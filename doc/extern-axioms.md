@@ -2,25 +2,30 @@
 
 ## CURRENT STEP
 
-Do per-axiom triage now that the `sorry` elimination phase is complete.
+Start Step 4 with the guard-tag-absence axioms.
 
 What remains open now:
 
 - `lake build` succeeds with **0 sorry warnings**
 - the remaining proof debt is the 10 extern axioms in `LeanProofs/StepFR.lean`
-- the next task is no longer generic sorry cleanup; it is deciding which axioms
-  are genuine permanent extern contracts and which now have a concrete proof
-  route
+- Step 3 triage is complete; the next task is executing the first
+  high-confidence structural reductions
 
 Required next action:
 
-1. classify each remaining axiom in `LeanProofs/StepFR.lean` as:
-   - likely permanent extern contract
-   - likely provable now with the current helper stack
-   - blocked on one specific missing structural lemma
-2. update this document with a concrete per-axiom strategy table
-3. choose one small, high-confidence structural target from the “likely
-   provable now” class as the first Step 4 execution item
+1. replace these three axioms with their already-proved `_of_tagEnvBounded`
+   variants:
+   - `applyFnTClosure_extern_ok_guardClosure_tag_absent`
+   - `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
+   - `typecheckExternVal_guardClosure_pred_implies_tag_absent`
+2. thread the needed `tagEnvBounded` premises through the current callers;
+   expect this to be an inductive boundedness-threading pass rather than a
+   one-line caller rewrite
+3. if required by the caller path, thread the companion boundedness hypotheses
+   used by `typecheckExpr_preserves_tagEnvBounded`
+   (`predTagsBoundedInCtx` and `closureEnvBoundedInCtx`) through the same
+   recursive contexts
+4. rebuild and confirm the axiom count decreases without reintroducing `sorry`
 
 Critical constraints:
 
@@ -31,14 +36,16 @@ Critical constraints:
   blocker
 - prefer proving a proved alternative and switching callers over editing the
   semantic contract surface blindly
+- do **not** start with the semantic `QTypRespectsTagMeaning` contracts; those
+  are currently classified as likely permanent
 
 Done means:
 
-- this document records a concrete strategy for each remaining axiom
-- the next execution step can target a specific axiom or small axiom cluster
-  instead of “reassess axiom surface”
+- the three guard-tag-absence axioms are removed from `StepFR.lean`
+- callers use the proved `_of_tagEnvBounded` lemmas instead
+- the axiom surface is strictly smaller than it is now
 
-**Current status (2026-04-09, branch `new-iofree`, base commit `f6b3c7f`)**
+**Current status (2026-04-10, branch `new-iofree`, base commit `f6b3c7f`)**
 
 - `TypeSafety.lean`: 0 `sorry`; downstream helper APIs and monotonicity lemmas
   added
@@ -48,14 +55,17 @@ Done means:
   `StepFRVlet.lean`, and `FaultRobustnessProofs.lean` have been repaired to
   the strengthened `wfTypeContext`
 - `lake build` succeeds cleanly
+- Step 3 triage is now documented in §2.9
 - no new theorem-interface or semantic blocker has appeared; the remaining debt
   is entirely the 10 extern axioms in `LeanProofs/StepFR.lean`
 
 ## 1. Problem
 
-This note tracks the remaining extern-related proof gaps on `new-iofree`,
-separates principled extern contracts from obligations that should be proved in
-Lean, and records the implementation plan for removing the non-contract gaps.
+This note now tracks the remaining extern-related **axiom surface** on
+`new-iofree`, after the `sorry`-elimination work has completed. Its purpose is
+to separate principled extern contracts from obligations that should still be
+proved in Lean, and to record the plan for reducing the remaining axiom set to
+the true contract floor.
 
 The end-state goal is:
 
@@ -66,36 +76,21 @@ The end-state goal is:
   `FaultRobustnessSpec`, or the top-level FR theorem interface unless a real
   proof obstruction forces that change
 
-The original blocker was the last **6 `sorry` terms**, all of the same shape:
+Current blocker:
 
-1. `capturedEnvRefLocsBounded capturedEnv result.nextLoc'`
-2. `etypRefLocsBounded argEtyp result.nextLoc'`
-
-These are needed at call sites of `applyFnTClosure_extern_wfTypeResult` or
-`mapM_applyFnTClosure_forall_wfTypeResult` in:
-
-- `LeanProofs/TypeSafety.lean`
-- `LeanProofs/StepFR.lean`
-- `LeanProofs/StepFRApp.lean`
+- the remaining proof debt is the 10 extern axioms in `LeanProofs/StepFR.lean`
+- some of these are likely genuine permanent extern contracts
+- others look structural and may now be provable with the helper stack built
+  during the completed `wfTypeContext` / ref-location work
 
 Operational constraint:
 
-- the typing-induction work and the `wfTypeContext` change must land
-  together
-- changing `wfTypeContext` first creates more holes than it closes
-- no plan step is acceptable if it causes net `sorry` inflation without a
-  clearly staged removal path
-- the current worktree now carries temporary `TypeSafety` and downstream
-  placeholder `sorry`s from the first all-at-once Step 2 attempt; this plan
-  now splits the work so those are removed in two stages rather than one
-
-Done conditions for the active blocker:
-
-- the original 6 ref-location caller `sorry`s are removed
-- the temporary `app` `sorry` introduced during Step 1 is also removed
-- no new `sorry` or `axiom` is introduced
-- the unused helper `applyFnTClosure_ok_wfTypeResult` is either deleted or
-  repaired without leaving latent proof debt
+- do not reintroduce `sorry`
+- do not add new `axiom`
+- do not change theorem interfaces unless the axiom triage exposes a genuine
+  new blocker
+- prefer replacing an axiom with an existing proved alternative before trying a
+  larger refactor
 
 ## 2. Analysis
 
@@ -178,138 +173,36 @@ What should be proved, not assumed:
 This means the active blocker is a proof-engineering issue, not a
 new permanent extern contract.
 
-### 2.4 Simple intuition for the blocker
+### 2.4 Completed foundation no longer on the critical path
 
-In plain terms, the proof currently knows how to say:
+The previous `wfTypeContext` strengthening and downstream `sorry` elimination
+are complete and validated. They remain important background, but they are no
+longer the active plan item. The details are recorded in §5 History.
 
-- every location already present in the memory summary is below `nextLoc`
+What matters for the current phase:
 
-But the extern application proof also needs to know something stronger:
+- `TypeSafety.lean`, `StepFR.lean`, and `StepFRApp.lean` are clean
+- the strengthened `wfTypeContext` architecture propagated successfully through
+  the current proof stack
+- no further proof-architecture or theorem-interface change appears necessary
 
-- every location mentioned *inside types* is below `nextLoc`
-- that includes locations hidden inside the argument type
-- and locations hidden inside closures captured in the environment
+### 2.5 Current impact assessment
 
-That is the gap.
-
-The current well-formedness invariant only watches the memory summary. It does
-not watch references that are stored indirectly inside `varEnv` entries or
-inside closure payloads. So when the extern proof tries to show that its
-typing-side memory updates stay within bounds, it lacks a global guarantee that
-those already-mentioned locations are old enough to be safe.
-
-Why existing runtime facts do not fix this:
-
-- runtime instantiation tells us that a typed variable has some runtime value
-- for a reference-typed value, that only exposes one realized location at a
-  time
-- but the type-level proof needs a bound on *all* logical locations mentioned
-  in the type annotation, not just the one runtime witness we happen to see
-
-Why the proposed approach fixes it:
-
-- the new typing induction proves that successful typechecking preserves these
-  hidden location bounds for results, arguments, and captured closures
-- strengthening `wfTypeContext` packages those bounds into the existing notion
-  of context well-formedness, so the context tracks not only memory locations
-  but also locations buried inside types and closures
-- after that, the extern call sites can obtain the exact boundedness facts they
-  need from the same `wfTypeContext` premise they already carry
-
-### 2.5 Why the blocker is real
-
-`applyFnTClosure_extern_wfTypeResult` needs **static** bounds on all logical
-locations that may appear in:
-
-- the captured environment of an extern closure
-- the argument `ETyp`
-
-The existing exported theorem stack only gives `wfTypeResult`, which bounds
-`memEnv'` against `nextLoc'`. It does **not** bound ref-location sets stored in
-`varEnv` or inside function-valued `ETyp`s.
-
-Existing FR-side runtime facts are not enough to recover the missing static
-bound:
-
-- `runtimeInstantiatesCtx` gives one runtime witness value per typed variable
-- `valueHasETyp` for `ETyp.ref ls` only witnesses that **some** `l ∈ ls` is
-  realized in `θ`
-- but `etypRefLocsBounded` needs **all** `l ∈ ls` to satisfy `l < nextLoc`
-
-So the missing fact cannot be reconstructed from the current `StepFR`
-hypotheses. This is exactly why the 4 holes outside `TypeSafety.lean` do not
-admit a purely local repair.
-
-Consequences:
-
-- fixing only the `TypeSafety.lean` proof is insufficient
-- threading a separate local invariant below `StepFR` is insufficient for the
-  4 external call sites
-- the real missing input invariant is static well-formedness of `varEnv`
-
-### 2.6 Exact shape of the proposed strengthening
-
-The intended blocker fix is:
-
-- **yes**: strengthen `wfTypeContext` from the current shallow property
-  ("all locations in `memEnv` are below `nextLoc`")
-- to a **deep nextLoc-boundedness property**
-- where "deep" means:
-  - memory locations in `memEnv` are below `nextLoc`
-  - locations mentioned in ref-typed `varEnv` entries are below `nextLoc`
-  - if a `varEnv` entry is a function type, then the captured environment of
-    each closure it contains also satisfies the same location-boundedness
-    condition recursively
-
-So the answer to the design question is:
-
-- the fix is **not** just "add one more shallow `varEnvRefLocsBounded`
-  conjunct"
-- the fix **does** need the recursive closure-aware part as well
-
-The document currently exposes that deep property through two top-level
-ingredients:
-
-1. `varEnvRefLocsBounded`
-2. `varEnvClosuresCapturedRefLocsBounded`
-
-but the implementation should use recursive helper machinery internally rather
-than treating those as unrelated facts.
-
-Recommended style for the implementation:
-
-- follow the same pattern already used for recursive tag-boundedness in
-  `TypeSafety.lean`, where the proof uses helper notions like
-  `CapturedEnvFullBounded` and `etypClosuresFullBounded`
-- for ref-location boundedness, introduce the analogous recursive helper layer
-  if that keeps the proof cleaner
-- keep the public theorem-level interface simple: externally the change is
-  "stronger `wfTypeContext`", internally the proof may use a deeper recursive
-  property to derive the two concrete facts needed at call sites
-
-### 2.7 Impact assessment
-
-Recommended change: strengthen the *meaning* of `wfTypeContext` so it carries
-the needed static `varEnv` bounds.
+Recommended current change: reduce the remaining extern axiom surface without
+changing the theorem interface unless forced.
 
 Impact on the proof stack:
 
 - **Top-level fault-robustness theorem:** no intended statement change
-- **`StepFR` / `StepFR_IH`:** no new standalone parameters, but the existing
-  `wfTypeContext` premise becomes semantically stronger
+- **`StepFR` / `StepFR_IH`:** no intended new parameters
 - **`FaultRobustnessSpec`:** no intended change
 
 Semantic impact on the language:
 
-- **Soundness:** none; this is proof-only strengthening of a well-formedness
-  invariant
+- **Soundness:** none intended; this is proof-only cleanup
 - **Precision:** none
 - **Language scope:** none
 - **Operational semantics:** none
-
-This is still a serious design decision, because it is the one place where the
-proof appears to need a justified boundary exception rather than a purely local
-repair.
 
 ### 2.8 Current assessment after Step 2b completion
 
@@ -352,197 +245,401 @@ So the planning conclusion is:
 - treat Step 2b as complete
 - move to per-axiom triage before any further proof implementation
 
-### 2.9 Preliminary per-axiom triage
+### 2.9 Per-axiom triage
 
-Based on the current code, the remaining 10 axioms fall into three groups.
+This section is the source of truth for the remaining 10 axioms. Each entry
+records:
 
-Likely permanent extern contracts:
+- what the axiom is really asserting
+- whether it looks structurally provable or fundamentally semantic
+- whether it should stay as-is, be replaced, or be split
 
-- `applyFnTClosure_extern_ok_QTypRespectsTagMeaning`
-- `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
-- `typecheckExternVal_QTypRespectsTagMeaning_axiom`
+#### 2.9.1 `applyFnTClosure_extern_ok_wfTagMeaningCtx`
 
-Reason:
+Current role:
 
-- these are the semantic obligations that connect opaque extern summaries to
-  `TagMeaning`; they are not obviously derivable from the structural
-  typechecking code alone
+- used to show that a successful `FnTClosure.extern` application preserves
+  `wfTagMeaningCtx` for the post-context
 
-Likely provable now with the current helper stack:
+Deep analysis:
 
-- `applyFnTClosure_extern_ok_guardClosure_tag_absent`
-- `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
-- `typecheckExternVal_guardClosure_pred_implies_tag_absent`
+- as stated, this bundles two logically different obligations:
+  1. the **result** `QTyp` produced by the extern application respects
+     `TagMeaning`
+  2. every **effect-written memory cell** introduced by the extern summary also
+     respects `TagMeaning`
+- the structural shell around those obligations is already present in the code:
+  `applyFnTClosure` preserves `tagEnv'` and `regime'` structurally, and the
+  shape of the memory updates is explicit in the effects loop
+- what is not derivable from structure alone is the semantic interpretation of
+  the resolved predicates embedded in the extern summary
 
-Reason:
+Judgment:
 
-- all three already have proved `_of_tagEnvBounded` variants
-- `TypeSafety.lean` now proves `typecheckExpr_preserves_tagEnvBounded`
-- the remaining task is to feed the appropriate `tagEnvBounded` premise to the
-  proved alternatives and switch callers
+- **not a good final axiom in its current bundled form**
+- **should be split**
 
-Still needs focused structural analysis:
+Recommended replacement:
 
-- `applyFnTClosure_extern_ok_wfTagMeaningCtx`
-- `applyFnTClosure_extern_ok_lookup_origin`
-- `applyFnTClosure_extern_ok_fresh_loc_not_clean`
-- `typecheckExternVal_preserves_lookup_origin_axiom`
+- keep a smaller semantic contract for **effect-predicate interpretation** of
+  the effect loop writes
+- prove a structural `wfTagMeaningCtx` preservation lemma that uses:
+  - the smaller effect-write contract
+  - the existing / retained result-side `QTypRespectsTagMeaning` contract
 
-Reason:
+Classification:
 
-- these look more structural than semantic, but the exact proof route is not
-  yet pinned down enough to schedule implementation blindly
-- `applyFnTClosure_extern_ok_wfTagMeaningCtx` in particular likely wants to be
-  split into a smaller semantic effect-predicate contract plus proved
-  structural preservation lemmas
+- **split required**
+- the current bundled axiom should not survive unchanged
+
+#### 2.9.2 `applyFnTClosure_extern_ok_QTypRespectsTagMeaning`
+
+Current role:
+
+- used to conclude that the result `QTyp` of an impure extern application
+  respects `TagMeaning`
+
+Deep analysis:
+
+- this is the core semantic question for extern returns: does the return
+  predicate describe a meaning already sanctioned by `tm`?
+- the typechecker only allocates / resolves tags and packages the summary; it
+  does not justify that the extern summary is semantically faithful
+- even in the simple-return case, the correctness of the resolved predicate is
+  an assumption about the extern summary, not a theorem of the typing
+  structure
+- nested extern returns are not evidence against keeping this contract: even if
+  some closure-shape pieces are structural, the semantic content of the
+  embedded extern summary remains opaque
+
+Judgment:
+
+- **fundamental extern contract**
+
+Recommended shape:
+
+- keep as a permanent semantic assumption unless later work isolates a smaller,
+  clearer statement for just the simple-return fragment
+
+Classification:
+
+- **likely permanent extern contract**
+
+#### 2.9.3 `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
+
+Current role:
+
+- pure-closure analogue of the previous axiom
+
+Deep analysis:
+
+- same reasoning as the impure version
+- the absence of the effect loop simplifies the structure, but not the core
+  semantic opacity of the return summary
+
+Judgment:
+
+- **fundamental extern contract**
+
+Recommended shape:
+
+- keep as a permanent semantic assumption, parallel to the impure version
+
+Classification:
+
+- **likely permanent extern contract**
+
+#### 2.9.4 `applyFnTClosure_extern_ok_lookup_origin`
+
+Current role:
+
+- used in the lookup-origin development to show that trusted output cells
+  produced by an impure extern application come from trusted input cells
+
+Deep analysis:
+
+- this is not just a shape lemma about `memEnv`; it is a **provenance**
+  statement
+- structurally, the effect loop can overwrite referenced locations with
+  arbitrary summary-provided poison / predicate pairs
+- nothing in the typing code alone says that a clean or active-guarded
+  non-function output at location `l` must originate from a pre-existing trusted
+  cell at `l`
+- that property is exactly the kind of semantic discipline we want from externs:
+  they must not conjure trusted data out of nowhere
+- the current statement is understandable to downstream proofs, but it mixes:
+  - clean-value origin
+  - active-guard origin for non-function values
+
+Judgment:
+
+- **semantic extern contract, not structurally provable from current code**
+
+Recommended shape:
+
+- keep it as a semantic provenance contract for now
+- optionally split later into:
+  - clean-origin
+  - guard-origin-for-nonfunctions
+  if that makes downstream use clearer
+
+Classification:
+
+- **likely permanent extern contract**
+
+#### 2.9.5 `applyFnTClosure_extern_ok_fresh_loc_not_clean`
+
+Current role:
+
+- used to rule out trusted fresh memory entries created by impure externs when
+  the application provenance is tainted
+
+Deep analysis:
+
+- this is also a semantic provenance / trust-discipline statement
+- structurally, the effect loop does not propagate `p` or `p1` into stored
+  memory cells, so the conclusion cannot come from the current typechecker
+  equations alone
+- the axiom says that even if the summary could write a fresh cell, that fresh
+  cell may not end up trusted under tainted application provenance
+- this is not an ordinary bookkeeping fact; it is an intended semantic rule for
+  extern behavior
+
+Judgment:
+
+- **semantic extern contract**
+
+Recommended shape:
+
+- keep separate from lookup-origin for now; although they share a common
+  “externs must not create trust out of nowhere” theme, this axiom talks about
+  the stronger `qtypCleanUnder` notion and is usefully direct at its call sites
+
+Classification:
+
+- **likely permanent extern contract**
+
+#### 2.9.6 `applyFnTClosure_extern_ok_guardClosure_tag_absent`
+
+Current role:
+
+- used to show that a guardClosure tag introduced by an impure extern return is
+  absent from `tagEnv'`
+
+Deep analysis:
+
+- there is already a proved alternative:
+  `applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded`
+- the remaining missing ingredient is no longer semantic; it is the input
+  `tagEnvBounded` fact
+- that fact now exists in the proof stack via the completed `TypeSafety`
+  development
+- the execution cost is not just a local caller swap:
+  the main caller path runs through the inductive helper
+  `ioFree_guardClosure_pred_implies_tag_absent` in `StepFRAssign.lean`
+- switching to the proved alternative will require threading
+  `tagEnvBoundedInCtx` through recursive cases, and likely also threading the
+  companion boundedness hypotheses used by
+  `typecheckExpr_preserves_tagEnvBounded`, namely
+  `predTagsBoundedInCtx` and `closureEnvBoundedInCtx`
+
+Judgment:
+
+- **structural and already essentially proved**
+
+Recommended replacement:
+
+- switch callers to the `_of_tagEnvBounded` lemma and delete the axiom
+- treat this as a mechanical but non-trivial inductive threading task, not as
+  a one-line replacement
+
+Classification:
+
+- **provable now**
+
+#### 2.9.7 `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
+
+Current role:
+
+- pure-closure analogue of the previous axiom
+
+Deep analysis:
+
+- same situation as the impure version
+- there is already a proved `_of_tagEnvBounded` lemma
+- the same caller-threading caveat applies here: the proof route is clear, but
+  the rewiring is likely to pass through recursive helper contexts rather than
+  a single direct call-site edit
+
+Judgment:
+
+- **structural and already essentially proved**
+
+Recommended replacement:
+
+- switch callers to the `_of_tagEnvBounded` lemma and delete the axiom
+- budget for inductive plumbing rather than treating it as a trivial local edit
+
+Classification:
+
+- **provable now**
+
+#### 2.9.8 `typecheckExternVal_QTypRespectsTagMeaning_axiom`
+
+Current role:
+
+- used at the `externVal` typing site to show that the produced result `QTyp`
+  respects `TagMeaning`
+
+Deep analysis:
+
+- this is the value-level analogue of the extern-return `QTypRespectsTagMeaning`
+  axioms above
+- the structural parts are already separated:
+  `typecheckExternVal_preserves_wfTagMeaningCtx` is proved
+- the remaining unproved content is exactly the semantic interpretation of the
+  resolved extern predicate
+
+Judgment:
+
+- **fundamental extern contract**
+
+Recommended shape:
+
+- keep as a permanent semantic assumption
+- it is already relatively focused and understandable; no urgent split is
+  needed
+
+Classification:
+
+- **likely permanent extern contract**
+
+#### 2.9.9 `typecheckExternVal_preserves_lookup_origin_axiom`
+
+Current role:
+
+- used in the clean-lookup-origin development for `externVal`
+
+Deep analysis:
+
+- this one is different from the impure extern provenance axioms
+- `typecheckExternVal` is structurally very simple: it resolves tags and then
+  calls `surfaceSpecToQTyp`
+- for non-reference results, `memEnv'` is unchanged
+- for `ref int`, `surfaceSpecToQTyp` allocates at `ctx.nextLoc`
+- so for an **existing** location `l`, lookup-origin should be structural if we
+  know the fresh location is genuinely fresh
+- however, the current axiom statement does **not** assume `wfTypeContext ctx`
+  or any equivalent freshness premise; with that omission, the theorem is
+  stronger than the structural code justifies
+- the likely repair is to add `wfTypeContext ctx` or the narrower freshness
+  premise `∀ l, ctx.memEnv.contains l → l < ctx.nextLoc`
+- this looks low-friction for callers, because the surrounding FR development
+  already carries context well-formedness in the relevant places
+
+Judgment:
+
+- **likely provable after a statement adjustment**
+
+Recommended replacement:
+
+- replace the axiom with a proved structural lemma whose hypotheses expose the
+  freshness needed for `freshTLoc`, most naturally `wfTypeContext ctx` or an
+  equivalent “all existing mem locations are < nextLoc” premise
+- then update the caller theorem that currently uses the axiom if needed
+
+Classification:
+
+- **blocked on a small statement / helper adjustment, not on extern semantics**
+
+#### 2.9.10 `typecheckExternVal_guardClosure_pred_implies_tag_absent`
+
+Current role:
+
+- used to show that a guardClosure tag introduced by `externVal` is absent from
+  `tagEnv'`
+
+Deep analysis:
+
+- there is already a proved alternative:
+  `typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded`
+- as with the closure-application guard-tag axioms, the remaining work is just
+  supplying the `tagEnvBounded` premise from the existing proof stack
+- again, this should not be mistaken for a purely local swap: the caller path
+  may need to thread `tagEnvBoundedInCtx` together with the supporting
+  boundedness hypotheses used to prove preservation
+
+Judgment:
+
+- **structural and already essentially proved**
+
+Recommended replacement:
+
+- switch callers to the `_of_tagEnvBounded` lemma and delete the axiom
+
+Classification:
+
+- **provable now**
+
+#### 2.9.11 Summary table
+
+| Axiom | Triage | Recommended action |
+|------|--------|--------------------|
+| `applyFnTClosure_extern_ok_wfTagMeaningCtx` | split required | split into smaller semantic effect-write contract plus proved structural preservation |
+| `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | likely permanent | keep as semantic extern contract |
+| `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | likely permanent | keep as semantic extern contract |
+| `applyFnTClosure_extern_ok_lookup_origin` | likely permanent | keep for now; optionally split clean-origin and guard-origin later |
+| `applyFnTClosure_extern_ok_fresh_loc_not_clean` | likely permanent | keep as semantic trust/provenance contract |
+| `applyFnTClosure_extern_ok_guardClosure_tag_absent` | provable now | switch callers to proved `_of_tagEnvBounded` lemma; expect inductive boundedness-threading |
+| `applyPFnTClosure_extern_ok_guardClosure_tag_absent` | provable now | switch callers to proved `_of_tagEnvBounded` lemma; expect inductive boundedness-threading |
+| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | likely permanent | keep as semantic extern contract |
+| `typecheckExternVal_preserves_lookup_origin_axiom` | likely provable after statement adjustment | expose freshness precondition, then prove structurally |
+| `typecheckExternVal_guardClosure_pred_implies_tag_absent` | provable now | switch callers to proved `_of_tagEnvBounded` lemma; expect boundedness-threading |
 
 ## 3. Approach
 
-I agree with the corrected blocker analysis and with the proposed repair
-strategy, with one explicit qualification:
-
-- the semantic strengthening of `wfTypeContext` should be treated as an
-  approved design pivot, not as an incidental local refactor
-
-**Explicit statement of the blocker solution:**
-
-- change `wfTypeContext` from the current shallow memEnv-only invariant to a
-  deep nextLoc-boundedness invariant
-- use recursive closure-aware helper machinery internally so that the new
-  `wfTypeContext` really covers captured environments, not only the top-level
-  `varEnv`
-- continue exposing only `wfTypeContext` at the `StepFR` boundary, rather than
-  adding a new separate parameter bundle there
+The active work is now axiom triage and reduction, not proof-architecture
+repair.
 
 Recommended approach:
 
-1. prove a **private combined typing-induction theorem** with the required
-   deep ref-location invariants supplied explicitly, without changing
-   `wfTypeContext` yet
-2. once that theorem is complete, **atomically** strengthen `wfTypeContext`
-   to the deep version and update the downstream callers
-3. do not add new separate hypotheses to `StepFR`, `StepFR_IH`, or the
-   top-level FR theorem; keep the change packaged inside the existing
-   `wfTypeContext` premise
+1. separate the remaining 10 axioms into:
+   - genuine semantic extern contracts
+   - likely structural obligations now provable with the existing helper stack
+   - statements that need one further structural split or helper lemma before
+     proof work should begin
+2. prefer switching callers to already-proved alternatives before attempting
+   deeper refactors
+3. only after that triage, choose one small, high-confidence structural target
+   and execute it end-to-end
 
-At the level of immediately usable facts, the induction needs:
+Preferred reduction order:
 
-1. `varEnvRefLocsBounded ctx.varEnv ctx.nextLoc`
-2. `varEnvClosuresCapturedRefLocsBounded ctx.varEnv ctx.nextLoc`
+1. guard-tag-absence axioms
+   - they already have `_of_tagEnvBounded` proved variants
+   - the remaining work is mostly caller rewiring
+2. the `wfTagMeaningCtx` preservation bundle
+   - likely best handled by splitting off a smaller semantic contract from the
+     structural preservation part
+3. the provenance / freshness axioms
+   - revisit only after the easy structural replacements are done
 
-These are the concrete projections the call sites need, but conceptually they
-come from one deeper recursive nextLoc-boundedness story.
+Guideline:
 
-Preferred implementation strategy:
-
-- do **not** build a completely independent second syntax induction if it can
-  be avoided
-- instead, extend the existing combined `TypeSafety` induction machinery in
-  the style of `typecheckExpr_preserves_combined_main`
-- the new ref-location outputs should become additional projections from that
-  same static induction stack, just as the existing combined theorem already
-  feeds the predicate-tag and closure-boundedness projections
-
-Sketch of the deep helper layer Step 1 should use internally:
-
-```lean
--- Shallow: the ETyp itself mentions only locations < nl.
-def etypRefLocsBounded (etyp : ETyp) (nl : Loc) : Prop := ...
-
--- Deep: every closure inside the ETyp has a captured env whose entries are
--- themselves deep-bounded at nl.
-def etypClosuresRefLocsFullBounded (etyp : ETyp) (nl : Loc) : Prop := ...
-
--- Deep captured-env boundedness, recursive through closure-valued entries.
-def CapturedEnvRefLocsFullBounded (env : CapturedVarEnv) (nl : Loc) : Prop := ...
-
--- Top-level projection for the current varEnv.
-def varEnvClosuresCapturedRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop := ...
-```
-
-The intended relationship is:
-
-- `etypRefLocsBounded` gives the shallow fact needed at the extern effect loop
-- `etypClosuresRefLocsFullBounded` / `CapturedEnvRefLocsFullBounded` supply the
-  recursive closure part
-- `varEnvRefLocsBounded` and `varEnvClosuresCapturedRefLocsBounded` are the
-  concrete top-level projections exposed at the call sites
-
-So Step 1 is not “prove one isolated lemma and move on”. It is:
-
-1. introduce or identify the deep recursive nextLoc-boundedness predicates
-2. extend the existing combined static induction so it preserves them
-3. expose the two concrete projections the extern `wfTypeResult` callers need
-
-Recommended handling of the active `StepFR.lean` helper:
-
-- `applyFnTClosure_ok_wfTypeResult` currently has zero callers
-- prefer deleting it rather than threading the new obligations through an
-  unused wrapper
-- only keep it if a real caller appears and the wrapper still earns its place
-
-Secondary implementation guideline:
-
-- if the paired `*_RefLocsBounded` /
-  `*_ClosuresCapturedRefLocsBounded` lemmas start to proliferate badly, then
-  consider collapsing them to one recursive predicate
-- do **not** start with that refactor; first try the minimal proof that unlocks
-  the 6 remaining holes
+- until proved otherwise, treat the three `QTypRespectsTagMeaning` axioms as
+  likely permanent contracts
+- challenge every other axiom to justify why it cannot be reduced further
 
 ## 4. Plan
 
 High-risk-first. This section is forward-looking only.
 
-**Current plan status:** Step 1, Step 2a, and Step 2b are complete. The
-current step is Step 3 axiom triage.
-
-### Step 2b. Finish the remaining `StepFRApp` propagation work
-
-**Status:** complete
-
-Most reusable helper first:
-
-- close `join_transport_wfTypeContext`, because several surviving app proofs
-  depend on the same transport shape and this helper should collapse the
-  repeated join-side obligations once finished
-
-Files:
-
-- `LeanProofs/StepFRApp.lean`
-
-Changes:
-
-- finish `join_transport_wfTypeContext`
-- in that helper, make the `nextLoc` transport explicit rather than implicit:
-  prove the two `varEnv` projections by monotonicity from
-  `wfTypeContext (ctxAfter ctx first)` to `ctxAfter ctx res`
-- replace the remaining manual closure-body `wfTypeContext` constructions with
-  `wfTypeContext_closureBody`
-- use the public `TypeSafety` APIs
-  `typecheckExpr_preserves_etypRefLocsBounded` and
-  `typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded`
-  at the remaining app-body sites
-- at each closure-body site, explicitly project the per-closure
-  `CapturedEnvRefLocsFullBounded` witness from the full
-  `etypClosuresCapturedRefLocsBounded` result using the closure membership
-  hypothesis available at that site
-- discharge the remaining `wfTypeContext_of_wfTypeResult` join instantiations
-  using explicit `ctx.nextLoc ≤ ... ≤ first.nextLoc'` monotonicity chains,
-  including `applyFnTClosure_nextLoc_mono` where the chain passes through a
-  closure application
-- treat one arrow site and one parrow site as templates first; the remaining
-  Pattern A sites are similar but not literally identical in local context
-
-Done:
-
-- `LeanProofs/StepFRApp.lean` has no `sorry` warnings
-- `lake build` succeeds without `sorry` warnings
-- no new interface changes were needed beyond the already-approved
-  strengthening of `wfTypeContext`
+**Current plan status:** Step 1, Step 2a, Step 2b, and Step 3 are complete.
+The current step is Step 4 axiom reduction.
 
 ### Step 3. Do per-axiom triage before any axiom-reduction implementation
 
-**Status:** current
+**Status:** complete
 
 Files:
 
@@ -581,18 +678,18 @@ Done means:
 
 ### Step 4. Execute the axiom-reduction plan from Step 3
 
-**Status:** pending
+**Status:** current
 
 Targets:
 
 1. finish the `tagEnvBounded` replacement route and switch the three
    guard-tag-absence axioms to their proved `_of_tagEnvBounded` variants
-2. prove any provisional axioms that Step 3 classified as structurally
-   derivable with the current helper stack
-3. split `applyFnTClosure_extern_ok_wfTagMeaningCtx` if Step 3 still judges the
+2. split `applyFnTClosure_extern_ok_wfTagMeaningCtx` if Step 3 still judges the
    bundled statement too coarse:
    - a smaller effect-predicate interpretation contract
    - proved structural `wfTagMeaningCtx` preservation lemmas
+3. prove any remaining provisional axioms that Step 3 classified as
+   structurally derivable with the current helper stack
 4. leave only the axioms that Step 3 classified as genuine permanent extern
    contracts
 
@@ -713,7 +810,28 @@ Done means:
 - This confirms that the strengthened `wfTypeContext` architecture is not only
   viable in principle but fully integrated through the current proof stack.
 
-### 5.9 Why the `wfTypeContext` change is now considered justified
+### 5.9 Completed Step 2b details moved out of the forward plan
+
+- The former Step 2b execution details are no longer part of §4 Plan.
+- The completed app-propagation work is now recorded here, since it no longer
+  belongs to the forward-looking action list.
+- The important outcome is:
+  - `StepFRApp.lean` is clean
+  - the ref-location / `wfTypeContext` propagation problem is solved
+  - the active plan has shifted entirely to axiom triage and reduction
+
+### 5.10 Step 3 axiom triage outcome
+
+- The remaining 10 axioms were classified into three groups:
+  - likely permanent semantic extern contracts
+  - provable now with the current helper stack
+  - likely provable after a small statement adjustment or split
+- The first concrete Step 4 execution target is the three guard-tag-absence
+  axioms, because they already have proved `_of_tagEnvBounded` variants.
+- The `QTypRespectsTagMeaning` axioms remain the leading candidates for the
+  true permanent contract floor.
+
+### 5.11 Why the `wfTypeContext` change is now considered justified
 
 The earlier boundary rule was:
 
@@ -732,7 +850,7 @@ So the recommended pivot is not "leak every useful local invariant into FR".
 It is a single, narrow strengthening of the existing notion of type-context
 well-formedness.
 
-### 5.10 Reference points
+### 5.12 Reference points
 
 Historical references that may still be useful during implementation:
 
