@@ -2,57 +2,54 @@
 
 ## CURRENT STEP
 
-Finish the downstream `StepFRApp` propagation step now that the `TypeSafety`
-and `StepFR` layers are clean.
+Do per-axiom triage now that the `sorry` elimination phase is complete.
 
 What remains open now:
 
-- `TypeSafety.lean` and `StepFR.lean` are clean; the remaining `sorry`
-  warnings are all in `StepFRApp.lean`
-- `lake build` succeeds, so the remaining work is localized proof debt rather
-  than a compile blocker
-- the surviving `StepFRApp` debt has collapsed to two proof patterns:
-  - closure-body `wfTypeContext` construction for closure / pclosure bodies
-  - `wfTypeContext` transport through `joinTypeResults`
+- `lake build` succeeds with **0 sorry warnings**
+- the remaining proof debt is the 10 extern axioms in `LeanProofs/StepFR.lean`
+- the next task is no longer generic sorry cleanup; it is deciding which axioms
+  are genuine permanent extern contracts and which now have a concrete proof
+  route
 
 Required next action:
 
-1. in `LeanProofs/StepFRApp.lean`, finish `join_transport_wfTypeContext`
-   and the remaining `wfTypeContext_of_wfTypeResult` join instantiations using
-   explicit `nextLoc` monotonicity chains
-2. replace the remaining manual closure-body `wfTypeContext` constructions with
-   `wfTypeContext_closureBody` plus the public
-   `typecheckExpr_preserves_etypRefLocsBounded` /
-   `typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded` APIs
-3. rebuild `LeanProofs/StepFRApp.lean`, then run `lake build`, before resuming
-   the extern-axiom reduction steps
+1. classify each remaining axiom in `LeanProofs/StepFR.lean` as:
+   - likely permanent extern contract
+   - likely provable now with the current helper stack
+   - blocked on one specific missing structural lemma
+2. update this document with a concrete per-axiom strategy table
+3. choose one small, high-confidence structural target from the “likely
+   provable now” class as the first Step 4 execution item
 
 Critical constraints:
 
-- do **not** add any new `sorry` or `axiom`
+- do **not** reintroduce `sorry`
+- do **not** add any new `axiom`
 - do **not** change `StepFR`, `StepFR_IH`, `FaultRobustnessSpec`, or the
-  top-level FR theorem interface unless the remaining `StepFRApp` work exposes
-  a genuine new blocker
-- keep the remaining work localized to `StepFRApp.lean` unless extracting one
-  helper clearly reduces duplication
+  top-level FR theorem interface unless the axiom triage exposes a genuine new
+  blocker
+- prefer proving a proved alternative and switching callers over editing the
+  semantic contract surface blindly
 
 Done means:
 
-- `StepFRApp.lean` has no `sorry` warnings
-- `lake build` succeeds without `sorry` warnings
-- the branch is ready for the extern-only axiom reduction steps
+- this document records a concrete strategy for each remaining axiom
+- the next execution step can target a specific axiom or small axiom cluster
+  instead of “reassess axiom surface”
 
 **Current status (2026-04-09, branch `new-iofree`, base commit `f6b3c7f`)**
 
-- `TypeSafety.lean`: 0 `sorry`, builds clean
-- `StepFR.lean`: 0 `sorry`, dead helper wrappers removed
+- `TypeSafety.lean`: 0 `sorry`; downstream helper APIs and monotonicity lemmas
+  added
+- `StepFR.lean`: 0 `sorry`; dead helper wrappers removed
+- `StepFRApp.lean`: 0 `sorry`; Step 2b propagation complete
 - `StepFRAssign.lean`, `StepFRIte.lean`, `StepFRNewRef.lean`,
   `StepFRVlet.lean`, and `FaultRobustnessProofs.lean` have been repaired to
   the strengthened `wfTypeContext`
-- `lake build` succeeds with 7 `sorry`-warning declarations, all in
-  `LeanProofs/StepFRApp.lean`
+- `lake build` succeeds cleanly
 - no new theorem-interface or semantic blocker has appeared; the remaining debt
-  is local invariant-threading work inside `StepFRApp`
+  is entirely the 10 extern axioms in `LeanProofs/StepFR.lean`
 
 ## 1. Problem
 
@@ -124,25 +121,16 @@ about typing artifacts, not executable extern behavior.
 
 ### 2.2 Current proof-gap inventory
 
-Verified on 2026-04-09 after the downstream sweep:
+Verified on 2026-04-09 after Step 2b completion:
 
 - `lake build` completes successfully
-- the only proof warnings are 7 `sorry`-warning declarations in
-  `LeanProofs/StepFRApp.lean`
+- there are no `sorry`-warning declarations in `LeanProofs/`
 - the branch still contains 10 explicit `axiom` declarations in
   `LeanProofs/StepFR.lean`
 
 Current `sorry` inventory:
 
-| File | Declaration | Remaining shape |
-|------|-------------|-----------------|
-| `StepFRApp.lean` | `join_transport_wfTypeContext` | transport the strengthened `wfTypeContext` through `joinTypeResults` |
-| `StepFRApp.lean` | `applyPFnTClosure_regular_body_wfTypeResult` | build closure-body `wfTypeContext` for a pure closure body |
-| `StepFRApp.lean` | `stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric` | repeated closure-body / join-side `wfTypeContext` threading |
-| `StepFRApp.lean` | `stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric` | repeated closure-body / join-side `wfTypeContext` threading |
-| `StepFRApp.lean` | `stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg` | repeated closure-body / join-side `wfTypeContext` threading |
-| `StepFRApp.lean` | `stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg` | repeated closure-body / join-side `wfTypeContext` threading |
-| `StepFRApp.lean` | `stepFR_app` | same two patterns in the final top-level app theorem |
+There are currently **no remaining `sorry` declarations** in `LeanProofs/`.
 
 Current axiom inventory:
 
@@ -164,10 +152,10 @@ Progress state by major line of work:
 - single-run strengthening for fresh clean locations: **complete**
 - predicate-tag / captured-env boundedness work: **complete**
 - captured-locset allocation work: **complete on the `TypeSafety` side and
-  mostly propagated**
+  fully propagated**
   - the `TypeSafety` and `StepFR` layers are clean
-  - non-app downstream files have been repaired
-  - only the concentrated `StepFRApp` transport / closure-body sites remain
+  - downstream `StepFRApp` propagation is complete
+  - the remaining work is axiom triage and reduction
 
 ### 2.3 Contract floor versus proof obligations
 
@@ -323,7 +311,7 @@ This is still a serious design decision, because it is the one place where the
 proof appears to need a justified boundary exception rather than a purely local
 repair.
 
-### 2.8 Current assessment after the downstream sweep
+### 2.8 Current assessment after Step 2b completion
 
 The overall plan is still viable.
 
@@ -331,17 +319,16 @@ What the current state demonstrates:
 
 - the strengthened meaning of `wfTypeContext` was sufficient to clean
   `TypeSafety.lean` and `StepFR.lean`
-- the downstream propagation has already succeeded in every touched file except
-  `StepFRApp.lean`
+- the downstream propagation has now succeeded in `StepFRApp.lean` as well
 - the remaining debt does **not** point to a new missing theorem-interface
-  invariant; it points to incomplete reuse of the new `TypeSafety` APIs
+  invariant; it points to the still-unreduced extern axiom surface
 
 The remaining work now has two distinct tiers:
 
 1. **Tier 1: `sorry` elimination**
-   - concentrated in `StepFRApp.lean`
-   - mechanically guided by the now-public `TypeSafety` helper APIs
-   - still requires careful local proof scripting, but not a new design pivot
+   - complete
+   - validates the strengthened `wfTypeContext` architecture end-to-end through
+     the current proof stack
 2. **Tier 2: axiom reduction**
    - still centered in `StepFR.lean`
    - materially less analyzed than the `sorry` elimination work
@@ -349,34 +336,8 @@ The remaining work now has two distinct tiers:
      structural obligations
 
 This means the end-state goal remains realistic, but the remaining distance is
-not uniform: finishing the `sorry` elimination is now routine engineering work,
-while the axiom-reduction phase still needs explicit per-axiom proof planning.
-
-Most reusable remaining helper item:
-
-- `join_transport_wfTypeContext` should be finished first, not because it now
-  looks like a new design blocker, but because it packages the one remaining
-  join-side `wfTypeContext` transport pattern for every surviving app proof
-
-Main tactical difficulty in the closure-body sites:
-
-- the remaining closure-body proofs do not just need the result-level theorem
-  `typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded`
-- they need a **per-closure projection** from the function-type result, usually
-  of the form:
-  - specialize the theorem with `rw [hetyp1] at hClosRL`
-  - then extract the specific captured environment bound using the closure
-    membership hypothesis (`hσcap_mem`, or the corresponding hypothesis
-    recovered from a `..._of_mapM_mem` inversion)
-
-Main tactical difficulty in the join-side sites:
-
-- `wfTypeContext_of_wfTypeResult ctx first h_first_wf hwfCtx hmono` needs an
-  explicit monotonicity chain ending in `ctx.nextLoc ≤ first.nextLoc'`
-- for the app sites this chain is not implicit; it must be assembled from the
-  `e2` monotonicity step, the `e1` monotonicity step, and then the closure
-  application monotonicity lemma such as `applyFnTClosure_nextLoc_mono`
-  (and the corresponding pure-closure variant when needed)
+not uniform: the `sorry` elimination is done, while the axiom-reduction phase
+still needs explicit per-axiom proof planning.
 
 What does **not** appear to be needed:
 
@@ -388,8 +349,52 @@ What does **not** appear to be needed:
 So the planning conclusion is:
 
 - keep the current proof architecture
-- finish the concentrated `StepFRApp` helper threading first
-- revisit the extern-only axioms only after `StepFRApp` is clean
+- treat Step 2b as complete
+- move to per-axiom triage before any further proof implementation
+
+### 2.9 Preliminary per-axiom triage
+
+Based on the current code, the remaining 10 axioms fall into three groups.
+
+Likely permanent extern contracts:
+
+- `applyFnTClosure_extern_ok_QTypRespectsTagMeaning`
+- `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
+- `typecheckExternVal_QTypRespectsTagMeaning_axiom`
+
+Reason:
+
+- these are the semantic obligations that connect opaque extern summaries to
+  `TagMeaning`; they are not obviously derivable from the structural
+  typechecking code alone
+
+Likely provable now with the current helper stack:
+
+- `applyFnTClosure_extern_ok_guardClosure_tag_absent`
+- `applyPFnTClosure_extern_ok_guardClosure_tag_absent`
+- `typecheckExternVal_guardClosure_pred_implies_tag_absent`
+
+Reason:
+
+- all three already have proved `_of_tagEnvBounded` variants
+- `TypeSafety.lean` now proves `typecheckExpr_preserves_tagEnvBounded`
+- the remaining task is to feed the appropriate `tagEnvBounded` premise to the
+  proved alternatives and switch callers
+
+Still needs focused structural analysis:
+
+- `applyFnTClosure_extern_ok_wfTagMeaningCtx`
+- `applyFnTClosure_extern_ok_lookup_origin`
+- `applyFnTClosure_extern_ok_fresh_loc_not_clean`
+- `typecheckExternVal_preserves_lookup_origin_axiom`
+
+Reason:
+
+- these look more structural than semantic, but the exact proof route is not
+  yet pinned down enough to schedule implementation blindly
+- `applyFnTClosure_extern_ok_wfTagMeaningCtx` in particular likely wants to be
+  split into a smaller semantic effect-predicate contract plus proved
+  structural preservation lemmas
 
 ## 3. Approach
 
@@ -488,13 +493,12 @@ Secondary implementation guideline:
 
 High-risk-first. This section is forward-looking only.
 
-**Current plan status:** Step 1 and Step 2a are complete. The non-app portion
-of Step 2b is complete. The current step is the concentrated `StepFRApp`
-finish-up.
+**Current plan status:** Step 1, Step 2a, and Step 2b are complete. The
+current step is Step 3 axiom triage.
 
 ### Step 2b. Finish the remaining `StepFRApp` propagation work
 
-**Status:** current
+**Status:** complete
 
 Most reusable helper first:
 
@@ -529,7 +533,7 @@ Changes:
 - treat one arrow site and one parrow site as templates first; the remaining
   Pattern A sites are similar but not literally identical in local context
 
-Done means:
+Done:
 
 - `LeanProofs/StepFRApp.lean` has no `sorry` warnings
 - `lake build` succeeds without `sorry` warnings
@@ -538,7 +542,7 @@ Done means:
 
 ### Step 3. Do per-axiom triage before any axiom-reduction implementation
 
-**Status:** pending
+**Status:** current
 
 Files:
 
@@ -555,9 +559,10 @@ Targets:
 - for every axiom in the second and third classes, record a concrete intended
   proof route in this document
 - specifically revisit:
+  - the three guard-tag-absence axioms
   - `applyFnTClosure_extern_ok_fresh_loc_not_clean`
   - `applyFnTClosure_extern_ok_lookup_origin`
-  - the three guard-tag-absence axioms
+  - `typecheckExternVal_preserves_lookup_origin_axiom`
   - the `applyFnTClosure_extern_ok_wfTagMeaningCtx` bundle
 
 Rationale:
@@ -571,7 +576,8 @@ Done means:
 
 - the document contains a per-axiom strategy table or equivalent prose
   classification
-- the next execution step can target specific axioms rather than “reassess”
+- the next execution step can target one concrete axiom or one small axiom
+  cluster rather than “reassess”
 
 ### Step 4. Execute the axiom-reduction plan from Step 3
 
@@ -696,7 +702,18 @@ Done means:
 - No new semantic blocker was uncovered. The remaining work is local proof
   threading, not a planning-stage design failure.
 
-### 5.8 Why the `wfTypeContext` change is now considered justified
+### 5.8 New finding from Step 2b completion
+
+- The remaining `StepFRApp` proof debt was fully discharged without any further
+  change to theorem interfaces or proof architecture.
+- `TypeSafety.lean` now exports the helper lemmas the downstream app proof
+  needed, including the monotonicity and captured-env bridge lemmas used during
+  propagation.
+- `lake build` is now clean: 0 `sorry`, 0 warnings.
+- This confirms that the strengthened `wfTypeContext` architecture is not only
+  viable in principle but fully integrated through the current proof stack.
+
+### 5.9 Why the `wfTypeContext` change is now considered justified
 
 The earlier boundary rule was:
 
@@ -715,7 +732,7 @@ So the recommended pivot is not "leak every useful local invariant into FR".
 It is a single, narrow strengthening of the existing notion of type-context
 well-formedness.
 
-### 5.9 Reference points
+### 5.10 Reference points
 
 Historical references that may still be useful during implementation:
 
