@@ -2,12 +2,13 @@
 
 ## CURRENT STEP
 
-Step 4f cleanup complete.  The branch is at its extern contract floor.
+Step 4f cleanup complete.  Next: Step 5 — unify Contract A axioms into a
+single tag-mapping semantic axiom (3 phases: validate → refactor → merge).
 
 Critical constraints:
 
 - do **not** reintroduce `sorry`
-- do **not** add any new `axiom`
+- do **not** increase net `axiom` count (new axioms must replace old ones)
 
 **Branch status (2026-04-13, branch `new-iofree`)**
 
@@ -248,26 +249,7 @@ proof considers "clean" (either by having `poison = false` or by being
 guarded by an active regime tag) can be traced to a correspondingly clean
 cell in the typing context that existed *before* the function was applied.
 
-## 5. Future directions (speculative)
-
-### 5.1 Axiomatize resolution primitive
-
-All Contract A axioms derive from the same semantic principle about
-`collectAndAllocExternTags` → `resolveSyntaxPred`.  If this pipeline were
-extracted as a standalone lemma target, a single axiom about the resolution
-step could replace all three per-entry-point declarations.  This would
-require:
-
-1. Refactoring `applyFnTClosure`, `applyPFnTClosure`, and
-   `typecheckExternVal` to expose the resolution result as an
-   intermediate value.
-2. Proving structural lemmas that connect each function's output to the
-   resolution step.
-
-Estimated reduction: 3 declarations → 1 axiom (plus ~3 structural lemmas).
-This is a significant refactoring effort.
-
-### 5.2 Factor poison conjunct of B1
+## 5. Future: factor poison conjunct of B1 (speculative)
 
 The first conjunct of `lookup_origin` (§2.3) — that clean cells in the
 extern output were not written by the effect loop — is partially structural:
@@ -285,8 +267,300 @@ it.
 
 ## 6. Plan
 
-Step 4f is complete.  The branch is at its extern contract floor:
-4 axiom declarations, 5 semantic obligations, `lake build` clean.
+### Step 5. Unify Contract A into a single tag-mapping axiom
+
+**Status:** proposed
+
+**Goal:** Replace the 3 Contract A declarations (§2.1, §2.2, §2.4) with a
+single semantic axiom about how freshly allocated tag mappings relate to
+`TagMeaning`, plus structural lemmas and corollaries.
+Axiom count: 4 → 2 (1 Contract A + 1 Contract B).
+
+**Approach:** First validate the axiom shape on the easiest cases (no code
+changes).  Then extract a helper in `Typecheck.lean` to make the impure
+effect-loop case provable.  Finally, prove all corollaries and delete the
+old axioms.
+
+#### Impact assessment
+
+- **Soundness:** No change — same type system behavior.
+- **Precision:** No change — same programs accepted/rejected.
+- **Language scope:** No change.
+- **Operational semantics:** No change — `beval` unaffected (externs fail
+  at runtime regardless).
+- **FR property:** Statement unchanged.  Proof restructured internally:
+  3 per-entry-point axioms become 1 semantic tag-mapping axiom +
+  structural lemmas/corollaries.
+
+#### Analysis: two sources of guard descriptors
+
+Guard descriptors reachable from extern output QTyps come from two sources:
+
+1. **Resolved predicates** (semantic).  Simple returns and effect cells
+   produce base-type QTyps (via `returnSpecToQTyp` / `effectSpecToQTyp` —
+   both reject arrow types).  `QTypInQTyp` has only the `self` case, so
+   the only guard descriptor is in the resolved `Predicate`.
+
+2. **Inherited captures** (structural).  Nested returns (`nestedFn` /
+   `nestedPfn`) produce arrow/parrow QTyps with `Predicate.noPred` at the
+   top level.  Guard descriptors are reachable only through
+   `QTypInQTyp.in_arrow` / `in_parrow`, descending into the deferred
+   closure's captured env (`VarTypeEnv.toCaptured unifiedEnv`).  This env
+   inherits from the pre-existing context + the argument binding, both of
+   which already respect `tm` via `wfTagMeaningCtx` and the IH.
+
+Additionally, `normalizeAppResultByProvenance` (Typecheck.lean:1241) strips
+the predicate to `noPred` when `joinPoison p1 p = true`, which eliminates
+source 1 in tainted contexts.  In that case, only source 2 remains.
+
+Source 1 is the semantic core — it needs the axiom.  Source 2 is structural
+and should be provable from the `wfTagMeaningCtx` precondition.
+
+#### Unified axiom shape
+
+Define a predicate-level respect property:
+
+```lean
+inductive PredicateRespectsTagMeaning (tm : TagMeaning) : Predicate → Prop where
+  | noPred : PredicateRespectsTagMeaning tm .noPred
+  | guardOnly (k : Tag) : PredicateRespectsTagMeaning tm (.guardOnly k)
+  | guardClosure (k : Tag) (arg : Name) (body : PExpr) (cap : CapturedVarEnv)
+      (hlookup : tm.lookup k = some { argName := arg, body := body, capEnv := cap }) :
+      PredicateRespectsTagMeaning tm (.guardClosure k arg body cap)
+```
+
+The axiom must include a hypothesis connecting `tm` to the tag mapping.
+Without it the axiom is unsound: take `tm = {}`, any successful
+`guardClosure` resolution produces a tag not in `tm`, and the conclusion
+is immediately false.
+
+Define a `TagMappingRespectsTagMeaning` predicate connecting `tm` to the
+tag mapping (see Option A / Option B below for the exact formulation —
+the `toPExpr` scoping matters).
+
+Given `TagMappingRespectsTagMeaning`, the `resolveSyntaxPred` step is
+likely **provable**, not semantic.  For `guardClosure`: `hcompat` +
+`hmember` + `hresolve` yield the exact `tm.lookup` fact.  For `guardOnly`
+and `noPred`: `PredicateRespectsTagMeaning` holds immediately via the
+corresponding constructor.  (There
+is already a related extraction helper at StepFR.lean:6181.)
+
+So `resolveSyntaxPred_respectsTagMeaning` should first be attempted as a
+**lemma**:
+
+```lean
+lemma resolveSyntaxPred_respectsTagMeaning
+  (tm : TagMeaning)
+  (pred : SyntaxPredicate) (env : VarTypeEnv)
+  (mapping : ExtTreeMap TagIndex Tag)
+  (preds : List SyntaxPredicate)
+  (resolvedPred : Predicate)
+  (hcompat : TagMappingRespectsTagMeaning tm mapping preds env)
+  (hmember : pred ∈ preds)
+  (hresolve : resolveSyntaxPred pred env mapping = .ok resolvedPred) :
+  PredicateRespectsTagMeaning tm resolvedPred
+```
+
+If this proof goes through, the **only** remaining semantic boundary is
+`TagMappingRespectsTagMeaning` itself: each call site must establish
+that `tm` maps the freshly allocated tags to the guard descriptors that
+`resolveSyntaxPred` will produce.
+
+Since `tm` is universally quantified and `wfTagMeaningCtx` does not
+constrain `tm` for fresh tags, this derivation is almost certainly
+**not** structurally possible.  Therefore `TagMappingRespectsTagMeaning`
+is the single surviving Contract A axiom.
+
+However, the axiom must not be stronger than the current contract.
+`collectAndAllocExternTags` only allocates tags and checks index
+consistency (Typecheck.lean:814) — it does not call `body.toPExpr`,
+which can fail for non-pure expressions (Syntax.lean:380).  So an axiom
+conditioned solely on `collectAndAllocExternTags` success would assert
+`toPExpr` success for bodies that might fail, making it stronger than the
+current axioms (which are conditioned on full entry-point success).
+
+Two options to match the current strength:
+
+**Option A — scope to successful resolution** (simplest; folds structural
+reasoning into the axiom but keeps the axiom small):
+
+```lean
+axiom externResolvedPredRespectsTagMeaning
+  (tm : TagMeaning)
+  (pred : SyntaxPredicate) (env : VarTypeEnv)
+  (mapping : ExtTreeMap TagIndex Tag)
+  (resolvedPred : Predicate)
+  (hresolve : resolveSyntaxPred pred env mapping = .ok resolvedPred)
+  : PredicateRespectsTagMeaning tm resolvedPred
+```
+
+This says: when resolution succeeds (implying `toPExpr` succeeded), the
+resolved predicate respects `tm`.  Advantage: ties the semantic claim to
+the same success condition as the current axioms and is about a single
+predicate, not an entire `TypeResult`.  Disadvantage: folds the structural
+`resolveSyntaxPred` case analysis into the axiom rather than separating
+it as a lemma.
+
+**Option B — separate structural from semantic** (cleaner layering):
+
+Weaken `TagMappingRespectsTagMeaning` to only cover bodies whose
+`toPExpr` succeeds:
+
+```lean
+def TagMappingRespectsTagMeaning (tm : TagMeaning)
+    (mapping : ExtTreeMap TagIndex Tag)
+    (preds : List SyntaxPredicate) (env : VarTypeEnv) : Prop :=
+  ∀ idx tag, mapping.get? idx = some tag →
+    ∀ arg body pbody,
+      (SyntaxPredicate.guardClosure idx arg body) ∈ preds →
+      body.toPExpr = .ok pbody →
+      tm.lookup tag = some { argName := arg, body := pbody,
+                             capEnv := VarTypeEnv.toCaptured env }
+```
+
+Then `resolveSyntaxPred_respectsTagMeaning` is a proved lemma (structural),
+and the axiom is:
+
+```lean
+axiom externTagMappingRespectsTagMeaning
+  (tm : TagMeaning)
+  (mapping : ExtTreeMap TagIndex Tag)
+  (preds : List SyntaxPredicate) (env : VarTypeEnv)
+  (nextTag : Tag) (nextTag' : Tag)
+  (halloc : collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag'))
+  : TagMappingRespectsTagMeaning tm mapping preds env
+```
+
+Advantage: clean separation — the axiom is purely about the tag-to-
+descriptor mapping, and the structural resolution reasoning is proved.
+The `toPExpr` guard in the definition prevents the axiom from asserting
+facts about bodies that fail to convert.
+
+Step 5a will determine which option is cleaner in practice.
+
+#### Step 5a. Validate axiom shape on existing code
+
+**Files:** `LeanProofs/RegimeConsistency.lean`, `LeanProofs/StepFR.lean`
+**Verification:** `lake build` — 0 sorry, 0 warnings.  Axiom count
+temporarily +1 (new axiom added, old axioms not yet deleted; net reduction
+deferred to 5c).
+**Highest-risk step** — tests whether the abstraction actually works.
+
+Validate the axiom shape by proving the two easiest corollaries on the
+**existing** code (no typechecker change):
+
+1. Define `PredicateRespectsTagMeaning` (RegimeConsistency.lean).
+2. Prove lifting lemma: for non-function-type QTyps,
+   `QTypRespectsTagMeaning tm qt ↔ PredicateRespectsTagMeaning tm qt.pred`.
+3. Choose between Option A and Option B:
+   - **Try Option B first** (cleaner layering): define
+     `TagMappingRespectsTagMeaning` with the `toPExpr` guard, attempt
+     `resolveSyntaxPred_respectsTagMeaning` as a proved **lemma**, state
+     `externTagMappingRespectsTagMeaning` as the axiom.
+   - **Fall back to Option A** if the structural lemma proof is
+     unexpectedly difficult: use `externResolvedPredRespectsTagMeaning`
+     as the axiom (scoped to successful resolution).
+4. Prove `§2.4` as corollary (simplest — `typecheckExternVal` calls
+   `resolveSyntaxPred` once, result is base type → lifting lemma +
+   axiom/lemma from sub-step 3).
+5. Prove `§2.2` for the `ExternReturn.simple` case of pure extern (no
+   effect loop, base-type return).
+
+This is the go/no-go gate for the entire Step 5.  If neither option
+produces a working corollary for §2.4, the approach needs redesign.
+
+**What this step does NOT do:** nested-return cases, effect-loop
+memEnv reasoning, or any typechecker changes.
+
+#### Step 5b. Typechecker refactoring + proof adjustment
+
+**Files:** `LeanPoison/Typecheck.lean`, then `LeanProofs/` as needed.
+**Verification:** `make test` (unit tests), then `lake build` — 0 sorry,
+0 warnings, no net axiom increase.
+
+Only proceed here after 5a succeeds.  The goal is to make the impure
+effect-loop case provable as a corollary.
+
+**Typechecker change:** extract the effect-loop body into a named helper:
+
+```lean
+/-- Resolve one extern effect and write the result to memory at the
+    locations referenced by the effect target. -/
+def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
+    (tagMapping : ExtTreeMap TagIndex Tag) (pc : Poison)
+    (memEnv : MemoryTypeEnv) : TypecheckM MemoryTypeEnv
+```
+
+The effect loop becomes:
+```lean
+let mut memEnv := result2.memEnv'
+for effect in effects do
+  memEnv ← applyExternEffect effect unifiedEnv tagMapping ctx.pc memEnv
+```
+
+Existing functions keep their signatures; the helper is called internally.
+No behavioral change — `make test` must pass.
+
+**Proof adjustment:** fix proofs broken by the changed function body.
+This is mechanical — same obligations, different terms after unfolding.
+State auxiliary lemmas about the helper as needed (e.g.,
+`applyExternEffect_memEnv_subset`, `applyExternEffect_regime_eq`).
+
+**Constraint:** No net increase in `sorry` or `axiom`.
+
+#### Step 5c. Complete axiom unification
+
+**Files:** `LeanProofs/StepFR.lean`, `LeanProofs/StepFRApp.lean`.
+**Verification:** `lake build` — 0 sorry, 0 warnings.  Axiom count: 2.
+
+Prove the remaining corollaries and delete the old axioms:
+
+1. Complete `§2.2` — nested-return cases (`nestedFn` / `nestedPfn`):
+   top-level `noPred` + captured env inherits from context → structural
+   via `wfTagMeaningCtx`.
+2. Prove `§2.1` conjunct 2 (result QTyp) — same case split as §2.2.
+3. Prove `§2.1` conjunct 1 (memEnv cells) — this is the hardest part.
+   Must show that every cell `l` in `r.memEnv'` respects `tm`:
+   - **Effect-written cells:** each call to `applyExternEffect` writes
+     cells with a resolved predicate from `resolveSyntaxPred` → axiom
+     via the extracted helper.  Need a loop invariant: if the input
+     memEnv respects `tm` and each effect-write produces cells that
+     respect `tm`, then the output memEnv respects `tm`.
+   - **Untouched cells:** cells in `result2.memEnv'` not overwritten by
+     the effect loop retain their values.  These respect `tm` by the
+     `wfTagMeaningCtx` precondition (they were already in the input).
+   - **Overwrites of old cells:** the loop invariant must also cover
+     cells that existed in `result2.memEnv'` and were overwritten — the
+     new value (from `applyExternEffect`) respects `tm` by the axiom,
+     so the overwrite preserves the invariant.
+4. Delete the 3 old axiom declarations (§2.1, §2.2, §2.4).
+5. Update all call sites to use the corollary lemmas.
+6. Verify `lake build` clean.
+
+#### Risks
+
+- **`tm`-mapping precondition** (step 5a, gate): the central risk is
+  whether `TagMappingRespectsTagMeaning` can be derived from
+  `wfTagMeaningCtx` or must itself become the axiom.  Step 5a is
+  specifically designed to resolve this before any refactoring.
+- **Nested-return captures** (step 5c, sub-step 1): showing that
+  `VarTypeEnv.toCaptured unifiedEnv` inherits guard descriptors from the
+  context requires lemmas about `VarTypeEnv.update`, `ofCaptured`, and
+  `toCaptured`.  Structural but may be verbose.
+- **`toPExpr` in `resolveSyntaxPred`**: the `body.toPExpr` call converts
+  `Expr → PExpr`.  The guard descriptor in the resolved predicate contains
+  the `PExpr`, which must match what `tm` maps the tag to.  This is part
+  of the semantic claim covered by the axiom and feeds into the
+  `TagMappingRespectsTagMeaning` definition.
+- **Effect loop invariant** (step 5c, sub-step 3): must show that the
+  fold over effects preserves the "all cells respect `tm`" property.
+  The `LocSet.fold` inside `applyExternEffect` writes the same QTyp to
+  multiple locations (one resolution → many writes), which simplifies the
+  per-effect argument, but the cross-effect composition still needs a
+  loop invariant.
+- **Proof churn in step 5b**: if many proofs unfold the extern case,
+  repair may be extensive.  Mitigation: keep the helper as a thin wrapper
+  so `simp` can unfold it when needed.
 
 ## 7. History
 
@@ -357,6 +631,19 @@ status.
 - Approved adding `TagBoundedCtx ctx` to the top-level FR specs
   (`TypeSystemEnforcesFaultRobustness_spec`, `_spec_ioFree`) since the initial
   context trivially satisfies it.
+- Chose typechecker-refactoring approach over proof-only approach for Step 5
+  axiom unification.  Proof-only approach would require structural lemmas
+  connecting each function's output to internal `resolveSyntaxPred` calls
+  (especially the inline `for` loop in `applyFnTClosure`).  Extracting the
+  effect-loop body as a named helper makes per-cell reasoning direct.
+- Rejected no-precondition axiom shape for unified resolution axiom:
+  `resolveSyntaxPred_respectsTagMeaning` without a `tm`-to-mapping
+  hypothesis is unsound (counterexample: `tm = {}` with any `guardClosure`
+  resolution).  With `TagMappingRespectsTagMeaning` as a hypothesis, the
+  `resolveSyntaxPred` step is likely provable as a lemma (not an axiom).
+  The true semantic boundary is `TagMappingRespectsTagMeaning` itself:
+  that `tm` maps freshly allocated tags to the descriptors that the
+  resolution pipeline will produce.  Step 5a will confirm this structure.
 
 ### 7.4 Reference points
 
