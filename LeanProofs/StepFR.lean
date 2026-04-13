@@ -6090,8 +6090,29 @@ lemma wfTagMeaningCtx_pclosure_body
 -- See doc/extern-axioms.md for the detailed rationale.
 -- ==========================================================================
 
-/-- Extern contract: FnTClosure.extern preserves wfTagMeaningCtx. -/
-axiom applyFnTClosure_extern_ok_wfTagMeaningCtx
+/-- Extern contract (effect-write): every memory entry in the output of an impure
+    extern application respects TagMeaning. This replaces the former bundled
+    `applyFnTClosure_extern_ok_wfTagMeaningCtx` axiom with a focused contract
+    about individual memory entries. Combined with the structural varEnv
+    preservation and the result-QTyp axiom, this suffices to prove the full
+    `wfTagMeaningCtx` preservation. -/
+axiom applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (fuel : Nat)
+  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+  (r : TypeResult)
+  (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
+  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+    argEtyp argPoison argPred ctx result2 fuel = .ok r)
+  (l : Loc) (qt : QTyp)
+  (hlookup : r.memEnv'.lookup l = some qt) :
+  QTypRespectsTagMeaning tm qt
+
+/-- Structural: given the focused effect-write contract and the unchanged varEnv,
+    the full wfTagMeaningCtx is preserved through extern application. -/
+lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -6101,7 +6122,25 @@ axiom applyFnTClosure_extern_ok_wfTagMeaningCtx
   (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
   (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
     argEtyp argPoison argPred ctx result2 fuel = .ok r) :
-  wfTagMeaningCtx tm (ctxAfter ctx r)
+  wfTagMeaningCtx tm (ctxAfter ctx r) := by
+  -- wfTagMeaningCtx = EnvRespectsTagMeaning tm ctx.varEnv r.memEnv'
+  -- varEnv is unchanged; memEnv entries all respect TagMeaning by the new axiom
+  unfold wfTagMeaningCtx
+  simp only [ctxAfter]
+  exact EnvRespectsTagMeaning.intro fun ⟨qt, _, _, hqte, hqd⟩ => by
+    cases hqte with
+    | inVar =>
+        -- Guard desc from varEnv: unchanged from input
+        rename_i xv qtRoot hqtinqt hlookup_var
+        rcases hwf with ⟨hwf'⟩
+        exact hwf' (GuardDescInEnvsDeep.intro qt _ _
+          (QTypInEnvs.inVar ctx.varEnv result2.memEnv' xv qt qtRoot hlookup_var hqtinqt) hqd)
+    | inMem =>
+        -- Guard desc from memEnv: use the focused effect-write axiom
+        rename_i l qtRoot hqtinqt hlookup_mem
+        exact (applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning
+          tm ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel
+          x retSpec effects capturedEnv r hwf happly l qtRoot hlookup_mem) hqtinqt hqd
 
 /-- Extern contract: FnTClosure.extern result QTyp respects tag meaning. -/
 axiom applyFnTClosure_extern_ok_QTypRespectsTagMeaning
