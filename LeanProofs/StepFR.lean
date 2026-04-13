@@ -6506,7 +6506,7 @@ private lemma surfaceSpecToQTyp_preserves_existing_lookup
   | ref t =>
     cases t with
     | int =>
-      simp only [surfaceSpecToQTyp, freshTLoc,
+      simp only [freshTLoc,
                  show (Typ.int != Typ.int) = false from by decide,
                  Bool.false_eq_true, ite_false, bind, Except.bind, pure, Except.pure,
                  Except.ok.injEq, Prod.mk.injEq] at hsurf
@@ -6515,9 +6515,9 @@ private lemma surfaceSpecToQTyp_preserves_existing_lookup
       have hl_ne : l ≠ ctx.nextLoc := Nat.ne_of_lt (hwf.1 l hpre)
       rwa [MemoryTypeEnv_lookup_updateMemEnv_ne hl_ne] at hlookup
     | _ =>
-      simp [surfaceSpecToQTyp, bind, Except.bind, bne] at hsurf
+      simp [bind, Except.bind, bne] at hsurf
   | arrow _ _ =>
-    simp [surfaceSpecToQTyp, Except.map, Functor.map] at hsurf
+    simp [Except.map, Functor.map] at hsurf
 
 /-- Proved structural replacement for the former axiom.
     With `wfTypeContext ctx`, existing memEnv entries are unchanged by typecheckExternVal,
