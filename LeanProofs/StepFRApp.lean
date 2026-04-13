@@ -1370,8 +1370,8 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern x retSpec effects capturedEnv =>
-    exact applyFnTClosure_extern_ok_QTypRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
-      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 happly
+    exact (applyFnTClosure_extern_ok_outputRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
+      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 happly).2
 
 private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx
   (tm : TagMeaning)

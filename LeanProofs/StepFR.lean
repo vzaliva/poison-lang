@@ -6090,13 +6090,12 @@ lemma wfTagMeaningCtx_pclosure_body
 -- See doc/extern-axioms.md for the detailed rationale.
 -- ==========================================================================
 
-/-- Extern contract (effect-write): every memory entry in the output of an impure
-    extern application respects TagMeaning. This replaces the former bundled
-    `applyFnTClosure_extern_ok_wfTagMeaningCtx` axiom with a focused contract
-    about individual memory entries. Combined with the structural varEnv
-    preservation and the result-QTyp axiom, this suffices to prove the full
-    `wfTagMeaningCtx` preservation. -/
-axiom applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning
+/-- Extern contract: all QTyp values produced by an impure extern application
+    respect tag meaning — both memory cells written by the effect loop and the
+    result QTyp.  The first conjunct (memEnv cells) feeds the structural
+    `applyFnTClosure_extern_ok_wfTagMeaningCtx` lemma; the second (result QTyp)
+    is used directly in the FR proof. -/
+axiom applyFnTClosure_extern_ok_outputRespectsTagMeaning
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -6105,10 +6104,10 @@ axiom applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning
   (r : TypeResult)
   (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
   (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (l : Loc) (qt : QTyp)
-  (hlookup : r.memEnv'.lookup l = some qt) :
-  QTypRespectsTagMeaning tm qt
+    argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+  (∀ (l : Loc) (qt : QTyp), r.memEnv'.lookup l = some qt →
+    QTypRespectsTagMeaning tm qt) ∧
+  QTypRespectsTagMeaning tm r.qualType
 
 /-- Structural: given the focused effect-write contract and the unchanged varEnv,
     the full wfTagMeaningCtx is preserved through extern application. -/
@@ -6138,22 +6137,9 @@ lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
     | inMem =>
         -- Guard desc from memEnv: use the focused effect-write axiom
         rename_i l qtRoot hqtinqt hlookup_mem
-        exact (applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning
+        exact ((applyFnTClosure_extern_ok_outputRespectsTagMeaning
           tm ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel
-          x retSpec effects capturedEnv r hwf happly l qtRoot hlookup_mem) hqtinqt hqd
-
-/-- Extern contract: FnTClosure.extern result QTyp respects tag meaning. -/
-axiom applyFnTClosure_extern_ok_QTypRespectsTagMeaning
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
-  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r) :
-  QTypRespectsTagMeaning tm r.qualType
+          x retSpec effects capturedEnv r hwf happly).1 l qtRoot hlookup_mem) hqtinqt hqd
 
 /-- Extern contract: PFnTClosure.extern result QTyp respects tag meaning. -/
 axiom applyPFnTClosure_extern_ok_QTypRespectsTagMeaning
@@ -8448,8 +8434,8 @@ lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern x retSpec effects capturedEnv =>
-    exact applyFnTClosure_extern_ok_QTypRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
-      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 happly
+    exact (applyFnTClosure_extern_ok_outputRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
+      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 happly).2
 
 lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
   (tm : TagMeaning)

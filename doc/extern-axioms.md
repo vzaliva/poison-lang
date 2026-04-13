@@ -2,7 +2,7 @@
 
 ## CURRENT STEP
 
-Step 4f cleanup in progress.  Remaining optional action: merge §2.1 + §2.2.
+Step 4f cleanup complete.  The branch is at its extern contract floor.
 
 Critical constraints:
 
@@ -13,11 +13,11 @@ Critical constraints:
 
 - `lake build` succeeds with **0 sorry, 0 warnings**
 - all `LeanProofs/` files compile cleanly
-- axiom count: **5** (2 declarations mergeable into 1, bundling 2 conjuncts)
+- axiom count: **4 declarations** (5 semantic obligations)
 
 ## 1. Overview: two high-level contracts
 
-The 5 axioms in `LeanProofs/StepFR.lean` fall into two semantic
+The 4 axiom declarations in `LeanProofs/StepFR.lean` fall into two semantic
 contracts about extern typechecking behavior:
 
 **Contract A — Tag Meaning Soundness.** Every `QTyp` produced or stored by
@@ -51,60 +51,39 @@ trust.  These facts cannot be derived structurally because:
 
 ## 2. Per-axiom review
 
-### 2.1 `applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning`
+### 2.1 `applyFnTClosure_extern_ok_outputRespectsTagMeaning`
 
-**StepFR.lean:6099.  Contract A.  Used at line 6141.**
-
-```
-(hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
-(happly : applyFnTClosure (FnTClosure.extern …) … = .ok r)
-(l : Loc) (qt : QTyp)
-(hlookup : r.memEnv'.lookup l = some qt) :
-QTypRespectsTagMeaning tm qt
-```
-
-**Role:** Every memory cell in the output of an impure extern application
-respects `TagMeaning`.  Feeds the proved structural theorem
-`applyFnTClosure_extern_ok_wfTagMeaningCtx` (line 6113).
-
-**Why semantic:** The effect loop writes cells with resolved predicates whose
-guard tags are freshly allocated.  Whether those tags are consistent with an
-arbitrary `tm` satisfying the precondition is a semantic claim about the
-tag-allocation/resolution pipeline.
-
-**Overlap with §2.2:** Identical preconditions (`hwf`, `happly`); differs
-only in conclusion target (memory cells vs result `QTyp`).  These two can be
-**merged** into a single axiom with a conjunction (see §5).
-
-**Verdict:** Irreducibly semantic.  Merge candidate with §2.2.
-
-### 2.2 `applyFnTClosure_extern_ok_QTypRespectsTagMeaning`
-
-**StepFR.lean:6146.  Contract A.  Used at lines 8465, StepFRApp:1373.**
+**StepFR.lean:6098.  Contract A.  Two conjuncts.**
 
 ```
 (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
 (happly : applyFnTClosure (FnTClosure.extern …) … = .ok r) :
+(∀ l qt, r.memEnv'.lookup l = some qt → QTypRespectsTagMeaning tm qt) ∧
 QTypRespectsTagMeaning tm r.qualType
 ```
 
-**Role:** The result `QTyp` of an impure extern application respects
+**Role:** All `QTyp` values produced by an impure extern application —
+memory cells written by the effect loop AND the result type — respect
 `TagMeaning`.
 
-**Why semantic:** The return predicate is resolved via
-`resolveSyntaxPred` using freshly allocated tags.  When
-`normalizeAppResultByProvenance` preserves the predicate (i.e., when
-`joinPoison p1 p = false`), the result `QTyp` contains a fresh guard tag
-that must be covered by `tm`.  This is a genuine assumption about the extern
-summary, not derivable from the typechecker equations.
+- **Conjunct 1** (memEnv cells): feeds the proved structural theorem
+  `applyFnTClosure_extern_ok_wfTagMeaningCtx` (line 6113) via `.1`.
+- **Conjunct 2** (result QTyp): used directly in the FR proof
+  (StepFR.lean:8451 via `.2`, StepFRApp.lean:1373 via `.2`).
 
-**Overlap with §2.1:** Same preconditions.  Merge candidate.
+**Why semantic:** The effect loop writes cells with resolved predicates whose
+guard tags are freshly allocated.  The return predicate is similarly resolved
+via `resolveSyntaxPred`.  When `normalizeAppResultByProvenance` preserves the
+predicate (i.e., when `joinPoison p1 p = false`), the result `QTyp` contains
+a fresh guard tag that must be covered by `tm`.  Whether freshly allocated
+tags are consistent with an arbitrary `tm` satisfying the precondition is a
+semantic claim about the tag-allocation/resolution pipeline.
 
-**Verdict:** Irreducibly semantic.  Merge candidate with §2.1.
+**Verdict:** Irreducibly semantic.  Both conjuncts required.
 
-### 2.3 `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
+### 2.2 `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
 
-**StepFR.lean:6159.  Contract A.  Used at lines 8679, StepFRApp:2012.**
+**StepFR.lean:6145.  Contract A.  Used at lines 8679, StepFRApp:2012.**
 
 ```
 (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
@@ -112,13 +91,13 @@ summary, not derivable from the typechecker equations.
 QTypRespectsTagMeaning tm r.qualType
 ```
 
-**Role:** Pure-closure analogue of §2.2.
+**Role:** Pure-closure analogue of §2.1 (second conjunct).
 
-**Why semantic:** Same reasoning as §2.2 — the absence of the effect loop
+**Why semantic:** Same reasoning as §2.1 — the absence of the effect loop
 simplifies the output (no memory writes), but the return predicate resolution
 is equally opaque.
 
-**Why not merged with §2.2:** Different function (`applyPFnTClosure` vs
+**Why not merged with §2.1:** Different function (`applyPFnTClosure` vs
 `applyFnTClosure`), different closure type, no `effects` parameter.
 
 **Why no companion memEnv axiom:** Pure externs don't modify memory.
@@ -127,9 +106,9 @@ is equally opaque.
 
 **Verdict:** Irreducibly semantic.  Standalone; no further split or merge.
 
-### 2.4 `applyFnTClosure_extern_ok_lookup_origin`
+### 2.3 `applyFnTClosure_extern_ok_lookup_origin`
 
-**StepFR.lean:6172.  Contract B.  Used at lines 11498, 11672.**
+**StepFR.lean:6158.  Contract B.  Used at lines 11498, 11672.**
 
 ```
 (happly : applyFnTClosure (FnTClosure.extern …) … = .ok r)
@@ -180,9 +159,9 @@ trivial (the output IS the input).  Proved via
 **Verdict:** Irreducibly semantic.  Standalone.  Poison conjunct is a
 candidate for partial structural factoring in a future pass.
 
-### 2.5 `typecheckExternVal_QTypRespectsTagMeaning_axiom`
+### 2.4 `typecheckExternVal_QTypRespectsTagMeaning_axiom`
 
-**StepFR.lean:6390.  Contract A.  Used at line 9110.**
+**StepFR.lean:6362.  Contract A.  Used at line 9110.**
 
 ```
 (hwf : wfTagMeaningCtx tm ctx)
@@ -212,7 +191,7 @@ The structural `wfTagMeaningCtx` preservation proof handles this.
 
 ### 3.1 Shared semantic root of Contract A axioms
 
-All four `QTypRespectsTagMeaning` axioms (§2.1–§2.3, §2.5) express the same
+All `QTypRespectsTagMeaning` obligations (§2.1 both conjuncts, §2.2, §2.4) express the same
 fundamental principle:
 
 > **Resolved extern predicates respect tag meaning.**  When the
@@ -228,42 +207,19 @@ resolution primitive as a standalone function could potentially express the
 semantic core as a **single axiom** about that primitive, with the per-entry-
 point axioms becoming proved structural corollaries.
 
-### 3.2 Overlap between §2.1 and §2.2
-
-These two axioms are about the **same** operation (`applyFnTClosure` for
-`FnTClosure.extern`) with **identical** preconditions (`hwf`, `happly`)
-and differ only in their conclusion:
-
-| Axiom | Conclusion target |
-|-------|-------------------|
-| §2.1 (`memEnv_QTypRespectsTagMeaning`) | ∀ l qt in `r.memEnv'` |
-| §2.2 (`QTypRespectsTagMeaning`) | `r.qualType` |
-
-They can be merged into a single axiom (see §5).
-
-### 3.3 Pure vs impure coverage
+### 3.2 Pure vs impure coverage
 
 | Entry point | Contract A (tag meaning) | Contract B (provenance) |
 |-------------|--------------------------|-------------------------|
-| Impure fn app (`applyFnTClosure`) | §2.1 (memEnv) + §2.2 (result) | §2.4 (lookup_origin) |
-| Pure fn app (`applyPFnTClosure`) | §2.3 (result only) | Not needed (proved: memEnv unchanged) |
-| Extern value (`typecheckExternVal`) | §2.5 (result only) | Not needed (fresh cell has `noPred`) |
+| Impure fn app (`applyFnTClosure`) | §2.1 (memEnv + result) | §2.3 (lookup_origin) |
+| Pure fn app (`applyPFnTClosure`) | §2.2 (result only) | Not needed (proved: memEnv unchanged) |
+| Extern value (`typecheckExternVal`) | §2.4 (result only) | Not needed (fresh cell has `noPred`) |
 
 This coverage is complete and minimal for the current extern model.
 
 ## 4. Consolidated contract floor
 
-### Current state (5 axioms)
-
-| # | Axiom | Contract | Category |
-|---|-------|----------|----------|
-| A1 | `applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning` | A | effect-write semantic |
-| A2 | `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | A | result semantic (impure) |
-| A3 | `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | A | result semantic (pure) |
-| A4 | `typecheckExternVal_QTypRespectsTagMeaning_axiom` | A | value semantic |
-| B1 | `applyFnTClosure_extern_ok_lookup_origin` | B | provenance |
-
-### After merging A1 + A2 (4 declarations, 5 semantic obligations)
+### Current state (4 declarations, 5 semantic obligations)
 
 | # | Axiom | Contract | Category |
 |---|-------|----------|----------|
@@ -292,43 +248,15 @@ proof considers "clean" (either by having `poison = false` or by being
 guarded by an active regime tag) can be traced to a correspondingly clean
 cell in the typing context that existed *before* the function was applied.
 
-## 5. Proposed changes
+## 5. Future directions (speculative)
 
-### 5.1 Merge A1 + A2 (optional, cosmetic consolidation)
-
-Replace axioms §2.1 and §2.2 with:
-
-```lean
-axiom applyFnTClosure_extern_ok_outputRespectsTagMeaning
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect)
-  (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
-  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv)
-    st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
-  (∀ (l : Loc) (qt : QTyp), r.memEnv'.lookup l = some qt →
-    QTypRespectsTagMeaning tm qt) ∧
-  QTypRespectsTagMeaning tm r.qualType
-```
-
-Proof-site changes:
-
-- `applyFnTClosure_extern_ok_wfTagMeaningCtx` (line 6141): extract `.1`
-- StepFR.lean:8465: extract `.2`
-- StepFRApp.lean:1373: extract `.2`
-
-This is a small, mechanical refactoring with no semantic change.
-
-### 5.2 Future: axiomatize resolution primitive (speculative)
+### 5.1 Axiomatize resolution primitive
 
 All Contract A axioms derive from the same semantic principle about
 `collectAndAllocExternTags` → `resolveSyntaxPred`.  If this pipeline were
 extracted as a standalone lemma target, a single axiom about the resolution
-step could replace all three per-entry-point axioms.  This would require:
+step could replace all three per-entry-point declarations.  This would
+require:
 
 1. Refactoring `applyFnTClosure`, `applyPFnTClosure`, and
    `typecheckExternVal` to expose the resolution result as an
@@ -336,13 +264,12 @@ step could replace all three per-entry-point axioms.  This would require:
 2. Proving structural lemmas that connect each function's output to the
    resolution step.
 
-Estimated reduction: 3 axioms → 1 axiom (plus ~3 structural lemmas).
-This is a significant refactoring effort and is recorded here as a
-potential future direction, not an immediate action.
+Estimated reduction: 3 declarations → 1 axiom (plus ~3 structural lemmas).
+This is a significant refactoring effort.
 
-### 5.3 Future: factor poison conjunct of B1 (speculative)
+### 5.2 Factor poison conjunct of B1
 
-The first conjunct of `lookup_origin` (§2.4) — that clean cells in the
+The first conjunct of `lookup_origin` (§2.3) — that clean cells in the
 extern output were not written by the effect loop — is partially structural:
 
 1. The effect loop writes every cell with
@@ -358,22 +285,8 @@ it.
 
 ## 6. Plan
 
-### Step 4f. Clean up
-
-**Status:** in progress
-
-Targets:
-
-1. ✓ Delete `applyFnTClosure_extern_ok_fresh_loc_not_clean` — done,
-   `lake build` clean
-2. (Optional) Merge §2.1 + §2.2 into `…_outputRespectsTagMeaning`
-3. Verify `lake build` clean
-
-Done means:
-
-- axiom count is 5 (current) or 4 declarations (after merge)
-- `lake build` succeeds with 0 sorry, 0 warnings
-- this document updated with final status
+Step 4f is complete.  The branch is at its extern contract floor:
+4 axiom declarations, 5 semantic obligations, `lake build` clean.
 
 ## 7. History
 
@@ -407,6 +320,11 @@ This section records completed work and design decisions for reference.
   2-contract framework.
 - **Step 4f.1 (dead axiom removal):** deleted unused
   `applyFnTClosure_extern_ok_fresh_loc_not_clean`. Axiom count: 10 → 5.
+- **Step 4f.2 (merge):** merged
+  `applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning` and
+  `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` into
+  `applyFnTClosure_extern_ok_outputRespectsTagMeaning` (conjunction).
+  Declaration count: 5 → 4.
 
 ### 7.2 Deleted axiom: `fresh_loc_not_clean`
 
@@ -421,7 +339,7 @@ Deleted in Step 4f.1.  Was dead code — declared but never referenced.
 ¬ qtypCleanUnder r.regime' qt
 ```
 
-Note: this axiom and `lookup_origin` (§2.4) were **not** in a subsumption
+Note: this axiom and `lookup_origin` (§2.3) were **not** in a subsumption
 relationship — they used orthogonal preconditions (`joinPoison p1 p = true`
 vs `ctx.pc = true`) and referenced different memory environments
 (`result2.memEnv'` vs `ctx.memEnv`).  Removal rested solely on dead-code
