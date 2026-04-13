@@ -2,16 +2,7 @@
 
 ## CURRENT STEP
 
-Step 4e review completed. The 6 declared axioms have been audited against
-the codebase, revealing:
-
-- **1 dead axiom** (`fresh_loc_not_clean`) — declared but never used
-- **2 mergeable axioms** (#1 + #2, identical preconditions, different outputs)
-- **5 live axioms**, naturally organized into 2 high-level contracts
-- **4 declarations** after merging #1 + #2 (bundling 2 conjuncts)
-
-Required next action: remove the dead axiom and optionally merge #1 + #2
-(see §5 for concrete proposal).
+Step 4f cleanup in progress.  Remaining optional action: merge §2.1 + §2.2.
 
 Critical constraints:
 
@@ -22,12 +13,11 @@ Critical constraints:
 
 - `lake build` succeeds with **0 sorry, 0 warnings**
 - all `LeanProofs/` files compile cleanly
-- axiom count: **6 declared, 5 live** (1 dead axiom to remove;
-  2 declarations mergeable into 1, bundling 2 conjuncts)
+- axiom count: **5** (2 declarations mergeable into 1, bundling 2 conjuncts)
 
 ## 1. Overview: two high-level contracts
 
-The 6 declared axioms in `LeanProofs/StepFR.lean` fall into two semantic
+The 5 axioms in `LeanProofs/StepFR.lean` fall into two semantic
 contracts about extern typechecking behavior:
 
 **Contract A — Tag Meaning Soundness.** Every `QTyp` produced or stored by
@@ -63,7 +53,7 @@ trust.  These facts cannot be derived structurally because:
 
 ### 2.1 `applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning`
 
-**StepFR.lean:6099.  Contract A.  LIVE — used at line 6141.**
+**StepFR.lean:6099.  Contract A.  Used at line 6141.**
 
 ```
 (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
@@ -90,7 +80,7 @@ only in conclusion target (memory cells vs result `QTyp`).  These two can be
 
 ### 2.2 `applyFnTClosure_extern_ok_QTypRespectsTagMeaning`
 
-**StepFR.lean:6146.  Contract A.  LIVE — used at lines 8465, StepFRApp:1373.**
+**StepFR.lean:6146.  Contract A.  Used at lines 8465, StepFRApp:1373.**
 
 ```
 (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
@@ -114,7 +104,7 @@ summary, not derivable from the typechecker equations.
 
 ### 2.3 `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`
 
-**StepFR.lean:6159.  Contract A.  LIVE — used at lines 8679, StepFRApp:2012.**
+**StepFR.lean:6159.  Contract A.  Used at lines 8679, StepFRApp:2012.**
 
 ```
 (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
@@ -139,7 +129,7 @@ is equally opaque.
 
 ### 2.4 `applyFnTClosure_extern_ok_lookup_origin`
 
-**StepFR.lean:6172.  Contract B.  LIVE — used at lines 11498, 11672.**
+**StepFR.lean:6172.  Contract B.  Used at lines 11498, 11672.**
 
 ```
 (happly : applyFnTClosure (FnTClosure.extern …) … = .ok r)
@@ -190,51 +180,9 @@ trivial (the output IS the input).  Proved via
 **Verdict:** Irreducibly semantic.  Standalone.  Poison conjunct is a
 candidate for partial structural factoring in a future pass.
 
-### 2.5 `applyFnTClosure_extern_ok_fresh_loc_not_clean`
+### 2.5 `typecheckExternVal_QTypRespectsTagMeaning_axiom`
 
-**StepFR.lean:6195.  Contract B.  DEAD — not used anywhere.**
-
-```
-(h_p1p : joinPoison p1 p = true)
-(happly : applyFnTClosure (FnTClosure.extern …) … = .ok r)
-(l : Loc) (qt : QTyp)
-(hlookup_in : result2.memEnv'.lookup l = none)
-(hlookup_out : r.memEnv'.lookup l = some qt) :
-¬ qtypCleanUnder r.regime' qt
-```
-
-**Role (intended):** Fresh memory entries created by impure externs may not
-be trusted when the application provenance is tainted.
-
-**Status:** **Dead code.** Declared but not referenced by any lemma or proof
-in the codebase.  Grep for `fresh_loc_not_clean` returns only the
-declaration site (line 6195).
-
-**Analysis:** Unused and plausibly obsolete.  Likely introduced anticipating
-a proof need that was later resolved differently — the provenance proof for
-the impure extern case (lines ~11498–11676) uses `lookup_origin` (§2.4)
-directly and never invokes this axiom.
-
-Note that §2.4 and §2.5 are **not** ordered by strength.  They use
-orthogonal preconditions and reference different memory environments:
-
-| | §2.4 (`lookup_origin`) | §2.5 (`fresh_loc_not_clean`) |
-|--|------------------------|------------------------------|
-| Precondition | `ctx.pc = true` | `joinPoison p1 p = true` |
-| Reference memory | `ctx.memEnv` (pre-argument) | `result2.memEnv'` (post-argument) |
-| Concern | Effect-write tainting (line 1294) | Return-QTyp normalization (line 1304) |
-
-The two conditions are independent: `ctx.pc` governs poison on effect-
-written cells (`joinPoison ctx.pc effectQt.poison`), while `joinPoison p1 p`
-governs the return QTyp normalization (`normalizeAppResultByProvenance`).
-Neither subsumes the other.
-
-**Verdict:** Remove — the axiom is dead code regardless of the subsumption
-question.
-
-### 2.6 `typecheckExternVal_QTypRespectsTagMeaning_axiom`
-
-**StepFR.lean:6390.  Contract A.  LIVE — used at line 9110.**
+**StepFR.lean:6390.  Contract A.  Used at line 9110.**
 
 ```
 (hwf : wfTagMeaningCtx tm ctx)
@@ -264,7 +212,7 @@ The structural `wfTagMeaningCtx` preservation proof handles this.
 
 ### 3.1 Shared semantic root of Contract A axioms
 
-All four `QTypRespectsTagMeaning` axioms (§2.1–§2.3, §2.6) express the same
+All four `QTypRespectsTagMeaning` axioms (§2.1–§2.3, §2.5) express the same
 fundamental principle:
 
 > **Resolved extern predicates respect tag meaning.**  When the
@@ -293,31 +241,19 @@ and differ only in their conclusion:
 
 They can be merged into a single axiom (see §5).
 
-### 3.3 §2.5 is unused
-
-Axiom §2.5 (`fresh_loc_not_clean`) is declared but never referenced in any
-proof.  The provenance proof for the impure extern case uses §2.4
-(`lookup_origin`) directly.
-
-§2.4 and §2.5 are **not** in a subsumption relationship — they use
-orthogonal preconditions (`ctx.pc = true` vs `joinPoison p1 p = true`) and
-reference different memory environments (`ctx.memEnv` vs
-`result2.memEnv'`).  See §2.5 for details.  The removal recommendation
-rests solely on the axiom being dead code, not on any coverage argument.
-
-### 3.4 Pure vs impure coverage
+### 3.3 Pure vs impure coverage
 
 | Entry point | Contract A (tag meaning) | Contract B (provenance) |
 |-------------|--------------------------|-------------------------|
 | Impure fn app (`applyFnTClosure`) | §2.1 (memEnv) + §2.2 (result) | §2.4 (lookup_origin) |
 | Pure fn app (`applyPFnTClosure`) | §2.3 (result only) | Not needed (proved: memEnv unchanged) |
-| Extern value (`typecheckExternVal`) | §2.6 (result only) | Not needed (fresh cell has `noPred`) |
+| Extern value (`typecheckExternVal`) | §2.5 (result only) | Not needed (fresh cell has `noPred`) |
 
 This coverage is complete and minimal for the current extern model.
 
 ## 4. Consolidated contract floor
 
-### After removing dead axiom (5 axioms)
+### Current state (5 axioms)
 
 | # | Axiom | Contract | Category |
 |---|-------|----------|----------|
@@ -358,12 +294,7 @@ cell in the typing context that existed *before* the function was applied.
 
 ## 5. Proposed changes
 
-### 5.1 Remove dead axiom (immediate, no proof impact)
-
-Delete `applyFnTClosure_extern_ok_fresh_loc_not_clean` (StepFR.lean:6195–
-6207).  It is unused; removal requires no proof changes.
-
-### 5.2 Merge A1 + A2 (optional, cosmetic consolidation)
+### 5.1 Merge A1 + A2 (optional, cosmetic consolidation)
 
 Replace axioms §2.1 and §2.2 with:
 
@@ -392,7 +323,7 @@ Proof-site changes:
 
 This is a small, mechanical refactoring with no semantic change.
 
-### 5.3 Future: axiomatize resolution primitive (speculative)
+### 5.2 Future: axiomatize resolution primitive (speculative)
 
 All Contract A axioms derive from the same semantic principle about
 `collectAndAllocExternTags` → `resolveSyntaxPred`.  If this pipeline were
@@ -409,7 +340,7 @@ Estimated reduction: 3 axioms → 1 axiom (plus ~3 structural lemmas).
 This is a significant refactoring effort and is recorded here as a
 potential future direction, not an immediate action.
 
-### 5.4 Future: factor poison conjunct of B1 (speculative)
+### 5.3 Future: factor poison conjunct of B1 (speculative)
 
 The first conjunct of `lookup_origin` (§2.4) — that clean cells in the
 extern output were not written by the effect loop — is partially structural:
@@ -427,38 +358,20 @@ it.
 
 ## 6. Plan
 
-**Current plan status:** structural reduction work is complete (Steps 1–4d).
-Step 4e review is complete.  The branch sits at 6 declared axioms (5 live,
-1 dead).
+### Step 4f. Clean up
 
-### Step 4e. Accept the contract floor ✓
-
-**Status:** complete
-
-Findings:
-
-1. All 5 live axioms are irreducibly semantic — no further reduction route
-   is available without either weakening the extern model, refactoring the
-   typechecker to expose shared primitives, or moving assumptions to a
-   different interface.
-2. The 1 dead axiom (`fresh_loc_not_clean`) should be removed.
-3. Merging §2.1 + §2.2 is a clean cosmetic improvement.
-4. The declaration count can be reduced to **4** (by bundling §2.1 + §2.2),
-   packaging **5 semantic obligations** (the merged axiom carries two
-   conjuncts) into 3 Tag Meaning Soundness declarations + 1 Trust
-   Provenance declaration.
-
-### Step 4f. Clean up (proposed)
+**Status:** in progress
 
 Targets:
 
-1. Delete `applyFnTClosure_extern_ok_fresh_loc_not_clean`
+1. ✓ Delete `applyFnTClosure_extern_ok_fresh_loc_not_clean` — done,
+   `lake build` clean
 2. (Optional) Merge §2.1 + §2.2 into `…_outputRespectsTagMeaning`
 3. Verify `lake build` clean
 
 Done means:
 
-- axiom count is 5 (after deletion) or 4 (after merge)
+- axiom count is 5 (current) or 4 declarations (after merge)
 - `lake build` succeeds with 0 sorry, 0 warnings
 - this document updated with final status
 
@@ -492,8 +405,29 @@ This section records completed work and design decisions for reference.
 - **Step 4e (contract floor review):** audited all 6 declared axioms,
   identified 1 dead axiom and 1 merge opportunity, organized survivors into
   2-contract framework.
+- **Step 4f.1 (dead axiom removal):** deleted unused
+  `applyFnTClosure_extern_ok_fresh_loc_not_clean`. Axiom count: 10 → 5.
 
-### 7.2 Key design decisions
+### 7.2 Deleted axiom: `fresh_loc_not_clean`
+
+Deleted in Step 4f.1.  Was dead code — declared but never referenced.
+
+```
+(h_p1p : joinPoison p1 p = true)
+(happly : applyFnTClosure (FnTClosure.extern …) … = .ok r)
+(l : Loc) (qt : QTyp)
+(hlookup_in : result2.memEnv'.lookup l = none)
+(hlookup_out : r.memEnv'.lookup l = some qt) :
+¬ qtypCleanUnder r.regime' qt
+```
+
+Note: this axiom and `lookup_origin` (§2.4) were **not** in a subsumption
+relationship — they used orthogonal preconditions (`joinPoison p1 p = true`
+vs `ctx.pc = true`) and referenced different memory environments
+(`result2.memEnv'` vs `ctx.memEnv`).  Removal rested solely on dead-code
+status.
+
+### 7.3 Key design decisions
 
 - Rejected local-only repair via stronger `contains` plumbing (doesn't solve
   typing-only locations from extern summaries).
@@ -506,7 +440,7 @@ This section records completed work and design decisions for reference.
   (`TypeSystemEnforcesFaultRobustness_spec`, `_spec_ioFree`) since the initial
   context trivially satisfies it.
 
-### 7.3 Reference points
+### 7.4 Reference points
 
 Current-branch helpers:
 

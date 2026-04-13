@@ -6191,20 +6191,6 @@ axiom applyFnTClosure_extern_ok_lookup_origin
       ctx.regime.lookup? k = some true ∧
       qt_in.etyp.isFunctionType = false
 
-/-- Extern contract: FnTClosure.extern fresh locations are not clean when tainted. -/
-axiom applyFnTClosure_extern_ok_fresh_loc_not_clean
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (h_p1p : joinPoison p1 p = true)
-  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (l : Loc) (qt : QTyp)
-  (hlookup_in : result2.memEnv'.lookup l = none)
-  (hlookup_out : r.memEnv'.lookup l = some qt) :
-  ¬ qtypCleanUnder r.regime' qt
 
 /-- Helper: if resolveSyntaxPred produces a guardClosure predicate, the tag came from the mapping. -/
 private lemma resolveSyntaxPred_guardClosure_tag_from_mapping
