@@ -383,6 +383,26 @@ lemma QTypRespectsTagMeaning_int_of_predRespects
   subst hEq
   exact qtypGuardDesc_lookup_of_predRespects_int tm poison pred hpred k d hqd
 
+/-- Generalized lifting: for any non-function ETyp, `PredRespectsTagMeaning`
+    lifts to `QTypRespectsTagMeaning`.  Generalises `QTypRespectsTagMeaning_int_of_predRespects`. -/
+lemma QTypRespectsTagMeaning_of_nonFunction_predRespects
+    (tm : TagMeaning) (etyp : ETyp) (poison : Poison) (pred : Predicate)
+    (hnotfun : etyp.isFunctionType = false)
+    (hpred : PredRespectsTagMeaning tm pred) :
+    QTypRespectsTagMeaning tm { etyp := etyp, poison := poison, pred := pred } := by
+  intro qt k d hinq hqd
+  have hEq : qt = { etyp := etyp, poison := poison, pred := pred } :=
+    QTypInQTyp_eq_of_nonFunctionTarget hinq hnotfun
+  subst hEq
+  cases pred with
+  | noPred => simp [qtypGuardDesc?] at hqd
+  | guardOnly _ => simp [qtypGuardDesc?] at hqd
+  | guardClosure k0 arg_name pred_body var_env =>
+    simp [qtypGuardDesc?] at hqd
+    rcases hqd with ⟨hk, hd⟩
+    subst hk; subst hd
+    exact hpred k0 arg_name pred_body var_env rfl
+
 lemma PredRespectsTagMeaning_joinPredicates
     (tm : TagMeaning) (p q : Predicate)
     (hp : PredRespectsTagMeaning tm p) :

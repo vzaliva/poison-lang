@@ -6090,6 +6090,274 @@ lemma wfTagMeaningCtx_pclosure_body
 -- See doc/extern-axioms.md for the detailed rationale.
 -- ==========================================================================
 
+-- --------------------------------------------------------------------------
+-- Step 5 unified tag-mapping axiom (Option B)
+-- --------------------------------------------------------------------------
+
+/-- Semantic predicate: the tag mapping produced by `collectAndAllocExternTags`
+    is consistent with `tm`.  For every allocated tag that corresponds to a
+    `guardClosure` predicate whose body successfully converts to `PExpr`, the
+    tag meaning maps that tag to the expected guard descriptor. -/
+def TagMappingRespectsTagMeaning (tm : TagMeaning)
+    (mapping : Std.ExtTreeMap TagIndex Tag compare)
+    (preds : List SyntaxPredicate) (env : VarTypeEnv) : Prop :=
+  ∀ idx tag, mapping.get? idx = some tag →
+    ∀ arg body pbody,
+      (SyntaxPredicate.guardClosure idx arg body) ∈ preds →
+      body.toPExpr = .ok pbody →
+      tm.lookup tag = some { argName := arg, body := pbody,
+                             capEnv := VarTypeEnv.toCaptured env }
+
+/-- **Unified Contract A axiom.**  The tag mapping produced by fresh-tag
+    allocation respects any tag meaning `tm`.  This is the single semantic
+    boundary for all extern `QTypRespectsTagMeaning` obligations — the claim
+    that `tm` covers freshly allocated tags cannot be derived structurally
+    because `tm` is universally quantified and `wfTagMeaningCtx` does not
+    constrain it on fresh tags. -/
+axiom externTagMappingRespectsTagMeaning
+  (tm : TagMeaning)
+  (mapping : Std.ExtTreeMap TagIndex Tag compare)
+  (preds : List SyntaxPredicate) (env : VarTypeEnv)
+  (nextTag : Tag) (nextTag' : Tag)
+  (halloc : collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag')) :
+  TagMappingRespectsTagMeaning tm mapping preds env
+
+/-- Structural lemma: when the tag mapping respects `tm` and `resolveSyntaxPred`
+    succeeds, the resolved predicate respects `tm`.  This is proved by case
+    analysis on `pred` — the `guardClosure` case uses `TagMappingRespectsTagMeaning`
+    directly; the other cases are vacuous. -/
+lemma resolveSyntaxPred_respectsTagMeaning
+    (tm : TagMeaning)
+    (pred : SyntaxPredicate) (env : VarTypeEnv)
+    (mapping : Std.ExtTreeMap TagIndex Tag compare)
+    (preds : List SyntaxPredicate)
+    (resolvedPred : Predicate)
+    (hcompat : TagMappingRespectsTagMeaning tm mapping preds env)
+    (hmember : pred ∈ preds)
+    (hresolve : resolveSyntaxPred pred env mapping = .ok resolvedPred) :
+    PredRespectsTagMeaning tm resolvedPred := by
+  cases pred with
+  | noPred =>
+    simp [resolveSyntaxPred, pure, Except.pure] at hresolve
+    subst hresolve
+    intro _ _ _ _ h; cases h
+  | guardOnly idx =>
+    simp only [resolveSyntaxPred] at hresolve
+    split at hresolve
+    · simp [pure, Except.pure] at hresolve; subst hresolve
+      intro _ _ _ _ h; cases h
+    · simp at hresolve
+  | guardClosure idx arg body =>
+    simp only [resolveSyntaxPred, bind, Except.bind] at hresolve
+    split at hresolve
+    · rename_i tag htag
+      cases htoPExpr : body.toPExpr with
+      | error e => simp [htoPExpr] at hresolve
+      | ok pbody =>
+        simp only [htoPExpr, pure, Except.pure, Except.ok.injEq] at hresolve
+        subst hresolve
+        intro k' arg' pb' ve' hgc
+        have heq := (Predicate.guardClosure.injEq _ _ _ _ _ _ _ _).mp hgc
+        rcases heq with ⟨hk, harg, hpb, hve⟩
+        subst hk; subst harg; subst hpb; subst hve
+        exact hcompat idx tag htag arg body pbody hmember htoPExpr
+    · simp at hresolve
+
+/-- Helper: `surfaceSpecToQTyp` produces non-function ETyps. -/
+private lemma surfaceSpecToQTyp_etyp_nonFunction (typ : Typ) (poison : Bool)
+    (resolvedPred : Predicate) (ctx : TypeContext)
+    (qt : QTyp) (ctx' : TypeContext)
+    (hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx = .ok (qt, ctx')) :
+    qt.etyp.isFunctionType = false := by
+  simp only [surfaceSpecToQTyp, bind, Except.bind, pure, Except.pure] at hsurf
+  cases typ with
+  | int | bool | unit | string =>
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hsurf
+    rw [← hsurf.1]; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+  | ref t =>
+    cases t with
+    | int =>
+      simp only [freshTLoc, show (Typ.int != Typ.int) = false from by decide,
+                 Bool.false_eq_true, ite_false, Except.ok.injEq, Prod.mk.injEq] at hsurf
+      rw [← hsurf.1]; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+    | _ => simp [bne] at hsurf
+  | arrow _ _ => simp at hsurf
+
+/-- Helper: `surfaceSpecToQTyp` preserves the predicate in the result QTyp. -/
+private lemma surfaceSpecToQTyp_pred_preserves (typ : Typ) (poison : Bool)
+    (resolvedPred : Predicate) (ctx : TypeContext)
+    (qt : QTyp) (ctx' : TypeContext)
+    (hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx = Except.ok (qt, ctx')) :
+    qt.pred = resolvedPred := by
+  simp only [surfaceSpecToQTyp, bind, Except.bind, pure, Except.pure] at hsurf
+  split at hsurf
+  all_goals first
+    | (simp only [Except.ok.injEq, Prod.mk.injEq] at hsurf; rw [← hsurf.1])
+    | (simp at hsurf)
+
+/-- Helper: `returnSpecToQTyp` produces non-function ETyps. -/
+private lemma returnSpecToQTyp_etyp_nonFunction (typ : Typ) (poison : Bool)
+    (resolvedPred : Predicate) (nextLoc : Loc)
+    (retQt : QTyp) (nextLoc' : Loc)
+    (h : returnSpecToQTyp typ poison resolvedPred nextLoc = .ok (retQt, nextLoc')) :
+    retQt.etyp.isFunctionType = false := by
+  unfold returnSpecToQTyp at h
+  simp [bind, Except.bind, pure, Except.pure] at h
+  cases typ with
+  | int | bool | unit | string =>
+    simp [Except.ok.injEq, Prod.mk.injEq] at h
+    rw [← h.1]; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+  | ref _ => simp at h
+  | arrow _ _ => simp at h
+
+/-- Helper: `returnSpecToQTyp` preserves the predicate. -/
+private lemma returnSpecToQTyp_pred_preserves (typ : Typ) (poison : Bool)
+    (resolvedPred : Predicate) (nextLoc : Loc)
+    (retQt : QTyp) (nextLoc' : Loc)
+    (h : returnSpecToQTyp typ poison resolvedPred nextLoc = .ok (retQt, nextLoc')) :
+    retQt.pred = resolvedPred := by
+  unfold returnSpecToQTyp at h
+  simp [bind, Except.bind, pure, Except.pure] at h
+  cases typ <;> simp at h <;> (try exact h.1 ▸ rfl)
+
+-- --------------------------------------------------------------------------
+-- Step 5a corollaries: validate the unified axiom on §2.4 and §2.2-simple
+-- --------------------------------------------------------------------------
+
+/-- Corollary of the unified axiom: `typecheckExternVal` result QTyp
+    respects tag meaning.  Replaces `typecheckExternVal_QTypRespectsTagMeaning_axiom`
+    (will be deleted once all corollaries are proved in Step 5c). -/
+lemma typecheckExternVal_QTypRespectsTagMeaning_corollary
+    (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+    (res : TypeResult)
+    (_hwf : wfTagMeaningCtx tm ctx)
+    (htc : typecheckExternVal ctx typ poison pred = .ok res) :
+    QTypRespectsTagMeaning tm res.qualType := by
+  simp only [typecheckExternVal] at htc
+  rcases hp : (poison, pred) with ⟨p, pr⟩
+  simp only [hp] at htc
+  split at htc
+  · simp at htc
+  · simp at htc
+  · cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
+    | error e => simp [halloc, bind, Except.bind] at htc
+    | ok tagres =>
+      obtain ⟨tagMapping, nextTag'⟩ := tagres
+      cases hresolved : resolveSyntaxPred pred ctx.varEnv tagMapping with
+      | error e =>
+        simp only [halloc, hresolved, bind, Except.bind] at htc; simp at htc
+      | ok resolvedPred =>
+        cases hsurface : surfaceSpecToQTyp typ poison resolvedPred ctx with
+        | error e =>
+          simp only [halloc, hresolved, hsurface, bind, Except.bind] at htc; simp at htc
+        | ok qctx =>
+          obtain ⟨qt, ctx'⟩ := qctx
+          simp only [halloc, hresolved, hsurface, bind, Except.bind, pure, Except.pure,
+                     Except.ok.injEq] at htc
+          subst htc; simp only
+          -- Apply the unified axiom
+          have hcompat := externTagMappingRespectsTagMeaning tm tagMapping [pred] ctx.varEnv
+            ctx.nextTag nextTag' halloc
+          have hpredTm := resolveSyntaxPred_respectsTagMeaning tm pred ctx.varEnv tagMapping [pred]
+            resolvedPred hcompat (List.Mem.head _) hresolved
+          -- The surface spec preserves the predicate and produces a non-function ETyp
+          have hsurfPred := surfaceSpecToQTyp_pred_preserves typ poison resolvedPred ctx qt ctx' hsurface
+          have hsurfNotFun := surfaceSpecToQTyp_etyp_nonFunction typ poison resolvedPred ctx qt ctx' hsurface
+          -- Lift PredRespectsTagMeaning to QTypRespectsTagMeaning
+          rw [← hsurfPred] at hpredTm
+          -- Destructure qt and prove directly
+          obtain ⟨qt_e, qt_p, qt_pred⟩ := qt
+          intro qt' k d hinq hqd
+          have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hsurfNotFun
+          subst hEq
+          cases qt_pred with
+          | noPred => simp [qtypGuardDesc?] at hqd
+          | guardOnly _ => simp [qtypGuardDesc?] at hqd
+          | guardClosure k0 arg pb cap =>
+            simp [qtypGuardDesc?] at hqd
+            rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
+            exact hpredTm k0 arg pb cap rfl
+
+/-- Corollary of the unified axiom: pure extern `ExternReturn.simple` result QTyp
+    respects tag meaning.  Validates §2.2 for the simplest case.
+    (Will be extended to nested cases in Step 5c.) -/
+lemma applyPFnTClosure_extern_simple_QTypRespectsTagMeaning_corollary
+    (tm : TagMeaning)
+    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result2 : TypeResult) (fuel : Nat)
+    (x : Name) (typ : Typ) (poison : Bool) (spred : SyntaxPredicate)
+    (capturedEnv : CapturedVarEnv)
+    (r : TypeResult)
+    (_hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
+    (happly : applyPFnTClosure (PFnTClosure.extern x (ExternReturn.simple typ poison spred) capturedEnv)
+      st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+    QTypRespectsTagMeaning tm r.qualType := by
+  cases fuel with
+  | zero => simp [applyPFnTClosure] at happly
+  | succ n =>
+    simp only [applyPFnTClosure] at happly
+    simp only [bind, Except.bind] at happly
+    -- Extract collectAndAllocExternTags
+    cases halloc : collectAndAllocExternTags [spred] result2.nextTag' with
+    | error e => simp [halloc] at happly
+    | ok tagres =>
+      obtain ⟨tagMapping, nextTag'⟩ := tagres
+      simp only [halloc] at happly
+      -- Extract resolveSyntaxPred
+      cases hresolved : resolveSyntaxPred spred
+          (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) tagMapping with
+      | error e => simp [hresolved] at happly
+      | ok resolvedPred =>
+        simp only [hresolved] at happly
+        -- Extract returnSpecToQTyp
+        cases hret : returnSpecToQTyp typ poison resolvedPred result2.nextLoc' with
+        | error e => simp [hret] at happly
+        | ok retres =>
+          obtain ⟨retQt, nextLoc'⟩ := retres
+          simp only [hret, pure, Except.pure, Except.ok.injEq] at happly
+          subst happly
+          -- The unified env for resolution
+          let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+          -- Apply the unified axiom
+          have hcompat := externTagMappingRespectsTagMeaning tm tagMapping [spred] unifiedEnv
+            result2.nextTag' nextTag' halloc
+          have hpredTm := resolveSyntaxPred_respectsTagMeaning tm spred unifiedEnv tagMapping [spred]
+            resolvedPred hcompat (List.Mem.head _) hresolved
+          -- returnSpecToQTyp preserves pred and produces non-function ETyp
+          have hretPred := returnSpecToQTyp_pred_preserves typ poison resolvedPred result2.nextLoc'
+            retQt nextLoc' hret
+          have hretNotFun := returnSpecToQTyp_etyp_nonFunction typ poison resolvedPred result2.nextLoc'
+            retQt nextLoc' hret
+          -- Destructure retQt and prove directly
+          obtain ⟨ret_e, ret_p, ret_pred⟩ := retQt
+          simp only at hretNotFun hpredTm hretPred
+          -- Case split on normalizeAppResultByProvenance
+          simp only [normalizeAppResultByProvenance]
+          split
+          · -- p1p = true: result is { poison := true, pred := noPred } — vacuously respects tm
+            intro qt' k d hinq hqd
+            have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hretNotFun
+            subst hEq; simp [qtypGuardDesc?] at hqd
+          · -- p1p = false: result keeps retQt's pred
+            rw [← hretPred] at hpredTm
+            intro qt' k d hinq hqd
+            have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hretNotFun
+            subst hEq
+            cases ret_pred with
+            | noPred => simp [qtypGuardDesc?] at hqd
+            | guardOnly _ => simp [qtypGuardDesc?] at hqd
+            | guardClosure k0 arg pb cap =>
+              simp [qtypGuardDesc?] at hqd
+              rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
+              exact hpredTm k0 arg pb cap rfl
+
+-- --------------------------------------------------------------------------
+-- Per-entry-point axioms (to be replaced by corollaries in Step 5c)
+-- --------------------------------------------------------------------------
+
 /-- Extern contract: all QTyp values produced by an impure extern application
     respect tag meaning — both memory cells written by the effect loop and the
     result QTyp.  The first conjunct (memEnv cells) feeds the structural
