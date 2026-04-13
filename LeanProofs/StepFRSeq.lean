@@ -129,6 +129,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
       typecheckExpr_clean_lookup_origin_of_pc_true
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
         (by simpa [hctx', ctxAfter] using htc2')
+        hwf1
         (by simpa [ctxAfter] using hpc)
         l qt_out hlookup_out
         (by simpa [ctxAfter] using typecheckExpr_mem_contains_preserved ctx e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctx.memEnv l _qt_in _hlookup_in))
@@ -149,6 +150,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
         typecheckExpr_clean_lookup_origin_of_pc_true
           (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
           (by simpa [hctx', ctxAfter] using htc2')
+          hwf1
           (by simpa [ctxAfter] using hpc)
           l qt hlookup hcontains_mid hclean
       have hθ1_none := _hfresh1 l qt_mid hnotIn
@@ -262,6 +264,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
       typecheckExpr_clean_lookup_origin_of_pc_true
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
         (by simpa [hctx', ctxAfter] using htc2')
+        hwf1
         (by simpa [ctxAfter] using hpc)
         l qt_out hlookup_out
         (by simpa [ctxAfter] using typecheckExpr_mem_contains_preserved ctx e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctx.memEnv l _qt_in _hlookup_in))
@@ -281,6 +284,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
         typecheckExpr_clean_lookup_origin_of_pc_true
           (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
           (by simpa [hctx', ctxAfter] using htc2')
+          hwf1
           (by simpa [ctxAfter] using hpc)
           l qt hlookup hcontains_mid hclean
       have hθ1_none := _hfresh1 l qt_mid hnotIn

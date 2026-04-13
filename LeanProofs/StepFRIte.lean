@@ -4473,7 +4473,7 @@ private lemma stepFR_ite_standard
                         exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                   rcases
                       typecheckExpr_clean_lookup_origin_of_pc_true
-                        ctx'' e2 fuel' res2 htc2' hpc''
+                        ctx'' e2 fuel' res2 htc2' hwf_ctx'' hpc''
                         l qt2 hlookup2 hcontains_ctx'' hclean2
                     with ⟨qt_in, hlookup_in, hclean_in⟩
                   have heq_qt : qt_mid = qt_in := by
@@ -5158,7 +5158,7 @@ private lemma stepFR_ite_standard
                         exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                   rcases
                       typecheckExpr_clean_lookup_origin_of_pc_true
-                        ctxForE3 e3 fuel' res3 htc3' hpcForE3
+                        ctxForE3 e3 fuel' res3 htc3' hwf_ctxForE3 hpcForE3
                         l qt3 hlookup3 hcontains_ctxForE3 hclean3
                     with ⟨qt_in, hlookup_in, hclean_in⟩
                   have heq_qt : qt_mid = qt_in := by

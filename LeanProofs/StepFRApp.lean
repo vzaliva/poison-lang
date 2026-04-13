@@ -7525,13 +7525,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
           exact
             typecheckExpr_lookup_clean_back_of_pc_true
               (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-              htc_bodyA hpc_body l qt1 qt3
+              htc_bodyA hwfBody hpc_body l qt1 qt3
               (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
         have hclean2 : qtypCleanUnder result2.regime' qt2 := by
           exact
             typecheckExpr_lookup_clean_back_of_pc_true
               (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-              (by simpa [typecheck] using htc1') hpc2 l qt2 qt1
+              (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qt1
               (by simpa [ctxAfter] using hlookup2) hlookup1 hclean1
         have hpres_l2 :=
           PreservesInheritedFinalCleanLocsOneRun.apply
@@ -7583,12 +7583,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
               have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                  htc_bodyA hpc_body l qt1 qt3
+                  htc_bodyA hwfBody hpc_body l qt1 qt3
                   (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
               have hclean2 : qtypCleanUnder result2.regime' qt2 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-                  (by simpa [typecheck] using htc1') hpc2 l qt2 qt1
+                  (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qt1
                   (by simpa [ctxAfter] using hlookup2) hlookup1 hclean1
               have hθ2_none := _hfresh2 l qt2 hnotIn hlookup2 hclean2
               have hpres_l1' :=
@@ -7625,7 +7625,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric
               have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                  htc_bodyA hpc_body l qt1 qt3
+                  htc_bodyA hwfBody hpc_body l qt1 qt3
                   (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
               have hθ1_none := _hfresh1 l qt1 (by simpa [ctxAfter] using hc2) hlookup1 hclean1
               have hpres_lbody' :=
@@ -8108,13 +8108,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
           exact
             typecheckExpr_lookup_clean_back_of_pc_true
               (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-              (by simpa [typecheck] using htcBody_body) hpc_body l qt1 qt3
+              (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
               (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
         have hclean2 : qtypCleanUnder result2.regime' qt2 := by
           exact
             typecheckExpr_lookup_clean_back_of_pc_true
               (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-              (by simpa [typecheck] using htc1') hpc2 l qt2 qt1
+              (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qt1
               (by simpa [ctxAfter] using hlookup2) hlookup1 hclean1
         have hpres_l2 :=
           PreservesInheritedFinalCleanLocsOneRun.apply
@@ -8169,12 +8169,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
               have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                  (by simpa [typecheck] using htcBody_body) hpc_body l qt1 qt3
+                  (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
                   (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
               have hclean2 : qtypCleanUnder result2.regime' qt2 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-                  (by simpa [typecheck] using htc1') hpc2 l qt2 qt1
+                  (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qt1
                   (by simpa [ctxAfter] using hlookup2) hlookup1 hclean1
               have hθ2_none := _hfresh2 l qt2 hnotIn hlookup2 hclean2
               have hpres_l1_loc :=
@@ -8215,7 +8215,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric
               have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                  (by simpa [typecheck] using htcBody_body) hpc_body l qt1 qt3
+                  (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
                   (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
               have hθ1_none := _hfresh1 l qt1 (by simpa [ctxAfter] using hc2) hlookup1 hclean1
               have hpres_lbody_loc :=
@@ -8778,13 +8778,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           exact
             typecheckExpr_lookup_clean_back_of_pc_true
               (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-              htc_bodyA hpc_body l qt1 qt3
+              htc_bodyA hwfBody hpc_body l qt1 qt3
               (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
         have hclean2 : qtypCleanUnder result2.regime' qt2 := by
           exact
             typecheckExpr_lookup_clean_back_of_pc_true
               (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-              (by simpa [typecheck] using htc1') hpc2 l qt2 qt1
+              (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qt1
               (by simpa [ctxAfter] using hlookup2) hlookup1 hclean1
         have hpres_l2 :=
           PreservesInheritedFinalCleanLocsOneRun.apply
@@ -8836,12 +8836,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
               have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                  htc_bodyA hpc_body l qt1 qt3
+                  htc_bodyA hwfBody hpc_body l qt1 qt3
                   (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
               have hclean2 : qtypCleanUnder result2.regime' qt2 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-                  (by simpa [typecheck] using htc1') hpc2 l qt2 qt1
+                  (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qt1
                   (by simpa [ctxAfter] using hlookup2) hlookup1 hclean1
               have hθ2_none := _hfresh2 l qt2 hnotIn hlookup2 hclean2
               have hpres_l1' :=
@@ -8878,7 +8878,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
               have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                  htc_bodyA hpc_body l qt1 qt3
+                  htc_bodyA hwfBody hpc_body l qt1 qt3
                   (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
               have hθ1_none := _hfresh1 l qt1 (by simpa [ctxAfter] using hc2) hlookup1 hclean1
               have hpres_lbody' :=
@@ -9391,13 +9391,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           exact
             typecheckExpr_lookup_clean_back_of_pc_true
               (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-              (by simpa [typecheck] using htcBody_body) hpc_body l qt1 qt3
+              (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
               (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
         have hclean2 : qtypCleanUnder result2.regime' qt2 := by
           exact
             typecheckExpr_lookup_clean_back_of_pc_true
               (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-              (by simpa [typecheck] using htc1') hpc2 l qt2 qt1
+              (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qt1
               (by simpa [ctxAfter] using hlookup2) hlookup1 hclean1
         have hpres_l2 :=
           PreservesInheritedFinalCleanLocsOneRun.apply
@@ -9452,12 +9452,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
               have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                  (by simpa [typecheck] using htcBody_body) hpc_body l qt1 qt3
+                  (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
                   (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
               have hclean2 : qtypCleanUnder result2.regime' qt2 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-                  (by simpa [typecheck] using htc1') hpc2 l qt2 qt1
+                  (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qt1
                   (by simpa [ctxAfter] using hlookup2) hlookup1 hclean1
               have hθ2_none := _hfresh2 l qt2 hnotIn hlookup2 hclean2
               have hpres_l1_loc :=
@@ -9498,7 +9498,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
               have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                 typecheckExpr_lookup_clean_back_of_pc_true
                   (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                  (by simpa [typecheck] using htcBody_body) hpc_body l qt1 qt3
+                  (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
                   (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
               have hθ1_none := _hfresh1 l qt1 (by simpa [ctxAfter] using hc2) hlookup1 hclean1
               have hpres_lbody_loc :=
@@ -10728,7 +10728,7 @@ lemma stepFR_app
                       exact
                         typecheckExpr_lookup_clean_back_of_pc_true
                           (ctx := bodyCtxA₀) (e := body₀) (fuel := fuelBodyA₀) (res := result3A₀)
-                          htc_bodyA₀ hpc_bodyA₀ l qt' qt_A₀
+                          htc_bodyA₀ hwfBodyCtxA₀ hpc_bodyA₀ l qt' qt_A₀
                           (by simpa [bodyCtxA₀] using hlookup_body)
                           hlookup_result3A₀ hclean_result3A₀
                     -- Use qt' cleanness to prove agreeLocUnder

@@ -2,7 +2,7 @@
 
 ## CURRENT STEP
 
-Continue Step 4 axiom reduction: next target after guard-tag-absence.
+Continue Step 4 axiom reduction: `typecheckExternVal_preserves_lookup_origin`.
 
 What has been completed:
 
@@ -10,38 +10,38 @@ What has been completed:
   input/output; all files compile with 0 sorry, 0 warnings
 - Step 4b (guard-tag-absence elimination): the 3 guard-tag-absence axioms have
   been deleted; callers switched to proved `_of_tagEnvBounded` variants
-- axiom count reduced from **10 to 7**
+- Step 4c (`wfTagMeaningCtx` split): the bundled axiom has been replaced by
+  `applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning` (focused per-entry
+  contract) plus a proved structural `wfTagMeaningCtx` preservation lemma
+- axiom count: **10 → 7** (3 deleted, 1 replaced by focused variant)
 
 What remains open now:
 
 - `lake build` succeeds with **0 sorry, 0 warnings**
-- the remaining proof debt is the **7 extern axioms** in `LeanProofs/StepFR.lean`
+- the remaining proof debt is **7 extern axioms** in `LeanProofs/StepFR.lean`
 
 Remaining 7 axioms:
 
-| Axiom | Triage |
-|------|--------|
-| `applyFnTClosure_extern_ok_wfTagMeaningCtx` | split required |
-| `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | likely permanent |
-| `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | likely permanent |
-| `applyFnTClosure_extern_ok_lookup_origin` | likely permanent |
-| `applyFnTClosure_extern_ok_fresh_loc_not_clean` | likely permanent |
-| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | likely permanent |
-| `typecheckExternVal_preserves_lookup_origin_axiom` | likely provable after statement adjustment |
+| Axiom | Triage | Status |
+|------|--------|--------|
+| `applyFnTClosure_extern_ok_memEnv_QTypRespectsTagMeaning` | focused semantic | replaces former wfTagMeaningCtx bundle |
+| `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` | likely permanent | result-side semantic contract |
+| `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | likely permanent | pure analogue |
+| `applyFnTClosure_extern_ok_lookup_origin` | likely permanent | provenance contract |
+| `applyFnTClosure_extern_ok_fresh_loc_not_clean` | likely permanent | trust discipline |
+| `typecheckExternVal_QTypRespectsTagMeaning_axiom` | likely permanent | value-level semantic |
+| `typecheckExternVal_preserves_lookup_origin_axiom` | **provable now** | needs `wfTypeContext ctx` precondition |
 
 Required next action:
 
-1. split `applyFnTClosure_extern_ok_wfTagMeaningCtx` into a smaller semantic
-   effect-write contract plus proved structural `wfTagMeaningCtx` preservation
-   (see triage §2.9.1)
-2. then revisit `typecheckExternVal_preserves_lookup_origin_axiom` (§2.9.9)
+1. replace `typecheckExternVal_preserves_lookup_origin_axiom` with a proved
+   structural lemma that exposes a `wfTypeContext ctx` precondition (see §2.9.9)
+2. update the caller to supply `wfTypeContext ctx`
 
 Critical constraints:
 
 - do **not** reintroduce `sorry`
-- do **not** add any new axiom beyond a focused replacement for the
-  `wfTagMeaningCtx` bundle split
-- the `QTypRespectsTagMeaning` contracts remain classified as likely permanent
+- do **not** add any new `axiom`
 
 ## 1. Problem
 

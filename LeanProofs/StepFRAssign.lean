@@ -4337,6 +4337,7 @@ private lemma typecheckAssign_lookup_clean_back_to_result1_of_pc_true
   (ctx : TypeContext) (e2 : Expr) (fuel : Nat)
   (result1 result2 res : TypeResult) (ls : LocSet)
   (htc2 : typecheckExpr (updateCtxFromResult ctx result1) e2 fuel = .ok result2)
+  (hwf_ctx : wfTypeContext (updateCtxFromResult ctx result1))
   (hInt : result2.qualType.etyp = ETyp.int)
   (h_mem :
     res.memEnv' =
@@ -4368,7 +4369,7 @@ private lemma typecheckAssign_lookup_clean_back_to_result1_of_pc_true
   exact
     typecheckExpr_lookup_clean_back_of_pc_true
       (ctx := updateCtxFromResult ctx result1) (e := e2) (fuel := fuel) (res := result2)
-      htc2 hpc2 l qt_mid qt₂
+      htc2 hwf_ctx hpc2 l qt_mid qt₂
       (by simpa [updateCtxFromResult] using hlookup_mid)
       hlookup₂
       hclean₂
@@ -4621,6 +4622,7 @@ private lemma assign_final_clean_preservation
   (hInt : result2.qualType.etyp = ETyp.int)
   (htc1_expr : typecheckExpr ctx e1 fuel' = .ok result1)
   (htc2_expr : typecheckExpr (ctxAfter ctx result1) e2 fuel' = .ok result2)
+  (hwf1 : wfTypeContext (ctxAfter ctx result1))
   (hmem_res :
     res.memEnv' =
       match Std.ExtTreeSet.toList ls with
@@ -4661,7 +4663,7 @@ private lemma assign_final_clean_preservation
   rcases
     typecheckExpr_clean_lookup_origin_of_pc_true
       (ctx := ctxAfter ctx result1) (e := e2) (fuel := fuel') (res := result2)
-      htc2_expr hpc_mid l qt_mid hlookup_mid
+      htc2_expr hwf1 hpc_mid l qt_mid hlookup_mid
       (by
         have hcontains_in : ctx.memEnv.contains l :=
           memEnv_contains_of_lookup_some ctx.memEnv l qt_in hlookup_in
@@ -6129,6 +6131,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
         hRef hInt
         htc1_expr
         (by simpa [ctxAfter] using htc2_expr_raw)
+        hwf1
         hmem_res hRegime hpc hvloc1 hθext2 hθ2wf hric2 hmem hpres1 hpres2
   have hwfcfg_final : wfConfig cf := by
     exact (wfConfig_preserved (Expr.assign e1 e2) _ cf o ht hwfcfg).1
@@ -6224,6 +6227,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
         typecheckExpr_clean_lookup_origin_of_pc_true
           (ctx := ctxAfter ctx result1) (e := e2) (fuel := fuel') (res := result2)
           htc2'
+          hwf1
           hpc1
           l qt hlookup2 hcontains_mid hclean2
       have hθ1_none := _hfresh1 l qt_mid hnotIn
@@ -6413,6 +6417,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
         hRef hInt
         htc1_expr
         (by simpa [ctxAfter] using htc2_expr_raw)
+        hwf1
         hmem_res hRegime hpc hvloc1 hθext2 hθ2wf hric2 hmem hpres1 hpres2
   have hwfcfg_final : wfConfig cf := by
     exact (wfConfig_preserved (Expr.assign e1 e2) _ cf o ht hwfcfg).1
@@ -6501,6 +6506,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
         typecheckExpr_clean_lookup_origin_of_pc_true
           (ctx := ctxAfter ctx result1) (e := e2) (fuel := fuel') (res := result2)
           htc2'
+          hwf1
           hpc1
           l qt hlookup2 hcontains_mid hclean2
       have hθ1_none := _hfresh1 l qt_mid hnotIn

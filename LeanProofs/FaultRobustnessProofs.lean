@@ -358,7 +358,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       intro l qt_in qt_out hlookup_in hlookup_out hclean_out
                       rcases
                           typecheckExpr_clean_lookup_origin_of_pc_true
-                            ctxTrue e2 fuel' res2 htc2 hpc_true
+                            ctxTrue e2 fuel' res2 htc2 hwf_true hpc_true
                             l qt_out (by simpa [hmemEnv] using hlookup_out)
                             (by simpa [ctxTrue] using memEnv_contains_of_lookup_some ctxᵢ.memEnv l qt_in hlookup_in)
                             (by simpa [hregime'] using hclean_out)
@@ -581,7 +581,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       intro l qt_in qt_out hlookup_in hlookup_out hclean_out
                       rcases
                           typecheckExpr_clean_lookup_origin_of_pc_true
-                            ctxFalse' e3 fuel' res3 htc3_for_pres hpc_false'
+                            ctxFalse' e3 fuel' res3 htc3_for_pres hwf_false' hpc_false'
                             l qt_out (by simpa [hmemEnv] using hlookup_out)
                             (by simpa [ctxFalse', ctxFalse] using memEnv_contains_of_lookup_some ctxᵢ.memEnv l qt_in hlookup_in)
                             (by simpa [hregime'] using hclean_out)
@@ -782,7 +782,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                   with ⟨qt2', hlookup2', _hetyp2, hpoison2⟩
                                 exact
                                   typecheckExpr_clean_lookup_origin_of_pc_true
-                                    ctx'' e2 fuel' res2 htc2' hpc''
+                                    ctx'' e2 fuel' res2 htc2' hwf_ctx'' hpc''
                                     l qt2' hlookup2'
                                     (by simpa [ctx'', ctx', ctxAfter] using typecheckExpr_mem_contains_preserved ctxᵢ e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctxᵢ.memEnv l _qt_in _hlookup_in))
                                     (qtypCleanUnder.clean hpoison2)
@@ -799,7 +799,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                   with ⟨qt3', hlookup3', _hetyp3, hpoison3⟩
                                 exact
                                   typecheckExpr_clean_lookup_origin_of_pc_true
-                                    ctxForE3 e3 fuel' res3 htc3' hpcForE3
+                                    ctxForE3 e3 fuel' res3 htc3' hwf_ctxForE3 hpcForE3
                                     l qt3' hlookup3'
                                     (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using typecheckExpr_mem_contains_preserved ctxᵢ e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctxᵢ.memEnv l _qt_in _hlookup_in))
                                     (qtypCleanUnder.clean hpoison3)
@@ -829,7 +829,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                   native_decide
                                 exact
                                   typecheckExpr_clean_lookup_origin_of_pc_true
-                                    ctx'' e2 fuel' res2 htc2' hpc''
+                                    ctx'' e2 fuel' res2 htc2' hwf_ctx'' hpc''
                                     l qt2 hlookup2
                                     (by simpa [ctx'', ctx', ctxAfter] using typecheckExpr_mem_contains_preserved ctxᵢ e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctxᵢ.memEnv l _qt_in _hlookup_in))
                                     (qtypCleanUnder.guard k htag2 hk2 hnotfun2)
@@ -847,7 +847,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                   native_decide
                                 exact
                                   typecheckExpr_clean_lookup_origin_of_pc_true
-                                    ctxForE3 e3 fuel' res3 htc3' hpcForE3
+                                    ctxForE3 e3 fuel' res3 htc3' hwf_ctxForE3 hpcForE3
                                     l qt3 hlookup3
                                     (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using typecheckExpr_mem_contains_preserved ctxᵢ e1 fuel' res1 htc1' l (memEnv_contains_of_lookup_some ctxᵢ.memEnv l _qt_in _hlookup_in))
                                     (qtypCleanUnder.guard k htag3 hk3 hnotfun3)
@@ -1018,7 +1018,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                 by_cases hcontains_mid : ctx''.memEnv.contains l
                                 · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
                                     typecheckExpr_clean_lookup_origin_of_pc_true
-                                      ctx'' e2 fuel' res2 htc2' hpc''
+                                      ctx'' e2 fuel' res2 htc2' hwf_ctx'' hpc''
                                       l qt2 hlookup2 hcontains_mid hclean2
                                   have hθ1_none := _hfresh1 l qt_mid hnotIn
                                     (by simpa [ctx'', ctx', ctxAfter] using hlookup_mid)
@@ -1268,7 +1268,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                 by_cases hcontains_mid : ctxForE3.memEnv.contains l
                                 · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
                                     typecheckExpr_clean_lookup_origin_of_pc_true
-                                      ctxForE3 e3 fuel' res3 htc3' hpcForE3
+                                      ctxForE3 e3 fuel' res3 htc3' hwf_ctxForE3 hpcForE3
                                       l qt3 hlookup3 hcontains_mid hclean3
                                   have hθ1_none := _hfresh1 l qt_mid hnotIn
                                     (by simpa [ctxForE3, ctx'', ctx', ctxAfter] using hlookup_mid)

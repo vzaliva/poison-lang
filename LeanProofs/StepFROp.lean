@@ -552,6 +552,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
       typecheckExpr_clean_lookup_origin_of_pc_true
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res2)
         (by simpa [ctx', ctxAfter] using htc2')
+        hwf1
         (by simpa [ctxAfter] using hpc)
         l qt_out
         (by simpa using hlookup_out)
@@ -601,6 +602,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
         typecheckExpr_clean_lookup_origin_of_pc_true
           (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res2)
           (by simpa [ctx', ctxAfter] using htc2')
+          hwf1
           (by simpa [ctxAfter] using hpc)
           l qt hlookup2 hcontains_mid hclean2
       have hθ1_none := _hfresh1 l qt_mid hnotIn
