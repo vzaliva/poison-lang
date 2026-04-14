@@ -3,8 +3,14 @@
 ## CURRENT STEP
 
 Contract A unification is complete.
-The next goal is to reduce Contract B by factoring the poison provenance
-conjunct out of `applyFnTClosure_extern_ok_lookup_origin`.
+The immediate goal is **Plan step 1**: state and validate the exact local
+structural lemma that should replace the poison-side `.1` use of
+`applyFnTClosure_extern_ok_lookup_origin` in the app case of
+`typecheckExpr_lookup_origin_of_pc_true_split`.
+This is a naming-sensitive step: at that call site, the axiom parameter
+named `result2` is instantiated by the app case's local `result1`
+(function-side result), while the app case's local `result2` is the
+argument-side result.
 
 Current status:
 
@@ -12,7 +18,9 @@ Current status:
    `externTagMappingRespectsTagMeaning`.
 2. Contract B is represented by a single provenance axiom:
    `applyFnTClosure_extern_ok_lookup_origin`.
-3. The next reduction target is only the poison provenance half of Contract B.
+3. The next executable subgoal is to pin down the smallest proved lemma that
+   gets from `srcRes.memEnv'` back to the pre-extern memory used by
+   `hbackToCtx_poison`.
 
 Critical constraints:
 
@@ -100,18 +108,26 @@ Two pieces remain bundled:
 2. **Guard provenance:** if an output cell is trusted via an active guard tag,
    that tag and its trust also came from the input context/regime.
 
-**Current assessment:** the poison conjunct looks partially structural,
-because under `ctx.pc = true` effect-written cells are always poisoned.
-The guard conjunct still looks semantic, because impure extern effects can
-overwrite cells with freshly resolved guards while preserving the regime.
+**Current assessment:** the poison conjunct is already proved at the
+whole-expression level by
+`typecheckExpr_lookup_origin_of_pc_true_split` /
+`typecheckExpr_clean_lookup_origin_of_pc_true`.  The remaining work is to
+make the impure `FnTClosure.extern` app subcase discharge that poison claim
+structurally instead of by axiom.  The guard conjunct still looks semantic,
+because impure extern effects can overwrite cells with freshly resolved
+guards while preserving the regime.  That said, the guard half may well be
+amenable to the same style of local structural treatment; it is simply out
+of scope for this step.
 
 **Status:** This is the only realistic remaining axiom-reduction target.
 
 ## 3. Current reduction question
 
-The only open reduction question is whether the poison provenance half of
-`applyFnTClosure_extern_ok_lookup_origin` can be proved structurally,
-leaving a smaller guard-provenance axiom.
+The open reduction question is now **local**, not global: can the impure
+extern application case prove the poison provenance half structurally, so
+the strong-induction theorem no longer needs `.1` of
+`applyFnTClosure_extern_ok_lookup_origin`?  The global clean-origin theorem
+already shows the desired statement is true for `typecheckExpr` as a whole.
 
 ## 4. Consolidated contract floor
 
@@ -142,7 +158,7 @@ proof considers "clean" (either by having `poison = false` or by being
 guarded by an active regime tag) can be traced to a correspondingly clean
 cell in the typing context that existed *before* the function was applied.
 
-## 5. Next goal: factor the poison conjunct of Contract B
+## 5. Next goal: extract the poison subproof of Contract B
 
 **Status:** proposed
 
@@ -166,25 +182,51 @@ conjunct axiomatic.
 1. clean output cells came from clean input cells
 2. guard-trusted output cells came from guard-trusted input cells
 
-The second claim still appears genuinely semantic.  The first looks partly
-structural after the `applyExternEffect` refactor and the established loop
-reasoning.
+The second claim still appears genuinely semantic.  The first is no longer
+an open semantic question: it is already proved at the whole-expression
+level, but the current proof still invokes the axiom in the impure extern
+app case.  The task is to replace that one local use with a structural
+lemma and then shrink the axiom.
 
 #### Analysis
 
 The structural opening is:
 
-1. each `applyExternEffect` write stores
-   `poison = joinPoison ctx.pc effectQt.poison`
-2. under the axiom's hypothesis `ctx.pc = true`, every effect-written cell is
-   therefore poisoned
-3. a clean cell in the final `r.memEnv'` cannot have been written by the
-   effect loop
+1. `typecheckExpr_lookup_origin_of_pc_true_split` already proves the desired
+   poison/guard provenance split for the entire typechecker, and
+   `typecheckExpr_clean_lookup_origin_of_pc_true` is its clean corollary.
+2. In that strong-induction proof's app case, regular closures already use
+   IH plus `hbackToCtx_poison`, and pure extern closures already use
+   `applyPFnTClosure_extern_memEnv_eq` plus the same back-to-context bridge.
+   The impure `FnTClosure.extern` branch is the only non-structural case.
+3. The axiom has only two live uses in this proof: `.1` for poison
+   provenance and `.2` for guard provenance.
+4. The effect loop already has the right structural template:
+   `applyExternEffect_preserves_allCellsRespect` and
+   `forIn_effects_loop_preserves_allCellsRespect`.
+5. Each `applyExternEffect` write stores
+   `poison = joinPoison ctx.pc effectQt.poison`.  Under `ctx.pc = true`,
+   every effect-written cell is therefore poisoned.
+6. `list_fold_updateMemEnv_lookup_eq_of_not_mem` is the key mechanical tool:
+   if a location is not written by the fold, its lookup is unchanged.  So a
+   clean cell in the final `r.memEnv'` cannot have been written by the
+   effect loop.
+7. No extra bridge through `returnSpecToQTyp` or
+   `normalizeAppResultByProvenance` is needed for memory provenance: in all
+   impure extern return branches, the final `memEnv'` is exactly the loop
+   result.
 
-The remaining proof obligation is to bridge from "untouched in the effect
-loop" back through `result2.memEnv'` and then back to `ctx.memEnv`.
-If that bridge can be proved structurally, the poison conjunct can move out of
-the axiom.
+So the remaining proof obligation is not a new global
+`result2.memEnv' -> ctx.memEnv` theorem.  It is a focused local lemma for
+the impure extern arm:
+
+- clean in `r.memEnv'`
+- implies clean in `result2.memEnv'`
+- then existing `hbackToCtx_poison` finishes the trip back to `ctx.memEnv`
+
+At the concrete call site in `typecheckExpr_lookup_origin_of_pc_true_split`,
+this `result2` is the app case's local `result1`, because the axiom is being
+instantiated at the function-side `applyFnTClosure` call.
 
 #### Proposed approach
 
@@ -195,26 +237,52 @@ replace `applyFnTClosure_extern_ok_lookup_origin` with:
 - a proved structural poison-provenance lemma
 - a smaller axiom covering only guard provenance
 
-If the bridge from `r.memEnv'` / `result2.memEnv'` back to `ctx.memEnv` fails,
-stop and record the exact obstruction rather than widening the interface.
+Model the new proof on the existing effect-loop invariant pair, but swap the
+per-cell "respects `tm`" invariant for a clean-lookup invariant:
+
+- if the post-state lookup at `l` is `some qt` with `qt.poison = false`,
+  then the pre-state lookup at `l` is also `some qt_in` with
+  `qt_in.poison = false`
+
+This is the same mechanical backbone as the `allCellsRespect` lemmas, but
+not the same quantifier shape: the new invariant is intentionally
+**pointwise in the caller's chosen `l`**, not a simultaneous statement
+about all clean cells at once.
+
+If the focused extern lemma fails, stop and record the exact obstruction
+rather than widening the interface or re-proving the whole theorem stack.
 
 #### Plan
 
-1. Prove the high-risk bridge: under `ctx.pc = true`, any clean cell in
-   `r.memEnv'` was untouched by the effect loop and therefore comes from
-   `result2.memEnv'`.
-2. Prove or isolate the next bridge from `result2.memEnv'` back to `ctx.memEnv`
-   for clean cells.  Reuse existing memory-preservation / monotonicity lemmas
-   if possible; otherwise state one focused structural helper.
-3. Once both bridges exist, prove the poison conjunct of
-   `applyFnTClosure_extern_ok_lookup_origin` as a theorem.
-4. Shrink the remaining axiom to the guard-provenance conjunct only, update
-   call sites, and verify `lake build` clean.
+1. **Highest-risk first:** state the focused structural replacement for the
+   current `.1` call in the app case.  The target statement should match the
+   call site directly:
+   from `applyFnTClosure (FnTClosure.extern ...) = .ok srcRes`,
+   `ctx.pc = true`, `srcRes.memEnv'.lookup l = some qt_src`, and
+   `qt_src.poison = false`, derive
+   `∃ qt_mid, result2.memEnv'.lookup l = some qt_mid ∧ qt_mid.poison = false`.
+   Validate that this is sufficient before broader refactoring.  At the
+   app-case call site, remember that this `result2` unifies with the local
+   function-side `result1`.
+2. Prove the supporting effect-loop helpers
+   `applyExternEffect_preserves_clean_lookup` and
+   `forIn_effects_loop_preserves_clean_lookup`, cloning the proof shape of
+   `applyExternEffect_preserves_allCellsRespect` /
+   `forIn_effects_loop_preserves_allCellsRespect` and using
+   `list_fold_updateMemEnv_lookup_eq_of_not_mem` as the fold step.  These
+   should be framed pointwise in `l`, not as a universal all-cells theorem.
+3. Replace the `.1` use of `applyFnTClosure_extern_ok_lookup_origin` in
+   `typecheckExpr_lookup_origin_of_pc_true_split` with the new structural
+   extern lemma, then finish via the existing `hbackToCtx_poison` bridge.
+4. Once the split theorem compiles without the poison half of the axiom,
+   shrink `applyFnTClosure_extern_ok_lookup_origin` to a guard-only
+   contract, update call sites, and verify `lake build` clean.
 
 #### Risks
 
-- The missing bridge from `result2.memEnv'` back to `ctx.memEnv` may not be
-  directly derivable from current lemmas; this is the highest-risk step.
+- The highest-risk step is pinning down the exact local statement for the
+  impure extern helper and decomposing the `applyFnTClosure` effect loop
+  without over-strengthening the interface.
 - The guard conjunct may still be entangled with the poison conjunct at some
   call sites, requiring small local proof rewrites even if the factorization
   is conceptually clean.
@@ -350,6 +418,10 @@ status.
   definitionally identical.  The reliable pattern is
   `intro qt' k d hinq hqd; exact (lemma ...) hinq hqd`, especially around the
   reducible/unfolded presentation of `QTypRespectsTagMeaning`.
+- Confirmed that the clean-lookup provenance statement was already proved at
+  the whole-expression level.  The remaining Contract B work is therefore a
+  **local axiom shrink** in the impure extern app case, not discovery of a
+  new global bridge from `result2.memEnv'` back to `ctx.memEnv`.
 
 ### 6.4 Reference points
 
@@ -368,6 +440,7 @@ Current-branch helpers:
   `typecheckExpr_TagBoundedCtx_varEnv_update`,
   `matchGuard_tag_bounded`,
   `tagEnvBounded_insert_of_lt`,
+  `list_fold_updateMemEnv_lookup_eq_of_not_mem`,
   `applyPFnTClosure_extern_memEnv_eq` (proves pure extern memory identity),
   `applyPFnTClosure_extern_regime_eq`
 - `LeanProofs/StepFR.lean`:
@@ -377,9 +450,12 @@ Current-branch helpers:
   `QTypRespectsTagMeaning_noPred_poison_transport`,
   `locset_fold_updateMemEnv_allCellsRespect`,
   `applyExternEffect_preserves_allCellsRespect`,
+  `forIn_effects_loop_preserves_allCellsRespect`,
   `applyFnTClosure_extern_ok_memCellsRespect`,
   `applyFnTClosure_extern_ok_qualTypeRespects`,
   `applyFnTClosure_extern_ok_outputRespectsTagMeaning_corollary`,
+  `typecheckExpr_lookup_origin_of_pc_true_split`,
+  `typecheckExpr_clean_lookup_origin_of_pc_true`,
   `QTypRespectsTagMeaning_of_arrow_captured_lookup`,
   `QTypRespectsTagMeaning_of_parrow_captured_lookup`,
   `wfTagMeaningCtx_closure_body`,
