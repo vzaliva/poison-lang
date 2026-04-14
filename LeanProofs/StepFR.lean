@@ -7026,7 +7026,10 @@ lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
 -- DELETED: applyPFnTClosure_extern_ok_QTypRespectsTagMeaning
 -- Replaced by the proved corollary applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary.
 
-/-- Extern contract: FnTClosure.extern preserves lookup origin (poison provenance). -/
+/-- Extern contract: FnTClosure.extern preserves lookup origin (guard provenance).
+    The poison conjunct is now proved structurally by
+    `applyFnTClosure_extern_ok_memEnv_poison_origin`; only the guard-trusted
+    output → guard-trusted input claim remains axiomatic (Contract B residual). -/
 axiom applyFnTClosure_extern_ok_lookup_origin
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -7037,17 +7040,16 @@ axiom applyFnTClosure_extern_ok_lookup_origin
     argEtyp argPoison argPred ctx result2 fuel = .ok r)
   (l : Loc) (qt_out : QTyp)
   (hlookup : r.memEnv'.lookup l = some qt_out)
-  (hpc : ctx.pc = true) :
-  (qt_out.poison = false → ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false) ∧
-  ∀ (k : Tag),
-    qtypGuardTag qt_out = some k →
-    r.regime'.lookup? k = some true →
-    qt_out.etyp.isFunctionType = false →
-    ∃ qt_in,
-      ctx.memEnv.lookup l = some qt_in ∧
-      qtypGuardTag qt_in = some k ∧
-      ctx.regime.lookup? k = some true ∧
-      qt_in.etyp.isFunctionType = false
+  (hpc : ctx.pc = true)
+  (k : Tag)
+  (hguard : qtypGuardTag qt_out = some k)
+  (hreg : r.regime'.lookup? k = some true)
+  (hnotfun : qt_out.etyp.isFunctionType = false) :
+  ∃ qt_in,
+    ctx.memEnv.lookup l = some qt_in ∧
+    qtypGuardTag qt_in = some k ∧
+    ctx.regime.lookup? k = some true ∧
+    qt_in.etyp.isFunctionType = false
 
 
 /-- Helper: if resolveSyntaxPred produces a guardClosure predicate, the tag came from the mapping. -/
@@ -12536,9 +12538,9 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       | extern x retSpec effects capturedEnv =>
                           have hreg_src' : srcRes.regime'.lookup? k = some true := by
                             simpa [ctxAfter] using hreg_src
-                          rcases (applyFnTClosure_extern_ok_lookup_origin ctx st1 st2 p p1
-                            etyp2 p2 pred2 result1 fuelApp x retSpec effects capturedEnv srcRes
-                            happly_src l qt_src hlookup_src hpc).2 k htag_src hreg_src' hnotfun_src with
+                          rcases applyFnTClosure_extern_ok_lookup_origin ctx st1 st2 p p1
+                              etyp2 p2 pred2 result1 fuelApp x retSpec effects capturedEnv srcRes
+                              happly_src l qt_src hlookup_src hpc k htag_src hreg_src' hnotfun_src with
                             ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
                           exact ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
                     rcases joinTypeResults_mem_contains_head_or_rest
