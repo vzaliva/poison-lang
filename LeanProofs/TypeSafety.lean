@@ -7037,25 +7037,33 @@ private lemma applyFnTClosure_extern_predTagsBounded
         have hMemAfterLoop : predTagsBoundedInMemEnv loopResult nextTag' := by
           apply effects_forIn_predTagsBounded hMemMono _ hloop
           intro eff r hr fs hfs
-          -- Case on the body's match chain (lookup)
+          -- Decompose the bind layer from `memEnv ← applyExternEffect ...`
+          simp only [bind, Except.bind, pure, Except.pure] at hfs
           split at hfs
-          · -- some case: split on qt.etyp
-            split at hfs
-            · -- ETyp.ref
-              split at hfs
-              · simp at hfs -- resolveSyntaxPred error
-              · rename_i resolvedPred_eff hresolve_eff
-                simp [pure, Except.pure] at hfs; cases hfs; simp
-                have hResBounded := resolveSyntaxPred_predTagBounded_of_mapping
-                  eff.pred unifiedEnv tagMapping nextTag' resolvedPred_eff hmapping hresolve_eff
-                have hStoredBounded : qtypPredTagBounded
-                    (⟨(effectSpecToQTyp eff.poison resolvedPred_eff).etyp,
-                      joinPoison ctx.pc (effectSpecToQTyp eff.poison resolvedPred_eff).poison,
-                      (effectSpecToQTyp eff.poison resolvedPred_eff).pred⟩ : QTyp) nextTag' := by
-                  simp [effectSpecToQTyp, qtypPredTagBounded]; exact hResBounded
-                exact locset_fold_updateMemEnv_predBounded _ r _ nextTag' hr hStoredBounded
-            · simp at hfs -- non-ref: error
-          · simp at hfs -- none: error
+          · simp at hfs  -- applyExternEffect error → contradiction
+          · -- applyExternEffect succeeded with some result
+            rename_i effectResult happlyEffect
+            simp only [Except.ok.injEq] at hfs; cases hfs; simp
+            -- Unfold applyExternEffect to expose the match chain
+            simp only [applyExternEffect, bind, Except.bind] at happlyEffect
+            split at happlyEffect
+            · -- some case: split on qt.etyp
+              split at happlyEffect
+              · -- ETyp.ref
+                split at happlyEffect
+                · simp at happlyEffect -- resolveSyntaxPred error
+                · rename_i resolvedPred_eff hresolve_eff
+                  simp [pure, Except.pure] at happlyEffect; subst happlyEffect
+                  have hResBounded := resolveSyntaxPred_predTagBounded_of_mapping
+                    eff.pred unifiedEnv tagMapping nextTag' resolvedPred_eff hmapping hresolve_eff
+                  have hStoredBounded : qtypPredTagBounded
+                      (⟨(effectSpecToQTyp eff.poison resolvedPred_eff).etyp,
+                        joinPoison ctx.pc (effectSpecToQTyp eff.poison resolvedPred_eff).poison,
+                        (effectSpecToQTyp eff.poison resolvedPred_eff).pred⟩ : QTyp) nextTag' := by
+                    simp [effectSpecToQTyp, qtypPredTagBounded]; exact hResBounded
+                  exact locset_fold_updateMemEnv_predBounded _ r _ nextTag' hr hStoredBounded
+              · simp at happlyEffect -- non-ref: error
+            · simp at happlyEffect -- none: error
         -- Case on retSpec
         cases retSpec with
         | simple typ poison pred =>
@@ -12566,37 +12574,45 @@ lemma applyFnTClosure_extern_wfTypeResult
           apply effects_forIn_wfMemEnv hwf2 _ _hloop
           -- Prove body preservation: each effect step preserves location boundedness
           intro eff r hr fs hfs
+          -- Decompose the bind layer from `memEnv ← applyExternEffect ...`
+          simp only [bind, Except.bind, pure, Except.pure] at hfs
           split at hfs
-          · -- lookup = some qt
-            rename_i qt _hlookup
-            split at hfs
-            · -- ETyp.ref ls
-              rename_i ls _hls
-              split at hfs
-              · simp at hfs  -- resolveSyntaxPred error
-              · rename_i resolvedPred _hresolve
-                simp [pure, Except.pure] at hfs; cases hfs; simp
-                apply locset_fold_updateMemEnv_wf ls r _ result2.nextLoc' hr
-                -- Show all locations in ls are < result2.nextLoc'
-                intro l' hl'
-                simp only [VarTypeEnv.update, VarTypeEnv.lookup,
-                  Std.ExtTreeMap.get?_eq_getElem?,
-                  Std.ExtTreeMap.getElem?_insert] at _hlookup
-                by_cases hEq : compare x eff.1.1 = Ordering.eq
-                · -- lookup hit: eff.1.1 = x, so qt = argQt, ls from argEtyp
-                  simp [hEq] at _hlookup; subst _hlookup
-                  simp only [] at _hls; rw [_hls] at hargLocs
-                  simp [etypRefLocsBounded] at hargLocs
-                  exact hargLocs l' hl'
-                · -- lookup miss: qt from ofCaptured capturedEnv
-                  simp [hEq] at _hlookup
-                  have hBounded := ofCaptured_refLocsBounded capturedEnv result2.nextLoc'
-                    hcaptLocs eff.1.1 qt _hlookup
-                  rw [_hls] at hBounded
-                  simp [etypRefLocsBounded] at hBounded
-                  exact hBounded l' hl'
-            · simp at hfs  -- non-ref etyp: error
-          · simp at hfs  -- lookup = none: error
+          · simp at hfs  -- applyExternEffect error → contradiction
+          · -- applyExternEffect succeeded
+            rename_i effectResult happlyEffect
+            simp only [Except.ok.injEq] at hfs; cases hfs; simp
+            simp only [applyExternEffect, bind, Except.bind] at happlyEffect
+            split at happlyEffect
+            · -- lookup = some qt
+              rename_i qt _hlookup
+              split at happlyEffect
+              · -- ETyp.ref ls
+                rename_i ls _hls
+                split at happlyEffect
+                · simp at happlyEffect  -- resolveSyntaxPred error
+                · rename_i resolvedPred _hresolve
+                  simp [pure, Except.pure] at happlyEffect; subst happlyEffect
+                  apply locset_fold_updateMemEnv_wf ls r _ result2.nextLoc' hr
+                  -- Show all locations in ls are < result2.nextLoc'
+                  intro l' hl'
+                  simp only [VarTypeEnv.update, VarTypeEnv.lookup,
+                    Std.ExtTreeMap.get?_eq_getElem?,
+                    Std.ExtTreeMap.getElem?_insert] at _hlookup
+                  by_cases hEq : compare x eff.1.1 = Ordering.eq
+                  · -- lookup hit: eff.1.1 = x, so qt = argQt, ls from argEtyp
+                    simp [hEq] at _hlookup; subst _hlookup
+                    simp only [] at _hls; rw [_hls] at hargLocs
+                    simp [etypRefLocsBounded] at hargLocs
+                    exact hargLocs l' hl'
+                  · -- lookup miss: qt from ofCaptured capturedEnv
+                    simp [hEq] at _hlookup
+                    have hBounded := ofCaptured_refLocsBounded capturedEnv result2.nextLoc'
+                      hcaptLocs eff.1.1 qt _hlookup
+                    rw [_hls] at hBounded
+                    simp [etypRefLocsBounded] at hBounded
+                    exact hBounded l' hl'
+              · simp at happlyEffect  -- non-ref etyp: error
+            · simp at happlyEffect  -- lookup = none: error
         -- Case on retSpec
         -- In all cases, r.memEnv' = loopResult and r.nextLoc' ≥ result2.nextLoc'
         simp only [wfTypeResult] at hWfLoop ⊢
@@ -12641,7 +12657,7 @@ lemma applyFnTClosure_extern_mem_contains_preserved
   | succ fuel =>
     intro l hl
     unfold applyFnTClosure at happly
-    simp only [bind, Except.bind] at happly
+    simp only [applyExternEffect, bind, Except.bind, pure, Except.pure] at happly
     split at happly
     · simp at happly
     · rename_i tagInfo _
@@ -12667,32 +12683,34 @@ lemma applyFnTClosure_extern_mem_contains_preserved
               exact hg ▸ hP
             | yield b =>
               intro acc' hg
+              -- Decompose the bind layer from `memEnv ← applyExternEffect`
+              simp only [bind, Except.bind, pure, Except.pure] at hg
               split at hg
-              · -- yield = yield b' case
-                rename_i b' _heq
-                have hbeq : b = b' := ForInStep.yield.inj _heq; subst hbeq
-                split at hg
+              · simp at hg  -- applyExternEffect error → contradiction
+              · -- applyExternEffect = .ok v
+                rename_i v happlyEffect
+                simp only [Except.ok.injEq] at hg; subst hg
+                simp only [ForInStep.value]
+                -- happlyEffect already has the match chain inlined from top-level simp
+                split at happlyEffect
                 · -- lookup = some qt
                   rename_i qt _hlookup
-                  split at hg
+                  split at happlyEffect
                   · -- etyp = ETyp.ref ls: apply LocSet.fold contains preservation
                     rename_i ls _hls
-                    split at hg
+                    split at happlyEffect
                     · -- resolveSyntaxPred error
-                      exact absurd hg (by simp)
+                      exact absurd happlyEffect (by simp)
                     · -- resolveSyntaxPred ok v'
                       rename_i v' _hresolve
-                      simp only [pure, Except.pure, Except.ok.injEq] at hg
-                      cases hg; simp only [ForInStep.value]
+                      simp only [pure, Except.pure, Except.ok.injEq] at happlyEffect
+                      subst happlyEffect
                       unfold LocSet.fold; rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
                       exact list_fold_updateMemEnv_contains_of_contains _ b l _ hP
                   · -- non-ref etyp: error
-                    exact absurd hg (by simp)
+                    exact absurd happlyEffect (by simp)
                 · -- lookup = none: error
-                  exact absurd hg (by simp)
-              · -- yield = done: impossible
-                rename_i b' _hdone
-                exact absurd _hdone (by simp)
+                  exact absurd happlyEffect (by simp)
           -- r.memEnv' = foldResult in all retSpec cases
           split at happly
           · split at happly

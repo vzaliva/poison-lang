@@ -2009,8 +2009,21 @@ private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern x retSpec capturedEnv =>
-    exact applyPFnTClosure_extern_ok_QTypRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
-      argPred result1 fuel x retSpec capturedEnv r hctxTm1 happly
+    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt := by
+      intro name qt hmem qt' k d hinq' hqd'
+      exact hresTm1
+        (QTypInQTyp.trans qt' qt result1.qualType hinq'
+          (QTypInQTyp.in_parrow qt result1.qualType st1 st2 p tcls
+            (PFnTClosure.extern x retSpec capturedEnv) name hetyp1 hmem_tcl hmem))
+        hqd'
+    have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+      QTypRespectsTagMeaning_transport_etyp_pred tm
+        ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        hargTm rfl rfl
+    intro qt' k d hinq hqd
+    exact (applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary tm ctx st1 st2 p p1 argEtyp
+      argPoison argPred result1 fuel x retSpec capturedEnv r hctxTm1 hcapTm hargTm' happly) hinq hqd
 
 private lemma mapM_applyPFnTClosure_forall_wfTypeResult'
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)

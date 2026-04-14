@@ -1094,6 +1094,86 @@ lemma list_lookup_of_ofCaptured_lookup
     exact Option.some.inj this
   simpa [hqt] using hlist
 
+/-- Bridge: `List.lookup` success implies list membership. -/
+private lemma list_lookup_mem {α β : Type} [BEq α] [LawfulBEq α]
+    (l : List (α × β)) (k : α) (v : β)
+    (h : l.lookup k = some v) : (k, v) ∈ l := by
+  induction l with
+  | nil => simp [List.lookup] at h
+  | cons hd tl ih =>
+    simp only [List.lookup] at h
+    split at h
+    · rename_i heq; rw [beq_iff_eq] at heq; simp at h; subst heq; subst h
+      exact List.Mem.head _
+    · exact List.Mem.tail _ (ih h)
+
+/-- Captured-env transfer for nested fn return: all entries in `unifiedEnv` that came from
+    `capturedEnv` or the arg binding respect `tm`.  Uses `list_lookup_of_ofCaptured_lookup`
+    and `VarTypeEnv` update semantics.
+    Note: QTyp poison is `p` (matching the arrow's internal poison) for compatibility
+    with `QTypInQTyp_fn_extern_root_or_self`; callers use `QTypRespectsTagMeaning_of_etyp_noPred`
+    to transport to other poisons. -/
+private lemma QTypRespectsTagMeaning_fn_extern_ofCaptured
+    (tm : TagMeaning)
+    (capturedEnv : CapturedVarEnv) (argName : Name) (argQt : QTyp)
+    (innerArg : Name) (st₁ st₂ : Typ) (p : Poison)
+    (retSpec : ExternReturn) (effects : List Effect)
+    (hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt)
+    (hargTm : QTypRespectsTagMeaning tm argQt) :
+    QTypRespectsTagMeaning tm
+      ⟨ETyp.arrow st₁ st₂ p
+        [FnTClosure.extern innerArg retSpec effects
+          (VarTypeEnv.toCaptured ((VarTypeEnv.ofCaptured capturedEnv).update argName argQt))],
+        p, Predicate.noPred⟩ := by
+  let ctx' : TypeContext :=
+    { pc := true, regime := {}, memEnv := {},
+      varEnv := (VarTypeEnv.ofCaptured capturedEnv).update argName argQt,
+      tagEnv := {}, nextLoc := 0, nextTag := 0, pureCtx := false }
+  intro qt' k d hinq hqd
+  rcases QTypInQTyp_fn_extern_root_or_self ctx' innerArg st₁ st₂ p retSpec effects hinq rfl
+    with hEq | ⟨y, qtRoot, hlookup, hInRoot⟩
+  · subst hEq; simp [qtypGuardDesc?] at hqd
+  · simp only [VarTypeEnv.update, VarTypeEnv.lookup, ctx',
+      Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert] at hlookup
+    by_cases hEq : compare argName y = Ordering.eq
+    · simp [hEq] at hlookup; subst hlookup
+      exact hargTm hInRoot hqd
+    · simp [hEq] at hlookup
+      have hlistLookup := list_lookup_of_ofCaptured_lookup capturedEnv y qtRoot hlookup
+      exact (hcapTm y qtRoot (list_lookup_mem capturedEnv y qtRoot hlistLookup)) hInRoot hqd
+
+/-- Captured-env transfer for nested pfn return (analogous to fn version). -/
+private lemma QTypRespectsTagMeaning_pfn_extern_ofCaptured
+    (tm : TagMeaning)
+    (capturedEnv : CapturedVarEnv) (argName : Name) (argQt : QTyp)
+    (innerArg : Name) (st₁ st₂ : Typ) (p : Poison)
+    (retSpec : ExternReturn)
+    (hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt)
+    (hargTm : QTypRespectsTagMeaning tm argQt) :
+    QTypRespectsTagMeaning tm
+      ⟨ETyp.parrow st₁ st₂ p
+        [PFnTClosure.extern innerArg retSpec
+          (VarTypeEnv.toCaptured ((VarTypeEnv.ofCaptured capturedEnv).update argName argQt))],
+        p, Predicate.noPred⟩ := by
+  let ctx' : TypeContext :=
+    { pc := true, regime := {}, memEnv := {},
+      varEnv := (VarTypeEnv.ofCaptured capturedEnv).update argName argQt,
+      tagEnv := {}, nextLoc := 0, nextTag := 0, pureCtx := false }
+  intro qt' k d hinq hqd
+  rcases QTypInQTyp_pfn_extern_root_or_self ctx' innerArg st₁ st₂ p retSpec hinq rfl
+    with hEq | ⟨y, qtRoot, hlookup, hInRoot⟩
+  · subst hEq; simp [qtypGuardDesc?] at hqd
+  · simp only [VarTypeEnv.update, VarTypeEnv.lookup, ctx',
+      Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert] at hlookup
+    by_cases hEq : compare argName y = Ordering.eq
+    · simp [hEq] at hlookup; subst hlookup
+      exact hargTm hInRoot hqd
+    · simp [hEq] at hlookup
+      have hlistLookup := list_lookup_of_ofCaptured_lookup capturedEnv y qtRoot hlookup
+      exact (hcapTm y qtRoot (list_lookup_mem capturedEnv y qtRoot hlistLookup)) hInRoot hqd
+
 /-- Path D helper: build direct member `varsRegime` facts for the singleton closure captured env
 created at lambda typing sites, from the enclosing `consistentWithRegime`. -/
 lemma memberVarsRegimeEvidence_of_toCaptured
@@ -6278,81 +6358,107 @@ lemma typecheckExternVal_QTypRespectsTagMeaning_corollary
             rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
             exact hpredTm k0 arg pb cap rfl
 
-/-- Corollary of the unified axiom: pure extern `ExternReturn.simple` result QTyp
-    respects tag meaning.  Validates §2.2 for the simplest case.
-    (Will be extended to nested cases in Step 5c.) -/
-lemma applyPFnTClosure_extern_simple_QTypRespectsTagMeaning_corollary
+/-- QTypRespectsTagMeaning is insensitive to poison when pred = noPred,
+    because all deep guard descriptors come from the etyp (closures), not the pred. -/
+private lemma QTypRespectsTagMeaning_noPred_poison_transport
+    (tm : TagMeaning) (etyp : ETyp) (p1 p2 : Poison)
+    (h : QTypRespectsTagMeaning tm ⟨etyp, p1, Predicate.noPred⟩) :
+    QTypRespectsTagMeaning tm ⟨etyp, p2, Predicate.noPred⟩ := by
+  intro qt' k d hinq hqd
+  rcases QTypInQTyp_transport_etyp hinq (show (⟨etyp, p2, Predicate.noPred⟩ : QTyp).etyp =
+      (⟨etyp, p1, Predicate.noPred⟩ : QTyp).etyp from rfl) with hEq | hinq'
+  · subst hEq; simp [qtypGuardDesc?] at hqd
+  · exact h hinq' hqd
+
+/-- Corollary replacing `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`.
+    Pure extern result QTyp respects tag meaning (all `ExternReturn` cases).
+    Simple case uses the unified axiom; nested cases use captured-env transfer. -/
+lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary
     (tm : TagMeaning)
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (result2 : TypeResult) (fuel : Nat)
-    (x : Name) (typ : Typ) (poison : Bool) (spred : SyntaxPredicate)
-    (capturedEnv : CapturedVarEnv)
+    (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
     (r : TypeResult)
     (_hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
-    (happly : applyPFnTClosure (PFnTClosure.extern x (ExternReturn.simple typ poison spred) capturedEnv)
+    (hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt)
+    (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+    (happly : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv)
       st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
     QTypRespectsTagMeaning tm r.qualType := by
   cases fuel with
   | zero => simp [applyPFnTClosure] at happly
   | succ n =>
-    simp only [applyPFnTClosure] at happly
+    unfold applyPFnTClosure at happly
     simp only [bind, Except.bind] at happly
-    -- Extract collectAndAllocExternTags
-    cases halloc : collectAndAllocExternTags [spred] result2.nextTag' with
-    | error e => simp [halloc] at happly
-    | ok tagres =>
-      obtain ⟨tagMapping, nextTag'⟩ := tagres
-      simp only [halloc] at happly
-      -- Extract resolveSyntaxPred
-      cases hresolved : resolveSyntaxPred spred
-          (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
-            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) tagMapping with
-      | error e => simp [hresolved] at happly
-      | ok resolvedPred =>
-        simp only [hresolved] at happly
-        -- Extract returnSpecToQTyp
-        cases hret : returnSpecToQTyp typ poison resolvedPred result2.nextLoc' with
-        | error e => simp [hret] at happly
-        | ok retres =>
-          obtain ⟨retQt, nextLoc'⟩ := retres
-          simp only [hret, pure, Except.pure, Except.ok.injEq] at happly
-          subst happly
-          -- The unified env for resolution
-          let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+    cases retSpec with
+    | simple typ poison spred =>
+      -- Simple return: use the unified axiom
+      -- Reduce the ExternReturn match after cases
+      simp only [bind, Except.bind] at happly
+      split at happly
+      · simp at happly
+      · rename_i tagres halloc
+        obtain ⟨tagMapping, nextTag'⟩ := tagres
+        split at happly
+        · simp at happly
+        · rename_i resolvedPred hresolved
+          split at happly
+          · simp at happly
+          · rename_i retres hret
+            obtain ⟨retQt, nextLoc'⟩ := retres
+            simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly
+            let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+            have hcompat := externTagMappingRespectsTagMeaning tm tagMapping [spred] unifiedEnv
+              result2.nextTag' nextTag' halloc
+            have hpredTm := resolveSyntaxPred_respectsTagMeaning tm spred unifiedEnv tagMapping
+              [spred] resolvedPred hcompat (List.Mem.head _) hresolved
+            have hretPred := returnSpecToQTyp_pred_preserves typ poison resolvedPred result2.nextLoc'
+              retQt nextLoc' hret
+            have hretNotFun := returnSpecToQTyp_etyp_nonFunction typ poison resolvedPred
+              result2.nextLoc' retQt nextLoc' hret
+            obtain ⟨ret_e, ret_p, ret_pred⟩ := retQt
+            simp only at hretNotFun hpredTm hretPred
+            simp only [normalizeAppResultByProvenance]
+            split
+            · intro qt' k d hinq hqd
+              have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hretNotFun
+              subst hEq; simp [qtypGuardDesc?] at hqd
+            · rw [← hretPred] at hpredTm
+              intro qt' k d hinq hqd
+              have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hretNotFun
+              subst hEq
+              cases ret_pred with
+              | noPred => simp [qtypGuardDesc?] at hqd
+              | guardOnly _ => simp [qtypGuardDesc?] at hqd
+              | guardClosure k0 arg pb cap =>
+                simp [qtypGuardDesc?] at hqd
+                rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
+                exact hpredTm k0 arg pb cap rfl
+    | nestedFn innerArg innerArgTyp innerRet innerEffects =>
+      -- Nested fn return: noPred + arrow type — use captured-env transfer
+      simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; simp only
+      simp only [normalizeAppResultByProvenance]
+      split <;> {
+        intro qt' k d hinq hqd
+        exact (QTypRespectsTagMeaning_noPred_poison_transport tm _ ctx.pc _
+          (QTypRespectsTagMeaning_fn_extern_ofCaptured tm capturedEnv x
             ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-          -- Apply the unified axiom
-          have hcompat := externTagMappingRespectsTagMeaning tm tagMapping [spred] unifiedEnv
-            result2.nextTag' nextTag' halloc
-          have hpredTm := resolveSyntaxPred_respectsTagMeaning tm spred unifiedEnv tagMapping [spred]
-            resolvedPred hcompat (List.Mem.head _) hresolved
-          -- returnSpecToQTyp preserves pred and produces non-function ETyp
-          have hretPred := returnSpecToQTyp_pred_preserves typ poison resolvedPred result2.nextLoc'
-            retQt nextLoc' hret
-          have hretNotFun := returnSpecToQTyp_etyp_nonFunction typ poison resolvedPred result2.nextLoc'
-            retQt nextLoc' hret
-          -- Destructure retQt and prove directly
-          obtain ⟨ret_e, ret_p, ret_pred⟩ := retQt
-          simp only at hretNotFun hpredTm hretPred
-          -- Case split on normalizeAppResultByProvenance
-          simp only [normalizeAppResultByProvenance]
-          split
-          · -- p1p = true: result is { poison := true, pred := noPred } — vacuously respects tm
-            intro qt' k d hinq hqd
-            have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hretNotFun
-            subst hEq; simp [qtypGuardDesc?] at hqd
-          · -- p1p = false: result keeps retQt's pred
-            rw [← hretPred] at hpredTm
-            intro qt' k d hinq hqd
-            have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hretNotFun
-            subst hEq
-            cases ret_pred with
-            | noPred => simp [qtypGuardDesc?] at hqd
-            | guardOnly _ => simp [qtypGuardDesc?] at hqd
-            | guardClosure k0 arg pb cap =>
-              simp [qtypGuardDesc?] at hqd
-              rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
-              exact hpredTm k0 arg pb cap rfl
+            innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet innerEffects
+            hcapTm hargTm)) hinq hqd }
+    | nestedPfn innerArg innerArgTyp innerRet =>
+      -- Nested pfn return: noPred + parrow type — use captured-env transfer
+      simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; simp only
+      simp only [normalizeAppResultByProvenance]
+      split <;> {
+        intro qt' k d hinq hqd
+        exact (QTypRespectsTagMeaning_noPred_poison_transport tm _ ctx.pc _
+          (QTypRespectsTagMeaning_pfn_extern_ofCaptured tm capturedEnv x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+            innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet
+            hcapTm hargTm)) hinq hqd }
 
 -- --------------------------------------------------------------------------
 -- Per-entry-point axioms (to be replaced by corollaries in Step 5c)
@@ -6409,18 +6515,8 @@ lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
           tm ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel
           x retSpec effects capturedEnv r hwf happly).1 l qtRoot hlookup_mem) hqtinqt hqd
 
-/-- Extern contract: PFnTClosure.extern result QTyp respects tag meaning. -/
-axiom applyPFnTClosure_extern_ok_QTypRespectsTagMeaning
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
-  (happly : applyPFnTClosure (PFnTClosure.extern x retSpec capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r) :
-  QTypRespectsTagMeaning tm r.qualType
+-- DELETED: applyPFnTClosure_extern_ok_QTypRespectsTagMeaning
+-- Replaced by the proved corollary applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary.
 
 /-- Extern contract: FnTClosure.extern preserves lookup origin (poison provenance). -/
 axiom applyFnTClosure_extern_ok_lookup_origin
@@ -6624,15 +6720,9 @@ lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
       simp only [normalizeAppResultByProvenance] at hpred
       split at hpred <;> simp at hpred
 
-/-- Foundational semantic extern contract: typecheckExternVal result QTyp respects tag meaning.
-    This is the irreducible semantic content: when extern typing resolves a guardClosure
-    predicate, the resulting concrete tag must map to the right GuardDesc in tm. -/
-axiom typecheckExternVal_QTypRespectsTagMeaning_axiom
-  (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-  (res : TypeResult)
-  (hwf : wfTagMeaningCtx tm ctx)
-  (htc : typecheckExternVal ctx typ poison pred = .ok res) :
-  QTypRespectsTagMeaning tm res.qualType
+-- DELETED: typecheckExternVal_QTypRespectsTagMeaning_axiom
+-- Replaced by the proved corollary typecheckExternVal_QTypRespectsTagMeaning_corollary
+-- (which derives from externTagMappingRespectsTagMeaning).
 
 /-- Helper: surfaceSpecToQTyp preserves EnvRespectsTagMeaning (only adds noPred int cell). -/
 private lemma surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
@@ -8916,8 +9006,22 @@ lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern x retSpec capturedEnv =>
-    exact applyPFnTClosure_extern_ok_QTypRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
-      argPred result1 fuel x retSpec capturedEnv r hctxTm1 happly
+    -- Derive hcapTm: captured env entries respect tm (from function type's QTypRespectsTagMeaning)
+    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt := by
+      intro name qt hmem qt' k d hinq' hqd'
+      exact hresTm1
+        (QTypInQTyp.trans qt' qt result1.qualType hinq'
+          (QTypInQTyp.in_parrow qt result1.qualType st1 st2 p tcls
+            (PFnTClosure.extern x retSpec capturedEnv) name hetyp1 hmem_tcl hmem))
+        hqd'
+    have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+      QTypRespectsTagMeaning_transport_etyp_pred tm
+        ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        hargTm rfl rfl
+    intro qt' k d hinq hqd
+    exact (applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary tm ctx st1 st2 p p1 argEtyp
+      argPoison argPred result1 fuel x retSpec capturedEnv r hctxTm1 hcapTm hargTm' happly) hinq hqd
 
 lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
   (tm : TagMeaning)
@@ -9347,7 +9451,7 @@ lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             simp only [] at htc
             have htc' := by simpa using htc
             exact ⟨typecheckExternVal_preserves_wfTagMeaningCtx tm ctx typ poison pred res hwf htc',
-                   typecheckExternVal_QTypRespectsTagMeaning_axiom tm ctx typ poison pred res hwf htc'⟩
+                   typecheckExternVal_QTypRespectsTagMeaning_corollary tm ctx typ poison pred res hwf htc'⟩
         | externFn _ _ _ _ =>
             simp only [typecheckExternFn, pure, Except.pure] at htc; cases htc
             exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],

@@ -1241,6 +1241,26 @@ termination_by fuel
 def normalizeAppResultByProvenance (p1p : Poison) (qt : QTyp) : QTyp :=
   if p1p then { qt with poison := true, pred := Predicate.noPred } else qt
 
+/-- Resolve one extern effect and write the result to memory at the
+    locations referenced by the effect target.  Extracted from the
+    inline loop in `applyFnTClosure` to enable per-effect reasoning
+    in the fault-robustness proof. -/
+def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
+    (tagMapping : Std.ExtTreeMap TagIndex Tag compare) (pc : Poison)
+    (memEnv : MemoryTypeEnv) : TypecheckM MemoryTypeEnv := do
+  match effect.target with
+  | EffectTarget.namedVar v =>
+      match unifiedEnv.lookup v with
+      | some qt =>
+          match qt.etyp with
+          | ETyp.ref ls =>
+              let resolvedPred ← resolveSyntaxPred effect.pred unifiedEnv tagMapping
+              let effectQt := effectSpecToQTyp effect.poison resolvedPred
+              let storedQt := ⟨effectQt.etyp, joinPoison pc effectQt.poison, effectQt.pred⟩
+              return LocSet.fold ls memEnv (fun acc l => updateMemEnv acc l storedQt)
+          | _ => throw s!"Effect target {v} must be a reference type"
+      | none => throw s!"Effect target {v} not found in environment"
+
 /-- Helper: Apply a single FnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single closure alternative.
 -/
@@ -1283,18 +1303,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         let mut memEnv := result2.memEnv'
         let mut nextLoc := result2.nextLoc'
         for effect in effects do
-          match effect.target with
-          | EffectTarget.namedVar v =>
-              match unifiedEnv.lookup v with
-              | some qt =>
-                  match qt.etyp with
-                  | ETyp.ref ls =>
-                      let resolvedPred ← resolveSyntaxPred effect.pred unifiedEnv tagMapping
-                      let effectQt := effectSpecToQTyp effect.poison resolvedPred
-                      let storedQt := ⟨effectQt.etyp, joinPoison ctx.pc effectQt.poison, effectQt.pred⟩
-                      memEnv := LocSet.fold ls memEnv (fun acc l => updateMemEnv acc l storedQt)
-                  | _ => throw s!"Effect target {v} must be a reference type"
-              | none => throw s!"Effect target {v} not found in environment"
+          memEnv ← applyExternEffect effect unifiedEnv tagMapping ctx.pc memEnv
 
         match retSpec with
         | ExternReturn.simple typ poison pred =>

@@ -2,23 +2,46 @@
 
 ## CURRENT STEP
 
-Step 4f cleanup complete.  Next: Step 5 — unify Contract A axioms into a
-single tag-mapping semantic axiom (3 phases: validate → refactor → merge).
+Step 5a and Step 5b are complete.  Step 5c is in progress.
+
+Highest-risk next task: replace the remaining impure Contract A axiom
+`applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
+The pure extern corollary work is complete; what remains is the impure case:
+first the **result QTyp** conjunct, then the **memEnv cells** conjunct via an
+`applyExternEffect` loop invariant.
+
+Work high-risk-first:
+
+1. Prove `§2.1` conjunct 2 (result QTyp) using the same return-spec case split
+   that now works for the pure extern corollary.
+2. Prove `§2.1` conjunct 1 (memEnv cells) via a loop invariant over
+   `applyExternEffect`.
+3. Delete the remaining old Contract A axiom
+   `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
+4. Update all remaining call sites, then verify `lake build` clean.
 
 Critical constraints:
 
 - do **not** reintroduce `sorry`
 - do **not** increase net `axiom` count (new axioms must replace old ones)
+- do **not** add a duplicate `ofCaptured` lookup bridge lemma; use
+  `list_lookup_of_ofCaptured_lookup`
+- prefer helper lemmas over strengthening public corollary interfaces unless
+  the existing call-site hypotheses prove insufficient
 
 **Branch status (2026-04-13, branch `new-iofree`)**
 
-- `lake build` succeeds with **0 sorry, 0 warnings**
-- all `LeanProofs/` files compile cleanly
-- axiom count: **4 declarations** (5 semantic obligations)
+- last reported `lake build` succeeds with **0 sorry, 0 warnings**
+- last reported `make test` passes after the `applyExternEffect` refactor
+- axiom count: **3 declarations**
+- Step 5c partial complete: `typecheckExternVal_QTypRespectsTagMeaning_axiom`
+  and `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` are deleted;
+  remaining old axioms are `applyFnTClosure_extern_ok_outputRespectsTagMeaning`
+  and `applyFnTClosure_extern_ok_lookup_origin`
 
 ## 1. Overview: two high-level contracts
 
-The 4 axiom declarations in `LeanProofs/StepFR.lean` fall into two semantic
+The original 4 axiom declarations in `LeanProofs/StepFR.lean` fell into two semantic
 contracts about extern typechecking behavior:
 
 **Contract A — Tag Meaning Soundness.** Every `QTyp` produced or stored by
@@ -220,13 +243,12 @@ This coverage is complete and minimal for the current extern model.
 
 ## 4. Consolidated contract floor
 
-### Current state (4 declarations, 5 semantic obligations)
+### Current state (3 declarations, 3 semantic obligations)
 
 | # | Axiom | Contract | Category |
 |---|-------|----------|----------|
-| A1 | `applyFnTClosure_extern_ok_outputRespectsTagMeaning` | A | impure fn (memEnv + result) |
-| A2 | `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` | A | pure fn (result) |
-| A3 | `typecheckExternVal_QTypRespectsTagMeaning_axiom` | A | extern val (result) |
+| A1 | `externTagMappingRespectsTagMeaning` | A | unified tag-mapping semantic core |
+| A2 | `applyFnTClosure_extern_ok_outputRespectsTagMeaning` | A | impure fn (memEnv + result) |
 | B1 | `applyFnTClosure_extern_ok_lookup_origin` | B | provenance |
 
 ### Plain-English contract summary
@@ -510,16 +532,22 @@ State auxiliary lemmas about the helper as needed (e.g.,
 
 #### Step 5c. Complete axiom unification
 
-**Files:** `LeanProofs/StepFR.lean`, `LeanProofs/StepFRApp.lean`.
+**Files:** `LeanProofs/StepFR.lean`, `LeanProofs/RegimeConsistency.lean`,
+`LeanProofs/StepFRApp.lean` (as needed).
 **Verification:** `lake build` — 0 sorry, 0 warnings.  Axiom count: 2.
 
-Prove the remaining corollaries and delete the old axioms:
+Prove the remaining corollaries and delete the old axioms.
+Work **high-risk-first**:
 
-1. Complete `§2.2` — nested-return cases (`nestedFn` / `nestedPfn`):
-   top-level `noPred` + captured env inherits from context → structural
-   via `wfTagMeaningCtx`.
-2. Prove `§2.1` conjunct 2 (result QTyp) — same case split as §2.2.
-3. Prove `§2.1` conjunct 1 (memEnv cells) — this is the hardest part.
+1. Prove `§2.1` conjunct 2 (result QTyp) and replace the result-side use of
+   `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
+   Reuse the same return-spec split that now works for the pure extern
+   corollary:
+   - `ExternReturn.simple`: unified axiom +
+     `resolveSyntaxPred_respectsTagMeaning`
+   - `ExternReturn.nestedFn` / `nestedPfn`: the new captured-env transfer
+     helpers and `noPred` poison transport
+2. Prove `§2.1` conjunct 1 (memEnv cells) — this remains the hardest part.
    Must show that every cell `l` in `r.memEnv'` respects `tm`:
    - **Effect-written cells:** each call to `applyExternEffect` writes
      cells with a resolved predicate from `resolveSyntaxPred` → axiom
@@ -533,9 +561,10 @@ Prove the remaining corollaries and delete the old axioms:
      cells that existed in `result2.memEnv'` and were overwritten — the
      new value (from `applyExternEffect`) respects `tm` by the axiom,
      so the overwrite preserves the invariant.
-4. Delete the 3 old axiom declarations (§2.1, §2.2, §2.4).
-5. Update all call sites to use the corollary lemmas.
-6. Verify `lake build` clean.
+3. Delete the 1 remaining old Contract A axiom declaration (§2.1).
+   (`§2.2` and `§2.4` are already deleted.)
+4. Update all call sites to use the corollary lemma(s).
+5. Verify `lake build` clean.
 
 #### Risks
 
@@ -543,10 +572,11 @@ Prove the remaining corollaries and delete the old axioms:
   whether `TagMappingRespectsTagMeaning` can be derived from
   `wfTagMeaningCtx` or must itself become the axiom.  Step 5a is
   specifically designed to resolve this before any refactoring.
-- **Nested-return captures** (step 5c, sub-step 1): showing that
-  `VarTypeEnv.toCaptured unifiedEnv` inherits guard descriptors from the
-  context requires lemmas about `VarTypeEnv.update`, `ofCaptured`, and
-  `toCaptured`.  Structural but may be verbose.
+- **Nested extern captures** (resolved in step 5c): the returned nested
+  extern closure stores `VarTypeEnv.toCaptured unifiedEnv`, not the ambient
+  context's original captured env.  This required extern-specific transfer
+  helpers plus the existing `ofCaptured` lookup bridge
+  (`list_lookup_of_ofCaptured_lookup`).
 - **`toPExpr` in `resolveSyntaxPred`**: the `body.toPExpr` call converts
   `Expr → PExpr`.  The guard descriptor in the resolved predicate contains
   the `PExpr`, which must match what `tm` maps the tag to.  This is part
@@ -599,6 +629,22 @@ This section records completed work and design decisions for reference.
   `applyFnTClosure_extern_ok_QTypRespectsTagMeaning` into
   `applyFnTClosure_extern_ok_outputRespectsTagMeaning` (conjunction).
   Declaration count: 5 → 4.
+- **Step 5a (unified axiom validation):** validated Option B on existing
+  code.  Added `externTagMappingRespectsTagMeaning`, proved
+  `resolveSyntaxPred_respectsTagMeaning`, and derived the `typecheckExternVal`
+  and pure-extern-simple corollaries.
+- **Step 5b (typechecker refactor):** extracted `applyExternEffect` from the
+  impure extern effect loop and repaired the affected `TypeSafety.lean`
+  proofs without changing axiom count.
+- **Step 5c (partial):** deleted
+  `typecheckExternVal_QTypRespectsTagMeaning_axiom` and switched its caller to
+  `typecheckExternVal_QTypRespectsTagMeaning_corollary`.
+- **Step 5c (partial, continued):** added the extern captured-env transfer
+  helpers for nested pure returns, replaced
+  `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` with a proved
+  corollary, and updated the pure-extern call sites.  The only remaining
+  Contract A axiom is the impure extern output contract
+  `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
 
 ### 7.2 Deleted axiom: `fresh_loc_not_clean`
 
@@ -644,12 +690,28 @@ status.
   The true semantic boundary is `TagMappingRespectsTagMeaning` itself:
   that `tm` maps freshly allocated tags to the descriptors that the
   resolution pipeline will produce.  Step 5a will confirm this structure.
+- Rejected the first Step 5c instinct to prove nested extern cases from
+  `wfTagMeaningCtx tm (ctxAfter ctx result2)` alone.  That hypothesis covers
+  the current context, but nested extern returns store
+  `VarTypeEnv.toCaptured unifiedEnv` inside the returned closure type.  The
+  proof needs an extern-specific captured-env transfer lemma.
+- Rejected adding a duplicate `VarTypeEnv.ofCaptured` lookup bridge lemma.
+  `list_lookup_of_ofCaptured_lookup` already provides the needed bridge;
+  the missing ingredient is the extern-return transfer from the returned
+  arrow/parrow QTyp back to `unifiedEnv`.
+- Confirmed that the nested pure-extern route works without widening the
+  public interface beyond the call-site derivable `hcapTm` / `hargTm`
+  obligations.  The remaining impure proof should reuse that same return-side
+  structure before tackling the effect-loop invariant.
 
 ### 7.4 Reference points
 
 Current-branch helpers:
 
 - `LeanProofs/RegimeConsistency.lean`:
+  `QTypInQTyp_fn_extern_root_or_self`,
+  `QTypInQTyp_pfn_extern_root_or_self`,
+  `list_lookup_of_ofCaptured_lookup`,
   `EnvRespectsTagMeaning_updateMemEnv`,
   `EnvRespectsTagMeaning_list_fold_updateMemEnv`,
   `QTypRespectsTagMeaning_fn_extern`,
@@ -661,3 +723,9 @@ Current-branch helpers:
   `tagEnvBounded_insert_of_lt`,
   `applyPFnTClosure_extern_memEnv_eq` (proves pure extern memory identity),
   `applyPFnTClosure_extern_regime_eq`
+- `LeanProofs/StepFR.lean`:
+  `QTypRespectsTagMeaning_of_arrow_captured_lookup`,
+  `QTypRespectsTagMeaning_of_parrow_captured_lookup`,
+  `wfTagMeaningCtx_closure_body`,
+  `wfTagMeaningCtx_pclosure_body`,
+  `typecheckExternVal_QTypRespectsTagMeaning_corollary`
