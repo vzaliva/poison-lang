@@ -6710,6 +6710,163 @@ lemma applyFnTClosure_extern_ok_memCellsRespect
           (fun effect hmem => effect_pred_mem_collectExternPreds retSpec effects effect hmem)
           hinit hloop'
 
+-- --------------------------------------------------------------------------
+-- Structural replacement for the poison conjunct of
+-- applyFnTClosure_extern_ok_lookup_origin.  Pointwise in `l`.
+-- --------------------------------------------------------------------------
+
+/-- Per-step pointwise: if a location has a clean lookup in the post-effect memEnv
+    under `pc = true`, the same location was clean in the pre-effect memEnv.
+    Justification: under `pc = true`, every written cell gets
+    `poison = joinPoison true _ = true`, so a clean hit cannot have been written. -/
+private lemma applyExternEffect_preserves_clean_lookup
+    (effect : Effect)
+    (unifiedEnv : VarTypeEnv)
+    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (memEnv memEnv' : MemoryTypeEnv)
+    (happly : applyExternEffect effect unifiedEnv tagMapping true memEnv = .ok memEnv')
+    (l : Loc) (qt : QTyp)
+    (hlookup : memEnv'.lookup l = some qt)
+    (hpoison : qt.poison = false) :
+    ∃ qt_in, memEnv.lookup l = some qt_in ∧ qt_in.poison = false := by
+  unfold applyExternEffect at happly
+  simp only [bind, Except.bind] at happly
+  split at happly
+  · rename_i qtVar _hlookup_var
+    split at happly
+    · rename_i ls _hls
+      split at happly
+      · simp at happly
+      · rename_i resolvedPred _hresolve
+        simp [pure, Except.pure] at happly
+        subst happly
+        -- After substitution, memEnv' = LocSet.fold ls memEnv (fun acc l => updateMemEnv acc l storedQt)
+        -- where storedQt = ⟨ETyp.int, joinPoison true effect.poison, resolvedPred⟩ = ⟨ETyp.int, true, resolvedPred⟩
+        set storedQt : QTyp :=
+          ⟨ETyp.int, joinPoison true effect.poison, resolvedPred⟩ with hstoredDef
+        have hstoredPoison : storedQt.poison = true := by
+          simp [hstoredDef, joinPoison]
+        have hstored_int : storedQt.etyp = ETyp.int := by simp [hstoredDef]
+        -- Unfold LocSet.fold to list foldl and effectSpecToQTyp to match storedQt
+        simp only [LocSet.fold, Std.ExtTreeSet.foldl_eq_foldl_toList,
+          effectSpecToQTyp] at hlookup
+        by_cases hmem : l ∈ ls.toList
+        · -- Written cell: poison = true, contradicting hpoison
+          have heq := list_fold_updateMemEnv_lookup_eq_of_mem ls.toList memEnv l
+            storedQt hmem hstored_int
+          rw [heq] at hlookup
+          have hqt : qt = storedQt := (Option.some.inj hlookup).symm
+          rw [hqt, hstoredPoison] at hpoison
+          exact absurd hpoison (by decide)
+        · -- Not written: lookup unchanged
+          have heq := list_fold_updateMemEnv_lookup_eq_of_not_mem ls.toList memEnv l
+            storedQt hmem
+          rw [heq] at hlookup
+          exact ⟨qt, hlookup, hpoison⟩
+    · simp at happly
+  · simp at happly
+
+/-- Pointwise loop: the `forIn` effect loop in `applyFnTClosure` (impure extern), under
+    `pc = true`, preserves clean-lookup at a fixed location `l` (backward direction). -/
+private lemma forIn_effects_loop_preserves_clean_lookup
+    (effects : List Effect)
+    (unifiedEnv : VarTypeEnv)
+    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (memEnv memEnv' : MemoryTypeEnv)
+    (hloop : forIn effects memEnv (fun effect r =>
+        match applyExternEffect effect unifiedEnv tagMapping true r with
+        | Except.error err => Except.error err
+        | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnv')
+    (l : Loc) (qt : QTyp)
+    (hlookup : memEnv'.lookup l = some qt)
+    (hpoison : qt.poison = false) :
+    ∃ qt_in, memEnv.lookup l = some qt_in ∧ qt_in.poison = false := by
+  induction effects generalizing memEnv with
+  | nil =>
+    simp only [List.forIn_nil, pure, Except.pure, Except.ok.injEq] at hloop
+    subst hloop; exact ⟨qt, hlookup, hpoison⟩
+  | cons h t ih =>
+    simp only [List.forIn_cons, bind, Except.bind] at hloop
+    split at hloop
+    · simp at hloop
+    · rename_i step heq
+      split at hloop
+      · -- ForInStep.done: impossible (we always produce yield)
+        rename_i _b
+        split at heq
+        · simp at heq
+        · rename_i _v _; simp at heq
+      · rename_i memEnv1
+        have happly1 : applyExternEffect h unifiedEnv tagMapping true memEnv = .ok memEnv1 := by
+          split at heq
+          · simp at heq
+          · rename_i v happly1
+            simp only [Except.ok.injEq, ForInStep.yield.injEq] at heq; subst heq; exact happly1
+        rcases ih memEnv1 hloop with ⟨qt_mid, hlookup_mid, hpoison_mid⟩
+        exact applyExternEffect_preserves_clean_lookup h unifiedEnv tagMapping
+          memEnv memEnv1 happly1 l qt_mid hlookup_mid hpoison_mid
+
+/-- Structural replacement for `.1` of `applyFnTClosure_extern_ok_lookup_origin`:
+    under `ctx.pc = true`, a clean cell in the post-extern memEnv traces back
+    pointwise to a clean cell in `result2.memEnv'` (the pre-extern memEnv passed
+    into `applyFnTClosure`).  The remaining step from `result2.memEnv'` to
+    `ctx.memEnv` is handled at the call site by the existing IH-based
+    `hbackToCtx_poison` helper. -/
+lemma applyFnTClosure_extern_ok_memEnv_poison_origin
+    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result2 : TypeResult) (fuel : Nat)
+    (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+    (r : TypeResult)
+    (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r)
+    (hpc : ctx.pc = true)
+    (l : Loc) (qt_out : QTyp)
+    (hlookup : r.memEnv'.lookup l = some qt_out)
+    (hpoison : qt_out.poison = false) :
+    ∃ qt_mid, result2.memEnv'.lookup l = some qt_mid ∧ qt_mid.poison = false := by
+  cases fuel with
+  | zero => simp [applyFnTClosure] at happly
+  | succ n =>
+    simp only [applyFnTClosure, bind, Except.bind] at happly
+    split at happly
+    · simp at happly
+    · rename_i allocRes _hcollect
+      set unifiedEnv := (VarTypeEnv.ofCaptured capturedEnv).update x
+        { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred }
+        with _hunifiedEnv
+      split at happly
+      · simp at happly
+      · rename_i memEnvLoop hloop
+        -- All three retSpec cases use `r.memEnv' = memEnvLoop`
+        have hmem_eq : r.memEnv' = memEnvLoop := by
+          split at happly
+          · split at happly
+            · simp at happly
+            · rename_i _vpred _heqpred
+              split at happly
+              · simp at happly
+              · simp only [pure, Except.pure, Except.ok.injEq] at happly
+                subst happly; rfl
+          · simp only [pure, Except.pure, Except.ok.injEq] at happly
+            subst happly; rfl
+          · simp only [pure, Except.pure, Except.ok.injEq] at happly
+            subst happly; rfl
+        rw [hmem_eq] at hlookup
+        -- Normalize hloop to the simpler form consumed by the loop lemma
+        have hloop' : forIn effects result2.memEnv' (fun effect r =>
+            match applyExternEffect effect unifiedEnv allocRes.1 ctx.pc r with
+            | Except.error err => Except.error err
+            | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnvLoop := by
+          convert hloop using 2
+          funext effect r
+          simp only [pure, Except.pure]
+          split <;> simp_all
+        -- Rewrite pc = true in hloop'
+        rw [hpc] at hloop'
+        exact forIn_effects_loop_preserves_clean_lookup effects unifiedEnv allocRes.1
+          result2.memEnv' memEnvLoop hloop' l qt_out hlookup hpoison
+
 /-- Conjunct 2: the result QTyp of an impure extern application respects tag meaning.
     Requires `hcapTm` (captured env entries respect tm) and `hargTm` (arg QTyp respects tm)
     in addition to `hwf` and `happly`. -/
@@ -12205,11 +12362,11 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               (by simpa [bodyCtx] using hlookup_mid_body)
                               hpoison_mid
                       | extern x retSpec effects capturedEnv =>
-                          rcases (applyFnTClosure_extern_ok_lookup_origin ctx st1 st2 p p1
-                            etyp2 p2 pred2 result1 fuelApp x retSpec effects capturedEnv srcRes
-                            happly_src l qt_src hlookup_src hpc).1 hpoison_src with
-                            ⟨qt_in, hlookup_in, hpoison_in⟩
-                          exact ⟨qt_in, hlookup_in, hpoison_in⟩
+                          rcases applyFnTClosure_extern_ok_memEnv_poison_origin ctx st1 st2 p p1
+                              etyp2 p2 pred2 result1 fuelApp x retSpec effects capturedEnv srcRes
+                              happly_src hpc l qt_src hlookup_src hpoison_src with
+                            ⟨qt_mid, hlookup_mid, hpoison_mid⟩
+                          exact hbackToCtx_poison qt_mid hlookup_mid hpoison_mid
                     rcases joinTypeResults_mem_contains_head_or_rest
                         ctx first rest res h_join l hcontains_res with
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
