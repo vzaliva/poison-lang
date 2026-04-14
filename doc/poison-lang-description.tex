@@ -1164,17 +1164,56 @@ and on trusted clean inputs) imply the initial hypothesis required by
 The specification is stated for arbitrary evaluation modes, but the proof
 establishes the property only for the I/O-free fragment.
 
-\subsubsection*{Pure Evaluation}
-\label{subsec:fr-iofree}
+\subsubsection*{Handling Extern Constructs}
 
-The evaluator is pure. Extern constructs (\texttt{externVal}, \texttt{externFn},
-\texttt{externPfn}) are part of the typing surface but are not executable: if
-evaluation reaches one, it yields \texttt{runtimeError}. The fault-robustness
-development therefore ranges over successful evaluations of the pure evaluator,
-with extern behavior handled through the typing and proof assumptions rather
-than through runtime execution.
+Extern constructs (\texttt{externVal}, \texttt{externFn},
+\texttt{externPfn}) are a placeholder for a future FFI: operationally, their
+runtime evaluation currently fails by producing \texttt{runtimeError}. This is
+temporary---the runtime will be extended to dispatch externs once the FFI is
+implemented---and until then, externs are operationally unreachable. The
+fault-robustness development therefore ranges over successful evaluations of
+the pure evaluator, with extern behaviour handled through the typing and proof
+assumptions rather than through runtime execution.
 
-\paragraph{Structural agreement for closures.}
+Even with the FFI unimplemented, externs must still \emph{typecheck soundly}.
+The fault-robustness theorem reasons about programs with conditionals whose
+guards can sometimes be determined statically. When the proof walks such a
+conditional, the body of the not-taken branch does not execute but must still
+typecheck. If that branch contains an extern call, the typing rules for externs
+are on the critical path of the proof even though no FFI machinery runs.
+Externs therefore affect the FR proof only at the \emph{typechecking summary}
+layer: the proof surface concerns what the typechecker states about external
+code. Two axioms pin the typechecker's extern summaries to the proof layer,
+one for fresh guard tags and one for impure memory effects; neither obligation
+is derivable from the syntactic shape of the typechecker alone.
+
+\paragraph{Tag meaning for fresh guards (\texttt{externTagSoundness}).}
+Extern typechecking resolves symbolic predicates using
+\texttt{collectAndAllocExternTags} and \texttt{resolveSyntaxPred}, and the
+resulting predicates may mention freshly allocated tags. A \texttt{TagMeaning}
+is a finite map that interprets each allocated guard tag as the closure it
+stands for---an argument name, a body, and a captured environment. A qualified
+type $qt$ \emph{respects} a tag meaning $tm$
+(\texttt{QTypRespectsTagMeaning}~$tm~qt$) when every closure-backed guard
+reachable inside $qt$ is mapped by $tm$ to the closure that tag was allocated
+to name. Guard-only predicates do not add an extra obligation at this layer.
+The axiom states that when extern typechecking allocates fresh tags
+and resolves symbolic predicates, those fresh tags are already interpreted
+correctly by the chosen $tm$. It is the trust boundary behind all downstream
+corollaries showing that extern values, pure extern applications, and impure
+extern applications produce qualified types that respect $tm$.
+
+\paragraph{Guard provenance for impure memory effects (\texttt{externGuardProvenance}).}
+An impure extern summary may modify memory under a poisoned program counter,
+overwriting cells with resolved guard predicates. The axiom says that trusted
+output cells do not manufacture trust out of nowhere: if a memory cell in the
+post-call state is trusted because it carries an active guard tag, that trust
+must trace back to a corresponding guarded-and-active cell at the same location
+in the pre-call state. In other words, impure extern type summaries may move
+or preserve guarded trust, but they may not invent it. 
+
+\subsubsection*{Structural Agreement for Function Values}
+
 Agreement in the fault-robustness step theorem is \emph{type-directed}: for clean
 non-reference base values (\texttt{int}, \texttt{bool}, \texttt{unit}, \texttt{string}) it reduces
 to literal equality, and for references it compares the concrete heap cells

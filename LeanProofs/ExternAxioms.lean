@@ -9,9 +9,8 @@
     `externTagSoundness`); and
   * guard provenance across impure extern summaries (Contract B,
     `externGuardProvenance`).
-
-  See `doc/extern-axioms.md` for the detailed rationale.
 -/
+
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanProofs.RegimeConsistency
