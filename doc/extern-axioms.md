@@ -70,59 +70,65 @@ stored `QTyp`s.
 
 **Plain English**
 
-An impure extern summary may write guarded cells into memory, but if a cell
-is trusted in the output because it carries an active guard tag, that trust
-must trace back to a corresponding guarded-and-active cell in the pre-call
-context.  In other words, impure extern type summaries may move or preserve
-guarded trust, but they may not invent it.
+If an impure extern summary produces `r` under a poisoned pc, and a memory
+cell is trusted in the output because it carries an active guard tag, that
+trust must trace back to a corresponding guarded-and-active cell at the same
+location in the input context.  In other words, impure extern type summaries
+may move or preserve guarded trust, but they may not invent it.
 
 The contract is **guard-only**: the poison analogue is structural (see §1)
 and is not part of the axiom surface.
+
+**Supporting definitions**
+
+```lean
+abbrev trustedGuardedCell (memEnv : MemoryTypeEnv) (regime : Regime)
+    (l : Loc) (k : Tag) (qt : QTyp) : Prop :=
+  memEnv.lookup l = some qt ∧
+  qtypGuardTag qt = some k ∧
+  regime.lookup? k = some true ∧
+  qt.etyp.isFunctionType = false
+
+abbrev ImpureExternCallOk (ctx : TypeContext) (r : TypeResult) : Prop :=
+  ∃ st1 st2 p p1 argEtyp argPoison argPred result2 fuel
+    x retSpec effects capturedEnv,
+    applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r
+```
 
 **Exact axiom statement**
 
 ```lean
 axiom externGuardProvenance
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (l : Loc) (qt_out : QTyp)
-  (hlookup : r.memEnv'.lookup l = some qt_out)
+  (ctx : TypeContext) (r : TypeResult)
+  (hcall : ImpureExternCallOk ctx r)
   (hpc : ctx.pc = true)
-  (k : Tag)
-  (hguard : qtypGuardTag qt_out = some k)
-  (hreg : r.regime'.lookup? k = some true)
-  (hnotfun : qt_out.etyp.isFunctionType = false) :
-  ∃ qt_in,
-    ctx.memEnv.lookup l = some qt_in ∧
-    qtypGuardTag qt_in = some k ∧
-    ctx.regime.lookup? k = some true ∧
-    qt_in.etyp.isFunctionType = false
+  (l : Loc) (k : Tag) (qt_out : QTyp)
+  (hout : trustedGuardedCell r.memEnv' r.regime' l k qt_out) :
+  ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in
 ```
 
 **Explanation**
 
-The hypotheses say:
+The axiom reads directly: if `r` is the result of an impure extern call from
+`ctx` under a poisoned pc, then every trusted guarded cell in the output
+`(r.memEnv', r.regime')` traces back pointwise to a trusted guarded cell at
+the same location in the input `(ctx.memEnv, ctx.regime)`.
 
-- we are in the impure extern branch of `applyFnTClosure`
-- the program counter is poisoned (`ctx.pc = true`)
-- a particular output memory cell `l` is looked up as `qt_out`
-- that output cell is trusted by an active guard tag `k`
-- the cell is not itself a function type
+`trustedGuardedCell memEnv regime l k qt` bundles the four-way conjunction
+that characterises a cell trusted by guard `k`: the cell is present in
+`memEnv` at `l` as `qt`, `qt` carries `k` as its guard tag, `k` is active in
+`regime`, and `qt` is not a function type.  The function-type exclusion
+matters because function-valued cells are handled separately: their trust
+derives from the arrow's own regime and from closure regime consistency, not
+from guard-tag provenance.
 
-The conclusion says that the same location already existed in the input
-memory `ctx.memEnv` with a `QTyp` carrying the same guard tag, with the same
-tag active in `ctx.regime`.
-
-**Why the function-type exclusion.** Both pre- and post-image `QTyp`s are
-required to satisfy `isFunctionType = false`. Function-valued cells are handled
-separately: their trust derives from the arrow's own regime and from closure
-regime consistency, not from guard-tag provenance, so they do not belong on
-this particular obligation path.
+`ImpureExternCallOk ctx r` says that `r` is the result of *some* successful
+`applyFnTClosure` call against an impure extern closure from context `ctx`.
+The individual call-shape parameters (`st1`, `st2`, `argEtyp`, `effects`,
+etc.) are existentially bound because they do not appear anywhere in the
+axiom's conclusion — they are only witnesses that `r` came from an extern
+call at all.
 
 **Why this is semantic.** The effect loop can mint new guard predicates at
 existing cells — `applyExternEffect` writes `effectSpecToQTyp effect.poison

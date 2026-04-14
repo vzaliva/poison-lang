@@ -44,29 +44,35 @@ axiom externTagSoundness
   (halloc : collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag')) :
   TagMappingRespectsTagMeaning tm mapping preds env
 
-/-- **Contract B: Guard Provenance for Impure Externs.** `FnTClosure.extern`
-    preserves guard provenance: if an output memEnv cell is trusted by an
-    active guard tag `k` and is not a function type, the same location already
-    carried the same active guard in the input context.  The poison analogue
-    is structural (`applyFnTClosure_extern_ok_memEnv_poison_origin`) and not
-    part of this contract. -/
+/-- A memory cell is trusted by an active guard tag when it is present in
+    `memEnv`, carries a guard tag `k` that is active in `regime`, and is not
+    a function-valued cell. -/
+abbrev trustedGuardedCell (memEnv : MemoryTypeEnv) (regime : Regime)
+    (l : Loc) (k : Tag) (qt : QTyp) : Prop :=
+  memEnv.lookup l = some qt ∧
+  qtypGuardTag qt = some k ∧
+  regime.lookup? k = some true ∧
+  qt.etyp.isFunctionType = false
+
+/-- `r` is the result of some successful `applyFnTClosure` call against an
+    impure extern closure from context `ctx`. -/
+abbrev ImpureExternCallOk (ctx : TypeContext) (r : TypeResult) : Prop :=
+  ∃ st1 st2 p p1 argEtyp argPoison argPred result2 fuel
+    x retSpec effects capturedEnv,
+    applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r
+
+/-- **Contract B: Guard Provenance for Impure Externs.** If `r` is the result
+    of an impure extern call from `ctx` under a poisoned pc, every trusted
+    guarded non-function cell in the output traces back pointwise to a trusted
+    guarded non-function cell at the same location in the input.  The poison
+    analogue is structural
+    (`applyFnTClosure_extern_ok_memEnv_poison_origin`) and not part of this
+    contract. -/
 axiom externGuardProvenance
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (l : Loc) (qt_out : QTyp)
-  (hlookup : r.memEnv'.lookup l = some qt_out)
+  (ctx : TypeContext) (r : TypeResult)
+  (hcall : ImpureExternCallOk ctx r)
   (hpc : ctx.pc = true)
-  (k : Tag)
-  (hguard : qtypGuardTag qt_out = some k)
-  (hreg : r.regime'.lookup? k = some true)
-  (hnotfun : qt_out.etyp.isFunctionType = false) :
-  ∃ qt_in,
-    ctx.memEnv.lookup l = some qt_in ∧
-    qtypGuardTag qt_in = some k ∧
-    ctx.regime.lookup? k = some true ∧
-    qt_in.etyp.isFunctionType = false
+  (l : Loc) (k : Tag) (qt_out : QTyp)
+  (hout : trustedGuardedCell r.memEnv' r.regime' l k qt_out) :
+  ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in

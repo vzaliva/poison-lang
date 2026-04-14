@@ -12456,9 +12456,11 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       | extern x retSpec effects capturedEnv =>
                           have hreg_src' : srcRes.regime'.lookup? k = some true := by
                             simpa [ctxAfter] using hreg_src
-                          rcases externGuardProvenance ctx st1 st2 p p1
-                              etyp2 p2 pred2 result1 fuelApp x retSpec effects capturedEnv srcRes
-                              happly_src l qt_src hlookup_src hpc k htag_src hreg_src' hnotfun_src with
+                          have hcall_src : ImpureExternCallOk ctx srcRes :=
+                            ⟨st1, st2, p, p1, etyp2, p2, pred2, result1, fuelApp,
+                             x, retSpec, effects, capturedEnv, happly_src⟩
+                          rcases externGuardProvenance ctx srcRes hcall_src hpc l k qt_src
+                              ⟨hlookup_src, htag_src, hreg_src', hnotfun_src⟩ with
                             ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
                           exact ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
                     rcases joinTypeResults_mem_contains_head_or_rest
