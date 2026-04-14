@@ -6396,7 +6396,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary
     | simple typ poison spred =>
       -- Simple return: use the unified axiom
       -- Reduce the ExternReturn match after cases
-      simp only [bind, Except.bind] at happly
+      simp only [] at happly
       split at happly
       · simp at happly
       · rename_i tagres halloc
@@ -6461,27 +6461,378 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary
             hcapTm hargTm)) hinq hqd }
 
 -- --------------------------------------------------------------------------
--- Per-entry-point axioms (to be replaced by corollaries in Step 5c)
+-- Impure extern corollary (Step 5c) — replaces
+-- applyFnTClosure_extern_ok_outputRespectsTagMeaning
 -- --------------------------------------------------------------------------
 
-/-- Extern contract: all QTyp values produced by an impure extern application
-    respect tag meaning — both memory cells written by the effect loop and the
-    result QTyp.  The first conjunct (memEnv cells) feeds the structural
-    `applyFnTClosure_extern_ok_wfTagMeaningCtx` lemma; the second (result QTyp)
-    is used directly in the FR proof. -/
-axiom applyFnTClosure_extern_ok_outputRespectsTagMeaning
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
-  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r) :
-  (∀ (l : Loc) (qt : QTyp), r.memEnv'.lookup l = some qt →
-    QTypRespectsTagMeaning tm qt) ∧
-  QTypRespectsTagMeaning tm r.qualType
+/-- LocSet.fold with updateMemEnv preserves all-cells-respect-tm. -/
+private lemma locset_fold_updateMemEnv_allCellsRespect
+    (tm : TagMeaning) (ls : LocSet) (memEnv : MemoryTypeEnv) (storedQt : QTyp)
+    (hinit : ∀ l qt, memEnv.lookup l = some qt → QTypRespectsTagMeaning tm qt)
+    (hstored : QTypRespectsTagMeaning tm storedQt)
+    (hstored_int : storedQt.etyp = ETyp.int) :
+    ∀ l qt, (LocSet.fold ls memEnv (fun acc l => updateMemEnv acc l storedQt)).lookup l = some qt →
+      QTypRespectsTagMeaning tm qt := by
+  -- Build EnvRespectsTagMeaning for the initial memEnv (with empty varEnv)
+  have hEnvInit : EnvRespectsTagMeaning tm {} memEnv :=
+    EnvRespectsTagMeaning.intro fun ⟨qtDeep, k0, d0, hqte0, hqd0⟩ => by
+      rcases hqte0 with ⟨_, _, xv, _, qtRoot, hlookupVar, _⟩ | ⟨_, _, loc, _, qtRoot, hlookupMem, hinq⟩
+      · -- inVar: empty varEnv → impossible
+        simp [VarTypeEnv.lookup] at hlookupVar
+      · -- inMem: use hinit
+        exact (hinit loc qtRoot hlookupMem) hinq hqd0
+  -- Apply the existing list-fold helper
+  unfold LocSet.fold; rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+  have hEnvPost := EnvRespectsTagMeaning_list_fold_updateMemEnv tm {} ls.toList memEnv storedQt
+    hstored_int hEnvInit hstored
+  -- Extract per-cell property from EnvRespectsTagMeaning
+  intro loc qtRoot hlookup qtDeep k d hinq hqd
+  rcases hEnvPost with ⟨hPost⟩
+  -- qtDeep occurs inside qtRoot (looked up at loc in the post-fold memEnv)
+  exact hPost (GuardDescInEnvsDeep.intro qtDeep k d
+    (QTypInEnvs.inMem {} _ loc qtDeep qtRoot hlookup hinq) hqd)
+
+/-- Per-step: `applyExternEffect` preserves the all-cells-respect-tm invariant. -/
+private lemma applyExternEffect_preserves_allCellsRespect
+    (tm : TagMeaning) (effect : Effect)
+    (unifiedEnv : VarTypeEnv)
+    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (allPreds : List SyntaxPredicate)
+    (pc : Poison) (memEnv memEnv' : MemoryTypeEnv)
+    (hcompat : TagMappingRespectsTagMeaning tm tagMapping allPreds unifiedEnv)
+    (hpred : effect.pred ∈ allPreds)
+    (hinit : ∀ l qt, memEnv.lookup l = some qt → QTypRespectsTagMeaning tm qt)
+    (happly : applyExternEffect effect unifiedEnv tagMapping pc memEnv = .ok memEnv') :
+    ∀ l qt, memEnv'.lookup l = some qt → QTypRespectsTagMeaning tm qt := by
+  unfold applyExternEffect at happly
+  simp only [bind, Except.bind] at happly
+  split at happly
+  · rename_i qtVar _hlookup
+    split at happly
+    · rename_i ls _hls
+      split at happly
+      · simp at happly
+      · rename_i resolvedPred hresolve
+        simp [pure, Except.pure] at happly; subst happly
+        have hpredTm := resolveSyntaxPred_respectsTagMeaning tm effect.pred unifiedEnv
+          tagMapping allPreds resolvedPred hcompat hpred hresolve
+        have hstoredTm : QTypRespectsTagMeaning tm
+            ⟨ETyp.int, joinPoison pc (effect.poison : Poison), resolvedPred⟩ := by
+          intro qt' k d hinq hqd
+          exact (QTypRespectsTagMeaning_int_of_predRespects tm _ resolvedPred hpredTm) hinq hqd
+        exact locset_fold_updateMemEnv_allCellsRespect tm ls memEnv
+          ⟨ETyp.int, joinPoison pc (effect.poison : Poison), resolvedPred⟩
+          hinit hstoredTm rfl
+    · simp at happly
+  · simp at happly
+
+-- --------------------------------------------------------------------------
+-- Per-entry-point corollaries (Step 5c) — replace
+-- applyFnTClosure_extern_ok_outputRespectsTagMeaning
+-- --------------------------------------------------------------------------
+
+/-- Helper: each effect's pred is in `collectExternPreds retSpec effects`. -/
+private lemma effect_pred_mem_collectExternPreds
+    (retSpec : ExternReturn) (effects : List Effect)
+    (effect : Effect) (hmem : effect ∈ effects) :
+    effect.pred ∈ collectExternPreds retSpec effects := by
+  cases retSpec with
+  | simple _ _ pred =>
+    simp only [collectExternPreds]
+    exact List.mem_append_right _ (List.mem_map_of_mem hmem)
+  | nestedFn _ _ _ _ =>
+    simp only [collectExternPreds]
+    exact List.mem_map_of_mem hmem
+  | nestedPfn _ _ _ =>
+    simp only [collectExternPreds]
+    exact List.mem_map_of_mem hmem
+
+/-- Helper: the `forIn` effect loop in `applyFnTClosure` (impure extern) preserves
+    the "all cells respect tm" invariant. -/
+private lemma forIn_effects_loop_preserves_allCellsRespect
+    (tm : TagMeaning)
+    (effects : List Effect)
+    (unifiedEnv : VarTypeEnv)
+    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (allPreds : List SyntaxPredicate)
+    (pc : Poison)
+    (memEnv memEnv' : MemoryTypeEnv)
+    (hcompat : TagMappingRespectsTagMeaning tm tagMapping allPreds unifiedEnv)
+    (hpreds : ∀ effect, effect ∈ effects → effect.pred ∈ allPreds)
+    (hinit : ∀ l qt, memEnv.lookup l = some qt → QTypRespectsTagMeaning tm qt)
+    (hloop : forIn effects memEnv (fun effect r =>
+        match applyExternEffect effect unifiedEnv tagMapping pc r with
+        | Except.error err => Except.error err
+        | Except.ok v =>
+          match (pure PUnit.unit : Except String PUnit) with
+          | Except.error err => Except.error err
+          | Except.ok _ => pure (ForInStep.yield v)) = Except.ok memEnv') :
+    ∀ l qt, memEnv'.lookup l = some qt → QTypRespectsTagMeaning tm qt := by
+  induction effects generalizing memEnv with
+  | nil =>
+    simp only [List.forIn_nil, pure, Except.pure, Except.ok.injEq] at hloop
+    subst hloop; exact hinit
+  | cons h t ih =>
+    simp only [List.forIn_cons, bind, Except.bind, pure, Except.pure] at hloop
+    split at hloop
+    · simp at hloop
+    · rename_i step heq
+      split at hloop
+      · -- ForInStep.done: impossible (we always produce yield)
+        rename_i _b
+        split at heq
+        · simp at heq
+        · rename_i _v _; simp at heq
+      · rename_i memEnv1
+        have happly1 : applyExternEffect h unifiedEnv tagMapping pc memEnv = .ok memEnv1 := by
+          split at heq
+          · simp at heq
+          · rename_i v happly1
+            simp only [Except.ok.injEq, ForInStep.yield.injEq] at heq; subst heq; exact happly1
+        apply ih memEnv1
+        · intro effect hmem; exact hpreds effect (List.Mem.tail _ hmem)
+        · exact applyExternEffect_preserves_allCellsRespect tm h unifiedEnv tagMapping allPreds
+            pc memEnv memEnv1 hcompat (hpreds h (List.Mem.head _)) hinit happly1
+        · exact hloop
+
+/-- Inner helper: all cells in the result of the impure extern effect loop respect tm.
+    The `hloop` parameter uses the exact form produced by simp-unfolding `applyFnTClosure`. -/
+private lemma extern_loop_allCellsRespect
+    (tm : TagMeaning)
+    (effects : List Effect)
+    (unifiedEnv : VarTypeEnv)
+    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (allPreds : List SyntaxPredicate)
+    (pc : Poison)
+    (memEnv memEnv' : MemoryTypeEnv)
+    (hcompat : TagMappingRespectsTagMeaning tm tagMapping allPreds unifiedEnv)
+    (hpreds : ∀ effect, effect ∈ effects → effect.pred ∈ allPreds)
+    (hinit : ∀ l qt, memEnv.lookup l = some qt → QTypRespectsTagMeaning tm qt)
+    (hloop : forIn effects memEnv (fun effect r =>
+        match applyExternEffect effect unifiedEnv tagMapping pc r with
+        | Except.error err => Except.error err
+        | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnv') :
+    ∀ l qt, memEnv'.lookup l = some qt → QTypRespectsTagMeaning tm qt := by
+  induction effects generalizing memEnv with
+  | nil =>
+    simp only [List.forIn_nil, pure, Except.pure, Except.ok.injEq] at hloop
+    subst hloop; exact hinit
+  | cons h t ih =>
+    simp only [List.forIn_cons, bind, Except.bind] at hloop
+    split at hloop
+    · simp at hloop
+    · rename_i step heq
+      split at hloop
+      · -- ForInStep.done: impossible (we always produce yield)
+        rename_i _b
+        split at heq
+        · simp at heq
+        · rename_i _v _happly; simp at heq
+      · rename_i memEnv1
+        have happly1 : applyExternEffect h unifiedEnv tagMapping pc memEnv = .ok memEnv1 := by
+          split at heq
+          · simp at heq
+          · rename_i v happly1
+            simp only [Except.ok.injEq, ForInStep.yield.injEq] at heq; subst heq; exact happly1
+        apply ih memEnv1
+        · intro effect hmem; exact hpreds effect (List.Mem.tail _ hmem)
+        · exact applyExternEffect_preserves_allCellsRespect tm h unifiedEnv tagMapping allPreds
+            pc memEnv memEnv1 hcompat (hpreds h (List.Mem.head _)) hinit happly1
+        · exact hloop
+
+/-- Conjunct 1: all cells in the post-loop memEnv of an impure extern application
+    respect tag meaning.  Only requires `hwf` (input wf) and `happly`. -/
+lemma applyFnTClosure_extern_ok_memCellsRespect
+    (tm : TagMeaning)
+    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result2 : TypeResult) (fuel : Nat)
+    (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+    (r : TypeResult)
+    (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
+    (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+    ∀ (l : Loc) (qt : QTyp), r.memEnv'.lookup l = some qt → QTypRespectsTagMeaning tm qt := by
+  cases fuel with
+  | zero => simp [applyFnTClosure] at happly
+  | succ n =>
+    simp only [applyFnTClosure, bind, Except.bind] at happly
+    split at happly
+    · simp at happly
+    · rename_i allocRes hcollect
+      -- The for loop: extract memEnvLoop and hloop
+      -- Setup: unifiedEnv and hcompat
+      set unifiedEnv := (VarTypeEnv.ofCaptured capturedEnv).update x
+        { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred }
+        with hunifiedEnv
+      have hcompat : TagMappingRespectsTagMeaning tm allocRes.1
+          (collectExternPreds retSpec effects) unifiedEnv :=
+        externTagMappingRespectsTagMeaning tm allocRes.1
+          (collectExternPreds retSpec effects) unifiedEnv result2.nextTag' allocRes.2 hcollect
+      -- Initial cells from hwf
+      have hinit : ∀ l qt, result2.memEnv'.lookup l = some qt → QTypRespectsTagMeaning tm qt := by
+        intro l qt hlookup qtDeep k d hinq hqd
+        rcases hwf with ⟨hwf'⟩
+        exact hwf' (GuardDescInEnvsDeep.intro qtDeep k d
+          (QTypInEnvs.inMem ctx.varEnv result2.memEnv' l qtDeep qt hlookup hinq) hqd)
+      split at happly
+      · simp at happly
+      · rename_i memEnvLoop hloop
+        -- All three retSpec cases use `r.memEnv' = memEnvLoop`
+        have hmem_eq : r.memEnv' = memEnvLoop := by
+          split at happly
+          · -- simple: happly involves resolveSyntaxPred and returnSpecToQTyp
+            split at happly
+            · simp at happly
+            · rename_i _vpred _heqpred
+              split at happly
+              · simp at happly
+              · simp only [pure, Except.pure, Except.ok.injEq] at happly
+                subst happly; rfl
+          · -- nestedFn
+            simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; rfl
+          · -- nestedPfn
+            simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; rfl
+        rw [hmem_eq]
+        -- Normalize hloop to the form expected by extern_loop_allCellsRespect
+        have hloop' : forIn effects result2.memEnv' (fun effect r =>
+            match applyExternEffect effect unifiedEnv allocRes.1 ctx.pc r with
+            | Except.error err => Except.error err
+            | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnvLoop := by
+          convert hloop using 2
+          funext effect r
+          simp only [pure, Except.pure]
+          split <;> simp_all
+        -- Apply the loop invariant
+        exact extern_loop_allCellsRespect tm effects unifiedEnv allocRes.1
+          (collectExternPreds retSpec effects) ctx.pc result2.memEnv' memEnvLoop
+          hcompat
+          (fun effect hmem => effect_pred_mem_collectExternPreds retSpec effects effect hmem)
+          hinit hloop'
+
+/-- Conjunct 2: the result QTyp of an impure extern application respects tag meaning.
+    Requires `hcapTm` (captured env entries respect tm) and `hargTm` (arg QTyp respects tm)
+    in addition to `hwf` and `happly`. -/
+lemma applyFnTClosure_extern_ok_qualTypeRespects
+    (tm : TagMeaning)
+    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result2 : TypeResult) (fuel : Nat)
+    (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+    (r : TypeResult)
+    (_hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
+    (hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt)
+    (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+    (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+    QTypRespectsTagMeaning tm r.qualType := by
+  cases fuel with
+  | zero => simp [applyFnTClosure] at happly
+  | succ n =>
+    simp only [applyFnTClosure, bind, Except.bind] at happly
+    split at happly
+    · simp at happly
+    · rename_i allocRes hcollect
+      split at happly
+      · simp at happly
+      · rename_i _memEnvLoop _hloop
+        -- Establish the tag mapping compat for each retSpec case
+        cases retSpec with
+        | simple typ poison spred =>
+          -- collectExternPreds (simple ...) effects = [spred] ++ effects.map(·.pred)
+          simp only [] at happly
+          split at happly
+          · simp at happly
+          · rename_i resolvedPred hresolved
+            split at happly
+            · simp at happly
+            · rename_i retres hret
+              obtain ⟨retQt, nextLoc'⟩ := retres
+              simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly
+              have hcompat : TagMappingRespectsTagMeaning tm allocRes.1
+                  (collectExternPreds (ExternReturn.simple typ poison spred) effects)
+                  ((VarTypeEnv.ofCaptured capturedEnv).update x
+                    ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) :=
+                externTagMappingRespectsTagMeaning tm allocRes.1
+                  (collectExternPreds (ExternReturn.simple typ poison spred) effects)
+                  ((VarTypeEnv.ofCaptured capturedEnv).update x
+                    ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+                  result2.nextTag' allocRes.2 hcollect
+              have hspredMem : spred ∈
+                  collectExternPreds (ExternReturn.simple typ poison spred) effects :=
+                by simp only [collectExternPreds]; exact List.Mem.head _
+              have hpredTm := resolveSyntaxPred_respectsTagMeaning tm spred
+                ((VarTypeEnv.ofCaptured capturedEnv).update x
+                  ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+                allocRes.1
+                (collectExternPreds (ExternReturn.simple typ poison spred) effects)
+                resolvedPred hcompat hspredMem hresolved
+              have hretPred := returnSpecToQTyp_pred_preserves typ poison resolvedPred result2.nextLoc'
+                retQt nextLoc' hret
+              have hretNotFun := returnSpecToQTyp_etyp_nonFunction typ poison resolvedPred
+                result2.nextLoc' retQt nextLoc' hret
+              obtain ⟨ret_e, ret_p, ret_pred⟩ := retQt
+              simp only at hretNotFun hpredTm hretPred
+              simp only [normalizeAppResultByProvenance]
+              split
+              · intro qt' k d hinq hqd
+                have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hretNotFun
+                subst hEq; simp [qtypGuardDesc?] at hqd
+              · rw [← hretPred] at hpredTm
+                intro qt' k d hinq hqd
+                have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hretNotFun
+                subst hEq
+                cases ret_pred with
+                | noPred => simp [qtypGuardDesc?] at hqd
+                | guardOnly _ => simp [qtypGuardDesc?] at hqd
+                | guardClosure k0 arg pb cap =>
+                  simp [qtypGuardDesc?] at hqd
+                  rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
+                  exact hpredTm k0 arg pb cap rfl
+        | nestedFn innerArg innerArgTyp innerRet innerEffects =>
+          simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; simp only
+          simp only [normalizeAppResultByProvenance]
+          split <;> {
+            intro qt' k d hinq hqd
+            exact (QTypRespectsTagMeaning_noPred_poison_transport tm _ ctx.pc _
+              (QTypRespectsTagMeaning_fn_extern_ofCaptured tm capturedEnv x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet innerEffects
+                hcapTm hargTm)) hinq hqd }
+        | nestedPfn innerArg innerArgTyp innerRet =>
+          simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; simp only
+          simp only [normalizeAppResultByProvenance]
+          split <;> {
+            intro qt' k d hinq hqd
+            exact (QTypRespectsTagMeaning_noPred_poison_transport tm _ ctx.pc _
+              (QTypRespectsTagMeaning_pfn_extern_ofCaptured tm capturedEnv x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet
+                hcapTm hargTm)) hinq hqd }
+
+/-- Combined corollary replacing `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
+    Requires extra hypotheses `hcapTm` and `hargTm` for the result-QTyp conjunct. -/
+lemma applyFnTClosure_extern_ok_outputRespectsTagMeaning_corollary
+    (tm : TagMeaning)
+    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result2 : TypeResult) (fuel : Nat)
+    (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+    (r : TypeResult)
+    (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
+    (hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt)
+    (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+    (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r) :
+    (∀ (l : Loc) (qt : QTyp), r.memEnv'.lookup l = some qt →
+      QTypRespectsTagMeaning tm qt) ∧
+    QTypRespectsTagMeaning tm r.qualType :=
+  ⟨applyFnTClosure_extern_ok_memCellsRespect tm ctx st1 st2 p p1 argEtyp argPoison argPred
+      result2 fuel x retSpec effects capturedEnv r hwf happly,
+   applyFnTClosure_extern_ok_qualTypeRespects tm ctx st1 st2 p p1 argEtyp argPoison argPred
+      result2 fuel x retSpec effects capturedEnv r hwf hcapTm hargTm happly⟩
 
 /-- Structural: given the focused effect-write contract and the unchanged varEnv,
     the full wfTagMeaningCtx is preserved through extern application. -/
@@ -6509,11 +6860,11 @@ lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
         exact hwf' (GuardDescInEnvsDeep.intro qt _ _
           (QTypInEnvs.inVar ctx.varEnv result2.memEnv' xv qt qtRoot hlookup_var hqtinqt) hqd)
     | inMem =>
-        -- Guard desc from memEnv: use the focused effect-write axiom
+        -- Guard desc from memEnv: use the proved memCellsRespect lemma
         rename_i l qtRoot hqtinqt hlookup_mem
-        exact ((applyFnTClosure_extern_ok_outputRespectsTagMeaning
+        exact (applyFnTClosure_extern_ok_memCellsRespect
           tm ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel
-          x retSpec effects capturedEnv r hwf happly).1 l qtRoot hlookup_mem) hqtinqt hqd
+          x retSpec effects capturedEnv r hwf happly l qtRoot hlookup_mem) hqtinqt hqd
 
 -- DELETED: applyPFnTClosure_extern_ok_QTypRespectsTagMeaning
 -- Replaced by the proved corollary applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary.
@@ -8792,8 +9143,23 @@ lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern x retSpec effects capturedEnv =>
-    exact (applyFnTClosure_extern_ok_outputRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
-      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 happly).2
+    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt := by
+      intro name qt hmem
+      intro qtDeep k d hinqDeep hqd
+      have hmemCap : (name, qt) ∈ fnCapturedEnv (FnTClosure.extern x retSpec effects capturedEnv) :=
+        by simpa [fnCapturedEnv] using hmem
+      have hroot : QTypInQTyp qt result1.qualType :=
+        QTypInQTyp.in_arrow qt result1.qualType st1 st2 p tcls
+          (FnTClosure.extern x retSpec effects capturedEnv) name hetyp1 hmem_tcl hmemCap
+      exact hresTm1 (QTypInQTyp.trans qtDeep qt result1.qualType hinqDeep hroot) hqd
+    have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+      QTypRespectsTagMeaning_transport_etyp_pred tm
+        ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        hargTm rfl rfl
+    intro qt' k d hinq hqd
+    exact (applyFnTClosure_extern_ok_qualTypeRespects tm ctx st1 st2 p p1 argEtyp argPoison
+      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 hcapTm hargTm' happly) hinq hqd
 
 lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
   (tm : TagMeaning)

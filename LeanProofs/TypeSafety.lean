@@ -7038,7 +7038,7 @@ private lemma applyFnTClosure_extern_predTagsBounded
           apply effects_forIn_predTagsBounded hMemMono _ hloop
           intro eff r hr fs hfs
           -- Decompose the bind layer from `memEnv ← applyExternEffect ...`
-          simp only [bind, Except.bind, pure, Except.pure] at hfs
+          simp only [pure, Except.pure] at hfs
           split at hfs
           · simp at hfs  -- applyExternEffect error → contradiction
           · -- applyExternEffect succeeded with some result
@@ -12575,7 +12575,7 @@ lemma applyFnTClosure_extern_wfTypeResult
           -- Prove body preservation: each effect step preserves location boundedness
           intro eff r hr fs hfs
           -- Decompose the bind layer from `memEnv ← applyExternEffect ...`
-          simp only [bind, Except.bind, pure, Except.pure] at hfs
+          simp only [pure, Except.pure] at hfs
           split at hfs
           · simp at hfs  -- applyExternEffect error → contradiction
           · -- applyExternEffect succeeded
@@ -12684,7 +12684,7 @@ lemma applyFnTClosure_extern_mem_contains_preserved
             | yield b =>
               intro acc' hg
               -- Decompose the bind layer from `memEnv ← applyExternEffect`
-              simp only [bind, Except.bind, pure, Except.pure] at hg
+              simp only [] at hg
               split at hg
               · simp at hg  -- applyExternEffect error → contradiction
               · -- applyExternEffect = .ok v
@@ -12703,7 +12703,7 @@ lemma applyFnTClosure_extern_mem_contains_preserved
                       exact absurd happlyEffect (by simp)
                     · -- resolveSyntaxPred ok v'
                       rename_i v' _hresolve
-                      simp only [pure, Except.pure, Except.ok.injEq] at happlyEffect
+                      simp only [Except.ok.injEq] at happlyEffect
                       subst happlyEffect
                       unfold LocSet.fold; rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
                       exact list_fold_updateMemEnv_contains_of_contains _ b l _ hP
@@ -12717,11 +12717,11 @@ lemma applyFnTClosure_extern_mem_contains_preserved
             · simp at happly
             · split at happly
               · simp at happly
-              · simp only [pure, Except.pure, Except.ok.injEq] at happly
+              · simp only [Except.ok.injEq] at happly
                 cases happly; exact hContains
-          · simp only [pure, Except.pure, Except.ok.injEq] at happly
+          · simp only [Except.ok.injEq] at happly
             cases happly; exact hContains
-          · simp only [pure, Except.pure, Except.ok.injEq] at happly
+          · simp only [Except.ok.injEq] at happly
             cases happly; exact hContains
 
 /-- applyFnTClosure in ioFree mode preserves wfTypeResult -/

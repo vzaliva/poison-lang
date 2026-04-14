@@ -1370,8 +1370,23 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
             exact QTypRespectsTagMeaning_transport_etyp_pred tm ⟨etyp3, p3, pred3⟩
               ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern x retSpec effects capturedEnv =>
-    exact (applyFnTClosure_extern_ok_outputRespectsTagMeaning tm ctx st1 st2 p p1 argEtyp argPoison
-      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 happly).2
+    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt := by
+      intro name qt hmem
+      intro qtDeep k d hinqDeep hqd
+      have hmemCap : (name, qt) ∈ fnCapturedEnv (FnTClosure.extern x retSpec effects capturedEnv) :=
+        by simpa [fnCapturedEnv] using hmem
+      have hroot : QTypInQTyp qt result1.qualType :=
+        QTypInQTyp.in_arrow qt result1.qualType st1 st2 p tcls
+          (FnTClosure.extern x retSpec effects capturedEnv) name hetyp1 hmem_tcl hmemCap
+      exact hresTm1 (QTypInQTyp.trans qtDeep qt result1.qualType hinqDeep hroot) hqd
+    have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+      QTypRespectsTagMeaning_transport_etyp_pred tm
+        ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        hargTm rfl rfl
+    intro qt' k d hinq hqd
+    exact (applyFnTClosure_extern_ok_qualTypeRespects tm ctx st1 st2 p p1 argEtyp argPoison
+      argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 hcapTm hargTm' happly) hinq hqd
 
 private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx
   (tm : TagMeaning)

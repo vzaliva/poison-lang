@@ -2,23 +2,19 @@
 
 ## CURRENT STEP
 
-Step 5a and Step 5b are complete.  Step 5c is in progress.
+Step 5 is complete.  The Contract A unification target has been reached.
 
-Highest-risk next task: replace the remaining impure Contract A axiom
-`applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
-The pure extern corollary work is complete; what remains is the impure case:
-first the **result QTyp** conjunct, then the **memEnv cells** conjunct via an
-`applyExternEffect` loop invariant.
+Current status:
 
-Work high-risk-first:
-
-1. Prove `§2.1` conjunct 2 (result QTyp) using the same return-spec case split
-   that now works for the pure extern corollary.
-2. Prove `§2.1` conjunct 1 (memEnv cells) via a loop invariant over
-   `applyExternEffect`.
-3. Delete the remaining old Contract A axiom
-   `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
-4. Update all remaining call sites, then verify `lake build` clean.
+1. `§2.4` (`typecheckExternVal_QTypRespectsTagMeaning_axiom`) is replaced by
+   `typecheckExternVal_QTypRespectsTagMeaning_corollary`.
+2. `§2.2` (`applyPFnTClosure_extern_ok_QTypRespectsTagMeaning`) is replaced by
+   `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary`.
+3. `§2.1` (`applyFnTClosure_extern_ok_outputRespectsTagMeaning`) is replaced by
+   structural corollaries for memEnv cells and result QTyp, combined in
+   `applyFnTClosure_extern_ok_outputRespectsTagMeaning_corollary`.
+4. The contract floor is now the intended minimum: 1 unified Contract A axiom
+   plus 1 Contract B axiom.
 
 Critical constraints:
 
@@ -33,11 +29,10 @@ Critical constraints:
 
 - last reported `lake build` succeeds with **0 sorry, 0 warnings**
 - last reported `make test` passes after the `applyExternEffect` refactor
-- axiom count: **3 declarations**
-- Step 5c partial complete: `typecheckExternVal_QTypRespectsTagMeaning_axiom`
-  and `applyPFnTClosure_extern_ok_QTypRespectsTagMeaning` are deleted;
-  remaining old axioms are `applyFnTClosure_extern_ok_outputRespectsTagMeaning`
-  and `applyFnTClosure_extern_ok_lookup_origin`
+- axiom count: **2 declarations**
+- Step 5 complete: the remaining axioms are
+  `externTagMappingRespectsTagMeaning` (unified Contract A) and
+  `applyFnTClosure_extern_ok_lookup_origin` (Contract B)
 
 ## 1. Overview: two high-level contracts
 
@@ -243,12 +238,11 @@ This coverage is complete and minimal for the current extern model.
 
 ## 4. Consolidated contract floor
 
-### Current state (3 declarations, 3 semantic obligations)
+### Current state (2 declarations, 2 semantic obligations)
 
 | # | Axiom | Contract | Category |
 |---|-------|----------|----------|
 | A1 | `externTagMappingRespectsTagMeaning` | A | unified tag-mapping semantic core |
-| A2 | `applyFnTClosure_extern_ok_outputRespectsTagMeaning` | A | impure fn (memEnv + result) |
 | B1 | `applyFnTClosure_extern_ok_lookup_origin` | B | provenance |
 
 ### Plain-English contract summary
@@ -291,7 +285,7 @@ it.
 
 ### Step 5. Unify Contract A into a single tag-mapping axiom
 
-**Status:** proposed
+**Status:** completed
 
 **Goal:** Replace the 3 Contract A declarations (§2.1, §2.2, §2.4) with a
 single semantic axiom about how freshly allocated tag mappings relate to
@@ -536,35 +530,15 @@ State auxiliary lemmas about the helper as needed (e.g.,
 `LeanProofs/StepFRApp.lean` (as needed).
 **Verification:** `lake build` — 0 sorry, 0 warnings.  Axiom count: 2.
 
-Prove the remaining corollaries and delete the old axioms.
-Work **high-risk-first**:
+Completed:
 
-1. Prove `§2.1` conjunct 2 (result QTyp) and replace the result-side use of
+1. Replaced `§2.1` with structural corollaries:
+   - result-QTyp respect via the same return-spec split validated for `§2.2`
+   - memEnv-cell respect via an `applyExternEffect` loop invariant
+2. Deleted the final old Contract A axiom declaration
    `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
-   Reuse the same return-spec split that now works for the pure extern
-   corollary:
-   - `ExternReturn.simple`: unified axiom +
-     `resolveSyntaxPred_respectsTagMeaning`
-   - `ExternReturn.nestedFn` / `nestedPfn`: the new captured-env transfer
-     helpers and `noPred` poison transport
-2. Prove `§2.1` conjunct 1 (memEnv cells) — this remains the hardest part.
-   Must show that every cell `l` in `r.memEnv'` respects `tm`:
-   - **Effect-written cells:** each call to `applyExternEffect` writes
-     cells with a resolved predicate from `resolveSyntaxPred` → axiom
-     via the extracted helper.  Need a loop invariant: if the input
-     memEnv respects `tm` and each effect-write produces cells that
-     respect `tm`, then the output memEnv respects `tm`.
-   - **Untouched cells:** cells in `result2.memEnv'` not overwritten by
-     the effect loop retain their values.  These respect `tm` by the
-     `wfTagMeaningCtx` precondition (they were already in the input).
-   - **Overwrites of old cells:** the loop invariant must also cover
-     cells that existed in `result2.memEnv'` and were overwritten — the
-     new value (from `applyExternEffect`) respects `tm` by the axiom,
-     so the overwrite preserves the invariant.
-3. Delete the 1 remaining old Contract A axiom declaration (§2.1).
-   (`§2.2` and `§2.4` are already deleted.)
-4. Update all call sites to use the corollary lemma(s).
-5. Verify `lake build` clean.
+3. Updated all remaining call sites.
+4. Verified `lake build` clean.
 
 #### Risks
 
@@ -582,12 +556,9 @@ Work **high-risk-first**:
   the `PExpr`, which must match what `tm` maps the tag to.  This is part
   of the semantic claim covered by the axiom and feeds into the
   `TagMappingRespectsTagMeaning` definition.
-- **Effect loop invariant** (step 5c, sub-step 3): must show that the
-  fold over effects preserves the "all cells respect `tm`" property.
-  The `LocSet.fold` inside `applyExternEffect` writes the same QTyp to
-  multiple locations (one resolution → many writes), which simplifies the
-  per-effect argument, but the cross-effect composition still needs a
-  loop invariant.
+- **Effect loop invariant** (resolved in step 5c): the fold over effects now
+  preserves the "all cells respect `tm`" property via per-effect preservation
+  and loop composition lemmas built around `applyExternEffect`.
 - **Proof churn in step 5b**: if many proofs unfold the extern case,
   repair may be extensive.  Mitigation: keep the helper as a thin wrapper
   so `simp` can unfold it when needed.
@@ -645,6 +616,10 @@ This section records completed work and design decisions for reference.
   corollary, and updated the pure-extern call sites.  The only remaining
   Contract A axiom is the impure extern output contract
   `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
+- **Step 5c (completed):** added the impure extern corollaries for memEnv
+  cells and result QTyp, proved the `applyExternEffect` loop invariant, and
+  deleted `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.  Contract A is
+  now represented solely by `externTagMappingRespectsTagMeaning`.
 
 ### 7.2 Deleted axiom: `fresh_loc_not_clean`
 
@@ -703,6 +678,9 @@ status.
   public interface beyond the call-site derivable `hcapTm` / `hargTm`
   obligations.  The remaining impure proof should reuse that same return-side
   structure before tackling the effect-loop invariant.
+- Confirmed that the full Step 5 factoring works cleanly: one semantic axiom
+  about the tag mapping plus structural corollaries for all three former
+  per-entry-point Contract A obligations.
 
 ### 7.4 Reference points
 
