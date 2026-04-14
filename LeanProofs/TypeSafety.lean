@@ -4033,7 +4033,7 @@ lemma joinTypeResults_nextTag_eq_max
 
 -- ================================================================
 
--- Exact next-tag preservation for `.ioFree` is proved below.
+-- Exact next-tag preservation is proved below.
 
 lemma typecheckVar_preserves_nextTag (ctx : TypeContext) (x : Name) (res : TypeResult) :
   typecheckVar ctx x = .ok res →
@@ -12722,8 +12722,8 @@ lemma applyFnTClosure_extern_mem_contains_preserved
           · simp only [Except.ok.injEq] at happly
             cases happly; exact hContains
 
-/-- applyFnTClosure in ioFree mode preserves wfTypeResult -/
-private lemma applyFnTClosure_ioFree_wfTypeResult
+/-- applyFnTClosure preserves wfTypeResult -/
+private lemma applyFnTClosure_wfTypeResult
     (fuel_top : Nat)
     (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
         wfTypeContext ctx' → typecheck ctx' e m = .ok res' → wfTypeResult res')
@@ -12791,8 +12791,8 @@ private lemma applyFnTClosure_ioFree_wfTypeResult
         result_fn (fuelBody + 1) x retSpec effects capturedEnv res hwf_fn
         (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcaptLocs) hargLocs happly
 
-/-- applyPFnTClosure in ioFree mode preserves wfTypeResult -/
-private lemma applyPFnTClosure_ioFree_wfTypeResult
+/-- applyPFnTClosure preserves wfTypeResult -/
+private lemma applyPFnTClosure_wfTypeResult
     (fuel_top : Nat)
     (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
         wfTypeContext ctx' → typecheck ctx' e m = .ok res' → wfTypeResult res')
@@ -13007,7 +13007,7 @@ lemma mapM_applyFnTClosure_forall_wfTypeResult
         cases hr with
         | inl heq =>
           subst heq
-          exact applyFnTClosure_ioFree_wfTypeResult fuel_top IH st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls')) hargLocs hargClosLocs h1
+          exact applyFnTClosure_wfTypeResult fuel_top IH st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls')) hargLocs hargClosLocs h1
         | inr htail =>
           exact ih rs' (fun t ht => hcaptLocs t (.tail tcl ht)) h2 r htail
 
@@ -13184,7 +13184,7 @@ private lemma applyFnTClosure_refLocsResultOutputs
     refLocsResultOutputs res := by
   -- wfTypeResult comes from the existing helper
   have hwfRes : wfTypeResult res :=
-    applyFnTClosure_ioFree_wfTypeResult fuel_top
+    applyFnTClosure_wfTypeResult fuel_top
       (fun m hm e' c r' hwfc htc' => (IH m hm e' c r' hwfc htc').1)
       st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl res
       hwf_fn hcaptLocs hargLocs hargClosLocs htc
@@ -13316,7 +13316,7 @@ private lemma applyPFnTClosure_refLocsResultOutputs
     (htc : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call = .ok res) :
     refLocsResultOutputs res := by
   have hwfRes : wfTypeResult res :=
-    applyPFnTClosure_ioFree_wfTypeResult fuel_top
+    applyPFnTClosure_wfTypeResult fuel_top
       (fun m hm e' c r' hwfc htc' => (IH m hm e' c r' hwfc htc').1)
       st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl res hwf_fn
       hcaptLocs hargLocs hargClosLocs htc
@@ -14152,7 +14152,7 @@ lemma joinTypeResults_mem_contains_of_member
                     a
                     hfold src hsrc_rest l hcontains_src
 
-private lemma applyFnTClosure_ioFree_mem_contains_preserved
+private lemma applyFnTClosure_mem_contains_preserved
     (fuel_top : Nat)
     (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
         typecheck ctx' e m = .ok res' →
@@ -14215,7 +14215,7 @@ private lemma applyFnTClosure_ioFree_mem_contains_preserved
           exact applyFnTClosure_extern_mem_contains_preserved ctx st1 st2 p p1 argEtyp argPoison
             argPred result_fn (fuelBody + 1) x retSpec effects capturedEnv res happly
 
-private lemma applyPFnTClosure_ioFree_mem_contains_preserved
+private lemma applyPFnTClosure_mem_contains_preserved
     (fuel_top : Nat)
     (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
         typecheck ctx' e m = .ok res' →
@@ -14386,7 +14386,7 @@ private lemma typecheckApp_mem_contains_preserved
                                             hflip firstResult (by simp) with
                                           ⟨tcl0, _htclMem, happly⟩
                                         have hcontains_first : firstResult.memEnv'.contains l :=
-                                          applyFnTClosure_ioFree_mem_contains_preserved
+                                          applyFnTClosure_mem_contains_preserved
                                             fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
                                             ctx result1 fuel' h_fuel tcl0 firstResult happly l hcontains1
                                         exact
@@ -14446,7 +14446,7 @@ private lemma typecheckApp_mem_contains_preserved
                                           hflip firstResult (by simp) with
                                         ⟨tcl0, _htclMem, happly⟩
                                       have hcontains_first : firstResult.memEnv'.contains l :=
-                                        applyPFnTClosure_ioFree_mem_contains_preserved
+                                        applyPFnTClosure_mem_contains_preserved
                                           fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
                                           ctx result1 fuel' h_fuel tcl0 firstResult happly l hcontains1
                                       exact
@@ -14591,7 +14591,7 @@ private lemma typecheckIf_mem_contains_preserved
           exact memEnv_contains_of_lookup_some _ _ _ hlookup_join
         simpa [h_mem] using hcontains_join
 
-private lemma typecheckExpr_ioFree_mem_contains_preserved_main :
+private lemma typecheckExpr_mem_contains_preserved_main :
     ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
       typecheck ctx e fuel = .ok res →
       ∀ l, ctx.memEnv.contains l → res.memEnv'.contains l := by
@@ -14780,14 +14780,6 @@ private lemma typecheckExpr_ioFree_mem_contains_preserved_main :
               have htcApp : typecheckApp ctx e1 e2 fuel' = .ok res := by
                 simpa [typecheckExpr] using htc
               exact typecheckApp_mem_contains_preserved ctx e1 e2 fuel' res IH_fuel' htcApp l hcontains
-
-/-- Successful ioFree typing preserves membership of every pre-existing memory location. -/
-lemma typecheckExpr_ioFree_mem_contains_preserved
-    (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) (l : Loc)
-    (htc : typecheckExpr ctx e fuel = .ok res)
-    (hcontains : ctx.memEnv.contains l) :
-    res.memEnv'.contains l :=
-  typecheckExpr_ioFree_mem_contains_preserved_main fuel ctx e res (by simpa [typecheck] using htc) l hcontains
 
 end memEnv_contains_preservation
 
@@ -15277,12 +15269,14 @@ lemma joinTypeResults_regime_lookup_of_all
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag')
                 acc hfold hfirst hrest
 
+/-- Successful typing preserves membership of every pre-existing memory location. -/
 lemma typecheckExpr_mem_contains_preserved
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok res) :
     ∀ l, ctx.memEnv.contains l → res.memEnv'.contains l := by
   intro l hcontains
-  exact typecheckExpr_ioFree_mem_contains_preserved ctx e fuel res l htc hcontains
+  exact typecheckExpr_mem_contains_preserved_main fuel ctx e res
+    (by simpa [typecheck] using htc) l hcontains
 
 lemma typecheckExpr_pure_mem_subset_of_toPExpr
     (ctx : TypeContext) (e : Expr) (pe : PExpr) (fuel : Nat) (res : TypeResult)

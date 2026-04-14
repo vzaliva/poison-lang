@@ -1,7 +1,7 @@
 /-
   FaultRobustnessProofs.lean - Orchestration of fault-robustness proofs.
 
-  Imports all per-operator StepFR* files and assembles the step-level IOFree
+  Imports all per-operator StepFR* files and assembles the step-level
   theorem and final fault-robustness bridges.
 
   Each stepFR_* case proof lives in its own StepFR*.lean file.
@@ -46,7 +46,7 @@ private lemma terminatesTo_externPfn_absurd (n : Name) (t : Typ) (r : ExternRetu
   obtain ⟨fuel, verbose, heval⟩ := hterm
   cases fuel <;> simp [LeanPoison.beval] at heval
 
-private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree
+private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked
   (masked : Tag → Prop)
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
   ∀ fuel res,
@@ -1477,14 +1477,14 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
               rename_i hterm _; exact terminatesTo_externPfn_absurd n t r _ _ _ hterm
 
-private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree
+private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
   ∀ fuel res,
     typecheck ctxᵢ e fuel = .ok res →
     StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tm := by
   intro fuel res htc
   have hmasked :=
-    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_IOFree
+    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked
       (masked := fun _ => False) e ctxᵢ predSat tm fuel res htc
   intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht hpc
   have hreg_masked :
@@ -1539,15 +1539,15 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFr
   exact ⟨θ', hθext, hvaltyp, hric', hcwr', hvalc', hpres, hfresh⟩
 
 
--- I/O-free step theorem: proves StepFR directly (no world-threading)
+-- Step theorem: proves StepFR directly.
 -- Restructured to avoid variable capture: induction is generalized over all expressions
-theorem TypeSystemEnforcesFaultRobustness_step_IOFree
+theorem TypeSystemEnforcesFaultRobustness_step
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
   TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm := by
   unfold TypeSystemEnforcesFaultRobustness_step_spec
   intro fuel res htc
   -- Use strong induction on fuel, generalized over all e and ctxᵢ
-  -- The key insight: we need IH to work for any I/O-free expression, not just our specific e
+  -- The key insight: we need IH to work for any expression, not just our specific e
   revert e ctxᵢ res htc
   induction fuel using Nat.strong_induction_on with
   | _ n IH =>
@@ -1682,7 +1682,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
             | succ fuel' =>
                 have hsingleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) := by
                   intro m _hm e ctx' hwfTm' res' htc'
-                  exact TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree e ctx' predSat tm m res' htc'
+                  exact TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue e ctx' predSat tm m res' htc'
                 exact
                   stepFR_ite ctxᵢ predSat tm e1 e2 e3 fuel' res
                     (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
@@ -1729,7 +1729,7 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
             | succ fuel' =>
                 have hsingleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) := by
                   intro m _hm e ctx' hwfTm' res' htc'
-                  exact TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_IOFree e ctx' predSat tm m res' htc'
+                  exact TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue e ctx' predSat tm m res' htc'
                 exact
                   stepFR_app ctxᵢ predSat tm e1 e2 fuel' res
                     (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
@@ -1744,65 +1744,10 @@ theorem TypeSystemEnforcesFaultRobustness_step_IOFree
             unfold StepFR; intros; exfalso
             rename_i hterm _; exact terminatesTo_externPfn_absurd n t r _ _ _ hterm
 
--- Bridges from step theorem to full specification
--- FaultRobustnessSpec specialized to ioFree mode (implied by FaultRobustnessSpec)
-def FaultRobustnessSpec_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
-    ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
-    wfRegime ctx.regime s →
-    wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
-    wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →
-    wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →
-    inputsConformSpec s μ₁ ρ₁ θ₁ →  inputsConformSpec s μ₂ ρ₂ θ₂ →
-    runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ θ₁ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ θ₂ →
-    consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
-    agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
-    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
-    ∃ (θ₁' θ₂' : RealizationMap),
-      wfExtendsMap θ₁ θ₁' ∧
-      wfExtendsMap θ₂ θ₂' ∧
-      observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
-
--- FaultRobustnessSpec implies FaultRobustnessSpec_ioFree (by instantiating mode =)
-lemma FaultRobustnessSpec_implies_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
-    FaultRobustnessSpec e s obs ctx predSat tm → FaultRobustnessSpec_ioFree e s obs ctx predSat tm := by
-  intro h
-  unfold FaultRobustnessSpec_ioFree
-  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm cf₁ cf₂ o₁ o₂
-  exact h μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm cf₁ cf₂ o₁ o₂
-
-def TypeSystemEnforcesFaultRobustness_spec_ioFree
-  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
-  wfInputSpec s →
-  wfObsSpec obs →
-  ∀ (ctx : TypeContext),
-      ctxMatchesInputSpec s ctx →
-      wfTypeContext ctx →
-      ctx.pc = false →
-      ctx.tagEnv = {} →
-      TagBoundedCtx ctx →
-      ∀ (predSat : PredSat) (tm : TagMeaning),
-        wfTagMeaningCtx tm ctx →
-        PredSatLaws predSat tm →
-        ((∃ (fuel : Nat) (res : TypeResult),
-          typecheck ctx e fuel = .ok res ∧
-          ObsConstraints obs res) →
-          FaultRobustnessSpec_ioFree e s obs ctx predSat tm)
-
--- TypeSystemEnforcesFaultRobustness_spec implies TypeSystemEnforcesFaultRobustness_spec_ioFree
-lemma TypeSystemEnforcesFaultRobustness_spec_implies_ioFree (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
-    TypeSystemEnforcesFaultRobustness_spec e s obs → TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs := by
-  intro h his hos ctx hctx hwf hpc hte htagBounded predSat tm hwfTm hps htc
-  exact FaultRobustnessSpec_implies_ioFree e s obs ctx predSat tm
-    (h his hos ctx hctx hwf hpc hte htagBounded predSat tm hwfTm hps htc)
-
-theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
+-- Bridge from step theorem to full specification
+theorem TypeSystemEnforcesFaultRobustness_impl :
   (∀ e ctxᵢ predSat tm, TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm) →
-  (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs) := by
+  (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec e s obs) := by
   intro hstep e s obs
   rintro his _hos ctx hctx hwf _hpc hte htagBoundedInit predSat tm hwfTm hps ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
@@ -2003,10 +1948,10 @@ theorem TypeSystemEnforcesFaultRobustness_impl_IOFree :
             exfalso
             simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hret_notfun_obs
 
--- Main I/O-free theorem
-theorem TypeSystemEnforcesFaultRobustness_IOFree
+-- Main fault-robustness theorem
+theorem TypeSystemEnforcesFaultRobustness
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
-  TypeSystemEnforcesFaultRobustness_spec_ioFree e s obs := by
-  apply TypeSystemEnforcesFaultRobustness_impl_IOFree
+  TypeSystemEnforcesFaultRobustness_spec e s obs := by
+  apply TypeSystemEnforcesFaultRobustness_impl
   · intro e' ctxᵢ predSat tm
-    simpa using TypeSystemEnforcesFaultRobustness_step_IOFree e' ctxᵢ predSat tm
+    simpa using TypeSystemEnforcesFaultRobustness_step e' ctxᵢ predSat tm

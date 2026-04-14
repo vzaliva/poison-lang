@@ -1,4 +1,0 @@
--- IOHelpers.lean
--- Previously contained IO world-threading helpers for monadic beval proofs.
--- Now that beval is pure, these are no longer needed.
--- This file is kept as a stub so existing imports don't break.

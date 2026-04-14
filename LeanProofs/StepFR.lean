@@ -14,7 +14,6 @@ import LeanProofs.FaultRobustness
 import LeanProofs.TypeSafety
 import LeanProofs.Aux
 import LeanProofs.SemanticsProperties
-import LeanProofs.IOHelpers
 import LeanProofs.Equality
 import LeanProofs.RegimeConsistency
 import LeanProofs.ExternAxioms
@@ -4225,198 +4224,6 @@ lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
     · -- Trusted variable: use trusted-input agreement.
       exact htrusted_vars x qt hctx_lookup hkey hclean
 
--- Bridge theorem: connects the step theorem to the top-level FR spec.
-theorem TypeSystemEnforcesFaultRobustness_impl :
-  (∀ e ctxᵢ predSat tm,
-    TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm) →
-  (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec e s obs) := by
-  intro hstep e s obs
-  rintro his _hos ctx hctx _hwf _hpc _hte _htagBoundedInit predSat tm _hwfTm _hps ⟨fuel, res, htc, hobs⟩
-  rcases hobs with ⟨hobs_ret, hobs_mem⟩
-  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
-  have hstep' := hstep e ctx predSat tm
-  have hstep' := hstep' fuel res htc
-  intro cf₁ cf₂ o₁ o₂ hWfRegime hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
-  set R := ctx.regime with hRdef
-  -- Use bridge lemma to derive consistentWithRegime from consistentRegimeSpec
-  have hcwr₁ : consistentWithRegime predSat R ctx μ₁ ρ₁ θ₁ := by
-    have hcrs₁' : consistentRegimeSpec predSat R s μ₁ ρ₁ θ₁ := by
-      simpa [hRdef] using hcrs₁
-    have hWfRegime' : wfRegime R s := by
-      simpa [hRdef] using hWfRegime
-    exact
-      consistentRegimeSpec_implies_consistentWithRegime
-        predSat R s ctx μ₁ ρ₁ θ₁ hcrs₁' hric₁ (by simpa [hRdef] using htrustedInit₁) his hctx hWfRegime'
-  have hcwr₂ : consistentWithRegime predSat R ctx μ₂ ρ₂ θ₂ := by
-    have hcrs₂' : consistentRegimeSpec predSat R s μ₂ ρ₂ θ₂ := by
-      simpa [hRdef] using hcrs₂
-    have hWfRegime' : wfRegime R s := by
-      simpa [hRdef] using hWfRegime
-    exact
-      consistentRegimeSpec_implies_consistentWithRegime
-        predSat R s ctx μ₂ ρ₂ θ₂ hcrs₂' hric₂ (by simpa [hRdef] using htrustedInit₂) his hctx hWfRegime'
-  have hagree_clean :
-      agreeOnClean predSat R ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ :=
-    agreeOnCriticalAndTrusted_implies_agreeOnClean
-      predSat R s ctx μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ hctx hagree htrusted
-  have htagR : tagEnvConsistentWithRegime ctx.tagEnv R := by
-    intro k deps hlookup
-    -- Empty tag environment at the top level.
-    have : (ctx.tagEnv.get? k) = none := by
-      simp [_hte]
-    rw [this] at hlookup
-    cases hlookup
-  have hreg : regimeConsistentWithCtx ctx := htagR
-  have htagBounded : TagBoundedCtx ctx := _htagBoundedInit
-  have hstepFR :=
-    hstep' _hps _hwfTm μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
-      hθ₁ hθ₂ _hwf htagBounded hric₁ hric₂ hreg hcwr₁ hcwr₂ hagree_clean
-      a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
-  rcases hstepFR with ⟨_hresTm, hstepFR⟩
-  rcases hstepFR with ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, _hvtyp₁, _hvtyp₂, _hTm', _hwf', _htagBounded', _hwfcf₁', _hwfcf₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
-  refine ⟨θ₁', θ₂', hθ₁ext, hθ₂ext, ?_⟩
-  -- Bridge from post-state agreement to observables.
-  simp [observablesEqual]
-  constructor
-  · intro l et hobs_lookup
-    obtain ⟨qt, hlookup_mem, _het_eq, hpoison⟩ := hobs_mem l et hobs_lookup
-    have hctx_lookup : (ctxAfter ctx res).memEnv.lookup l = some qt := by
-      simpa [ctxAfter] using hlookup_mem
-    -- Use output regime since hagree_clean' now uses (ctxAfter ctx res).regime
-    have hclean : qtypCleanUnder (ctxAfter ctx res).regime qt := by
-      exact qtypCleanUnder.clean hpoison
-    have hlocEntry : agreeLocUnder predSat (ctxAfter ctx res).regime cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
-      (hagree_clean'.1 l qt hctx_lookup hclean)
-    cases hlocEntry with
-    | agree_values _l _qt a₁' a₂' n₁ n₂ hreal₁ hreal₂ hlookup₁ hlookup₂ hagree =>
-        -- Reduce to equality of stored ints via agreement on the stored values.
-        have hvalEq : n₁ = n₂ := by
-          cases hagree with
-          | clean_eq_nonref_nonarrow _ _ _ hval =>
-              cases hval
-              rfl
-          | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv1 _ =>
-              cases hv1
-          | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
-              -- A Value.num can only have type ETyp.int, but isArrow = true implies function type
-              have het : qt.etyp = ETyp.int := by
-                generalize hqte : qt.etyp = qte at htyp1; cases htyp1; rfl
-              exact absurd (het ▸ hisArrow) (by decide)
-          | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv1 _ =>
-              cases hv1
-          | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
-              -- A Value.num can only have type ETyp.int, but isParrow = true implies parrow type
-              have het : qt.etyp = ETyp.int := by
-                generalize hqte : qt.etyp = qte at htyp1; cases htyp1; rfl
-              exact absurd (het ▸ hisParrow) (by decide)
-          | clean_ref _ _ _ _ hv1 _ _ =>
-              cases hv1
-          | withPred_true_eq _ _ _ _ _ hval =>
-              cases hval
-              rfl
-          | withPred_true_ref _ _ _ _ _ _ hv1 _ _ =>
-              cases hv1
-        refine Or.inl ?_
-        refine ⟨a₁', ?_⟩
-        refine And.intro hreal₁ ?_
-        refine ⟨a₂', ?_⟩
-        refine And.intro hreal₂ ?_
-        calc
-          cf₁.memory.lookup a₁' = some n₁ := hlookup₁
-          _ = some n₂ := by simp [hvalEq]
-          _ = cf₂.memory.lookup a₂' := by symm; exact hlookup₂
-    | both_unrealized _l _qt _hnone₁ _hnone₂ =>
-        exact Or.inr ⟨_hnone₁, _hnone₂⟩
-  · cases hretOpt : obs.retEtyp? with
-    | none =>
-        simp
-    | some et =>
-        -- Use return agreement from the step proof.
-        rcases hobs_ret _ hretOpt with ⟨hret_et, hret_poison⟩
-        have hret_notfun_obs : et.isFunctionType = false := by
-          simpa [wfObsSpec, hretOpt] using _hos
-        -- Use output regime since hret_agree now uses (ctxAfter ctx res).regime
-        have hret_clean : qtypCleanUnder (ctxAfter ctx res).regime res.qualType := by
-          exact qtypCleanUnder.clean hret_poison
-        have hret_agree' :
-            agreeValueUnder predSat (ctxAfter ctx res).regime cf₁.memory cf₂.memory θ₁' θ₂' res.qualType o₁ o₂ :=
-          hret_agree hret_clean
-        cases et with
-        | ref ls =>
-            cases hret_agree' with
-            | @clean_ref ls' l a₁ a₂ _qt v₁ v₂ hpoison hetyp hlookup1 hin hv1 hlookup2 hv2 =>
-                have hls_eq : ls' = ls := by injection (hret_et.symm.trans hetyp); exact ‹ls = ls'›.symm
-                exact And.intro
-                  ⟨l, And.intro (hls_eq ▸ hin) (Exists.intro a₁ (And.intro hlookup1 hv1))⟩
-                  ⟨l, And.intro (hls_eq ▸ hin) (Exists.intro a₂ (And.intro hlookup2 hv2))⟩
-            | @withPred_true_ref k ls' l a₁ a₂ _qt v₁ v₂ htag hregime hetyp hlookup1 hin hv1 hlookup2 hv2 =>
-                have hls_eq : ls' = ls := by injection (hret_et.symm.trans hetyp); exact ‹ls = ls'›.symm
-                exact And.intro
-                  ⟨l, And.intro (hls_eq ▸ hin) (Exists.intro a₁ (And.intro hlookup1 hv1))⟩
-                  ⟨l, And.intro (hls_eq ▸ hin) (Exists.intro a₂ (And.intro hlookup2 hv2))⟩
-            | clean_eq_nonref_nonarrow _ _ hnotref _ =>
-                have : False := by
-                  apply hnotref
-                  exact ⟨ls, hret_et⟩
-                exact False.elim this
-            | withPred_true_eq _ _ _ _ hnotref _ =>
-                have : False := by
-                  apply hnotref
-                  exact ⟨ls, hret_et⟩
-                exact False.elim this
-            | clean_internal_arrow _ hetyp _ _ _ _ _ _ _ =>
-                cases (Eq.trans (Eq.symm hetyp) hret_et)
-            | dirty_internal_arrow _ hisArrow =>
-                -- qt.etyp is an arrow but hret_et says it's et (from observable spec).
-                -- This would contradict if observable types are not function types.
-                have : (ETyp.ref ls).isArrow = true := by
-                  simpa [hret_et] using hisArrow
-                -- But references are not arrow types.
-                have : (false : Bool) = true := by
-                  simp [ETyp.isArrow] at this
-                cases this
-            | clean_internal_parrow _ hetyp _ _ _ _ _ _ _ =>
-                cases (Eq.trans (Eq.symm hetyp) hret_et)
-            | dirty_internal_parrow _ hisParrow =>
-                -- qt.etyp is a parrow but hret_et says it's et (from observable spec).
-                -- This would contradict if observable types are not function types.
-                have : (ETyp.ref ls).isParrow = true := by
-                  simpa [hret_et] using hisParrow
-                -- But references are not parrow types.
-                have : (false : Bool) = true := by
-                  simp [ETyp.isParrow] at this
-                cases this
-        | int =>
-            have hnotref : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
-              simp [hret_et]
-            have hnotfun : res.qualType.etyp.isFunctionType = false := by
-              simp [hret_et, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-            exact ret_eq_of_agreeValueUnder_nonref hnotref hnotfun hret_poison hret_agree'
-        | bool =>
-            have hnotref : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
-              simp [hret_et]
-            have hnotfun : res.qualType.etyp.isFunctionType = false := by
-              simp [hret_et, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-            exact ret_eq_of_agreeValueUnder_nonref hnotref hnotfun hret_poison hret_agree'
-        | unit =>
-            have hnotref : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
-              simp [hret_et]
-            have hnotfun : res.qualType.etyp.isFunctionType = false := by
-              simp [hret_et, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-            exact ret_eq_of_agreeValueUnder_nonref hnotref hnotfun hret_poison hret_agree'
-        | string =>
-            have hnotref : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
-              simp [hret_et]
-            have hnotfun : res.qualType.etyp.isFunctionType = false := by
-              simp [hret_et, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-            exact ret_eq_of_agreeValueUnder_nonref hnotref hnotfun hret_poison hret_agree'
-        | arrow st₁ st₂ p tcls =>
-            exfalso
-            simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hret_notfun_obs
-        | parrow st₁ st₂ p tcls =>
-            exfalso
-            simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hret_notfun_obs
-
 end TypeSystemEnforcesFaultRobustness_impl_proof
 
 section TypeSystemEnforcesFaultRobustness_step_proof
@@ -5590,7 +5397,7 @@ lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
 
 end TypeSystemEnforcesFaultRobustness_step_proof
 
--- Moved from IOFree section: used by both stepFR_ite and stepFR_app
+-- Used by both stepFR_ite and stepFR_app
 lemma agreeValueUnder_clean_transport_by_cleanBack
     {predSat : PredSat} {R R' : Regime}
     {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
@@ -7410,8 +7217,8 @@ lemma typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded
 -- ==========================================================================
 -- typecheckExpr preserves regimeConsistentWithCtx
 -- ==========================================================================
--- This is a key preservation theorem: successful typechecking in ioFree mode
--- preserves the regime consistency invariant (tagEnv/regime agreement + bound).
+-- This is a key preservation theorem: successful typechecking preserves
+-- the regime consistency invariant (tagEnv/regime agreement + bound).
 
 -- Helper: regimeConsistentWithCtx only depends on tagEnv, regime, nextTag
 lemma regimeConsistentWithCtx_of_tagEnv_regime_nextTag
@@ -8688,7 +8495,7 @@ lemma EnvRespectsTagMeaning_mix
     exact h2.1 (GuardDescInEnvsDeep.intro qt k d
       (QTypInEnvs.inMem σ₂ Γ₂ l qt qtRoot hlookup hinq) hguard)
 
-/-- typecheckIf always produces a result with pred = noPred in ioFree mode. -/
+/-- typecheckIf always produces a result with pred = noPred. -/
 lemma typecheckIf_pred_noPred
     (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckIf ctx e1 e2 e3 fuel = .ok res) :

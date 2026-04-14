@@ -1088,7 +1088,7 @@ def capturedVarsTypingProperty (θ : RealizationMap)
 
 -- Tracks varsRegime for captured variables inside closure values, recursively
 -- across all nesting levels.  Uses qt.etyp (not qt.pred) to find the σcap,
--- so it fires for ioFree closures which always have Predicate.noPred.
+-- so it fires for closures which always have Predicate.noPred.
 --
 -- Checked against the CURRENT regime R rather than the regime at capture time.
 -- This is sound because Regime.monotoneStep only removes entries, so any

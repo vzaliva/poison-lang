@@ -3,7 +3,6 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanProofs.IOHelpers
 import LeanProofs.SemanticsProperties
 import Mathlib.Tactic
 

@@ -9695,8 +9695,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
           rw [show pm = c₂'₀.pureMode from hpm₀.symm]
         have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
@@ -12290,8 +12290,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
           rw [show pm = c₂'₀.pureMode from hpm₀.symm]
         have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
@@ -12318,8 +12318,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
           rw [show pm = c₂'₀.pureMode from hpm₀.symm]
         have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
@@ -12345,8 +12345,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
           rw [show pm = c₂'₀.pureMode from hpm₀.symm]
         have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
@@ -12392,8 +12392,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
           rw [show pm = c₂'₀.pureMode from hpm₀.symm]
         have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
@@ -12419,8 +12419,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
           rw [show pm = c₂'₀.pureMode from hpm₀.symm]
         have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
@@ -12447,8 +12447,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
           rw [show pm = c₂'₀.pureMode from hpm₀.symm]
         have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
@@ -12476,8 +12476,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_IOFree_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
+        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
+        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
         have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
           rw [show pm = c₂'₀.pureMode from hpm₀.symm]
         have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by

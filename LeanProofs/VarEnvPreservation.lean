@@ -4,7 +4,6 @@ import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.SemanticsProperties
-import LeanProofs.IOHelpers
 import Mathlib.Tactic
 
 open Std

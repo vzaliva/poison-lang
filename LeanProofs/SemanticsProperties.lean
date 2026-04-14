@@ -6,7 +6,6 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanProofs.IOHelpers
 import LeanProofs.Aux
 import Mathlib.Tactic
 import Batteries.Data.List.Lemmas
@@ -724,7 +723,7 @@ lemma terminatesTo_deref_inv' (e : Expr) (c₀ c₁ : Config) (v : Value) :
 
 /-- Helper lemma: in evaluation, `pureMode` is preserved through evaluation.
     This holds for any expression. -/
-lemma terminatesTo_IOFree_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value) :
+lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value) :
     terminatesTo e c₀ c₁ v →
     c₁.pureMode = c₀.pureMode := by
   intro ht
@@ -887,13 +886,13 @@ lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) 
   rcases hstruct with ⟨cfg2, cfg1, v2, x, body, env, hbeval_e2, h_app, hpure_mode_final⟩
   -- Convert e₂ evaluation to terminatesTo
   have hpure_cfg2 : cfg2.pureMode = c₀.pureMode :=
-    terminatesTo_IOFree_preserves_pureMode e₂ c₀ cfg2 v2 ⟨fuel - 1, verbose, hbeval_e2⟩
+    terminatesTo_preserves_pureMode e₂ c₀ cfg2 v2 ⟨fuel - 1, verbose, hbeval_e2⟩
   -- Case split: closure vs peClosure
   rcases h_app with ⟨hbeval_e1, hpure_false, hbeval_body⟩ | ⟨hbeval_e1, htoPExpr, hbeval_body⟩
   · -- Case 1: Regular closure
     left
     have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-      terminatesTo_IOFree_preserves_pureMode e₁ cfg2 cfg1 (Value.closure x body env) ⟨fuel - 1, verbose, hbeval_e1⟩
+      terminatesTo_preserves_pureMode e₁ cfg2 cfg1 (Value.closure x body env) ⟨fuel - 1, verbose, hbeval_e1⟩
     obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
       bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body false c₂ v hbeval_body
     refine ⟨cfg2, v2, cfg1, x, body, env, evalConfig, ⟨fuel - 1, verbose, hbeval_e2⟩, ⟨fuel - 1, verbose, hbeval_e1⟩,
@@ -902,7 +901,7 @@ lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) 
   · -- Case 2: Pure closure (peClosure)
     right
     have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-      terminatesTo_IOFree_preserves_pureMode e₁ cfg2 cfg1 (Value.peClosure x body env) ⟨fuel - 1, verbose, hbeval_e1⟩
+      terminatesTo_preserves_pureMode e₁ cfg2 cfg1 (Value.peClosure x body env) ⟨fuel - 1, verbose, hbeval_e1⟩
     obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
       bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body true c₂ v hbeval_body
     refine ⟨cfg2, v2, cfg1, x, body, env, evalConfig, ⟨fuel - 1, verbose, hbeval_e2⟩, ⟨fuel - 1, verbose, hbeval_e1⟩,
@@ -922,16 +921,16 @@ lemma terminatesTo_ite_inv' (e₁ e₂ e₃ : Expr) (c₀ c₂ : Config) (v : Va
   intro ⟨fuel, verbose, hbeval⟩
   have hstruct := bevalIte_structure e₁ e₂ e₃ fuel verbose c₀ c₂ v hbeval
   rcases hstruct with ⟨cfg₁, b, hbeval_e1, hbranch⟩
-  have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ (Value.bool b) ⟨fuel - 1, verbose, hbeval_e1⟩
+  have hrec₁ := terminatesTo_preserves_pureMode e₁ c₀ cfg₁ (Value.bool b) ⟨fuel - 1, verbose, hbeval_e1⟩
   cases hbranch with
   | inl htrue =>
     rcases htrue with ⟨hb, hbeval_e2⟩
-    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ c₂ v ⟨fuel - 1, verbose, hbeval_e2⟩
+    have hrec₂ := terminatesTo_preserves_pureMode e₂ cfg₁ c₂ v ⟨fuel - 1, verbose, hbeval_e2⟩
     refine ⟨cfg₁, b, ⟨fuel - 1, verbose, hbeval_e1⟩, Or.inl ⟨hb, ⟨fuel - 1, verbose, hbeval_e2⟩⟩, hrec₁, ?_⟩
     rw [hrec₂, hrec₁]
   | inr hfalse =>
     rcases hfalse with ⟨hb, hbeval_e3⟩
-    have hrec₃ := terminatesTo_IOFree_preserves_pureMode e₃ cfg₁ c₂ v ⟨fuel - 1, verbose, hbeval_e3⟩
+    have hrec₃ := terminatesTo_preserves_pureMode e₃ cfg₁ c₂ v ⟨fuel - 1, verbose, hbeval_e3⟩
     refine ⟨cfg₁, b, ⟨fuel - 1, verbose, hbeval_e1⟩, Or.inr ⟨hb, ⟨fuel - 1, verbose, hbeval_e3⟩⟩, hrec₁, ?_⟩
     rw [hrec₃, hrec₁]
 
@@ -951,9 +950,9 @@ lemma terminatesTo_op_inv' (e₁ : Expr) (op : Op) (e₂ : Expr) (c₀ c₂ : Co
       cases cfg₂; cases c₂; simp only [Config.mk.injEq]; exact ⟨hmem, hvar, hnext, hpure_mode⟩
     rw [← h_cfg2_eq]; exact hbeval_e2
   refine ⟨cfg₁, v₁, v₂, ⟨fuel - 1, verbose, hbeval_e1⟩, ⟨fuel - 1, verbose, hbeval_e2'⟩, hevalOp, ?_, ?_⟩
-  · exact terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
-  · have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
-    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ c₂ v₂ ⟨fuel - 1, verbose, hbeval_e2'⟩
+  · exact terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
+  · have hrec₁ := terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
+    have hrec₂ := terminatesTo_preserves_pureMode e₂ cfg₁ c₂ v₂ ⟨fuel - 1, verbose, hbeval_e2'⟩
     rw [hrec₂, hrec₁]
 
 /-- Inversion lemma for terminatesTo on seq. -/
@@ -967,9 +966,9 @@ lemma terminatesTo_seq_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) 
   have hstruct := bevalSeq_structure e₁ e₂ fuel verbose c₀ c₂ v hbeval
   rcases hstruct with ⟨cfg₁, v₁, hbeval_e1, hbeval_e2⟩
   refine ⟨cfg₁, v₁, ⟨fuel - 1, verbose, hbeval_e1⟩, ⟨fuel - 1, verbose, hbeval_e2⟩, ?_, ?_⟩
-  · exact terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
-  · have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
-    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₁ c₂ v ⟨fuel - 1, verbose, hbeval_e2⟩
+  · exact terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
+  · have hrec₁ := terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
+    have hrec₂ := terminatesTo_preserves_pureMode e₂ cfg₁ c₂ v ⟨fuel - 1, verbose, hbeval_e2⟩
     rw [hrec₂, hrec₁]
 
 /-- Inversion lemma for terminatesTo on vlet. -/
@@ -986,9 +985,9 @@ lemma terminatesTo_vlet_inv' (x : Name) (e₁ e₂ : Expr) (c₀ c₂ : Config) 
   have hpure_e2' : LeanPoison.beval (fuel - 1) { cfg₁ with varEnv := cfg₁.varEnv.update x v₁ } e₂ verbose =
       .success cfg₃ v := by rw [← hcfg2_eq]; exact hbeval_e2
   refine ⟨cfg₁, v₁, cfg₃, ⟨fuel - 1, verbose, hbeval_e1⟩, ⟨fuel - 1, verbose, hpure_e2'⟩, hcfg_final, ?_, ?_⟩
-  · exact terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
-  · have hrec₁ := terminatesTo_IOFree_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
-    have hrec₂ := terminatesTo_IOFree_preserves_pureMode e₂ cfg₂ cfg₃ v ⟨fuel - 1, verbose, hbeval_e2⟩
+  · exact terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
+  · have hrec₁ := terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
+    have hrec₂ := terminatesTo_preserves_pureMode e₂ cfg₂ cfg₃ v ⟨fuel - 1, verbose, hbeval_e2⟩
     have h_pure_cfg2 : cfg₂.pureMode = cfg₁.pureMode := by rw [hcfg2_eq]
     rw [hcfg_final]; simp; rw [hrec₂, h_pure_cfg2, hrec₁]
 

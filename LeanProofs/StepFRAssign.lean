@@ -617,7 +617,7 @@ private lemma assign_updated_new_guardClosure_implies_invalidated_regime_none
     simp [hkeep_false] at hsurvive
   exact this.elim
 
-private lemma typecheckIf_ioFree_ok_pred_noPred
+private lemma typecheckIf_ok_pred_noPred
     (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckIf ctx e1 e2 e3 fuel = .ok res) :
     res.qualType.pred = Predicate.noPred := by
@@ -1539,7 +1539,7 @@ private lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                 simpa using htagEq.symm
               simpa [hresTag] using hjoinedTagNone
 
-private lemma ioFree_guardClosure_pred_implies_tag_absent
+private lemma guardClosure_pred_implies_tag_absent
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
     (htc : typecheckExpr ctx e fuel = .ok res)
@@ -1644,7 +1644,7 @@ private lemma ioFree_guardClosure_pred_implies_tag_absent
           have htc' : typecheckIf ctx e1 e2 e3 fuel = .ok res := by
             simpa [typecheckExpr] using htc
           have hpredNo : res.qualType.pred = Predicate.noPred :=
-            typecheckIf_ioFree_ok_pred_noPred ctx e1 e2 e3 fuel res htc'
+            typecheckIf_ok_pred_noPred ctx e1 e2 e3 fuel res htc'
           simp [hpredNo] at hpred
       | var x =>
           have htcVar : typecheckVar ctx x = .ok res := by
@@ -2254,11 +2254,11 @@ lemma stepFR_assign
   have hmono1 : Regime.monotoneStep ctxᵢ.regime res1.regime' := regime_monotone ctxᵢ e1 fuel' res1 htc1'
   have hpm₀1 : cfg₀1.pureMode = pm := by
     simpa using
-      (terminatesTo_IOFree_preserves_pureMode e1
+      (terminatesTo_preserves_pureMode e1
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 (Value.loc a₀w) ht₀_e1)
   have hpm₁1 : cfg₁1.pureMode = pm := by
     simpa using
-      (terminatesTo_IOFree_preserves_pureMode e1
+      (terminatesTo_preserves_pureMode e1
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 (Value.loc a₁w) ht₁_e1)
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by
     rw [hpm₁1, hpm₀1]
@@ -2572,7 +2572,7 @@ lemma stepFR_assign
                         hmem_res hIn hlookup_res hpred
                   have hnone : res2.tagEnv'.get? k' = none := by
                     exact
-                      ioFree_guardClosure_pred_implies_tag_absent
+                      guardClosure_pred_implies_tag_absent
                         (ctx := { ctxᵢ with
                           memEnv := res1.memEnv'
                           tagEnv := res1.tagEnv'
@@ -2773,7 +2773,7 @@ lemma stepFR_assign
                       hmem_res _hIn hlookup_res hpred
                 have hnone : res2.tagEnv'.get? k' = none := by
                   exact
-                    ioFree_guardClosure_pred_implies_tag_absent
+                    guardClosure_pred_implies_tag_absent
                       (ctx := { ctxᵢ with
                         memEnv := res1.memEnv'
                         tagEnv := res1.tagEnv'
@@ -2984,7 +2984,7 @@ lemma stepFR_assign
                         hmem_res hIn hlookup_res hpred
                   have hnone : res2.tagEnv'.get? k' = none := by
                     exact
-                      ioFree_guardClosure_pred_implies_tag_absent
+                      guardClosure_pred_implies_tag_absent
                         (ctx := { ctxᵢ with
                           memEnv := res1.memEnv'
                           tagEnv := res1.tagEnv'
@@ -3169,7 +3169,7 @@ lemma stepFR_assign
                       hmem_res _hIn hlookup_res hpred
                 have hnone : res2.tagEnv'.get? k' = none := by
                   exact
-                    ioFree_guardClosure_pred_implies_tag_absent
+                    guardClosure_pred_implies_tag_absent
                       (ctx := { ctxᵢ with
                         memEnv := res1.memEnv'
                         tagEnv := res1.tagEnv'
@@ -3920,7 +3920,7 @@ lemma stepFR_assign
                                   hmem_res hIn hlookup_res hpred
                             have hnone : res2.tagEnv'.get? k' = none := by
                               exact
-                                ioFree_guardClosure_pred_implies_tag_absent
+                                guardClosure_pred_implies_tag_absent
                                   (ctx := { ctxᵢ with
                                     memEnv := res1.memEnv'
                                     tagEnv := res1.tagEnv'

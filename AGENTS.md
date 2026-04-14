@@ -79,11 +79,11 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `StepFR.lean` - Step-based proof mechanics and shared definitions (`StepFR`, `StepFR_IH`, utility lemmas, `TypeSystemEnforcesFaultRobustness_impl`)
 - `StepFRApp.lean` - Fault-robustness proof for the function application case (`stepFR_app` and exclusive helpers)
 - `StepFRAssign.lean` - Fault-robustness proof for the assignment case (`stepFR_assign` and exclusive helpers)
-- `FaultRobustnessProofs.lean` - Remaining case proofs (stepFR_literal through stepFR_seq, excluding app and assign), step theorem (`TypeSystemEnforcesFaultRobustness_step_IOFree`), and final bridges (`TypeSystemEnforcesFaultRobustness_IOFree`)
+- `FaultRobustnessProofs.lean` - Remaining case proofs (stepFR_literal through stepFR_seq, excluding app and assign), step theorem (`TypeSystemEnforcesFaultRobustness_step`), and final bridges (`TypeSystemEnforcesFaultRobustness`)
 - `Progress*.lean` - Progress (well-typed expressions evaluate or diverge, never get stuck)
 - `MemoryMonotonicity.lean` - Memory monotonicity (evaluation only adds locations, never removes)
 
-**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`, `IOHelpers.lean`
+**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`
 
 ### Other Components
 
@@ -124,7 +124,6 @@ To add a test:
 
 - **No testing**: Proofs are verified by compilation, not runtime tests
 - **Conservative `sorry` use**: Use `sorry` sparingly. The goal is to **decrease** the number of `sorry` statements (shrinking proof surface), not increase them. Adding more `sorry` goes in the wrong direction.
-- **IO monad reasoning**: See `doc/IO_equality_approach.md` for guidelines on functions defined in IO monad (e.g., `beval`)
 - **Proof techniques**: Many proofs use structural induction on fuel or expression structure
 - **Lean LSP tooling**: Use `lean-lsp` MCP tool to examine proof goals, errors, and search for lemmas
 - **Bounded falsification check**: When a lemma looks suspicious, try 2–3 quick
