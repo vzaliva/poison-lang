@@ -1246,7 +1246,7 @@ def normalizeAppResultByProvenance (p1p : Poison) (qt : QTyp) : QTyp :=
     inline loop in `applyFnTClosure` to enable per-effect reasoning
     in the fault-robustness proof. -/
 def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
-    (tagMapping : Std.ExtTreeMap TagIndex Tag compare) (pc : Poison)
+    (tagMapping : TagMapping) (pc : Poison)
     (memEnv : MemoryTypeEnv) : TypecheckM MemoryTypeEnv := do
   match effect.target with
   | EffectTarget.namedVar v =>

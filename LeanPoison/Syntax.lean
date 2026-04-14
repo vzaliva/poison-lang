@@ -1,6 +1,7 @@
 -- Core definitions for Poison language (aligned with poison-lang.ott)
 
 import Std.Data.ExtTreeSet
+import Std.Data.ExtTreeMap
 import Mathlib.Tactic
 
 open Std
@@ -131,6 +132,11 @@ instance : TransCmp (compare : TagIndex → TagIndex → Ordering) where
     exact TransCmp.isLE_trans (α := Nat) h1 h2
 
 end TagIndex
+
+/-- Map from symbolic `TagIndex` to fresh concrete `Tag`s allocated at an
+    extern use site. Used by `collectAndAllocExternTags` / `resolveSyntaxPred`
+    and by the FR contract surface for externs. -/
+abbrev TagMapping := ExtTreeMap TagIndex Tag compare
 
 -- Effect target: a named variable whose memory location is affected
 inductive EffectTarget where

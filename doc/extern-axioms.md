@@ -1,29 +1,17 @@
 # Extern Functions: FR Contract Surface on `new-iofree`
 
-This note records the residual semantic contract floor for extern
-typechecking on `new-iofree`.
-
-The proof reduction is complete.  What remains axiomatic is:
-
-- Contract A: fresh-tag allocation for extern predicate resolution respects
-  `TagMeaning`
-- Contract B: impure extern application preserves **guard provenance**
-
-The old poison-provenance half of Contract B is no longer axiomatic.  It is
-now proved structurally by
-`applyFnTClosure_extern_ok_memEnv_poison_origin`, and then threaded into the
-whole-expression theorem
-`typecheckExpr_lookup_origin_of_pc_true_split`.
+This note records the semantic contract floor for extern typechecking on
+`new-iofree`.
 
 ## 1. Motivation
 
-Externs matter to the fault-robustness proof only at the **typechecking
-summary** layer, not at runtime.  Raw extern syntax (`externVal`,
-`externFn`, `externPfn`) is operationally unreachable: runtime evaluation
-fails on those forms.  The remaining proof surface is therefore about what
-the typechecker says about external code.
+Externs affect the fault-robustness proof only at the **typechecking
+summary** layer, not at runtime. Raw extern syntax (`externVal`, `externFn`,
+`externPfn`) is operationally unreachable: runtime evaluation fails on those
+forms. The proof surface is therefore about what the typechecker states about
+external code.
 
-That proof surface splits into two kinds of obligations:
+Two obligations arise:
 
 1. **Typechecking-to-semantics coherence for fresh guards.**
    Extern typechecking resolves symbolic predicates using
@@ -32,20 +20,16 @@ That proof surface splits into two kinds of obligations:
    contract connecting those fresh tags to an arbitrary `TagMeaning`.
 2. **Typechecking-to-semantics coherence for impure memory effects.**
    An impure extern summary may overwrite memory cells with resolved guard
-   predicates.  The FR proof needs a contract saying that trusted output
+   predicates. The FR proof needs a contract saying that trusted output
    cells do not manufacture trust out of nowhere.
 
-Not every externally-facing fact remained semantic.
-
-- Pure externs require no provenance axiom because
-  `applyPFnTClosure_extern_memEnv_eq` proves structurally that they do not
-  modify memory.
-- The poison half of the old impure-extern provenance contract is also now
-  structural: under `ctx.pc = true`, every `applyExternEffect` write stores
-  `poison = joinPoison true _ = true`, so any post-loop cell that remains
-  clean must have been untouched by the effect loop.
-
-What remains below is the actual residual contract floor.
+Neither obligation is derivable from the syntactic shape of the typechecker
+alone, so each is discharged by one axiom. Related obligations that *are*
+structural — pure-extern memory preservation, the poison half of impure-extern
+provenance, and `typecheckExternVal` lookup-origin preservation — are handled
+by proved lemmas (`applyPFnTClosure_extern_memEnv_eq`,
+`applyFnTClosure_extern_ok_memEnv_poison_origin`, and
+`typecheckExternVal_preserves_lookup_origin` respectively).
 
 ## 2. Contracts
 
@@ -64,7 +48,7 @@ applications, and impure extern applications.
 ```lean
 axiom externTagMappingRespectsTagMeaning
   (tm : TagMeaning)
-  (mapping : Std.ExtTreeMap TagIndex Tag compare)
+  (mapping : TagMapping)
   (preds : List SyntaxPredicate) (env : VarTypeEnv)
   (nextTag : Tag) (nextTag' : Tag)
   (halloc : collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag')) :
@@ -73,11 +57,11 @@ axiom externTagMappingRespectsTagMeaning
 
 **Explanation**
 
-This remains semantic because `tm` is universally quantified.  The ambient
+This is semantic because `tm` is universally quantified.  The ambient
 well-formedness hypotheses constrain descriptors already present in the
 typing context, but they do not force an arbitrary `TagMeaning` to assign
-the right meaning to freshly allocated tags.  Once this contract is assumed,
-the rest of the resolution pipeline is structural:
+the right meaning to freshly allocated tags.  Given this contract, the rest
+of the resolution pipeline is structural:
 `resolveSyntaxPred_respectsTagMeaning` pushes the property through predicate
 resolution, and the various extern corollaries push it through returned or
 stored `QTyp`s.
@@ -92,8 +76,8 @@ must trace back to a corresponding guarded-and-active cell in the pre-call
 context.  In other words, impure extern type summaries may move or preserve
 guarded trust, but they may not invent it.
 
-This is now a **guard-only** residual contract.  The poison analogue was
-proved structurally and removed from the axiom surface.
+The contract is **guard-only**: the poison analogue is structural (see §1)
+and is not part of the axiom surface.
 
 **Exact axiom statement**
 
@@ -122,8 +106,6 @@ axiom applyFnTClosure_extern_ok_lookup_origin
 
 **Explanation**
 
-This is the residual semantic boundary for impure extern provenance.
-
 The hypotheses say:
 
 - we are in the impure extern branch of `applyFnTClosure`
@@ -136,8 +118,18 @@ The conclusion says that the same location already existed in the input
 memory `ctx.memEnv` with a `QTyp` carrying the same guard tag, with the same
 tag active in `ctx.regime`.
 
-Why this remains semantic: the effect loop can overwrite cells with newly
-resolved guard predicates while preserving the regime structure.  The proof
-now handles poison structurally, but it does not yet derive this
-guard-specific backward-origin fact from the shape of the extern summary
-alone.
+**Why the function-type exclusion.** Both pre- and post-image `QTyp`s are
+required to satisfy `isFunctionType = false`. Function-valued cells are handled
+separately: their trust derives from the arrow's own regime and from closure
+regime consistency, not from guard-tag provenance, so they do not belong on
+this particular obligation path.
+
+**Why this is semantic.** The effect loop can mint new guard predicates at
+existing cells — `applyExternEffect` writes `effectSpecToQTyp effect.poison
+resolvedPred`, where `resolvedPred` may be a `guardClosure` predicate with a
+freshly allocated tag. Proving that any such minted guard, if later observed
+as active in `r.regime'`, must correspond to a pre-existing active guard in
+`ctx.regime` would require reasoning about the syntactic shape of effect specs
+(which tags effects can introduce, which tags effects can promote to active)
+that is not currently mechanized. Until that reasoning exists, guard
+provenance is assumed.

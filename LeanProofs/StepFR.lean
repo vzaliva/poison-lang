@@ -6179,7 +6179,7 @@ lemma wfTagMeaningCtx_pclosure_body
     `guardClosure` predicate whose body successfully converts to `PExpr`, the
     tag meaning maps that tag to the expected guard descriptor. -/
 def TagMappingRespectsTagMeaning (tm : TagMeaning)
-    (mapping : Std.ExtTreeMap TagIndex Tag compare)
+    (mapping : TagMapping)
     (preds : List SyntaxPredicate) (env : VarTypeEnv) : Prop :=
   ∀ idx tag, mapping.get? idx = some tag →
     ∀ arg body pbody,
@@ -6196,7 +6196,7 @@ def TagMappingRespectsTagMeaning (tm : TagMeaning)
     constrain it on fresh tags. -/
 axiom externTagMappingRespectsTagMeaning
   (tm : TagMeaning)
-  (mapping : Std.ExtTreeMap TagIndex Tag compare)
+  (mapping : TagMapping)
   (preds : List SyntaxPredicate) (env : VarTypeEnv)
   (nextTag : Tag) (nextTag' : Tag)
   (halloc : collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag')) :
@@ -6209,7 +6209,7 @@ axiom externTagMappingRespectsTagMeaning
 lemma resolveSyntaxPred_respectsTagMeaning
     (tm : TagMeaning)
     (pred : SyntaxPredicate) (env : VarTypeEnv)
-    (mapping : Std.ExtTreeMap TagIndex Tag compare)
+    (mapping : TagMapping)
     (preds : List SyntaxPredicate)
     (resolvedPred : Predicate)
     (hcompat : TagMappingRespectsTagMeaning tm mapping preds env)
@@ -6495,7 +6495,7 @@ private lemma locset_fold_updateMemEnv_allCellsRespect
 private lemma applyExternEffect_preserves_allCellsRespect
     (tm : TagMeaning) (effect : Effect)
     (unifiedEnv : VarTypeEnv)
-    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (tagMapping : TagMapping)
     (allPreds : List SyntaxPredicate)
     (pc : Poison) (memEnv memEnv' : MemoryTypeEnv)
     (hcompat : TagMappingRespectsTagMeaning tm tagMapping allPreds unifiedEnv)
@@ -6552,7 +6552,7 @@ private lemma forIn_effects_loop_preserves_allCellsRespect
     (tm : TagMeaning)
     (effects : List Effect)
     (unifiedEnv : VarTypeEnv)
-    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (tagMapping : TagMapping)
     (allPreds : List SyntaxPredicate)
     (pc : Poison)
     (memEnv memEnv' : MemoryTypeEnv)
@@ -6600,7 +6600,7 @@ private lemma extern_loop_allCellsRespect
     (tm : TagMeaning)
     (effects : List Effect)
     (unifiedEnv : VarTypeEnv)
-    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (tagMapping : TagMapping)
     (allPreds : List SyntaxPredicate)
     (pc : Poison)
     (memEnv memEnv' : MemoryTypeEnv)
@@ -6721,7 +6721,7 @@ lemma applyFnTClosure_extern_ok_memCellsRespect
 private lemma applyExternEffect_preserves_clean_lookup
     (effect : Effect)
     (unifiedEnv : VarTypeEnv)
-    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (tagMapping : TagMapping)
     (memEnv memEnv' : MemoryTypeEnv)
     (happly : applyExternEffect effect unifiedEnv tagMapping true memEnv = .ok memEnv')
     (l : Loc) (qt : QTyp)
@@ -6770,7 +6770,7 @@ private lemma applyExternEffect_preserves_clean_lookup
 private lemma forIn_effects_loop_preserves_clean_lookup
     (effects : List Effect)
     (unifiedEnv : VarTypeEnv)
-    (tagMapping : Std.ExtTreeMap TagIndex Tag compare)
+    (tagMapping : TagMapping)
     (memEnv memEnv' : MemoryTypeEnv)
     (hloop : forIn effects memEnv (fun effect r =>
         match applyExternEffect effect unifiedEnv tagMapping true r with
@@ -7053,7 +7053,7 @@ axiom applyFnTClosure_extern_ok_lookup_origin
 /-- Helper: if resolveSyntaxPred produces a guardClosure predicate, the tag came from the mapping. -/
 private lemma resolveSyntaxPred_guardClosure_tag_from_mapping
     (pred : SyntaxPredicate) (varEnv : VarTypeEnv)
-    (mapping : Std.ExtTreeMap TagIndex Tag compare) (resolvedPred : Predicate)
+    (mapping : TagMapping) (resolvedPred : Predicate)
     (hresolve : resolveSyntaxPred pred varEnv mapping = .ok resolvedPred)
     (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
     (hpred : resolvedPred = Predicate.guardClosure k arg_name pred_body var_env) :
