@@ -46,7 +46,7 @@ applications, and impure extern applications.
 **Exact axiom statement**
 
 ```lean
-axiom externTagMappingRespectsTagMeaning
+axiom externTagSoundness
   (tm : TagMeaning)
   (mapping : TagMapping)
   (preds : List SyntaxPredicate) (env : VarTypeEnv)
@@ -82,7 +82,7 @@ and is not part of the axiom surface.
 **Exact axiom statement**
 
 ```lean
-axiom applyFnTClosure_extern_ok_lookup_origin
+axiom externGuardProvenance
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)

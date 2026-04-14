@@ -17,6 +17,7 @@ import LeanProofs.SemanticsProperties
 import LeanProofs.IOHelpers
 import LeanProofs.Equality
 import LeanProofs.RegimeConsistency
+import LeanProofs.ExternAxioms
 import LeanProofs.VarEnvPreservation
 import LeanProofs.MemoryMonotonicity
 import Std.Data.ExtTreeMap.Lemmas
@@ -6164,44 +6165,6 @@ lemma wfTagMeaningCtx_pclosure_body
     wfTagMeaningCtx_varEnv_ext tm ctxCap xArg argQt hctxCapTm hargTm
   simpa [ctxCap] using hbodyTm
 
--- ==========================================================================
--- Extern behavioral contract: axioms for extern closure properties
--- These are the irreducible assumptions about extern type-checking behavior.
--- See doc/extern-axioms.md for the detailed rationale.
--- ==========================================================================
-
--- --------------------------------------------------------------------------
--- Step 5 unified tag-mapping axiom (Option B)
--- --------------------------------------------------------------------------
-
-/-- Semantic predicate: the tag mapping produced by `collectAndAllocExternTags`
-    is consistent with `tm`.  For every allocated tag that corresponds to a
-    `guardClosure` predicate whose body successfully converts to `PExpr`, the
-    tag meaning maps that tag to the expected guard descriptor. -/
-def TagMappingRespectsTagMeaning (tm : TagMeaning)
-    (mapping : TagMapping)
-    (preds : List SyntaxPredicate) (env : VarTypeEnv) : Prop :=
-  ∀ idx tag, mapping.get? idx = some tag →
-    ∀ arg body pbody,
-      (SyntaxPredicate.guardClosure idx arg body) ∈ preds →
-      body.toPExpr = .ok pbody →
-      tm.lookup tag = some { argName := arg, body := pbody,
-                             capEnv := VarTypeEnv.toCaptured env }
-
-/-- **Unified Contract A axiom.**  The tag mapping produced by fresh-tag
-    allocation respects any tag meaning `tm`.  This is the single semantic
-    boundary for all extern `QTypRespectsTagMeaning` obligations — the claim
-    that `tm` covers freshly allocated tags cannot be derived structurally
-    because `tm` is universally quantified and `wfTagMeaningCtx` does not
-    constrain it on fresh tags. -/
-axiom externTagMappingRespectsTagMeaning
-  (tm : TagMeaning)
-  (mapping : TagMapping)
-  (preds : List SyntaxPredicate) (env : VarTypeEnv)
-  (nextTag : Tag) (nextTag' : Tag)
-  (halloc : collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag')) :
-  TagMappingRespectsTagMeaning tm mapping preds env
-
 /-- Structural lemma: when the tag mapping respects `tm` and `resolveSyntaxPred`
     succeeds, the resolved predicate respects `tm`.  This is proved by case
     analysis on `pred` — the `guardClosure` case uses `TagMappingRespectsTagMeaning`
@@ -6304,7 +6267,7 @@ private lemma returnSpecToQTyp_pred_preserves (typ : Typ) (poison : Bool)
 -- Step 5a corollaries: validate the unified axiom on §2.4 and §2.2-simple
 -- --------------------------------------------------------------------------
 
-/-- Corollary of `externTagMappingRespectsTagMeaning`: `typecheckExternVal`
+/-- Corollary of `externTagSoundness`: `typecheckExternVal`
     result `QTyp` respects tag meaning. -/
 lemma typecheckExternVal_QTypRespectsTagMeaning_corollary
     (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
@@ -6335,7 +6298,7 @@ lemma typecheckExternVal_QTypRespectsTagMeaning_corollary
                      Except.ok.injEq] at htc
           subst htc; simp only
           -- Apply the unified axiom
-          have hcompat := externTagMappingRespectsTagMeaning tm tagMapping [pred] ctx.varEnv
+          have hcompat := externTagSoundness tm tagMapping [pred] ctx.varEnv
             ctx.nextTag nextTag' halloc
           have hpredTm := resolveSyntaxPred_respectsTagMeaning tm pred ctx.varEnv tagMapping [pred]
             resolvedPred hcompat (List.Mem.head _) hresolved
@@ -6410,7 +6373,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary
             simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly
             let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
               ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-            have hcompat := externTagMappingRespectsTagMeaning tm tagMapping [spred] unifiedEnv
+            have hcompat := externTagSoundness tm tagMapping [spred] unifiedEnv
               result2.nextTag' nextTag' halloc
             have hpredTm := resolveSyntaxPred_respectsTagMeaning tm spred unifiedEnv tagMapping
               [spred] resolvedPred hcompat (List.Mem.head _) hresolved
@@ -6666,7 +6629,7 @@ lemma applyFnTClosure_extern_ok_memCellsRespect
         with hunifiedEnv
       have hcompat : TagMappingRespectsTagMeaning tm allocRes.1
           (collectExternPreds retSpec effects) unifiedEnv :=
-        externTagMappingRespectsTagMeaning tm allocRes.1
+        externTagSoundness tm allocRes.1
           (collectExternPreds retSpec effects) unifiedEnv result2.nextTag' allocRes.2 hcollect
       -- Initial cells from hwf
       have hinit : ∀ l qt, result2.memEnv'.lookup l = some qt → QTypRespectsTagMeaning tm qt := by
@@ -6710,8 +6673,7 @@ lemma applyFnTClosure_extern_ok_memCellsRespect
           hinit hloop'
 
 -- --------------------------------------------------------------------------
--- Structural replacement for the poison conjunct of
--- applyFnTClosure_extern_ok_lookup_origin.  Pointwise in `l`.
+-- Pointwise poison origin for impure extern effects.
 -- --------------------------------------------------------------------------
 
 /-- Per-step pointwise: if a location has a clean lookup in the post-effect memEnv
@@ -6805,12 +6767,11 @@ private lemma forIn_effects_loop_preserves_clean_lookup
         exact applyExternEffect_preserves_clean_lookup h unifiedEnv tagMapping
           memEnv memEnv1 happly1 l qt_mid hlookup_mid hpoison_mid
 
-/-- Structural replacement for `.1` of `applyFnTClosure_extern_ok_lookup_origin`:
-    under `ctx.pc = true`, a clean cell in the post-extern memEnv traces back
-    pointwise to a clean cell in `result2.memEnv'` (the pre-extern memEnv passed
-    into `applyFnTClosure`).  The remaining step from `result2.memEnv'` to
-    `ctx.memEnv` is handled at the call site by the existing IH-based
-    `hbackToCtx_poison` helper. -/
+/-- Poison origin for impure externs: under `ctx.pc = true`, a clean cell in
+    the post-extern memEnv traces back pointwise to a clean cell in
+    `result2.memEnv'` (the pre-extern memEnv passed into `applyFnTClosure`).
+    The remaining step from `result2.memEnv'` to `ctx.memEnv` is handled at
+    the call site by the IH-based `hbackToCtx_poison` helper. -/
 lemma applyFnTClosure_extern_ok_memEnv_poison_origin
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -6910,7 +6871,7 @@ lemma applyFnTClosure_extern_ok_qualTypeRespects
                   (collectExternPreds (ExternReturn.simple typ poison spred) effects)
                   ((VarTypeEnv.ofCaptured capturedEnv).update x
                     ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) :=
-                externTagMappingRespectsTagMeaning tm allocRes.1
+                externTagSoundness tm allocRes.1
                   (collectExternPreds (ExternReturn.simple typ poison spred) effects)
                   ((VarTypeEnv.ofCaptured capturedEnv).update x
                     ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
@@ -7021,34 +6982,6 @@ lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
         exact (applyFnTClosure_extern_ok_memCellsRespect
           tm ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel
           x retSpec effects capturedEnv r hwf happly l qtRoot hlookup_mem) hqtinqt hqd
-
-/-- Extern contract: `FnTClosure.extern` preserves guard provenance. If an
-    output memEnv cell is trusted by an active guard tag `k` and is not a
-    function type, the same location already carried the same active guard in
-    the input context. The poison analogue is structural
-    (`applyFnTClosure_extern_ok_memEnv_poison_origin`) and not part of this
-    contract. -/
-axiom applyFnTClosure_extern_ok_lookup_origin
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (l : Loc) (qt_out : QTyp)
-  (hlookup : r.memEnv'.lookup l = some qt_out)
-  (hpc : ctx.pc = true)
-  (k : Tag)
-  (hguard : qtypGuardTag qt_out = some k)
-  (hreg : r.regime'.lookup? k = some true)
-  (hnotfun : qt_out.etyp.isFunctionType = false) :
-  ∃ qt_in,
-    ctx.memEnv.lookup l = some qt_in ∧
-    qtypGuardTag qt_in = some k ∧
-    ctx.regime.lookup? k = some true ∧
-    qt_in.etyp.isFunctionType = false
-
 
 /-- Helper: if resolveSyntaxPred produces a guardClosure predicate, the tag came from the mapping. -/
 private lemma resolveSyntaxPred_guardClosure_tag_from_mapping
@@ -12523,7 +12456,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       | extern x retSpec effects capturedEnv =>
                           have hreg_src' : srcRes.regime'.lookup? k = some true := by
                             simpa [ctxAfter] using hreg_src
-                          rcases applyFnTClosure_extern_ok_lookup_origin ctx st1 st2 p p1
+                          rcases externGuardProvenance ctx st1 st2 p p1
                               etyp2 p2 pred2 result1 fuelApp x retSpec effects capturedEnv srcRes
                               happly_src l qt_src hlookup_src hpc k htag_src hreg_src' hnotfun_src with
                             ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
