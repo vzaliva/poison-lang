@@ -6304,9 +6304,8 @@ private lemma returnSpecToQTyp_pred_preserves (typ : Typ) (poison : Bool)
 -- Step 5a corollaries: validate the unified axiom on §2.4 and §2.2-simple
 -- --------------------------------------------------------------------------
 
-/-- Corollary of the unified axiom: `typecheckExternVal` result QTyp
-    respects tag meaning.  Replaces `typecheckExternVal_QTypRespectsTagMeaning_axiom`
-    (will be deleted once all corollaries are proved in Step 5c). -/
+/-- Corollary of `externTagMappingRespectsTagMeaning`: `typecheckExternVal`
+    result `QTyp` respects tag meaning. -/
 lemma typecheckExternVal_QTypRespectsTagMeaning_corollary
     (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     (res : TypeResult)
@@ -7023,13 +7022,12 @@ lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
           tm ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel
           x retSpec effects capturedEnv r hwf happly l qtRoot hlookup_mem) hqtinqt hqd
 
--- DELETED: applyPFnTClosure_extern_ok_QTypRespectsTagMeaning
--- Replaced by the proved corollary applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary.
-
-/-- Extern contract: FnTClosure.extern preserves lookup origin (guard provenance).
-    The poison conjunct is now proved structurally by
-    `applyFnTClosure_extern_ok_memEnv_poison_origin`; only the guard-trusted
-    output → guard-trusted input claim remains axiomatic (Contract B residual). -/
+/-- Extern contract: `FnTClosure.extern` preserves guard provenance. If an
+    output memEnv cell is trusted by an active guard tag `k` and is not a
+    function type, the same location already carried the same active guard in
+    the input context. The poison analogue is structural
+    (`applyFnTClosure_extern_ok_memEnv_poison_origin`) and not part of this
+    contract. -/
 axiom applyFnTClosure_extern_ok_lookup_origin
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -7097,11 +7095,8 @@ private lemma returnSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (pred : Predi
   | ref _ => simp at h
   | arrow _ _ => simp at h
 
--- REMOVED: applyFnTClosure_extern_ok_guardClosure_tag_absent
--- Replaced by the proved lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
-
-/-- Proved alternative: FnTClosure.extern guard tag is absent from tagEnv,
-    given that the input tagEnv is bounded by nextTag. -/
+/-- `FnTClosure.extern` guard tag is absent from `tagEnv`, given that the
+    input `tagEnv` is bounded by `nextTag`. -/
 lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -7165,11 +7160,8 @@ lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
           simp only [normalizeAppResultByProvenance] at hpred
           split at hpred <;> simp at hpred
 
--- REMOVED: applyPFnTClosure_extern_ok_guardClosure_tag_absent
--- Replaced by the proved lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
-
-/-- Proved alternative: PFnTClosure.extern guard tag is absent from tagEnv,
-    given that the input tagEnv is bounded by nextTag. -/
+/-- `PFnTClosure.extern` guard tag is absent from `tagEnv`, given that the
+    input `tagEnv` is bounded by `nextTag`. -/
 lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -7229,10 +7221,6 @@ lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
       rw [← happly] at hpred
       simp only [normalizeAppResultByProvenance] at hpred
       split at hpred <;> simp at hpred
-
--- DELETED: typecheckExternVal_QTypRespectsTagMeaning_axiom
--- Replaced by the proved corollary typecheckExternVal_QTypRespectsTagMeaning_corollary
--- (which derives from externTagMappingRespectsTagMeaning).
 
 /-- Helper: surfaceSpecToQTyp preserves EnvRespectsTagMeaning (only adds noPred int cell). -/
 private lemma surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
@@ -7359,9 +7347,9 @@ private lemma surfaceSpecToQTyp_preserves_existing_lookup
   | arrow _ _ =>
     simp [Except.map, Functor.map] at hsurf
 
-/-- Proved structural replacement for the former axiom.
-    With `wfTypeContext ctx`, existing memEnv entries are unchanged by typecheckExternVal,
-    so the lookup-origin property follows trivially. -/
+/-- `typecheckExternVal` preserves the lookup-origin property for existing
+    memEnv entries: with `wfTypeContext ctx`, existing entries are unchanged,
+    so the property follows trivially. -/
 lemma typecheckExternVal_preserves_lookup_origin
   (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
   (res : TypeResult)
@@ -7419,11 +7407,8 @@ private lemma surfaceSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (resolvedPre
     | (simp only [Except.ok.injEq] at hsurf; exact (congrArg (·.1.pred) hsurf.symm))
     | (simp at hsurf)
 
--- REMOVED: typecheckExternVal_guardClosure_pred_implies_tag_absent
--- Replaced by the proved lemma typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded
-
-/-- Proved alternative: typecheckExternVal guard tag is absent from tagEnv,
-    given that the input context's tagEnv is bounded by nextTag. -/
+/-- `typecheckExternVal` guard tag is absent from `tagEnv`, given that the
+    input context's `tagEnv` is bounded by `nextTag`. -/
 lemma typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded
   (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
   (res : TypeResult)

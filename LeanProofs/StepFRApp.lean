@@ -2241,11 +2241,6 @@ private lemma runtimeInstantiatesCtx_closure_body_from_henv
   rcases _hcover y qt hlookup with ⟨v, hlookupρ⟩
   exact ⟨v, hlookupρ, _henv y qt v hlookup hlookupρ⟩
 
--- NOTE: old packed app helpers from the head-oriented approach were removed.
--- The app proof now keeps obligations inline and will use member-oriented join helpers.
--- (QTypRespectsTagMeaning_of_arrow_captured_lookup, wfTagMeaningCtx_ofCaptured_from_arrow,
---  and wfTagMeaningCtx_closure_body have been moved earlier in the file.)
-
 -- Extract per-member evidence from closureCapturedVarsRegime for a closure value.
 -- Given that the value is a closure with arrow type, the deepValueQTypProperty
 -- must use the .closure constructor, yielding σcap with regime, typing, and recursive

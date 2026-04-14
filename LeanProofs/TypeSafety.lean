@@ -3950,11 +3950,9 @@ end advanceNextTag_monotone_proof
 
 
 
--- [Deleted: typecheck_ioFree_preserves_nextTag section]
--- The nextTag-equality statements were false for extern expressions (extern tag
--- allocation via collectAndAllocExternTags advances nextTag). The public interface
--- typecheck_ioFree_preserves_nextTag was unused. The following helpers are retained
--- because they are used by the nextTag monotonicity proofs below.
+-- The following helpers are used by the nextTag monotonicity proofs below.
+-- A stronger nextTag-equality property does not hold in general: extern tag
+-- allocation via `collectAndAllocExternTags` advances `nextTag`.
 
 lemma joinTypeResults_nextTag_eq_max
   (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
