@@ -546,26 +546,6 @@ lemma bevalFunctionBody_to_terminatesTo
 -- terminatesTo inversion lemmas
 -- ================================================================
 
-private def isExternExpr : Expr → Prop
-  | Expr.externVal _ _ _ => True
-  | Expr.externFn _ _ _ _ => True
-  | Expr.externPfn _ _ _ => True
-  | _ => False
-
-lemma terminatesTo_extern_false {e : Expr} {c₀ c₁ : Config} {o : Value} :
-  isExternExpr e →
-  terminatesTo e c₀ c₁ o → False := by
-  intro hex ht
-  rcases ht with ⟨fuel, verbose, hbeval⟩
-  cases e with
-  | externVal _ _ _ =>
-      cases fuel <;> simp [LeanPoison.beval] at hbeval
-  | externFn _ _ _ _ =>
-      cases fuel <;> simp [LeanPoison.beval] at hbeval
-  | externPfn _ _ _ =>
-      cases fuel <;> simp [LeanPoison.beval] at hbeval
-  | _ => cases hex
-
 /-- Inversion lemma for terminatesTo on number literals. -/
 lemma terminatesTo_num_inv' (n : Int) (c₀ c₁ : Config) (v : Value) :
     terminatesTo (Expr.num n) c₀ c₁ v → c₁ = c₀ ∧ v = Value.num n := by

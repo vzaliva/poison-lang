@@ -1174,15 +1174,6 @@ lemma valueHasETyp_closure_etyp_arrow_inv
   cases h with
   | closure => exact ⟨_, _, _, _, rfl⟩
 
-/-- Inversion: closure typed at arrow gives a member of the closure list. -/
-lemma valueHasETyp_closure_mem_inv
-  {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv}
-  {st1 st2 : Typ} {p : Poison} {tcl : List FnTClosure}
-  (h : valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p tcl)) :
-  ∃ tenv, FnTClosure.regular x e tenv ∈ tcl := by
-  cases h with
-  | closure htcl => exact ⟨_, htcl⟩
-
 /-- Inversion: peClosure typed at et has et = parrow for some parrow type. -/
 lemma valueHasETyp_peClosure_etyp_parrow_inv
 
@@ -1192,40 +1183,6 @@ lemma valueHasETyp_peClosure_etyp_parrow_inv
   ∃ st1 st2 p tcl, et = ETyp.parrow st1 st2 p tcl := by
   cases h with
   | peClosure => exact ⟨_, _, _, _, rfl⟩
-
-/-- Inversion: peClosure typed at parrow gives a member of the closure list. -/
-lemma valueHasETyp_peClosure_mem_inv
-  {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv}
-  {st1 st2 : Typ} {p : Poison} {tcl : List PFnTClosure}
-  (h : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl)) :
-  ∃ pbody tenv, Expr.toPExpr? body = some pbody ∧ PFnTClosure.regular x pbody tenv ∈ tcl := by
-  cases h with
-  | peClosure hpure htcl => exact ⟨_, _, hpure, htcl⟩
-
-/-- Future-use lemma for preservation proofs:
-    when typing joins function closure sets (e.g. branch joins / merged alternatives),
-    transport a concrete closure-typing witness to the larger closure list. -/
-lemma valueHasETyp_closure_weaken_tcl
-    {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv}
-    {st1 st2 : Typ} {p₁ p₂ : Poison} {tcls₁ tcls₂ : List FnTClosure}
-    (h : valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p₁ tcls₁))
-    (hsub : ∀ tc, tc ∈ tcls₁ → tc ∈ tcls₂) :
-    valueHasETyp θ (Value.closure x e env) (ETyp.arrow st1 st2 p₂ tcls₂) := by
-  cases h with
-  | closure htcl henv hcover =>
-      exact valueHasETyp.closure (htcl := hsub _ htcl) (henv := henv) (hcover := hcover)
-
-/-- Future-use lemma for preservation proofs:
-    pure analogue of `valueHasETyp_closure_weaken_tcl` for joined parrow closure sets. -/
-lemma valueHasETyp_peClosure_weaken_tcl
-    {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv}
-    {st1 st2 : Typ} {p₁ p₂ : Poison} {tcls₁ tcls₂ : List PFnTClosure}
-    (h : valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p₁ tcls₁))
-    (hsub : ∀ tc, tc ∈ tcls₁ → tc ∈ tcls₂) :
-    valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p₂ tcls₂) := by
-  cases h with
-  | peClosure hpure htcl henv hcover =>
-      exact valueHasETyp.peClosure (hpure := hpure) (htcl := hsub _ htcl) (henv := henv) (hcover := hcover)
 
 -- ================================================================
 -- Helper Lemmas
@@ -11030,54 +10987,6 @@ lemma beqETypSignature_joinETyps_left {t1 t2 t3 : ETyp} {p1 p2 : Poison}
           · simp [heq] at h
       | _ => simp [beqETypSignature] at h
 
-/-- joinETyps for ref types with compatible signatures produces a ref type. -/
-lemma joinMemEnvs_contains_implies_or (env1 env2 : MemoryTypeEnv) (l : Loc) :
-  (joinMemEnvs env1 env2).contains l → env1.contains l ∨ env2.contains l := by
-  intro hcontains
-  by_cases h1 : env1.contains l = true
-  · left; exact h1
-  · by_cases h2 : env2.contains l = true
-    · right; exact h2
-    · exfalso
-      have h1not : l ∉ env1 := (Std.ExtTreeMap.contains_iff_mem).not.1 h1
-      have h2not : l ∉ env2 := (Std.ExtTreeMap.contains_iff_mem).not.1 h2
-      have h1_none : env1[l]? = none := Std.ExtTreeMap.getElem?_eq_none h1not
-      have h2_none : env2[l]? = none := Std.ExtTreeMap.getElem?_eq_none h2not
-      have hjoin_none : (joinMemEnvs env1 env2)[l]? = none := by
-        classical
-        let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
-          match oe1, oe2 with
-          | some e1, none => some e1
-          | none, some e2 => some e2
-          | some e1, some e2 =>
-            some ⟨joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩
-          | none, none => none
-        -- unfold joinMemEnvs/ combineExtTreeMaps and reason on membership in `ks`
-        dsimp [joinMemEnvs, f, combineExtTreeMaps]
-        change
-          (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
-              ({} : MemoryTypeEnv))[l]? = none
-        by_cases h_in : l ∈ (env1.keys ++ env2.keys).eraseDups
-        · have hgo :=
-            combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
-              ({} : MemoryTypeEnv) l h_in
-          have hfun : f l (env1.get? l) (env2.get? l) = none := by
-            simp [ExtTreeMap.get?_eq_getElem?, h1_none, h2_none, f]
-          -- rewrite the RHS to `none` and close
-          rw [hfun] at hgo
-          exact hgo
-        · have hgo :=
-            combineExtTreeMaps_go_get_not_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
-              ({} : MemoryTypeEnv) l h_in
-          have hempty : (({} : MemoryTypeEnv)[l]?) = none := by
-            rfl
-          rw [hempty] at hgo
-          exact hgo
-      have hmem : l ∈ joinMemEnvs env1 env2 := (Std.ExtTreeMap.contains_iff_mem).1 hcontains
-      have hsome : Option.isSome (joinMemEnvs env1 env2)[l]? :=
-        (Std.ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
-      simp [hjoin_none] at hsome
-
 /-- If a location is in the left env and not in the right, it is in the join. -/
 lemma joinMemEnvs_contains_of_left (env1 env2 : MemoryTypeEnv) (l : Loc) :
   env1.contains l → env2[l]? = none → (joinMemEnvs env1 env2).contains l := by
@@ -13967,28 +13876,6 @@ lemma typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded (ctx : TypeCont
     (hwf : wfTypeContext ctx) (htc : typecheck ctx e fuel = .ok res) :
     etypClosuresCapturedRefLocsBounded res.qualType.etyp res.nextLoc' :=
   (typecheckExpr_preserves_refLocs_main fuel ctx e res hwf htc).2.2
-
-/-- Build wfTypeContext for a closure body context given the function result's ref-loc properties
-    and the argument's ref-loc properties. Used at FR closure-application sites. -/
-lemma wfTypeContext_closureBody
-    (result_fn : TypeResult) (capturedEnv : CapturedVarEnv) (x : Name)
-    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-    (pc' : Poison) (ctx : TypeContext)
-    (hwf_fn : wfTypeResult result_fn)
-    (hcaptFull : CapturedEnvRefLocsFullBounded capturedEnv result_fn.nextLoc')
-    (hargRL : etypRefLocsBounded argEtyp result_fn.nextLoc')
-    (hargCRL : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc') :
-    wfTypeContext { ctx with
-      pc := pc', memEnv := result_fn.memEnv',
-      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
-        ⟨argEtyp, argPoison, argPred⟩,
-      tagEnv := result_fn.tagEnv', nextLoc := result_fn.nextLoc',
-      nextTag := result_fn.nextTag', regime := result_fn.regime' } :=
-  ⟨hwf_fn,
-   varEnvRefLocsBounded_update
-     (varEnvRefLocsBounded_ofCaptured (capturedEnvRefLocsBounded_of_fullBounded_refLocs hcaptFull)) hargRL,
-   varEnvClosuresCapturedRefLocsBounded_update
-     (varEnvClosuresCapturedRefLocsBounded_ofCaptured hcaptFull) hargCRL⟩
 
 /-- Combined theorem: typechecking preserves wfTypeResult and ref-location boundedness.
     This is the target theorem from Step 1 of the extern-axioms plan. -/

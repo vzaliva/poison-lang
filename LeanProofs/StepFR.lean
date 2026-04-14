@@ -322,29 +322,6 @@ private lemma tagEnvConsistentWithRegimeMasked_insert_false_with_regime
         simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hlookup ⊢
         exact hlookup
 
--- `invalidateTagDeps` only removes entries; it never creates new `true` bindings.
-lemma tagEnvConsistentWithRegime_invalidate
-    (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
-    (h : tagEnvConsistentWithRegime tagEnv R) :
-    tagEnvConsistentWithRegime (invalidateTagDeps tagEnv ls) R := by
-  intro k deps hget
-  -- Filtering can only keep an existing binding.
-  have hget' : tagEnv.get? k = some ⟨true, deps⟩ := by
-    -- `invalidateTagDeps` is `filter`; use the filter lookup lemma.
-    unfold invalidateTagDeps at hget
-    -- Apply filter lemma: `(t.filter f)[k]? = Option.filter (f k) t[k]?`
-    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter'] at hget
-    -- Case split on the original value at k
-    cases h0 : tagEnv.get? k
-    · -- If tagEnv[k] = none, then filter returns none, contradicting hget
-      rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
-      simp at hget
-    · -- If tagEnv[k] = some val, and filter returns some, then val is preserved
-      rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
-      simp at hget
-      rw [hget.1]
-  exact h k deps hget'
-
 private lemma tagEnvConsistentWithRegimeMasked_invalidate
     (masked : Tag → Prop)
     (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
@@ -361,50 +338,6 @@ private lemma tagEnvConsistentWithRegimeMasked_invalidate
       simp at hget
       rw [hget.1]
   exact h k deps hget'
-
--- `invalidateRegimeDeps` keeps the regime and tag environment in sync: if a tag survives
--- invalidation in the TagEnv, it also survives in the regime map.
-lemma invalidateRegimeDeps_preserves_true
-    (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
-    (h : tagEnvConsistentWithRegime tagEnv R) :
-    tagEnvConsistentWithRegime (invalidateTagDeps tagEnv ls) (invalidateRegimeDeps R tagEnv ls) := by
-  intro k deps hget
-  -- From TagEnv consistency, the *pre* regime maps `k ↦ true`.
-  have hkR : R.lookup? k = some true := by
-    -- `invalidateTagDeps` only removes entries; recover the original binding.
-    have hkeep : tagEnv.get? k = some ⟨true, deps⟩ := by
-      unfold invalidateTagDeps at hget
-      rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter'] at hget
-      cases h0 : tagEnv.get? k
-      · -- If tagEnv[k] = none, then filter returns none, contradicting hget
-        rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
-        simp at hget
-      · -- If tagEnv[k] = some val, and filter returns some, then val is preserved
-        rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
-        simp at hget
-        rw [hget.1]
-    exact h k deps hkeep
-  -- Now show the invalidated regime still maps `k ↦ true`.
-  unfold invalidateRegimeDeps
-  -- `lookup?` is just `R.get? k`, so `hkR : R.get? k = some true` directly.
-  dsimp [Regime.lookup?] at hkR
-  -- We need to show the filtered map still has `k ↦ true`.
-  dsimp only [invalidateTagDeps]
-  -- First, `invalidated.contains k = true` since `invalidateTagDeps` kept `k`.
-  have hcontains : (invalidateTagDeps tagEnv ls).contains k = true := by
-    -- `contains` checks if `get?` returns `some`
-    simp only [Std.ExtTreeMap.contains_eq_isSome_getElem?]
-    rw [← Std.ExtTreeMap.get?_eq_getElem?, hget]
-    rfl
-  -- Use `getElem?_filter'` for the map filter.
-  have hmap : (R.filter (fun k _ => (invalidateTagDeps tagEnv ls).contains k)).get? k = some true := by
-    -- Filter keeps `k` because `hcontains` is true.
-    -- `get?` on the filtered map is `Option.filter` on the original get?.
-    simp [Std.ExtTreeMap.get?_eq_getElem?, hcontains, hkR]
-  -- Finally, discharge the `lookup?` of the new regime.
-  -- `Regime.lookup?` is just `.get? k`, so simp reduces to the filtered map lookup.
-  simp [Regime.lookup?]
-  exact ⟨hkR, hcontains⟩
 
 private lemma invalidateRegimeDeps_preserves_true_masked
     (masked : Tag → Prop)
@@ -975,16 +908,6 @@ lemma valueHasETyp_loc_inv {θ : RealizationMap} {a : Address} {e : ETyp}
   | loc hlookup hin => exact ⟨_, _, rfl, hlookup, hin⟩
 
 -- Inversion for closure/parrow: etype is arrow/parrow (avoids dependent elimination in agreeValueUnder_same).
-lemma valueHasETyp_closure_etyp_arrow {θ : RealizationMap} {x : Name} {e : Expr} {env : VarEnv} {et : ETyp}
-  (h : valueHasETyp θ (Value.closure x e env) et) : et.isArrow = true := by
-  cases h with
-  | closure => simp [ETyp.isArrow]
-
-lemma valueHasETyp_peClosure_etyp_parrow {θ : RealizationMap} {x : Name} {body : Expr} {env : VarEnv} {et : ETyp}
-  (h : valueHasETyp θ (Value.peClosure x body env) et) : et.isParrow = true := by
-  cases h with
-  | peClosure => simp [ETyp.isParrow]
-
 lemma List_lookup_some_mem
     {α β : Type} [BEq α] [LawfulBEq α]
     (x : α) (y : β) (l : List (α × β)) :
@@ -1367,37 +1290,6 @@ lemma agreeValueUnder_same
     agreeValueUnder predSat R μ μ θ θ qt v v := by
   obtain ⟨hdeep⟩ := hcvcr
   exact agreeValueUnder_same_aux hdeep hclean htyp
-
--- agreeOnClean when both sides are the same (μ, ρ, θ).
-lemma agreeOnClean_same_config
-  (predSat : PredSat) (R : Regime) (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (hric : runtimeInstantiatesCtx ctx μ ρ θ) (hcwr : consistentWithRegime predSat R ctx μ ρ θ)
-  (_hR : R = ctx.regime) :
-  agreeOnClean predSat R ctx μ ρ θ μ ρ θ := by
-  constructor
-  · intro l qt hlookup hclean
-    cases hθ : θ.lookup l with
-    | none => exact agreeLocUnder.both_unrealized l qt hθ hθ
-    | some a =>
-      have hcontains := (hric.1 l a hθ).2
-      have hmem : a ∈ μ := (ExtTreeMap.contains_iff_mem).1 hcontains
-      have hisSome : μ[a]?.isSome = true := (ExtTreeMap.mem_iff_isSome_getElem?).1 hmem
-      cases hμan : μ[a]? with
-      | none => simp only [hμan] at hisSome; exact False.elim (Bool.false_ne_true hisSome)
-      | some n =>
-        by_cases hetyp : qt.etyp = ETyp.int
-        · have hμ : Memory.lookup μ a = some n := by simp [Memory.lookup, ExtTreeMap.get?_eq_getElem?, hμan]
-          have htyp : valueHasETyp θ (Value.num n) qt.etyp := by rw [hetyp]; exact valueHasETyp.num n
-          have hcvcr : closureCapturedVarsRegime predSat R qt μ θ (Value.num n) :=
-            .intro (.nonClosure (fun _ _ _ h => by injection h) (fun _ _ _ h => by injection h))
-          exact agreeLocUnder.agree_values l qt a a n n hθ hθ hμ hμ
-            (agreeValueUnder_same hclean htyp hcvcr)
-        · exact False.elim (hetyp (memEnv_lookup_etyp_int ctx.memEnv l qt hlookup))
-  · intro x qt hlookup hclean
-    rcases hric.2 hlookup with ⟨v, hρ, htyp⟩
-    have hcvcr := hcwr.2.2 x qt v hlookup hρ
-    refine agreeVarUnder.agree_values x qt v v hρ hρ
-      (agreeValueUnder_same hclean htyp hcvcr)
 
 -- Unary preservation: a single run preserves the value at an inherited clean location.
 inductive PreservesInheritedCleanLocOneRun
@@ -4087,13 +3979,6 @@ lemma deref_foldM_etyp_int
     simpa using hl
   exact list_foldlM_derefFoldF_etyp_int mem ls.toList (false, none) joined pred? hfold l hl'
 
--- wfTypeContext for ctxAfter is equivalent to wfTypeResult
--- (ctxAfter sets memEnv := res.memEnv' and nextLoc := res.nextLoc')
-lemma wfTypeResult_of_wfTypeContext_ctxAfter (ctx : TypeContext) (res : TypeResult) :
-  wfTypeContext (ctxAfter ctx res) → wfTypeResult res := by
-  simp only [wfTypeContext, ctxAfter, wfTypeResult]
-  exact fun ⟨h, _, _⟩ => h
-
 -- If l is not in ctx.memEnv and runtimeInstantiatesCtx holds, then θ.lookup l = none
 -- (contrapositive of runtimeInstantiatesCtx's first conjunct)
 lemma theta_not_contains_if_not_in_memEnv
@@ -4383,116 +4268,6 @@ lemma agreeValueUnder_clean_extends
       hagree
   exact htransport hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
 
-lemma agreeCapturedEnv_clean_extends
-  {predSat : PredSat} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
-  {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {σcap : CapturedVarEnv} {ρcap₀ ρcap₁ : VarEnv} :
-  (∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v) →
-  (∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v) →
-  θ₀.extendsMap θ₀' →
-  θ₁.extendsMap θ₁' →
-  agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ →
-  agreeCapturedEnv predSat R μ₀' μ₁' θ₀' θ₁' σcap ρcap₀ ρcap₁ := by
-  intro hpred_compat₀ hpred_compat₁ hθ₀ hθ₁ hcap
-  let motive₁ :
-      (a : QTyp) → (a_1 a_2 : Value) → agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
-    fun qt v₁ v₂ _ =>
-      qtypCleanUnder R qt →
-        (∀ (qt : QTyp) (v : Value),
-          qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v) →
-          (∀ (qt : QTyp) (v : Value),
-            qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v) →
-            θ₀.extendsMap θ₀' →
-              θ₁.extendsMap θ₁' →
-                agreeValueUnder predSat R μ₀' μ₁' θ₀' θ₁' qt v₁ v₂
-  let motive₂ :
-      (a : CapturedVarEnv) → (a_1 a_2 : VarEnv) → agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
-    fun σcap ρcap₁ ρcap₂ _ =>
-      (∀ (qt : QTyp) (v : Value),
-        qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v) →
-        (∀ (qt : QTyp) (v : Value),
-          qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v) →
-          θ₀.extendsMap θ₀' →
-            θ₁.extendsMap θ₁' →
-              agreeCapturedEnv predSat R μ₀' μ₁' θ₀' θ₁' σcap ρcap₁ ρcap₂
-  have htransport : motive₂ σcap ρcap₀ ρcap₁ hcap :=
-    agreeCapturedEnv.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
-      (motive_1 := motive₁) (motive_2 := motive₂)
-      (clean_eq_nonref_nonarrow := by
-        intro qt v₁ v₂ hpoison hnotfun hnotref hagree _hclean _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
-        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref hagree)
-      (clean_internal_arrow := by
-        intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ ihCap _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
-        exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch
-          (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
-          hv₁ hv₂)
-      (dirty_internal_arrow := by
-        intro qt v₁ v₂ hdirty hisArrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
-        exact agreeValueUnder.dirty_internal_arrow hdirty hisArrow
-          (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
-      (clean_internal_parrow := by
-        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ ihCap _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
-        exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch
-          (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
-          hv₁ hv₂)
-      (dirty_internal_parrow := by
-        intro qt v₁ v₂ hdirty hisParrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
-        exact agreeValueUnder.dirty_internal_parrow hdirty hisParrow
-          (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
-      (clean_ref := by
-        intro ls l a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin hv1 hlookup2 hv2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
-        exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin hv1 (hθ₁ _ _ hlookup2) hv2)
-      (withPred_true_eq := by
-        intro k qt v₁ v₂ htag hregime hnotfun hnotref hagree _hclean _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
-        exact agreeValueUnder.withPred_true_eq k htag hregime hnotfun hnotref hagree)
-      (withPred_true_ref := by
-        intro k ls l a₁ a₂ qt v₁ v₂ htag hregime hetyp hlookup1 hin hv1 hlookup2 hv2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
-        exact agreeValueUnder.withPred_true_ref k htag hregime hetyp
-          (hθ₀ _ _ hlookup1) hin hv1 (hθ₁ _ _ hlookup2) hv2)
-      (nil := by
-        intro ρcap₁ ρcap₂ _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
-        exact agreeCapturedEnv.nil)
-      (cons_clean := by
-        intro x qt σcap ρcap₁ ρcap₂ v₁ v₂ hclean hlookup1 hlookup2 htyp1 htyp2 hagree htail ihAgree ihTail
-          hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
-        exact agreeCapturedEnv.cons_clean hclean hlookup1 hlookup2
-          (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2)
-          (ihAgree hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
-          (ihTail hpred_compat₀ hpred_compat₁ hθ₀ hθ₁))
-      (cons_dirty := by
-        intro x qt σcap ρcap₁ ρcap₂ v₁ v₂ hdirty hlookup1 hlookup2 htyp1 htyp2 htail ihTail
-          hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
-        exact agreeCapturedEnv.cons_dirty hdirty hlookup1 hlookup2
-          (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2)
-          (ihTail hpred_compat₀ hpred_compat₁ hθ₀ hθ₁))
-      hcap
-  exact htransport hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
-
--- Same-memory transport across realization-map extension. This is the Path D-safe
--- portion of `agreeValueUnder_clean_extends`.
-lemma agreeValueUnder_clean_extends_sameMem
-  {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory}
-  {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
-  qtypCleanUnder R qt →
-  θ₀.extendsMap θ₀' →
-  θ₁.extendsMap θ₁' →
-  agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
-  agreeValueUnder predSat R μ₀ μ₁ θ₀' θ₁' qt v₀ v₁ := by
-  intro hclean hθ₀ hθ₁ hagree
-  exact agreeValueUnder_clean_extends
-    (fun _ _ => Iff.rfl) (fun _ _ => Iff.rfl) hclean hθ₀ hθ₁ hagree
-
 -- Explicit memory-transport interface (with predicate-compatibility witnesses).
 -- The current proof still delegates to the stronger selector-based lemma; this
 -- wrapper is the call-site API we will keep when Path D removes selector
@@ -4511,31 +4286,6 @@ lemma agreeValueUnder_clean_extends_transport_mem
   agreeValueUnder predSat R μ₀' μ₁' θ₀' θ₁' qt v₀ v₁ := by
   intro hclean hθ₀ hθ₁ hagree
   exact agreeValueUnder_clean_extends _hpred_compat₀ _hpred_compat₁ hclean hθ₀ hθ₁ hagree
-
-lemma agreeCapturedEnv_clean_extends_sameMem
-  {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory}
-  {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {σcap : CapturedVarEnv} {ρcap₀ ρcap₁ : VarEnv} :
-  θ₀.extendsMap θ₀' →
-  θ₁.extendsMap θ₁' →
-  agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ →
-  agreeCapturedEnv predSat R μ₀ μ₁ θ₀' θ₁' σcap ρcap₀ ρcap₁ := by
-  intro hθ₀ hθ₁ hcap
-  exact agreeCapturedEnv_clean_extends
-    (fun _ _ => Iff.rfl) (fun _ _ => Iff.rfl) hθ₀ hθ₁ hcap
-
-lemma agreeCapturedEnv_clean_extends_transport_mem
-  {predSat : PredSat} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
-  {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {σcap : CapturedVarEnv} {ρcap₀ ρcap₁ : VarEnv}
-  (_hpred_compat₀ : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v)
-  (_hpred_compat₁ : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v) :
-  θ₀.extendsMap θ₀' →
-  θ₁.extendsMap θ₁' →
-  agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ →
-  agreeCapturedEnv predSat R μ₀' μ₁' θ₀' θ₁' σcap ρcap₀ ρcap₁ := by
-  intro hθ₀ hθ₁ hcap
-  exact agreeCapturedEnv_clean_extends _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁ hcap
 
 lemma agreeCapturedEnv_of_agreeOnClean_aux
   (predSat : PredSat) (R : Regime) (ctx : TypeContext)
@@ -6734,29 +6484,6 @@ lemma applyFnTClosure_extern_ok_qualTypeRespects
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
                 innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet
                 hcapTm hargTm)) hinq hqd }
-
-/-- Combined corollary replacing `applyFnTClosure_extern_ok_outputRespectsTagMeaning`.
-    Requires extra hypotheses `hcapTm` and `hargTm` for the result-QTyp conjunct. -/
-lemma applyFnTClosure_extern_ok_outputRespectsTagMeaning_corollary
-    (tm : TagMeaning)
-    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-    (result2 : TypeResult) (fuel : Nat)
-    (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-    (r : TypeResult)
-    (hwf : wfTagMeaningCtx tm (ctxAfter ctx result2))
-    (hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
-        QTypRespectsTagMeaning tm qt)
-    (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
-    (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-      argEtyp argPoison argPred ctx result2 fuel = .ok r) :
-    (∀ (l : Loc) (qt : QTyp), r.memEnv'.lookup l = some qt →
-      QTypRespectsTagMeaning tm qt) ∧
-    QTypRespectsTagMeaning tm r.qualType :=
-  ⟨applyFnTClosure_extern_ok_memCellsRespect tm ctx st1 st2 p p1 argEtyp argPoison argPred
-      result2 fuel x retSpec effects capturedEnv r hwf happly,
-   applyFnTClosure_extern_ok_qualTypeRespects tm ctx st1 st2 p p1 argEtyp argPoison argPred
-      result2 fuel x retSpec effects capturedEnv r hwf hcapTm hargTm happly⟩
 
 /-- Structural: given the focused effect-write contract and the unchanged varEnv,
     the full wfTagMeaningCtx is preserved through extern application. -/
@@ -10159,13 +9886,6 @@ lemma typecheckExpr_preserves_QTypRespectsTagMeaning
     (htc : typecheck ctx e fuel = .ok res) :
     QTypRespectsTagMeaning tm res.qualType :=
   (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).2
-
-lemma typecheckExpr_QTypRespectsTagMeaning_of_ok
-    (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
-    (hwf : wfTagMeaningCtx tm ctx)
-    (htc : typecheck ctx e fuel = .ok res) :
-    QTypRespectsTagMeaning tm res.qualType :=
-  typecheckExpr_preserves_QTypRespectsTagMeaning tm ctx e fuel res hwf htc
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Shared clean-lookup infrastructure (moved from StepFRApp.lean)

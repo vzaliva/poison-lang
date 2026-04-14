@@ -383,26 +383,6 @@ lemma QTypRespectsTagMeaning_int_of_predRespects
   subst hEq
   exact qtypGuardDesc_lookup_of_predRespects_int tm poison pred hpred k d hqd
 
-/-- Generalized lifting: for any non-function ETyp, `PredRespectsTagMeaning`
-    lifts to `QTypRespectsTagMeaning`.  Generalises `QTypRespectsTagMeaning_int_of_predRespects`. -/
-lemma QTypRespectsTagMeaning_of_nonFunction_predRespects
-    (tm : TagMeaning) (etyp : ETyp) (poison : Poison) (pred : Predicate)
-    (hnotfun : etyp.isFunctionType = false)
-    (hpred : PredRespectsTagMeaning tm pred) :
-    QTypRespectsTagMeaning tm { etyp := etyp, poison := poison, pred := pred } := by
-  intro qt k d hinq hqd
-  have hEq : qt = { etyp := etyp, poison := poison, pred := pred } :=
-    QTypInQTyp_eq_of_nonFunctionTarget hinq hnotfun
-  subst hEq
-  cases pred with
-  | noPred => simp [qtypGuardDesc?] at hqd
-  | guardOnly _ => simp [qtypGuardDesc?] at hqd
-  | guardClosure k0 arg_name pred_body var_env =>
-    simp [qtypGuardDesc?] at hqd
-    rcases hqd with ⟨hk, hd⟩
-    subst hk; subst hd
-    exact hpred k0 arg_name pred_body var_env rfl
-
 lemma PredRespectsTagMeaning_joinPredicates
     (tm : TagMeaning) (p q : Predicate)
     (hp : PredRespectsTagMeaning tm p) :
@@ -560,53 +540,6 @@ lemma QTypRespectsTagMeaning_joinMem_lookup
         _ = e1.pred := by simp [hp1]
     exact
       (QTypRespectsTagMeaning_transport_etyp_pred tm qt1 qtRoot h1_tm hetyp' hpred_root_eq_pred1) hinq hqd
-
-/-- EnvRespectsTagMeaning is preserved under joinMemEnvs: if both memory envs
-    respect tag meaning (with the same var env), so does their join. -/
-lemma EnvRespectsTagMeaning_joinMemEnvs
-    (tm : TagMeaning) (σ : VarTypeEnv) (Γ1 Γ2 : MemoryTypeEnv)
-    (h1 : EnvRespectsTagMeaning tm σ Γ1)
-    (h2 : EnvRespectsTagMeaning tm σ Γ2) :
-    EnvRespectsTagMeaning tm σ (joinMemEnvs Γ1 Γ2) := by
-  exact EnvRespectsTagMeaning.intro fun gd =>
-    match gd with
-    | .intro qt k d hin hm =>
-      match hin with
-      | .inVar _ _ x qt qtRoot hlookup hinq =>
-        h1.1 (GuardDescInEnvsDeep.intro qt k d
-          (QTypInEnvs.inVar σ Γ1 x qt qtRoot hlookup hinq) hm)
-      | .inMem _ _ l qt qtRoot hlookup hinq =>
-        by
-          have hcontains : (joinMemEnvs Γ1 Γ2).contains l :=
-            memEnv_contains_of_lookup_some (joinMemEnvs Γ1 Γ2) l qtRoot hlookup
-          have hor := joinMemEnvs_contains_implies_or Γ1 Γ2 l hcontains
-          cases hor with
-          | inl hleft =>
-            by_cases h2_none : Γ2[l]? = none
-            · have heq := joinMemEnvs_lookup_eq_left_of_right_none Γ1 Γ2 l hleft h2_none
-              rw [heq] at hlookup
-              exact h1.1 (GuardDescInEnvsDeep.intro qt k d
-                (QTypInEnvs.inMem σ Γ1 l qt qtRoot hlookup hinq) hm)
-            · have h1_some : Γ1[l]? ≠ none := by
-                intro heq
-                have hnot_some : ¬Option.isSome (Γ1[l]?) := by simp [heq]
-                have hmem : l ∈ Γ1 := (Std.ExtTreeMap.contains_iff_mem).mp hleft
-                exact hnot_some ((Std.ExtTreeMap.mem_iff_isSome_getElem?).mp hmem)
-              exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1
-                hlookup h1_some h2_none) hinq hm
-          | inr hright =>
-            by_cases h1_none : Γ1[l]? = none
-            · have heq := joinMemEnvs_lookup_eq_right_of_left_none Γ1 Γ2 l h1_none hright
-              rw [heq] at hlookup
-              exact h2.1 (GuardDescInEnvsDeep.intro qt k d
-                (QTypInEnvs.inMem σ Γ2 l qt qtRoot hlookup hinq) hm)
-            · have h2_some : Γ2[l]? ≠ none := by
-                intro heq
-                have hnot_some : ¬Option.isSome (Γ2[l]?) := by simp [heq]
-                have hmem : l ∈ Γ2 := (Std.ExtTreeMap.contains_iff_mem).mp hright
-                exact hnot_some ((Std.ExtTreeMap.mem_iff_isSome_getElem?).mp hmem)
-              exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 hlookup
-                h1_none h2_some) hinq hm
 
 /-- Membership in a captured environment produced from `VarTypeEnv.toCaptured`
     gives the corresponding map lookup. -/
@@ -902,26 +835,6 @@ lemma EnvRespectsTagMeaning_of_update
       | .inMem _ _ l _qt qtRoot hΓ hinq =>
         hUpd.1 (GuardDescInEnvsDeep.intro _qt k d
           (QTypInEnvs.inMem (σ.update x qtNew) Γ l _qt qtRoot hΓ hinq) hm)
-
-/-- EnvRespectsTagMeaning for extended varEnv implies it for smaller varEnv when
-    σ' = σ.update x0 qt (so σ doesn't have x0) and ∀ x ≠ x0, σ.lookup x = σ'.lookup x. -/
-lemma EnvRespectsTagMeaning_subbind (tm : TagMeaning) (x0 : Name) (σ σ' : VarTypeEnv) (Γ : MemoryTypeEnv)
-    (hnone : σ.lookup x0 = none)
-    (hext : ∀ x, x ≠ x0 → σ.lookup x = σ'.lookup x)
-    (h : EnvRespectsTagMeaning tm σ' Γ) :
-    EnvRespectsTagMeaning tm σ Γ :=
-  EnvRespectsTagMeaning.intro fun gd =>
-    match gd with
-    | .intro qt k d hin hm =>
-      match hin with
-      | .inVar _ _ x _qt qtRoot hlookup hinq =>
-        if hx : x = x0 then by
-          subst hx; rw [hnone] at hlookup; cases hlookup
-        else
-          have hσ' : σ'.lookup x = some qtRoot := by rw [← hext x hx, hlookup]
-          h.1 (GuardDescInEnvsDeep.intro _qt k d (QTypInEnvs.inVar σ' Γ x _qt qtRoot hσ' hinq) hm)
-      | .inMem _ _ l _qt qtRoot hΓ hinq =>
-        h.1 (GuardDescInEnvsDeep.intro _qt k d (QTypInEnvs.inMem σ' Γ l _qt qtRoot hΓ hinq) hm)
 
 -- Laws that constrain the abstract `PredSat` relation.
 structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where

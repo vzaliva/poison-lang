@@ -18,7 +18,7 @@ The Poison Language is a research implementation of a simple imperative programm
 - **Warnings**: Avoid compilation warnings (except `sorry`-related warnings in proofs)
 - **Build verification**: Run `lake build` to check compilation before committing
 - **No parallel builds**: Do not run concurrent builds (including via parallel sub-agents) for files that share dependencies; `lake` builds all transitive dependencies, so concurrent builds of interdependent files will conflict and produce spurious errors
-- **CLI tools**: You can use: fd (fdfind), ripgrep, jq, rename, shellcheck, sd, delta, gh, difft (difftastic), scc, yq, hyperfine, watchexec, comby, tree-sitter, ast-grep, dtrx; fzf, bat, just, entr, rga (ripgrep-all), parallel (gnu parallel). For Lean workflows: fzf+bat (file/symbol nav + preview), just (task runner), entr or watchexec (rebuild on change), rga (search PDFs/docs/specs), parallel (safe parallel checks across files).
+- **CLI tools**: fd (fdfind), ripgrep, jq, rename, shellcheck, sd, delta, gh, difftastic (`difft` on some installs), scc, yq, hyperfine, comby, tree-sitter, ast-grep, dtrx; fzf, bat (navigation/preview), just (task runner), entr, watchexec (rebuild on change), parallel (gnu parallel; independent per-file checks).
 
 ## Build Commands
 
