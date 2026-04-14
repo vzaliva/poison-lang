@@ -7362,7 +7362,7 @@ private lemma surfaceSpecToQTyp_preserves_existing_lookup
 /-- Proved structural replacement for the former axiom.
     With `wfTypeContext ctx`, existing memEnv entries are unchanged by typecheckExternVal,
     so the lookup-origin property follows trivially. -/
-lemma typecheckExternVal_preserves_lookup_origin_axiom
+lemma typecheckExternVal_preserves_lookup_origin
   (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
   (res : TypeResult)
   (htc : typecheckExternVal ctx typ poison pred = .ok res)
@@ -12650,7 +12650,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
       | externVal typ poison pred =>
           have htc' : typecheckExternVal ctx typ poison pred = .ok res := by
             simpa [typecheckExpr, typecheck] using htc
-          exact typecheckExternVal_preserves_lookup_origin_axiom ctx typ poison pred res htc' hwf hpc
+          exact typecheckExternVal_preserves_lookup_origin ctx typ poison pred res htc' hwf hpc
             l qt_out hpre hlookup_out
       | externFn arg argTyp retSpec effects =>
           unfold typecheckExpr at htc
