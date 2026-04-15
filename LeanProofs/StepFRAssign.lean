@@ -55,6 +55,7 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
         CtxCons ValCons ctx e res predSat tm
 
 private def AssignCtxConsPostTransport
+  (RegCtx : TypeContext → Prop)
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (predSat : PredSat) (tm : TagMeaning) : Prop :=
   ∀ (ctx : TypeContext)
@@ -64,7 +65,7 @@ private def AssignCtxConsPostTransport
     wfTagMeaningCtx tm (ctxAfter (ctxAfter ctx result1) result2) →
     wfTypeContext (ctxAfter (ctxAfter ctx result1) result2) →
     runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx result1) result2) cfg2.memory cfg2.varEnv θ →
-    regimeConsistentWithCtx (ctxAfter (ctxAfter ctx result1) result2) →
+    RegCtx (ctxAfter (ctxAfter ctx result1) result2) →
     CtxCons (ctxAfter (ctxAfter ctx result1) result2) cfg2.memory cfg2.varEnv θ →
     result1.qualType.etyp = ETyp.ref ls →
     valueHasETyp θ (Value.loc a_w) result1.qualType.etyp →
@@ -90,47 +91,7 @@ private def AssignCtxConsPostTransport
     wfTagMeaningCtx tm (ctxAfter ctx res) ∧
     wfTypeContext (ctxAfter ctx res) ∧
     runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ ∧
-    regimeConsistentWithCtx (ctxAfter ctx res) ∧
-    CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ
-
-private def AssignCtxConsPostTransportMaskedReg
-  (masked : Tag → Prop)
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (predSat : PredSat) (tm : TagMeaning) : Prop :=
-  ∀ (ctx : TypeContext)
-    (result1 result2 res : TypeResult) (ls : LocSet)
-    (cfg2 cf : Config) (θ : RealizationMap) (a_w : Address) (n : Int),
-    PredSatLaws predSat tm →
-    wfTagMeaningCtx tm (ctxAfter (ctxAfter ctx result1) result2) →
-    wfTypeContext (ctxAfter (ctxAfter ctx result1) result2) →
-    runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx result1) result2) cfg2.memory cfg2.varEnv θ →
-    regimeConsistentWithCtxMasked masked (ctxAfter (ctxAfter ctx result1) result2) →
-    CtxCons (ctxAfter (ctxAfter ctx result1) result2) cfg2.memory cfg2.varEnv θ →
-    result1.qualType.etyp = ETyp.ref ls →
-    valueHasETyp θ (Value.loc a_w) result1.qualType.etyp →
-    wfRealizationMap θ →
-    cf.memory = Std.ExtTreeMap.insert cfg2.memory a_w n →
-    cf.varEnv = cfg2.varEnv →
-    res.nextLoc' = ls.fold result2.nextLoc' (fun acc l => max acc (l + 1)) →
-    res.nextTag' = result2.nextTag' →
-    res.regime' = invalidateRegimeDeps result2.regime' result2.tagEnv' ls →
-    (res.memEnv' =
-      match Std.ExtTreeSet.toList ls with
-      | [l] =>
-          updateMemEnv result2.memEnv' l
-            { etyp := ETyp.int
-              poison := joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison)
-              pred := if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred }
-      | _ =>
-          updateLocsetWeak result2.memEnv' ls
-            (joinPoison ctx.pc (joinPoison result1.qualType.poison result2.qualType.poison))
-            (if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred else result2.qualType.pred)) →
-    res.tagEnv' = invalidateTagDeps result2.tagEnv' ls →
-    ctx.pc = true →
-    wfTagMeaningCtx tm (ctxAfter ctx res) ∧
-    wfTypeContext (ctxAfter ctx res) ∧
-    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ ∧
-    regimeConsistentWithCtxMasked masked (ctxAfter ctx res) ∧
+    RegCtx (ctxAfter ctx res) ∧
     CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ
 
 private def AssignResultValCons
@@ -5427,7 +5388,7 @@ private lemma assign_single_run_post_transport_pc_true
 
 private lemma consistentWithRegime_assign_post_transport
   (predSat : PredSat) (tm : TagMeaning) :
-  AssignCtxConsPostTransport
+  AssignCtxConsPostTransport regimeConsistentWithCtx
     (fun ctx μ ρ θ => consistentWithRegime predSat ctx.regime ctx μ ρ θ)
     predSat tm := by
   intro ctx result1 result2 res ls cfg2 cf θ a_w n
@@ -5443,7 +5404,7 @@ private lemma consistentWithRegime_assign_post_transport
 
 private lemma consistentWithRegimeMasked_assign_post_transport
   (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
-  AssignCtxConsPostTransport
+  AssignCtxConsPostTransport regimeConsistentWithCtx
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     predSat tm := by
   intro ctx result1 result2 res ls cfg2 cf θ a_w n
@@ -5698,7 +5659,7 @@ private lemma consistentWithRegimeMasked_assign_post_transport
 
 private lemma consistentWithRegimeMasked_assign_post_transport_maskedReg
   (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
-  AssignCtxConsPostTransportMaskedReg masked
+  AssignCtxConsPostTransport (regimeConsistentWithCtxMasked masked)
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     predSat tm := by
   intro ctx result1 result2 res ls cfg2 cf θ a_w n
@@ -5996,7 +5957,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
   (IH :
     StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
       CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
-  (hCtxConsPost : AssignCtxConsPostTransport CtxCons predSat tm)
+  (hCtxConsPost : AssignCtxConsPostTransport regimeConsistentWithCtx CtxCons predSat tm)
   (hValConsResult : AssignResultValCons ValCons)
   (htc : typecheck ctx (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueWithCtxValCons
@@ -6247,7 +6208,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
 private def StepFRAssignCtxConsPostTransport
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (predSat : PredSat) (tm : TagMeaning) : Prop :=
-  AssignCtxConsPostTransport CtxCons predSat tm
+  AssignCtxConsPostTransport regimeConsistentWithCtx CtxCons predSat tm
 
 private def StepFRAssignResultValCons
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
