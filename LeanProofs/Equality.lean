@@ -175,7 +175,6 @@ private theorem beqPExpr_refl (e : PExpr) : beqPExpr e e = true := by
       simp [beqPExpr, IH1, IH2]
 
 -- Soundness lemmas for PExpr
-section PExprSoundness
 
 -- Main theorem for PExpr
 private theorem beqPExpr_sound (a b : PExpr) : (a == b) = true → a = b := by
@@ -248,7 +247,6 @@ private theorem beqPExpr_sound (a b : PExpr) : (a == b) = true → a = b := by
         have : e2 = e2' := IH2 e2' h_e2
         subst_vars; rfl
 
-end PExprSoundness
 
 -- LawfulBEq instance for PExpr
 instance : LawfulBEq PExpr where

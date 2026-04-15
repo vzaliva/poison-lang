@@ -99,7 +99,6 @@ abbrev Tag := Nat
 
 
 -- TagIndex definitions and instaces requiered for ExtTreeMap TagIndex Tag
-section TagIndex
 
 /-- Symbolic tag index used in extern specifications.
     At each extern use site, `TagIndex` values are collected and mapped to fresh
@@ -131,7 +130,6 @@ instance : TransCmp (compare : TagIndex → TagIndex → Ordering) where
     show (compare a.val c.val).isLE = true
     exact TransCmp.isLE_trans (α := Nat) h1 h2
 
-end TagIndex
 
 /-- Map from symbolic `TagIndex` to fresh concrete `Tag`s allocated at an
     extern use site. Used by `collectAndAllocExternTags` / `resolveSyntaxPred`

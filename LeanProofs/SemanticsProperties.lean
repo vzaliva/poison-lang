@@ -995,7 +995,6 @@ lemma terminatesTo_assign_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Valu
 -- NextAddr Monotonicity
 -- ================================================================
 
-section nextAddr_monotonic
 
 /-- Helper lemma: bevalFunctionBody preserves monotonicity of nextAddr. -/
 private lemma bevalFunctionBody_nextAddr_mono
@@ -1244,7 +1243,6 @@ lemma terminatesTo_nextAddr_mono (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
   intro ⟨fuel, verbose, hbeval⟩
   exact beval_nextAddr_mono e fuel verbose cfg₀ cfg₁ v hbeval
 
-end nextAddr_monotonic
 
 -- ================================================================
 -- Pure evaluation preserves config (used for pure closures)
@@ -1477,7 +1475,6 @@ lemma beval_pure_memory_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Config) (v :
 -- wfConfig_preserved Proof
 -- ================================================================
 
-section wfConfig_preserved_proof
 
 -- Private lemmas for wfConfig_preserved proof
 
@@ -1967,4 +1964,3 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           unfold LeanPoison.beval at hbeval
           simp at hbeval
 
-end wfConfig_preserved_proof

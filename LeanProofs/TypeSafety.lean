@@ -1312,7 +1312,7 @@ lemma freshLoc_not_realized (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ 
 -- Typechecker structure lemmas
 -- ================================================================
 
-section typecheck_structure_lemmas
+-- typecheck_structure_lemmas
 
 -- Structure lemma for unary-op typechecking.
 lemma typecheckUnaryOp_structure (ctx : TypeContext) (op : UnaryOp) (e1 : Expr) (fuel : Nat)
@@ -2720,13 +2720,12 @@ lemma typecheckApp_arrow_structure_full
           | _ =>
               simp at htc
 
-end typecheck_structure_lemmas
 
 -- ================================================================
 -- Typechecker monotonicity and preservation lemmas
 -- ================================================================
 
-section regime_monotone_proof
+-- regime_monotone_proof
 
 private lemma regimeMonotone_refl (R : Regime) :
     Regime.monotoneStep R R := by
@@ -3877,9 +3876,7 @@ lemma regime_monotone (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeRes
   intro htc
   simpa [ctxAfter] using typecheck_regime_mono_main ctx e fuel res htc
 
-end regime_monotone_proof
 
-section advanceNextTag_monotone_proof
 
 -- Helper lemmas for advanceNextTag functions monotonicity
 
@@ -3903,7 +3900,6 @@ private lemma advanceNextTagForEffects_ge (effects : List Effect) (t : Tag) :
   | nil => simp [advanceNextTagForEffects, List.foldl]
   | cons hd tl ih => exact Nat.le_trans (advanceNextTagForSyntaxPred_ge hd.pred t) (ih _)
 
-end advanceNextTag_monotone_proof
 
 
 
@@ -4428,7 +4424,7 @@ private lemma resolveSyntaxPred_predTagBounded
     simp [pure, Except.pure] at htc_resolve
     rw [← htc_resolve]; trivial
 
-section typecheck_nextTag_normal_mono_proof
+-- typecheck_nextTag_normal_mono_proof
 
 private lemma typecheckExternVal_nextTag_mono
     (ctx : TypeContext) (typ : Typ)
@@ -5555,9 +5551,8 @@ lemma typecheck_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
   intro htc
   exact typecheck_normal_nextTag_mono ctx e fuel res htc
 
-end typecheck_nextTag_normal_mono_proof
 
-section typecheck_tagEnvBounded_proof
+-- typecheck_tagEnvBounded_proof
 
 -- predTagBounded helper lemmas and infrastructure
 
@@ -9489,7 +9484,6 @@ private lemma typecheckExpr_preserves_tagEnvBounded
     tagEnvBounded res.tagEnv' res.nextTag' :=
   typecheckExpr_preserves_tagEnvBounded_main ctx e fuel res htc hbound hpred hclosure
 
-end typecheck_tagEnvBounded_proof
 
 /-- TagBoundedCtx is preserved across typechecking for the ctxAfter pattern. -/
 lemma typecheckExpr_preserves_TagBoundedCtx
@@ -9531,7 +9525,7 @@ lemma typecheckExpr_TagBoundedCtx_varEnv_update
   · -- closureEnvBoundedInCtx: varEnv component needs update
     exact varEnvClosuresCapturedBounded_update (varEnvClosuresCapturedBounded_mono hclosure hmono) hclosureRes
 
-section typecheck_nextLoc_mono_proof
+-- typecheck_nextLoc_mono_proof
 
 -- Helper lemmas for typecheck_nextLoc_mono proof
 
@@ -10601,7 +10595,6 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
             simp at htc
             exact typecheckApp_nextLoc_mono ctx e1 e2 fuel' res IH_fuel' htc
 
-end typecheck_nextLoc_mono_proof
 
 -- `nextLoc` is monotone for successful typechecking: typing never decreases the fresh-location supply.
 -- This is analogous to typecheck_nextTag_mono but for memory locations.
@@ -12066,7 +12059,7 @@ lemma joinTypeResults_mem_contains_head_or_rest
 -- then successful typechecking produces a well-formed result (same invariant).
 -- This is purely a static bookkeeping property with no runtime semantics.
 
-section wfTypeResult_preservation
+-- wfTypeResult_preservation
 
 /-- restrictMemEnv contains only keys from the base env -/
 private lemma restrictMemEnv_contains_implies_base (env base : MemoryTypeEnv) (l : Loc) :
@@ -12922,7 +12915,6 @@ lemma mapM_applyFnTClosure_forall_wfTypeResult
 
 -- typecheckExpr_preserves_wfTypeResult_main and public API moved to after refLocs_preservation section
 
-end wfTypeResult_preservation
 
 -- ═══════════════════════════════════════════════════════════════════
 -- Combined ref-location boundedness preservation
@@ -13335,7 +13327,6 @@ private lemma mapM_applyPFnTClosure_forall_refLocs
         | inr htail =>
           exact ih rs' (fun t ht => hcaptLocs t (.tail tcl ht)) h2 r htail
 
-section refLocs_preservation
 
 /-- Abbreviation for the three-part ref-location context inputs. -/
 private abbrev refLocsCtxInputs (ctx : TypeContext) : Prop :=
@@ -13850,7 +13841,6 @@ private lemma typecheckExpr_preserves_refLocs_main :
                               (fun r hr => hcrl_at_res r (by simp [hr]))⟩
                 | _ => simp at htc
 
-end refLocs_preservation
 
 /-- Main lemma: typecheckExpr preserves wfTypeResult (delegates to combined induction). -/
 private lemma typecheckExpr_preserves_wfTypeResult_main :
@@ -13891,7 +13881,6 @@ private lemma typecheckExpr_wfTypeResult_and_refLocs :
   intro fuel ctx e res hwfCtx hrlCtx hclCtx htc
   exact typecheckExpr_preserves_refLocs_main fuel ctx e res ⟨hwfCtx, hrlCtx, hclCtx⟩ htc
 
-section memEnv_contains_preservation
 
 lemma joinTypeResults_mem_contains_of_member
     (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -14668,7 +14657,6 @@ private lemma typecheckExpr_mem_contains_preserved_main :
                 simpa [typecheckExpr] using htc
               exact typecheckApp_mem_contains_preserved ctx e1 e2 fuel' res IH_fuel' htcApp l hcontains
 
-end memEnv_contains_preservation
 
 lemma joinTypeResults_transport_valueHasETyp_from_member
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)

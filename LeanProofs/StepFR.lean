@@ -933,7 +933,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
           PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
           FreshCleanLocsUnrealizedOneRun ctx res θ'
 
-section TypeSystemEnforcesFaultRobustness_impl_proof
+-- TypeSystemEnforcesFaultRobustness_impl_proof
 
 -- Helper lemmas: transport predicate-based properties across qualified types
 -- that differ only in irrelevant fields (e.g. poison), but share the same predicate.
@@ -3489,9 +3489,8 @@ lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
     · -- Trusted variable: use trusted-input agreement.
       exact htrusted_vars x qt hctx_lookup hkey hclean
 
-end TypeSystemEnforcesFaultRobustness_impl_proof
 
-section TypeSystemEnforcesFaultRobustness_step_proof
+-- TypeSystemEnforcesFaultRobustness_step_proof
 
 lemma agreeValueUnder_of_agreeVarUnder
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv}
@@ -4525,7 +4524,6 @@ lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
     masked CtxCons ValCons predSat tm k :=
   fun m hm e ctx _hwfTm res htc => IH m hm e ctx res htc
 
-end TypeSystemEnforcesFaultRobustness_step_proof
 
 -- Used by both stepFR_ite and stepFR_app
 lemma agreeValueUnder_clean_transport_by_cleanBack
