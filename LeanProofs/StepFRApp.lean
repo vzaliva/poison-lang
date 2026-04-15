@@ -182,21 +182,21 @@ private def AppJoinValConsFromMember
 
 private lemma join_transport_wfTypeContext
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_join : joinTypeResults ctx first rest = .ok res)
   (h_mem : ∀ l, res.memEnv'.contains l → first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l)
   (h_first : wfTypeContext (ctxAfter ctx first))
   (h_rest_wf : ∀ r ∈ rest, wfTypeResult r) :
   wfTypeContext (ctxAfter ctx res) := by
   simp only [wfTypeContext, ctxAfter]
   have hfirst_le_res : first.nextLoc' ≤ res.nextLoc' :=
-    joinTypeResults_member_nextLoc_le ctx first rest res _h_join first (List.Mem.head _)
+    joinTypeResults_member_nextLoc_le ctx first rest res h_join first (List.Mem.head _)
   refine ⟨?_, varEnvRefLocsBounded_mono h_first.2.1 (by simpa [ctxAfter] using hfirst_le_res),
            varEnvClosuresCapturedRefLocsBounded_mono h_first.2.2 (by simpa [ctxAfter] using hfirst_le_res)⟩
   intro l hcontains
   rcases h_mem l hcontains with hfirst | ⟨r, hr_mem, h_in⟩
   · -- l in first
     have hlt := h_first.1 l (by simp only [ctxAfter]; exact hfirst)
-    rw [joinTypeResults_nextLoc_eq_max _ _ _ _ _h_join]
+    rw [joinTypeResults_nextLoc_eq_max _ _ _ _ h_join]
     have hle : first.nextLoc' ≤ List.max (first.nextLoc' :: rest.map TypeResult.nextLoc') (by intro h; cases h) := by
       apply List.le_max_of_mem
       simp
@@ -204,7 +204,7 @@ private lemma join_transport_wfTypeContext
   · -- l in some r ∈ rest
     have hwf := h_rest_wf r hr_mem
     have hlt := hwf l h_in
-    rw [joinTypeResults_nextLoc_eq_max _ _ _ _ _h_join]
+    rw [joinTypeResults_nextLoc_eq_max _ _ _ _ h_join]
     have hle : r.nextLoc' ≤ List.max (first.nextLoc' :: rest.map TypeResult.nextLoc') (by intro h; cases h) := by
       apply List.le_max_of_mem
       simp only [List.mem_cons, List.mem_map]
@@ -235,7 +235,7 @@ private lemma join_transport_valueConsistentWithRegime
 private lemma joinTypeResults_closure_cvcr_transport
   (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (R : Regime) (μ : Memory) (θ : RealizationMap) (v : Value)
-  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_join : joinTypeResults ctx first rest = .ok res)
   (hcap : closureCapturedVarsRegime predSat R first.qualType μ θ v) :
   closureCapturedVarsRegime predSat R res.qualType μ θ v := by
   let joinStep : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
@@ -286,7 +286,7 @@ private lemma joinTypeResults_closure_cvcr_transport
   cases hqt : first.qualType with
   | mk etyp poison pred =>
       simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
-        MonadExceptOf.throw, TypecheckM] at _h_join
+        MonadExceptOf.throw, TypecheckM] at h_join
       cases hcheck : (List.foldlM (fun _ result =>
         match result.qualType with
         | { etyp := resEtyp, poison := _, pred := _ } =>
@@ -294,15 +294,15 @@ private lemma joinTypeResults_closure_cvcr_transport
               Except.error (toString "Closure alternatives produced incompatible result types: " ++
                 toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
             else Except.ok ()) () rest : Except String Unit) with
-      | error _ => erw [hcheck] at _h_join; contradiction
+      | error _ => erw [hcheck] at h_join; contradiction
       | ok _ =>
-          erw [hcheck] at _h_join
+          erw [hcheck] at h_join
           cases hfold : List.foldlM joinStep (etyp, first.memEnv', poison, pred, first.tagEnv',
             first.regime', first.nextLoc', first.nextTag') rest with
-          | error _ => erw [hfold] at _h_join; contradiction
+          | error _ => erw [hfold] at h_join; contradiction
           | ok a =>
-              erw [hfold] at _h_join
-              have heq := Except.ok.inj _h_join
+              erw [hfold] at h_join
+              have heq := Except.ok.inj h_join
               have hetyp : (⟨a.1, a.2.2.1, a.2.2.2.1⟩ : QTyp).etyp = res.qualType.etyp :=
                 congr_arg (·.qualType.etyp) heq
               have hcompat := joinTypeResults_compat_ok etyp rest hcheck
@@ -315,45 +315,45 @@ private lemma joinTypeResults_closure_cvcr_transport
 private lemma join_transport_valueConsistentWithRegime_resQual
   (predSat : PredSat) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (μ : Memory) (θ : RealizationMap) (v : Value)
-  (_h_join : joinTypeResults ctx first rest = .ok res)
-  (_hpred : res.qualType.pred = first.qualType.pred)
+  (h_join : joinTypeResults ctx first rest = .ok res)
+  (hpred : res.qualType.pred = first.qualType.pred)
   (h_regime_mono : Regime.monotoneStep first.regime' res.regime')
   (h_first : valueConsistentWithRegime predSat (ctxAfter ctx first).regime first.qualType μ θ v) :
   valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType μ θ v := by
   have h_mono := valueConsistentWithRegime_monotone h_regime_mono h_first
-  refine valueConsistentWithRegime_transport_pred' (_hpred.symm)
+  refine valueConsistentWithRegime_transport_pred' (hpred.symm)
     (fun hcap => joinTypeResults_closure_cvcr_transport predSat ctx first rest res
-      (ctxAfter ctx res).regime μ θ v _h_join hcap) h_mono
+      (ctxAfter ctx res).regime μ θ v h_join hcap) h_mono
 
 -- Weaken runtimeInstantiatesCtx when going from post-e1 context to post-e2 context.
 -- Requires memEnv equality (holds when e1 is var/fn/pfn producing arrow).
 private lemma runtimeInstantiatesCtx_weaken_ctx
   (ctx : TypeContext) (res_outer res_inner : TypeResult) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (_h_mem_eq : res_outer.memEnv' = res_inner.memEnv')
-  (_hric : runtimeInstantiatesCtx (ctxAfter ctx res_inner) μ ρ θ) :
+  (h_mem_eq : res_outer.memEnv' = res_inner.memEnv')
+  (hric : runtimeInstantiatesCtx (ctxAfter ctx res_inner) μ ρ θ) :
   runtimeInstantiatesCtx (ctxAfter ctx res_outer) μ ρ θ := by
   unfold runtimeInstantiatesCtx
-  simp only [ctxAfter, _h_mem_eq]
-  exact _hric
+  simp only [ctxAfter, h_mem_eq]
+  exact hric
 
 -- Obtain runtimeInstantiatesCtx for closure env from post-e1 instantiation and closure typing.
 -- The body context needs env₀ (closure's captured env), not c₁₀.varEnv.
 -- Requires memEnv equality and that env₀ realises the context's varEnv.
 private lemma runtimeInstantiatesCtx_of_closure_env
   (ctx : TypeContext) (res2 res1 : TypeResult) (μ : Memory) (env₀ ρ : VarEnv) (θ : RealizationMap)
-  (_h_mem_eq : res2.memEnv' = res1.memEnv')
-  (_hric : runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx res2) res1) μ ρ θ)
-  (_h_env : ∀ x qt, (ctxAfter ctx res2).varEnv.lookup x = some qt →
+  (h_mem_eq : res2.memEnv' = res1.memEnv')
+  (hric : runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx res2) res1) μ ρ θ)
+  (h_env : ∀ x qt, (ctxAfter ctx res2).varEnv.lookup x = some qt →
     ∃ v, env₀.lookup x = some v ∧ valueHasETyp θ v qt.etyp) :
   runtimeInstantiatesCtx (ctxAfter ctx res2) μ env₀ θ := by
-  unfold runtimeInstantiatesCtx at _hric ⊢
-  simp only [ctxAfter] at _hric ⊢
+  unfold runtimeInstantiatesCtx at hric ⊢
+  simp only [ctxAfter] at hric ⊢
   constructor
   · intro l a hθ
-    obtain ⟨hctx, hμ⟩ := _hric.1 l a hθ
-    rw [_h_mem_eq]; exact ⟨hctx, hμ⟩
+    obtain ⟨hctx, hμ⟩ := hric.1 l a hθ
+    rw [h_mem_eq]; exact ⟨hctx, hμ⟩
   · intro x qt h
-    exact _h_env x qt h
+    exact h_env x qt h
 
 private lemma consistentWithRegime_app_closure_body_start
   (predSat : PredSat)
@@ -1156,32 +1156,31 @@ private lemma valueConsistentWithRegime_app_body_result_member
       rw [hand.1, hand.2]
       simp only [joinPoison, Bool.false_or]
       set qt' : QTyp := { result3.qualType with poison := joinPoison false result3.qualType.poison } with hqt'_def
-      have hpred_eq : result3.qualType.pred = qt'.pred := rfl
       cases hval with
       | noTag htag hcap =>
           exact valueConsistentWithRegime.noTag
             (show qtypGuardTag qt' = none by simp [qtypGuardTag, hqt'_def]; exact htag)
-            (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegime_transport_pred hcap)
       | guardOnly_ok k hgo hcap =>
           exact valueConsistentWithRegime.guardOnly_ok k
             (show qt'.pred = Predicate.guardOnly k from hgo)
-            (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegime_transport_pred hcap)
       | notInRegime k htag hlookup hcap =>
           exact valueConsistentWithRegime.notInRegime k
             (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
-            (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegime_transport_pred hcap)
       | inRegimeTrue k htag hlookup hpred hcap =>
           exact valueConsistentWithRegime.inRegimeTrue k
             (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
             (qtypPredHolds_transport_pred (qt := result3.qualType) (qt' := qt')
               (show result3.qualType.pred = qt'.pred from rfl) hpred)
-            (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegime_transport_pred hcap)
       | inRegimeFalse k htag hlookup hnpred hcap =>
           exact valueConsistentWithRegime.inRegimeFalse k
             (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
             (fun habs => hnpred (qtypPredHolds_transport_pred (qt := qt') (qt' := result3.qualType)
               (show qt'.pred = result3.qualType.pred from rfl) habs))
-            (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegime_transport_pred hcap)
   simpa [ctxAfter, hsrc, hμ] using hval_first
 
 -- Inversion for regular closures: from
@@ -2168,9 +2167,9 @@ private lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning
 private lemma runtimeInstantiatesCtx_closure_body
   (ctx : TypeContext) (result2 : TypeResult) (x : Name) (tenv : CapturedVarEnv)
   (argQt : QTyp) (argVal : Value) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (_hric : runtimeInstantiatesCtx (ctxAfter ctx result2) μ ρ θ)
-  (_harg : valueHasETyp θ argVal argQt.etyp)
-  (_hcap : ∀ y qt, (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
+  (hric : runtimeInstantiatesCtx (ctxAfter ctx result2) μ ρ θ)
+  (harg : valueHasETyp θ argVal argQt.etyp)
+  (hcap : ∀ y qt, (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
     ∃ v, ρ.lookup y = some v ∧ valueHasETyp θ v qt.etyp) :
   let bodyVarEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x argQt
   let bodyCtx : TypeContext := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime', varEnv := bodyVarEnv }
@@ -2179,7 +2178,7 @@ private lemma runtimeInstantiatesCtx_closure_body
   constructor
   · intro l a hθ
     -- memEnv/heap obligations are inherited from the post-`e2` context.
-    exact _hric.1 l a hθ
+    exact hric.1 l a hθ
   · intro y qt hlookup
     have hlookup_var : bodyVarEnv.lookup y = some qt := by
       simpa [bodyCtx] using hlookup
@@ -2196,13 +2195,13 @@ private lemma runtimeInstantiatesCtx_closure_body
               some qt = bodyVarEnv.lookup x := by symm; exact hlookup_var
               _ = some argQt := hx_lookup
           exact Option.some.inj this
-        simpa [hqt] using _harg
+        simpa [hqt] using harg
     · have hlookup_cap : (VarTypeEnv.ofCaptured tenv).lookup y = some qt := by
         have hne_lookup :
             bodyVarEnv.lookup y = (VarTypeEnv.ofCaptured tenv).lookup y :=
           VarTypeEnv_lookup_update_ne (VarTypeEnv.ofCaptured tenv) x y argQt hyx
         simpa [hne_lookup] using hlookup_var
-      rcases _hcap y qt hlookup_cap with ⟨v, hlookupρ, hvtyp⟩
+      rcases hcap y qt hlookup_cap with ⟨v, hlookupρ, hvtyp⟩
       refine ⟨v, ?_⟩
       constructor
       · have hne_lookup :
@@ -2226,21 +2225,21 @@ private lemma runtimeInstantiatesCtx_closure_body
 private lemma runtimeInstantiatesCtx_closure_body_from_henv
   (ctx : TypeContext) (result2 : TypeResult) (x : Name) (tenv : CapturedVarEnv)
   (argQt : QTyp) (argVal : Value) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-  (_hric : runtimeInstantiatesCtx (ctxAfter ctx result2) μ ρ θ)
-  (_harg : valueHasETyp θ argVal argQt.etyp)
-  (_henv : ∀ y qt v, (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
+  (hric : runtimeInstantiatesCtx (ctxAfter ctx result2) μ ρ θ)
+  (harg : valueHasETyp θ argVal argQt.etyp)
+  (henv : ∀ y qt v, (VarTypeEnv.ofCaptured tenv).lookup y = some qt →
     ρ.lookup y = some v → valueHasETyp θ v qt.etyp)
-  (_hcover : ∀ y qt, (VarTypeEnv.ofCaptured tenv).lookup y = some qt → ∃ v, ρ.lookup y = some v) :
+  (hcover : ∀ y qt, (VarTypeEnv.ofCaptured tenv).lookup y = some qt → ∃ v, ρ.lookup y = some v) :
   let bodyVarEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x argQt
   let bodyCtx : TypeContext := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime', varEnv := bodyVarEnv }
   runtimeInstantiatesCtx bodyCtx μ (VarEnv.update ρ x argVal) θ := by
   apply runtimeInstantiatesCtx_closure_body
     (ctx := ctx) (result2 := result2) (x := x) (tenv := tenv)
     (argQt := argQt) (argVal := argVal) (μ := μ) (ρ := ρ) (θ := θ)
-    _hric _harg
+    hric harg
   intro y qt hlookup
-  rcases _hcover y qt hlookup with ⟨v, hlookupρ⟩
-  exact ⟨v, hlookupρ, _henv y qt v hlookup hlookupρ⟩
+  rcases hcover y qt hlookup with ⟨v, hlookupρ⟩
+  exact ⟨v, hlookupρ, henv y qt v hlookup hlookupρ⟩
 
 -- Extract per-member evidence from closureCapturedVarsRegime for a closure value.
 -- Given that the value is a closure with arrow type, the deepValueQTypProperty
@@ -2310,7 +2309,7 @@ private lemma closureCapturedVarsRegime_peClosure_extract
 
 private lemma join_transport_wfTagMeaningCtx
   (tm : TagMeaning) (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (h_join : joinTypeResults ctx first rest = .ok res)
   (h_first : wfTagMeaningCtx tm (ctxAfter ctx first)) :
   wfTagMeaningCtx tm (ctxAfter ctx res) := by
   unfold wfTagMeaningCtx
@@ -2356,7 +2355,7 @@ private lemma join_transport_wfTagMeaningCtx
             exact ih _ hfold hacc1
   cases hqt : first.qualType with
   | mk etyp poison pred =>
-      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw, TypecheckM] at _h_join
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw, TypecheckM] at h_join
       cases hcheck :
           (List.foldlM
             (fun x result =>
@@ -2369,20 +2368,20 @@ private lemma join_transport_wfTagMeaningCtx
                 else Except.ok ())
             () rest : Except String Unit) with
       | error err =>
-          erw [hcheck] at _h_join
-          simp at _h_join
+          erw [hcheck] at h_join
+          simp at h_join
       | ok _ =>
-          erw [hcheck] at _h_join
-          simp at _h_join
+          erw [hcheck] at h_join
+          simp at h_join
           cases hfold :
               List.foldlM joinStep
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag') rest with
           | error err =>
-              erw [hfold] at _h_join
-              simp at _h_join
+              erw [hfold] at h_join
+              simp at h_join
           | ok a =>
-              erw [hfold] at _h_join
-              simp at _h_join
+              erw [hfold] at h_join
+              simp at h_join
               subst res
               exact h_fold_tm rest
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag') a
@@ -2417,7 +2416,7 @@ private lemma join_transport_consistentWithRegime
             | inl heq =>
                 have hb : b' = b := Option.some.inj (heq.symm.trans hk')
                 have h_locsR := h_first.1 l qt k hlookup_first hguard hRdef
-                exact locsRegime_monotone h_regime_mono hguard (by rw [← hb]; exact hk) hk' h_locsR
+                exact locsRegime_monotone h_regime_mono hguard hk' h_locsR
             | inr h_none => simp [h_none] at hk'
   constructor
   · intro x qt k hlookup hguard hR'def
@@ -2433,7 +2432,7 @@ private lemma join_transport_consistentWithRegime
             | inl heq =>
                 have hb : b' = b := Option.some.inj (heq.symm.trans hk')
                 have h_varsR := h_first.2.1 x qt k hlookup hguard hRdef
-                exact varsRegime_monotone h_regime_mono hguard (by rw [← hb]; exact hk) hk' h_varsR
+                exact varsRegime_monotone h_regime_mono hguard hk' h_varsR
             | inr h_none => simp [h_none] at hk'
   · intro x qt v hlookup hlookup_v
     exact closureCapturedVarsRegime_monotone h_regime_mono
@@ -2520,32 +2519,31 @@ private lemma valueConsistentWithRegime_transport_normalizeAppResultByProvenance
     rw [hand.1, hand.2]
     simp only [joinPoison, Bool.false_or]
     set qt' : QTyp := { qt with poison := joinPoison false qt.poison } with hqt'_def
-    have hpred_eq : qt.pred = qt'.pred := rfl
     cases h with
     | noTag htag hcap =>
         exact valueConsistentWithRegime.noTag
           (show qtypGuardTag qt' = none by simp [qtypGuardTag, hqt'_def]; exact htag)
-          (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+          (closureCapturedVarsRegime_transport_pred hcap)
     | guardOnly_ok k hgo hcap =>
         exact valueConsistentWithRegime.guardOnly_ok k
           (show qt'.pred = Predicate.guardOnly k from hgo)
-          (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+          (closureCapturedVarsRegime_transport_pred hcap)
     | notInRegime k htag hlookup hcap =>
         exact valueConsistentWithRegime.notInRegime k
           (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
-          (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+          (closureCapturedVarsRegime_transport_pred hcap)
     | inRegimeTrue k htag hlookup hpred hcap =>
         exact valueConsistentWithRegime.inRegimeTrue k
           (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
           (qtypPredHolds_transport_pred (qt := qt) (qt' := qt')
             (show qt.pred = qt'.pred from rfl) hpred)
-          (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+          (closureCapturedVarsRegime_transport_pred hcap)
     | inRegimeFalse k htag hlookup hnpred hcap =>
         exact valueConsistentWithRegime.inRegimeFalse k
           (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
           (fun habs => hnpred (qtypPredHolds_transport_pred (qt := qt') (qt' := qt)
             (show qt'.pred = qt.pred from rfl) habs))
-          (closureCapturedVarsRegime_transport_pred hpred_eq hcap)
+          (closureCapturedVarsRegime_transport_pred hcap)
 
 private lemma resultAgreesIfClean_transport_normalizeAppResultByProvenance
   (predSat : PredSat) (R : Regime) (p p1 : Poison) (qt : QTyp)
@@ -2611,37 +2609,36 @@ private lemma valueConsistentWithRegimeMasked_app_body_result_member
       rw [hand.1, hand.2]
       simp only [joinPoison, Bool.false_or]
       set qt' : QTyp := { result3.qualType with poison := joinPoison false result3.qualType.poison } with hqt'_def
-      have hpred_eq : result3.qualType.pred = qt'.pred := rfl
       cases hval with
       | noTag htag hcap =>
           exact valueConsistentWithRegimeMasked.noTag
             (show qtypGuardTag qt' = none by simp [qtypGuardTag, hqt'_def]; exact htag)
-            (closureCapturedVarsRegimeMasked_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegimeMasked_transport_pred hcap)
       | guardOnly_ok k hgo hcap =>
           exact valueConsistentWithRegimeMasked.guardOnly_ok k
             (show qt'.pred = Predicate.guardOnly k from hgo)
-            (closureCapturedVarsRegimeMasked_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegimeMasked_transport_pred hcap)
       | maskedTag k htag hmasked hcap =>
           exact valueConsistentWithRegimeMasked.maskedTag k
             (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag)
             hmasked
-            (closureCapturedVarsRegimeMasked_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegimeMasked_transport_pred hcap)
       | notInRegime k htag hlookup hcap =>
           exact valueConsistentWithRegimeMasked.notInRegime k
             (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
-            (closureCapturedVarsRegimeMasked_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegimeMasked_transport_pred hcap)
       | inRegimeTrue k htag hlookup hpred hcap =>
           exact valueConsistentWithRegimeMasked.inRegimeTrue k
             (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
             (qtypPredHolds_transport_pred (qt := result3.qualType) (qt' := qt')
               (show result3.qualType.pred = qt'.pred from rfl) hpred)
-            (closureCapturedVarsRegimeMasked_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegimeMasked_transport_pred hcap)
       | inRegimeFalse k htag hlookup hnpred hcap =>
           exact valueConsistentWithRegimeMasked.inRegimeFalse k
             (show qtypGuardTag qt' = some k by simp [qtypGuardTag, hqt'_def]; exact htag) hlookup
             (fun habs => hnpred (qtypPredHolds_transport_pred (qt := qt') (qt' := result3.qualType)
               (show qt'.pred = result3.qualType.pred from rfl) habs))
-            (closureCapturedVarsRegimeMasked_transport_pred hpred_eq hcap)
+            (closureCapturedVarsRegimeMasked_transport_pred hcap)
   simpa [ctxAfter, hsrc, hμ] using hval_first
 
 private lemma applyPFnTClosure_ok_poison_pred_of_p1_true

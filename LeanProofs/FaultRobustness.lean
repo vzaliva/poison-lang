@@ -317,7 +317,6 @@ lemma locsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ 
     {entry : Loc × QTyp} {k : Tag} {b : Bool}
     (h_mono : Regime.monotoneStep R R')
     (hguard : qtypGuardTag entry.snd = some k)
-    (_hkR : R.lookup? k = some b)
     (hkR' : R'.lookup? k = some b)
     (h_loc : locsRegime predSat R μ θ entry) :
     locsRegime predSat R' μ θ entry := by
@@ -347,7 +346,6 @@ lemma varsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ 
     {entry : Name × QTyp} {k : Tag} {b : Bool}
     (h_mono : Regime.monotoneStep R R')
     (hguard : qtypGuardTag entry.snd = some k)
-    (_hkR : R.lookup? k = some b)
     (hkR' : R'.lookup? k = some b)
     (h_var : varsRegime predSat R μ ρ entry) :
     varsRegime predSat R' μ ρ entry := by

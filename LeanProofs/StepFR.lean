@@ -1068,7 +1068,7 @@ private lemma capturedVarsRegimeProperty_monotone
     | none => exact absurd h_eq hkR
     | some b => exact ⟨b, rfl⟩
   cases h_mono.1 k_x b hb with
-  | inl hk'_eq => exact varsRegime_monotone h_mono hguard hb hk'_eq hvr_R
+  | inl hk'_eq => exact varsRegime_monotone h_mono hguard hk'_eq hvr_R
   | inr hk'_none => exact absurd hk'_none hkR'
 
 section RegimeTransport
@@ -1460,7 +1460,6 @@ lemma closureCapturedVarsRegime_joinETyps_step_right
 -- etyp equality (defaults to rfl for the common case where only pred changes).
 lemma closureCapturedVarsRegime_transport_pred
   {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
-  (_hpred : qt.pred = qt'.pred)
   (h : closureCapturedVarsRegime predSat R qt μ θ v)
   (hetyp : qt.etyp = qt'.etyp := by rfl) :
   closureCapturedVarsRegime predSat R qt' μ θ v :=
@@ -1944,7 +1943,7 @@ lemma memberVarsRegimeEvidence_monotone
   | some b =>
       cases h_mono.1 k_y b hRk with
       | inl hkR'_eq =>
-          exact varsRegime_monotone h_mono hguard hRk hkR'_eq hvr_R
+          exact varsRegime_monotone h_mono hguard hkR'_eq hvr_R
       | inr hkR'_none =>
           exact (hkR' hkR'_none).elim
 
@@ -2131,7 +2130,7 @@ private lemma capturedVarsRegimePropertyMasked_monotone
       | some b =>
           cases h_mono.1 k_x b hRk with
           | inl hkR'_eq =>
-              exact Or.inr (varsRegime_monotone h_mono hguard hRk hkR'_eq hvr)
+              exact Or.inr (varsRegime_monotone h_mono hguard hkR'_eq hvr)
           | inr hkR'_none =>
               exact (hkR' hkR'_none).elim
 
@@ -2202,7 +2201,6 @@ lemma closureCapturedVarsRegimeMasked_transport_μ_θ
 lemma closureCapturedVarsRegimeMasked_transport_pred
   {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
   {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
-  (_hpred : qt.pred = qt'.pred)
   (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v)
   (hetyp : qt.etyp = qt'.etyp := by rfl) :
   closureCapturedVarsRegimeMasked masked predSat R qt' μ θ v :=
@@ -4311,7 +4309,7 @@ lemma consistentWithRegime_monotone
                   exact Option.some.inj this
                 have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
                 have h_locsR := h_cwr.1 l qt k hlookup hguard hRdef
-                exact locsRegime_monotone h_mono hguard hk_b hk' h_locsR
+                exact locsRegime_monotone h_mono hguard hk' h_locsR
             | inr h_none =>
                 simp [h_none] at hk'
   · -- Variable regime consistency (similar)
@@ -4331,7 +4329,7 @@ lemma consistentWithRegime_monotone
                   exact Option.some.inj this
                 have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
                 have h_varsR := h_cwr.2.1 x qt k hlookup hguard hRdef
-                exact varsRegime_monotone h_mono hguard hk_b hk' h_varsR
+                exact varsRegime_monotone h_mono hguard hk' h_varsR
             | inr h_none =>
                 simp [h_none] at hk'
   · -- Third conjunct: closureCapturedVarsRegime monotone under h_mono.
@@ -4366,7 +4364,7 @@ lemma consistentWithRegimeMasked_monotone
                       have : some b' = some b := h_eq.symm.trans hk'
                       exact Option.some.inj this
                     have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
-                    exact Or.inr (locsRegime_monotone h_mono hguard hk_b hk' hloc)
+                    exact Or.inr (locsRegime_monotone h_mono hguard hk' hloc)
                 | inr h_none =>
                     simp [h_none] at hk'
   · intro x qt k hlookup hguard hR'def
@@ -4389,7 +4387,7 @@ lemma consistentWithRegimeMasked_monotone
                       have : some b' = some b := h_eq.symm.trans hk'
                       exact Option.some.inj this
                     have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
-                    exact Or.inr (varsRegime_monotone h_mono hguard hk_b hk' hvars)
+                    exact Or.inr (varsRegime_monotone h_mono hguard hk' hvars)
                 | inr h_none =>
                     simp [h_none] at hk'
   · intro x qt v hlookup hρ
@@ -5210,7 +5208,6 @@ private lemma returnSpecToQTyp_pred_preserves (typ : Typ) (poison : Bool)
 private lemma typecheckExternVal_QTypRespectsTagMeaning_corollary
     (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     (res : TypeResult)
-    (_hwf : wfTagMeaningCtx tm ctx)
     (htc : typecheckExternVal ctx typ poison pred = .ok res) :
     QTypRespectsTagMeaning tm res.qualType := by
   simp only [typecheckExternVal] at htc
@@ -8809,7 +8806,7 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             simp only [] at htc
             have htc' := by simpa using htc
             exact ⟨typecheckExternVal_preserves_wfTagMeaningCtx tm ctx typ poison pred res hwf htc',
-                   typecheckExternVal_QTypRespectsTagMeaning_corollary tm ctx typ poison pred res hwf htc'⟩
+                   typecheckExternVal_QTypRespectsTagMeaning_corollary tm ctx typ poison pred res htc'⟩
         | externFn _ _ _ _ =>
             simp only [typecheckExternFn, pure, Except.pure] at htc; cases htc
             exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
