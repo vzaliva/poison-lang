@@ -13,6 +13,19 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
+-- Given `terminatesTo e c₀ c'` with `c₀.pureMode = pm`, produces the pair
+-- (`c'.pureMode = pm`, `c' = {..c'.., pureMode := pm}`). The record equality is
+-- useful for rewriting `ht : terminatesTo _ _ c'` when downstream calls require
+-- the config in explicit-record form.
+private lemma cfg_pureMode_eq_of_terminatesTo
+    {e : Expr} {c₀ c' : Config} {v : Value} {pm : Bool}
+    (ht : terminatesTo e c₀ c' v) (hinit : c₀.pureMode = pm) :
+    c'.pureMode = pm ∧
+    c' = { memory := c'.memory, varEnv := c'.varEnv, nextAddr := c'.nextAddr, pureMode := pm } := by
+  have h : c'.pureMode = pm := (terminatesTo_preserves_pureMode e c₀ c' v ht).trans hinit
+  refine ⟨h, ?_⟩
+  rw [show pm = c'.pureMode from h.symm]
+
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -3872,6 +3885,36 @@ lemma stepFR_app
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+    -- Local helper capturing the shared IH_e2 → IH_e1 ritual. Used by the
+    -- "impossible" mixed-constructor branches below to derive valueHasETyp of
+    -- each run's output value at `result1.qualType.etyp`, which is then
+    -- `cases`d to close the goal via type-constructor mismatch.
+    have mkValueHasETyp_pair :
+        ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ o₀ o₁ : Value},
+          terminatesTo e2 cinit₀ c₂'₀ v₂₀ →
+          terminatesTo e2 cinit₁ c₂'₁ v₂₁ →
+          terminatesTo e1 c₂'₀ c₁₀ o₀ →
+          terminatesTo e1 c₂'₁ c₁₁ o₁ →
+          ∃ θ₀1 θ₁1, valueHasETyp θ₀1 o₀ result1.qualType.etyp ∧
+                      valueHasETyp θ₁1 o₁ result1.qualType.etyp := by
+      intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ o₀ o₁ ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+      have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+        hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+      rcases hstep_e2 with ⟨_, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _, _, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
+        hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _⟩⟩
+      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+      have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+      have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+      obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl
+      obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl
+      have hstep_e1 := hIH_e1 hpredlaws hTm2
+        c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+        c₁₀ c₁₁ o₀ o₁
+        hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+        c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+        (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+      rcases hstep_e1 with ⟨_, ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩⟩
+      exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
     have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ ht₀
     have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ ht₁
     -- Handle runtime closure/peClosure splits for the arrow-typed branch.
@@ -3890,12 +3933,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
-        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
-        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        obtain ⟨hpm₀, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl
+        obtain ⟨hpm₁, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
@@ -6475,87 +6514,27 @@ lemma stepFR_app
         · -- resultAgreesIfClean ...
           exact hres_agree_out
       · -- Run 1: peClosure (mixed case, impossible under arrow typing)
-        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
-        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
-        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
-        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
-        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
-        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
-        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
-        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
-        have hstep_e1 := hIH_e1 hpredlaws hTm2
-          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
-          c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
-          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
-          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
-          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
-        have hv₁1_arrow : valueHasETyp θ₁1 (Value.peClosure x₁ body₁ env₁) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
-        cases hv₁1_arrow
+        obtain ⟨c₂'₀, _, c₁₀, _, _, _, _, ht₀_e2, ht₀_e1, _, _, _, _, _⟩ := h_clo₀
+        obtain ⟨c₂'₁, _, c₁₁, x₁, body₁, env₁, _, ht₁_e2, ht₁_e1, _, _, _, _, _⟩ := h_peclo₁
+        obtain ⟨_, _, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+        have hv₁_arrow : valueHasETyp _ (Value.peClosure x₁ body₁ env₁) (ETyp.arrow st1 st2 p tcls) :=
+          hetyp1.symm ▸ hv₁_typed
+        cases hv₁_arrow
     · rcases hstruct₁ with h_clo₁ | h_peclo₁
       · -- Run 0: peClosure, Run 1: closure (mixed case, impossible under arrow typing)
-        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
-        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
-        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
-        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
-        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
-        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
-        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
-        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
-        have hstep_e1 := hIH_e1 hpredlaws hTm2
-          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
-          c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
-          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
-          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
-          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
-        have hv₀1_arrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
-        cases hv₀1_arrow
+        obtain ⟨c₂'₀, _, c₁₀, x₀, body₀, env₀, _, ht₀_e2, ht₀_e1, _, _, _, _, _⟩ := h_peclo₀
+        obtain ⟨c₂'₁, _, c₁₁, _, _, _, _, ht₁_e2, ht₁_e1, _, _, _, _, _⟩ := h_clo₁
+        obtain ⟨_, _, hv₀_typed, _⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+        have hv₀_arrow : valueHasETyp _ (Value.peClosure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) :=
+          hetyp1.symm ▸ hv₀_typed
+        cases hv₀_arrow
       · -- Run 0: peClosure, Run 1: peClosure (impossible under arrow typing)
-        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
-        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
-        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
-        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
-        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
-        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
-        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
-        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
-        have hstep_e1 := hIH_e1 hpredlaws hTm2
-          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
-          c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
-          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
-          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
-          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
-        have hv₀1_arrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
-        cases hv₀1_arrow
+        obtain ⟨c₂'₀, _, c₁₀, x₀, body₀, env₀, _, ht₀_e2, ht₀_e1, _, _, _, _, _⟩ := h_peclo₀
+        obtain ⟨c₂'₁, _, c₁₁, _, _, _, _, ht₁_e2, ht₁_e1, _, _, _, _, _⟩ := h_peclo₁
+        obtain ⟨_, _, hv₀_typed, _⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+        have hv₀_arrow : valueHasETyp _ (Value.peClosure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) :=
+          hetyp1.symm ▸ hv₀_typed
+        cases hv₀_arrow
   | inr h_parrow =>
     -- Pure arrow case (peClosure)
     obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, hp1, _hnempty, _hsub,
@@ -6571,93 +6550,61 @@ lemma stepFR_app
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+    -- Local helper capturing the shared IH_e2 → IH_e1 ritual (parrow branch).
+    -- Used by "impossible" closure/peClosure mismatch branches below.
+    have mkValueHasETyp_pair :
+        ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ o₀ o₁ : Value},
+          terminatesTo e2 cinit₀ c₂'₀ v₂₀ →
+          terminatesTo e2 cinit₁ c₂'₁ v₂₁ →
+          terminatesTo e1 c₂'₀ c₁₀ o₀ →
+          terminatesTo e1 c₂'₁ c₁₁ o₁ →
+          ∃ θ₀1 θ₁1, valueHasETyp θ₀1 o₀ result1.qualType.etyp ∧
+                      valueHasETyp θ₁1 o₁ result1.qualType.etyp := by
+      intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ o₀ o₁ ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+      have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+        hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+      rcases hstep_e2 with ⟨_, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _, _, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
+        hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _⟩⟩
+      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+      have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+      have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+      obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl
+      obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl
+      have hstep_e1 := hIH_e1 hpredlaws hTm2
+        c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+        c₁₀ c₁₁ o₀ o₁
+        hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
+        c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+        (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+      rcases hstep_e1 with ⟨_, ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩⟩
+      exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
     have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ ht₀
     have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ ht₁
     -- Handle runtime closure/peClosure splits for the parrow-typed branch.
     rcases hstruct₀ with h_clo₀ | h_peclo₀
     · rcases hstruct₁ with h_clo₁ | h_peclo₁
       · -- Both runs: closure (impossible under parrow typing)
-        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
-        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
-        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
-        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
-        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
-        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
-        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
-        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
-        have hstep_e1 := hIH_e1 hpredlaws hTm2
-          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
-          c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
-          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
-          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
-          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
-        have hv₀1_parrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
-        cases hv₀1_parrow
+        obtain ⟨c₂'₀, _, c₁₀, x₀, body₀, env₀, _, ht₀_e2, ht₀_e1, _, _, _, _, _⟩ := h_clo₀
+        obtain ⟨c₂'₁, _, c₁₁, _, _, _, _, ht₁_e2, ht₁_e1, _, _, _, _, _⟩ := h_clo₁
+        obtain ⟨_, _, hv₀_typed, _⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+        have hv₀_parrow : valueHasETyp _ (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) :=
+          hetyp1.symm ▸ hv₀_typed
+        cases hv₀_parrow
       · -- Run 0: closure, Run 1: peClosure (impossible under parrow typing)
-        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, hpm1₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_clo₀
-        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
-        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
-        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
-        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
-        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
-        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
-        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
-        have hstep_e1 := hIH_e1 hpredlaws hTm2
-          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
-          c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
-          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
-          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
-          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
-        have hv₀1_parrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
-        cases hv₀1_parrow
+        obtain ⟨c₂'₀, _, c₁₀, x₀, body₀, env₀, _, ht₀_e2, ht₀_e1, _, _, _, _, _⟩ := h_clo₀
+        obtain ⟨c₂'₁, _, c₁₁, _, _, _, _, ht₁_e2, ht₁_e1, _, _, _, _, _⟩ := h_peclo₁
+        obtain ⟨_, _, hv₀_typed, _⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+        have hv₀_parrow : valueHasETyp _ (Value.closure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) :=
+          hetyp1.symm ▸ hv₀_typed
+        cases hv₀_parrow
     · rcases hstruct₁ with h_clo₁ | h_peclo₁
       · -- Run 0: peClosure, Run 1: closure (impossible under parrow typing)
-        obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
-        obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, hpm1₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_clo₁
-        have hstep_e2 := hIH_e2 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-          hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
-        rcases hstep_e2 with ⟨_hresTm2, ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hv₂₀, _hv₂₁, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-          hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩⟩
-        have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
-        have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
-        have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
-        have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
-        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
-        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
-        have hstep_e1 := hIH_e1 hpredlaws hTm2
-          c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
-          c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
-          hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
-          c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
-          (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
-        rcases hstep_e1 with ⟨_hresTm1, ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
-          hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩⟩
-        have hv₁1_parrow : valueHasETyp θ₁1 (Value.closure x₁ body₁ env₁) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
-        cases hv₁1_parrow
+        obtain ⟨c₂'₀, _, c₁₀, _, _, _, _, ht₀_e2, ht₀_e1, _, _, _, _, _⟩ := h_peclo₀
+        obtain ⟨c₂'₁, _, c₁₁, x₁, body₁, env₁, _, ht₁_e2, ht₁_e1, _, _, _, _, _⟩ := h_clo₁
+        obtain ⟨_, _, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+        have hv₁_parrow : valueHasETyp _ (Value.closure x₁ body₁ env₁) (ETyp.parrow st1 st2 p tcls) :=
+          hetyp1.symm ▸ hv₁_typed
+        cases hv₁_parrow
       · -- Both runs: peClosure (the real case for parrow typing)
         obtain ⟨c₂'₀, v₂₀, c₁₀, x₀, body₀, env₀, evalCfg₀, ht₀_e2, ht₀_e1, htoP₀, ht₀_body, heq_cfg₀, hpm_e2₀, _⟩ := h_peclo₀
         obtain ⟨c₂'₁, v₂₁, c₁₁, x₁, body₁, env₁, evalCfg₁, ht₁_e2, ht₁_e1, htoP₁, ht₁_body, heq_cfg₁, hpm_e2₁, _⟩ := h_peclo₁
@@ -6671,12 +6618,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        have hpm₀ : c₂'₀.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₀ c₂'₀ v₂₀ ht₀_e2).trans rfl
-        have hpm₁ : c₂'₁.pureMode = pm := (terminatesTo_preserves_pureMode e2 cinit₁ c₂'₁ v₂₁ ht₁_e2).trans rfl
-        have heq_cfg₀' : c₂'₀ = { memory := c₂'₀.memory, varEnv := c₂'₀.varEnv, nextAddr := c₂'₀.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₀.pureMode from hpm₀.symm]
-        have heq_cfg₁' : c₂'₁ = { memory := c₂'₁.memory, varEnv := c₂'₁.varEnv, nextAddr := c₂'₁.nextAddr, pureMode := pm } := by
-          rw [show pm = c₂'₁.pureMode from hpm₁.symm]
+        obtain ⟨hpm₀, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl
+        obtain ⟨hpm₁, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
