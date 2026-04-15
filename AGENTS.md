@@ -16,6 +16,7 @@ The Poison Language is a research implementation of a simple imperative programm
 - **Indentation**: Use spaces only, never tabs
 - **Compilation**: Always leave code in compilable state at checkpoints (no build errors)
 - **Warnings**: Avoid compilation warnings (except `sorry`-related warnings in proofs)
+- **Unused binders**: Prefix unused variables and parameters with `_` so the tree stays warning-clean (warnings can fail CI or tests)
 - **Build verification**: Run `lake build` to check compilation before committing
 - **No parallel builds**: Do not run concurrent builds (including via parallel sub-agents) for files that share dependencies; `lake` builds all transitive dependencies, so concurrent builds of interdependent files will conflict and produce spurious errors
 - **CLI tools**: fd (fdfind), ripgrep, jq, rename, shellcheck, sd, delta, gh, difftastic (`difft` on some installs), scc, yq, hyperfine, comby, tree-sitter, ast-grep, dtrx; fzf, bat (navigation/preview), just (task runner), entr, watchexec (rebuild on change), parallel (gnu parallel; independent per-file checks).
@@ -104,6 +105,14 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `poison-lang-spec/` - Ott specification (`poison-lang.ott`)
 - `examples/` - Test suite (`.poison` files with `.output` or `.fail` golden files)
 
+## Specification and documentation
+
+**Ott** (`poison-lang-spec/poison-lang.ott`): When syntax or typing rules change, keep **`doc/poison-lang-description.tex`** and **`examples/`** consistent (update tests and prose as needed).
+
+**Narrative docs** (`doc/`): Describe the **current** language. Avoid changelog-style phrasing (for example, "we now support …").
+
+**Builds:** Use the targets in **Build Commands** above (`make poison-lang-spec`, `make doc`, `make parser`, etc.).
+
 ## Working with Implementation (LeanPoison/)
 
 ### Adding Language Features
@@ -136,7 +145,23 @@ To add a test:
 
 - **No testing**: Proofs are verified by compilation, not runtime tests
 - **Extern semantics**: Fault-robustness for extern-backed typing relies on the axioms in `ExternAxioms.lean`; keep that boundary minimal and consistent with `RegimeConsistency` / typechecking
-- **Conservative `sorry` use**: Use `sorry` sparingly. The goal is to **decrease** the number of `sorry` statements (shrinking proof surface), not increase them. Adding more `sorry` goes in the wrong direction.
+- **Conservative `sorry` use**: When you are proving deliberately, use `sorry` sparingly. The goal is to **decrease** the number of `sorry` statements (shrinking proof surface), not increase them. Adding more `sorry` goes in the wrong direction
+- **Specification style**: Prefer **declarative / logical** specifications over functional encodings when both are reasonable (for example, membership predicates instead of `filter`-style definitions)
+- **Inductive predicates**: For proof-relevant properties, prefer **inductive predicates** over `Bool` helpers so inversion is straightforward
+
+Example (style preference):
+
+```lean
+-- Prefer: inductive predicate
+inductive IsMember (x : α) : List α → Prop where
+  | head : IsMember x (x :: _)
+  | tail : IsMember x xs → IsMember x (_ :: xs)
+
+-- Less convenient for proofs: functional encoding
+def isMember (x : α) (xs : List α) : Bool :=
+  xs.any (· = x)
+```
+
 - **Proof techniques**: Many proofs use structural induction on fuel or expression structure
 - **Lean LSP tooling**: Use `lean-lsp` MCP tool to examine proof goals, errors, and search for lemmas
 - **Bounded falsification check**: When a lemma looks suspicious, try 2–3 quick
