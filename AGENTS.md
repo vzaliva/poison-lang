@@ -80,10 +80,11 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `SemanticsProperties.lean` - Evaluation relations (terminatesTo, diverges, stuck), runtime configuration well-formedness
 
 **Main properties:**
-- `RegimeConsistency.lean` - Regime-consistency definitions (tag meaning, guard descriptors) shared by fault-robustness
+- `RegimeConsistency.lean` - Regime-consistency definitions (tag meaning, guard descriptors) plus the masked-regime / `tagEnvConsistentWithRegime*` machinery (definitions, insert/invalidate/join lemmas) shared by `StepFR` and downstream FR proofs
 - `FaultRobustness.lean` - Top-level fault-robustness definitions (`FaultRobustnessSpec`, `agreeOnClean`, `agreeValueUnder`, etc.)
-- `StepFR.lean` - Shared step-based machinery (`StepFR`, `StepFR_IH`, consistency lemmas) and large proof sections supporting the fault-robustness theorems
-- **Per-expression case proofs** (each file contains the corresponding `stepFR_*` / masked single-run lemmas; shared imports from `StepFR`):
+- `StepFR.lean` - Shared step-based machinery (`StepFR`, `StepFR_IH`, `resultAgreesIfClean`, `consistentRegimeSpec_implies_consistentWithRegime` bridge lemma, and helper lemmas for value/captured/closure consistency) used by every per-operator FR proof
+- `JoinMemberTransport.lean` - Shared join-member transport machinery: lemmas about how `joinTypeResults` transports per-member properties (`valueConsistentWithRegime`, `agreeOnClean`, etyp signatures, member-of-arrow/parrow, ref membership, internal-poison) to the joined result. Imported by `StepFRApp` and `StepFRIte` so per-operator FR proof modules stay mutually independent
+- **Per-expression case proofs** (each file contains the corresponding `stepFR_*` / masked single-run lemmas; shared imports from `StepFR`; `StepFRApp` and `StepFRIte` additionally import `JoinMemberTransport`):
   - `StepFRApp.lean` - function application
   - `StepFRAssign.lean` - assignment
   - `StepFRLiteral.lean`, `StepFRVar.lean`, `StepFROp.lean` - literals, variables, primitive operators
@@ -97,6 +98,10 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `MemoryMonotonicity.lean` - Memory monotonicity (evaluation only adds locations, never removes)
 
 **Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`, `ExternAxioms.lean` (semantic contracts for extern typechecking used in fault-robustness)
+
+**Module visibility / `private` discipline:** declarations used only within their declaring file are marked `private`. The `private` keyword scopes the binding to the file, which keeps the public surface of each module small and gives reviewers a quick read of "what is this module's API." When adding a new helper, default to `private` until another file actually needs it.
+
+**Per-operator independence rule:** the `StepFR{App,Assign,Ite,Deref,NewRef,Seq,Vlet,Literal,Var,Op,FnPfn}.lean` files MUST NOT import each other. Any helper that two of them need belongs in a shared module (`StepFR.lean` for general step machinery, or `JoinMemberTransport.lean` for join-member transport). Because these files are mutually independent, edits to different per-operator files may be delegated to sub-agents in parallel — but run `lake build` sequentially afterwards (lake cannot build shared-dependency files concurrently).
 
 ### Other Components
 

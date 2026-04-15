@@ -1940,7 +1940,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_vlet_parametric
   rw [h_ret_etyp]
   exact hv2
 
-lemma stepFRSingleRunFinalCleanPcTrue_vlet
+private lemma stepFRSingleRunFinalCleanPcTrue_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
@@ -2180,16 +2180,16 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   rw [h_ret_etyp]
   exact hv2
 
-def StepFRVletCtxConsBodyStart
+private def StepFRVletCtxConsBodyStart
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   VletCtxConsBodyStart CtxCons ValCons
 
-def StepFRVletCtxConsFinish
+private def StepFRVletCtxConsFinish
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (predSat : PredSat) (tm : TagMeaning) : Prop :=
   VletCtxConsFinish CtxCons predSat tm
 
-def StepFRVletValConsFinish
+private def StepFRVletValConsFinish
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   VletValConsFinish ValCons

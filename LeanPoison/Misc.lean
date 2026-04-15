@@ -31,6 +31,6 @@ def combineExtTreeMaps [Ord α] [BEq α] [TransCmp (compare : α → α → Orde
   go ks ({} : ExtTreeMap α β)
 
 /-- Concatenate lists while removing duplicates -/
-def concat_noDups [BEq α] (l₁ l₂ : List α) : List α :=
+private def concat_noDups [BEq α] (l₁ l₂ : List α) : List α :=
   let l := l₁ ++ l₂
   l.eraseDups

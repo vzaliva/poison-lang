@@ -48,16 +48,16 @@ set_option maxHeartbeats 1000000
 -- ============================================================================
 
 
-theorem LocSet.beq_refl (ls : LocSet) : BEq.beq ls ls = true := by
+private theorem LocSet.beq_refl (ls : LocSet) : BEq.beq ls ls = true := by
   -- Reduce to list reflexivity on the underlying toList representation
   have h : (ExtTreeSet.toList ls == ExtTreeSet.toList ls) = true :=
     ReflBEq.rfl (a := ExtTreeSet.toList ls)
   simpa [BEq.beq] using h
 
-theorem LocSet.rfl (ls : LocSet) : ls = ls := by
+private theorem LocSet.rfl (ls : LocSet) : ls = ls := by
   rfl
 
-theorem LocSet.sound (a b : LocSet) : BEq.beq a b = true → a = b := by
+private theorem LocSet.sound (a b : LocSet) : BEq.beq a b = true → a = b := by
   intro h
   have hList : ExtTreeSet.toList a = ExtTreeSet.toList b := by
     have h' : (ExtTreeSet.toList a == ExtTreeSet.toList b) = true := by

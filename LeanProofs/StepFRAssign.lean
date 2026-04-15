@@ -6244,12 +6244,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_assign_parametric
   simpa [hEtyp] using valueHasETyp.unit (θ := θ2)
 
 
-def StepFRAssignCtxConsPostTransport
+private def StepFRAssignCtxConsPostTransport
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (predSat : PredSat) (tm : TagMeaning) : Prop :=
   AssignCtxConsPostTransport CtxCons predSat tm
 
-def StepFRAssignResultValCons
+private def StepFRAssignResultValCons
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   AssignResultValCons ValCons
 

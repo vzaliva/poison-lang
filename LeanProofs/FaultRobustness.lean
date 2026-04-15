@@ -15,7 +15,7 @@ open Std
 -- Fault-Robustness (semantic formulation)
 -- ================================================================
 
-abbrev MemoryETypEnv := ExtTreeMap Loc ETyp
+private abbrev MemoryETypEnv := ExtTreeMap Loc ETyp
 namespace MemoryETypEnv
 
   @[inline] def lookup (m : MemoryETypEnv) (l : Loc) : Option ETyp :=
@@ -55,13 +55,13 @@ structure InputSpec where
 deriving Repr
 
 -- Output realizations should include every location in the spec.
-def fullyRealizes (s : InputSpec) (θ : RealizationMap) : Prop :=
+private def fullyRealizes (s : InputSpec) (θ : RealizationMap) : Prop :=
   ∀ l, s.locs.hasKey l → θ.lookup l ≠ none
 
 open List
 
 /-- Keys are unique in both `s.locs` (addresses) and `s.vars` (names). -/
-def inputKeysUnique (vars : VarTypeEnv) : Prop :=
+private def inputKeysUnique (vars : VarTypeEnv) : Prop :=
   vars.keys.Nodup
   -- `vars` is an ExtTreeMap, so keys are already unique
 
@@ -72,11 +72,11 @@ def inputSpecTags (s : InputSpec) : List Tag :=
   locTags ++ varTags
 
 -- Predicate-shape helpers
-def isGuardClosure (qt : QTyp) : Prop :=
+private def isGuardClosure (qt : QTyp) : Prop :=
   ∃ (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
     qt.pred = Predicate.guardClosure k arg_name pred_body var_env
 
-def isGuardOnly (qt : QTyp) : Prop :=
+private def isGuardOnly (qt : QTyp) : Prop :=
   ∃ k, qt.pred = Predicate.guardOnly k
 
 -- Regime is well-formed with respect to spec S if it's defined exactly for tags in S.
@@ -85,7 +85,7 @@ def wfRegime (R : Regime) (s : InputSpec) : Prop :=
   (∀ k, k ∈ tags → (R.lookup? k).isSome) ∧
   (∀ k, (R.lookup? k).isSome → k ∈ tags)
 
-inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
+private inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
   | noPred (retType : QTyp)
       (hpred : retType.pred = Predicate.noPred) :
       wfRegimeForReturn R retType
@@ -121,7 +121,7 @@ def observablesEqual (obs : ObservableSpec)
   sameMem ∧ sameRet
 
 -- Helper: check if guard tag present
-def hasGuardTag (p : Predicate) : Bool :=
+private def hasGuardTag (p : Predicate) : Bool :=
   match p with
   | Predicate.noPred => false
   | _ => true
@@ -218,22 +218,22 @@ end
 -- Well-formedness: memory stores integers at critical locations; additionally,
 -- align predicate and poison for critical inputs: no predicate ⇒ clean;
 -- predicate present ⇒ initially poisoned.
-def wfInputSpecMem (locs : MemoryTypeEnv) : Prop :=
+private def wfInputSpecMem (locs : MemoryTypeEnv) : Prop :=
   ∀ l qt, locs.lookup l = some qt →
     qt.etyp = ETyp.int ∧ qt.poison = hasGuardTag qt.pred
 
-def wfInputSpecVars (vars : VarTypeEnv) : Prop :=
+private def wfInputSpecVars (vars : VarTypeEnv) : Prop :=
   inputKeysUnique vars ∧
   (∀ x qt, vars.lookup x = some qt →
      qt.poison = hasGuardTag qt.pred)
 
-def wfInputSpecVarsDeep (vars : VarTypeEnv) : Prop :=
+private def wfInputSpecVarsDeep (vars : VarTypeEnv) : Prop :=
   deepVarEnvProperty wfInputSpecVars vars
 
 /-- Critical input variables are first-order values (no function closures).
     This keeps the user-provided input specification focused on explicit data,
     not hidden captured runtime environments. -/
-def wfInputSpecVarsFirstOrder (vars : VarTypeEnv) : Prop :=
+private def wfInputSpecVarsFirstOrder (vars : VarTypeEnv) : Prop :=
   ∀ x qt, vars.lookup x = some qt → nonClosureQTyp qt
 
 def wfInputSpec (s : InputSpec) : Prop :=
@@ -247,10 +247,10 @@ def wfObsSpec (obs : ObservableSpec) : Prop :=
   | some et => et.isFunctionType = false
 
 -- Derive return-observability and a conservative QTyp for the return from ObservableSpec.
-def isRetObservableFromObs (obs : ObservableSpec) : Bool :=
+private def isRetObservableFromObs (obs : ObservableSpec) : Bool :=
   obs.retEtyp?.isSome
 
-def retQTypFromObs (obs : ObservableSpec) : QTyp :=
+private def retQTypFromObs (obs : ObservableSpec) : QTyp :=
   match obs.retEtyp? with
   | some et => ⟨et, false, Predicate.noPred⟩
   | none    => ⟨ETyp.unit, true, Predicate.noPred⟩
@@ -272,7 +272,7 @@ def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
     ∀ x qt k, env.lookup x = some qt → qtypGuardTag qt = some k →
       ¬ s.vars.hasKey x → k ∉ inputSpecTags s) ctx.varEnv
 
-def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
+private def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   (∀ {l a}, s.locs.contains l → θ.lookup l = some a → μ.contains a) ∧
   (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp θ v qt.etyp)
 
@@ -642,7 +642,7 @@ def agreeOnCriticalInputsUnderRegimeSpec
   List.Forall (agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂) s.vars.toList
 
 -- Typing results must satisfy the observable constraints.
-def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
+private def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
   let retMatches : Prop :=
     ∀ et, obs.retEtyp? = some et → res.qualType.etyp = et ∧ res.qualType.poison = false
   let memMatches : Prop :=
@@ -690,7 +690,7 @@ inductive trustedVarsClosureRegimeInit
 
 -- Fault-Robustness property (top-level, spec-driven).
 -- Same shape as NI but with an extra premise requiring agreement on trusted inputs.
-def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
+private def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime ctx.regime s →

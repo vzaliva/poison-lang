@@ -16,7 +16,7 @@ inductive EvalResult : Type where
   | runtimeError : String → EvalResult         -- Stuck state: runtime error
 
 -- Lightweight debug entry trace for big-step
-def bsTraceEnter (fuel : Nat) (verbose : Bool) (_config : Config) (expr : Expr) : Unit :=
+private def bsTraceEnter (fuel : Nat) (verbose : Bool) (_config : Config) (expr : Expr) : Unit :=
   if verbose then dbg_trace s!"→ BS [{fuel}]:\t⟨{repr expr}⟩"; () else ()
 
 -- Operation evaluator (local copy to avoid depending on SmallStep)

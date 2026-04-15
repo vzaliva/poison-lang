@@ -640,12 +640,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_deref_parametric
     exact _hfresh' l qt hnotIn (by rwa [h_mem] at hlookup) (by rwa [h_regime] at hclean)
   exact ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
 
-def StepFRDerefCtxToValCons
+private def StepFRDerefCtxToValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   DerefCtxToValCons CtxCons ValCons
 
-theorem stepFRDeref_ctxToValCons_masked
+private theorem stepFRDeref_ctxToValCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRDerefCtxToValCons
     (fun ctx μ ρ θ =>

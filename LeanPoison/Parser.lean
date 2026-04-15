@@ -61,7 +61,7 @@ partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except Strin
 --------------------------------------------------------------------------------
 -- Helper Wrapper function to parse a Type Expression into a Type
 
-def parseTypeExpr (typeExpElements : Array Content ) : Except String Typ := do
+private def parseTypeExpr (typeExpElements : Array Content ) : Except String Typ := do
   let TypExp := flattenTypeExpr 1000 typeExpElements
   match TypExp with
    | .ok typeExpression => .ok typeExpression

@@ -272,7 +272,7 @@ def freshTLocRes (result : TypeResult): (Loc × TypeResult) :=
   (result.nextLoc', { result with nextLoc' := result.nextLoc' + 1 })
 
 -- Function to get a fresh Tag Value From the environment
-def generateFreshTag (ctx : TypeContext) : (Tag × TypeContext) :=
+private def generateFreshTag (ctx : TypeContext) : (Tag × TypeContext) :=
   (ctx.nextTag, { ctx with nextTag := ctx.nextTag + 1 })
 
 -- Allocate a fresh Tag Value and return it along with updated typing result
@@ -307,7 +307,7 @@ def joinPoison (p1 p2 : Poison) : Poison :=
   p1 || p2
 
 /-- Join multiple poison flags -/
-def joinPoisons (ps : List Poison) : Poison :=
+private def joinPoisons (ps : List Poison) : Poison :=
   ps.foldl joinPoison false
 
 /-- Join two predicates using agreement-only policy.
@@ -449,7 +449,7 @@ def Expr.toPExpr (e : Expr) : TypecheckM PExpr :=
 
 -- Helper function to project ETyp to Typ By stripping poison and closure
 -- information from arrows and locations from references.
-def ETyp.toTyp (pt : ETyp) : Typ :=
+private def ETyp.toTyp (pt : ETyp) : Typ :=
   match pt with
   | ETyp.int => Typ.int
   | ETyp.bool => Typ.bool
@@ -475,7 +475,7 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | .app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
 /-- Convert qualified type to surface type by stripping poison and preducate info -/
-def QTyp.toTyp (qt : QTyp) : Typ :=
+private def QTyp.toTyp (qt : QTyp) : Typ :=
   qt.etyp.toTyp
 
 /-- Check if a surface type is a subtype of a qualified type. This implements ST
@@ -521,7 +521,7 @@ def opEType? : Op → ETyp → ETyp → Option ETyp
   | .neq,  .int,   .int  => some .bool
   | _,    _,     _     => none
 
-inductive OpUnaryEType : UnaryOp → ETyp → ETyp → Prop where
+private inductive OpUnaryEType : UnaryOp → ETyp → ETyp → Prop where
   | not_bool : OpUnaryEType UnaryOp.not ETyp.bool ETyp.bool
 
 def opUnaryEType? : UnaryOp → ETyp → Option ETyp
@@ -745,7 +745,7 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
 -- ------------------
 -- pc ; G ; S ; L |- l : ref @ {l} :> clean { no_pred } -| G ; L
 -/
-def typecheckLocation (ctx : TypeContext) (l : Loc) : TypecheckM TypeResult := do
+private def typecheckLocation (ctx : TypeContext) (l : Loc) : TypecheckM TypeResult := do
   match ctx.memEnv.lookup l with
   | some qt =>
     let refTyp := ETyp.ref (LocSet.singleton l)
@@ -979,7 +979,7 @@ def typecheckExternPfn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
            nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
 
 
-def generateFreshVar (ctx : TypeContext) (pref : Name) (suffix : Nat) (fuel : Nat) : Name :=
+private def generateFreshVar (ctx : TypeContext) (pref : Name) (suffix : Nat) (fuel : Nat) : Name :=
   match fuel with
   | 0 => s!"{pref}{suffix}"
   | fuel + 1 =>

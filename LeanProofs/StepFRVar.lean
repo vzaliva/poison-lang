@@ -49,7 +49,7 @@ private def VarCtxToValCons
     CtxCons ctx μ ρ θ →
     ValCons (ctxAfter ctx res).regime res.qualType μ θ v
 
-def StepFRVarCtxToValCons
+private def StepFRVarCtxToValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   VarCtxToValCons CtxCons ValCons
@@ -535,7 +535,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_var_parametric
       (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctxᵢ) (res := res) (ρ := ρ) hric)
   · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
 
-theorem stepFRVar_ctxToValCons_masked
+private theorem stepFRVar_ctxToValCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRVarCtxToValCons
     (fun ctx μ ρ θ =>

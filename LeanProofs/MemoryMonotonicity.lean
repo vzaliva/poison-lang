@@ -62,7 +62,7 @@ private lemma bevalFunctionBody_memory_monotonic
 
 /-- Successful evaluation is monotone on memory: previously allocated addresses
     remain present in the final memory. -/
-lemma beval_memory_monotonic :
+private lemma beval_memory_monotonic :
     ∀ (e : Expr) (fuel : Nat) (verbose : Bool) (config₀ config₁ : Config) (v : Value),
       LeanPoison.beval fuel config₀ e verbose = LeanPoison.EvalResult.success config₁ v →
       ∀ l, config₀.memory.contains l → config₁.memory.contains l := by

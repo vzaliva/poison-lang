@@ -100,7 +100,7 @@ lemma List_lookup_cons_ne {α β : Type} [BEq α] [LawfulBEq α] (l : List (α �
 theorem Except.error_ne_ok {ε α : Type} (err : ε) (a : α) : Except.error err ≠ Except.ok a :=
   fun h => nomatch h
 
-theorem Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Except ε β) (b : β)
+private theorem Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Except ε β) (b : β)
     (h : Except.bind x f = Except.ok b) :
     ∃ a, x = Except.ok a ∧ f a = Except.ok b := by
   cases x with
@@ -152,7 +152,7 @@ lemma ExtTreeMap_insert_preserves_injectivity
 -- List + Except: foldlM / mapM preserve properties
 -- ================================================================
 
-theorem List.foldlM_Except_preserves_property_of_forall_mem
+private theorem List.foldlM_Except_preserves_property_of_forall_mem
     (xs : List α) (init : β) (f : β → α → Except ε β)
     (P : β → Prop) (Q : α → Prop)
     (h_init : P init)
@@ -281,7 +281,7 @@ theorem List.Forall2.exists_of_mem_left
           exact ⟨y, by simp [hymem], hR⟩
 
 -- If List.mapM succeeds, each input element maps to some output element.
-theorem List.mapM_Except_ok_exists_of_mem_left
+private theorem List.mapM_Except_ok_exists_of_mem_left
     (xs : List α) (f : α → Except ε β) :
     ∀ (ys : List β), List.mapM f xs = Except.ok ys →
       ∀ x ∈ xs, ∃ y, y ∈ ys ∧ f x = Except.ok y := by

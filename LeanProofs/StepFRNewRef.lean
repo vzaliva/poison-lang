@@ -625,16 +625,16 @@ private lemma stepFRSingleRunFinalCleanPcTrue_newRef_parametric
   exact
     ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
 
-def StepFRNewRefCtxConsFinish
+private def StepFRNewRefCtxConsFinish
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (predSat : PredSat) (tm : TagMeaning) : Prop :=
   NewRefCtxConsFinish CtxCons predSat tm
 
-def StepFRNewRefResultValCons
+private def StepFRNewRefResultValCons
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   NewRefResultValCons ValCons
 
-theorem stepFRNewRef_ctxConsFinish_masked
+private theorem stepFRNewRef_ctxConsFinish_masked
   (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
   StepFRNewRefCtxConsFinish
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -649,7 +649,7 @@ theorem stepFRNewRef_ctxConsFinish_masked
       (cfg' := cfg1) (cf := cf) (θ1 := θ1) (θ' := θ') (n := n)
       hpredlaws hwfcfg1 hregime_eq hmemEq hmem hvar hpc hθext hstoredQt hctxCons
 
-theorem stepFRNewRef_resultValCons_masked
+private theorem stepFRNewRef_resultValCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRNewRefResultValCons
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v) := by

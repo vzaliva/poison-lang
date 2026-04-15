@@ -23,7 +23,7 @@ def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value): Prop :=
     LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.success c₁ out
 
 -- Divergence relation: program runs out of fuel
-def diverges (e : Expr) (c₀ : Config) : Prop :=
+private def diverges (e : Expr) (c₀ : Config) : Prop :=
   ∀ (fuel : Nat) (verbose : Bool),
     LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.outOfFuel
 
@@ -501,7 +501,7 @@ lemma bevalApp_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
 -- ================================================================
 
 -- Helper: Convert bevalFunctionBody success to terminatesTo for the body
-lemma bevalFunctionBody_to_terminatesTo
+private lemma bevalFunctionBody_to_terminatesTo
     (fuel : Nat) (verbose : Bool) (currentConfig : Config) (closureEnv : VarEnv)
     (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool)
     (finalConfig : Config) (v : Value) :
@@ -547,7 +547,7 @@ lemma bevalFunctionBody_to_terminatesTo
 -- ================================================================
 
 /-- Inversion lemma for terminatesTo on number literals. -/
-lemma terminatesTo_num_inv' (n : Int) (c₀ c₁ : Config) (v : Value) :
+private lemma terminatesTo_num_inv' (n : Int) (c₀ c₁ : Config) (v : Value) :
     terminatesTo (Expr.num n) c₀ c₁ v → c₁ = c₀ ∧ v = Value.num n := by
   intro ⟨fuel, _verbose, hbeval⟩
   cases fuel with
@@ -557,7 +557,7 @@ lemma terminatesTo_num_inv' (n : Int) (c₀ c₁ : Config) (v : Value) :
       exact ⟨hbeval.1.symm, hbeval.2.symm⟩
 
 /-- Inversion lemma for terminatesTo on boolean literals. -/
-lemma terminatesTo_bool_inv' (b : Bool) (c₀ c₁ : Config) (v : Value) :
+private lemma terminatesTo_bool_inv' (b : Bool) (c₀ c₁ : Config) (v : Value) :
     terminatesTo (Expr.bool b) c₀ c₁ v → c₁ = c₀ ∧ v = Value.bool b := by
   intro ⟨fuel, _verbose, hbeval⟩
   cases fuel with
@@ -567,7 +567,7 @@ lemma terminatesTo_bool_inv' (b : Bool) (c₀ c₁ : Config) (v : Value) :
       exact ⟨hbeval.1.symm, hbeval.2.symm⟩
 
 /-- Inversion lemma for terminatesTo on unit. -/
-lemma terminatesTo_unit_inv' (c₀ c₁ : Config) (v : Value) :
+private lemma terminatesTo_unit_inv' (c₀ c₁ : Config) (v : Value) :
     terminatesTo Expr.unit c₀ c₁ v → c₁ = c₀ ∧ v = Value.unit := by
   intro ⟨fuel, _verbose, hbeval⟩
   cases fuel with
@@ -577,7 +577,7 @@ lemma terminatesTo_unit_inv' (c₀ c₁ : Config) (v : Value) :
       exact ⟨hbeval.1.symm, hbeval.2.symm⟩
 
 /-- Inversion lemma for terminatesTo on string literals. -/
-lemma terminatesTo_str_inv' (s : String) (c₀ c₁ : Config) (v : Value) :
+private lemma terminatesTo_str_inv' (s : String) (c₀ c₁ : Config) (v : Value) :
     terminatesTo (Expr.str s) c₀ c₁ v → c₁ = c₀ ∧ v = Value.str s := by
   intro ⟨fuel, _verbose, hbeval⟩
   cases fuel with

@@ -19,7 +19,7 @@ open Std
 -- OpEType / opEType? (moved from Properties for type-safety use)
 -- ================================================================
 
-theorem OpEType.sound {o t₁ t₂ r}
+private theorem OpEType.sound {o t₁ t₂ r}
   (h : OpEType o t₁ t₂ r) : opEType? o t₁ t₂ = some r := by
   cases h <;> simp [opEType?]
 
@@ -28,7 +28,7 @@ theorem OpEType.complete {o t₁ t₂ r}
   cases o <;> cases t₁ <;> cases t₂
    <;> simp [opEType?] at h <;> rw [<-h] <;> constructor
 
-theorem opEType?_iff (o t₁ t₂ r) :
+private theorem opEType?_iff (o t₁ t₂ r) :
   opEType? o t₁ t₂ = some r ↔ OpEType o t₁ t₂ r :=
   ⟨OpEType.complete, OpEType.sound⟩
 
@@ -53,7 +53,7 @@ instance : LawfulBEq MemEntry where
     exact (Bool.and_eq_true (po == po) (preda == preda)).mpr
       ⟨by cases po <;> rfl, (inferInstance : LawfulBEq Predicate).rfl (a := preda)⟩
 
-theorem MemoryTypeEnv_eq_equiv {m₁ m₂ : MemoryTypeEnv} (h : m₁ = m₂) : m₁.equiv m₂ := by
+private theorem MemoryTypeEnv_eq_equiv {m₁ m₂ : MemoryTypeEnv} (h : m₁ = m₂) : m₁.equiv m₂ := by
   rw [h]
   simp only [MemoryTypeEnv.equiv]
   have : LawfulBEq (List (Loc × MemEntry)) := inferInstance
@@ -358,12 +358,12 @@ private lemma joinMemEnvs_func_self :
 
 namespace MemoryTypeEnv
 
-theorem equiv.refl (m : MemoryTypeEnv) : m.equiv m := by
+private theorem equiv.refl (m : MemoryTypeEnv) : m.equiv m := by
   simp only [equiv]
   have : LawfulBEq (List (Loc × MemEntry)) := inferInstance
   exact this.rfl
 
-theorem equiv.trans (m₁ m₂ m₃ : MemoryTypeEnv) : m₁.equiv m₂ → m₂.equiv m₃ → m₁.equiv m₃ := by
+private theorem equiv.trans (m₁ m₂ m₃ : MemoryTypeEnv) : m₁.equiv m₂ → m₂.equiv m₃ → m₁.equiv m₃ := by
   simp only [equiv]
   intro h1 h2
   have : LawfulBEq (List (Loc × MemEntry)) := inferInstance
@@ -378,7 +378,7 @@ theorem equiv.trans (m₁ m₂ m₃ : MemoryTypeEnv) : m₁.equiv m₂ → m₂.
 
 end MemoryTypeEnv
 
-theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
+private theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
   m.equiv m1 → m.equiv m2 → m.equiv (joinMemEnvs m1 m2) := by
   intros m m1 m2 h1 h2
   simp only [MemoryTypeEnv.equiv]
@@ -445,12 +445,12 @@ theorem joinMemEnv_idempotent : ∀ (m m1 m2 : MemoryTypeEnv),
   rw [h_toList]
   exact this.rfl
 
-theorem locSet_union_idempotent (s : LocSet) : LocSet.union s s = s := by
+private theorem locSet_union_idempotent (s : LocSet) : LocSet.union s s = s := by
   classical
   ext k
   simp [LocSet.union, Std.ExtTreeSet.mem_union_iff]
 
-theorem joinTagEnvs_func_idempotent :
+private theorem joinTagEnvs_func_idempotent :
   ∀ (k : Tag) (otv : Option TagVal),
     (fun _ otv1 otv2 =>
       match otv1, otv2 with
@@ -470,7 +470,7 @@ theorem joinTagEnvs_func_idempotent :
       | mk b deps =>
           cases b <;> simp [locSet_union_idempotent]
 
-theorem joinTagEnvs_idempotent (t : TagEnv) : joinTagEnvs t t = t := by
+private theorem joinTagEnvs_idempotent (t : TagEnv) : joinTagEnvs t t = t := by
   classical
   let f : Tag → Option TagVal → Option TagVal → Option TagVal := fun _ otv1 otv2 =>
     match otv1, otv2 with
@@ -584,7 +584,7 @@ lemma MemoryTypeEnv_lookup_updateMemEnv_ne {Γ : MemoryTypeEnv} {l l' : Loc} {qt
     exact hne this.symm
   simp [updateMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.getElem?_insert, hcmp]
 
-lemma updateMemEnv_contains_of_contains (env : MemoryTypeEnv) (l l' : Loc) (qt : QTyp)
+private lemma updateMemEnv_contains_of_contains (env : MemoryTypeEnv) (l l' : Loc) (qt : QTyp)
   (h : env.contains l' = true) : (updateMemEnv env l qt).contains l' = true := by
   by_cases hEq : l' = l
   · subst hEq
@@ -595,7 +595,7 @@ lemma updateMemEnv_contains_of_contains (env : MemoryTypeEnv) (l l' : Loc) (qt :
       exact hEq this.symm
     simp [updateMemEnv, Std.ExtTreeMap.contains_insert, h]
 
-lemma updateMemEnv_contains_eq_or_old (env : MemoryTypeEnv) (l0 l : Loc) (qt : QTyp)
+private lemma updateMemEnv_contains_eq_or_old (env : MemoryTypeEnv) (l0 l : Loc) (qt : QTyp)
   (h : (updateMemEnv env l0 qt).contains l = true) : l = l0 ∨ env.contains l = true := by
   by_cases hEq : l = l0
   · exact Or.inl hEq
@@ -608,7 +608,7 @@ lemma updateMemEnv_contains_eq_or_old (env : MemoryTypeEnv) (l0 l : Loc) (qt : Q
       exact h
     exact Or.inr hOld
 
-lemma list_fold_updateMemEnv_contains_of_contains (xs : List Loc) (env : MemoryTypeEnv) (l' : Loc) (qt : QTyp)
+private lemma list_fold_updateMemEnv_contains_of_contains (xs : List Loc) (env : MemoryTypeEnv) (l' : Loc) (qt : QTyp)
   (h : env.contains l' = true) :
   (xs.foldl (fun acc l => updateMemEnv acc l qt) env).contains l' = true := by
   induction xs generalizing env with
@@ -618,7 +618,7 @@ lemma list_fold_updateMemEnv_contains_of_contains (xs : List Loc) (env : MemoryT
         updateMemEnv_contains_of_contains env x l' qt h
       exact ih (env := updateMemEnv env x qt) h1
 
-lemma list_fold_updateMemEnv_contains_eq_or_mem (xs : List Loc) (env : MemoryTypeEnv) (l : Loc) (qt : QTyp)
+private lemma list_fold_updateMemEnv_contains_eq_or_mem (xs : List Loc) (env : MemoryTypeEnv) (l : Loc) (qt : QTyp)
   (h : (xs.foldl (fun acc l0 => updateMemEnv acc l0 qt) env).contains l = true) :
   env.contains l = true ∨ l ∈ xs := by
   induction xs generalizing env with
@@ -648,7 +648,7 @@ lemma list_fold_updateMemEnv_lookup_eq_of_not_mem (xs : List Loc) (env : MemoryT
             (updateMemEnv env x qt).lookup l' := ih (env := updateMemEnv env x qt) hnot.2
         _ = env.lookup l' := MemoryTypeEnv_lookup_updateMemEnv_ne hneq
 
-lemma list_fold_updateMemEnv_lookup_eq_of_lookup_eq (xs : List Loc) (env : MemoryTypeEnv) (l : Loc) (qt : QTyp)
+private lemma list_fold_updateMemEnv_lookup_eq_of_lookup_eq (xs : List Loc) (env : MemoryTypeEnv) (l : Loc) (qt : QTyp)
   (hlookup : env.lookup l = some qt) :
   (xs.foldl (fun acc l0 => updateMemEnv acc l0 qt) env).lookup l = some qt := by
   induction xs generalizing env with
@@ -697,7 +697,7 @@ lemma list_fold_joinPoison_first_true (env : MemoryTypeEnv) (xs : List Loc) (pre
       | none => simpa [List.foldl, hgetx] using ih pred0
       | some qtX => simpa [List.foldl, hgetx, joinPoison] using ih (joinPredicates pred0 qtX.pred)
 
-lemma list_fold_joinPoison_true_of_mem_lookup_true (env : MemoryTypeEnv) (xs : List Loc) (storedPoison : Poison) (storedPred : Predicate)
+private lemma list_fold_joinPoison_true_of_mem_lookup_true (env : MemoryTypeEnv) (xs : List Loc) (storedPoison : Poison) (storedPred : Predicate)
   (l : Loc) (qt : QTyp) (hmem : l ∈ xs) (hlookup : env.lookup l = some qt) (hpoison : qt.poison = true) :
   ((xs.foldl
       (fun acc l0 =>
@@ -760,7 +760,7 @@ def qtypGuardTag (qt : QTyp) : Option Tag :=
   | Predicate.guardOnly k => some k
   | Predicate.noPred => none
 
-lemma joinPredicates_guardTag_eq_some_implies_left_right {p q : Predicate} {k : Tag} :
+private lemma joinPredicates_guardTag_eq_some_implies_left_right {p q : Predicate} {k : Tag} :
   qtypGuardTag { etyp := ETyp.int, poison := false, pred := joinPredicates p q } = some k →
   qtypGuardTag { etyp := ETyp.int, poison := false, pred := p } = some k ∧
     qtypGuardTag { etyp := ETyp.int, poison := false, pred := q } = some k := by
@@ -909,7 +909,7 @@ lemma list_fold_max_ge_init (xs : List Loc) (init : Nat) :
         init ≤ max init (a + 1) := Nat.le_max_left init (a + 1)
         _ ≤ List.foldl (fun acc x => max acc (x + 1)) (max init (a + 1)) as := ih (max init (a + 1))
 
-lemma list_fold_max_succ_ge_of_mem (xs : List Loc) (init l : Nat) (h : l ∈ xs) :
+private lemma list_fold_max_succ_ge_of_mem (xs : List Loc) (init l : Nat) (h : l ∈ xs) :
   l + 1 ≤ List.foldl (fun acc x => max acc (x + 1)) init xs := by
   induction xs generalizing init with
   | nil => cases h
@@ -949,7 +949,7 @@ lemma updateLocsetWeak_contains_eq_or_mem
   | inr hMem =>
       exact Or.inr (by simpa using hMem)
 
-lemma updateLocsetWeak_contains_of_contains
+private lemma updateLocsetWeak_contains_of_contains
     (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) (l : Loc)
     (h : env.contains l = true) :
     (updateLocsetWeak env ls storedPoison storedPred).contains l = true := by
@@ -1015,7 +1015,7 @@ lemma assign_memEnv_formula_contains_of_contains
           simp
           exact updateLocsetWeak_contains_of_contains env ls storedPoison storedPred l h
 
-lemma updateLocsetWeak_lookup_eq_of_not_mem
+private lemma updateLocsetWeak_lookup_eq_of_not_mem
     (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
     (l : Loc) (hnot : l ∉ ls) :
     (updateLocsetWeak env ls storedPoison storedPred).lookup l = env.lookup l := by
@@ -1205,7 +1205,7 @@ lemma var_has_correct_type (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
 
 -- LocSet.foldM preserves a property P when the fold function preserves P
 -- (uses List.foldlM_Except_preserves_property from Properties)
-theorem LocSet.foldM_Except_preserves_property
+private theorem LocSet.foldM_Except_preserves_property
     (s : LocSet) (init : β) (f : β → Loc → Except ε β)
     (P : β → Prop)
     (h_init : P init)
@@ -1234,11 +1234,11 @@ def etypRefLocsBounded (etyp : ETyp) (nl : Loc) : Prop :=
   | _ => True
 
 /-- All ref-type locations in a captured variable environment are below a bound. -/
-def capturedEnvRefLocsBounded (env : CapturedVarEnv) (nl : Loc) : Prop :=
+private def capturedEnvRefLocsBounded (env : CapturedVarEnv) (nl : Loc) : Prop :=
   ∀ name qt, (name, qt) ∈ env → etypRefLocsBounded qt.etyp nl
 
 /-- All ref-type locations in a variable environment are below a bound. -/
-def varEnvRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop :=
+private def varEnvRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop :=
   ∀ x qt, S.lookup x = some qt → etypRefLocsBounded qt.etyp nl
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -1248,7 +1248,7 @@ def varEnvRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop :=
 /-- Depth-indexed captured-env ref-location boundedness. At depth 0, trivially true.
     At depth n+1, each entry has bounded ref locations AND its closures' captured envs
     are recursively bounded at depth n. -/
-def CapturedEnvRefLocsBoundedN : Nat → List (Name × QTyp) → Loc → Prop
+private def CapturedEnvRefLocsBoundedN : Nat → List (Name × QTyp) → Loc → Prop
   | 0, _, _ => True
   | n + 1, env, nl =>
     ∀ name qt, (name, qt) ∈ env →
@@ -1279,7 +1279,7 @@ def etypClosuresCapturedRefLocsBounded (etyp : ETyp) (nl : Loc) : Prop :=
   | _ => True
 
 /-- All ETyp closures in a VarTypeEnv have fully bounded captured env ref-locations. -/
-def varEnvClosuresCapturedRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop :=
+private def varEnvClosuresCapturedRefLocsBounded (S : VarTypeEnv) (nl : Loc) : Prop :=
   ∀ x qt, S.lookup x = some qt → etypClosuresCapturedRefLocsBounded qt.etyp nl
 
 /-- The typing context is well-formed: all locations in memEnv are below nextLoc,
@@ -1714,7 +1714,7 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
 -- Extracts the intermediate typechecking results and function type information.
 -- Note: The actual result comes from joinTypeResults which joins multiple closure results,
 -- but for the proof we mainly need result1, result2, and the function type with internal poison.
-lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
+private lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckApp ctx e1 e2 fuel = .ok res →
   ∃ (result2 result1 : TypeResult) (st1 st2 : Typ) (p p1 : Poison) (isArrow : Bool),
     typecheckExpr ctx e2 (fuel - 1) = .ok result2 ∧
@@ -2082,7 +2082,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
         · simp only [hbool, bne_iff_ne, ne_eq] at htc; cases htc
 
 /-- In standard mode (when matchGuard fails), typecheckIf produces a result with noPred. -/
-lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult) :
+private lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (res : TypeResult) :
     typecheckIf ctx e1 e2 e3 fuel = .ok res →
     (∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err) →
     ∃ (res1 res2 res3 : TypeResult),
@@ -2147,7 +2147,7 @@ lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Na
           cases htc
 
 /-- Variant of typecheckIf_standard_etyp that uses already-established res2, res3. -/
-lemma typecheckIf_standard_etyp' (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat)
+private lemma typecheckIf_standard_etyp' (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat)
     (res res1 res2 res3 : TypeResult)
     (htc : typecheckIf ctx e1 e2 e3 fuel = .ok res)
     (hmatch_fail : ∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err)
@@ -3883,21 +3883,21 @@ section advanceNextTag_monotone_proof
 
 -- Helper lemmas for advanceNextTag functions monotonicity
 
-lemma advanceNextTagForPred_ge (pred : Predicate) (t : Tag) :
+private lemma advanceNextTagForPred_ge (pred : Predicate) (t : Tag) :
   t ≤ advanceNextTagForPred pred t := by
   cases pred with
   | guardClosure k _ _ _ => simp [advanceNextTagForPred]
   | guardOnly k => simp [advanceNextTagForPred]
   | noPred => simp [advanceNextTagForPred]
 
-lemma advanceNextTagForSyntaxPred_ge (pred : SyntaxPredicate) (t : Tag) :
+private lemma advanceNextTagForSyntaxPred_ge (pred : SyntaxPredicate) (t : Tag) :
   t ≤ advanceNextTagForSyntaxPred pred t := by
   cases pred with
   | guardClosure k _ _ => simp [advanceNextTagForSyntaxPred]
   | guardOnly k => simp [advanceNextTagForSyntaxPred]
   | noPred => simp [advanceNextTagForSyntaxPred]
 
-lemma advanceNextTagForEffects_ge (effects : List Effect) (t : Tag) :
+private lemma advanceNextTagForEffects_ge (effects : List Effect) (t : Tag) :
   t ≤ advanceNextTagForEffects effects t := by
   induction effects generalizing t with
   | nil => simp [advanceNextTagForEffects, List.foldl]
@@ -3911,7 +3911,7 @@ end advanceNextTag_monotone_proof
 -- A stronger nextTag-equality property does not hold in general: extern tag
 -- allocation via `collectAndAllocExternTags` advances `nextTag`.
 
-lemma joinTypeResults_nextTag_eq_max
+private lemma joinTypeResults_nextTag_eq_max
   (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
     joinTypeResults ctx r rs = .ok res →
     res.nextTag' = List.max (r.nextTag' :: rs.map TypeResult.nextTag') (by intro h; cases h) := by
@@ -4208,7 +4208,7 @@ abbrev tagEnvBoundedInCtx (ctx : TypeContext) : Prop :=
   tagEnvBounded ctx.tagEnv ctx.nextTag
 
 /-- A predicate's guard tag (if any) is below the given bound. -/
-def predTagBounded (bound : Tag) (p : Predicate) : Prop :=
+private def predTagBounded (bound : Tag) (p : Predicate) : Prop :=
   match p with
   | Predicate.guardClosure k _ _ _ => k < bound
   | Predicate.guardOnly k => k < bound
@@ -4219,7 +4219,7 @@ abbrev qtypPredTagBounded (qt : QTyp) (bound : Tag) : Prop :=
   predTagBounded bound qt.pred
 
 /-- All predicate guard tags in a variable environment are below the given bound. -/
-def predTagsBoundedInVarEnv (S : VarTypeEnv) (bound : Tag) : Prop :=
+private def predTagsBoundedInVarEnv (S : VarTypeEnv) (bound : Tag) : Prop :=
   ∀ x qt, S.lookup x = some qt → qtypPredTagBounded qt bound
 
 /-- All predicate guard tags in a memory environment are below the given bound. -/
@@ -4260,7 +4260,7 @@ private lemma forIn_tag_incr_ge
     exact Nat.le_trans (Nat.le_succ _) (ih _ _ h)
 
 /-- collectAndAllocExternTags never decreases nextTag: the returned nextTag' ≥ input nextTag. -/
-lemma collectAndAllocExternTags_nextTag_ge (preds : List SyntaxPredicate) (t : Tag)
+private lemma collectAndAllocExternTags_nextTag_ge (preds : List SyntaxPredicate) (t : Tag)
     (map : ExtTreeMap TagIndex Tag) (t' : Tag) :
     collectAndAllocExternTags preds t = .ok (map, t') → t ≤ t' := by
   intro h
@@ -4361,7 +4361,7 @@ private lemma forIn_tag_mapping_values_lt
 
 /-- All concrete tags in the mapping produced by collectAndAllocExternTags are strictly less than
     the returned nextTag'. -/
-lemma collectAndAllocExternTags_mapping_values_lt (preds : List SyntaxPredicate) (t : Tag)
+private lemma collectAndAllocExternTags_mapping_values_lt (preds : List SyntaxPredicate) (t : Tag)
     (map : ExtTreeMap TagIndex Tag) (t' : Tag)
     (htc : collectAndAllocExternTags preds t = .ok (map, t'))
     (idx : TagIndex) (tag : Tag)
@@ -4430,7 +4430,7 @@ private lemma resolveSyntaxPred_predTagBounded
 
 section typecheck_nextTag_normal_mono_proof
 
-lemma typecheckExternVal_nextTag_mono
+private lemma typecheckExternVal_nextTag_mono
     (ctx : TypeContext) (typ : Typ)
     (poison : Bool) (pred : SyntaxPredicate) (res : TypeResult) :
     typecheckExternVal ctx typ poison pred = .ok res →
@@ -4456,7 +4456,7 @@ lemma typecheckExternVal_nextTag_mono
           simp only [hsurf, Except.ok.injEq] at htc; cases htc
           exact collectAndAllocExternTags_nextTag_ge [pred] ctx.nextTag tagMapping nextTag' halloc
 
-lemma typecheckExternFn_preserves_nextTag
+private lemma typecheckExternFn_preserves_nextTag
     (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (effects : List Effect) (res : TypeResult) :
     typecheckExternFn ctx arg argTyp retSpec effects = .ok res →
@@ -4467,7 +4467,7 @@ lemma typecheckExternFn_preserves_nextTag
   cases htc
   rfl
 
-lemma typecheckExternPfn_preserves_nextTag
+private lemma typecheckExternPfn_preserves_nextTag
     (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (res : TypeResult) :
     typecheckExternPfn ctx arg argTyp retSpec = .ok res →
@@ -5561,7 +5561,7 @@ section typecheck_tagEnvBounded_proof
 
 -- predTagBounded helper lemmas and infrastructure
 
-lemma predTagBounded_mono {nt nt' : Tag} {p : Predicate}
+private lemma predTagBounded_mono {nt nt' : Tag} {p : Predicate}
     (hb : predTagBounded nt p) (hle : nt ≤ nt') : predTagBounded nt' p := by
   cases p with
   | guardClosure k _ _ _ => exact Nat.lt_of_lt_of_le hb hle
@@ -5723,23 +5723,23 @@ private lemma predTagsBoundedInMemEnv_joinMemEnvsStrong
 -- ═══════════════════════════════════════════════════════════════════
 
 /-- All predicate guard tags in a captured variable environment are below the bound. -/
-def capturedPredTagsBounded (env : CapturedVarEnv) (nt : Tag) : Prop :=
+private def capturedPredTagsBounded (env : CapturedVarEnv) (nt : Tag) : Prop :=
   ∀ name qt, (name, qt) ∈ env → qtypPredTagBounded qt nt
 
 /-- All captured environments in a list of FnTClosures have bounded predicate tags. -/
-def fnClosuresCapturedPredTagsBounded (tcls : List FnTClosure) (nt : Tag) : Prop :=
+private def fnClosuresCapturedPredTagsBounded (tcls : List FnTClosure) (nt : Tag) : Prop :=
   ∀ tcl ∈ tcls, match tcl with
     | .regular _ _ env => capturedPredTagsBounded env nt
     | .extern _ _ _ env => capturedPredTagsBounded env nt
 
 /-- All captured environments in a list of PFnTClosures have bounded predicate tags. -/
-def pfnClosuresCapturedPredTagsBounded (tcls : List PFnTClosure) (nt : Tag) : Prop :=
+private def pfnClosuresCapturedPredTagsBounded (tcls : List PFnTClosure) (nt : Tag) : Prop :=
   ∀ tcl ∈ tcls, match tcl with
     | .regular _ _ env => capturedPredTagsBounded env nt
     | .extern _ _ env => capturedPredTagsBounded env nt
 
 /-- All closure captured environments in an ETyp are bounded. -/
-def etypClosuresCapturedPredTagsBounded (etyp : ETyp) (nt : Tag) : Prop :=
+private def etypClosuresCapturedPredTagsBounded (etyp : ETyp) (nt : Tag) : Prop :=
   match etyp with
   | .arrow _ _ _ tcls => fnClosuresCapturedPredTagsBounded tcls nt
   | .parrow _ _ _ tcls => pfnClosuresCapturedPredTagsBounded tcls nt
@@ -5883,7 +5883,7 @@ private lemma predTagsBoundedInMemEnv_updateLocsetWeak
 /-- Depth-indexed captured-env boundedness. At depth 0, trivially true.
     At depth n+1, each entry has bounded pred tags AND its closures' captured envs
     are bounded at depth n. -/
-def capturedEnvBoundedN : Nat → List (Name × QTyp) → Tag → Prop
+private def capturedEnvBoundedN : Nat → List (Name × QTyp) → Tag → Prop
   | 0, _, _ => True
   | n + 1, env, nt =>
     ∀ name qt, (name, qt) ∈ env →
@@ -6285,7 +6285,7 @@ lemma varEnvClosuresCapturedRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl
 -- ═══════════════════════════════════════════════════════════════════
 
 /-- All ETyp closures in a VarTypeEnv have fully bounded captured envs. -/
-def varEnvClosuresCapturedBounded (S : VarTypeEnv) (nt : Tag) : Prop :=
+private def varEnvClosuresCapturedBounded (S : VarTypeEnv) (nt : Tag) : Prop :=
   ∀ x qt, S.lookup x = some qt → etypClosuresFullBounded qt.etyp nt
 
 /-- From predTagsBoundedInVarEnv + varEnvClosuresCapturedBounded, derive
@@ -6527,7 +6527,7 @@ private theorem foldlM_tags_bounded {bound : Tag}
         (fun acc x hx hacc => hstep acc x (.tail hd hx) hacc)
 
 /-- All entries in a captured environment have bounded ETyp closures. -/
-def capturedClosuresBounded (env : CapturedVarEnv) (nt : Tag) : Prop :=
+private def capturedClosuresBounded (env : CapturedVarEnv) (nt : Tag) : Prop :=
   ∀ name qt, (name, qt) ∈ env → etypClosuresCapturedPredTagsBounded qt.etyp nt
 
 /-- From varEnvClosuresCapturedBounded, derive capturedClosuresBounded for toCaptured. -/
@@ -9480,7 +9480,7 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                   IH_fuel m (Nat.lt_trans hm (Nat.lt_succ_self fuel')) e' ctx' res' htc' hb hp hc
               exact typecheckApp_tagEnvBounded_normal ctx e1 e2 fuel' res hbound hpred hclosure IH_fuel' htcApp
 
-lemma typecheckExpr_preserves_tagEnvBounded
+private lemma typecheckExpr_preserves_tagEnvBounded
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok res)
     (hbound : tagEnvBoundedInCtx ctx)
@@ -9698,7 +9698,7 @@ private lemma List.foldl_ge_init_of_step_ge {α β : Type*} [Preorder α] {f : �
         _ ≤ List.foldl f (f init x) xs := ih (f init x)
 
 -- Helper lemma for typecheckAssign: nextLoc' is at least result2.nextLoc'
-lemma typecheckAssign_preserves_nextLoc (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
+private lemma typecheckAssign_preserves_nextLoc (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckAssign ctx e1 e2 fuel = .ok res →
   ∃ (result1 result2 : TypeResult) (ctx' : TypeContext),
     typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
@@ -9745,7 +9745,7 @@ private lemma typecheckAssign_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (f
         _ ≤ res.nextLoc' := hnextloc
 
 -- Helper lemma for typecheckDeref: all branches preserve nextLoc'
-lemma typecheckDeref_preserves_nextLoc (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
+private lemma typecheckDeref_preserves_nextLoc (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckDeref ctx e fuel = .ok res →
   ∃ (result1 : TypeResult),
     typecheckExpr ctx e (fuel - 1) = .ok result1 ∧
@@ -10168,7 +10168,7 @@ private lemma returnSpecToQTyp_preserves_nextLoc
       simp [bind, Except.bind] at h
 
 
-lemma applyFnTClosure_nextLoc_mono
+private lemma applyFnTClosure_nextLoc_mono
   (tcl : FnTClosure) (ctx : TypeContext)
   (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -10628,12 +10628,12 @@ lemma joinPoison_eq_false {p1 p2 : Poison} :
   all_goals simp [joinPoison] at h ⊢
 
 /-- If the left input is true, joinPoison returns true. -/
-lemma joinPoison_true_left {p1 p2 : Poison} :
+private lemma joinPoison_true_left {p1 p2 : Poison} :
   p1 = true → joinPoison p1 p2 = true := by
   intro h; cases p1 <;> cases p2 <;> simp [joinPoison] at h ⊢
 
 /-- If the right input is true, joinPoison returns true. -/
-lemma joinPoison_true_right {p1 p2 : Poison} :
+private lemma joinPoison_true_right {p1 p2 : Poison} :
   p2 = true → joinPoison p1 p2 = true := by
   intro h; cases p1 <;> cases p2 <;> simp [joinPoison] at h ⊢
 
@@ -10682,7 +10682,7 @@ private lemma foldl_addUnique_mem_of_input {α : Type} [BEq α] [LawfulBEq α]
         exact ih (acc ++ [hd]) hmem_tl
 
 /-- mergeFnTClosures preserves membership from the left list. -/
-lemma mem_mergeFnTClosures_left (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
+private lemma mem_mergeFnTClosures_left (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
     tcl ∈ tcls1 → tcl ∈ mergeFnTClosures tcls1 tcls2 := by
   intro hmem
   simp only [mergeFnTClosures]
@@ -10701,7 +10701,7 @@ lemma mem_mergeFnTClosures_right (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosu
   exact foldl_addUnique_mem_of_input tcls2 _ tcl hmem
 
 /-- mergePFnTClosures preserves membership from the left list. -/
-lemma mem_mergePFnTClosures_left (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
+private lemma mem_mergePFnTClosures_left (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
     tcl ∈ tcls1 → tcl ∈ mergePFnTClosures tcls1 tcls2 := by
   intro hmem
   simp only [mergePFnTClosures]
@@ -10988,7 +10988,7 @@ lemma beqETypSignature_joinETyps_left {t1 t2 t3 : ETyp} {p1 p2 : Poison}
       | _ => simp [beqETypSignature] at h
 
 /-- If a location is in the left env and not in the right, it is in the join. -/
-lemma joinMemEnvs_contains_of_left (env1 env2 : MemoryTypeEnv) (l : Loc) :
+private lemma joinMemEnvs_contains_of_left (env1 env2 : MemoryTypeEnv) (l : Loc) :
   env1.contains l → env2[l]? = none → (joinMemEnvs env1 env2).contains l := by
   intro h1 h2
   have h1' : env1[l]? ≠ none := by
@@ -11231,7 +11231,7 @@ lemma memEnv_lookup_some_of_contains (env : MemoryTypeEnv) (l : Loc)
   refine ⟨⟨ETyp.int, entry.poison, entry.pred⟩, ?_⟩
   simp [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hentry]
 
-lemma joinMemEnvs_lookup_some_of_left_lookup (env1 env2 : MemoryTypeEnv) (l : Loc) (qt1 : QTyp)
+private lemma joinMemEnvs_lookup_some_of_left_lookup (env1 env2 : MemoryTypeEnv) (l : Loc) (qt1 : QTyp)
   (hlookup1 : env1.lookup l = some qt1) : ∃ qt, (joinMemEnvs env1 env2).lookup l = some qt := by
   by_cases hlookup2_none : env2.lookup l = none
   · have hcontains1 : env1.contains l := memEnv_contains_of_lookup_some env1 l qt1 hlookup1
@@ -11277,7 +11277,7 @@ lemma joinMemEnvs_lookup_some_of_left_lookup (env1 env2 : MemoryTypeEnv) (l : Lo
             simp only [MemoryTypeEnv.lookup, combineExtTreeMaps, ExtTreeMap.get?_eq_getElem?,
               Option.map, hgo]
 
-lemma joinMemEnvs_lookup_some_of_right_lookup (env1 env2 : MemoryTypeEnv) (l : Loc) (qt2 : QTyp)
+private lemma joinMemEnvs_lookup_some_of_right_lookup (env1 env2 : MemoryTypeEnv) (l : Loc) (qt2 : QTyp)
   (hlookup2 : env2.lookup l = some qt2) : ∃ qt, (joinMemEnvs env1 env2).lookup l = some qt := by
   by_cases hlookup1_none : env1.lookup l = none
   · have hcontains2 : env2.contains l := memEnv_contains_of_lookup_some env2 l qt2 hlookup2
@@ -11323,7 +11323,7 @@ lemma joinMemEnvs_lookup_some_of_right_lookup (env1 env2 : MemoryTypeEnv) (l : L
             simp only [MemoryTypeEnv.lookup, combineExtTreeMaps, ExtTreeMap.get?_eq_getElem?,
               Option.map, hgo]
 
-lemma joinMemEnvs_lookup_guardTag_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt1 : QTyp) (k : Tag)
+private lemma joinMemEnvs_lookup_guardTag_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt1 : QTyp) (k : Tag)
   (hlookup_join : (joinMemEnvs env1 env2).lookup l = some qt)
   (hlookup1 : env1.lookup l = some qt1)
   (htag_join : qtypGuardTag qt = some k) :
@@ -11387,7 +11387,7 @@ lemma joinMemEnvs_lookup_guardTag_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt
               (by simpa [qtypGuardTag, hqt_pred] using htag_join)
             simpa [qtypGuardTag] using hsplit.1
 
-lemma joinMemEnvs_lookup_guardTag_right (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt2 : QTyp) (k : Tag)
+private lemma joinMemEnvs_lookup_guardTag_right (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt2 : QTyp) (k : Tag)
   (hlookup_join : (joinMemEnvs env1 env2).lookup l = some qt)
   (hlookup2 : env2.lookup l = some qt2)
   (htag_join : qtypGuardTag qt = some k) :
@@ -11453,7 +11453,7 @@ lemma joinMemEnvs_lookup_guardTag_right (env1 env2 : MemoryTypeEnv) (l : Loc) (q
 
 /-- If a clean type is in joinMemEnvs and the left input has something at that location,
     then the left input's type is also clean (since joinPoison false = requires both false). -/
-lemma joinMemEnvs_lookup_clean_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp) :
+private lemma joinMemEnvs_lookup_clean_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp) :
   (joinMemEnvs env1 env2).lookup l = some qt →
   qt.poison = false →
   env1.lookup l ≠ none →
@@ -11512,7 +11512,7 @@ lemma joinMemEnvs_lookup_clean_left (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : 
         exact Option.noConfusion hgo
 
 /-- Symmetric companion of `joinMemEnvs_lookup_clean_left` for the right input. -/
-lemma joinMemEnvs_lookup_clean_right (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp) :
+private lemma joinMemEnvs_lookup_clean_right (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp) :
   (joinMemEnvs env1 env2).lookup l = some qt →
   qt.poison = false →
   env2.lookup l ≠ none →
@@ -12447,7 +12447,7 @@ private lemma effects_forIn_wfMemEnv
 
 /-- FnTClosure.extern preserves wfTypeResult when the captured environment's
     ref-type locations are bounded by nextLoc'. -/
-lemma applyFnTClosure_extern_wfTypeResult
+private lemma applyFnTClosure_extern_wfTypeResult
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
@@ -12550,7 +12550,7 @@ lemma applyFnTClosure_extern_wfTypeResult
 /-- Extern contract: FnTClosure.extern preserves mem_contains (existing locations are kept).
     Proved: the effects loop applies `LocSet.fold ... updateMemEnv` which only inserts/updates
     entries (never removes), so containment is monotone. -/
-lemma applyFnTClosure_extern_mem_contains_preserved
+private lemma applyFnTClosure_extern_mem_contains_preserved
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
@@ -12803,7 +12803,7 @@ lemma mapM_applyFnTClosure_member_nextLoc_mono
         | inr htail => exact ih rs' h2 r htail
 
 /-- applyPFnTClosure preserves nextLoc monotonicity. -/
-lemma applyPFnTClosure_nextLoc_mono
+private lemma applyPFnTClosure_nextLoc_mono
     (tcl : PFnTClosure) (ctx : TypeContext)
     (st1 st2 : Typ) (p p1 : Poison) (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (r1 r2 : TypeResult) (fuel : Nat)
@@ -14817,7 +14817,7 @@ lemma joinTypeResults_transport_valueHasETyp_from_member
                     a src hcompat hfold hsrc_tail h_src
                 simpa [hetyp_res] using hval_a
 
-lemma joinTypeResults_mem_subset
+private lemma joinTypeResults_mem_subset
     (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
     (hjoin : joinTypeResults ctx first rest = .ok res)
     (hfirst : ∀ l, first.memEnv'.contains l → ctx.memEnv.contains l)
@@ -14912,7 +14912,7 @@ lemma joinTypeResults_mem_subset
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag')
                 acc hfold hacc0 hrest
 
-lemma joinMemEnvs_lookup_of_some_some
+private lemma joinMemEnvs_lookup_of_some_some
     (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp)
     (h1 : env1.lookup l = some qt)
     (h2 : env2.lookup l = some qt) :
@@ -14945,7 +14945,7 @@ lemma joinMemEnvs_lookup_of_some_some
     simp only [joinMemEnvs]; congr 2
   rw [← heq, MemoryTypeEnv.lookup, hcombine, Option.map, memEnv_lookup_toQTyp env1 l qt h1]
 
-lemma joinMemEnvsStrong_lookup_of_some_some
+private lemma joinMemEnvsStrong_lookup_of_some_some
     (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp)
     (h1 : env1.lookup l = some qt)
     (h2 : env2.lookup l = some qt) :
@@ -14978,7 +14978,7 @@ lemma joinMemEnvsStrong_lookup_of_some_some
     simp only [joinMemEnvsStrong]; congr 2
   rw [← heq, MemoryTypeEnv.lookup, hcombine, Option.map, memEnv_lookup_toQTyp env1 l qt h1]
 
-lemma joinTypeResults_mem_lookup_of_all
+private lemma joinTypeResults_mem_lookup_of_all
     (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
     (hjoin : joinTypeResults ctx first rest = .ok res)
     (l : Loc) (qt : QTyp)
@@ -15067,7 +15067,7 @@ lemma joinTypeResults_mem_lookup_of_all
                 (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc', first.nextTag')
                 acc hfold hfirst hrest
 
-lemma joinTypeResults_regime_lookup_of_all
+private lemma joinTypeResults_regime_lookup_of_all
     (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
     (hjoin : joinTypeResults ctx first rest = .ok res)
     (k : Tag) (b : Bool)

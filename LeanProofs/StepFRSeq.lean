@@ -303,7 +303,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   · simpa [hctxAfter] using hctxCons2
   · simpa [hctxAfter] using hvalc2
 
-lemma stepFRSingleRunFinalCleanPcTrue_seq
+private lemma stepFRSingleRunFinalCleanPcTrue_seq
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
