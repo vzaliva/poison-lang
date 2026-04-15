@@ -3367,7 +3367,6 @@ lemma typecheckIf_standard_compat_from_existing_hyps
                               simp [hq2, hq3, pure, Except.pure, hcompat_false] at htcIf'
 
 -- Standard conservative if case: either matchGuard fails or the matched regime is absent.
-set_option maxHeartbeats 2000000 in
 private lemma stepFR_ite_standard
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)

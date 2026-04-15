@@ -1966,12 +1966,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+      predSat tm (Nat.succ (Nat.succ fuel'))
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      predSat tm (Nat.succ (Nat.succ fuel')))
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked

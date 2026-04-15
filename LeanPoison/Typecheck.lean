@@ -691,22 +691,25 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) (fuel : Nat) : Ty
 
 -- Type checking rules implementation
 
+section TypecheckPrimitives
+variable (ctx : TypeContext)
+
 /-- Rule: int (Ott rule: int)
 -- pc ; G ; S ; L |- n : int :> clean { no_pred } -| G ; L
 -/
-def typecheckInt (ctx : TypeContext) (_n : Int) : TypecheckM TypeResult := do
+def typecheckInt (_n : Int) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.int, false, Predicate.noPred⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
 
 /-- Rule: bool (Ott rule: bool)
 -- pc ; G ; S ; L |- b : bool :> clean { no_pred } -| G ; L
 -/
-def typecheckBool (ctx : TypeContext) (_b : Bool) : TypecheckM TypeResult := do
+def typecheckBool (_b : Bool) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.bool, false, Predicate.noPred⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
 
 
-def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
+def typecheckVar (x : Name) : TypecheckM TypeResult := do
   --dbg_trace ("Typechecking var " ++ x)
   --dbg_trace s!"ctx.pc is {ctx.pc}"
   match ctx.varEnv.lookup x with
@@ -745,7 +748,7 @@ def typecheckVar (ctx : TypeContext) (x : Name) : TypecheckM TypeResult := do
 -- ------------------
 -- pc ; G ; S ; L |- l : ref @ {l} :> clean { no_pred } -| G ; L
 -/
-private def typecheckLocation (ctx : TypeContext) (l : Loc) : TypecheckM TypeResult := do
+private def typecheckLocation (l : Loc) : TypecheckM TypeResult := do
   match ctx.memEnv.lookup l with
   | some qt =>
     let refTyp := ETyp.ref (LocSet.singleton l)
@@ -756,21 +759,18 @@ private def typecheckLocation (ctx : TypeContext) (l : Loc) : TypecheckM TypeRes
 /-- Rule: unit (Ott rule: unit)
 -- pc ; G ; S ; L |- unit : unit :> clean { no_pred } -| G ; L
 -/
-def typecheckUnit (ctx : TypeContext) : TypecheckM TypeResult := do
+def typecheckUnit : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.unit, false, Predicate.noPred⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
 
 /--  Rule: string (Ott rule: string)
 -- pc ; G ; S ; L |- string : string :> clean { no_pred } -| G ; L
 -/
-def typecheckString (ctx : TypeContext) (_s : String) : TypecheckM TypeResult := do
+def typecheckString (_s : String) : TypecheckM TypeResult := do
   let qt : QTyp := ⟨ETyp.string, false, Predicate.noPred⟩  -- clean, no predicate
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
 
--- The following option is needed in increasing the maximum number of heartbeats
--- to avoid the termination checker failure on the following mutual block.
-set_option maxHeartbeats 800000
-
+end TypecheckPrimitives
 
 /-- Rule: fn_abs (Ott rule: fn_abs)
 ----------------------------------------------------------------------  :: fn_abs

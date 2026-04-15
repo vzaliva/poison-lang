@@ -1055,8 +1055,10 @@ def regimeConsistentWithCtx (ctx : TypeContext) : Prop :=
 --     (insertion, invalidation, joins), and
 --   * typechecking preserves the invariant when starting from a consistent context.
 
+section TagEnvConsistentWithRegimeInsert
+variable (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+
 lemma tagEnvConsistentWithRegime_insert_true
-    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegime tagEnv R)
     (hk : R.lookup? k = some true) :
     tagEnvConsistentWithRegime (tagEnv.insert k ⟨true, deps⟩) R := by
@@ -1078,7 +1080,6 @@ lemma tagEnvConsistentWithRegime_insert_true
     exact h k' deps' hget'
 
 lemma tagEnvConsistentWithRegime_insert_false
-    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegime tagEnv R) :
     tagEnvConsistentWithRegime (tagEnv.insert k ⟨false, deps⟩) R := by
   intro k' deps' hget
@@ -1096,7 +1097,6 @@ lemma tagEnvConsistentWithRegime_insert_false
     exact h k' deps' hget'
 
 private lemma tagEnvConsistentWithRegime_insert_true_with_regime
-    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegime tagEnv R) :
     tagEnvConsistentWithRegime
       (tagEnv.insert k ⟨true, deps⟩)
@@ -1119,7 +1119,6 @@ private lemma tagEnvConsistentWithRegime_insert_true_with_regime
     exact hR'
 
 private lemma tagEnvConsistentWithRegime_insert_false_with_regime
-    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegime tagEnv R) :
     tagEnvConsistentWithRegime
       (tagEnv.insert k ⟨false, deps⟩)
@@ -1139,6 +1138,8 @@ private lemma tagEnvConsistentWithRegime_insert_false_with_regime
     unfold Regime.lookup? at hR' ⊢
     simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hR' ⊢
     exact hR'
+
+end TagEnvConsistentWithRegimeInsert
 
 def tagEnvConsistentWithRegimeMasked
     (masked : Tag → Prop) (tagEnv : TagEnv) (regime : Regime) : Prop :=
@@ -1220,9 +1221,11 @@ private lemma tagEnvConsistentWithRegimeMasked_weaken
   | inr hlookup =>
       exact Or.inr hlookup
 
+section TagEnvConsistentWithRegimeMasked
+variable (masked : Tag → Prop) (tagEnv : TagEnv) (R : Regime)
+
 lemma tagEnvConsistentWithRegimeMasked_insert_true
-    (masked : Tag → Prop)
-    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R)
     (hk : R.lookup? k = some true) :
     tagEnvConsistentWithRegimeMasked masked (tagEnv.insert k ⟨true, deps⟩) R := by
@@ -1240,8 +1243,7 @@ lemma tagEnvConsistentWithRegimeMasked_insert_true
     exact h k' deps' hget'
 
 lemma tagEnvConsistentWithRegimeMasked_insert_false
-    (masked : Tag → Prop)
-    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
     tagEnvConsistentWithRegimeMasked masked (tagEnv.insert k ⟨false, deps⟩) R := by
   intro k' deps' hget
@@ -1258,8 +1260,7 @@ lemma tagEnvConsistentWithRegimeMasked_insert_false
     exact h k' deps' hget'
 
 private lemma tagEnvConsistentWithRegimeMasked_insert_true_with_regime
-    (masked : Tag → Prop)
-    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
     tagEnvConsistentWithRegimeMasked masked
       (tagEnv.insert k ⟨true, deps⟩)
@@ -1288,8 +1289,7 @@ private lemma tagEnvConsistentWithRegimeMasked_insert_true_with_regime
         exact hlookup
 
 private lemma tagEnvConsistentWithRegimeMasked_insert_false_with_regime
-    (masked : Tag → Prop)
-    (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
+    (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
     tagEnvConsistentWithRegimeMasked masked
       (tagEnv.insert k ⟨false, deps⟩)
@@ -1316,8 +1316,7 @@ private lemma tagEnvConsistentWithRegimeMasked_insert_false_with_regime
         exact hlookup
 
 private lemma tagEnvConsistentWithRegimeMasked_invalidate
-    (masked : Tag → Prop)
-    (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
+    (ls : LocSet)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
     tagEnvConsistentWithRegimeMasked masked (invalidateTagDeps tagEnv ls) R := by
   intro k deps hget
@@ -1333,8 +1332,7 @@ private lemma tagEnvConsistentWithRegimeMasked_invalidate
   exact h k deps hget'
 
 lemma invalidateRegimeDeps_preserves_true_masked
-    (masked : Tag → Prop)
-    (tagEnv : TagEnv) (R : Regime) (ls : LocSet)
+    (ls : LocSet)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
     tagEnvConsistentWithRegimeMasked masked
       (invalidateTagDeps tagEnv ls) (invalidateRegimeDeps R tagEnv ls) := by
@@ -1367,6 +1365,8 @@ lemma invalidateRegimeDeps_preserves_true_masked
         simp [Std.ExtTreeMap.get?_eq_getElem?, hcontains, hkR]
       simp [Regime.lookup?]
       exact ⟨hkR, hcontains⟩
+
+end TagEnvConsistentWithRegimeMasked
 
 -- Join of TagEnvs/Regimes preserves the invariant (meet-style join: only agreed tags remain).
 lemma tagEnvConsistentWithRegime_join

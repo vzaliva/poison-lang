@@ -5556,24 +5556,29 @@ lemma typecheck_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
 
 -- predTagBounded helper lemmas and infrastructure
 
-private lemma predTagBounded_mono {nt nt' : Tag} {p : Predicate}
+section PredTagBoundMono
+variable {nt nt' : Tag}
+
+private lemma predTagBounded_mono {p : Predicate}
     (hb : predTagBounded nt p) (hle : nt ≤ nt') : predTagBounded nt' p := by
   cases p with
   | guardClosure k _ _ _ => exact Nat.lt_of_lt_of_le hb hle
   | guardOnly k => exact Nat.lt_of_lt_of_le hb hle
   | noPred => trivial
 
-lemma qtypPredTagBounded_mono {qt : QTyp} {nt nt' : Tag}
+lemma qtypPredTagBounded_mono {qt : QTyp}
     (hb : qtypPredTagBounded qt nt) (hle : nt ≤ nt') : qtypPredTagBounded qt nt' :=
   predTagBounded_mono hb hle
 
-lemma predTagsBoundedInVarEnv_mono {S : VarTypeEnv} {nt nt' : Tag}
+lemma predTagsBoundedInVarEnv_mono {S : VarTypeEnv}
     (hb : predTagsBoundedInVarEnv S nt) (hle : nt ≤ nt') : predTagsBoundedInVarEnv S nt' :=
   fun x qt hlookup => qtypPredTagBounded_mono (hb x qt hlookup) hle
 
-lemma predTagsBoundedInMemEnv_mono {G : MemoryTypeEnv} {nt nt' : Tag}
+lemma predTagsBoundedInMemEnv_mono {G : MemoryTypeEnv}
     (hb : predTagsBoundedInMemEnv G nt) (hle : nt ≤ nt') : predTagsBoundedInMemEnv G nt' :=
   fun l qt hlookup => qtypPredTagBounded_mono (hb l qt hlookup) hle
+
+end PredTagBoundMono
 
 lemma tagEnvBounded_insert_of_lt (te : TagEnv) (nt : Tag) (k : Tag) (tv : TagVal)
     (hb : tagEnvBounded te nt) (hk : k < nt) :
@@ -5605,7 +5610,10 @@ private lemma predTagBounded_joinPredicates {nt : Tag} {p q : Predicate}
     · trivial  -- noPred/_
     · trivial  -- _/noPred
 
-lemma predTagsBoundedInVarEnv_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt : QTyp}
+section PredTagsBoundedUpdate
+variable {nt : Tag} {qt : QTyp}
+
+lemma predTagsBoundedInVarEnv_update {S : VarTypeEnv} {x : Name}
     (hb : predTagsBoundedInVarEnv S nt) (hqt : qtypPredTagBounded qt nt) :
     predTagsBoundedInVarEnv (S.update x qt) nt := by
   intro y qt' hlookup
@@ -5615,7 +5623,7 @@ lemma predTagsBoundedInVarEnv_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt 
   · cases hlookup; exact hqt
   · exact hb y qt' (by simp only [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
 
-private lemma predTagsBoundedInMemEnv_update {G : MemoryTypeEnv} {nt : Tag} {l : Loc} {qt : QTyp}
+private lemma predTagsBoundedInMemEnv_update {G : MemoryTypeEnv} {l : Loc}
     (hb : predTagsBoundedInMemEnv G nt) (hqt : qtypPredTagBounded qt nt) :
     predTagsBoundedInMemEnv (G.update l qt) nt := by
   intro l' qt' hlookup
@@ -5625,6 +5633,8 @@ private lemma predTagsBoundedInMemEnv_update {G : MemoryTypeEnv} {nt : Tag} {l :
   · simp [Option.map] at hlookup; cases hlookup; exact hqt
   · simp at hlookup
     exact hb l' qt' (by simp [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
+
+end PredTagsBoundedUpdate
 
 /-- If joinMemEnvsStrong has an entry at l, then G1 or G2 has an entry at l,
     and the pred is either noPred (single-sided) or joinPredicates (both-sided). -/
@@ -6031,8 +6041,11 @@ private lemma etypClosuresCapturedPredTagsBounded_of_fullBounded
 -- Ref-location boundedness: monotonicity, constructors, and helpers
 -- ═══════════════════════════════════════════════════════════════════
 
+section RefLocsBoundedMono
+variable {nl nl' : Loc}
+
 /-- Monotonicity for etypRefLocsBounded. -/
-lemma etypRefLocsBounded_mono {etyp : ETyp} {nl nl' : Loc}
+lemma etypRefLocsBounded_mono {etyp : ETyp}
     (h : etypRefLocsBounded etyp nl) (hle : nl ≤ nl') :
     etypRefLocsBounded etyp nl' := by
   cases etyp with
@@ -6040,13 +6053,13 @@ lemma etypRefLocsBounded_mono {etyp : ETyp} {nl nl' : Loc}
   | _ => trivial
 
 /-- Monotonicity for capturedEnvRefLocsBounded. -/
-private lemma capturedEnvRefLocsBounded_mono {env : List (Name × QTyp)} {nl nl' : Loc}
+private lemma capturedEnvRefLocsBounded_mono {env : List (Name × QTyp)}
     (h : capturedEnvRefLocsBounded env nl) (hle : nl ≤ nl') :
     capturedEnvRefLocsBounded env nl' :=
   fun name qt hmem => etypRefLocsBounded_mono (h name qt hmem) hle
 
 /-- Monotonicity for varEnvRefLocsBounded. -/
-lemma varEnvRefLocsBounded_mono {S : VarTypeEnv} {nl nl' : Loc}
+lemma varEnvRefLocsBounded_mono {S : VarTypeEnv}
     (h : varEnvRefLocsBounded S nl) (hle : nl ≤ nl') :
     varEnvRefLocsBounded S nl' :=
   fun x qt hlookup => etypRefLocsBounded_mono (h x qt hlookup) hle
@@ -6074,13 +6087,13 @@ private lemma CapturedEnvRefLocsBoundedN_mono :
     | _ => intro _; trivial
 
 /-- Monotonicity for CapturedEnvRefLocsFullBounded. -/
-private lemma CapturedEnvRefLocsFullBounded_mono {env : List (Name × QTyp)} {nl nl' : Loc}
+private lemma CapturedEnvRefLocsFullBounded_mono {env : List (Name × QTyp)}
     (h : CapturedEnvRefLocsFullBounded env nl) (hle : nl ≤ nl') :
     CapturedEnvRefLocsFullBounded env nl' :=
   fun n => CapturedEnvRefLocsBoundedN_mono n (h n) hle
 
 /-- Monotonicity for etypClosuresCapturedRefLocsBounded. -/
-lemma etypClosuresCapturedRefLocsBounded_mono {etyp : ETyp} {nl nl' : Loc}
+lemma etypClosuresCapturedRefLocsBounded_mono {etyp : ETyp}
     (h : etypClosuresCapturedRefLocsBounded etyp nl) (hle : nl ≤ nl') :
     etypClosuresCapturedRefLocsBounded etyp nl' := by
   cases etyp with
@@ -6097,10 +6110,12 @@ lemma etypClosuresCapturedRefLocsBounded_mono {etyp : ETyp} {nl nl' : Loc}
   | _ => trivial
 
 /-- Monotonicity for varEnvClosuresCapturedRefLocsBounded. -/
-lemma varEnvClosuresCapturedRefLocsBounded_mono {S : VarTypeEnv} {nl nl' : Loc}
+lemma varEnvClosuresCapturedRefLocsBounded_mono {S : VarTypeEnv}
     (h : varEnvClosuresCapturedRefLocsBounded S nl) (hle : nl ≤ nl') :
     varEnvClosuresCapturedRefLocsBounded S nl' :=
   fun x qt hlookup => etypClosuresCapturedRefLocsBounded_mono (h x qt hlookup) hle
+
+end RefLocsBoundedMono
 
 /-- wfTypeResult implies wfTypeContext for the post-context (ctxAfter preserves varEnv from ctx). -/
 lemma wfTypeContext_of_wfTypeResult (ctx : TypeContext) (res : TypeResult)
@@ -6113,9 +6128,12 @@ lemma wfTypeContext_of_wfTypeResult (ctx : TypeContext) (res : TypeResult)
          varEnvRefLocsBounded_mono hwfCtx.2.1 hmono,
          varEnvClosuresCapturedRefLocsBounded_mono hwfCtx.2.2 hmono⟩
 
+section RefLocsBoundedSingleBound
+variable {nl : Loc}
+
 /-- Construct CapturedEnvRefLocsFullBounded from per-entry evidence at a single bound. -/
 private lemma CapturedEnvRefLocsFullBounded.mk'
-    {env : List (Name × QTyp)} {nl : Loc}
+    {env : List (Name × QTyp)}
     (h : ∀ name qt, (name, qt) ∈ env →
          etypRefLocsBounded qt.etyp nl ∧ etypClosuresCapturedRefLocsBounded qt.etyp nl) :
     CapturedEnvRefLocsFullBounded env nl := by
@@ -6139,7 +6157,7 @@ private lemma CapturedEnvRefLocsFullBounded.mk'
     | _ => intro _; trivial
 
 /-- Extract per-entry ref-loc evidence from CapturedEnvRefLocsFullBounded. -/
-private lemma CapturedEnvRefLocsFullBounded.get {env : List (Name × QTyp)} {nl : Loc}
+private lemma CapturedEnvRefLocsFullBounded.get {env : List (Name × QTyp)}
     (h : CapturedEnvRefLocsFullBounded env nl) {name : Name} {qt : QTyp}
     (hmem : (name, qt) ∈ env) :
     etypRefLocsBounded qt.etyp nl ∧ etypClosuresCapturedRefLocsBounded qt.etyp nl := by
@@ -6168,12 +6186,12 @@ private lemma CapturedEnvRefLocsFullBounded.get {env : List (Name × QTyp)} {nl 
 
 /-- Extract capturedEnvRefLocsBounded from CapturedEnvRefLocsFullBounded. -/
 lemma capturedEnvRefLocsBounded_of_fullBounded_refLocs
-    {env : List (Name × QTyp)} {nl : Loc}
+    {env : List (Name × QTyp)}
     (h : CapturedEnvRefLocsFullBounded env nl) : capturedEnvRefLocsBounded env nl :=
   fun name qt hmem => (h 1 name qt hmem).1
 
 /-- varEnvRefLocsBounded for VarTypeEnv.update. -/
-lemma varEnvRefLocsBounded_update {S : VarTypeEnv} {nl : Loc} {x : Name} {qt : QTyp}
+lemma varEnvRefLocsBounded_update {S : VarTypeEnv} {x : Name} {qt : QTyp}
     (hS : varEnvRefLocsBounded S nl) (hqt : etypRefLocsBounded qt.etyp nl) :
     varEnvRefLocsBounded (VarTypeEnv.update S x qt) nl := by
   intro y qt' hlookup
@@ -6186,7 +6204,7 @@ lemma varEnvRefLocsBounded_update {S : VarTypeEnv} {nl : Loc} {x : Name} {qt : Q
 
 /-- varEnvClosuresCapturedRefLocsBounded for VarTypeEnv.update. -/
 lemma varEnvClosuresCapturedRefLocsBounded_update
-    {S : VarTypeEnv} {nl : Loc} {x : Name} {qt : QTyp}
+    {S : VarTypeEnv} {x : Name} {qt : QTyp}
     (hS : varEnvClosuresCapturedRefLocsBounded S nl)
     (hqt : etypClosuresCapturedRefLocsBounded qt.etyp nl) :
     varEnvClosuresCapturedRefLocsBounded (VarTypeEnv.update S x qt) nl := by
@@ -6199,7 +6217,7 @@ lemma varEnvClosuresCapturedRefLocsBounded_update
     exact hS y qt' (by simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?, hlookup])
 
 /-- Bridge: varEnvRefLocsBounded → capturedEnvRefLocsBounded for toCaptured. -/
-private lemma capturedEnvRefLocsBounded_of_toCaptured {S : VarTypeEnv} {nl : Loc}
+private lemma capturedEnvRefLocsBounded_of_toCaptured {S : VarTypeEnv}
     (h : varEnvRefLocsBounded S nl) :
     capturedEnvRefLocsBounded (VarTypeEnv.toCaptured S) nl := by
   intro name qt hmem
@@ -6209,7 +6227,7 @@ private lemma capturedEnvRefLocsBounded_of_toCaptured {S : VarTypeEnv} {nl : Loc
 
 /-- Bridge: varEnvRefLocsBounded + varEnvClosuresCapturedRefLocsBounded →
     CapturedEnvRefLocsFullBounded for toCaptured. -/
-private lemma CapturedEnvRefLocsFullBounded_of_toCaptured {S : VarTypeEnv} {nl : Loc}
+private lemma CapturedEnvRefLocsFullBounded_of_toCaptured {S : VarTypeEnv}
     (hrl : varEnvRefLocsBounded S nl)
     (hcl : varEnvClosuresCapturedRefLocsBounded S nl) :
     CapturedEnvRefLocsFullBounded (VarTypeEnv.toCaptured S) nl :=
@@ -6221,7 +6239,7 @@ private lemma CapturedEnvRefLocsFullBounded_of_toCaptured {S : VarTypeEnv} {nl :
     exact ⟨hrl name qt hlookup', hcl name qt hlookup'⟩
 
 /-- Bridge: capturedEnvRefLocsBounded → varEnvRefLocsBounded for ofCaptured. -/
-lemma varEnvRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
+lemma varEnvRefLocsBounded_ofCaptured {env : CapturedVarEnv}
     (h : capturedEnvRefLocsBounded env nl) :
     varEnvRefLocsBounded (VarTypeEnv.ofCaptured env) nl := by
   induction env with
@@ -6246,7 +6264,7 @@ lemma varEnvRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
 
 /-- CapturedEnvRefLocsFullBounded for a sublist (tail). -/
 private lemma CapturedEnvRefLocsFullBounded_tail {entry : Name × QTyp}
-    {tl : List (Name × QTyp)} {nl : Loc}
+    {tl : List (Name × QTyp)}
     (h : CapturedEnvRefLocsFullBounded (entry :: tl) nl) :
     CapturedEnvRefLocsFullBounded tl nl := fun n => by
   cases n with
@@ -6254,7 +6272,7 @@ private lemma CapturedEnvRefLocsFullBounded_tail {entry : Name × QTyp}
   | succ n => intro name qt hmem; exact h (n + 1) name qt (List.Mem.tail _ hmem)
 
 /-- Bridge: CapturedEnvRefLocsFullBounded → varEnvClosuresCapturedRefLocsBounded for ofCaptured. -/
-lemma varEnvClosuresCapturedRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl : Loc}
+lemma varEnvClosuresCapturedRefLocsBounded_ofCaptured {env : CapturedVarEnv}
     (h : CapturedEnvRefLocsFullBounded env nl) :
     varEnvClosuresCapturedRefLocsBounded (VarTypeEnv.ofCaptured env) nl := by
   induction env with
@@ -6274,6 +6292,8 @@ lemma varEnvClosuresCapturedRefLocsBounded_ofCaptured {env : CapturedVarEnv} {nl
       have hlookup' : (VarTypeEnv.ofCaptured tl).lookup x = some qt := by
         simp [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup
       exact ih htl x qt hlookup'
+
+end RefLocsBoundedSingleBound
 
 -- ═══════════════════════════════════════════════════════════════════
 -- Closure captured-env preservation
@@ -6468,14 +6488,17 @@ private lemma etypClosuresCapturedPredTagsBounded_joinETyps {e1 e2 : ETyp} {p1 p
     | _ => simp only [joinETyps]; exact h1
   | _ => simp only [joinETyps]; cases e2 <;> exact h1
 
+section ClosureCapturedBoundedness
+variable {S : VarTypeEnv} {nt : Tag}
+
 /-- varEnvClosuresCapturedBounded is monotone in the bound. -/
-lemma varEnvClosuresCapturedBounded_mono {S : VarTypeEnv} {nt nt' : Tag}
+lemma varEnvClosuresCapturedBounded_mono {nt' : Tag}
     (hb : varEnvClosuresCapturedBounded S nt) (hle : nt ≤ nt') :
     varEnvClosuresCapturedBounded S nt' :=
   fun x qt hlookup => etypClosuresFullBounded_mono (hb x qt hlookup) hle
 
 /-- varEnvClosuresCapturedBounded is preserved by VarTypeEnv.update. -/
-lemma varEnvClosuresCapturedBounded_update {S : VarTypeEnv} {nt : Tag} {x : Name} {qt : QTyp}
+lemma varEnvClosuresCapturedBounded_update {x : Name} {qt : QTyp}
     (hb : varEnvClosuresCapturedBounded S nt) (hqt : etypClosuresFullBounded qt.etyp nt) :
     varEnvClosuresCapturedBounded (S.update x qt) nt := by
   intro y qt' hlookup
@@ -6484,6 +6507,8 @@ lemma varEnvClosuresCapturedBounded_update {S : VarTypeEnv} {nt : Tag} {x : Name
   split at hlookup
   · cases hlookup; exact hqt
   · exact hb y qt' (by simp only [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
+
+end ClosureCapturedBoundedness
 
 -- typecheckExpr_preserves_closureCapturedBounded: now a projection from typecheckExpr_preserves_combined_main
 
@@ -6787,7 +6812,6 @@ lemma matchGuard_tag_bounded
       · exact absurd hmatch (by intro h; exact Except.noConfusion h)
       · exact absurd hmatch (by intro h; exact Except.noConfusion h)
 
-set_option maxHeartbeats 800000 in
 private lemma typecheckIf_pred_noPred (ctx : TypeContext) (e1 e2 e3 : Expr)
     (fuel : Nat) (res : TypeResult)
     (htc : typecheckIf ctx e1 e2 e3 fuel = .ok res) :

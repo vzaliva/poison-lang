@@ -1071,8 +1071,11 @@ private lemma capturedVarsRegimeProperty_monotone
   | inl hk'_eq => exact varsRegime_monotone h_mono hguard hb hk'_eq hvr_R
   | inr hk'_none => exact absurd hk'_none hkR'
 
+section RegimeTransport
+variable {predSat : PredSat} {R R' : Regime} {μ : Memory}
+
 lemma closureCapturedVarsRegime_monotone
-  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  {qt : QTyp} {θ : RealizationMap} {v : Value}
   (h_mono : Regime.monotoneStep R R')
   (h : closureCapturedVarsRegime predSat R qt μ θ v) :
   closureCapturedVarsRegime predSat R' qt μ θ v := by
@@ -1084,7 +1087,7 @@ lemma closureCapturedVarsRegime_monotone
 
 -- Lookup-back transport helpers used by both the `ite` and join transport proofs.
 lemma varsRegime_transport_active_lookup_back
-  {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ : VarEnv}
+  {ρ : VarEnv}
   {entry : Name × QTyp} {k : Tag} {b : Bool}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   (hguard : qtypGuardTag entry.snd = some k)
@@ -1118,7 +1121,6 @@ lemma varsRegime_transport_active_lookup_back
       exact varsRegime.withPred_ok entry k' arg_name pred_body var_env v b' hclos hreg'' hvar hcons
 
 private lemma capturedVarsRegimeProperty_transport_lookup_back
-  {predSat : PredSat} {R R' : Regime} {μ : Memory}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
   (h : capturedVarsRegimeProperty predSat R μ σcap ρcap) :
@@ -1140,7 +1142,7 @@ private lemma capturedVarsRegimeProperty_transport_lookup_back
           hlookup_back hguard hkR'some hvr_R
 
 lemma closureCapturedVarsRegime_transport_lookup_back
-  {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  {qt : QTyp} {θ : RealizationMap} {v : Value}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   (h : closureCapturedVarsRegime predSat R qt μ θ v) :
   closureCapturedVarsRegime predSat R' qt μ θ v := by
@@ -1154,7 +1156,6 @@ lemma closureCapturedVarsRegime_transport_lookup_back
         hdeep)
 
 lemma memberVarsRegimeEvidence_transport_lookup_back
-  {predSat : PredSat} {R R' : Regime} {μ : Memory}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
   (h : MemberVarsRegimeEvidence predSat R μ σcap ρcap) :
@@ -1178,7 +1179,7 @@ lemma memberVarsRegimeEvidence_transport_lookup_back
           hlookup_back hguard hkR'some hvr_R
 
 lemma memberCvcrEvidence_transport_lookup_back
-  {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
+  {θ : RealizationMap}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
   (h : MemberCvcrEvidence predSat R μ θ σcap ρcap) :
@@ -1191,7 +1192,7 @@ lemma memberCvcrEvidence_transport_lookup_back
 
 -- Transport closureCapturedVarsRegime across qt.etyp equality.
 lemma closureCapturedVarsRegime_transport_etyp
-  {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  {qt qt' : QTyp} {θ : RealizationMap} {v : Value}
   (hetyp : qt.etyp = qt'.etyp)
   (h : closureCapturedVarsRegime predSat R qt μ θ v) :
   closureCapturedVarsRegime predSat R qt' μ θ v := by
@@ -1204,6 +1205,8 @@ lemma closureCapturedVarsRegime_transport_etyp
           exact .closure xp body ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hmem hP hrec
       | peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp_eq hpure hmem hP hrec =>
           exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hpure hmem hP hrec
+
+end RegimeTransport
 
 -- Weaken closureCapturedVarsRegime when the closure list grows (superset).
 -- Used when joining type results: mergeFnTClosures produces a superset.
@@ -4466,14 +4469,16 @@ lemma valueHasETyp_of_evalUnaryOp
   cases heval
   exact valueHasETyp.bool _
 
-abbrev StepFR_IH (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+section StepFR_IH_Abbrevs
+variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
+
+abbrev StepFR_IH : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
     wfTagMeaningCtx tm ctxᵢ →
     TagBoundedCtx ctxᵢ →
     ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → StepFR ctxᵢ e res predSat tm
 
-abbrev StepFRSingleRunFinalCleanPcTrue_IH
-    (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+abbrev StepFRSingleRunFinalCleanPcTrue_IH : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext),
     wfTagMeaningCtx tm ctxᵢ →
     ∀ (res : TypeResult),
@@ -4482,8 +4487,7 @@ abbrev StepFRSingleRunFinalCleanPcTrue_IH
 
 private abbrev StepFRSingleRunFinalCleanPcTrueParam_IH
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-    (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tm ctx →
     ∀ (res : TypeResult),
@@ -4494,8 +4498,7 @@ private abbrev StepFRSingleRunFinalCleanPcTrueParam_IH
 abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
     (masked : Tag → Prop)
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-    (predSat : PredSat) (tm : TagMeaning) (fuel : Nat) : Prop :=
+    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tm ctx →
     ∀ (res : TypeResult),
@@ -4505,24 +4508,24 @@ abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
 
 -- Convert strong-induction IH (no wfTagMeaningCtx/TagBoundedCtx) to StepFR_IH; extra premises are unused
 lemma StepFR_IH_of_induction
-  (predSat : PredSat) (tm : TagMeaning) (k : Nat)
-  (IH : ∀ m < k, ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctxᵢ : TypeContext) (res : TypeResult),
     typecheck ctxᵢ e m = .ok res → StepFR ctxᵢ e res predSat tm) :
-  StepFR_IH predSat tm k :=
+  StepFR_IH predSat tm fuel :=
   fun m hm e ctxᵢ _hwfTm _htagBounded res htc => IH m hm e ctxᵢ res htc
 
 lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
   (masked : Tag → Prop)
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  (predSat : PredSat) (tm : TagMeaning) (k : Nat)
-  (IH : ∀ m < k, ∀ (e : Expr) (ctx : TypeContext) (res : TypeResult),
+  (IH : ∀ m < fuel, ∀ (e : Expr) (ctx : TypeContext) (res : TypeResult),
     typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueMaskedRegParam
         masked CtxCons ValCons ctx e res predSat tm) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-    masked CtxCons ValCons predSat tm k :=
+    predSat tm fuel masked CtxCons ValCons :=
   fun m hm e ctx _hwfTm res htc => IH m hm e ctx res htc
+
+end StepFR_IH_Abbrevs
 
 
 -- Used by both stepFR_ite and stepFR_app

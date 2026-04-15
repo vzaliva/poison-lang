@@ -4531,7 +4531,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      masked CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
+      predSat tm (Nat.succ (Nat.succ fuel')) masked CtxCons ValCons)
   (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
   (htc2' : typecheck ctxᵢ e2 fuel' = .ok result2)
   (htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1)
@@ -5082,7 +5082,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      masked CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
+      predSat tm (Nat.succ (Nat.succ fuel')) masked CtxCons ValCons)
   (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
   (htc2' : typecheck ctxᵢ e2 fuel' = .ok result2)
   (htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1)
@@ -5662,7 +5662,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      masked CtxCons ValCons predSat tm (Nat.succ (Nat.succ fuel')))
+      predSat tm (Nat.succ (Nat.succ fuel')) masked CtxCons ValCons)
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm := by
@@ -5704,10 +5704,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+      predSat tm (Nat.succ (Nat.succ fuel'))
       masked
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-      (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      predSat tm (Nat.succ (Nat.succ fuel')))
+      (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked

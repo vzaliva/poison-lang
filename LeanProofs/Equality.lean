@@ -40,9 +40,6 @@ import LeanPoison.Syntax
 
 open Std
 
--- Increase heartbeat limit for large soundness proofs
-set_option maxHeartbeats 1000000
-
 -- ============================================================================
 -- Proofs for types defined in Syntax.lean
 -- ============================================================================
@@ -283,8 +280,6 @@ instance : LawfulBEq EffectTarget where
 -- We define all reflexivity and soundness proofs together using well-founded recursion.
 
 -- Reflexivity proofs using well-founded recursion
--- Increase heartbeats for complex mutual recursion
-set_option maxHeartbeats 500000
 mutual
   private theorem beqExpr_refl : ∀ (e : Expr), beqExpr e e = true
     | Expr.unit => rfl
@@ -379,7 +374,6 @@ mutual
 end
 
 -- Soundness proofs using well-founded recursion
-set_option maxHeartbeats 1000000
 mutual
   -- beqExpr_sound with all cases explicitly handled
   private theorem beqExpr_sound : ∀ (a b : Expr), beqExpr a b = true → a = b

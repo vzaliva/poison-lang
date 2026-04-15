@@ -14,12 +14,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg
   (e : Expr) (op : UnaryOp) (fuel' : Nat) (res : TypeResult)
   (IH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+      predSat tm (Nat.succ (Nat.succ fuel'))
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      predSat tm (Nat.succ (Nat.succ fuel')))
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
   (htc : typecheck ctx (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
@@ -452,12 +452,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
   (IH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+      predSat tm (Nat.succ (Nat.succ fuel'))
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      predSat tm (Nat.succ (Nat.succ fuel')))
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
   (htc : typecheck ctx (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
