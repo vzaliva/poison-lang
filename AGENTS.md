@@ -26,7 +26,7 @@ The Poison Language is a research implementation of a simple imperative programm
 # Initial setup and build
 make                                   # Build everything: spec, docs, parser, Lean code
 make lean-build                        # Build Lean libraries and executables
-make lean-build-file FILE=LeanProofs/FaultRobustness.lean  # Build a single Lean file
+make lean-build-file FILE=LeanProofs/FaultRobustness.lean  # Build one module (path or dotted name, e.g. LeanProofs.FaultRobustness)
 
 # Running interpreter
 make run POISON=FILE.poison              # Run a .poison file
@@ -42,9 +42,13 @@ make poison-lang-spec                  # Generate PDF from Ott specification
 make doc                               # Build documentation pdf from tex files
 make parser                            # Build tree-sitter parser
 
-# Cleaning (WARNING: invalidates mathlib cache - avoid. ask user permssions if it is absolutely necessary)
+# Cleaning (WARNING: invalidates mathlib cache - avoid; ask user permission if it is absolutely necessary)
 make clean                             # Clean build artifacts
 # After cleaning, run: lake exe cache get
+
+# Lean cache (mathlib); `lean-build` already depends on `cache`
+make cache                             # Download precompiled caches if needed
+make cache-refresh                     # Force fresh cache (use after toolchain/mathlib bumps)
 ```
 
 ## Architecture
@@ -57,6 +61,7 @@ The executable language implementation. **Tests apply to this package.**
 - `BigStep.lean` - Big-step operational semantics (`beval` with fuel-based evaluation)
 - `Typecheck.lean` - Type checking with typing contexts (MemoryTypeEnv, TagEnv, TypeContext)
 - `Parser.lean` - Tree-sitter parser integration, XML-to-AST conversion
+- `Pretty.lean` - `Repr`/`Format` pretty-printing for values, configs, and related structures
 - `Runtime.lean` - Runtime support functions
 - `Misc.lean` - Utilities
 
@@ -76,14 +81,21 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 **Main properties:**
 - `RegimeConsistency.lean` - Regime-consistency definitions (tag meaning, guard descriptors) shared by fault-robustness
 - `FaultRobustness.lean` - Top-level fault-robustness definitions (`FaultRobustnessSpec`, `agreeOnClean`, `agreeValueUnder`, etc.)
-- `StepFR.lean` - Step-based proof mechanics and shared definitions (`StepFR`, `StepFR_IH`, utility lemmas, `TypeSystemEnforcesFaultRobustness_impl`)
-- `StepFRApp.lean` - Fault-robustness proof for the function application case (`stepFR_app` and exclusive helpers)
-- `StepFRAssign.lean` - Fault-robustness proof for the assignment case (`stepFR_assign` and exclusive helpers)
-- `FaultRobustnessProofs.lean` - Remaining case proofs (stepFR_literal through stepFR_seq, excluding app and assign), step theorem (`TypeSystemEnforcesFaultRobustness_step`), and final bridges (`TypeSystemEnforcesFaultRobustness`)
-- `Progress*.lean` - Progress (well-typed expressions evaluate or diverge, never get stuck)
+- `StepFR.lean` - Shared step-based machinery (`StepFR`, `StepFR_IH`, consistency lemmas) and large proof sections supporting the fault-robustness theorems
+- **Per-expression case proofs** (each file contains the corresponding `stepFR_*` / masked single-run lemmas; shared imports from `StepFR`):
+  - `StepFRApp.lean` - function application
+  - `StepFRAssign.lean` - assignment
+  - `StepFRLiteral.lean`, `StepFRVar.lean`, `StepFROp.lean` - literals, variables, primitive operators
+  - `StepFRFnPfn.lean` - `fn` / `pfn` forms
+  - `StepFRIte.lean` - conditional
+  - `StepFRDeref.lean`, `StepFRNewRef.lean` - memory operations
+  - `StepFRSeq.lean` - sequencing
+  - `StepFRVlet.lean` - `vlet`
+- `FaultRobustnessProofs.lean` - Orchestration: imports all `StepFR*` case modules and proves the step theorem (`TypeSystemEnforcesFaultRobustness_step`), the implementation bridge (`TypeSystemEnforcesFaultRobustness_impl`), and the top-level statement (`TypeSystemEnforcesFaultRobustness`)
+- `Progress.lean` - Progress (well-typed expressions evaluate or diverge, never get stuck)
 - `MemoryMonotonicity.lean` - Memory monotonicity (evaluation only adds locations, never removes)
 
-**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`
+**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`, `ExternAxioms.lean` (semantic contracts for extern typechecking used in fault-robustness)
 
 ### Other Components
 
@@ -123,6 +135,7 @@ To add a test:
 ### Proof Development Guidelines
 
 - **No testing**: Proofs are verified by compilation, not runtime tests
+- **Extern semantics**: Fault-robustness for extern-backed typing relies on the axioms in `ExternAxioms.lean`; keep that boundary minimal and consistent with `RegimeConsistency` / typechecking
 - **Conservative `sorry` use**: Use `sorry` sparingly. The goal is to **decrease** the number of `sorry` statements (shrinking proof surface), not increase them. Adding more `sorry` goes in the wrong direction.
 - **Proof techniques**: Many proofs use structural induction on fuel or expression structure
 - **Lean LSP tooling**: Use `lean-lsp` MCP tool to examine proof goals, errors, and search for lemmas
