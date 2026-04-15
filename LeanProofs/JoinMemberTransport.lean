@@ -3112,53 +3112,6 @@ lemma join_transport_agreeOnClean_from_member
         exact agreeVarUnder.agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagree'
 
 
-private lemma joinTypeResults_lookup_head_etyp_compat
-  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (_h_join : joinTypeResults ctx first rest = .ok res)
-  (l : Loc) (qt qt_first : QTyp)
-  (hlookup_res : (ctxAfter ctx res).memEnv.lookup l = some qt)
-  (hlookup_first : (ctxAfter ctx first).memEnv.lookup l = some qt_first) :
-  qt.etyp = qt_first.etyp := by
-  have hres_int : qt.etyp = ETyp.int :=
-    memEnv_lookup_etyp_int (env := (ctxAfter ctx res).memEnv) l qt hlookup_res
-  have hfirst_int : qt_first.etyp = ETyp.int :=
-    memEnv_lookup_etyp_int (env := (ctxAfter ctx first).memEnv) l qt_first hlookup_first
-  calc
-    qt.etyp = ETyp.int := hres_int
-    _ = qt_first.etyp := hfirst_int.symm
-
-private lemma joinTypeResults_lookup_head_clean_compat
-  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
-  (_h_join : joinTypeResults ctx first rest = .ok res)
-  (l : Loc) (qt qt_first : QTyp)
-  (hlookup_res : (ctxAfter ctx res).memEnv.lookup l = some qt)
-  (hclean_res : qtypCleanUnder (ctxAfter ctx res).regime qt)
-  (hlookup_first : (ctxAfter ctx first).memEnv.lookup l = some qt_first) :
-  qtypCleanUnder (ctxAfter ctx first).regime qt_first := by
-  cases hclean_res with
-  | clean hpoison =>
-      exact qtypCleanUnder.clean
-        (joinTypeResults_lookup_head_poison_imp
-          (ctx := ctx) (first := first) (rest := rest) (res := res)
-          _h_join l qt qt_first hlookup_res hlookup_first hpoison)
-  | guard k htag hreg hnotfun =>
-      have htag_first : qtypGuardTag qt_first = some k :=
-        joinTypeResults_lookup_head_guardTag_compat
-          (ctx := ctx) (first := first) (rest := rest) (res := res)
-          _h_join l qt qt_first k hlookup_res hlookup_first htag
-      have hreg_first : (ctxAfter ctx first).regime.lookup? k = some true :=
-        joinTypeResults_lookup_head_regime_compat
-          (ctx := ctx) (first := first) (rest := rest) (res := res)
-          _h_join k true hreg
-      have hetyp_eq : qt.etyp = qt_first.etyp :=
-        joinTypeResults_lookup_head_etyp_compat
-          (ctx := ctx) (first := first) (rest := rest) (res := res)
-          _h_join l qt qt_first hlookup_res hlookup_first
-      have hnotfun_first : qt_first.etyp.isFunctionType = false := by
-        simpa [hetyp_eq.symm] using hnotfun
-      exact qtypCleanUnder.guard k htag_first hreg_first hnotfun_first
-
-
 lemma joinTypeResults_transport_valueConsistentWithRegimeMasked_from_member
   (masked : Tag → Prop) (predSat : PredSat)
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)

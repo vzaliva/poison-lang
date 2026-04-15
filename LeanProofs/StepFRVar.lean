@@ -496,45 +496,6 @@ private lemma var_valueConsistentWithRegimeMasked_of_typecheck
                       exact valueConsistentWithRegimeMasked.noTag (by simp [qtypGuardTag, hres])
                         (closureCapturedVarsRegimeMasked_transport_etyp (by simp [hres]) (hcwr.2.2 name qt v hlookup_ctx hρ))
 
-private lemma stepFRSingleRunFinalCleanPcTrue_var_parametric
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (name : Name) (res : TypeResult) (fuel : Nat)
-  (hCtxToVal : VarCtxToValCons CtxCons ValCons)
-  (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-    CtxCons ValCons ctxᵢ (Expr.var name) res predSat tm := by
-  have htc' : typecheckVar ctxᵢ name = .ok res := by
-    simpa [typecheck, typecheckExpr] using htc
-  have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
-    simp [ctxAfter,
-      typecheckVar_preserves_memEnv ctxᵢ name res htc',
-      typecheckVar_preserves_tagEnv ctxᵢ name res htc',
-      typecheckVar_preserves_nextLoc ctxᵢ name res htc',
-      typecheckVar_preserves_nextTag ctxᵢ name res htc',
-      typecheckVar_preserves_regime ctxᵢ name res htc']
-  intro _hpredlaws _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg hctxCons a pm hwfcfg ht _hpc
-  rcases
-    terminatesTo_var_inv' name
-      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
-    with ⟨v, hlookup, hcf, ho⟩
-  subst hcf
-  have hvaltyp : valueHasETyp θ o res.qualType.etyp := by
-    rw [ho]
-    exact var_valueHasETyp_of_typecheck ctxᵢ μ ρ θ name res v htc' hθwf hric hlookup
-  have hvalc : ValCons (ctxAfter ctxᵢ res).regime res.qualType μ θ o := by
-    rw [ho]
-    exact hCtxToVal ctxᵢ name res μ ρ θ v htc' hlookup hctxCons
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_, ?_⟩
-  · exact ⟨fun _ _ hlookup => hlookup, fun hθwf' => hθwf'⟩
-  · simpa [hctxAfter] using hric
-  · simpa [hctxAfter] using hctxCons
-  · simpa [hctxAfter] using
-      (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctxᵢ) (res := res) (ρ := ρ) hric)
-  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
-
 private theorem stepFRVar_ctxToValCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRVarCtxToValCons

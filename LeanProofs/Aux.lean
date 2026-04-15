@@ -15,26 +15,6 @@ open Std
 -- List: removeAll, eraseDups, membership
 -- ================================================================
 
-theorem list_removeAll_self [BEq α] [LawfulBEq α] (l : List α) : l.removeAll l = [] := by
-  simp [List.removeAll, List.filter_eq_nil_iff]
-
-theorem list_eraseDups_eq_self_of_nodup [BEq α] [LawfulBEq α] {l : List α} (h : l.Nodup) :
-  l.eraseDups = l := by
-  induction l with
-  | nil => simp
-  | cons a as ih =>
-      have h' : as.Nodup := (List.nodup_cons.mp h).2
-      have ha_not : a ∉ as := (List.nodup_cons.mp h).1
-      have hfilter : as.filter (fun b => !b == a) = as := by
-        apply (List.filter_eq_self).2
-        intro b hb
-        have hbne : b ≠ a := by
-          intro hba
-          apply ha_not
-          simpa [hba] using hb
-        simp [hbne]
-      simp [List.eraseDups_cons, hfilter, ih h']
-
 lemma List.mem_eraseDups_of_mem {α : Type*} [BEq α] [LawfulBEq α] {x : α} {l : List α}
     (h : x ∈ l) : x ∈ l.eraseDups := by
   let P : Nat → Prop := fun n =>

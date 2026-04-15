@@ -2180,16 +2180,3 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   rw [h_ret_etyp]
   exact hv2
 
-private def StepFRVletCtxConsBodyStart
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
-  VletCtxConsBodyStart CtxCons ValCons
-
-private def StepFRVletCtxConsFinish
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (predSat : PredSat) (tm : TagMeaning) : Prop :=
-  VletCtxConsFinish CtxCons predSat tm
-
-private def StepFRVletValConsFinish
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
-  VletValConsFinish ValCons

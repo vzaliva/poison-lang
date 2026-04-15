@@ -55,11 +55,6 @@ structure InputSpec where
 deriving Repr
 
 -- Output realizations should include every location in the spec.
-private def fullyRealizes (s : InputSpec) (θ : RealizationMap) : Prop :=
-  ∀ l, s.locs.hasKey l → θ.lookup l ≠ none
-
-open List
-
 /-- Keys are unique in both `s.locs` (addresses) and `s.vars` (names). -/
 private def inputKeysUnique (vars : VarTypeEnv) : Prop :=
   vars.keys.Nodup
@@ -72,14 +67,6 @@ def inputSpecTags (s : InputSpec) : List Tag :=
   locTags ++ varTags
 
 -- Predicate-shape helpers
-private def isGuardClosure (qt : QTyp) : Prop :=
-  ∃ (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
-    qt.pred = Predicate.guardClosure k arg_name pred_body var_env
-
-private def isGuardOnly (qt : QTyp) : Prop :=
-  ∃ k, qt.pred = Predicate.guardOnly k
-
--- Regime is well-formed with respect to spec S if it's defined exactly for tags in S.
 def wfRegime (R : Regime) (s : InputSpec) : Prop :=
   let tags := inputSpecTags s
   (∀ k, k ∈ tags → (R.lookup? k).isSome) ∧
@@ -247,22 +234,6 @@ def wfObsSpec (obs : ObservableSpec) : Prop :=
   | some et => et.isFunctionType = false
 
 -- Derive return-observability and a conservative QTyp for the return from ObservableSpec.
-private def isRetObservableFromObs (obs : ObservableSpec) : Bool :=
-  obs.retEtyp?.isSome
-
-private def retQTypFromObs (obs : ObservableSpec) : QTyp :=
-  match obs.retEtyp? with
-  | some et => ⟨et, false, Predicate.noPred⟩
-  | none    => ⟨ETyp.unit, true, Predicate.noPred⟩
-
--- Context compliance with the input spec: all listed critical entries
--- must be present with exactly the specified qualified types. Any unlisted
--- entry that appears in the context is permitted without restriction, *except*
--- that non-spec entries must not reuse guard tags that appear in the spec.
--- This tag-hygiene condition is needed to bridge from the spec-indexed
--- regime-consistency predicate (`consistentRegimeSpec`) to the context-indexed
--- one (`consistentWithRegime`) at the initial context.
-
 def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
   (∀ {l qt}, s.locs.lookup l = some qt → ctx.memEnv.lookup l = some qt) ∧
   (∀ {x qt}, s.vars.lookup x = some qt → ctx.varEnv.lookup x = some qt) ∧

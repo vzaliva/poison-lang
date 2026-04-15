@@ -23,11 +23,6 @@ def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value): Prop :=
     LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.success c₁ out
 
 -- Divergence relation: program runs out of fuel
-private def diverges (e : Expr) (c₀ : Config) : Prop :=
-  ∀ (fuel : Nat) (verbose : Bool),
-    LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.outOfFuel
-
--- Stuck relation: program encounters a runtime error
 def stuck (e : Expr) (c₀ : Config)  : Prop :=
   ∃ (fuel : Nat) (verbose : Bool) (msg : String),
     LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.runtimeError msg
