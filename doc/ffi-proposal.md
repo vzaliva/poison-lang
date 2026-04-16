@@ -322,3 +322,64 @@ assumptions.
   components, even though building the actual separate-compilation pipeline is
   out of scope.
 
+## Notes from the call on 2026-04-16
+
+### Function descriptors
+
+The earlier text already points towards a single extern identity being used for
+both runtime lookup in the `registry` and proof-side lookup of FR `evidence`.
+The main open question is how that identity is assigned for unnamed and nested
+externs, not whether the source language must expose it directly. In line with
+the earlier design constraints, prefer internally generated identity over a
+user-visible `id` annotation on `extern`.
+
+The executable side should receive only what evaluation needs: a Lean-supplied
+value or callable, plus at most the basic-shape information used by shallow
+runtime checks. FR-facing properties should stay on the proof side. The
+declared summary (`ExternReturn`, `Effect`, `SyntaxPredicate`) remains the
+typing/FR contract, while any extra trusted guarantees for `safe` externs are
+supplied separately as evidence indexed by the same extern identity.
+
+### Safe/unsafe distinction
+
+Both `safe` and `unsafe` externs are intended to be executable. The split is
+about what FR may assume, not about whether evaluation can call the extern at
+all. In particular, only actually reached calls should matter to an FR theorem:
+the mere presence of an unsafe declaration, or of an unsafe call in a known-dead
+branch, should not by itself count against the program.
+
+This leaves an open question about how the trust tier split interacts with the
+current typing-side baseline:
+
+1. Soundness/preservation: currently we effectively have one level of
+   typechecking, namely `QTyp`; `EType` typing can be derived from it by
+   erasing the extra information. If we move to two actual typecheckers,
+   `EType` typechecking could always succeed, including for unsafe functions,
+   while `QTyp` typechecking could fail with a typechecking error on unsafe
+   calls.
+
+2. Another approach is to keep a single level of typechecking, but, when
+   typechecking an unsafe function, poison `pc`. Typechecking still passes, but
+   the results are poisoned and FR does not hold, as intended. (favoured
+   direction)
+
+### FN/PFN extern distinction
+
+One idea discussed on the call was that the `extern fn`/`extern pfn` split
+might be derivable from annotations, and that the surface syntax could perhaps
+be simplified accordingly. For user-defined functions, `pfn` does two jobs: it
+restricts the body to `PExpr` and gives the resulting value `parrow` type.
+Externs have no body, so only the second role remains. In the current surface
+story, `extern pfn` is therefore the direct way to introduce an extern callable
+that pure contexts, including predicates, may apply.
+
+Simple argument against: with the current annotation language, this looks
+infeasible, or at least premature. `Effect` summaries alone do not seem rich
+enough to recover the full higher-order purity story, and the present typing
+interface does not derive `parrow` from summaries by itself. In particular,
+higher-order cases still need an explicit account of how function-valued
+arguments and returned callables are classified. So the simplification is worth
+recording as a possible future direction, but it should not be treated as a
+consequence of the current annotations.
+
+
