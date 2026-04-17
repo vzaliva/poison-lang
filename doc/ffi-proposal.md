@@ -205,8 +205,6 @@ fault-robustness (FR) boundary explicit.
 - Keep the runtime interface abstract and Lean-level, not an inter-language
   ABI.
 - Preserve executability of the definitional interpreter.
-- To reduce special cases, `extern val` may be treated internally as a pure
-  immutable constant-function case.
 - Keep loading/registration outside object-language semantics; in the research
   setting this can simply mean supplying an extern environment to evaluation.
 - Treat memory access, fuel, and error taxonomy as part of the extern contract,
@@ -312,8 +310,8 @@ assumptions.
 - If callbacks are supported, they are only through function values explicitly
   passed or obtained during execution; there is no by-name access back into the
   enclosing program.
-- `extern val` may be treated internally as a pure immutable constant-function
-  case; the main design focus is therefore on extern functions.
+- The main design focus is on extern functions, since callbacks, effect
+  summaries, and most FR obligations arise there.
 - The current `ExternAxioms.lean` axioms are the known typing-side contract
   floor. Any semantics-side extension should connect to that baseline rather
   than replace it wholesale.
