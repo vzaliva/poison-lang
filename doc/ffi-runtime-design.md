@@ -82,20 +82,29 @@ extern callable" is therefore a derived predicate of the form
 `v = Value.closure _ (Expr.externFn ..) env` (or the `peClosure`
 analogue for some `env`).
 
-Environment capture is therefore part of the current design, not an
-open question. Extern callables behave like ordinary closures in this
-respect: they may read captured variables through their deferred
-summaries, but they never mutate the environment itself.
+Environment capture is part of the current design. Extern callables
+behave like ordinary closures in this respect: they may read captured
+variables through their return and effect summaries, but they never
+mutate the environment itself.
 
 ## Registry
 
 ```
+structure ExternCallable where
+  asValue : Value
+  invoke : ExternValue → Memory → Address → Nat →
+             Except ExternError (ExternValue × Memory × Address × Nat)
+
+inductive ExternValue where
+  | plain    : Value → ExternValue
+  | callable : ExternCallable → ExternValue
+
 inductive ExternImpl where
   | val : Value → ExternImpl
-  | pfn : (VarEnv → Value → Memory → Address → Nat → CallbackDriver →
-             Except ExternError Value) → ExternImpl
-  | fn  : (VarEnv → Value → Memory → Address → Nat → CallbackDriver →
-             Except ExternError (Value × Memory × Address)) → ExternImpl
+  | pfn : (VarEnv → ExternValue → Memory → Address → Nat →
+             Except ExternError (Value × Nat)) → ExternImpl
+  | fn  : (VarEnv → ExternValue → Memory → Address → Nat →
+             Except ExternError (Value × Memory × Address × Nat)) → ExternImpl
 
 abbrev ExternId := Nat
 abbrev ExternRegistry := Std.HashMap ExternId ExternImpl
@@ -125,9 +134,21 @@ def register (reg : ExternRegistry) (id : ExternId)
 The driver supplies the identifier and the Lean impl. `register`
 rejects a second registration under the same identifier.
 
+A driver may additionally validate registry coverage against the
+program's declared extern ids before evaluation begins. If it does not,
+missing entries surface on first reach as `ExternError.missing`.
+
 Extern impls are expected to be deterministic under fixed inputs. The
 runtime does not enforce this, but any FR-facing guarantee keyed by the
 same id presupposes it.
+
+Fuel is threaded through extern invocation and callable capabilities
+because callback-enabled execution can form cross-boundary call cycles:
+Poison may call an extern, the extern may invoke a passed Poison
+callable, and that callable may call the extern again (or another
+extern). The runtime therefore keeps one explicit fuel budget across
+ordinary evaluation, extern calls, and capability invocation so the
+combined execution remains terminating by fuel.
 
 On the proof side, the only assumption relevant here is that any
 optional additional guarantee is keyed by the same extern id. The Lean
@@ -140,14 +161,16 @@ Impl signatures:
   `ref int` this is a `Value.loc l` that the driver has already
   wired into `Config.memory`; see the reference-types section.
 - `ExternImpl.pfn f` — receives the unified runtime environment of the
-  call (captured env plus the current argument binding), the argument
-  value directly, the current `Memory`, the current `nextAddr`,
-  remaining fuel, and the callback driver. The environment, memory, and
+  call (captured env plus the current argument binding), the marshalled
+  argument as `ExternValue`, the current `Memory`, the current
+  `nextAddr`, and remaining fuel. The environment, memory, and
   `nextAddr` are read-only inputs: pure impls may inspect them but do
   not return or mutate them. The result is a `Value`, which may itself
-  be a nested extern closure.
+  be a nested extern closure, together with the remaining fuel after the
+  impl finishes its work.
 - `ExternImpl.fn f` — as `pfn`, but it may return updated `Memory` and
-  updated `nextAddr` along with the returned `Value`.
+  updated `nextAddr` along with the returned `Value` and the remaining
+  fuel.
 
 Whether an impure extern may delete cells or otherwise violate the
 language's usual memory-monotonicity discipline is intentionally left
@@ -159,7 +182,8 @@ directly rather than asking the evaluator to synthesize it. In the
 intended design, that returned value is the corresponding extern
 closure, carrying the nested id from the declared return summary and
 whatever captured environment the impl chooses to preserve. The runtime
-does not enforce full conformance beyond ordinary kind/shape checks.
+checks nested returned callables against the declared nested summary
+before accepting them.
 
 Kind disagreement between the current extern AST constructor and the
 registered impl — for instance, a `.val` impl registered under an
@@ -181,6 +205,22 @@ impl returns the nested callable value directly. Operationally:
 3. Invoke the registered impl.
 4. If the outermost return summary is nested, the impl returns the
    nested callable as a `Value.closure` / `Value.peClosure`.
+5. The runtime validates that returned value against the declared nested
+   summary.
+
+For `ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects`,
+the accepted shape is exactly:
+
+`Value.closure innerArg (Expr.externFn innerId innerArgTyp innerRet innerEffects) env`
+
+where `innerId` is the identifier carried by the nested return
+descriptor. For `ExternReturn.nestedPfn innerArg innerArgTyp innerRet`,
+the accepted shape is exactly:
+
+`Value.peClosure innerArg (Expr.externPfn innerId innerArgTyp innerRet) env`
+
+with the corresponding nested identifier. Any other returned value is
+rejected as `ExternError.nestedReturnMismatch`.
 
 In the intended use, that returned value is the corresponding extern
 closure, carrying the nested id declared in the return summary and an
@@ -195,38 +235,61 @@ guarantee for the nested callable is recovered exactly as for a
 top-level extern: by looking up the nested id in the externally
 supplied guarantee map.
 
-## Callbacks
+## Callable Capabilities
 
-Impls may apply Poison-level callables (closures or other extern
-callables) through a driver handed to them by `beval`:
+Extern impls are not given a general-purpose hook for running arbitrary
+Poison code. Instead, when a Poison callable crosses into extern land,
+the runtime marshals it as an `ExternValue.callable` carrying:
 
-```
-abbrev CallbackDriver :=
-  (callable : Value) → (arg : Value) → (mem : Memory) →
-  (nextAddr : Address) → (fuel : Nat) →
-    Except ExternError (Value × Memory × Address)
-```
+- the underlying Poison callable as `asValue`, for pass-through back
+  into Poison, and
+- a specialized `invoke` lambda for that specific callable.
 
-The driver dispatches `callable arg` against `mem` and `nextAddr` with
-`fuel`, exactly as `beval` would for an `Expr.app` node. Purity is
-inferred from the callable constructor exactly as today:
-`Value.peClosure` runs without memory effects and returns the input
-memory and `nextAddr` unchanged; `Value.closure` may update memory and
-advance `nextAddr`, and is rejected when a pure impl supplies it
-(mirroring the existing `pureMode` rule). Operationally, `beval`
-constructs the callback driver at the call site: impure extern calls
-get a driver that may execute both closure kinds, while pure extern
-calls get a driver that rejects `Value.closure` immediately.
+These capability objects are created by the runtime during marshalling.
+Impls are consumers of capabilities, not their constructors.
 
-Fuel threads through the driver: each callback deducts one unit before
-invoking `beval` on the callable's body. `beval`, the driver, and
-`bevalFunctionBody` share one termination measure; no new well-founded
-argument is needed.
+That lambda is a partially specified application step derived from the
+ordinary evaluator: it applies the already-fixed callable to one
+marshalled argument, threading `Memory`, `nextAddr`, fuel, and runtime
+errors exactly as normal Poison application would. Concretely,
+`invoke arg mem nextAddr fuel` behaves as applying `asValue` to the
+Poison value represented by `arg` under those runtime inputs. The
+result is re-marshalled as `ExternValue`, and the returned `Nat` is the
+remaining fuel after that application step.
 
-An impl unable to complete within its budget returns
-`ExternError.fuelExhausted`. Nothing in the language lets an impl
-reach the enclosing program by name — it can only apply callables it
-was handed as arguments or obtained from previous driver calls.
+This keeps the boundary capability-scoped:
+
+- an extern may invoke only callable values explicitly passed to it or
+  returned to it from earlier capability invocations,
+- it may not ask the runtime to evaluate an arbitrary `Expr`, and
+- it may not discover additional call targets by name lookup in the
+  surrounding program.
+
+The `asValue` field supports pass-through scenarios where an extern does
+not want to invoke a callable, but does want to return it unchanged or
+store and later re-emit it as a Poison value.
+
+When a capability invocation returns a Poison callable, the runtime
+marshals that result back into `ExternValue.callable` before handing it
+to the extern impl. In this case, `asValue` is exactly the
+post-validation `Value` returned by the invocation. In this way,
+higher-order interaction remains possible without exposing a general
+evaluator interface.
+
+Purity remains aligned with ordinary Poison application semantics. The
+capability for a pure callable preserves `Memory` and `nextAddr`; a
+capability for an impure callable may update both. The runtime should
+not expose an invokable impure capability to a pure extern in any case
+where ordinary `pureMode` would reject that application. If a pure
+extern invokes a capability that nevertheless returns modified `Memory`
+or `nextAddr`, the runtime ignores those modifications and keeps the
+caller's original state.
+
+Fuel threads through capability invocation exactly as it does through
+ordinary application: each invocation deducts one unit before reusing
+the existing application logic, and the returned `Nat` is the remaining
+budget for subsequent work. An impl unable to complete within its
+budget returns `ExternError.fuelExhausted`.
 
 ## Shape Checking
 
@@ -234,13 +297,15 @@ A single helper `valueMatchesTyp : Value → Typ → Bool` maps value
 constructors to `Typ` cases. It is applied:
 
 - on call entry, to the argument against the declared input `Typ`;
-- on call exit, to the returned value against the declared output
-  `Typ` from the outermost `ExternReturn`;
+- on call exit for simple returns, to the returned value against the
+  declared output `Typ` from the currently-dispatched extern's
+  outermost `ExternReturn`;
 - on `Expr.externVal` dispatch, to the stored value against the
   declared `Typ`.
 
 It does not inspect poison, predicates, or effect summaries. Those
-are proof-side concerns.
+are proof-side concerns. Nested returns are checked separately by exact
+closure-shape validation as described above.
 
 ## Errors
 
@@ -251,6 +316,7 @@ inductive ExternKind where
 inductive ExternError where
   | missing           (id : ExternId)
   | kindMismatch      (id : ExternId) (site : ExternKind) (impl : ExternKind)
+  | nestedReturnMismatch (id : ExternId) (actual : Value)
   | shapeMismatch     (id : ExternId) (at_ : ArgOrReturn) (expected : Typ) (actual : Value)
   | implFailure       (id : ExternId) (msg : String)
   | fuelExhausted     (id : ExternId)
@@ -261,8 +327,7 @@ message; no new top-level result case is added.
 
 For nested return specs, the runtime relies on the impl to return the
 corresponding nested callable value directly. Any violation of that
-expectation surfaces as a downstream kind/shape/runtime error rather
-than through a dedicated top-level result case.
+expectation surfaces as `ExternError.nestedReturnMismatch`.
 
 ## `beval` Dispatch
 
@@ -292,12 +357,20 @@ Application dispatch keeps its existing `Value.closure` /
 inspected one level further: when the body's head constructor is
 `Expr.externFn` (respectively `Expr.externPfn`), the prologue above
 runs on the wrapped AST, then `unifiedEnv := closureEnv[param := arg]`
-is formed, and the impure (respectively pure) impl is invoked with
-`unifiedEnv`, the argument value, the current `Memory`, the current
-`nextAddr`, `(fuel-1)`, and the callback driver. The returned `Value`
-is shape-checked against the declared outermost `Typ`. For impure
-externs, both `Memory` and `nextAddr` are updated from the impl result.
-Otherwise the existing user-closure path runs unchanged. The
+is formed, and the argument value is marshalled into `ExternValue`
+before crossing the boundary. For first-order values this is
+`ExternValue.plain`; for callable values it is
+`ExternValue.callable ⟨asValue, invoke⟩`, where `invoke` is the specialized
+application capability described above. The impure (respectively pure)
+impl is then invoked with `unifiedEnv`, the marshalled argument, the
+current `Memory`, the current `nextAddr`, and `(fuel-1)`. The returned
+`Value` is shape-checked against the declared outermost `Typ`; when the
+return summary is nested, exact closure-shape validation is applied
+instead of relying on `valueMatchesTyp` alone. For impure externs,
+`Memory`, `nextAddr`, and remaining fuel are updated from the impl
+result. For pure externs, remaining fuel is updated from the impl
+result but any returned `Memory` / `nextAddr` modifications are
+ignored. Otherwise the existing user-closure path runs unchanged. The
 impure extern branch is rejected in `pureMode` exactly as a
 user-defined `Value.closure` would be.
 
@@ -361,14 +434,15 @@ mechanism in this design; it is rejected.
   `ExternReturn.nestedPfn`; extend the existing extern `BEq` cases
   to account for the new field.
 - `LeanPoison/Runtime.lean`: add `ExternImpl`, `ExternRegistry`,
-  `CallbackDriver`, `ExternKind`,
-  `ExternError`, `valueMatchesTyp`, and a `register` helper; add
-  `registry` to `Config`.
+  `ExternCallable`, `ExternValue`, `ExternKind`, `ExternError`,
+  `valueMatchesTyp`, and a `register` helper; add `registry` to
+  `Config`.
 - `LeanPoison/BigStep.lean`: replace the three placeholder branches,
   run the dispatch prologue (lookup and kind-compatibility) on every
   extern AST, extend `Expr.app` dispatch, capture env when building
-  extern closures, accept nested returned extern callables from impl
-  results, define the callback driver inline.
+  extern closures, marshal callable arguments into invocation
+  capabilities, and accept nested returned extern callables from impl
+  results.
 - `LeanPoison/Typecheck.lean`: enforce the identifier-reuse rule by
   collecting extern occurrences and rejecting any duplicate identifier
   outright; keep fresh logical-location allocation for each accepted
@@ -378,8 +452,8 @@ mechanism in this design; it is rejected.
 - `poison-lang-spec/poison-lang.ott`,
   `doc/poison-lang-description.tex`: reflect the new identifier slot,
   extern-as-closure evaluation, the `Config.registry` field, and the
-  callback semantics.
+  callable-capability semantics.
 - `examples/`: add tests for `extern val` of each admitted type,
   `extern fn` with memory effects, `extern pfn` in predicates,
   duplicate-identifier rejection across all extern kinds,
-  and an extern invoking a callback.
+  and an extern invoking a function argument through its capability.
