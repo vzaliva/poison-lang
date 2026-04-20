@@ -5,7 +5,7 @@ the runtime semantics of `extern val`, `extern fn`, and `extern pfn`.
 
 ## Identity
 
-Every extern declaration carries a mandatory `Int` identifier written
+Every extern declaration carries a mandatory `Nat` identifier written
 at the declaration site after `@`:
 
 ```
@@ -90,18 +90,15 @@ summaries, but they never mutate the environment itself.
 ## Registry
 
 ```
-inductive ExternResult where
-  | simple   : Value → ExternResult
-  | deferred : ExternResult
-
 inductive ExternImpl where
   | val : Value → ExternImpl
   | pfn : (VarEnv → Value → Memory → Address → Nat → CallbackDriver →
-             Except ExternError ExternResult) → ExternImpl
+             Except ExternError Value) → ExternImpl
   | fn  : (VarEnv → Value → Memory → Address → Nat → CallbackDriver →
-             Except ExternError (ExternResult × Memory × Address)) → ExternImpl
+             Except ExternError (Value × Memory × Address)) → ExternImpl
 
-abbrev ExternRegistry := Std.HashMap Int ExternImpl
+abbrev ExternId := Nat
+abbrev ExternRegistry := Std.HashMap ExternId ExternImpl
 ```
 
 The registry lives as an immutable field of `Config`. Threading it
@@ -120,7 +117,7 @@ The registry is built once by the Lean driver (`Main.lean` or
 equivalent) outside evaluation. The driver API is
 
 ```
-def register (reg : ExternRegistry) (id : Int)
+def register (reg : ExternRegistry) (id : ExternId)
              (impl : ExternImpl)
     : Except String ExternRegistry
 ```
@@ -147,23 +144,22 @@ Impl signatures:
   value directly, the current `Memory`, the current `nextAddr`,
   remaining fuel, and the callback driver. The environment, memory, and
   `nextAddr` are read-only inputs: pure impls may inspect them but do
-  not return or mutate them. The result is either
-  `ExternResult.simple v` for simple returns or
-  `ExternResult.deferred` for nested-callable returns.
+  not return or mutate them. The result is a `Value`, which may itself
+  be a nested extern closure.
 - `ExternImpl.fn f` — as `pfn`, but it may return updated `Memory` and
-  updated `nextAddr` along with the `ExternResult`.
+  updated `nextAddr` along with the returned `Value`.
 
 Whether an impure extern may delete cells or otherwise violate the
 language's usual memory-monotonicity discipline is intentionally left
 unspecified here and should be reviewed separately from the allocation
 interface.
 
-Returning `ExternResult.deferred` means "the current call succeeded,
-and the evaluator should synthesize the nested callable from the
-declared nested return summary plus the unified environment of this
-call." This rules out hidden Lean-only per-instance state for returned
-extern callables: instance variation comes only from captured Poison
-values and from future callback results.
+For nested return specs, the impl returns the nested callable value
+directly rather than asking the evaluator to synthesize it. In the
+intended design, that returned value is the corresponding extern
+closure, carrying the nested id from the declared return summary and
+whatever captured environment the impl chooses to preserve. The runtime
+does not enforce full conformance beyond ordinary kind/shape checks.
 
 Kind disagreement between the current extern AST constructor and the
 registered impl — for instance, a `.val` impl registered under an
@@ -177,30 +173,24 @@ is intentionally not part of the current design surface.
 ## Nested Return Instantiation
 
 When an extern application's outermost return summary is nested, the
-Lean impl does not fabricate the returned callable directly. The
-evaluator synthesizes it from the nested return descriptor and the
-producing call's unified environment:
+impl returns the nested callable value directly. Operationally:
 
 1. Start from the extern closure's captured runtime environment.
 2. Bind the current argument under the extern's argument name, yielding
    `unifiedEnv`.
 3. Invoke the registered impl.
-4. If the outermost return summary is `ExternReturn.nestedFn ...`,
-   require `ExternResult.deferred` and return
-   `Value.closure innerArg (Expr.externFn innerId innerArgTyp innerRet innerEffects) unifiedEnv`.
-5. If the outermost return summary is `ExternReturn.nestedPfn ...`,
-   require `ExternResult.deferred` and return
-   `Value.peClosure innerArg (Expr.externPfn innerId innerArgTyp innerRet) unifiedEnv`.
+4. If the outermost return summary is nested, the impl returns the
+   nested callable as a `Value.closure` / `Value.peClosure`.
 
-The nested callable is therefore an ordinary closure value carrying the
-same captured environment that the typing side records in
-`FnTClosure.extern` / `PFnTClosure.extern`. On later application, it
-goes through the same runtime prologue and registry lookup as a
-top-level extern value, keyed by its own nested identifier.
+In the intended use, that returned value is the corresponding extern
+closure, carrying the nested id declared in the return summary and an
+environment derived from `unifiedEnv`. On later application, it goes
+through the same runtime prologue and registry lookup as a top-level
+extern value, keyed by its own nested identifier.
 
-Later executability and FR lookup come from that nested identifier
-alone. The closure does not carry any separate proof-side token,
-theorem handle, slot index, or bundle reference. Any optional
+Later executability and FR lookup therefore come from that nested
+identifier alone. The closure does not carry any separate proof-side
+token, theorem handle, slot index, or bundle reference. Any optional
 guarantee for the nested callable is recovered exactly as for a
 top-level extern: by looking up the nested id in the externally
 supplied guarantee map.
@@ -259,20 +249,20 @@ inductive ExternKind where
   | val | fn | pfn
 
 inductive ExternError where
-  | missing           (id : Int)
-  | kindMismatch      (id : Int) (site : ExternKind) (impl : ExternKind)
-  | shapeMismatch     (id : Int) (at_ : ArgOrReturn) (expected : Typ) (actual : Value)
-  | implFailure       (id : Int) (msg : String)
-  | fuelExhausted     (id : Int)
+  | missing           (id : ExternId)
+  | kindMismatch      (id : ExternId) (site : ExternKind) (impl : ExternKind)
+  | shapeMismatch     (id : ExternId) (at_ : ArgOrReturn) (expected : Typ) (actual : Value)
+  | implFailure       (id : ExternId) (msg : String)
+  | fuelExhausted     (id : ExternId)
 ```
 
 All cases surface through `EvalResult.runtimeError` with a formatted
 message; no new top-level result case is added.
 
-A mismatch between the outermost `ExternReturn` shape and the impl's
-`ExternResult` (`simple` versus `deferred`) is reported as
-`implFailure` with an explanatory message. This is a driver/registry
-bug, not a user-program type error.
+For nested return specs, the runtime relies on the impl to return the
+corresponding nested callable value directly. Any violation of that
+expectation surfaces as a downstream kind/shape/runtime error rather
+than through a dedicated top-level result case.
 
 ## `beval` Dispatch
 
@@ -304,12 +294,10 @@ inspected one level further: when the body's head constructor is
 runs on the wrapped AST, then `unifiedEnv := closureEnv[param := arg]`
 is formed, and the impure (respectively pure) impl is invoked with
 `unifiedEnv`, the argument value, the current `Memory`, the current
-`nextAddr`, `(fuel-1)`, and the callback driver. If the return summary
-is simple, the returned `Value` is shape-checked against the declared
-`Typ`; if the return summary is nested, the returned callable is
-synthesized as described above. For impure externs, both `Memory` and
-`nextAddr` are updated from the impl result. Otherwise the existing
-user-closure path runs unchanged. The
+`nextAddr`, `(fuel-1)`, and the callback driver. The returned `Value`
+is shape-checked against the declared outermost `Typ`. For impure
+externs, both `Memory` and `nextAddr` are updated from the impl result.
+Otherwise the existing user-closure path runs unchanged. The
 impure extern branch is rejected in `pureMode` exactly as a
 user-defined `Value.closure` would be.
 
@@ -373,14 +361,14 @@ mechanism in this design; it is rejected.
   `ExternReturn.nestedPfn`; extend the existing extern `BEq` cases
   to account for the new field.
 - `LeanPoison/Runtime.lean`: add `ExternImpl`, `ExternRegistry`,
-  `ExternResult`, `CallbackDriver`, `ExternKind`,
+  `CallbackDriver`, `ExternKind`,
   `ExternError`, `valueMatchesTyp`, and a `register` helper; add
   `registry` to `Config`.
 - `LeanPoison/BigStep.lean`: replace the three placeholder branches,
   run the dispatch prologue (lookup and kind-compatibility) on every
   extern AST, extend `Expr.app` dispatch, capture env when building
-  extern closures, synthesize nested returned extern callables, define
-  the callback driver inline.
+  extern closures, accept nested returned extern callables from impl
+  results, define the callback driver inline.
 - `LeanPoison/Typecheck.lean`: enforce the identifier-reuse rule by
   collecting extern occurrences and rejecting any duplicate identifier
   outright; keep fresh logical-location allocation for each accepted
