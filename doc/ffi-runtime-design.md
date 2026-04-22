@@ -22,41 +22,39 @@ extern fn @10 n : (int) ->
   (extern pfn @11 x : (int) -> ((int :> clean {})))
 ```
 
-The identifier is the shared handle between the runtime registry and
-proof-side evidence. It is author-chosen, stable across runs,
-independent of elaboration order, and separate from the argument name
-(`x`, `u` above). `ExternReturn.nestedFn` / `ExternReturn.nestedPfn`
-carry their own identifier slots: every extern callable that may be
-applied at runtime, including a callable returned by another extern,
-has its own global identifier. The same identifier is later used for
-runtime implementation lookup and for any optional FR-side guarantee
-lookup. There is no separate slot/path identity scheme, and no theorem
-or evidence object is stored inside runtime closure values.
+The identifier is the runtime handle for extern lookup. It is
+author-chosen, stable across runs, independent of elaboration order,
+and separate from the argument name (`x`, `u` above).
+`ExternReturn.nestedFn` / `ExternReturn.nestedPfn` carry their own
+identifier slots: every extern callable that may be applied at runtime,
+including a callable returned by another extern, has its own global
+identifier. There is no separate slot/path identity scheme.
 
 ## Identifier Reuse
 
 Identifiers are globally unique across all extern declarations. Any
 second occurrence of an identifier already used by some `extern val`,
-`extern fn`, or `extern pfn` is a typechecking error, regardless of
-kind or structural equality.
+`extern fn`, or `extern pfn` is an error.
 
 The rule is reflected at two layers:
 
-- **Typechecker** is the authoritative enforcer. It collects extern
-  occurrences and rejects any duplicate identifier outright.
+- **Program validation / typechecking** is the authoritative enforcer
+  for source-level uniqueness. It collects extern occurrences in the
+  program and rejects any duplicate identifier outright.
 - **Runtime** dispatches by identifier and checks extern kind against
   the registered implementation.
 
-The current runtime proposal relies on typechecking plus the
-global-unique-id discipline and performs only id/kind/shape checks.
+At runtime there is a second, separate uniqueness check: the
+implementation registry is keyed by extern id and rejects duplicate
+registrations for the same id. During evaluation, the runtime assumes
+the source program's extern ids are already unique and simply performs
+id/kind/shape checks.
 Full-AST runtime verification against a canonical declaration is a
 possible later extension, not part of this phase.
 
 The rule preserves the invariant that one identifier maps to one
-implementation and one set of proof-side evidence. This is stricter
-than allowing structurally-equal declarations to share an id, but it
-keeps the registry and the typechecker simple and avoids special reuse
-rules for refs versus callables.
+implementation. This keeps the registry and the typechecker simple and
+keeps the source-level rule uniform across refs and callables.
 
 ## Runtime Values
 
@@ -90,9 +88,9 @@ mutate the environment itself.
 ## Registry
 
 ```
-structure ExternCallable where
-  invoke : ExternValue → Memory → Address → Nat →
-             Except ExternError (ExternValue × Memory × Address × Nat)
+abbrev ExternCallable :=
+  ExternValue → Memory → Address → Nat →
+    Except ExternError (ExternValue × Memory × Address × Nat)
 
 inductive ExternValue where
   | plain    : Value → ExternValue
@@ -133,14 +131,6 @@ def register (reg : ExternRegistry) (id : ExternId)
 The driver supplies the identifier and the Lean impl. `register`
 rejects a second registration under the same identifier.
 
-A driver may additionally validate registry coverage against the
-program's declared extern ids before evaluation begins. If it does not,
-missing entries surface on first reach as `ExternError.missing`.
-
-Extern impls are expected to be deterministic under fixed inputs. The
-runtime does not enforce this, but any FR-facing guarantee keyed by the
-same id presupposes it.
-
 Fuel is threaded through extern invocation and callable capabilities
 because callback-enabled execution can form cross-boundary call cycles:
 Poison may call an extern, the extern may invoke a passed Poison
@@ -148,11 +138,6 @@ callable, and that callable may call the extern again (or another
 extern). The runtime therefore keeps one explicit fuel budget across
 ordinary evaluation, extern calls, and capability invocation so the
 combined execution remains terminating by fuel.
-
-On the proof side, the only assumption relevant here is that any
-optional additional guarantee is keyed by the same extern id. The Lean
-representation of that guarantee map is out of scope for this runtime
-sub-proposal.
 
 Impl signatures:
 
@@ -171,10 +156,10 @@ Impl signatures:
   updated `nextAddr` along with the returned `Value` and the remaining
   fuel.
 
-Whether an impure extern may delete cells or otherwise violate the
-language's usual memory-monotonicity discipline is intentionally left
-unspecified here and should be reviewed separately from the allocation
-interface.
+Whether an impure extern may delete cells or otherwise shrink or
+restructure the heap in ways ordinary Poison evaluation does not is
+intentionally left unspecified here and should be reviewed separately
+from the allocation interface.
 
 For nested return specs, the impl returns the nested callable value
 directly rather than asking the evaluator to synthesize it. In the
@@ -188,10 +173,6 @@ Kind disagreement between the current extern AST constructor and the
 registered impl — for instance, a `.val` impl registered under an
 identifier that the program reaches through an `externFn` node — is a
 driver bug caught at dispatch as `ExternError.kindMismatch`.
-
-Possible later extension: the registry could additionally store a
-canonical extern AST and use `beqExpr` as a runtime sanity check. That
-is intentionally not part of the current design surface.
 
 ## Nested Return Instantiation
 
@@ -227,12 +208,9 @@ environment derived from `unifiedEnv`. On later application, it goes
 through the same runtime prologue and registry lookup as a top-level
 extern value, keyed by its own nested identifier.
 
-Later executability and FR lookup therefore come from that nested
-identifier alone. The closure does not carry any separate proof-side
-token, theorem handle, slot index, or bundle reference. Any optional
-guarantee for the nested callable is recovered exactly as for a
-top-level extern: by looking up the nested id in the externally
-supplied guarantee map.
+Later executability therefore comes from that nested identifier alone.
+The closure does not carry any separate slot index, bundle reference,
+or other auxiliary runtime tag.
 
 ## Callable Capabilities
 
@@ -301,21 +279,18 @@ constructors to `Typ` cases. It is applied:
 - on `Expr.externVal` dispatch, to the stored value against the
   declared `Typ`.
 
-It does not inspect poison, predicates, or effect summaries. Those
-are proof-side concerns. Nested returns are checked separately by exact
+It does not inspect poison, predicates, or effect summaries. Nested
+returns are checked separately by exact
 closure-shape validation as described above.
 
 ## Errors
 
 ```
-inductive ExternKind where
-  | val | fn | pfn
-
 inductive ExternError where
   | missing           (id : ExternId)
-  | kindMismatch      (id : ExternId) (site : ExternKind) (impl : ExternKind)
-  | nestedReturnMismatch (id : ExternId) (actual : Value)
-  | shapeMismatch     (id : ExternId) (at_ : ArgOrReturn) (expected : Typ) (actual : Value)
+  | kindMismatch      (id : ExternId)
+  | nestedReturnMismatch (id : ExternId)
+  | shapeMismatch     (id : ExternId)
   | implFailure       (id : ExternId) (msg : String)
   | fuelExhausted     (id : ExternId)
 ```
@@ -358,7 +333,7 @@ runs on the wrapped AST, then `unifiedEnv := closureEnv[param := arg]`
 is formed, and the argument value is marshalled into `ExternValue`
 before crossing the boundary. For first-order values this is
 `ExternValue.plain`; for callable values it is
-`ExternValue.callable ⟨invoke⟩`, where `invoke` is the specialized
+`ExternValue.callable invoke`, where `invoke` is the specialized
 application capability described above. The impure (respectively pure)
 impl is then invoked with `unifiedEnv`, the marshalled argument, the
 current `Memory`, the current `nextAddr`, and `(fuel-1)`. The returned
@@ -432,7 +407,7 @@ mechanism in this design; it is rejected.
   `ExternReturn.nestedPfn`; extend the existing extern `BEq` cases
   to account for the new field.
 - `LeanPoison/Runtime.lean`: add `ExternImpl`, `ExternRegistry`,
-  `ExternCallable`, `ExternValue`, `ExternKind`, `ExternError`,
+  `ExternCallable`, `ExternValue`, `ExternError`,
   `valueMatchesTyp`, and a `register` helper; add `registry` to
   `Config`.
 - `LeanPoison/BigStep.lean`: replace the three placeholder branches,
