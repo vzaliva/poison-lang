@@ -91,7 +91,6 @@ mutate the environment itself.
 
 ```
 structure ExternCallable where
-  asValue : Value
   invoke : ExternValue → Memory → Address → Nat →
              Except ExternError (ExternValue × Memory × Address × Nat)
 
@@ -241,8 +240,6 @@ Extern impls are not given a general-purpose hook for running arbitrary
 Poison code. Instead, when a Poison callable crosses into extern land,
 the runtime marshals it as an `ExternValue.callable` carrying:
 
-- the underlying Poison callable as `asValue`, for pass-through back
-  into Poison, and
 - a specialized `invoke` lambda for that specific callable.
 
 These capability objects are created by the runtime during marshalling.
@@ -252,10 +249,11 @@ That lambda is a partially specified application step derived from the
 ordinary evaluator: it applies the already-fixed callable to one
 marshalled argument, threading `Memory`, `nextAddr`, fuel, and runtime
 errors exactly as normal Poison application would. Concretely,
-`invoke arg mem nextAddr fuel` behaves as applying `asValue` to the
-Poison value represented by `arg` under those runtime inputs. The
-result is re-marshalled as `ExternValue`, and the returned `Nat` is the
-remaining fuel after that application step.
+`invoke arg mem nextAddr fuel` behaves as applying the specific callable
+that was marshalled into this capability to the Poison value
+represented by `arg` under those runtime inputs. The result is
+re-marshalled as `ExternValue`, and the returned `Nat` is the remaining
+fuel after that application step.
 
 This keeps the boundary capability-scoped:
 
@@ -265,16 +263,16 @@ This keeps the boundary capability-scoped:
 - it may not discover additional call targets by name lookup in the
   surrounding program.
 
-The `asValue` field supports pass-through scenarios where an extern does
-not want to invoke a callable, but does want to return it unchanged or
-store and later re-emit it as a Poison value.
+Callable capabilities are invocation-only. An extern may use them by
+calling `invoke`, but it may not pass an arbitrary received Poison
+callable back into Poison unchanged. If an extern wants to return a
+callable, it must return an explicitly constructed extern closure of
+the declared result shape.
 
 When a capability invocation returns a Poison callable, the runtime
 marshals that result back into `ExternValue.callable` before handing it
-to the extern impl. In this case, `asValue` is exactly the
-post-validation `Value` returned by the invocation. In this way,
-higher-order interaction remains possible without exposing a general
-evaluator interface.
+to the extern impl. In this way, higher-order interaction remains
+possible without exposing a general evaluator interface.
 
 Purity remains aligned with ordinary Poison application semantics. The
 capability for a pure callable preserves `Memory` and `nextAddr`; a
@@ -360,7 +358,7 @@ runs on the wrapped AST, then `unifiedEnv := closureEnv[param := arg]`
 is formed, and the argument value is marshalled into `ExternValue`
 before crossing the boundary. For first-order values this is
 `ExternValue.plain`; for callable values it is
-`ExternValue.callable ⟨asValue, invoke⟩`, where `invoke` is the specialized
+`ExternValue.callable ⟨invoke⟩`, where `invoke` is the specialized
 application capability described above. The impure (respectively pure)
 impl is then invoked with `unifiedEnv`, the marshalled argument, the
 current `Memory`, the current `nextAddr`, and `(fuel-1)`. The returned
