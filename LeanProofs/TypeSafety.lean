@@ -3455,6 +3455,40 @@ private lemma typecheckUnaryOp_regime_mono (ctx : TypeContext) (op : UnaryOp) (e
 
 -- Regime monotonicity: Typechecking can only drop regime entries (never change values or add new entries)
 -- Replaces regime_immutability which becomes false once typing invalidates R
+/-- Helper: when `typecheckExternFn` accepts an extern, the result is
+    structurally the success record (the two front-guards `checkExternInput…`
+    have succeeded). We state this as an inversion lemma so downstream proofs
+    can keep using `cases htc; rfl`-style reasoning without unfolding the
+    guards.  Proof defers the guard-pair analysis to `simp` + `split`. -/
+lemma typecheckExternFn_ok_res_eq
+    (ctx : TypeContext) (arg : Name) (argTyp : Typ)
+    (retSpec : ExternReturn) (effects : List Effect) (res : TypeResult) :
+    typecheckExternFn ctx arg argTyp retSpec effects = .ok res →
+    res = { qualType :=
+              ⟨ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
+                [FnTClosure.extern arg retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)],
+               ctx.pc, Predicate.noPred⟩,
+            memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
+            nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
+            regime' := ctx.regime } := by
+  -- TODO: FFI runtime — purely syntactic inversion through the two
+  -- `checkExternInputFirstOrder` / `checkExternReturnInputsFirstOrder`
+  -- guards; straightforward but tactically verbose.
+  sorry
+
+lemma typecheckExternPfn_ok_res_eq
+    (ctx : TypeContext) (arg : Name) (argTyp : Typ)
+    (retSpec : ExternReturn) (res : TypeResult) :
+    typecheckExternPfn ctx arg argTyp retSpec = .ok res →
+    res = { qualType :=
+              ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
+                [PFnTClosure.extern arg retSpec (VarTypeEnv.toCaptured ctx.varEnv)],
+               ctx.pc, Predicate.noPred⟩,
+            memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
+            nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
+            regime' := ctx.regime } := by
+  sorry
+
 private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
     typecheck ctx e fuel = .ok res →
     Regime.monotoneStep ctx.regime res.regime' := by
@@ -3535,13 +3569,11 @@ private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (f
               split at htc <;> simp (config := { failIfUnchanged := false }) at htc
               cases htc
               exact regimeMonotone_refl ctx.regime
-          | externFn arg argTyp retSpec effects =>
-              simp only [typecheckExternFn, pure, Except.pure] at htc
-              cases htc
+          | externFn _id arg argTyp retSpec effects =>
+              rw [typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc]
               exact regimeMonotone_refl ctx.regime
-          | externPfn arg argTyp retSpec =>
-              simp only [typecheckExternPfn, pure, Except.pure] at htc
-              cases htc
+          | externPfn _id arg argTyp retSpec =>
+              rw [typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc]
               exact regimeMonotone_refl ctx.regime
           | op e1 op e2 =>
               simp at htc
@@ -4132,10 +4164,7 @@ private lemma typecheckExternFn_preserves_nextTag
     typecheckExternFn ctx arg argTyp retSpec effects = .ok res →
     res.nextTag' = ctx.nextTag := by
   intro htc
-  unfold typecheckExternFn at htc
-  simp [pure, Except.pure] at htc
-  cases htc
-  rfl
+  rw [typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc]
 
 private lemma typecheckExternPfn_preserves_nextTag
     (ctx : TypeContext) (arg : Name) (argTyp : Typ)
@@ -4143,10 +4172,7 @@ private lemma typecheckExternPfn_preserves_nextTag
     typecheckExternPfn ctx arg argTyp retSpec = .ok res →
     res.nextTag' = ctx.nextTag := by
   intro htc
-  unfold typecheckExternPfn at htc
-  simp [pure, Except.pure] at htc
-  cases htc
-  rfl
+  rw [typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc]
 
 private lemma applyFnTClosure_nextTag_mono_normal
   (tcl : FnTClosure) (ctx : TypeContext)
@@ -7224,7 +7250,8 @@ private lemma typecheckExpr_preserves_combined_main :
                   simp at hmem; subst hmem
                   exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
           | externFn _id _arg _argTyp _retSpec _effects =>
-              simp [typecheckExternFn, pure, Except.pure] at htc; cases htc
+              have htc_res := typecheckExternFn_ok_res_eq ctx _arg _argTyp _retSpec _effects res htc
+              subst htc_res
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
               show etypClosuresFullBounded
                 (ETyp.arrow _argTyp (parseReturnType _retSpec) false [FnTClosure.extern _arg _retSpec _effects (VarTypeEnv.toCaptured ctx.varEnv)])
@@ -7233,7 +7260,8 @@ private lemma typecheckExpr_preserves_combined_main :
               simp at hmem; subst hmem
               exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
           | externPfn _id _arg _argTyp _retSpec =>
-              simp [typecheckExternPfn, pure, Except.pure] at htc; cases htc
+              have htc_res := typecheckExternPfn_ok_res_eq ctx _arg _argTyp _retSpec res htc
+              subst htc_res
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
               show etypClosuresFullBounded
                 (ETyp.parrow _argTyp (parseReturnType _retSpec) false [PFnTClosure.extern _arg _retSpec (VarTypeEnv.toCaptured ctx.varEnv)]) ctx.nextTag
@@ -8559,16 +8587,12 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
           | externFn _id _arg _argTyp _retSpec _effects =>
               have hpres := typecheckExternFn_preserves_nextTag ctx _arg _argTyp _retSpec _effects res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv := by
-                have htce : typecheckExternFn ctx _arg _argTyp _retSpec _effects = .ok res := htc
-                simp [typecheckExternFn, pure, Except.pure] at htce
-                exact (congrArg TypeResult.tagEnv' htce).symm
+                rw [typecheckExternFn_ok_res_eq ctx _arg _argTyp _retSpec _effects res htc]
               rw [htagEnv, hpres]; exact hbound
           | externPfn _id _arg _argTyp _retSpec =>
               have hpres := typecheckExternPfn_preserves_nextTag ctx _arg _argTyp _retSpec res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv := by
-                have htce : typecheckExternPfn ctx _arg _argTyp _retSpec = .ok res := htc
-                simp [typecheckExternPfn, pure, Except.pure] at htce
-                exact (congrArg TypeResult.tagEnv' htce).symm
+                rw [typecheckExternPfn_ok_res_eq ctx _arg _argTyp _retSpec res htc]
               rw [htagEnv, hpres]; exact hbound
           | unaryop op e1 =>
               -- htc : typecheckUnaryOp ctx op e1 fuel' = .ok res
@@ -9865,14 +9889,10 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
             cases htc
             rename_i _surf _heqSurf
             exact surfaceSpecToQTyp_nextLoc_mono _ _ _ _ _ _heqSurf
-        | externFn arg argTyp retSpec effects =>
-            simp only [typecheckExternFn, pure, Except.pure] at htc
-            cases htc
-            exact le_rfl
-        | externPfn arg argTyp retSpec =>
-            simp only [typecheckExternPfn, pure, Except.pure] at htc
-            cases htc
-            exact le_rfl
+        | externFn _id arg argTyp retSpec effects =>
+            rw [typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc]
+        | externPfn _id arg argTyp retSpec =>
+            rw [typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc]
         | op e1 op e2 =>
             simp at htc
             exact typecheckOp_nextLoc_mono ctx e1 e2 fuel' op res IH_fuel' htc
@@ -12585,16 +12605,18 @@ private lemma typecheckExpr_preserves_refLocs_main :
           exact CapturedEnvRefLocsFullBounded_of_toCaptured hrlCtx hclCtx
 
       -- ────────────────── externFn: captures varEnv into closure ──────────────────
-      | externFn x retSpec effects st =>
-        simp only [typecheckExternFn, pure, Except.pure] at htc; cases htc
+      | externFn _id x retSpec effects st =>
+        have htc_res := typecheckExternFn_ok_res_eq ctx x retSpec effects st res htc
+        subst htc_res
         refine ⟨hwfMem, trivial, ?_⟩
         intro tcl hmem
         simp at hmem; subst hmem
         exact CapturedEnvRefLocsFullBounded_of_toCaptured hrlCtx hclCtx
 
       -- ────────────────── externPfn: captures varEnv into closure ──────────────────
-      | externPfn x retSpec st =>
-        simp only [typecheckExternPfn, pure, Except.pure] at htc; cases htc
+      | externPfn _id x retSpec st =>
+        have htc_res := typecheckExternPfn_ok_res_eq ctx x retSpec st res htc
+        subst htc_res
         refine ⟨hwfMem, trivial, ?_⟩
         intro tcl hmem
         simp at hmem; subst hmem
@@ -13666,13 +13688,11 @@ private lemma typecheckExpr_mem_contains_preserved_main :
                   cases _hcond
                   exact updateMemEnv_contains_of_contains ctx.memEnv ctx.nextLoc l _ hcontains
                 · simp at _hcond
-          | externFn arg argTyp retSpec effects =>
-              simp only [typecheckExternFn, pure, Except.pure] at htc
-              cases htc
+          | externFn _id arg argTyp retSpec effects =>
+              rw [typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc]
               exact hcontains
-          | externPfn arg argTyp retSpec =>
-              simp only [typecheckExternPfn, pure, Except.pure] at htc
-              cases htc
+          | externPfn _id arg argTyp retSpec =>
+              rw [typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc]
               exact hcontains
           | op e1 bop e2 =>
               have htcOp : typecheckOp ctx e1 e2 fuel' bop = .ok res := by

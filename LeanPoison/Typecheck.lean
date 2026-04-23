@@ -970,9 +970,14 @@ def checkExternReturnInputsFirstOrder : ExternReturn → TypecheckM Unit
       checkExternInputFirstOrder argTyp
       checkExternReturnInputsFirstOrder inner
 
-/-- Typecheck extern impure function -/
+/-- Typecheck extern impure function.  Per-declaration, rejects function-
+    typed and non-`ref int` reference inputs — both at the top-level argument
+    and inside every nested return descriptor.  See
+    `doc/ffi-runtime-design.md`, §Registry. -/
 def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (effects : List Effect) : TypecheckM TypeResult := do
+  checkExternInputFirstOrder argTyp
+  checkExternReturnInputsFirstOrder retSpec
   -- Create extern closure with captured varEnv (singleton list)
   let tcl := FnTClosure.extern arg retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)
 
@@ -985,9 +990,12 @@ def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
            nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
 
-/-- Typecheck extern pure function -/
+/-- Typecheck extern pure function. Same first-order-input rule as
+    `typecheckExternFn`. -/
 def typecheckExternPfn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) : TypecheckM TypeResult := do
+  checkExternInputFirstOrder argTyp
+  checkExternReturnInputsFirstOrder retSpec
   -- Create extern closure with captured varEnv (singleton list)
   let tcl := PFnTClosure.extern arg retSpec (VarTypeEnv.toCaptured ctx.varEnv)
 
@@ -1672,98 +1680,13 @@ lemma normalizeAppResultByProvenance_etyp (p1p : Poison) (qt : QTyp) :
   (normalizeAppResultByProvenance p1p qt).etyp = qt.etyp := by
   simp only [normalizeAppResultByProvenance]; split_ifs <;> rfl
 
--- Main type checking function
-/-- Collect every `ExternId` that appears anywhere in an `ExternReturn`
-    descriptor, reading left to right. Each nested callable contributes
-    its own id; `ExternReturn.simple` contributes none (its id lives on
-    the enclosing top-level extern). -/
-private partial def collectExternIdsReturn : ExternReturn → List ExternId
-  | ExternReturn.simple _ _ _ => []
-  | ExternReturn.nestedFn id _ _ inner _ => id :: collectExternIdsReturn inner
-  | ExternReturn.nestedPfn id _ _ inner => id :: collectExternIdsReturn inner
-
-mutual
-partial def collectExternIdsPred : SyntaxPredicate → List ExternId
-  | SyntaxPredicate.guardClosure _ _ body => collectExternIdsExpr body
-  | SyntaxPredicate.guardOnly _ => []
-  | SyntaxPredicate.noPred => []
-
-partial def collectExternIdsExpr : Expr → List ExternId
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ => []
-  | Expr.op e1 _ e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
-  | Expr.unaryop _ e => collectExternIdsExpr e
-  | Expr.ite e1 e2 e3 =>
-      collectExternIdsExpr e1 ++ collectExternIdsExpr e2 ++ collectExternIdsExpr e3
-  | Expr.newRef e => collectExternIdsExpr e
-  | Expr.assign e1 e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
-  | Expr.deref e => collectExternIdsExpr e
-  | Expr.seq e1 e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
-  | Expr.vlet _ e1 e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
-  | Expr.fn _ _ body _ => collectExternIdsExpr body
-  | Expr.pfn _ _ body _ => collectExternIdsExpr body
-  | Expr.app e1 e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
-  | Expr.externVal id _ _ pred =>
-      id :: collectExternIdsPred pred
-  | Expr.externFn id _ _ retSpec effects =>
-      id :: collectExternIdsReturn retSpec ++
-        (effects.flatMap (fun eff => collectExternIdsPred eff.pred))
-  | Expr.externPfn id _ _ retSpec =>
-      id :: collectExternIdsReturn retSpec
-end
-
-/-- Reject a program that uses the same extern identifier in two distinct
-    declaration sites. Walks the program once and diffs ids against a seen
-    set. This is a whole-program check — callers that want a full program
-    typecheck should call this before `typecheck`. -/
-def checkExternIdsUnique (e : Expr) : TypecheckM Unit := do
-  let ids := collectExternIdsExpr e
-  let rec go (seen : Std.ExtTreeSet ExternId) : List ExternId → TypecheckM Unit
-    | [] => return ()
-    | id :: rest =>
-        if seen.contains id then
-          throw s!"Duplicate extern identifier @{id}"
-        else
-          go (seen.insert id) rest
-  go ∅ ids
-
-/-- Whole-program check that every extern callable's input type is first-order
-    (per `doc/ffi-runtime-design.md`: function-typed inputs to executable
-    extern callables are forbidden; the only admitted input types are
-    `{int, bool, unit, string, ref int}`).  Walks the AST and rejects any
-    violation at both top-level and nested `ExternReturn` positions. -/
-partial def checkExternInputsWholeProgram : Expr → TypecheckM Unit
-  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ => return ()
-  | Expr.op e1 _ e2 => do
-      checkExternInputsWholeProgram e1
-      checkExternInputsWholeProgram e2
-  | Expr.unaryop _ e => checkExternInputsWholeProgram e
-  | Expr.ite e1 e2 e3 => do
-      checkExternInputsWholeProgram e1
-      checkExternInputsWholeProgram e2
-      checkExternInputsWholeProgram e3
-  | Expr.newRef e => checkExternInputsWholeProgram e
-  | Expr.assign e1 e2 => do
-      checkExternInputsWholeProgram e1
-      checkExternInputsWholeProgram e2
-  | Expr.deref e => checkExternInputsWholeProgram e
-  | Expr.seq e1 e2 => do
-      checkExternInputsWholeProgram e1
-      checkExternInputsWholeProgram e2
-  | Expr.vlet _ e1 e2 => do
-      checkExternInputsWholeProgram e1
-      checkExternInputsWholeProgram e2
-  | Expr.fn _ _ body _ => checkExternInputsWholeProgram body
-  | Expr.pfn _ _ body _ => checkExternInputsWholeProgram body
-  | Expr.app e1 e2 => do
-      checkExternInputsWholeProgram e1
-      checkExternInputsWholeProgram e2
-  | Expr.externVal _ _ _ _ => return ()
-  | Expr.externFn _ _ argTyp retSpec _ => do
-      checkExternInputFirstOrder argTyp
-      checkExternReturnInputsFirstOrder retSpec
-  | Expr.externPfn _ _ argTyp retSpec => do
-      checkExternInputFirstOrder argTyp
-      checkExternReturnInputsFirstOrder retSpec
-
+/-- Public typecheck entry point.  Thin wrapper over `typecheckExpr` preserved
+    for callers outside the recursive kernel.  The language-level rule that
+    executable extern callables must have first-order input types is enforced
+    per-declaration inside `typecheckExpr` (at the `Expr.externFn` /
+    `Expr.externPfn` dispatch).  Global extern-id uniqueness is NOT enforced
+    here — the driver's `register` already rejects duplicate ids at
+    registration time, and any mismatch between a declared type and a
+    registered value is caught by `valueMatchesTyp` at runtime. -/
 def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   typecheckExpr ctx e fuel

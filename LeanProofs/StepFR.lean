@@ -6603,13 +6603,11 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             cases htc
             simpa [ctxAfter, regimeConsistentWithCtxMasked]
-        | externFn _ _ _ _ =>
-            simp only [typecheckExternFn, pure, Except.pure] at htc
-            cases htc
+        | externFn _id arg argTyp retSpec effects =>
+            rw [typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc]
             simpa [ctxAfter, regimeConsistentWithCtxMasked]
-        | externPfn _ _ _ =>
-            simp only [typecheckExternPfn, pure, Except.pure] at htc
-            cases htc
+        | externPfn _id arg argTyp retSpec =>
+            rw [typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc]
             simpa [ctxAfter, regimeConsistentWithCtxMasked]
         | unaryop op e1 =>
             have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
@@ -8195,12 +8193,14 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             have htc' := by simpa using htc
             exact ⟨typecheckExternVal_preserves_wfTagMeaningCtx tm ctx typ poison pred res hwf htc',
                    typecheckExternVal_QTypRespectsTagMeaning_corollary tm ctx typ poison pred res htc'⟩
-        | externFn _ _ _ _ _ =>
-            simp only [typecheckExternFn, pure, Except.pure] at htc; cases htc
+        | externFn _id arg argTyp retSpec effects =>
+            have htc_res := typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc
+            subst htc_res
             exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
               QTypRespectsTagMeaning_fn_extern tm ctx _ _ _ ctx.pc _ _ hwf⟩
-        | externPfn _ _ _ _ =>
-            simp only [typecheckExternPfn, pure, Except.pure] at htc; cases htc
+        | externPfn _id arg argTyp retSpec =>
+            have htc_res := typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc
+            subst htc_res
             exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
               QTypRespectsTagMeaning_pfn_extern tm ctx _ _ _ ctx.pc _ hwf⟩
         -- ===== Single-IH cases: memEnv from sub-expression =====
@@ -10789,14 +10789,14 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             l qt_out hpre hlookup_out
       | externFn _id arg argTyp retSpec effects =>
           unfold typecheckExpr at htc
-          simp [typecheckExternFn, pure, Except.pure] at htc
-          cases htc
+          have htc_res := typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc
+          subst htc_res
           exact ⟨fun hp => ⟨qt_out, hlookup_out, hp⟩,
                  fun k hg hr hfn => ⟨qt_out, hlookup_out, hg, hr, hfn⟩⟩
-      | externPfn arg argTyp retSpec =>
+      | externPfn _id arg argTyp retSpec =>
           unfold typecheckExpr at htc
-          simp [typecheckExternPfn, pure, Except.pure] at htc
-          cases htc
+          have htc_res := typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc
+          subst htc_res
           exact ⟨fun hp => ⟨qt_out, hlookup_out, hp⟩,
                  fun k hg hr hfn => ⟨qt_out, hlookup_out, hg, hr, hfn⟩⟩
 

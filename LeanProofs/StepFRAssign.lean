@@ -1673,18 +1673,20 @@ private lemma guardClosure_pred_implies_tag_absent
             simpa [typecheckExpr, typecheck] using htc
           exact typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded ctx typ poison pred res
             htc' hbounded.1 k arg_name pred_body var_env hpred
-      | externFn _ _ _ _ _ =>
+      | externFn _id arg argTyp retSpec effects =>
           exfalso
-          have htc' := htc
-          simp [typecheckExpr, typecheckExternFn] at htc'
-          simp [pure, Except.pure] at htc'
-          simp [← htc'] at hpred
-      | externPfn _ _ _ _ =>
+          have htc' : typecheckExternFn ctx arg argTyp retSpec effects = .ok res := by
+            simpa [typecheckExpr] using htc
+          have hres_eq := typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc'
+          subst hres_eq
+          simp at hpred
+      | externPfn _id arg argTyp retSpec =>
           exfalso
-          have htc' := htc
-          simp [typecheckExpr, typecheckExternPfn] at htc'
-          simp [pure, Except.pure] at htc'
-          simp [← htc'] at hpred
+          have htc' : typecheckExternPfn ctx arg argTyp retSpec = .ok res := by
+            simpa [typecheckExpr] using htc
+          have hres_eq := typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc'
+          subst hres_eq
+          simp at hpred
 
 private lemma assign_mem_formula_guardClosure_lookup_implies_rhs_pred
     (ctxᵢ : TypeContext) (res1 res2 res : TypeResult) (ls : LocSet)
