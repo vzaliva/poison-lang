@@ -315,6 +315,39 @@ Options 1 and 2 may repackage or subsume parts of the current baseline. Option
 3 most naturally extends `ExternAxioms.lean` with explicit semantics-side
 assumptions.
 
+### Pending Proof Obligations (Category B)
+
+The following proof obligations in `LeanProofs/` currently stand as `sorry`
+and genuinely need the extern evidence interface described above. They are
+listed here so the proof work that introduces that interface can discharge
+them together. All other extern-related `sorry`s in the proof development
+concern top-level extern *declarations* (which leave `Config` unchanged) and
+are mechanical to close without any extern guarantees.
+
+- `LeanProofs/SemanticsProperties.lean:2137` — the `app` case of the
+  `wfConfig` preservation lemma. For the `ExternImpl.fn` dispatch path, the
+  driver-supplied implementation returns an arbitrary `(mem', addr')` pair.
+  Preserving `wfConfig` requires a registry contract stating at minimum:
+  - `mem'` is well-formed with respect to `addr'`,
+  - `addr₀ ≤ addr'` (address monotonicity so the pre-existing `varEnv`
+    remains well-formed).
+  The `ExternImpl.pfn` sub-case of the same `app` proof and the user-closure
+  sub-case are provable without extern guarantees; only the `fn` sub-case is
+  guarantee-dependent.
+- `LeanProofs/FaultRobustnessProofs.lean:39` — `terminatesTo_extern_absurd`.
+  Under the previous placeholder runtime every extern evaluation errored,
+  which made this lemma vacuously true; with a live registry the lemma is
+  statically false. Its six call sites (lines 1500, 1503, 1506, 1767, 1770,
+  1773 — all inside the masked-single-run FR theorem) currently discharge
+  the extern cases by `exfalso`. Each must be replaced with a real
+  FR-at-extern-dispatch proof consuming extern-invocation evidence,
+  specifically: when a registered extern with declared return qtype `qt`
+  produces value `v`, `v` satisfies
+  `valueConsistentWithRegime qt μ θ v` at the post-dispatch memory/map. This
+  is the central FR obligation for trusted externs and is the natural fit
+  for an id-indexed evidence bundle in either the Option-2 or Option-3
+  interface above.
+
 ### High-Level Direction
 
 - Prefer an evidence-passing design over hard-wired global trust markers.
