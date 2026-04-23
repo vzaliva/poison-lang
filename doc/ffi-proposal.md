@@ -6,6 +6,18 @@ Goal: give `extern val`, `extern fn`, and `extern pfn` intended runtime
 semantics while keeping implementations outside Poison and making the
 fault-robustness (FR) boundary explicit.
 
+This is the top-level design document. It gives the high-level overview of
+how FFI is handled in:
+
+1. runtime / semantics;
+2. proofs / reasoning.
+
+The runtime part now has a more detailed sub-proposal in
+`doc/ffi-runtime-design.md`. That document is authoritative for the concrete
+runtime design and operational details. This top-level proposal should stay at
+the level of capabilities, constraints, proof interfaces, and major design
+choices.
+
 ## Scope
 
 - This is a high-level design document for a research project.
@@ -19,13 +31,17 @@ fault-robustness (FR) boundary explicit.
   reuse, where a separately verified Poison component is treated abstractly as
   an extern boundary; building the actual pipeline is out of scope.
 - This document records required capabilities, proof interfaces, and open
-  questions, without choosing a concrete low-level representation.
+  questions, without duplicating the operational detail now recorded in
+  `doc/ffi-runtime-design.md`.
 
 ## Glossary
 
 - `extern`: a Poison declaration whose executable behaviour is supplied
   externally rather than by a Poison body.
-- `registry`: the abstract mapping from extern identities to Lean-supplied
+- `extern id`: the explicit `@id` attached to an extern declaration. This is
+  now the language-level identity used by runtime dispatch, nested returned
+  callables, and any future proof-facing evidence indexing.
+- `registry`: the Lean-supplied mapping from extern identities to runtime
   values or callables.
 - `basic shape`: the coarse runtime kind checked dynamically, for example
   integer, boolean, unit, string, location, or callable, as distinct from full
@@ -43,31 +59,37 @@ fault-robustness (FR) boundary explicit.
   Poison components.
 - Designing tooling details such as hot reloading, debugging, or deployment
   workflows.
+- Repeating the detailed runtime rules that now live in
+  `doc/ffi-runtime-design.md`.
 
 ## Current Baseline
 
 - Surface syntax already has `extern val`, `extern fn`, and `extern pfn`.
+- The runtime design now requires an explicit `@id` on every extern
+  declaration, including nested callable return descriptors.
 - The typechecker already interprets extern summaries through `ExternReturn`,
   `Effect`, and `SyntaxPredicate`, allocating fresh tags per use site.
 - Application typing already computes the summary-level effect of applying an
   extern closure.
-- The current evaluator does not execute externs; evaluating an extern
-  expression currently fails with a runtime error.
-- `beval` is a total pure Lean function. Any executable extern interface must
-  therefore be supplied as computable Lean-level data/functions to evaluation,
-  not only as an abstract proof-side relation. From the proof side, such
-  implementations should still be used through explicit guarantees rather than
-  by inspecting their code.
-- Within a fixed supplied extern environment, operational behaviour is
-  deterministic by construction.
+- The evaluator can now execute externs through a Lean-supplied registry rather
+  than failing immediately on every extern occurrence.
+- `beval` remains a total pure Lean function. Executable extern behaviour is
+  still supplied as computable Lean-level data/functions, not as I/O or an
+  abstract proof-only relation.
+- Within a fixed supplied extern environment, operational behaviour is intended
+  to be deterministic by construction.
 - The current proof boundary lives in `LeanProofs/ExternAxioms.lean`. This is
   the typing-side baseline. At present it contains:
   - `externTagSoundness`, for fresh-tag soundness of summary-generated tags.
   - `externGuardProvenance`, for provenance of impure extern summaries in the
     FR development.
-- Known current typing restrictions already relevant to the design include:
+- The main currently relevant typing/runtime restrictions are now:
+  - executable extern input types are restricted to the first-order surface
+    types `{ int, bool, unit, string, ref int }`;
+  - function-typed extern inputs are rejected;
   - extern functions do not currently return references;
-  - the current heap model constrains the shape of effect summaries.
+  - the current heap model constrains the shape of effect summaries and the
+    supported reference story.
 - Typing restrictions should stay paired with any matching semantic obligations
   or proof evidence.
 
@@ -79,22 +101,22 @@ fault-robustness (FR) boundary explicit.
   intended setting they are supplied by surrounding Lean code.
 - `R-SEM-2`: Supplying extern implementations happens outside Poison
   evaluation; calling an extern during evaluation does not itself perform I/O.
-- `R-SEM-3`: If callbacks are supported, they occur only through function
-  values explicitly passed or obtained during execution, not by name lookup
-  into the enclosing program. Any resulting recursion must be reflected in the
-  fuel story.
+- `R-SEM-3`: The current executable design does not support higher-order
+  callbacks from externs back into arbitrary Poison callables. The current
+  phase restricts executable extern inputs to first-order types, so any richer
+  callback story is deferred.
 - `R-SEM-4`: The proposal must state the first-class status of extern-provided
   callables and values, including capture, return, and storage.
-- `R-SEM-5`: The proposal must decide how runtime/proof identity is assigned to
-  externs, preferably without forcing user-visible names, and must account for
-  unnamed and nested externs.
+- `R-SEM-5`: Runtime/proof identity is now explicit and user-visible through
+  `@id`, including for nested returned callables.
 
 ### Typing Summaries and Contracts
 
 - `R-CON-1`: Extern summaries describe poisoned inputs, outputs, and effects at
   the typing/FR level; poison itself is not a runtime notion.
-- `R-CON-2`: Runtime checking is intentionally shallow: it may check only basic
-  shape, not full conformance with summaries or FR obligations.
+- `R-CON-2`: Runtime checking is intentionally shallow: it checks declared
+  identity/kind/basic shape and nested-return wrapper shape, not full
+  conformance with summaries or FR obligations.
 - `R-CON-3`: The proposal must decide whether the current annotation language
   is sufficient for FR or whether extra annotations or proof-only metadata are
   needed.
@@ -108,19 +130,22 @@ fault-robustness (FR) boundary explicit.
 
 ### Runtime and Execution
 
-- `R-RUN-1`: Registered externs must be executable in the intended semantics;
-  absent registrations must produce documented runtime failure.
-- `R-RUN-2`: The proposal must define an abstract registry role and lifecycle,
-  including duplicate bindings, resolution time, and how the surrounding Lean
-  driver supplies implementations.
-- `R-RUN-3`: The proposal must define an abstract memory-access interface
-  sufficient to talk about reads, writes, and effect summaries.
-- `R-RUN-4`: The proposal must explain how extern calls interact with fuel and
-  termination. Current working assumption: no divergence, and extern calls
-  consume fixed nominal fuel unless callbacks force a more detailed account.
-- `R-RUN-5`: The proposal must define a high-level error taxonomy covering at
-  least missing implementation, basic-shape mismatch, and
-  extern-implementation failure.
+- `R-RUN-1`: Registered externs are executable in the intended semantics;
+  absent registrations produce documented runtime failure.
+- `R-RUN-2`: The registry is a flat mapping from explicit extern ids to
+  implementations, supplied by the surrounding Lean driver and fixed for the
+  duration of evaluation.
+- `R-RUN-3`: The runtime side must support the current memory-access needs of
+  impure externs, while staying within the existing heap model.
+- `R-RUN-4`: Extern calls participate in the evaluator's existing fuel story.
+  The current runtime design treats each extern invocation as consuming one
+  evaluator step; richer callback-related recursion is out of scope in the
+  current phase.
+- `R-RUN-5`: The runtime side must provide a documented error taxonomy covering
+  at least missing implementation, kind mismatch, basic-shape mismatch,
+  nested-return mismatch, and extern-implementation failure.
+- `R-RUN-6`: Detailed runtime rules, driver obligations, and operational
+  examples should live in `doc/ffi-runtime-design.md`, not be duplicated here.
 
 ### Typing Baseline and Specification Alignment
 
@@ -141,9 +166,8 @@ fault-robustness (FR) boundary explicit.
 - `R-PRF-2`: The proposal must clarify how FR builds on the existing
   typing-side extern floor and what, if any, extra semantics-side assumptions
   are still needed.
-- `R-PRF-3`: The proposal must define how FR-facing evidence is supplied and
-  indexed by extern identity, ideally through the same contract story used by
-  typing.
+- `R-PRF-3`: FR-facing evidence should be indexed by the same explicit extern
+  identities used by runtime dispatch, including for nested returned callables.
 - `R-PRF-4`: The proposal must relate any new extern evidence interface to the
   existing `LeanProofs/ExternAxioms.lean` baseline, including how executable
   behaviour is related to declared summaries.
@@ -155,20 +179,22 @@ fault-robustness (FR) boundary explicit.
   interface is sufficient to model separately verified Poison components linked
   through an extern boundary.
 - `R-PRF-8`: The proposal must state how FR should treat callable values
-  returned by externs, if such returns remain in scope.
+  returned by externs.
 - `R-PRF-9`: The proposal must examine what soundness property should connect
   executable extern semantics and typing, and whether safe guarantees support a
   stronger theorem than basic-shape execution alone.
 
 ## Success Criteria
 
-- `S-1`: The proposal explicitly addresses callbacks, fuel, memory access,
-  first-class status, naming/identity, and error taxonomy.
+- `S-1`: The proposal explicitly addresses identity, registry lifecycle,
+  memory-access needs, first-class extern callables, and error taxonomy.
 - `S-2`: The proposal makes clear what is handled by typing, what is handled by
   executable semantics, and what remains axiomatic or evidence-backed.
 - `S-3`: The proposal explains how `ExternAxioms.lean` is preserved, extended,
   or repackaged.
-- `S-4`: The proposal is stress-tested against multiple examples, even if they
+- `S-4`: The runtime overview here stays consistent with
+  `doc/ffi-runtime-design.md` rather than re-specifying it independently.
+- `S-5`: The proposal is stress-tested against multiple examples, even if they
   are not fully written out here.
 
 ## Affected Artefacts (Likely)
@@ -179,26 +205,52 @@ fault-robustness (FR) boundary explicit.
 - `LeanPoison/Typecheck.lean`, if the extern contract vocabulary changes.
 - `LeanProofs/`: `ExternAxioms.lean`, `StepFR.lean`,
   `FaultRobustnessProofs.lean`, and downstream proof modules.
+- `doc/ffi-runtime-design.md`, which carries the detailed runtime
+  sub-proposal.
 - `poison-lang-spec/poison-lang.ott` and `doc/poison-lang-description.tex`.
-- Examples/tests for any eventual executable design.
+- Examples/tests for executable extern design.
 
 ## Part I: Runtime / Semantics
 
-### Topics This Part Must Settle
+### Runtime Status
 
-- What it means for externs to have runtime semantics rather than immediate
-  failure.
-- The abstract memory interface for impure externs.
-- Lookup and identity, especially for unnamed and nested externs.
-- Registry lifecycle: when implementations exist and how missing/duplicate
-  entries behave.
-- Fuel and termination under the no-divergence working assumption, including
-  callback-related recursion scenarios.
-- Error classification.
-- Whether extern callables behave like ordinary higher-order values in the
-  current language.
-- Callback/re-entrancy limits: only via function values already passed or
-  obtained during execution.
+The runtime side is no longer just an open sketch. Its high-level shape is now
+decided, and the concrete operational design is recorded in
+`doc/ffi-runtime-design.md`.
+
+This top-level proposal only needs the following runtime summary:
+
+- extern identity is explicit through mandatory `@id` syntax;
+- nested callable return descriptors carry their own ids as well;
+- ids are globally unique across the whole program;
+- runtime dispatch uses a flat registry keyed by extern id;
+- the registry is supplied by the surrounding Lean driver and stored in
+  `Config`;
+- `extern val` dispatch returns a registered value after shallow shape
+  checking;
+- `extern fn` and `extern pfn` behave as ordinary Poison closures whose body is
+  the corresponding extern AST node;
+- nested callable returns are supplied directly by the implementation and
+  validated against the declared nested return descriptor;
+- runtime checking is deliberately shallow and does not re-check poison or FR
+  obligations;
+- executable extern input types are restricted to first-order surface types,
+  which keeps callbacks out of scope in the current phase;
+- the current reference story supports `extern val` at type `ref int`, with the
+  detailed driver obligations spelled out in the runtime sub-proposal.
+
+### What This Runtime Part No Longer Needs To Settle Here
+
+The following are now delegated to `doc/ffi-runtime-design.md`:
+
+- exact runtime representation of extern implementations;
+- exact registry API and duplicate-registration behaviour;
+- exact `beval` dispatch structure;
+- shape-checking rules for arguments, simple returns, and nested returns;
+- exact error constructors/messages;
+- driver obligations for reference-typed extern values;
+- detailed curried examples such as the built-in `max` externs;
+- the precise fuel accounting for extern dispatch.
 
 ### High-Level Direction
 
@@ -206,9 +258,11 @@ fault-robustness (FR) boundary explicit.
   ABI.
 - Preserve executability of the definitional interpreter.
 - Keep loading/registration outside object-language semantics; in the research
-  setting this can simply mean supplying an extern environment to evaluation.
-- Treat memory access, fuel, and error taxonomy as part of the extern contract,
-  not incidental implementation details.
+  setting this means supplying an extern registry to evaluation.
+- Keep the runtime model shallow: execution checks kind/basic shape, while
+  typing and proofs continue to carry poison-level meaning.
+- Use the runtime sub-proposal for concrete operational choices, and keep this
+  top-level document at the capability/interface level.
 
 ## Part II: Proofs / Reasoning
 
@@ -226,7 +280,7 @@ fault-robustness (FR) boundary explicit.
 - How FR evidence is indexed by extern identity.
 - How new semantics-side assumptions relate to the current typing-side
   assumptions in `ExternAxioms.lean`.
-- How callable values returned by externs, if permitted, are handled by FR.
+- How callable values returned by externs are handled by FR.
 - Whether the same interface can stand in for a separately verified Poison
   component.
 - What soundness relation should hold between executable extern semantics,
@@ -267,6 +321,8 @@ assumptions.
 - Keep the executable runtime model and the proof interface distinct but
   compatible: semantics stays executable, proofs abstract over the properties
   executable externs must satisfy.
+- Reuse explicit extern ids as the common indexing story for runtime dispatch,
+  nested returned callables, and proof-facing evidence.
 - It remains open whether the primary consumed interface should be
   `StepFR`-shaped or finer-grained.
 
@@ -275,43 +331,36 @@ assumptions.
 - Are current extern annotations (`ExternReturn`, `Effect`,
   `SyntaxPredicate`) sufficient for FR, or is extra proof-only metadata
   unavoidable?
-- Is the extern registry fixed for the duration of evaluation, or may it vary?
-- Beyond within-run determinism, what stability properties are needed for
-  trusted externs?
+- Beyond within-run determinism, what additional stability properties are
+  needed for trusted externs?
 - Are the current typing-side axioms already too strong for unsafe externs, or
   should unsafe externs sit entirely outside that baseline?
 - Is the proposed extern/evidence interface strong enough to model separate
   compilation with FR proved once for a component and reused by a client
   program?
-- How should duplicate registrations and extern-related diagnostics be handled?
-- What is the status of polymorphic or generic extern summaries, if any?
 - What soundness theorem should connect executable semantics, typing, and FR?
   Is basic-shape execution enough for a minimal baseline? Do safe guarantees
   support a stronger theorem? Does FR itself imply the desired soundness
   property?
 - If new semantics assumptions are needed, should they live beside the current
   ones in `LeanProofs/ExternAxioms.lean` or in a separate module?
-- Least-effort sequencing question: should the project first make externs
-  executable and then prove against that runtime, or first design the proof
-  boundary as if externs may execute later while the current interpreter still
-  throws an exception?
+- How much of the runtime sub-proposal should be reflected in proof-facing
+  lemmas directly, and how much should stay hidden behind abstract evidence?
+- What is the status of polymorphic or generic extern summaries, if any?
 
 ## Design Decisions / Constraints
 
 - This is a research design for reasoning about externs in FR, not a production
   FFI design.
 - Externs do not perform I/O.
-- `beval` is a total pure Lean function; executable externs, if added, must be
+- `beval` is a total pure Lean function; executable externs must therefore be
   computable Lean-level data/functions supplied to evaluation.
-- The preferred surface story is to keep current externs lambda-like. If
-  runtime/proof identity is needed, it should be generated internally rather
-  than forced into user-visible syntax, including for unnamed and nested
-  externs.
-- If callbacks are supported, they are only through function values explicitly
-  passed or obtained during execution; there is no by-name access back into the
-  enclosing program.
-- The main design focus is on extern functions, since callbacks, effect
-  summaries, and most FR obligations arise there.
+- Extern identity is explicit and user-visible through mandatory `@id` syntax,
+  including for nested returned callables.
+- The registry is fixed for the duration of evaluation and supplied outside the
+  object-language semantics.
+- The current executable design restricts extern inputs to first-order types;
+  richer callback stories are deferred.
 - The current `ExternAxioms.lean` axioms are the known typing-side contract
   floor. Any semantics-side extension should connect to that baseline rather
   than replace it wholesale.
@@ -319,65 +368,6 @@ assumptions.
 - The interface should be suitable for modelling separately verified Poison
   components, even though building the actual separate-compilation pipeline is
   out of scope.
-
-## Notes from the call on 2026-04-16
-
-### Function descriptors
-
-The earlier text already points towards a single extern identity being used for
-both runtime lookup in the `registry` and proof-side lookup of FR `evidence`.
-The main open question is how that identity is assigned for unnamed and nested
-externs, not whether the source language must expose it directly. In line with
-the earlier design constraints, prefer internally generated identity over a
-user-visible `id` annotation on `extern`.
-
-The executable side should receive only what evaluation needs: a Lean-supplied
-value or callable, plus at most the basic-shape information used by shallow
-runtime checks. FR-facing properties should stay on the proof side. The
-declared summary (`ExternReturn`, `Effect`, `SyntaxPredicate`) remains the
-typing/FR contract, while any extra trusted guarantees for `safe` externs are
-supplied separately as evidence indexed by the same extern identity.
-
-### Safe/unsafe distinction
-
-Both `safe` and `unsafe` externs are intended to be executable. The split is
-about what FR may assume, not about whether evaluation can call the extern at
-all. In particular, only actually reached calls should matter to an FR theorem:
-the mere presence of an unsafe declaration, or of an unsafe call in a known-dead
-branch, should not by itself count against the program.
-
-This leaves an open question about how the trust tier split interacts with the
-current typing-side baseline:
-
-1. Soundness/preservation: currently we effectively have one level of
-   typechecking, namely `QTyp`; `EType` typing can be derived from it by
-   erasing the extra information. If we move to two actual typecheckers,
-   `EType` typechecking could always succeed, including for unsafe functions,
-   while `QTyp` typechecking could fail with a typechecking error on unsafe
-   calls.
-
-2. Another approach is to keep a single level of typechecking, but, when
-   typechecking an unsafe function, poison `pc`. Typechecking still passes, but
-   the results are poisoned and FR does not hold, as intended. (favoured
-   direction)
-
-### FN/PFN extern distinction
-
-One idea discussed on the call was that the `extern fn`/`extern pfn` split
-might be derivable from annotations, and that the surface syntax could perhaps
-be simplified accordingly. For user-defined functions, `pfn` does two jobs: it
-restricts the body to `PExpr` and gives the resulting value `parrow` type.
-Externs have no body, so only the second role remains. In the current surface
-story, `extern pfn` is therefore the direct way to introduce an extern callable
-that pure contexts, including predicates, may apply.
-
-Simple argument against: with the current annotation language, this looks
-infeasible, or at least premature. `Effect` summaries alone do not seem rich
-enough to recover the full higher-order purity story, and the present typing
-interface does not derive `parrow` from summaries by itself. In particular,
-higher-order cases still need an explicit account of how function-valued
-arguments and returned callables are classified. So the simplification is worth
-recording as a possible future direction, but it should not be treated as a
-consequence of the current annotations.
-
-
+- `doc/ffi-runtime-design.md` is the detailed runtime companion to this
+  top-level proposal and should be treated as authoritative for runtime
+  mechanics.
