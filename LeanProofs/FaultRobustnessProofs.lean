@@ -27,17 +27,6 @@ open scoped MemoryTypeEnv
 
 
 
--- TODO: FFI runtime — this lemma was provable when extern dispatch always
--- returned `runtimeError`; with the registered dispatcher, extern evaluations
--- can now succeed (yielding closures), so the statement is no longer
--- unconditionally true.  Proof deferred.
-private lemma terminatesTo_extern_absurd {e : Expr} {c₀ c₁ : Config} {o : Value}
-    (_hterm : terminatesTo e c₀ c₁ o)
-    (_hext : (∃ id t p pr, e = Expr.externVal id t p pr) ∨
-            (∃ id n t r eff, e = Expr.externFn id n t r eff) ∨
-            (∃ id n t r, e = Expr.externPfn id n t r)) : False := by
-  sorry
-
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked
   (masked : Tag → Prop)
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
@@ -1495,15 +1484,33 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         (fun m hm e' ctx' res' htc' =>
                           IH' m hm masked e' ctx' res' htc'))
                       htc
-          | externVal id t p pr =>
-              unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
-              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inl ⟨id, t, p, pr, rfl⟩)
-          | externFn id n t r eff =>
-              unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
-              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inl ⟨id, n, t, r, eff, rfl⟩)
-          | externPfn id n t r =>
-              unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
-              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inr ⟨id, n, t, r, rfl⟩)
+          | externVal _id _t _p _pr =>
+              -- FFI: masked single-run FR for extern value dispatch.
+              -- Requires Contract A (tag-mapping soundness) for
+              -- `QTypRespectsTagMeaning` on the declared predicate's fresh tags
+              -- and Contract E (registered ref-typed extern val in bounds) for
+              -- the `ref int` subcase.  The remaining conclusions
+              -- (valueHasETyp, consistentWithRegime, etc.) follow from beval's
+              -- externVal dispatch clause plus `valueMatchesTyp`.
+              sorry
+          | externFn _id _n _t _r _eff =>
+              -- FFI: masked single-run FR for impure extern fn declaration.
+              -- Declaration itself leaves `Config` unchanged and returns a
+              -- closure wrapping the extern AST node.  The remaining
+              -- conclusions rely on Contract A (tag-mapping soundness) for the
+              -- declared effect/return predicates.  Frame (C) and
+              -- guard-provenance (B) are only consumed at call dispatch, not
+              -- at declaration; here we just need A plus a mechanical
+              -- closure-valueHasETyp proof.
+              sorry
+          | externPfn _id _n _t _r =>
+              -- FFI: masked single-run FR for pure extern pfn declaration.
+              -- Same structure as `externFn`: declaration returns a peClosure
+              -- wrapping the extern AST node and leaves `Config` unchanged.
+              -- Requires Contract A (tag-mapping soundness) for declared
+              -- return-spec predicates; no Contract B/C needed at declaration
+              -- because pure externs do not mutate memory.
+              sorry
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
@@ -1762,15 +1769,32 @@ theorem TypeSystemEnforcesFaultRobustness_step
                   stepFR_app ctxᵢ predSat tm e1 e2 fuel' res
                     (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
                     hsingleIH htc
-        | externVal id t p pr =>
-            unfold StepFR; intros; exfalso
-            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inl ⟨id, t, p, pr, rfl⟩)
-        | externFn id n t r eff =>
-            unfold StepFR; intros; exfalso
-            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inl ⟨id, n, t, r, eff, rfl⟩)
-        | externPfn id n t r =>
-            unfold StepFR; intros; exfalso
-            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inr ⟨id, n, t, r, rfl⟩)
+        | externVal _id _t _p _pr =>
+            -- FFI: two-run step FR for extern value dispatch.
+            -- Both runs select the same registered impl (`.val v`) because
+            -- `terminatesTo_preserves_registry` plus equal initial registries
+            -- force a matching dispatch.  Concluding `agreeOnClean`,
+            -- `valueConsistentWithRegime`, and `resultAgreesIfClean` still
+            -- requires Contract A (tag-mapping soundness) for fresh declared
+            -- tags and Contract E (ref-int address bound) for the `ref int`
+            -- subcase.
+            sorry
+        | externFn _id _n _t _r _eff =>
+            -- FFI: two-run step FR for impure extern fn declaration.
+            -- Declaration leaves memory/varEnv unchanged and returns a closure
+            -- wrapping the extern AST node; the two runs build closures with
+            -- equal captured varEnvs modulo `agreeOnClean`.  Closure-level
+            -- fault robustness requires Contract A for any tag meaning
+            -- assigned to the declared effect/return predicates.  Contracts B
+            -- (guard provenance) and C (frame) are consumed only when the
+            -- resulting closure is subsequently applied, not at declaration.
+            sorry
+        | externPfn _id _n _t _r =>
+            -- FFI: two-run step FR for pure extern pfn declaration.
+            -- Same structure as `externFn` but for peClosure; pure externs do
+            -- not mutate memory so no frame/guard-provenance is needed.
+            -- Requires Contract A for declared return-spec predicates.
+            sorry
 
 -- Bridge from step theorem to full specification
 theorem TypeSystemEnforcesFaultRobustness_impl :

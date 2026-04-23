@@ -248,7 +248,10 @@ with no runtime teeth. With it:
 - **FR carries cleanness and guards across extern calls.** Cells
   outside effects keep pre-call guards and cleanness — mirroring
   `PreservesInheritedCleanLocs` for user closures, and the single
-  biggest lever for closing `terminatesTo_extern_absurd`.
+  biggest lever for FR across extern fn *dispatches* inside
+  `StepFRApp`.  (The six former `terminatesTo_extern_absurd` call sites
+  sit at extern *declaration*, not dispatch, so they consume A and E —
+  not C.)
 - **The driver burden is natural.** Drivers typically know *what they
   wrote*; proving "I only wrote to X and Y" is easier than a global
   `wfMem` claim.
@@ -387,7 +390,7 @@ two live axioms becomes axiom-free.
 |------------------|--------------------------|-------|
 | `SemanticsProperties.lean` — `app` fn-case `wfConfig` preservation | `frame` (C), `addrMono` (D) | C gives `wfMem addr' mem'` via frame + int-only heap; D gives `wfVarEnv addr' cfg.varEnv` via monotonicity. |
 | `SemanticsProperties.lean` — `externVal` `ref int` `wfConfig` preservation | `refInBounds` (E) + proven `nextAddr` monotonicity | E at init, monotonicity transports to intermediate `cfg`. |
-| `FaultRobustnessProofs.lean` — `terminatesTo_extern_absurd` × 6 | `frame` (C), `tagSoundness` (A), `guardProvenance` (B) | C supplies the frame needed for `valueConsistentWithRegime` transport; A and B continue in their current roles. |
+| `FaultRobustnessProofs.lean` — `terminatesTo_extern_absurd` × 6 | `tagSoundness` (A), `refInBounds` (E) | Six FR obligations at extern *declaration* sites (three in the masked single-run theorem, three in the step theorem, one per extern form). A covers tag-mapping coherence for the declared predicates in all three forms. E covers the `ref int` subcase of `externVal`, where the registered runtime `.val (.loc a)` must lie below `nextAddr`. Contracts B and C are *not* consumed here because declarations do not invoke dispatch; they are consumed inside `StepFRApp` at the application of extern closures. |
 
 Other extern-related `sorry`s concern top-level extern *declarations*
 (which leave `Config` unchanged) and close mechanically without any
@@ -443,7 +446,7 @@ One unified per-extern evidence model. Five contracts:
 | B | Impure Extern Guard Provenance | ✅ admitted (to migrate) | `.fn` | StepFR App fn-case |
 | C | Extern Fn Frame | 🟡 proposed | `.fn` | `wfConfig` preservation + FR |
 | D | Extern Fn Address Monotonicity | 🟡 proposed | `.fn` | `wfConfig` preservation |
-| E | Registered Ref-Typed Extern Val In Bounds | 🟡 proposed | `.val (.loc _)` at `ref int` | `externVal` preservation |
+| E | Registered Ref-Typed Extern Val In Bounds | 🟡 proposed | `.val (.loc _)` at `ref int` | `externVal` preservation + FR declaration sites |
 
 Contracts A and B already exist as universally-quantified axioms and
 are consumed by the current proof development; migrating them into the
