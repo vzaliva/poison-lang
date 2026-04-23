@@ -99,11 +99,13 @@ private def initialTypeContext (regime : Regime) : TypeContext :=
 
 def typecheckExprSimple (e : _root_.Expr) (regime : Regime := emptyRegime) : TypecheckM QTyp := do
   checkExternIdsUnique e
+  checkExternInputsWholeProgram e
   let result ← typecheck (initialTypeContext regime) e defaultFuel
   return result.qualType
 
 def typecheckExprVerbose (e : _root_.Expr) (regime : Regime := emptyRegime) : TypecheckM TypeResult := do
   checkExternIdsUnique e
+  checkExternInputsWholeProgram e
   typecheck (initialTypeContext regime) e defaultFuel
 
 structure CliOptions where
@@ -314,18 +316,28 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
     IO.FS.writeFile tmpPath trimmed
     try
       let expr ← parsePoisonFile tmpPath
-      match LeanPoison.runBig defaultFuel expr false with
-      | .success newConfig v =>
-        IO.println s!"Result: {v}"
-        IO.println s!"Memory: {newConfig.memory}"
-        IO.FS.removeFile tmpPath
-        replLoop newConfig tmpPath
-      | .outOfFuel =>
-        IO.FS.removeFile tmpPath
-        replLoop config tmpPath
-      | .runtimeError _ =>
-        IO.FS.removeFile tmpPath
-        replLoop config tmpPath
+      -- Enforce extern identifier uniqueness and first-order-input rules in
+      -- the REPL entry, matching the file-execution path.
+      match (do checkExternIdsUnique expr; checkExternInputsWholeProgram expr) with
+      | .error msg =>
+          IO.println s!"Type checking error: {msg}"
+          IO.FS.removeFile tmpPath
+          replLoop config tmpPath
+      | .ok () =>
+        -- Use the REPL's persistent config (seeded with `defaultRegistry`) so
+        -- built-in externs are available to every expression.
+        match LeanPoison.beval defaultFuel config expr false with
+        | .success newConfig v =>
+          IO.println s!"Result: {v}"
+          IO.println s!"Memory: {newConfig.memory}"
+          IO.FS.removeFile tmpPath
+          replLoop newConfig tmpPath
+        | .outOfFuel =>
+          IO.FS.removeFile tmpPath
+          replLoop config tmpPath
+        | .runtimeError _ =>
+          IO.FS.removeFile tmpPath
+          replLoop config tmpPath
     catch e =>
       IO.eprintln s!"Error: {e}"
       replLoop config tmpPath

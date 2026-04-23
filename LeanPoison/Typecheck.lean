@@ -948,6 +948,28 @@ def parseReturnType (retType : ExternReturn):Typ :=
  | ExternReturn.nestedFn _ _ typ extReturn _ => Typ.arrow typ (parseReturnType extReturn)
  | ExternReturn.nestedPfn _ _ typ extReturn => Typ.arrow typ (parseReturnType extReturn)
 
+/-- Require that an executable extern's input type is first-order: one of
+    `{int, bool, unit, string, ref int}`.  Function-typed inputs are rejected
+    (design: `doc/ffi-runtime-design.md`, §Registry).  Arrow and non-int ref
+    types are forbidden at declaration sites. -/
+def checkExternInputFirstOrder (argTyp : Typ) : TypecheckM Unit :=
+  match argTyp with
+  | Typ.int | Typ.bool | Typ.unit | Typ.string => return ()
+  | Typ.ref Typ.int => return ()
+  | Typ.ref t => throw s!"extern callable input must be first-order; ref {repr t} is not executable (only ref int is supported)"
+  | Typ.arrow _ _ => throw "extern callable input must be first-order; function-typed arguments are forbidden"
+
+/-- Recursively enforce `checkExternInputFirstOrder` on every nested-return
+    argument type in an `ExternReturn` chain. -/
+def checkExternReturnInputsFirstOrder : ExternReturn → TypecheckM Unit
+  | ExternReturn.simple _ _ _ => return ()
+  | ExternReturn.nestedFn _ _ argTyp inner _ => do
+      checkExternInputFirstOrder argTyp
+      checkExternReturnInputsFirstOrder inner
+  | ExternReturn.nestedPfn _ _ argTyp inner => do
+      checkExternInputFirstOrder argTyp
+      checkExternReturnInputsFirstOrder inner
+
 /-- Typecheck extern impure function -/
 def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (effects : List Effect) : TypecheckM TypeResult := do
@@ -1703,6 +1725,45 @@ def checkExternIdsUnique (e : Expr) : TypecheckM Unit := do
         else
           go (seen.insert id) rest
   go ∅ ids
+
+/-- Whole-program check that every extern callable's input type is first-order
+    (per `doc/ffi-runtime-design.md`: function-typed inputs to executable
+    extern callables are forbidden; the only admitted input types are
+    `{int, bool, unit, string, ref int}`).  Walks the AST and rejects any
+    violation at both top-level and nested `ExternReturn` positions. -/
+partial def checkExternInputsWholeProgram : Expr → TypecheckM Unit
+  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ => return ()
+  | Expr.op e1 _ e2 => do
+      checkExternInputsWholeProgram e1
+      checkExternInputsWholeProgram e2
+  | Expr.unaryop _ e => checkExternInputsWholeProgram e
+  | Expr.ite e1 e2 e3 => do
+      checkExternInputsWholeProgram e1
+      checkExternInputsWholeProgram e2
+      checkExternInputsWholeProgram e3
+  | Expr.newRef e => checkExternInputsWholeProgram e
+  | Expr.assign e1 e2 => do
+      checkExternInputsWholeProgram e1
+      checkExternInputsWholeProgram e2
+  | Expr.deref e => checkExternInputsWholeProgram e
+  | Expr.seq e1 e2 => do
+      checkExternInputsWholeProgram e1
+      checkExternInputsWholeProgram e2
+  | Expr.vlet _ e1 e2 => do
+      checkExternInputsWholeProgram e1
+      checkExternInputsWholeProgram e2
+  | Expr.fn _ _ body _ => checkExternInputsWholeProgram body
+  | Expr.pfn _ _ body _ => checkExternInputsWholeProgram body
+  | Expr.app e1 e2 => do
+      checkExternInputsWholeProgram e1
+      checkExternInputsWholeProgram e2
+  | Expr.externVal _ _ _ _ => return ()
+  | Expr.externFn _ _ argTyp retSpec _ => do
+      checkExternInputFirstOrder argTyp
+      checkExternReturnInputsFirstOrder retSpec
+  | Expr.externPfn _ _ argTyp retSpec => do
+      checkExternInputFirstOrder argTyp
+      checkExternReturnInputsFirstOrder retSpec
 
 def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   typecheckExpr ctx e fuel

@@ -168,7 +168,8 @@ partial def reprExpr : Expr → Nat → Std.Format
         Std.Format.text " => " ++ reprExpr e 0 ++ Std.Format.text " : " ++ formatTypSurface t2
     | Expr.app e1 e2 => atom e1 ++ Std.Format.text " " ++ atom e2
     | Expr.externVal id t p pred =>
-      Std.Format.text s!"extern val @{id} (" ++
+      -- Surface syntax: `extern val @<id> : (T :> poisoned|clean { SP })`
+      Std.Format.text s!"extern val @{id} : (" ++
       reprTyp t 0 ++
       Std.Format.text " :> " ++
       Std.Format.text (if p then "poisoned" else "clean") ++
