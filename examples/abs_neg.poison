@@ -1,0 +1,2 @@
+-- Test: built-in @12 `abs` on a negative int. f (0 - 7) = 7.
+let f = extern pfn @12 x : (int) -> ((int :> clean {})) in f (0 - 7)

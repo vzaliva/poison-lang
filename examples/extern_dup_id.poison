@@ -1,0 +1,5 @@
+-- Test: two extern declarations sharing the same identifier (@7)
+-- must be rejected during typechecking as a duplicate.
+let a = extern val @7 : (int :> clean {}) in
+let b = extern val @7 : (int :> clean {}) in
+a + b

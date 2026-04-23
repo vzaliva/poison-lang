@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_dup_id.poison (verbose mode)
+
+Type checking error: Duplicate extern identifier @7
+

@@ -1,0 +1,3 @@
+-- Test: well-typed program invoking an extern whose id is not registered
+-- in the driver. Must produce a runtime error naming the missing id.
+let f = extern pfn @999 x : (int) -> ((int :> clean {})) in f 1

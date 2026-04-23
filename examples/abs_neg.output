@@ -1,0 +1,8 @@
+Evaluating file: examples/abs_neg.poison (verbose mode)
+
+Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
+
+Result: 7
+Final state:
+Variable environment: []
+  Memory: []

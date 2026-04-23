@@ -1,0 +1,7 @@
+-- Test: curried `max` using two built-in pure externs (@10 outer, @11 inner).
+-- (max 3) 5 should return 5.
+let m =
+  extern pfn @10 a : (int) -> (
+    extern pfn @11 b : (int) -> ((int :> clean {}))
+  )
+in (m 3) 5
