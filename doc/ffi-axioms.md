@@ -12,9 +12,30 @@ Two of the five contracts below (**A**, **B**) are already admitted as
 universally-quantified axioms in `LeanProofs/ExternAxioms.lean` and are
 used by the current proof development. The remaining three (**C**, **D**,
 **E**) are proposed new contracts needed to close the pending
-extern-related `sorry`s. Under this proposal, **all five migrate into the
-same per-extern evidence bundle**, and `ExternAxioms.lean` ends up
-axiom-free.
+extern-related `sorry`s. Under this proposal, **all five migrate into
+per-extern evidence**, and `ExternAxioms.lean` ends up axiom-free.
+
+### Two layers: typing vs. implementation
+
+The contracts split cleanly along a fundamental axis:
+
+- **Typing-layer (A, B).** Properties of an extern *declaration*. They
+  apply to every declared extern in the program AST regardless of
+  whether a runtime implementation has been registered under the same
+  id. They are consumed by the typechecker and by typing-level FR
+  reasoning. A program with a declaration but no matching registration
+  still needs A and B to typecheck; it just errors at runtime on
+  dispatch.
+- **Implementation-layer (C, D, E).** Properties of a registered
+  runtime *implementation* — claims that the driver-supplied code is
+  well-behaved. They apply only when an impl is actually present in
+  the registry. An unregistered declaration contributes no
+  implementation-layer obligation because there is no impl whose
+  behaviour needs to be constrained.
+
+The evidence registry below reflects this split: declaration evidence
+is keyed by extern id (one bundle per declaration); implementation
+evidence is keyed by `(id, impl)` (one bundle per registration).
 
 ## Context
 
@@ -36,9 +57,15 @@ the same evidence bundle as the three new contracts (C, D, E).
 ## Design principles
 
 - **Evidence passing over global axioms.** Every trust-level obligation
-  is a proof term attached to the specific registered extern it
-  concerns, not a universally-quantified axiom. The top-level FR
-  theorem takes a "trusted registry" as input.
+  is a proof term attached to the specific extern it concerns, not a
+  universally-quantified axiom. The top-level FR theorem takes a
+  "trusted registry" as input.
+- **Typing / implementation separation.** Declaration-scoped
+  obligations (typing-layer) and impl-scoped obligations
+  (implementation-layer) live in distinct evidence bundles. Keeping the
+  two apart lets a program typecheck without any impl evidence, and
+  lets a driver supply impl evidence only for the subset of declared
+  externs it actually registers.
 - **Minimality.** Each contract expresses one thing that cannot be
   proved structurally. Where the shape check (`valueMatchesTyp`), the
   first-order input restriction, or the int-only heap model already
@@ -54,60 +81,99 @@ the same evidence bundle as the three new contracts (C, D, E).
 
 ## The evidence registry
 
-The driver supplies a `TrustedRegistry` pairing the runtime
-`ExternRegistry` with per-entry evidence bundles.
+Two evidence bundles, one per layer, packaged into a single
+`TrustedRegistry` input to the FR proof.
+
+### Typing-layer: declaration evidence
 
 ```lean
-/-- Per-extern evidence. Fields that do not apply to a given impl kind
-    reduce to `True`, so drivers supply a single proof shape regardless
-    of kind. -/
-structure ExternEvidence (id : ExternId) (impl : ExternImpl) : Prop where
-  -- Contract A: tag-mapping coherence (all kinds)
-  tagSoundness    : Contract_A id impl
-  -- Contract B: impure guard provenance (.fn only; True otherwise)
-  guardProvenance : Contract_B id impl
+/-- Typing-layer evidence: properties of an extern *declaration*.
+    Required for every extern in the program AST regardless of
+    registration status. -/
+structure ExternDeclarationEvidence (id : ExternId) : Prop where
+  -- Contract A: tag-mapping coherence (all declaration kinds)
+  tagSoundness    : Contract_A id
+  -- Contract B: impure guard provenance (impure declarations only;
+  --              `True` otherwise)
+  guardProvenance : Contract_B id
+```
+
+### Implementation-layer: registered-impl evidence
+
+```lean
+/-- Implementation-layer evidence: properties of a registered runtime
+    implementation. Required only for ids that actually appear in the
+    runtime registry. Fields that do not apply to a given impl kind
+    reduce to `True`. -/
+structure ExternImplEvidence
+    (id : ExternId) (impl : ExternImpl) : Prop where
   -- Contract C: fn frame (.fn only; True otherwise)
   frame           : Contract_C id impl
   -- Contract D: fn address monotonicity (.fn only; True otherwise)
   addrMono        : Contract_D id impl
   -- Contract E: ref-val init address bound
-  --              (.val (.loc _) at ref int only; True otherwise)
+  --             (.val (.loc _) at ref int only; True otherwise)
   refInBounds     : Contract_E id impl
+```
 
-/-- A trusted registry: runtime registry + per-entry evidence. -/
+### The combined trusted registry
+
+```lean
+/-- Trusted registry: one typing-layer bundle per declared extern,
+    plus one implementation-layer bundle per registered impl. -/
 structure TrustedRegistry where
-  reg      : ExternRegistry
-  evidence : ∀ id impl,
-               reg.get? id = some impl → ExternEvidence id impl
+  -- Typing-layer: covers every declared extern (from program AST).
+  declEv  : ∀ id, ExternDeclared id → ExternDeclarationEvidence id
+  -- Implementation-layer: covers every registered impl (from driver).
+  reg     : ExternRegistry
+  implEv  : ∀ id impl,
+              reg.get? id = some impl → ExternImplEvidence id impl
 ```
 
 Equivalent list-shaped view (what the driver actually writes):
 
 ```lean
-structure TrustedExtern where
+/-- One entry per registered impl; pairs impl with its
+    implementation-layer evidence. -/
+structure TrustedExternImpl where
   id       : ExternId
   impl     : ExternImpl
-  evidence : ExternEvidence id impl
+  evidence : ExternImplEvidence id impl
 
-def TrustedRegistry.ofList (xs : List TrustedExtern)
-    (huniq : xs.Pairwise (fun a b => a.id ≠ b.id)) :
+/-- One entry per declared extern; carries typing-layer evidence. -/
+structure TrustedExternDeclaration where
+  id       : ExternId
+  evidence : ExternDeclarationEvidence id
+
+def TrustedRegistry.ofLists
+    (decls : List TrustedExternDeclaration)
+    (impls : List TrustedExternImpl)
+    (huniqDecls : decls.Pairwise (fun a b => a.id ≠ b.id))
+    (huniqImpls : impls.Pairwise (fun a b => a.id ≠ b.id))
+    (hcover    : ∀ e ∈ impls, ∃ d ∈ decls, d.id = e.id) :
     TrustedRegistry := ...
 ```
 
-FR-level theorems take `(tr : TrustedRegistry)` and destructure
-`tr.evidence id impl hreg` at each extern call site to consume the
-specific contract field they need. Non-extern proof sites are
-unaffected: `tr` threads through but is not consumed.
+`hcover` enforces that every registered impl has a matching
+declaration — an impl without a declaration is a driver bug that the
+typechecker has no contract to reason about.
+
+FR-level theorems take `(tr : TrustedRegistry)` and destructure the
+appropriate layer on demand: `tr.declEv id hdecl` at
+extern-declaration typechecking sites, and `tr.implEv id impl hreg` at
+runtime dispatch sites. Non-extern proof sites are unaffected.
 
 ## Contracts
 
 ### Contract A — Tag Mapping Soundness
 
+**Layer:** typing (declaration-scoped).
 **Status:** ✅ **Already admitted and used.**
 Lives today as `axiom externTagSoundness` in
 `LeanProofs/ExternAxioms.lean`. Consumed by the current proof
 development at extern-declaration typechecking sites. Under this
-proposal, restated as a per-extern field in the evidence bundle.
+proposal, restated as a per-declaration field in
+`ExternDeclarationEvidence`.
 
 **Current admitted form (universally quantified):**
 
@@ -123,10 +189,10 @@ axiom externTagSoundness
   TagMappingRespectsTagMeaning tm mapping preds env
 ```
 
-**Proposed per-extern form:**
+**Proposed per-declaration form:**
 
 ```lean
-def Contract_A (id : ExternId) (_impl : ExternImpl) : Prop :=
+def Contract_A (id : ExternId) : Prop :=
   ∀ (preds : List SyntaxPredicate) (env : VarTypeEnv)
     (tm : TagMeaning) (mapping : TagMapping)
     (nextTag nextTag' : Tag),
@@ -136,9 +202,12 @@ def Contract_A (id : ExternId) (_impl : ExternImpl) : Prop :=
     TagMappingRespectsTagMeaning tm mapping preds env
 ```
 
-`DeclaredPredsFor id` scopes the claim to the predicates of the single
-extern declaration bearing `id`; the universal form is recovered by
-quantifying over all ids that appear in the declaration environment.
+Parameterised by `id` alone — no `impl` argument, because Contract A
+is about the declared predicates of an extern, not about any
+registered implementation. `DeclaredPredsFor id` scopes the claim to
+the predicates of the single extern declaration bearing `id`; the
+universal form is recovered by quantifying over all ids that appear
+in the declaration environment.
 
 **Plain-English intuition.**
 
@@ -148,17 +217,21 @@ quantifying over all ids that appear in the declaration environment.
 
 **Discussion.** Not structurally provable because `tm` is universally
 quantified and `wfTagMeaningCtx` does not constrain fresh tags. The
-semantic content is unchanged by per-extern phrasing; the relocation
-into the evidence bundle is purely structural. Applies to all impl
-kinds because any extern declaration can carry predicates.
+semantic content is unchanged by per-declaration phrasing; the
+relocation into the typing-layer evidence bundle is purely structural.
+Applies to all declaration kinds because any extern declaration
+(`externVal`, `externFn`, `externPfn`) can carry predicates. Does not
+depend on whether an impl is registered for this id.
 
 ### Contract B — Impure Extern Guard Provenance
 
+**Layer:** typing (declaration-scoped).
 **Status:** ✅ **Already admitted and used.**
 Lives today as `axiom externGuardProvenance` in
 `LeanProofs/ExternAxioms.lean`. Consumed by the current FR proof
 development at impure extern call sites. Under this proposal, restated
-as a per-extern field scoped to `.fn` impls.
+as a per-declaration field in `ExternDeclarationEvidence`, scoped to
+impure (`externFn`) declarations.
 
 **Current admitted form (universally quantified):**
 
@@ -173,23 +246,23 @@ axiom externGuardProvenance
   ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in
 ```
 
-**Proposed per-extern form:**
+**Proposed per-declaration form:**
 
 ```lean
-def Contract_B (id : ExternId) (impl : ExternImpl) : Prop :=
-  match impl with
-  | .fn _ =>
-      ∀ (ctx : TypeContext) (r : TypeResult),
-        ImpureExternCallOkForId id ctx r →
-        ctx.pc = true →
-        ∀ l k qt_out,
-          trustedGuardedCell r.memEnv' r.regime' l k qt_out →
-          ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in
-  | _     => True
+def Contract_B (id : ExternId) : Prop :=
+  IsImpureExternDeclaration id →
+  ∀ (ctx : TypeContext) (r : TypeResult),
+    ImpureExternCallOkForId id ctx r →
+    ctx.pc = true →
+    ∀ l k qt_out,
+      trustedGuardedCell r.memEnv' r.regime' l k qt_out →
+      ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in
 ```
 
-where `ImpureExternCallOkForId id ctx r` refines the existing
-`ImpureExternCallOk` to dispatches through `id` specifically.
+The hypothesis `IsImpureExternDeclaration id` makes the claim vacuous
+for `externVal` and `externPfn` declarations. `ImpureExternCallOkForId
+id ctx r` refines the existing `ImpureExternCallOk` to calls that
+dispatch through `id` specifically.
 
 **Plain-English intuition.**
 
@@ -197,14 +270,20 @@ where `ImpureExternCallOkForId id ctx r` refines the existing
 > there was already a trusted-guarded cell at the same location in the
 > input. Impure externs do not conjure new guards while pc is poisoned.
 
-**Discussion.** Same semantic content as the current axiom, narrowed to
-a specific id. Vacuous for `.val` and `.pfn` because only `.fn`
-triggers the FR `ImpureExternCallOk` path.
+**Discussion.** Same semantic content as the current axiom, narrowed
+to a specific id. Vacuous for `externVal` and `externPfn` declarations
+because only `externFn` triggers the FR `ImpureExternCallOk` path.
+Like Contract A, Contract B is a property of the declaration's
+type-level summary, not of any registered impl: it constrains what
+typing results an impure extern *could* produce, regardless of whether
+a runtime impl backs it.
 
 ### Contract C — Extern Fn Frame
 
+**Layer:** implementation (impl-scoped).
 **Status:** 🟡 **Proposed (new).** Keystone of the semantics-side
-story.
+story. A claim about how the driver-supplied `fn` impl behaves at
+runtime — not required when no impl is registered.
 
 **Per-extern form:**
 
@@ -268,8 +347,10 @@ Open formalisation points:
 
 ### Contract D — Extern Fn Address Monotonicity
 
+**Layer:** implementation (impl-scoped).
 **Status:** 🟡 **Proposed (new).** Surgical; consumed at a single
-proof site.
+proof site. A claim about how the driver-supplied `fn` impl behaves at
+runtime.
 
 **Per-extern form:**
 
@@ -301,8 +382,11 @@ monotonicity. D cannot be derived from C.
 
 ### Contract E — Registered Ref-Typed Extern Val in Bounds
 
+**Layer:** implementation (impl-scoped).
 **Status:** 🟡 **Proposed (new).** Narrow: only ref-typed `.val`
-registrations.
+registrations. A claim about the registered runtime value, hence
+impl-scoped even though the value has no dispatch behaviour of its
+own.
 
 **Per-extern form:**
 
@@ -336,18 +420,28 @@ them. Vacuous for all impls except `.val (.loc _)`.
 
 ## How evidence is consumed
 
+Typing-layer evidence is retrieved by id from `tr.declEv`;
+implementation-layer evidence by `(id, impl)` from `tr.implEv`:
+
 ```lean
--- Before (global axiom):
+-- Before (global axioms):
 theorem FaultRobustness_step ... := by
   ...
-  have := externGuardProvenance ctx r hcall hpc l k qt hout
+  have := externGuardProvenance ctx r hcall hpc l k qt hout          -- B
+  have := externTagSoundness tm mapping preds env _ _ halloc          -- A
   ...
 
--- After (evidence registry):
+-- After (evidence registry, two layers):
 theorem FaultRobustness_step (tr : TrustedRegistry) ... := by
   ...
-  have hev := tr.evidence id impl hreg
-  have := hev.guardProvenance ctx r hcallId hpc l k qt hout
+  -- Typing-layer lookup (no registration required):
+  have hdecl := tr.declEv id hDeclared
+  have := hdecl.guardProvenance hImpure ctx r hcallId hpc l k qt hout -- B
+  have := hdecl.tagSoundness preds env tm mapping _ _ hpreds halloc   -- A
+
+  -- Implementation-layer lookup (only when dispatching):
+  have himpl := tr.implEv id impl hreg
+  have := himpl.frame effs hEffs hreg hrun a hlo hne                  -- C
   ...
 ```
 
@@ -359,11 +453,12 @@ whichever `StepFR*` modules need it. Pure-Poison steps are unaffected;
 ## Migration plan for Contracts A and B
 
 Both live today as admitted axioms and have call sites spread across
-`LeanProofs/`. Moving them into the evidence bundle is a structural
-refactor, not a semantic change:
+`LeanProofs/`. Moving them into the typing-layer evidence bundle is a
+structural refactor, not a semantic change:
 
-1. Introduce `TrustedRegistry` and `ExternEvidence` in
-   `LeanProofs/ExternAxioms.lean` (or a sibling file).
+1. Introduce `ExternDeclarationEvidence`, `ExternImplEvidence`, and
+   `TrustedRegistry` in `LeanProofs/ExternAxioms.lean` (or a sibling
+   file).
 2. Re-derive the current universal axiom statements from the bundle
    fields as *theorems* (trivial once `tr` is in scope):
 
@@ -372,7 +467,7 @@ refactor, not a semantic change:
        (tr : TrustedRegistry) ... :
        -- same conclusion as the old axiom
        ... :=
-     (tr.evidence id impl hreg).tagSoundness ...
+     (tr.declEv id hDeclared).tagSoundness ...
    ```
 
 3. Thread `tr` through the top-level FR theorems and intermediate
@@ -381,16 +476,18 @@ refactor, not a semantic change:
    `ExternAxioms.lean` contains **zero** `axiom` declarations — only
    structure definitions, `Contract_*` predicates, and helper lemmas.
 
-Step 4 is the concrete axiom-hygiene payoff: the file that today admits
-two live axioms becomes axiom-free.
+Because A and B are typing-layer, migration can proceed independently
+of any decision about the implementation-layer contracts (C/D/E).
+Step 4 is the concrete axiom-hygiene payoff: the file that today
+admits two live axioms becomes axiom-free.
 
 ## Sorries discharged
 
-| `sorry` location | Evidence fields consumed | Notes |
-|------------------|--------------------------|-------|
-| `SemanticsProperties.lean` — `app` fn-case `wfConfig` preservation | `frame` (C), `addrMono` (D) | C gives `wfMem addr' mem'` via frame + int-only heap; D gives `wfVarEnv addr' cfg.varEnv` via monotonicity. |
-| `SemanticsProperties.lean` — `externVal` `ref int` `wfConfig` preservation | `refInBounds` (E) + proven `nextAddr` monotonicity | E at init, monotonicity transports to intermediate `cfg`. |
-| `FaultRobustnessProofs.lean` — `terminatesTo_extern_absurd` × 6 | `tagSoundness` (A), `refInBounds` (E) | Six FR obligations at extern *declaration* sites (three in the masked single-run theorem, three in the step theorem, one per extern form). A covers tag-mapping coherence for the declared predicates in all three forms. E covers the `ref int` subcase of `externVal`, where the registered runtime `.val (.loc a)` must lie below `nextAddr`. Contracts B and C are *not* consumed here because declarations do not invoke dispatch; they are consumed inside `StepFRApp` at the application of extern closures. |
+| `sorry` location | Layer | Evidence consumed | Notes |
+|------------------|-------|-------------------|-------|
+| `SemanticsProperties.lean` — `app` fn-case `wfConfig` preservation | impl | `implEv.frame` (C), `implEv.addrMono` (D) | C gives `wfMem addr' mem'` via frame + int-only heap; D gives `wfVarEnv addr' cfg.varEnv` via monotonicity. |
+| `SemanticsProperties.lean` — `externVal` `ref int` `wfConfig` preservation | impl | `implEv.refInBounds` (E) + proven `nextAddr` monotonicity | E at init, monotonicity transports to intermediate `cfg`. |
+| `FaultRobustnessProofs.lean` — `terminatesTo_extern_absurd` × 6 | typing (+ impl for `ref int` val) | `declEv.tagSoundness` (A); `implEv.refInBounds` (E) only for the `externVal (ref int)` subcase | Six FR obligations at extern *declaration* sites (three in the masked single-run theorem, three in the step theorem, one per extern form). A covers tag-mapping coherence for the declared predicates in all three forms — pure typing-layer. E is the one impl-layer touch: only the `externVal` of type `ref int` requires the registered runtime `.val (.loc a)` to lie below `nextAddr`. Contracts B, C, D are *not* consumed here because declarations do not invoke dispatch; they are consumed inside `StepFRApp` at the application of extern closures. |
 
 Other extern-related `sorry`s concern top-level extern *declarations*
 (which leave `Config` unchanged) and close mechanically without any
@@ -438,27 +535,39 @@ independent runs of the same extern directly.
 
 ## Summary
 
-One unified per-extern evidence model. Five contracts:
+Five contracts, two layers:
 
-| # | Name | Status | Impl kinds | Consumed at |
-|---|------|--------|------------|-------------|
-| A | Tag Mapping Soundness | ✅ admitted (to migrate) | all | extern-decl typechecking |
-| B | Impure Extern Guard Provenance | ✅ admitted (to migrate) | `.fn` | StepFR App fn-case |
-| C | Extern Fn Frame | 🟡 proposed | `.fn` | `wfConfig` preservation + FR |
-| D | Extern Fn Address Monotonicity | 🟡 proposed | `.fn` | `wfConfig` preservation |
-| E | Registered Ref-Typed Extern Val In Bounds | 🟡 proposed | `.val (.loc _)` at `ref int` | `externVal` preservation + FR declaration sites |
+| # | Name | Layer | Status | Scope | Consumed at |
+|---|------|-------|--------|-------|-------------|
+| A | Tag Mapping Soundness | typing | ✅ admitted (to migrate) | every declaration | extern-decl typechecking |
+| B | Impure Extern Guard Provenance | typing | ✅ admitted (to migrate) | impure (`externFn`) declarations | StepFR App fn-case |
+| C | Extern Fn Frame | impl | 🟡 proposed | registered `.fn` impls | `wfConfig` preservation + FR |
+| D | Extern Fn Address Monotonicity | impl | 🟡 proposed | registered `.fn` impls | `wfConfig` preservation |
+| E | Registered Ref-Typed Extern Val In Bounds | impl | 🟡 proposed | registered `.val (.loc _)` at `ref int` | `externVal` preservation + FR declaration sites |
+
+**Typing-layer (A, B)** constrain properties of extern declarations in
+the program AST. They are consumed whenever a declaration is
+typechecked, regardless of whether a runtime implementation is
+registered under the same id.
+
+**Implementation-layer (C, D, E)** constrain well-behavedness of the
+driver-supplied runtime code (or registered value, in E's case). They
+are consumed only when the registry actually contains an impl for
+that id — an unregistered declaration carries no implementation-layer
+obligation.
 
 Contracts A and B already exist as universally-quantified axioms and
-are consumed by the current proof development; migrating them into the
-evidence bundle is structural. Contracts C, D, and E are new and close
-the three pending extern-related `sorry`s.
+are consumed by the current proof development; migrating them into
+`ExternDeclarationEvidence` is structural. Contracts C, D, and E are
+new and close the three pending extern-related `sorry`s by landing in
+`ExternImplEvidence`.
 
 End state: `ExternAxioms.lean` contains zero `axiom` declarations —
-only the `TrustedRegistry` / `ExternEvidence` structures,
-`Contract_{A,B,C,D,E}` predicate definitions, and derived
-compatibility theorems restating the old universal axiom forms from
-the bundle. The top-level FR theorem becomes
-evidence-parameterised:
+only the `TrustedRegistry`, `ExternDeclarationEvidence`, and
+`ExternImplEvidence` structures, `Contract_{A,B,C,D,E}` predicate
+definitions, and derived compatibility theorems restating the old
+universal axiom forms from the bundle. The top-level FR theorem
+becomes evidence-parameterised:
 
 ```lean
 theorem TypeSystemEnforcesFaultRobustness
@@ -468,5 +577,7 @@ theorem TypeSystemEnforcesFaultRobustness
 ```
 
 Concrete drivers (e.g. `Main.lean`) supply a `TrustedRegistry` with
-concrete proofs; abstract reasoning and separate-compilation scenarios
-supply hypothetical registries to prove component FR independently.
+concrete proofs — typing-layer evidence for every declared extern plus
+implementation-layer evidence for every registered impl. Abstract
+reasoning and separate-compilation scenarios supply hypothetical
+registries to prove component FR independently.
