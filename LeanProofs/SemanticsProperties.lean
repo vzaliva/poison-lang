@@ -1148,15 +1148,17 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
               rw [hrec_e1, hrec_e2]
             rw [h_pure_final, h_pure_cfg2]
         | externVal _id _typ _p _pred =>
-          -- TODO: FFI runtime — extern val dispatch (config preserved; trivially
-          -- preserves pureMode, proof deferred).
-          sorry
+          unfold LeanPoison.beval at hpure
+          simp at hpure
+          split at hpure <;> (try split at hpure) <;> simp_all
         | externFn _id _x _typ _ret _eff =>
-          -- TODO: FFI runtime — extern fn dispatch (config preserved on success).
-          sorry
+          unfold LeanPoison.beval at hpure
+          simp at hpure
+          split at hpure <;> simp_all
         | externPfn _id _x _typ _ret =>
-          -- TODO: FFI runtime — extern pfn dispatch (config preserved on success).
-          sorry
+          unfold LeanPoison.beval at hpure
+          simp at hpure
+          split at hpure <;> simp_all
   exact hmain fuel e c₀ c₁ v verbose hbeval
 
 -- ================================================================
@@ -1376,18 +1378,27 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
       intro m h_lt e' config₀' config₁' v' h_eval'
       exact IH m h_lt e' verbose config₀' config₁' v' h_eval'
     cases e with
-    | externVal id typ poison pred =>
-        -- TODO: FFI runtime — extern dispatch; nextAddr unchanged by
-        -- `externVal` (registry lookup only), but the proof needs to unfold
-        -- the registry match and conclude cfg₀.nextAddr = cfg₁.nextAddr.
-        sorry
-    | externFn id arg argTyp retSpec effects =>
-        -- TODO: FFI runtime — extern dispatch yields a closure; nextAddr
-        -- unchanged but proof not wired.
-        sorry
-    | externPfn id arg argTyp retSpec =>
-        -- TODO: FFI runtime — same as `externFn`.
-        sorry
+    | externVal _id _typ _poison _pred =>
+        cases fuel with
+        | zero => simp [LeanPoison.beval] at h_eval
+        | succ fuel' =>
+          unfold LeanPoison.beval at h_eval
+          simp at h_eval
+          split at h_eval <;> (try split at h_eval) <;> simp_all
+    | externFn _id _arg _argTyp _retSpec _effects =>
+        cases fuel with
+        | zero => simp [LeanPoison.beval] at h_eval
+        | succ fuel' =>
+          unfold LeanPoison.beval at h_eval
+          simp at h_eval
+          split at h_eval <;> simp_all
+    | externPfn _id _arg _argTyp _retSpec =>
+        cases fuel with
+        | zero => simp [LeanPoison.beval] at h_eval
+        | succ fuel' =>
+          unfold LeanPoison.beval at h_eval
+          simp at h_eval
+          split at h_eval <;> simp_all
     | num n | bool b | unit | str s =>
         cases fuel with
         | zero => simp [LeanPoison.beval] at h_eval
@@ -2137,13 +2148,25 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           sorry
       -- Extern cases
       | externVal _id _t _p _pred =>
-          -- TODO: FFI runtime — extern dispatch now succeeds when the id is
-          -- registered; `wfConfig` preservation follows from `valueMatchesTyp`
-          -- but the proof needs to unfold the registry lookup.
+          -- TODO: FFI runtime — `wfConfig cfg₁` is trivial (cfg unchanged),
+          -- but `wfValue cfg₁.nextAddr v` for the `ref int` subcase requires
+          -- the registry contract that registered `Value.loc a` values
+          -- satisfy `a < cfg.nextAddr`. See `doc/ffi-proposal.md` §
+          -- "Pending Proof Obligations (Category B)".
           sorry
-      | externFn _id _name _t _ret _effs =>
-          -- TODO: FFI runtime — extern dispatch yields a closure; proof not wired.
-          sorry
-      | externPfn _id _name _t _ret =>
-          -- TODO: FFI runtime — same as `externFn`.
-          sorry
+      | externFn _id name _t _ret _effs =>
+          unfold LeanPoison.beval at hbeval
+          simp at hbeval
+          split at hbeval
+          · simp_all
+          · cases hbeval
+            exact ⟨hwf₀, wfValue.closure name _ cfg₀.varEnv hwf₀.2⟩
+          · simp_all
+      | externPfn _id name _t _ret =>
+          unfold LeanPoison.beval at hbeval
+          simp at hbeval
+          split at hbeval
+          · simp_all
+          · cases hbeval
+            exact ⟨hwf₀, wfValue.peClosure name _ cfg₀.varEnv hwf₀.2⟩
+          · simp_all

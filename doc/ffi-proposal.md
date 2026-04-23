@@ -324,8 +324,8 @@ them together. All other extern-related `sorry`s in the proof development
 concern top-level extern *declarations* (which leave `Config` unchanged) and
 are mechanical to close without any extern guarantees.
 
-- `LeanProofs/SemanticsProperties.lean:2137` — the `app` case of the
-  `wfConfig` preservation lemma. For the `ExternImpl.fn` dispatch path, the
+- `LeanProofs/SemanticsProperties.lean` — the `app` case of the `wfConfig`
+  preservation lemma. For the `ExternImpl.fn` dispatch path, the
   driver-supplied implementation returns an arbitrary `(mem', addr')` pair.
   Preserving `wfConfig` requires a registry contract stating at minimum:
   - `mem'` is well-formed with respect to `addr'`,
@@ -334,12 +334,18 @@ are mechanical to close without any extern guarantees.
   The `ExternImpl.pfn` sub-case of the same `app` proof and the user-closure
   sub-case are provable without extern guarantees; only the `fn` sub-case is
   guarantee-dependent.
-- `LeanProofs/FaultRobustnessProofs.lean:39` — `terminatesTo_extern_absurd`.
+- `LeanProofs/SemanticsProperties.lean` — the `externVal` case of the
+  `wfConfig` preservation lemma. `wfConfig cfg₁` is trivial (cfg unchanged),
+  but `wfValue cfg₁.nextAddr v` for the `ref int` sub-case needs a registry
+  contract that any registered `Value.loc a` satisfies `a < cfg.nextAddr`.
+  `valueMatchesTyp` only enforces basic shape and accepts any `loc a`;
+  numeric/boolean/unit/string sub-cases are provable without extern
+  guarantees.
+- `LeanProofs/FaultRobustnessProofs.lean` — `terminatesTo_extern_absurd`.
   Under the previous placeholder runtime every extern evaluation errored,
   which made this lemma vacuously true; with a live registry the lemma is
-  statically false. Its six call sites (lines 1500, 1503, 1506, 1767, 1770,
-  1773 — all inside the masked-single-run FR theorem) currently discharge
-  the extern cases by `exfalso`. Each must be replaced with a real
+  statically false. Its six call sites — all inside the masked-single-run
+  FR theorem — currently discharge the extern cases by `exfalso`. Each must be replaced with a real
   FR-at-extern-dispatch proof consuming extern-invocation evidence,
   specifically: when a registered extern with declared return qtype `qt`
   produces value `v`, `v` satisfies

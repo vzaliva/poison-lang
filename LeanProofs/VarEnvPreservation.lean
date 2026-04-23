@@ -136,15 +136,16 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool)
                     rcases hPure with ⟨hEvalFn, _hBodyPure, hBody⟩
                     have hFn : configArg.varEnv = configFn.varEnv := ih' e₁ configArg configFn (Value.peClosure x body env) hEvalFn
                     exact hArg.trans (hFn.trans (bevalFunctionBody_preserves_varEnv fuel' verbose configFn config₁ env x vArg body true v hBody))
-            | externVal _ _ _ _ =>
-                -- TODO: FFI runtime — extern dispatch preserves varEnv (registry
-                -- lookup only), but proof not wired.
-                sorry
-            | externFn _ _ _ _ _ =>
-                -- TODO: FFI runtime — extern dispatch yields a closure, varEnv
-                -- unchanged.
-                sorry
-            | externPfn _ _ _ _ =>
-                -- TODO: FFI runtime — same as `externFn`.
-                sorry
+            | externVal _id _typ _poison _pred =>
+                unfold LeanPoison.beval at hEval
+                simp at hEval
+                split at hEval <;> (try split at hEval) <;> simp_all
+            | externFn _id _arg _argTyp _retSpec _effects =>
+                unfold LeanPoison.beval at hEval
+                simp at hEval
+                split at hEval <;> simp_all
+            | externPfn _id _arg _argTyp _retSpec =>
+                unfold LeanPoison.beval at hEval
+                simp at hEval
+                split at hEval <;> simp_all
   exact hmain fuel e verbose config₀ config₁ v hEval
