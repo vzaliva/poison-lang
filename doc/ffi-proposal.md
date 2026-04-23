@@ -222,7 +222,10 @@ This top-level proposal only needs the following runtime summary:
 
 - extern identity is explicit through mandatory `@id` syntax;
 - nested callable return descriptors carry their own ids as well;
-- ids are globally unique across the whole program;
+- source programs should not reuse the same id across multiple extern
+  declarations, though the current implementation does not enforce that;
+- runtime lookup is keyed by those explicit ids, and the registry rejects
+  duplicate registrations;
 - runtime dispatch uses a flat registry keyed by extern id;
 - the registry is supplied by the surrounding Lean driver and stored in
   `Config`;

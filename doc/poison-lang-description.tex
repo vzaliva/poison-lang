@@ -274,8 +274,12 @@ the kind keyword:
   extern pfn @6 u : (unit) -> ((int :> clean {}))
 \end{verbatim}
 Nested callable return descriptors use the same \texttt{@N} syntax and carry
-their own identifier.  Identifiers must be globally unique across all extern
-declaration sites in a program; the type checker rejects duplicates.
+their own identifier.  These identifiers are the runtime handles used for
+registry lookup.  Source programs should not reuse the same identifier across
+multiple extern declarations, but the current implementation does not detect
+that source-level reuse: ids mentioned in the program are only looked up in the
+registry during evaluation.  The driver-side registry separately rejects
+duplicate registrations for the same identifier.
 
 At runtime, extern declarations are resolved against a registry provided by
 the driver.  The interpreter in \texttt{Main.lean} ships with three built-in
@@ -1195,20 +1199,27 @@ The specification is stated for the full language.
 \subsubsection*{Handling Extern Constructs}
 
 Extern constructs (\texttt{externVal}, \texttt{externFn},
-\texttt{externPfn}) are a placeholder for a future FFI: operationally, their
-runtime evaluation currently fails by producing \texttt{runtimeError}. This is
-temporary---the runtime will be extended to dispatch externs once the FFI is
-implemented---and until then, externs are operationally unreachable. The
-fault-robustness development therefore ranges over successful evaluations of
-the pure evaluator, with extern behaviour handled through the typing and proof
-assumptions rather than through runtime execution.
+\texttt{externPfn}) are now executable through a Lean-supplied registry stored
+in the runtime configuration.  Evaluating an \texttt{externVal} looks up the
+registered value by identifier and performs shallow shape checking.
+Evaluating \texttt{externFn} or \texttt{externPfn} produces an ordinary closure
+whose body is the corresponding extern AST node; applying that closure performs
+registry lookup, argument shape checking, and return-shape or nested-wrapper
+validation.  Missing registrations, kind mismatches, shape mismatches, and
+extern-implementation failures surface as \texttt{runtimeError}.
 
-Even with the FFI unimplemented, externs must still \emph{typecheck soundly}.
+The fault-robustness development nevertheless does not inspect Lean extern
+implementations directly.  It still reasons about externs through typing
+summaries and proof assumptions rather than by analyzing registry code.
+
+Even with executable extern dispatch, externs must still \emph{typecheck
+soundly}.
 The fault-robustness theorem reasons about programs with conditionals whose
 guards can sometimes be determined statically. When the proof walks such a
 conditional, the body of the not-taken branch does not execute but must still
 typecheck. If that branch contains an extern call, the typing rules for externs
-are on the critical path of the proof even though no FFI machinery runs.
+are on the critical path of the proof even though that branch never reaches
+runtime dispatch.
 Externs therefore affect the FR proof only at the \emph{typechecking summary}
 layer: the proof surface concerns what the typechecker states about external
 code. Two axioms pin the typechecker's extern summaries to the proof layer,

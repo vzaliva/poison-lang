@@ -40,32 +40,30 @@ identifier. There is no separate slot/path identity scheme.
 
 ## Identifier Reuse
 
-Identifiers are globally unique across all extern declarations. Any
-second occurrence of an identifier already used by some `extern val`,
-`extern fn`, or `extern pfn` is an error.
+Extern identifiers are the runtime handles used for registry lookup.
+At the source level, the same id should not be reused in two extern
+declarations, whether the extern is top-level or nested. However, the
+current implementation does not enforce or detect that source-level
+uniqueness rule: ids mentioned in Poison source are only looked up in
+the registry during evaluation, not inserted into any table by the
+typechecker or evaluator.
 
-The rule is reflected at two layers:
+Registry uniqueness is a separate property. The concrete enforcement
+point in the current design is the registry:
+`register` rejects duplicate registrations for the same id. During
+evaluation, runtime lookup then performs only id/kind/shape checks for
+the reached extern. Full-AST runtime verification against a canonical
+declaration for a given id is a possible later extension, not part of
+this phase. This is separate from the nested-return shape check below,
+which does not validate a general function type; it only checks that a
+returned value is the expected extern-closure wrapper whose embedded AST
+matches the nested descriptor already present in the currently executing
+extern summary.
 
-- **Program validation / typechecking** is the authoritative enforcer
-  for source-level uniqueness. It collects extern occurrences in the
-  program and rejects any duplicate identifier outright.
-- **Runtime** dispatches by identifier and checks extern kind against
-  the registered implementation.
-
-At runtime there is a second, separate uniqueness check: the
-implementation registry is keyed by extern id and rejects duplicate
-registrations for the same id. During evaluation, runtime lookup then
-performs only id/kind/shape checks for the reached extern. Full-AST
-runtime verification against a canonical declaration for a given id is a
-possible later extension, not part of this phase. This is separate from
-the nested-return shape check below, which does not validate a general
-function type; it only checks that a returned value is the expected
-extern-closure wrapper whose embedded AST matches the nested descriptor
-already present in the currently executing extern summary.
-
-The rule preserves the invariant that one identifier maps to one
-implementation. This keeps the registry and the typechecker simple and
-keeps the source-level rule uniform across refs and callables.
+The important runtime invariant is therefore: one identifier maps to one
+registered implementation. This should not be confused with
+source-level uniqueness of extern declarations, which is desirable but
+not currently checked.
 
 ## Runtime Values
 
@@ -390,8 +388,6 @@ the only one where runtime dispatch must cooperate with the driver.
 
 Typechecking for `extern val @c : (ref int :> poisoned { k })`:
 
-- Requires that `@c` be unique among all extern declarations in the
-  program.
 - Allocates a fresh typing-level location `l_c` in the memory-type
   environment and records the declared qualified type there, exactly as
   the current typechecker does for one `extern val` occurrence.
@@ -401,9 +397,10 @@ Typechecking for `extern val @c : (ref int :> poisoned { k })`:
   remains use-site-local.
 
 There is no identifier-driven logical-location sharing for `extern
-val`. Each declaration site gets its own logical location. Sharing
-must be expressed explicitly through ordinary Poison bindings rather
-than by repeating the same extern identifier.
+val`. Each declaration site gets its own logical location, even if two
+sites happen to mention the same extern id. Sharing must be expressed
+explicitly through ordinary Poison bindings rather than by repeating an
+extern declaration, and current source-id reuse is not rejected.
 
 Driver obligations for a ref-typed `extern val`:
 
@@ -433,7 +430,8 @@ let s = r in
 ```
 
 Repeating `extern val @7` at two declaration sites is not the sharing
-mechanism in this design; it is rejected.
+mechanism in this design; even if such source reuse appears, each
+occurrence still gets its own typing-level location.
 
 ## Affected Files
 
@@ -449,10 +447,10 @@ mechanism in this design; it is rejected.
   extern AST, extend `Expr.app` dispatch, capture env when building
   extern closures, pass first-order argument values directly to impls,
   and accept nested returned extern callables from impl results.
-- `LeanPoison/Typecheck.lean`: enforce the identifier-reuse rule by
-  collecting extern occurrences and rejecting any duplicate identifier
-  outright; keep fresh logical-location allocation for each accepted
-  `extern val` occurrence.
+- `LeanPoison/Typecheck.lean`: keep the executable-input restrictions
+  and fresh logical-location allocation for each accepted `extern val`
+  occurrence. A separate source-level extern-id uniqueness pass could be
+  added later, but it is not part of the current implementation.
 - `LeanPoison/Parser.lean` and `parser/`: accept the identifier
   after `@` at each extern declaration.
 - `poison-lang-spec/poison-lang.ott`,
@@ -462,5 +460,6 @@ mechanism in this design; it is rejected.
   ref int }`.
 - `examples/`: add tests for `extern val` of each admitted type,
   `extern fn` with memory effects, `extern pfn` in predicates,
-  duplicate-identifier rejection across all extern kinds,
+  registry-level duplicate-registration rejection,
+  missing-registration and kind/shape mismatch failures,
   and a curried multi-argument extern such as `max`.
