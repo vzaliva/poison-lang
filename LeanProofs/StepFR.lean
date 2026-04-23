@@ -817,7 +817,7 @@ lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   {cf : Config} {o : Value}
   {a : Address} {pm : Bool}
   (hctxAfter : ctxAfter ctx res = ctx)
-  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm})
   (hvaltyp : valueHasETyp θ o res.qualType.etyp)
   (hctxCons : CtxCons ctx μ ρ θ)
   (hvalc : ValCons ctx.regime res.qualType μ θ o)
@@ -826,7 +826,7 @@ lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   (hric : runtimeInstantiatesCtx ctx μ ρ θ)
   (_hreg : regimeConsistentWithCtxMasked masked ctx)
   (_hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
-  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }) :
+  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm}) :
   ∃ (θ' : RealizationMap),
     wfExtendsMap θ θ' ∧
     valueHasETyp θ' o res.qualType.etyp ∧
@@ -859,8 +859,8 @@ def StepFRSingleRunFinalCleanPcTrue
       regimeConsistentWithCtx ctx →
       consistentWithRegime predSat ctx.regime ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
-        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm} →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm} cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -891,8 +891,8 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
       (∀ k, masked k → ctx.regime.lookup? k = none) →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
-        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm} →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm} cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -3359,7 +3359,7 @@ lemma wfValue_mono_of_le_nextAddr {n m : Address} (h : n ≤ m) (x : Name) (v : 
   wfValue n v → wfValue m v := by
   intro hv
   let cfg : Config :=
-    { memory := (∅ : Memory), varEnv := [(x, v)], nextAddr := n, pureMode := false }
+    { memory := (∅ : Memory), varEnv := [(x, v)], nextAddr := n, pureMode := false}
   have hcfg_n : wfConfig cfg := by
     constructor
     · intro a ha
@@ -4974,9 +4974,9 @@ lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
   | .seq _ _, _, h => by simp [Expr.toPExpr?] at h
   | .fn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
   | .pfn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
-  | .externVal _ _ _, _, h => by simp [Expr.toPExpr?] at h
-  | .externFn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
-  | .externPfn _ _ _, _, h => by simp [Expr.toPExpr?] at h
+  | .externVal _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
+  | .externFn _ _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
+  | .externPfn _ _ _ _, _, h => by simp [Expr.toPExpr?] at h
 
 private lemma QTypRespectsTagMeaning_of_parrow_captured_lookup
   (tm : TagMeaning)
@@ -5294,7 +5294,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary
                 simp [qtypGuardDesc?] at hqd
                 rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
                 exact hpredTm k0 arg pb cap rfl
-    | nestedFn innerArg innerArgTyp innerRet innerEffects =>
+    | nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
       -- Nested fn return: noPred + arrow type — use captured-env transfer
       simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; simp only
       simp only [normalizeAppResultByProvenance]
@@ -5305,7 +5305,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary
             ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
             innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet innerEffects
             hcapTm hargTm)) hinq hqd }
-    | nestedPfn innerArg innerArgTyp innerRet =>
+    | nestedPfn _ innerArg innerArgTyp innerRet =>
       -- Nested pfn return: noPred + parrow type — use captured-env transfer
       simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; simp only
       simp only [normalizeAppResultByProvenance]
@@ -5754,7 +5754,7 @@ lemma applyFnTClosure_extern_ok_qualTypeRespects
                   simp [qtypGuardDesc?] at hqd
                   rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
                   exact hpredTm k0 arg pb cap rfl
-        | nestedFn innerArg innerArgTyp innerRet innerEffects =>
+        | nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
           simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; simp only
           simp only [normalizeAppResultByProvenance]
           split <;> {
@@ -5764,7 +5764,7 @@ lemma applyFnTClosure_extern_ok_qualTypeRespects
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
                 innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet innerEffects
                 hcapTm hargTm)) hinq hqd }
-        | nestedPfn innerArg innerArgTyp innerRet =>
+        | nestedPfn _ innerArg innerArgTyp innerRet =>
           simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; simp only
           simp only [normalizeAppResultByProvenance]
           split <;> {
@@ -8190,16 +8190,16 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
               simp [h_topexpr, pure, Except.pure] at htc; subst htc
               exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
                 QTypRespectsTagMeaning_pfn_regular tm ctx x st1 st2 ctx.pc pbody hwf⟩
-        | externVal typ poison pred =>
+        | externVal _id typ poison pred =>
             simp only [] at htc
             have htc' := by simpa using htc
             exact ⟨typecheckExternVal_preserves_wfTagMeaningCtx tm ctx typ poison pred res hwf htc',
                    typecheckExternVal_QTypRespectsTagMeaning_corollary tm ctx typ poison pred res htc'⟩
-        | externFn _ _ _ _ =>
+        | externFn _ _ _ _ _ =>
             simp only [typecheckExternFn, pure, Except.pure] at htc; cases htc
             exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
               QTypRespectsTagMeaning_fn_extern tm ctx _ _ _ ctx.pc _ _ hwf⟩
-        | externPfn _ _ _ =>
+        | externPfn _ _ _ _ =>
             simp only [typecheckExternPfn, pure, Except.pure] at htc; cases htc
             exact ⟨by simpa [wfTagMeaningCtx, ctxAfter],
               QTypRespectsTagMeaning_pfn_extern tm ctx _ _ _ ctx.pc _ hwf⟩
@@ -10782,12 +10782,12 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩
                     · exact hmember_origin first (by simp) hhead
                     · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
-      | externVal typ poison pred =>
+      | externVal _id typ poison pred =>
           have htc' : typecheckExternVal ctx typ poison pred = .ok res := by
             simpa [typecheckExpr, typecheck] using htc
           exact typecheckExternVal_preserves_lookup_origin ctx typ poison pred res htc' hwf hpc
             l qt_out hpre hlookup_out
-      | externFn arg argTyp retSpec effects =>
+      | externFn _id arg argTyp retSpec effects =>
           unfold typecheckExpr at htc
           simp [typecheckExternFn, pure, Except.pure] at htc
           cases htc

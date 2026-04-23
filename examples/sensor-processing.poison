@@ -1,7 +1,7 @@
 -- Sensor processing example
 
-let sensor1 = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in -- Type: int :> poisoned {guard 1 (y, y >=0 && y <= 0, _)} 
-let sensor2 = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in  -- Type: int :> poisoned {guard 2 (z, z >=0 && z <= 0, _)} 
+let sensor1 = extern val @249 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in -- Type: int :> poisoned {guard 1 (y, y >=0 && y <= 0, _)} 
+let sensor2 = extern val @250 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in  -- Type: int :> poisoned {guard 2 (z, z >=0 && z <= 0, _)} 
 
 let f = fn x : int =>            -- Captures sensor1 with its predicate 
     if ( (sensor1 >= 0) && (sensor1 <= 0 )) then         -- Matches guard "temp" test expression 

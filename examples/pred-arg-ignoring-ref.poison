@@ -4,5 +4,5 @@
 -- matchGuard with condition true would have matched before the fix;
 -- with usesArg check, the ref-level closure is skipped (not eligible).
 -- Standard path is used; program type-checks but fails at runtime (extern)
-let r = ref (extern val : (int :> poisoned { 3, a => true })) in
+let r = ref (extern val @242 : (int :> poisoned { 3, a => true })) in
 if true then !r else 0

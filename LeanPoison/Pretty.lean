@@ -93,8 +93,8 @@ private partial def externReturnInline : ExternReturn → Std.Format
         Std.Format.text " " ++
         syntaxPredInline pred
       )
-  | .nestedFn x typ ret eff =>
-      Std.Format.text "extern fn " ++
+  | .nestedFn id x typ ret eff =>
+      Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
       Std.Format.paren (reprTyp typ 0) ++
@@ -102,8 +102,8 @@ private partial def externReturnInline : ExternReturn → Std.Format
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", effects: " ++
       formatBracedEntries (eff.map effectInline)
-  | .nestedPfn x typ ret =>
-      Std.Format.text "extern pfn " ++
+  | .nestedPfn id x typ ret =>
+      Std.Format.text s!"extern pfn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
       Std.Format.paren (reprTyp typ 0) ++
@@ -167,16 +167,16 @@ partial def reprExpr : Expr → Nat → Std.Format
         Std.Format.text "pfn " ++ Std.Format.text x ++ Std.Format.text " : " ++ formatTypSurface t1 ++
         Std.Format.text " => " ++ reprExpr e 0 ++ Std.Format.text " : " ++ formatTypSurface t2
     | Expr.app e1 e2 => atom e1 ++ Std.Format.text " " ++ atom e2
-    | Expr.externVal t p pred =>
-      Std.Format.text "extern val (" ++
+    | Expr.externVal id t p pred =>
+      Std.Format.text s!"extern val @{id} (" ++
       reprTyp t 0 ++
       Std.Format.text " :> " ++
       Std.Format.text (if p then "poisoned" else "clean") ++
       Std.Format.text " " ++
       syntaxPredInline pred ++
       Std.Format.text ")"
-    | Expr.externFn x t ret eff =>
-      Std.Format.text "extern fn " ++
+    | Expr.externFn id x t ret eff =>
+      Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
       Std.Format.paren (reprTyp t 0) ++
@@ -184,8 +184,8 @@ partial def reprExpr : Expr → Nat → Std.Format
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", effects: " ++
       formatBracedEntries (eff.map effectInline)
-    | Expr.externPfn x t ret =>
-      Std.Format.text "extern pfn " ++
+    | Expr.externPfn id x t ret =>
+      Std.Format.text s!"extern pfn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
       Std.Format.paren (reprTyp t 0) ++

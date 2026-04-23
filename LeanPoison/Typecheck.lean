@@ -862,8 +862,8 @@ def collectExternPreds (retSpec : ExternReturn) (effects : List Effect) : List S
   let effectPreds := effects.map (·.pred)
   match retSpec with
   | ExternReturn.simple _ _ pred => [pred] ++ effectPreds
-  | ExternReturn.nestedFn _ _ _ _ => effectPreds
-  | ExternReturn.nestedPfn _ _ _ => effectPreds
+  | ExternReturn.nestedFn _ _ _ _ _ => effectPreds
+  | ExternReturn.nestedPfn _ _ _ _ => effectPreds
 
 /-- Convert (Typ, Bool, Predicate) to QTyp for EXTERN VALUES.
     Used only for extern val declarations at definition time.
@@ -945,8 +945,8 @@ def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : S
 def parseReturnType (retType : ExternReturn):Typ :=
  match retType with
  | ExternReturn.simple typ _ _ => typ
- | ExternReturn.nestedFn _ typ extReturn _ => Typ.arrow typ (parseReturnType extReturn)
- | ExternReturn.nestedPfn _ typ extReturn => Typ.arrow typ (parseReturnType extReturn)
+ | ExternReturn.nestedFn _ _ typ extReturn _ => Typ.arrow typ (parseReturnType extReturn)
+ | ExternReturn.nestedPfn _ _ typ extReturn => Typ.arrow typ (parseReturnType extReturn)
 
 /-- Typecheck extern impure function -/
 def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
@@ -1061,9 +1061,9 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
     | Expr.unaryop op e => typecheckUnaryOp ctx op e fuel
-    | Expr.externVal typ poison pred => typecheckExternVal ctx typ poison pred
-    | Expr.externFn arg argTyp retSpec effects => typecheckExternFn ctx arg argTyp retSpec effects
-    | Expr.externPfn arg argTyp retSpec => typecheckExternPfn ctx arg argTyp retSpec
+    | Expr.externVal _ typ poison pred => typecheckExternVal ctx typ poison pred
+    | Expr.externFn _ arg argTyp retSpec effects => typecheckExternFn ctx arg argTyp retSpec effects
+    | Expr.externPfn _ arg argTyp retSpec => typecheckExternPfn ctx arg argTyp retSpec
 termination_by fuel
 
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
@@ -1316,7 +1316,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := result2.regime' }
 
-        | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
+        | ExternReturn.nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
@@ -1325,7 +1325,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag', regime' := result2.regime' }
 
-        | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
+        | ExternReturn.nestedPfn _ innerArg innerArgTyp innerRet =>
             let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
@@ -1384,7 +1384,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := result2.regime' }
 
-        | ExternReturn.nestedFn innerArg innerArgTyp innerRet innerEffects =>
+        | ExternReturn.nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             -- Issue #111: taint app result by function poison (p, p1)
@@ -1395,7 +1395,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
 
-        | ExternReturn.nestedPfn innerArg innerArgTyp innerRet =>
+        | ExternReturn.nestedPfn _ innerArg innerArgTyp innerRet =>
             let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             -- Issue #111: taint app result by function poison (p, p1)
@@ -1651,5 +1651,58 @@ lemma normalizeAppResultByProvenance_etyp (p1p : Poison) (qt : QTyp) :
   simp only [normalizeAppResultByProvenance]; split_ifs <;> rfl
 
 -- Main type checking function
+/-- Collect every `ExternId` that appears anywhere in an `ExternReturn`
+    descriptor, reading left to right. Each nested callable contributes
+    its own id; `ExternReturn.simple` contributes none (its id lives on
+    the enclosing top-level extern). -/
+private partial def collectExternIdsReturn : ExternReturn → List ExternId
+  | ExternReturn.simple _ _ _ => []
+  | ExternReturn.nestedFn id _ _ inner _ => id :: collectExternIdsReturn inner
+  | ExternReturn.nestedPfn id _ _ inner => id :: collectExternIdsReturn inner
+
+mutual
+partial def collectExternIdsPred : SyntaxPredicate → List ExternId
+  | SyntaxPredicate.guardClosure _ _ body => collectExternIdsExpr body
+  | SyntaxPredicate.guardOnly _ => []
+  | SyntaxPredicate.noPred => []
+
+partial def collectExternIdsExpr : Expr → List ExternId
+  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ => []
+  | Expr.op e1 _ e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
+  | Expr.unaryop _ e => collectExternIdsExpr e
+  | Expr.ite e1 e2 e3 =>
+      collectExternIdsExpr e1 ++ collectExternIdsExpr e2 ++ collectExternIdsExpr e3
+  | Expr.newRef e => collectExternIdsExpr e
+  | Expr.assign e1 e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
+  | Expr.deref e => collectExternIdsExpr e
+  | Expr.seq e1 e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
+  | Expr.vlet _ e1 e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
+  | Expr.fn _ _ body _ => collectExternIdsExpr body
+  | Expr.pfn _ _ body _ => collectExternIdsExpr body
+  | Expr.app e1 e2 => collectExternIdsExpr e1 ++ collectExternIdsExpr e2
+  | Expr.externVal id _ _ pred =>
+      id :: collectExternIdsPred pred
+  | Expr.externFn id _ _ retSpec effects =>
+      id :: collectExternIdsReturn retSpec ++
+        (effects.flatMap (fun eff => collectExternIdsPred eff.pred))
+  | Expr.externPfn id _ _ retSpec =>
+      id :: collectExternIdsReturn retSpec
+end
+
+/-- Reject a program that uses the same extern identifier in two distinct
+    declaration sites. Walks the program once and diffs ids against a seen
+    set. This is a whole-program check — callers that want a full program
+    typecheck should call this before `typecheck`. -/
+def checkExternIdsUnique (e : Expr) : TypecheckM Unit := do
+  let ids := collectExternIdsExpr e
+  let rec go (seen : Std.ExtTreeSet ExternId) : List ExternId → TypecheckM Unit
+    | [] => return ()
+    | id :: rest =>
+        if seen.contains id then
+          throw s!"Duplicate extern identifier @{id}"
+        else
+          go (seen.insert id) rest
+  go ∅ ids
+
 def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   typecheckExpr ctx e fuel

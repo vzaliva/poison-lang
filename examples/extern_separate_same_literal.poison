@@ -2,6 +2,6 @@
 -- concrete tags. Even though both use tag index 3, they are independent
 -- extern specs with independent fresh tag allocation. We store both into
 -- refs so both tags appear in the final MemoryTypeEnv.
-let a = ref (extern val : (int :> poisoned { 3, x => x >= 0 })) in
-let b = ref (extern val : (int :> poisoned { 3, x => x >= 0 })) in
+let a = ref (extern val @119 : (int :> poisoned { 3, x => x >= 0 })) in
+let b = ref (extern val @120 : (int :> poisoned { 3, x => x >= 0 })) in
 !a + !b

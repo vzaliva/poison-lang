@@ -3,6 +3,6 @@
 -- closure bodies (v >= 0 vs v >= 10). This must produce a type error.
 let s = ref 0 in
 let f =
-  extern fn x : (int) -> ( (int :> poisoned { 7, v => v >= 0 }) ) ,
+  extern fn @101 x : (int) -> ( (int :> poisoned { 7, v => v >= 0 }) ) ,
     effects: { !s :> (int :> poisoned { 7, v => v >= 10 }) }
 in f 1

@@ -194,27 +194,85 @@ mutual
         | .success config' v2 =>
           match beval (fuel - 1) config' e1 verbose with
           | .success config'' (Value.closure x body env) =>
-            if config''.pureMode then
-              .runtimeError "Pure function cannot apply impure closure"
-            else
-              bevalFunctionBody (fuel - 1) verbose config'' env x v2 body false
+            -- Extern impure dispatch: body is an extern AST node.
+            match body with
+            | Expr.externFn id _ argTyp retSpec _ =>
+              if config''.pureMode then
+                .runtimeError "Pure function cannot apply impure closure"
+              else
+                match config''.registry.get? id with
+                | none => .runtimeError (ExternError.format (.missing id))
+                | some (ExternImpl.fn implFn) =>
+                  if ¬ valueMatchesTyp v2 argTyp then
+                    .runtimeError (ExternError.format (.shapeMismatch id))
+                  else
+                    let unifiedEnv := VarEnv.update env x v2
+                    match implFn unifiedEnv v2 config''.memory config''.nextAddr with
+                    | .error err => .runtimeError (ExternError.format err)
+                    | .ok (v, mem', addr') =>
+                      match validateExternReturn id retSpec v with
+                      | .error err => .runtimeError (ExternError.format err)
+                      | .ok v' =>
+                        .success { config'' with memory := mem', nextAddr := addr' } v'
+                | some _ => .runtimeError (ExternError.format (.kindMismatch id))
+            | _ =>
+              if config''.pureMode then
+                .runtimeError "Pure function cannot apply impure closure"
+              else
+                bevalFunctionBody (fuel - 1) verbose config'' env x v2 body false
           | .success config'' (Value.peClosure x body env) =>
-            match Expr.toPExpr? body with
-            | some _ => bevalFunctionBody (fuel - 1) verbose config'' env x v2 body true
-            | none => .runtimeError "Pure closure body is not pure"
+            -- Extern pure dispatch: body is an extern AST node.
+            match body with
+            | Expr.externPfn id _ argTyp retSpec =>
+              match config''.registry.get? id with
+              | none => .runtimeError (ExternError.format (.missing id))
+              | some (ExternImpl.pfn implFn) =>
+                if ¬ valueMatchesTyp v2 argTyp then
+                  .runtimeError (ExternError.format (.shapeMismatch id))
+                else
+                  let unifiedEnv := VarEnv.update env x v2
+                  match implFn unifiedEnv v2 config''.memory with
+                  | .error err => .runtimeError (ExternError.format err)
+                  | .ok v =>
+                    match validateExternReturn id retSpec v with
+                    | .error err => .runtimeError (ExternError.format err)
+                    | .ok v' => .success config'' v'
+              | some _ => .runtimeError (ExternError.format (.kindMismatch id))
+            | _ =>
+              match Expr.toPExpr? body with
+              | some _ => bevalFunctionBody (fuel - 1) verbose config'' env x v2 body true
+              | none => .runtimeError "Pure closure body is not pure"
           | .success _ _ => .runtimeError "Runtime type error: expected function in application"
           | .outOfFuel => .outOfFuel
           | .runtimeError msg => .runtimeError msg
         | .outOfFuel => .outOfFuel
         | .runtimeError msg => .runtimeError msg
 
-      -- Extern placeholders (cannot be executed)
-      | Expr.externVal _ _ _ =>
-        .runtimeError "Cannot execute extern value – no implementation provided"
-      | Expr.externFn _ _ _ _ =>
-        .runtimeError "Cannot execute extern function – no implementation provided"
-      | Expr.externPfn _ _ _ =>
-        .runtimeError "Cannot execute extern pure function – no implementation provided"
+      -- Extern declarations: look up in the registry and produce a runtime
+      -- value. See `doc/ffi-runtime-design.md`.
+      | Expr.externVal id typ _poison _pred =>
+        match config.registry.get? id with
+        | none => .runtimeError (ExternError.format (.missing id))
+        | some (ExternImpl.val v) =>
+            if valueMatchesTyp v typ then .success config v
+            else .runtimeError (ExternError.format (.shapeMismatch id))
+        | some _ => .runtimeError (ExternError.format (.kindMismatch id))
+      | Expr.externFn id argName argTyp retSpec effects =>
+        match config.registry.get? id with
+        | none => .runtimeError (ExternError.format (.missing id))
+        | some (ExternImpl.fn _) =>
+            .success config
+              (Value.closure argName
+                (Expr.externFn id argName argTyp retSpec effects) config.varEnv)
+        | some _ => .runtimeError (ExternError.format (.kindMismatch id))
+      | Expr.externPfn id argName argTyp retSpec =>
+        match config.registry.get? id with
+        | none => .runtimeError (ExternError.format (.missing id))
+        | some (ExternImpl.pfn _) =>
+            .success config
+              (Value.peClosure argName
+                (Expr.externPfn id argName argTyp retSpec) config.varEnv)
+        | some _ => .runtimeError (ExternError.format (.kindMismatch id))
 
   /-- Helper for evaluating function bodies (impure vs pure) -/
   def bevalFunctionBody (fuel : Nat) (verbose : Bool)
@@ -239,9 +297,11 @@ mutual
 
 end -- mutual
 
-/- Convenience runner that returns EvalResult from an empty initial state. -/
+/- Convenience runner that returns EvalResult from an empty initial state.
+   Uses an empty extern registry — callers that need registered externs should
+   call `beval` directly with a `Config` carrying a populated registry. -/
 def runBig (fuel : Nat) (expr : Expr) (verbose : Bool := false) : EvalResult :=
-  let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
+  let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false, emptyExternRegistry⟩
   beval fuel initialConfig expr verbose
 
 end LeanPoison

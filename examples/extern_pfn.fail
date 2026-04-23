@@ -2,4 +2,4 @@ Evaluating file: examples/extern_pfn.poison (verbose mode)
 
 Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
 
-Runtime error: Cannot execute extern pure function – no implementation provided
+Runtime error: extern id 117 not registered

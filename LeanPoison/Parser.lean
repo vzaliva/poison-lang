@@ -396,8 +396,12 @@ mutual
               | Content.Element e => some e
               | _ => none)
             match contsFiltered.toList with
-            | [e] => let (typ, poisonStatus, pred) ← xmlToQTyp e
-                     return Expr.externVal typ poisonStatus pred
+            | [Element.Element "number" _ #[Content.Character idStr], e] =>
+                match idStr.trim.toNat? with
+                | some id =>
+                    let (typ, poisonStatus, pred) ← xmlToQTyp e
+                    return Expr.externVal id typ poisonStatus pred
+                | none => .error s!"Invalid extern_val id: {idStr}"
             | _ => .error "Invalid extern_val content"
 
 /- | externFn : Name → Typ → ExternReturn → List Effect → Expr
@@ -420,7 +424,11 @@ mutual
               | Content.Element e => some e
               | _ => none)
               match contsFiltered.toList with
-                | [e_name ,e_argTyp,e_retType] =>
+                | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType] =>
+                    let id <-
+                      match idStr.trim.toNat? with
+                      | some n => .ok n
+                      | none => .error s!"Invalid extern_fn id: {idStr}"
                     let name <-
                       match e_name with
                         | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
@@ -433,10 +441,14 @@ mutual
 
                     let retType <- xmlToRetType e_retType
 
-                    return Expr.externFn name (← argTyp) retType []
+                    return Expr.externFn id name (← argTyp) retType []
 
 
-                | [e_name ,e_argTyp,e_retType,e_effects] =>
+                | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType,e_effects] =>
+                  let id <-
+                    match idStr.trim.toNat? with
+                    | some n => .ok n
+                    | none => .error s!"Invalid extern_fn id: {idStr}"
                   let name <-
                     match e_name with
                     | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
@@ -452,7 +464,7 @@ mutual
                       (xmlToEffects ( Element.Element "effects_block" attr effectsContent))
                     | _ => .error ("Invalid effects : "++ toString e_effects)
 
-                  return Expr.externFn name (← argTyp) retType (<- effectBlock)
+                  return Expr.externFn id name (← argTyp) retType (<- effectBlock)
 
                 | _ => .error "Invalid extern_fn content"
 
@@ -463,7 +475,11 @@ mutual
               | _ => none)
 
               match contsFiltered.toList with
-                | [e_name ,e_argTyp,e_retType] =>
+                | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType] =>
+                  let id <-
+                    match idStr.trim.toNat? with
+                    | some n => .ok n
+                    | none => .error s!"Invalid extern_pfn id: {idStr}"
                   let name <-
                     match e_name with
                     | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
@@ -474,7 +490,7 @@ mutual
                       | Element.Element "paren_type" _ contents => parseTypeExpr contents
                       | _ => .error "Invalid extern_pfn arg type"
 
-                  return Expr.externPfn name (← argTyp) (<- xmlToRetType e_retType)
+                  return Expr.externPfn id name (← argTyp) (<- xmlToRetType e_retType)
                 | _ => .error "Invalid extern_pfn content"
 
 
@@ -586,20 +602,30 @@ mutual
           | _ => none
 
         match elems.toList with
-        | [Element.Element "identifier" _ #[Content.Character name],
+        | [Element.Element "number" _ #[Content.Character idStr],
+          Element.Element "identifier" _ #[Content.Character name],
           Element.Element "paren_type" _ argTypeContents,
           e_retType] =>
+            let id <-
+              match idStr.trim.toNat? with
+              | some n => .ok n
+              | none => .error s!"Invalid nested extern_fn id: {idStr}"
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedFn name.trim argType retType []
+            return ExternReturn.nestedFn id name.trim argType retType []
 
-        | [Element.Element "identifier" _ #[Content.Character name],
+        | [Element.Element "number" _ #[Content.Character idStr],
+          Element.Element "identifier" _ #[Content.Character name],
           Element.Element "paren_type" _ argTypeContents,
           e_retType,e_effects] =>
+            let id <-
+              match idStr.trim.toNat? with
+              | some n => .ok n
+              | none => .error s!"Invalid nested extern_fn id: {idStr}"
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
             let effects <- xmlToEffects e_effects
-            return ExternReturn.nestedFn name.trim argType retType effects
+            return ExternReturn.nestedFn id name.trim argType retType effects
 
         | _ => .error s!"Invalid extern_fn shape in RetType: {elems.toList}"
 
@@ -609,12 +635,17 @@ mutual
           | Content.Element el => some el
           | _ => none
         match elems.toList with
-        | [Element.Element "identifier" _ #[Content.Character name],
+        | [Element.Element "number" _ #[Content.Character idStr],
+          Element.Element "identifier" _ #[Content.Character name],
           Element.Element "paren_type" _ argTypeContents,
           e_retType] =>
+            let id <-
+              match idStr.trim.toNat? with
+              | some n => .ok n
+              | none => .error s!"Invalid nested extern_pfn id: {idStr}"
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedPfn name.trim argType retType
+            return ExternReturn.nestedPfn id name.trim argType retType
         | _ => .error s!"Invalid extern_pfn shape in RetType: {contents}"
 
     | _ => .error s!"Invalid RetType element: {x}"

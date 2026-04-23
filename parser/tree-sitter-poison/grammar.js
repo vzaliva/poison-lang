@@ -203,6 +203,8 @@ module.exports = grammar({
     extern_val: $ => prec.left(seq(
       "extern",
       "val",
+      "@",
+      field("id", $.number),
       ":",
       field("type", $.qtyp)
 
@@ -211,6 +213,8 @@ module.exports = grammar({
     extern_fn: $ => prec.left(seq(
       "extern",
       "fn",
+      "@",
+      field("id", $.number),
       field("name", $.identifier),
       ":",
       field("arg_type", $.paren_type),
@@ -224,6 +228,8 @@ module.exports = grammar({
     extern_pfn: $ => prec.left(seq(
       "extern",
       "pfn",
+      "@",
+      field("id", $.number),
       field("name", $.identifier),
       ":",
       field("arg_type", $.paren_type),

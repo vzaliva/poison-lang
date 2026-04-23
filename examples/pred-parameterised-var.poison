@@ -1,5 +1,5 @@
 -- Test: parameterised variable predicate still matches uniquely (regression)
--- extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) produces value with predicate (limit >= 0 && limit <= 0)
+-- extern val @245 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) produces value with predicate (limit >= 0 && limit <= 0)
 -- Condition (x >= 0) && (x <= 0) matches; matchGuard succeeds
-let x = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
+let x = extern val @246 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
 if (x >= 0) && (x <= 0) then 1 else 0

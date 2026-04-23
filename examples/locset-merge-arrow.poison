@@ -11,7 +11,7 @@
 --        target : ref int @ {l_target}
 --   2. Build a function `chooseRef` via an `if`:
 --        - Branch 1: closure returns `safe` without modifying memory.
---        - Branch 2: closure writes `extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) })` into `target` and returns it.
+--        - Branch 2: closure writes `extern val @228 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) })` into `target` and returns it.
 --      The branches have the same surface type `unit -> ref int`, so the
 --      conditional joins them into a single arrow type whose closure set
 --      contains *both* alternatives.
@@ -47,7 +47,7 @@ let chooseRef =
     -- Result of this branch when applied:
     --   ref int @ {l_target}, and the cell at l_target is poisoned in Γ.
     fn u : unit =>
-      (target := extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) });      -- assignment writes poisoned data into l_target
+      (target := extern val @229 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) });      -- assignment writes poisoned data into l_target
        target)                 -- return the poisoned reference
       : (ref int)
 in

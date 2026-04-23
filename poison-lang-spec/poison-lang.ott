@@ -30,6 +30,10 @@ metavar tag_index, ki ::=
   {{ com Symbolic tag indices (local to extern specs) }}
   {{ phantom }}
 
+metavar extern_id, eid ::=
+  {{ com Extern identifiers (author-chosen natural numbers) }}
+  {{ phantom }}
+
 grammar
 
 locset, LS :: 'LS_' ::= {{ com location sets }}
@@ -88,9 +92,9 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure fn with return type }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
-  | extern_val ST p SP      ::   :: extern_val {{ com extern value }}
-  | extern_fn x ST ER ESL   ::   :: extern_fn {{ com extern impure function }}
-  | extern_pfn x ST ER      ::   :: extern_pfn {{ com extern pure function }}
+  | extern_val @ eid ST p SP      ::   :: extern_val {{ com extern value with mandatory identifier }} {{ tex \mathsf{extern}\,\mathsf{val}\,@[[eid]]\,[[ST]]\,[[p]]\,[[SP]] }}
+  | extern_fn @ eid x ST ER ESL   ::   :: extern_fn {{ com extern impure function with mandatory identifier }} {{ tex \mathsf{extern}\,\mathsf{fn}\,@[[eid]]\,[[x]]:[[ST]] \to [[ER]]\,;\,[[ESL]] }}
+  | extern_pfn @ eid x ST ER      ::   :: extern_pfn {{ com extern pure function with mandatory identifier }} {{ tex \mathsf{extern}\,\mathsf{pfn}\,@[[eid]]\,[[x]]:[[ST]] \Rightarrow [[ER]] }}
 
 
 pe :: 'PE_' ::=            {{ com pure expressions }}
@@ -237,11 +241,13 @@ effect_list, ESL :: 'ESL_' ::= {{ com effect list }}
   | empty                    ::   :: empty
   | ES , ESL                 ::   :: cons
 
-% Extern return specification
+% Extern return specification.  Nested callable return forms carry their own
+% extern identifier (@eid); `simple` returns do not (the id lives on the
+% enclosing top-level extern).
 extern_return, ER :: 'ER_' ::= {{ com extern return spec }}
-  | simple ST p SP           ::   :: simple {{ com simple return }} {{ tex ([[ST]] \triangleright [[p]]\, \{ [[SP]] \}) }}
-  | nested_fn x ST ER ESL    ::   :: nested_fn {{ com nested impure fn return }} {{ tex \mathsf{fn}\,[[x]]:[[ST]] \to [[ER]]\,;\,[[ESL]] }}
-  | nested_pfn x ST ER       ::   :: nested_pfn {{ com nested pure fn return }} {{ tex \mathsf{pfn}\,[[x]]:[[ST]] \Rightarrow [[ER]] }}
+  | simple ST p SP                ::   :: simple {{ com simple return }} {{ tex ([[ST]] \triangleright [[p]]\, \{ [[SP]] \}) }}
+  | nested_fn @ eid x ST ER ESL   ::   :: nested_fn {{ com nested impure fn return with identifier }} {{ tex \mathsf{fn}\,@[[eid]]\,[[x]]:[[ST]] \to [[ER]]\,;\,[[ESL]] }}
+  | nested_pfn @ eid x ST ER      ::   :: nested_pfn {{ com nested pure fn return with identifier }} {{ tex \mathsf{pfn}\,@[[eid]]\,[[x]]:[[ST]] \Rightarrow [[ER]] }}
 
 % Tag resolution map (symbolic index -> concrete tag)
 tag_map, TM :: 'TM_' ::= {{ com tag resolution map }}
@@ -1244,9 +1250,9 @@ externValConvert ST G = T G'
 freshTags SP k = k' TM
 resolve TM SP S = P
 ----------------------------------------------------------------------  :: extern_val
-pm ; R ; pc ; G ; S ; L |- extern_val ST p SP : T :> p { P } -| G' ; L ; R
+pm ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L ; R
 
-% Extern impure function: extern fn x : (ST1) -> ER , effects: ESL
+% Extern impure function: extern fn @ eid x : (ST1) -> ER , effects: ESL
 % The function is wrapped in an extern typing closure containing the unresolved
 % return spec ER, effect list ESL, and captured environment S.
 % Tag resolution is deferred to application time (each call gets fresh tags).
@@ -1256,16 +1262,21 @@ pm ; R ; pc ; G ; S ; L |- extern_val ST p SP : T :> p { P } -| G' ; L ; R
 extern_spec_wf ER ESL
 returnType ER = ST2
 ----------------------------------------------------------------------  :: extern_fn
-pm ; R ; pc ; G ; S ; L |- extern_fn x ST1 ER ESL : ST1 -> ST2 # pc tclosures extern_tcl ( x , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
+pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x ST1 ER ESL : ST1 -> ST2 # pc tclosures extern_tcl ( x , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
 
-% Extern pure function: extern pfn x : (ST1) -> ER
+% Extern pure function: extern pfn @ eid x : (ST1) -> ER
 % The function is wrapped in an extern pure typing closure.
 % Tag resolution is deferred to application time (each call gets fresh tags).
 % extern_spec_wf ensures all predicates in ER satisfy extern_wf.
 extern_spec_wf ER empty
 returnType ER = ST2
 ----------------------------------------------------------------------  :: extern_pfn
-pm ; R ; pc ; G ; S ; L |- extern_pfn x ST1 ER : ST1 -> ST2 # pc tpclosures extern_ptcl ( x , ER , S ) :> pc { no_pred } -| G ; L ; R
+pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x ST1 ER : ST1 -> ST2 # pc tpclosures extern_ptcl ( x , ER , S ) :> pc { no_pred } -| G ; L ; R
+
+% Side condition (not a typing rule): within a program, the set of extern
+% identifiers @eid appearing in extern_val / extern_fn / extern_pfn forms
+% (including those inside nested_fn / nested_pfn return descriptors) must be
+% globally unique.  Duplicates are rejected during typechecking.
 
 % --- Extern closure application rules ---
 % When an extern typing closure is applied, tags are resolved fresh at each call site.
@@ -1302,7 +1313,7 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 {
 % The inner return spec ER' is NOT resolved; it is wrapped in a new extern_tcl
 % with the updated captured environment (deferred inner resolution).
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_fn x1 ST3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_fn @ eid1 x1 ST3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 allocEffectTags ESL k = k' TM
 resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
@@ -1313,7 +1324,7 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl ( x1
 % Extern impure function application - nested pure fn return
 % Same pattern: only outer ESL preds allocated; inner ER' deferred in extern_ptcl.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_pfn x1 ST3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_pfn @ eid1 x1 ST3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 allocEffectTags ESL k = k' TM
 resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
@@ -1339,7 +1350,7 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { App
 % Extern pure function application - nested impure fn return
 % No effects to resolve (pure context). Inner spec ER' deferred in new extern_tcl.
 pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , nested_fn x1 ST3 ER' ESL' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , nested_fn @ eid1 x1 ST3 ER' ESL' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 returnType ER' = ST4
 ----------------------------------------------------------------------  :: app_extern_pfn_nested_fn
@@ -1348,7 +1359,7 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl ( x1 , E
 % Extern pure function application - nested pure fn return
 % No effects to resolve (pure context). Inner spec ER' deferred in new extern_ptcl.
 pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , nested_pfn x1 ST3 ER' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , nested_pfn @ eid1 x1 ST3 ER' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 returnType ER' = ST4
 ----------------------------------------------------------------------  :: app_extern_pfn_nested_pfn

@@ -2,4 +2,4 @@ Evaluating file: examples/vlet-shadow-uninterpreted.poison (verbose mode)
 
 Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
 
-Runtime error: Cannot execute extern value – no implementation provided
+Runtime error: extern id 253 not registered

@@ -150,26 +150,38 @@ lemma stepFR_op
   -- Apply IH for e2
   -- Note: cfg₀1.pureMode = cfg₁1.pureMode = pm (from inversion lemmas)
   have hpm_eq : cfg₁1.pureMode = cfg₀1.pureMode := by rw [hpm₀1, hpm₁1]
-  -- Convert ht₁_e2 to use cfg₀1.pureMode
+  -- Thread the extern registry: cfg₀1 and cfg₁1 both inherit the default
+  -- registry from their initial configs (via `beval_preserves_registry`).
+  have hreg_cfg₀1 : cfg₀1.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht₀_e1
+  have hreg_cfg₁1 : cfg₁1.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht₁_e1
+  have hcfg₀1_eq : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } :=
+    config_eq_of_registry_default cfg₀1 hreg_cfg₀1
   have hcfg₁1_eq : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
-    cases cfg₁1
-    simp only [Config.mk.injEq, true_and]
-    exact hpm_eq
+    cases cfg₁1 with
+    | mk m v n pm r =>
+      simp only [Config.mk.injEq, true_and]
+      refine ⟨hpm_eq, ?_⟩
+      simpa using hreg_cfg₁1
+  have ht₀_e2' : terminatesTo e2
+      { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode }
+      cf₀ v₀2 := by rw [← hcfg₀1_eq]; exact ht₀_e2
   have ht₁_e2' : terminatesTo e2
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode }
-      cf₁ v₁2 := by
-    rw [← hcfg₁1_eq]
-    exact ht₁_e2
+      cf₁ v₁2 := by rw [← hcfg₁1_eq]; exact ht₁_e2
+  have hwfcf₀1' : wfConfig
+      { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
+    rw [← hcfg₀1_eq]; exact hwfcf₀1
   have hwfcf₁1' : wfConfig
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode } := by
-    rw [← hcfg₁1_eq]
-    exact hwfcf₁1
+    rw [← hcfg₁1_eq]; exact hwfcf₁1
   have hstep_e2 :=
     hIH2 hpredlaws hwfTm' cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ v₀2 v₁2
       hθ₀1wf hθ₁1wf hwf1' htagBounded1' hric₀1' hric₁1' htagR1' hcwr₀1' hcwr₁1' hagree_clean1'
-      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1 hwfcf₁1'
-      ht₀_e2 ht₁_e2'
+      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1' hwfcf₁1'
+      ht₀_e2' ht₁_e2'
   rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
   rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hvtyp₀2, _hvtyp₁2, _hTm2, hwf2, _htagBounded2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, _hval_consist₀2, _hval_consist₁2, hres_agree2⟩
   -- Combine extension maps
@@ -530,10 +542,19 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
     simpa [ctx', ctxAfter] using hmasked_none1 k hk
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res2 htc2'
+  -- Thread extern registry: cfg1 inherits default registry from initial config.
+  have hreg_cfg1 : cfg1.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht_e1
+  have hcfg1_eq : cfg1 = { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } :=
+    config_eq_of_registry_default cfg1 hreg_cfg1
+  have hwfcfg1' : wfConfig { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } := by
+    rw [← hcfg1_eq]; exact hwfcfg1
+  have ht_e2' : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf v2 := by
+    rw [← hcfg1_eq]; exact ht_e2
   rcases
     hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf v2
       hθ1wf hwf1' hric1' hreg1' hmasked_none1' hcwr1'
-      cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc1
+      cfg1.nextAddr cfg1.pureMode hwfcfg1' ht_e2' hpc1
     with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
   have hctxAfter : ctxAfter ctx res = ctxAfter ctx' res2 := by

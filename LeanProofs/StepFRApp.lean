@@ -19,12 +19,17 @@ open scoped MemoryTypeEnv
 -- the config in explicit-record form.
 private lemma cfg_pureMode_eq_of_terminatesTo
     {e : Expr} {c₀ c' : Config} {v : Value} {pm : Bool}
-    (ht : terminatesTo e c₀ c' v) (hinit : c₀.pureMode = pm) :
+    (ht : terminatesTo e c₀ c' v) (hinit : c₀.pureMode = pm)
+    (hreg : c₀.registry = emptyExternRegistry) :
     c'.pureMode = pm ∧
     c' = { memory := c'.memory, varEnv := c'.varEnv, nextAddr := c'.nextAddr, pureMode := pm } := by
   have h : c'.pureMode = pm := (terminatesTo_preserves_pureMode e c₀ c' v ht).trans hinit
   refine ⟨h, ?_⟩
-  rw [show pm = c'.pureMode from h.symm]
+  have hreg' : c'.registry = emptyExternRegistry :=
+    (terminatesTo_preserves_registry ht).trans hreg
+  have := config_eq_of_registry_default c' hreg'
+  rw [this]
+  rw [h]
 
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -2704,9 +2709,11 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       simp [ctxAfter, hpc]
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
+    have hreg2' : c₂'.registry = emptyExternRegistry := by
+      simpa [cinit] using terminatesTo_preserves_registry ht_e2
     have heq_cfg2' :
         c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      rw [show pm = c₂'.pureMode from hpm2.symm]
+      rw [← hpm2]; exact config_eq_of_registry_default c₂' hreg2'
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hTm2 result1 htc1'
     rcases
@@ -2874,6 +2881,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       have hSingle_body := singleIH fuelBody hfuel_lt body bodyCtx hTmBody result3 htcBody'
       have hpc_body : bodyCtx.pc = true := by
         simp [bodyCtx, hpc, joinPoison]
+      -- Thread extern registry: c₂' inherits default from cinit, c₁ from c₂'.
+      have hreg_c₁ : c₁.registry = emptyExternRegistry := by
+        have h2 : c₂'.registry = emptyExternRegistry := by
+          simpa [cinit] using terminatesTo_preserves_registry ht_e2
+        exact (terminatesTo_preserves_registry ht_e1).trans h2
+      rw [hreg_c₁] at ht_body
       rcases
         hSingle_body hpredlaws hTmBody
           c₁.memory (env.update x v₂) θ1 evalCfg o
@@ -3174,7 +3187,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
         c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      rw [show pm = c₂'.pureMode from hpm2.symm]
+      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      rw [← hpm2]; exact config_eq_of_registry_default c₂' hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -3257,7 +3272,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
         c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      rw [show pm = c₂'.pureMode from hpm2.symm]
+      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      rw [← hpm2]; exact config_eq_of_registry_default c₂' hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -3300,7 +3317,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
         c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      rw [show pm = c₂'.pureMode from hpm2.symm]
+      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      rw [← hpm2]; exact config_eq_of_registry_default c₂' hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -3472,6 +3491,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         · intro a ha
           exact hwfcfg1.1 a ha
         · simpa [VarEnv.update] using wfVarEnv.cons x v₂ env hv₂_wf henv_wf
+      -- Thread extern registry: c₁ inherits default registry.
+      have hreg_c₁_p : c₁.registry = emptyExternRegistry := by
+        have h2 : c₂'.registry = emptyExternRegistry := by
+          simpa [cinit] using terminatesTo_preserves_registry ht_e2
+        exact (terminatesTo_preserves_registry ht_e1).trans h2
+      rw [hreg_c₁_p] at ht_body
       have ht_body' : terminatesTo body
           { memory := cf.memory, varEnv := env.update x v₂,
             nextAddr := cf.nextAddr, pureMode := true } evalCfg o := by
@@ -3905,8 +3930,8 @@ lemma stepFR_app
       have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
-      obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl
-      obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl
+      obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
+      obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
       have hstep_e1 := hIH_e1 hpredlaws hTm2
         c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
         c₁₀ c₁₁ o₀ o₁
@@ -3933,8 +3958,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        obtain ⟨hpm₀, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl
-        obtain ⟨hpm₁, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl
+        obtain ⟨hpm₀, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
+        obtain ⟨hpm₁, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
@@ -4400,6 +4425,12 @@ lemma stepFR_app
             have hpc_bodyA₀_run : bodyCtxA₀.pc = true := by
               simp [bodyCtxA₀, joinPoison] at h_p1p ⊢
               cases p1 <;> cases p <;> simp at h_p1p ⊢
+            -- Thread extern registry: c₁₀ inherits default registry.
+            have hreg_c₁₀_A : c₁₀.registry = emptyExternRegistry := by
+              have h2 : c₂'₀.registry = emptyExternRegistry := by
+                simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+              exact (terminatesTo_preserves_registry ht₀_e1).trans h2
+            rw [hreg_c₁₀_A] at ht₀_body
             have hsr₀ :=
               hSingle_bodyA₀ hpredlaws hTmBodyA₀
                 c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
@@ -4581,6 +4612,12 @@ lemma stepFR_app
             have hpc_bodyA₁_run : bodyCtxA₁.pc = true := by
               simp [bodyCtxA₁, joinPoison] at h_p1p ⊢
               cases p1 <;> cases p <;> simp at h_p1p ⊢
+            -- Thread extern registry: c₁₁ inherits default registry.
+            have hreg_c₁₁_A : c₁₁.registry = emptyExternRegistry := by
+              have h2 : c₂'₁.registry = emptyExternRegistry := by
+                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+              exact (terminatesTo_preserves_registry ht₁_e1).trans h2
+            rw [hreg_c₁₁_A] at ht₁_body
             have hsr₁ :=
               hSingle_bodyA₁ hpredlaws hTmBodyA₁
                 c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
@@ -5695,6 +5732,17 @@ lemma stepFR_app
                 exact (wfConfig_preserved body₀ _ evalCfg₀ o₀ ht₀_body hwfcfg_body_init₀).1
               have hwfcfg_body_final₁ : wfConfig evalCfg₁ := by
                 exact (wfConfig_preserved body₁ _ evalCfg₁ o₁ ht₁_body hwfcfg_body_init₁).1
+              -- Thread extern registry: c₁₀/c₁₁ inherit default registry.
+              have hreg_c₁₀_B : c₁₀.registry = emptyExternRegistry := by
+                have h2 : c₂'₀.registry = emptyExternRegistry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                exact (terminatesTo_preserves_registry ht₀_e1).trans h2
+              have hreg_c₁₁_B : c₁₁.registry = emptyExternRegistry := by
+                have h2 : c₂'₁.registry = emptyExternRegistry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                exact (terminatesTo_preserves_registry ht₁_e1).trans h2
+              rw [hreg_c₁₀_B] at ht₀_body
+              rw [hreg_c₁₁_B] at ht₁_body
               have ht₀_body' :
                   terminatesTo body₀
                     { memory := c₁₀.memory
@@ -6568,8 +6616,8 @@ lemma stepFR_app
       have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
-      obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl
-      obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl
+      obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
+      obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
       have hstep_e1 := hIH_e1 hpredlaws hTm2
         c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
         c₁₀ c₁₁ o₀ o₁
@@ -6618,8 +6666,8 @@ lemma stepFR_app
         have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
         have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
         have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
-        obtain ⟨hpm₀, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl
-        obtain ⟨hpm₁, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl
+        obtain ⟨hpm₀, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
+        obtain ⟨hpm₁, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
         have hstep_e1 := hIH_e1 hpredlaws hTm2
           c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
           c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
@@ -7167,6 +7215,12 @@ lemma stepFR_app
             constructor
             · intro a ha; exact hwfcf₁₀.1 a ha
             · simpa [VarEnv.update] using wfVarEnv.cons x₀ v₂₀ env₀ hv₂₀_wf henv₀_wf
+          -- Thread extern registry: after `subst heq_cfg₀`, cf₀ replaces c₁₀.
+          have hreg_cf₀_pp : cf₀.registry = emptyExternRegistry := by
+            have h2 : c₂'₀.registry = emptyExternRegistry := by
+              simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+            exact (terminatesTo_preserves_registry ht₀_e1).trans h2
+          rw [hreg_cf₀_pp] at ht₀_body
           -- The body terminatesTo uses body₀, but init config has pureMode := true
           have ht₀_body' : terminatesTo body₀
               { memory := cf₀.memory, varEnv := env₀.update x₀ v₂₀,
@@ -7354,6 +7408,12 @@ lemma stepFR_app
             constructor
             · intro a ha; exact hwfcf₁₁.1 a ha
             · simpa [VarEnv.update] using wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf
+          -- Thread extern registry: after `subst heq_cfg₁`, cf₁ replaces c₁₁.
+          have hreg_cf₁_pp : cf₁.registry = emptyExternRegistry := by
+            have h2 : c₂'₁.registry = emptyExternRegistry := by
+              simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+            exact (terminatesTo_preserves_registry ht₁_e1).trans h2
+          rw [hreg_cf₁_pp] at ht₁_body
           have ht₁_body' : terminatesTo body₁
               { memory := cf₁.memory, varEnv := env₁.update x₁ v₂₁,
                 nextAddr := cf₁.nextAddr, pureMode := true } evalCfg₁ o₁ := ht₁_body
@@ -8423,6 +8483,17 @@ lemma stepFR_app
               · intro a ha
                 exact hwfcf₁₁.1 a ha
               · simpa [VarEnv.update] using (wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf)
+            -- Thread extern registry: after subst heq_cfg, cf₀/cf₁ replace c₁₀/c₁₁.
+            have hreg_cf₀_pp2 : cf₀.registry = emptyExternRegistry := by
+              have h2 : c₂'₀.registry = emptyExternRegistry := by
+                simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+              exact (terminatesTo_preserves_registry ht₀_e1).trans h2
+            have hreg_cf₁_pp2 : cf₁.registry = emptyExternRegistry := by
+              have h2 : c₂'₁.registry = emptyExternRegistry := by
+                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+              exact (terminatesTo_preserves_registry ht₁_e1).trans h2
+            rw [hreg_cf₀_pp2] at ht₀_body
+            rw [hreg_cf₁_pp2] at ht₁_body
             -- Phase 7: terminatesTo for body (pureMode := true)
             have ht₀_body' :
                 terminatesTo (PExpr.toExpr pbody)

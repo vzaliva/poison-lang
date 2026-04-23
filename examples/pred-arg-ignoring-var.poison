@@ -3,5 +3,5 @@
 -- matchGuard with condition true would have matched before the fix;
 -- with usesArg check, the closure is skipped (not eligible for matching)
 -- Standard path is used; program type-checks but fails at runtime (extern)
-let x = extern val : (int :> poisoned { 3, a => true }) in
+let x = extern val @243 : (int :> poisoned { 3, a => true }) in
 if true then x else 0

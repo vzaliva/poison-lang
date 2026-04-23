@@ -141,7 +141,10 @@ inductive EffectTarget where
   | namedVar : Name → EffectTarget      -- !varname
   deriving Repr, BEq
 
-
+/-- Extern identifier: author-chosen runtime handle assigned at each extern
+    declaration site (both top-level and nested). See
+    `doc/ffi-runtime-design.md`. -/
+abbrev ExternId := Nat
 
 mutual
 
@@ -161,10 +164,12 @@ structure Effect where
   pred : SyntaxPredicate
 
 -- Return specification for extern functions (simple or nested)
+-- Nested variants carry their own `ExternId`; `simple` does not (the id lives
+-- on the enclosing top-level extern AST node).
 inductive ExternReturn where
   | simple : Typ → Bool → SyntaxPredicate → ExternReturn
-  | nestedFn : Name → Typ → ExternReturn → List Effect → ExternReturn
-  | nestedPfn : Name → Typ → ExternReturn → ExternReturn
+  | nestedFn : ExternId → Name → Typ → ExternReturn → List Effect → ExternReturn
+  | nestedPfn : ExternId → Name → Typ → ExternReturn → ExternReturn
 
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
@@ -186,10 +191,10 @@ inductive Expr : Type where
   | fn : Name → Typ → Expr → Typ → Expr         -- fn x : ST1 => e : ST2
   | pfn : Name → Typ → Expr → Typ → Expr        -- pfn x : ST1 => pe : ST2
   | app : Expr → Expr → Expr                    -- e1 e2
-  /- extern placeholders -/
-  | externVal : Typ → Bool → SyntaxPredicate → Expr
-  | externFn : Name → Typ → ExternReturn → List Effect → Expr
-  | externPfn : Name → Typ → ExternReturn → Expr
+  /- extern declarations: each carries a mandatory `ExternId` identifier -/
+  | externVal : ExternId → Typ → Bool → SyntaxPredicate → Expr
+  | externFn : ExternId → Name → Typ → ExternReturn → List Effect → Expr
+  | externPfn : ExternId → Name → Typ → ExternReturn → Expr
 
 end
 
@@ -245,12 +250,12 @@ def beqExpr : Expr → Expr → Bool
   | Expr.fn x1 t1 e1 t1', Expr.fn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.pfn x1 t1 e1 t1', Expr.pfn x2 t2 e2 t2' => x1 == x2 && t1 == t2 && beqExpr e1 e2 && t1' == t2'
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
-  | Expr.externVal t1 p1 pred1, Expr.externVal t2 p2 pred2 =>
-      t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
-  | Expr.externFn x1 t1 ret1 eff1, Expr.externFn x2 t2 ret2 eff2 =>
-      x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
-  | Expr.externPfn x1 t1 ret1, Expr.externPfn x2 t2 ret2 =>
-      x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
+  | Expr.externVal id1 t1 p1 pred1, Expr.externVal id2 t2 p2 pred2 =>
+      id1 == id2 && t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
+  | Expr.externFn id1 x1 t1 ret1 eff1, Expr.externFn id2 x2 t2 ret2 eff2 =>
+      id1 == id2 && x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
+  | Expr.externPfn id1 x1 t1 ret1, Expr.externPfn id2 x2 t2 ret2 =>
+      id1 == id2 && x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
   | _, _ => false
 termination_by structural e1 _ => e1
 
@@ -276,10 +281,10 @@ termination_by structural efs1 _=> efs1
 def beqExternReturn : ExternReturn → ExternReturn → Bool
   | ExternReturn.simple t1 p1 pred1, ExternReturn.simple t2 p2 pred2 =>
       t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
-  | ExternReturn.nestedFn x1 t1 ret1 eff1, ExternReturn.nestedFn x2 t2 ret2 eff2 =>
-      x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
-  | ExternReturn.nestedPfn x1 t1 ret1, ExternReturn.nestedPfn x2 t2 ret2 =>
-      x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
+  | ExternReturn.nestedFn id1 x1 t1 ret1 eff1, ExternReturn.nestedFn id2 x2 t2 ret2 eff2 =>
+      id1 == id2 && x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
+  | ExternReturn.nestedPfn id1 x1 t1 ret1, ExternReturn.nestedPfn id2 x2 t2 ret2 =>
+      id1 == id2 && x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
   | _, _ => false
 termination_by structural r1 _ => r1
 

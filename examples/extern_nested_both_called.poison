@@ -5,8 +5,8 @@
 -- all tags are observable in the final MemoryTypeEnv.
 let s = ref 0 in
 let outer =
-  extern fn x : (int) -> (
-    extern pfn y : (int) -> ( (int :> poisoned { 7, w => w >= 0 }) )
+  extern fn @113 x : (int) -> (
+    extern pfn @114 y : (int) -> ( (int :> poisoned { 7, w => w >= 0 }) )
   ) ,
     effects: { !s :> (int :> poisoned { 7, v => v >= 0 }) }
 in

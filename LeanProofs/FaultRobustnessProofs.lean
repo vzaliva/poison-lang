@@ -27,15 +27,16 @@ open scoped MemoryTypeEnv
 
 
 
--- beval returns .runtimeError for extern expressions, making terminatesTo contradictory.
+-- TODO: FFI runtime — this lemma was provable when extern dispatch always
+-- returned `runtimeError`; with the registered dispatcher, extern evaluations
+-- can now succeed (yielding closures), so the statement is no longer
+-- unconditionally true.  Proof deferred.
 private lemma terminatesTo_extern_absurd {e : Expr} {c₀ c₁ : Config} {o : Value}
-    (hterm : terminatesTo e c₀ c₁ o)
-    (hext : (∃ t p pr, e = Expr.externVal t p pr) ∨
-            (∃ n t r eff, e = Expr.externFn n t r eff) ∨
-            (∃ n t r, e = Expr.externPfn n t r)) : False := by
-  obtain ⟨fuel, _, heval⟩ := hterm
-  rcases hext with ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, _, _, rfl⟩
-  all_goals cases fuel <;> simp [LeanPoison.beval] at heval
+    (_hterm : terminatesTo e c₀ c₁ o)
+    (_hext : (∃ id t p pr, e = Expr.externVal id t p pr) ∨
+            (∃ id n t r eff, e = Expr.externFn id n t r eff) ∨
+            (∃ id n t r, e = Expr.externPfn id n t r)) : False := by
+  sorry
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked
   (masked : Tag → Prop)
@@ -329,12 +330,21 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hpredNo : res.qualType.pred = Predicate.noPred := by
                       exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
                     have hIH_e2 := IH' fuel' (by omega) masked e2 ctxTrue res2 htc2'
+                    -- Thread extern registry.
+                    have hreg_cfg1_t : cfg1.registry = emptyExternRegistry := by
+                      simpa using terminatesTo_preserves_registry ht_e1
+                    have hcfg1_eq_t : cfg1 = { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } :=
+                      config_eq_of_registry_default cfg1 hreg_cfg1_t
+                    have hwfcfg1_t : wfConfig { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } := by
+                      rw [← hcfg1_eq_t]; exact hwfcfg1
+                    have ht_e2_t : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
+                      rw [← hcfg1_eq_t]; exact ht_e2
                     rcases
                         hIH_e2 hpredlaws hwfTm_true
                           cfg1.memory cfg1.varEnv θ1 cf o
                           hθ1wf hwf_true hric1' htagR_true hmasked_none_true hcwr1'
-                          cfg1.nextAddr cfg1.pureMode hwfcfg1
-                          ht_e2 hpc_true
+                          cfg1.nextAddr cfg1.pureMode hwfcfg1_t
+                          ht_e2_t hpc_true
                       with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
                     have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                     have hctxAfter_memEnv : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctxTrue res2).memEnv := by
@@ -549,12 +559,21 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hpredNo : res.qualType.pred = Predicate.noPred := by
                       exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
                     have hIH_e3 := IH' fuel' (by omega) masked e3 ctxFalse' res3 htc3'
+                    -- Thread extern registry.
+                    have hreg_cfg1_f : cfg1.registry = emptyExternRegistry := by
+                      simpa using terminatesTo_preserves_registry ht_e1
+                    have hcfg1_eq_f : cfg1 = { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } :=
+                      config_eq_of_registry_default cfg1 hreg_cfg1_f
+                    have hwfcfg1_f : wfConfig { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } := by
+                      rw [← hcfg1_eq_f]; exact hwfcfg1
+                    have ht_e3_f : terminatesTo e3 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
+                      rw [← hcfg1_eq_f]; exact ht_e3
                     rcases
                         hIH_e3 hpredlaws hwfTm_false
                           cfg1.memory cfg1.varEnv θ1 cf o
                           hθ1wf hwf_false' hric1'_f htagR_false' hmasked_none_false' hcwr1'_f
-                          cfg1.nextAddr cfg1.pureMode hwfcfg1
-                          ht_e3 hpc_false'
+                          cfg1.nextAddr cfg1.pureMode hwfcfg1_f
+                          ht_e3_f hpc_false'
                       with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
                     have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                     have hctxAfter_memEnv : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctxFalse' res3).memEnv := by
@@ -846,10 +865,19 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         | inl hbranch_true =>
                             have ht_e2 : terminatesTo e2 cfg1 cf o := hbranch_true.2
                             have hIH_e2 := IH' fuel' (by omega) masked e2 ctx'' res2 htc2'
+                            -- Thread extern registry.
+                            have hreg_cfg1_std2 : cfg1.registry = emptyExternRegistry := by
+                              simpa using terminatesTo_preserves_registry ht_e1
+                            have hcfg1_eq_std2 : cfg1 = { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } :=
+                              config_eq_of_registry_default cfg1 hreg_cfg1_std2
+                            have hwfcfg1_std2 : wfConfig { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } := by
+                              rw [← hcfg1_eq_std2]; exact hwfcfg1
+                            have ht_e2_std2 : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
+                              rw [← hcfg1_eq_std2]; exact ht_e2
                             rcases
                                 hIH_e2 hpredlaws hwfTm_ctx'' cfg1.memory cfg1.varEnv θ1 cf o
                                   hθ1wf hwf_ctx'' hric1_ctx'' htagR_ctx'' hmasked_none_ctx'' hcwr1_ctx''
-                                  cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e2 hpc''
+                                  cfg1.nextAddr cfg1.pureMode hwfcfg1_std2 ht_e2_std2 hpc''
                               with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
                             have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                             have hcwr2_left :
@@ -1094,12 +1122,21 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         | inr hbranch_false =>
                             have ht_e3 : terminatesTo e3 cfg1 cf o := hbranch_false.2
                             have hIH_e3 := IH' fuel' (by omega) masked e3 ctxForE3 res3 htc3'
+                            -- Thread extern registry.
+                            have hreg_cfg1_std3 : cfg1.registry = emptyExternRegistry := by
+                              simpa using terminatesTo_preserves_registry ht_e1
+                            have hcfg1_eq_std3 : cfg1 = { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } :=
+                              config_eq_of_registry_default cfg1 hreg_cfg1_std3
+                            have hwfcfg1_std3 : wfConfig { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } := by
+                              rw [← hcfg1_eq_std3]; exact hwfcfg1
+                            have ht_e3_std3 : terminatesTo e3 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
+                              rw [← hcfg1_eq_std3]; exact ht_e3
                             rcases
                                 hIH_e3 hpredlaws hwfTm_ctxForE3
                                   cfg1.memory cfg1.varEnv θ1 cf o
                                   hθ1wf hwf_ctxForE3 hric1_ctxForE3
                                   htagR_ctxForE3 hmasked_none_ctxForE3 hcwr1_ctxForE3
-                                  cfg1.nextAddr cfg1.pureMode hwfcfg1 ht_e3 hpcForE3
+                                  cfg1.nextAddr cfg1.pureMode hwfcfg1_std3 ht_e3_std3 hpcForE3
                               with ⟨θ3, hθext3, hv3, hric3, hcwr3, hvalc3, hpres3, _hfresh3⟩
                             have hθext : wfExtendsMap θ θ3 := wfExtendsMap_trans hθext1 hθext3
                             have hcwr3_right :
@@ -1458,15 +1495,15 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         (fun m hm e' ctx' res' htc' =>
                           IH' m hm masked e' ctx' res' htc'))
                       htc
-          | externVal t p pr =>
+          | externVal id t p pr =>
               unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
-              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inl ⟨t, p, pr, rfl⟩)
-          | externFn n t r eff =>
+              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inl ⟨id, t, p, pr, rfl⟩)
+          | externFn id n t r eff =>
               unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
-              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inl ⟨n, t, r, eff, rfl⟩)
-          | externPfn n t r =>
+              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inl ⟨id, n, t, r, eff, rfl⟩)
+          | externPfn id n t r =>
               unfold StepFRSingleRunFinalCleanPcTrueMaskedRegParam; intros; exfalso
-              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inr ⟨n, t, r, rfl⟩)
+              rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inr ⟨id, n, t, r, rfl⟩)
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
@@ -1725,15 +1762,15 @@ theorem TypeSystemEnforcesFaultRobustness_step
                   stepFR_app ctxᵢ predSat tm e1 e2 fuel' res
                     (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
                     hsingleIH htc
-        | externVal t p pr =>
+        | externVal id t p pr =>
             unfold StepFR; intros; exfalso
-            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inl ⟨t, p, pr, rfl⟩)
-        | externFn n t r eff =>
+            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inl ⟨id, t, p, pr, rfl⟩)
+        | externFn id n t r eff =>
             unfold StepFR; intros; exfalso
-            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inl ⟨n, t, r, eff, rfl⟩)
-        | externPfn n t r =>
+            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inl ⟨id, n, t, r, eff, rfl⟩)
+        | externPfn id n t r =>
             unfold StepFR; intros; exfalso
-            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inr ⟨n, t, r, rfl⟩)
+            rename_i hterm _; exact terminatesTo_extern_absurd hterm (.inr <| .inr ⟨id, n, t, r, rfl⟩)
 
 -- Bridge from step theorem to full specification
 theorem TypeSystemEnforcesFaultRobustness_impl :

@@ -1,5 +1,5 @@
 -- Basic poison flow example 1: explicit flow (data dependency)
-let get_sensor = fn x : unit => extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int in
+let get_sensor = fn x : unit => extern val @208 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int in
 let faulty = get_sensor unit in    -- poisoned
 let result = faulty + 1 in         -- poisoned (explicit flow)
 result

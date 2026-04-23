@@ -1,1 +1,1 @@
-let x = extern val : ( bool :> poisoned { 3 }) in x
+let x = extern val @123 : ( bool :> poisoned { 3 }) in x

@@ -1,1 +1,1 @@
-let x = extern val : (int :> clean {}) in x
+let x = extern val @124 : (int :> clean {}) in x

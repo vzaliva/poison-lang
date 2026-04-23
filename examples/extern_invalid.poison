@@ -1,1 +1,1 @@
-let x = extern val : (bool :> clean { 3, a => a >=0 }) in x
+let x = extern val @108 : (bool :> clean { 3, a => a >=0 }) in x

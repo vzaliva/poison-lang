@@ -6,4 +6,4 @@ Type checking passed:
   tagEnv: { 1 := { value := true, deps := [] } },
   nextLoc: 2
 
-Runtime error: Cannot execute extern value – no implementation provided
+Runtime error: extern id 233 not registered

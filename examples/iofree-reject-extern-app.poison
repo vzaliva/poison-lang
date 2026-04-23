@@ -1,5 +1,5 @@
 --! poison-interpreter --io-free
 -- Test: Extern closure application rejection. Variable holds extern fn, then applied.
 -- Rejection at definition site (typecheckExternFn throws) with single-mode execution.
-let f = extern fn x : (int) -> ((int :> poisoned { 3, y => (y >= 0 && y <= x) })) in
+let f = extern fn @224 x : (int) -> ((int :> poisoned { 3, y => (y >= 0 && y <= x) })) in
 f 1

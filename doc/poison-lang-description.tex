@@ -263,13 +263,42 @@ syntax.
 
 \subsection{Implementation-specific extensions}
 
-The Lean implementation includes extern placeholders (\texttt{extern val},
-\texttt{extern fn}, \texttt{extern pfn}) for external code and specification-driven
-test scenarios. The Ott specification includes typing rules for these constructs.
-The interpreter is pure and does not execute externs: reaching one at runtime
-yields a runtime error. The type checker rejects extern functions that return
-references, but it permits reference parameters and explicit effect specifications
-on referenced locations.
+The Lean implementation includes extern declarations (\texttt{extern val},
+\texttt{extern fn}, \texttt{extern pfn}) for external code and
+specification-driven test scenarios.  Each declaration carries a mandatory
+author-chosen natural-number identifier written \texttt{@N} immediately after
+the kind keyword:
+\begin{verbatim}
+  extern val @7 : (int :> clean {})
+  extern fn  @5 x : (int) -> ((int :> poisoned { 1, v => v >= 0 }))
+  extern pfn @6 u : (unit) -> ((int :> clean {}))
+\end{verbatim}
+Nested callable return descriptors use the same \texttt{@N} syntax and carry
+their own identifier.  Identifiers must be globally unique across all extern
+declaration sites in a program; the type checker rejects duplicates.
+
+At runtime, extern declarations are resolved against a registry provided by
+the driver.  The interpreter in \texttt{Main.lean} ships with three built-in
+pure extern implementations registered under well-known identifiers — the
+curried \texttt{max} pair (\texttt{@10}/\texttt{@11}) and \texttt{abs}
+(\texttt{@12}) — usable by any \texttt{.poison} program and exercised in the
+unit-test suite.  Multi-argument externs are expressed by nesting pure extern
+returns; the canonical example is \texttt{max}:
+\begin{verbatim}
+  let max = extern pfn @10 a : (int) -> (
+              extern pfn @11 b : (int) -> ((int :> clean {})))
+  in (max 3) 5
+\end{verbatim}
+
+The executable input type of an extern callable is restricted to the
+first-order surface types \texttt{\{int, bool, unit, string, ref int\}};
+passing a function as an argument to an extern is rejected both by the type
+checker and by runtime dispatch.
+
+Reaching an extern identifier that the driver has not registered yields a
+runtime error naming the missing identifier.  The type checker rejects
+extern functions that return references, but it permits reference parameters
+and explicit effect specifications on referenced locations.
 
 Extern specifications use \emph{symbolic tag indices} rather than globally
 meaningful concrete tags. Each extern definition has its own local symbolic tag

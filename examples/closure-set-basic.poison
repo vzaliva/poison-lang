@@ -12,7 +12,7 @@ let chosen_fn =
     fn y : int => x + y : int
   else
     -- Branch 2: x is poisoned (from frand)
-    let x = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
+    let x = extern val @210 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
     -- Define function capturing poisoned x (SAME VARIABLE NAME, DIFFERENT POISON STATE)
     fn y : int => x + y : int
   in

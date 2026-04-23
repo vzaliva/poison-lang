@@ -6,4 +6,4 @@ Type checking passed:
   tagEnv: {},
   nextLoc: 1
 
-Runtime error: Cannot execute extern value – no implementation provided
+Runtime error: extern id 242 not registered

@@ -7,5 +7,5 @@
 -- fails (extern has no implementation).
 -- NOTE: guardClosure required (not bare guardOnly) because fresh tag allocation
 -- needs a closure definition. Tag index 3 → fresh tag 1 (nextTag starts at 1).
-let ret = extern val : (int :> poisoned { 3, ret => ret >= 0 }) in
+let ret = extern val @223 : (int :> poisoned { 3, ret => ret >= 0 }) in
 if ret >= 0 then 42 else (printInt 99; 42)

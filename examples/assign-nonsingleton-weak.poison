@@ -13,7 +13,7 @@
 
 let r1 = ref 0 in              -- r1 : ref int @ {l1}, clean
 let r2 = ref 0 in              -- r2 : ref int @ {l2}, clean
-(r1 := extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) });                -- Poison r1
- let choice = if (extern val : (int :> clean {})) >= 0 then r1 else r2 in  -- choice : ref int @ {l1, l2}
+(r1 := extern val @206 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) });                -- Poison r1
+ let choice = if (extern val @207 : (int :> clean {})) >= 0 then r1 else r2 in  -- choice : ref int @ {l1, l2}
  (choice := 42;                -- Weak update: join clean write with poisoned l1
   !choice))                    -- Result is poisoned (runtime updates one location)

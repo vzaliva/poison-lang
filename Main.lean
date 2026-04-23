@@ -38,6 +38,53 @@ def defaultFuel : Nat := 1000
 -- Language Version No
 def versionNo := "1.0"
 
+-- ----------------------------------------------------------------------------
+-- Built-in extern implementations.
+-- The interpreter ships with a fixed, publicly documented set of externs that
+-- unit tests may invoke by their well-known identifiers:
+--   @10 : outer pure-fn stage of curried `max` (int -> ...)
+--   @11 : inner pure-fn stage of curried `max`, expects captured `a` in env
+--   @12 : pure `abs` (int -> int)
+-- See `doc/ffi-runtime-design.md` and `doc/poison-lang-description.tex`.
+-- ----------------------------------------------------------------------------
+
+private def outerMaxImpl
+    : VarEnv → Value → Memory → Except ExternError Value
+  | unifiedEnv, Value.num _a, _m =>
+      let innerRet  : ExternReturn := .simple .int false .noPred
+      let innerNode : _root_.Expr := .externPfn 11 "b" .int innerRet
+      .ok (Value.peClosure "b" innerNode unifiedEnv)
+  | _, _, _ => .error (.implFailure 10 "expected int argument")
+
+private def innerMaxImpl
+    : VarEnv → Value → Memory → Except ExternError Value
+  | unifiedEnv, Value.num b, _m =>
+      match VarEnv.lookup unifiedEnv "a" with
+      | some (Value.num a) => .ok (Value.num (max a b))
+      | _ => .error (.implFailure 11 "captured `a` missing or not an int")
+  | _, _, _ => .error (.implFailure 11 "expected int argument")
+
+private def absImpl
+    : VarEnv → Value → Memory → Except ExternError Value
+  | _, Value.num n, _ => .ok (Value.num (Int.ofNat n.natAbs))
+  | _, _, _           => .error (.implFailure 12 "expected int argument")
+
+/-- Build the default registry shipped with the interpreter. Registrations
+    cannot collide (ids are hard-coded literals), so `register` failures are
+    impossible at runtime; `panic!` is only defensive. -/
+def defaultRegistry : ExternRegistry := Id.run do
+  let r0 : ExternRegistry := ∅
+  let r1 := match register r0 10 (.pfn outerMaxImpl) with
+           | .ok r => r
+           | .error e => panic! s!"defaultRegistry: {e}"
+  let r2 := match register r1 11 (.pfn innerMaxImpl) with
+           | .ok r => r
+           | .error e => panic! s!"defaultRegistry: {e}"
+  let r3 := match register r2 12 (.pfn absImpl) with
+           | .ok r => r
+           | .error e => panic! s!"defaultRegistry: {e}"
+  return r3
+
 private def initialTypeContext (regime : Regime) : TypeContext :=
   {
     pc := false
@@ -51,10 +98,12 @@ private def initialTypeContext (regime : Regime) : TypeContext :=
   }
 
 def typecheckExprSimple (e : _root_.Expr) (regime : Regime := emptyRegime) : TypecheckM QTyp := do
+  checkExternIdsUnique e
   let result ← typecheck (initialTypeContext regime) e defaultFuel
   return result.qualType
 
 def typecheckExprVerbose (e : _root_.Expr) (regime : Regime := emptyRegime) : TypecheckM TypeResult := do
+  checkExternIdsUnique e
   typecheck (initialTypeContext regime) e defaultFuel
 
 structure CliOptions where
@@ -203,7 +252,7 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
         match typecheckExprVerbose expr regime with
         | .ok resultType =>
             printDoc (formatTypecheckPassedVerbose resultType)
-            let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
+            let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false, defaultRegistry⟩
             let result := LeanPoison.beval defaultFuel initialConfig expr verbose
             handleEvalResult result verbose
         | .error errorMsg =>
@@ -216,7 +265,7 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
         match typecheckExprSimple expr regime with
         | .ok qualType =>
             printDoc (formatTypecheckPassedSimple qualType)
-            let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
+            let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false, defaultRegistry⟩
             let result := LeanPoison.beval defaultFuel initialConfig expr verbose
             handleEvalResult result verbose
         | .error errorMsg =>
@@ -323,7 +372,7 @@ def main (args : List String) : IO UInt32 := do
         IO.println "Enter a blank line after an expression to evaluate it."
         let tmp ← IO.Process.output { cmd := "mktemp", args := #["--tmpdir", "repl-XXXXXX.poison"] }
         let tmpPath := tmp.stdout.trim
-        let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0, false ⟩
+        let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0, false, defaultRegistry ⟩
         replLoop initialConfig tmpPath
       else
         let regime := opts.regime.getD emptyRegime
@@ -344,7 +393,7 @@ def main (args : List String) : IO UInt32 := do
                   | .ok resultType =>
                       printDoc (formatTypecheckPassedVerbose resultType)
                       IO.println ""
-                      let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false⟩
+                      let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false, defaultRegistry⟩
                       let result := LeanPoison.beval defaultFuel initialConfig expr true
                       handleEvalResult result true
                   | .error errorMsg =>

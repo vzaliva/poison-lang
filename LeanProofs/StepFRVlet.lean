@@ -1060,12 +1060,34 @@ lemma stepFR_vlet
           simp [hctx', ctxAfter]
         have h_mem_eq : cfg₁2.memory = cfg₁1.memory := by simp [cfg₁2]
         rwa [h_regime_eq, h_mem_eq]
+  -- Thread extern registry: cfg₀1 and cfg₁1 inherit default registry from
+  -- initial config (via beval_preserves_registry). cfg₀2/cfg₁2 are updates of
+  -- these so their registry field is also the default.
+  have hreg_cfg₀1 : cfg₀1.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht₀_e1
+  have hreg_cfg₁1 : cfg₁1.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht₁_e1
+  have ht₀_e2_ih : terminatesTo e2
+      { memory := cfg₀2.memory, varEnv := cfg₀2.varEnv, nextAddr := cfg₀2.nextAddr, pureMode := cfg₀2.pureMode }
+      cfg₀3 o₀ := by
+    have h : cfg₀1.registry = emptyExternRegistry := hreg_cfg₀1
+    have tmp := ht₀_e2
+    rw [h] at tmp
+    show terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv.update vname v₀1, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } cfg₀3 o₀
+    exact tmp
+  have ht₁_e2_ih : terminatesTo e2
+      { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode }
+      cfg₁3 o₁ := by
+    have h : cfg₁1.registry = emptyExternRegistry := hreg_cfg₁1
+    have tmp := ht₁_e2'
+    rw [h] at tmp
+    exact tmp
   have hstep_e2 :=
     hIH2 hpredlaws hwfTm' cfg₀2.memory cfg₁2.memory cfg₀2.varEnv cfg₁2.varEnv θ₀1 θ₁1
       cfg₀3 cfg₁3 o₀ o₁
       hθ₀1wf hθ₁1wf hwf1' htagBounded' hric₀1' hric₁1' hreg_ctx' hcwr₀1' hcwr₁1' hagree_clean1'
       cfg₀2.nextAddr cfg₁2.nextAddr cfg₀2.pureMode hwfcfg₀2 hwfcfg₁2'
-      ht₀_e2 ht₁_e2'
+      ht₀_e2_ih ht₁_e2_ih
   rcases hstep_e2 with ⟨hresTm2, hstep_e2⟩
   rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _hvtyp₀2, _hvtyp₁2, _hTm2, hwf2, _htagBounded2, hwfcf₀3, hwfcf₁3, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree_clean2, _hval_consist₀2, _hval_consist₁2, hres_agree2⟩
   -- Combine map extensions
@@ -1822,10 +1844,19 @@ private lemma stepFRSingleRunFinalCleanPcTrue_vlet_parametric
       simpa [cfg2, VarEnv.update] using hwfenv2
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res2 htc2'
+  -- Thread extern registry: cfg1 inherits default registry from initial config.
+  have hreg_cfg1 : cfg1.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht_e1
+  have ht_e2_ih : terminatesTo e2
+      { memory := cfg2.memory, varEnv := cfg2.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode }
+      cfg3 o := by
+    have tmp := ht_e2
+    rw [hreg_cfg1] at tmp
+    exact tmp
   rcases
     hIH2 hpredlaws hwfTm' cfg2.memory cfg2.varEnv θ1 cfg3 o
       hθ1wf hwf1' hric1' hreg1' hctxCons1'
-      cfg1.nextAddr cfg1.pureMode hwfcfg2 ht_e2 hpc1
+      cfg1.nextAddr cfg1.pureMode hwfcfg2 ht_e2_ih hpc1
     with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
   have hctxAfter_regime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctx' res2).regime := by
@@ -2059,10 +2090,19 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
       simpa [cfg2, VarEnv.update] using hwfenv2
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' res2 htc2'
+  -- Thread extern registry: cfg1 inherits default registry from initial config.
+  have hreg_cfg1 : cfg1.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht_e1
+  have ht_e2_ih : terminatesTo e2
+      { memory := cfg2.memory, varEnv := cfg2.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode }
+      cfg3 o := by
+    have tmp := ht_e2
+    rw [hreg_cfg1] at tmp
+    exact tmp
   rcases
     hIH2 hpredlaws hwfTm' cfg2.memory cfg2.varEnv θ1 cfg3 o
       hθ1wf hwf1' hric1' hreg1' hmasked_none1' hctxCons1'
-      cfg1.nextAddr cfg1.pureMode hwfcfg2 ht_e2 hpc1
+      cfg1.nextAddr cfg1.pureMode hwfcfg2 ht_e2_ih hpc1
     with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
   have hctxAfter_regime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctx' res2).regime := by

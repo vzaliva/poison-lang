@@ -1,6 +1,6 @@
 --! poison-interpreter --regime "100=true"
 -- Test: shadowing a guardClosure variable whose tag is NOT interpreted by regime
 -- Tag 3 is not in the regime, so shadowing should be allowed
-let x = extern val : (int :> poisoned { 3, a => a >= 0 }) in
+let x = extern val @253 : (int :> poisoned { 3, a => a >= 0 }) in
 let x = 5 in  -- Shadowing x (should pass - tag 3 not interpreted)
 x

@@ -664,8 +664,8 @@ private def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
     wfRegime ctx.regime s →
     wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
-    wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →  -- initial config₁ well-formed
-    wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } →  -- initial config₂ well-formed
+    wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm} →  -- initial config₁ well-formed
+    wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm} →  -- initial config₂ well-formed
     inputsConformSpec s μ₁ ρ₁ θ₁ →  inputsConformSpec s μ₂ ρ₂ θ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
     trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ θ₁ →
@@ -673,8 +673,8 @@ private def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec
     consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
     agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
-    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm } cf₂ o₂ →
+    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm} cf₁ o₁ →
+    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm} cf₂ o₂ →
     ∃ (θ₁' θ₂' : RealizationMap),
       wfExtendsMap θ₁ θ₁' ∧
       wfExtendsMap θ₂ θ₂' ∧

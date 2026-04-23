@@ -16,4 +16,4 @@ Type checking passed:
   tagEnv: {},
   nextLoc: 2
 
-Runtime error: Cannot execute extern function – no implementation provided
+Runtime error: extern id 109 not registered

@@ -5170,14 +5170,14 @@ private lemma typecheck_nextTag_mono_normal_main : ∀ (ctx : TypeContext) (e : 
                   injection htc with h_eq
                   subst h_eq
                   exact le_rfl
-          | externVal typ poison pred =>
+          | externVal _id typ poison pred =>
               simp at htc
               exact typecheckExternVal_nextTag_mono ctx typ poison pred res htc
-          | externFn arg argTyp retSpec effects =>
+          | externFn _id arg argTyp retSpec effects =>
               simp at htc
               have hpres := typecheckExternFn_preserves_nextTag ctx arg argTyp retSpec effects res htc
               simp [hpres]
-          | externPfn arg argTyp retSpec =>
+          | externPfn _id arg argTyp retSpec =>
               simp at htc
               have hpres := typecheckExternPfn_preserves_nextTag ctx arg argTyp retSpec res htc
               simp [hpres]
@@ -7223,7 +7223,7 @@ private lemma typecheckExpr_preserves_combined_main :
                   intro tcl hmem
                   simp at hmem; subst hmem
                   exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
-          | externFn _arg _argTyp _retSpec _effects =>
+          | externFn _id _arg _argTyp _retSpec _effects =>
               simp [typecheckExternFn, pure, Except.pure] at htc; cases htc
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
               show etypClosuresFullBounded
@@ -7232,7 +7232,7 @@ private lemma typecheckExpr_preserves_combined_main :
               intro tcl hmem
               simp at hmem; subst hmem
               exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
-          | externPfn _arg _argTyp _retSpec =>
+          | externPfn _id _arg _argTyp _retSpec =>
               simp [typecheckExternPfn, pure, Except.pure] at htc; cases htc
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
               show etypClosuresFullBounded
@@ -7868,7 +7868,7 @@ private lemma typecheckExpr_preserves_combined_main :
                   exact ⟨hjPT.1,
                     ⟨hjPT.2, joinTypeResults_etypClosuresFullBounded ctx r1 rs' res res.nextTag'
                       htcApp (etypClosuresFullBounded_mono hR.2.2 hr1_le) hAllRs_clos⟩⟩
-          | externVal typ poison pred =>
+          | externVal _id typ poison pred =>
               -- Unfold typecheckExternVal to extract structure
               have htce : typecheckExternVal ctx typ poison pred = .ok res := htc
               unfold typecheckExternVal at htce
@@ -8531,7 +8531,7 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
               cases h_topexpr : _body.toPExpr with
               | error _ => simp [h_topexpr] at htc
               | ok _ => simp [h_topexpr] at htc; cases htc; exact hbound
-          | externVal typ poison pred =>
+          | externVal _id typ poison pred =>
               have hmono := typecheckExternVal_nextTag_mono ctx typ poison pred res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv := by
                 have htce : typecheckExternVal ctx typ poison pred = .ok res := htc
@@ -8556,14 +8556,14 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                               exact (congrArg TypeResult.tagEnv' (Except.ok.inj htce)).symm
               rw [htagEnv]
               exact tagEnvBounded_mono ctx.tagEnv ctx.nextTag res.nextTag' hbound hmono
-          | externFn _arg _argTyp _retSpec _effects =>
+          | externFn _id _arg _argTyp _retSpec _effects =>
               have hpres := typecheckExternFn_preserves_nextTag ctx _arg _argTyp _retSpec _effects res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv := by
                 have htce : typecheckExternFn ctx _arg _argTyp _retSpec _effects = .ok res := htc
                 simp [typecheckExternFn, pure, Except.pure] at htce
                 exact (congrArg TypeResult.tagEnv' htce).symm
               rw [htagEnv, hpres]; exact hbound
-          | externPfn _arg _argTyp _retSpec =>
+          | externPfn _id _arg _argTyp _retSpec =>
               have hpres := typecheckExternPfn_preserves_nextTag ctx _arg _argTyp _retSpec res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv := by
                 have htce : typecheckExternPfn ctx _arg _argTyp _retSpec = .ok res := htc

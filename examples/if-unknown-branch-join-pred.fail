@@ -2,4 +2,4 @@ Evaluating file: examples/if-unknown-branch-join-pred.poison (verbose mode)
 
 Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: { 0 := (true, {}) }, tagEnv: {}, nextLoc: 1
 
-Runtime error: Cannot execute extern value – no implementation provided
+Runtime error: extern id 220 not registered

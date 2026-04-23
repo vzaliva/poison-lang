@@ -24,4 +24,4 @@ def Progress (e : Expr) (ctx : TypeContext) : Prop :=
   ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (a : Address) (pm : Bool),
     wfRealizationMap θ →
     runtimeInstantiatesCtx ctx μ ρ θ →
-    ¬stuck e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
+    ¬stuck e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm}

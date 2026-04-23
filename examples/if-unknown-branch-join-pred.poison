@@ -2,7 +2,7 @@
 -- frand creates guard tag; empty regime => R(k) = none => unknown-branch path
 -- Then-branch allocates a ref; else-branch does not.
 -- After join, the single-sided location should have noPred.
-let sensor = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
+let sensor = extern val @220 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
 if (sensor >= 0) && (sensor <= 0) then
   let r = ref 42 in
   !r

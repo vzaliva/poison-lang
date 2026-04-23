@@ -847,7 +847,7 @@ structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
                   (v : Value) (b : Bool),
     EnvRespectsTagMeaning tm σ Γ →
     matchGuard condition Γ σ fuel = .ok (k, deps) →
-    terminatesTo condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm } cfg (Value.bool b) →
+    terminatesTo condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm} cfg (Value.bool b) →
     ( (∃ (x : Name) (qt : QTyp),
           σ.lookup x = some qt ∧
           qtypGuardTag qt = some k ∧

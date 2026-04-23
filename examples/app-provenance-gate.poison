@@ -1,11 +1,11 @@
 -- Issue #113: provenance-poisoned function clears predicate in result.
--- The function body returns extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) (guarded), but since the function
+-- The function body returns extern val @202 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) (guarded), but since the function
 -- itself is poisoned (via if-on-poisoned-condition), the guard predicate
 -- must be stripped from the application result.
-let sensor = extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
+let sensor = extern val @203 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
 let f = if sensor > 0 then
-  fn x : int => extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int
+  fn x : int => extern val @204 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int
 else
-  fn x : int => extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int
+  fn x : int => extern val @205 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int
 in
 f 42
