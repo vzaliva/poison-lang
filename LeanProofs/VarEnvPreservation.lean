@@ -83,11 +83,11 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool)
                     simp [hEval.1]
             | unaryop op e₁ =>
                 rcases bevalUnaryOp_structure op e₁ (fuel' + 1) verbose config₀ config₁ v hEval with
-                  ⟨config', v', hEval₁, _hOp, _hMem, hVar, _hNext, _hPure⟩
+                  ⟨config', v', hEval₁, _hOp, _hMem, hVar, _hNext, _hPure, _⟩
                 exact (ih' e₁ config₀ config' v' hEval₁).trans hVar
             | op e₁ op e₂ =>
                 rcases bevalOp_structure e₁ e₂ op (fuel' + 1) verbose config₀ config₁ v hEval with
-                  ⟨config₁', config₂', v₁, v₂, hEval₁, hEval₂, _hOp, _hMem, hVar, _hNext, _hPure⟩
+                  ⟨config₁', config₂', v₁, v₂, hEval₁, hEval₂, _hOp, _hMem, hVar, _hNext, _hPure, _⟩
                 exact (ih' e₁ config₀ config₁' v₁ hEval₁).trans ((ih' e₂ config₁' config₂' v₂ hEval₂).trans hVar)
             | seq e₁ e₂ =>
                 rcases bevalSeq_structure e₁ e₂ (fuel' + 1) verbose config₀ config₁ v hEval with
@@ -102,15 +102,15 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool)
                 exact hVar₁.trans hFinal.symm
             | newRef e₁ =>
                 rcases bevalNewRef_structure e₁ (fuel' + 1) verbose config₀ config₁ v hEval with
-                  ⟨config', n, a, hEval₁, _ha, _hMem, _hNext, hVar, _hPure, _hv⟩
+                  ⟨config', n, a, hEval₁, _ha, _hMem, _hNext, hVar, _hPure, _, _hv⟩
                 exact (ih' e₁ config₀ config' (Value.num n) hEval₁).trans hVar.symm
             | deref e₁ =>
                 rcases bevalDeref_structure e₁ (fuel' + 1) verbose config₀ config₁ v hEval with
-                  ⟨config', a, n, hEval₁, _hLookup, _hv, _hMem, hVar, _hNext, _hPure⟩
+                  ⟨config', a, n, hEval₁, _hLookup, _hv, _hMem, hVar, _hNext, _hPure, _⟩
                 exact (ih' e₁ config₀ config' (Value.loc a) hEval₁).trans hVar.symm
             | assign e₁ e₂ =>
                 rcases bevalAssign_structure e₁ e₂ (fuel' + 1) verbose config₀ config₁ v hEval with
-                  ⟨config₁', config₂', a, n, hEval₁, hEval₂, _hv, _hMem, hVar, _hNext, _hPure⟩
+                  ⟨config₁', config₂', a, n, hEval₁, hEval₂, _hv, _hMem, hVar, _hNext, _hPure, _⟩
                 exact (ih' e₁ config₀ config₁' (Value.loc a) hEval₁).trans ((ih' e₂ config₁' config₂' (Value.num n) hEval₂).trans hVar.symm)
             | ite e₁ e₂ e₃ =>
                 rcases bevalIte_structure e₁ e₂ e₃ (fuel' + 1) verbose config₀ config₁ v hEval with

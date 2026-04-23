@@ -11,6 +11,7 @@ import Mathlib.Tactic
 import Batteries.Data.List.Lemmas
 
 open Std
+open LeanPoison
 
 -- ================================================================
 -- Evaluation Relations
@@ -106,7 +107,8 @@ lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : 
     config₁.memory = config₂.memory ∧
     config₁.varEnv = config₂.varEnv ∧
     config₁.nextAddr = config₂.nextAddr ∧
-    config₁.pureMode = config₂.pureMode := by
+    config₁.pureMode = config₂.pureMode ∧
+    config₁.registry = config₂.registry := by
   intro h_eq
   cases fuel with
   | zero =>
@@ -129,10 +131,12 @@ lemma bevalUnaryOp_structure (op : UnaryOp) (e1 : Expr) (fuel : Nat) (verbose : 
               rw [h_eq_cfg]
             have h_pure_eq : config₁.pureMode = config₂.pureMode := by
               rw [h_eq_cfg]
+            have h_reg_eq : config₁.registry = config₂.registry := by
+              rw [h_eq_cfg]
             rw [h_eq_val] at h_evalOp
             subst h_eq_cfg
             simp only [Nat.add_sub_cancel]
-            exact ⟨config₁, v₁, h_beval1, h_evalOp, h_mem_eq, h_var_eq, h_next_eq, h_pure_eq⟩
+            exact ⟨config₁, v₁, h_beval1, h_evalOp, h_mem_eq, h_var_eq, h_next_eq, h_pure_eq, h_reg_eq⟩
         | none =>
             simp [h_evalOp] at h_eq
       · next h_oof =>
@@ -154,7 +158,8 @@ lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
     config₂.memory = config₃.memory ∧
     config₂.varEnv = config₃.varEnv ∧
     config₂.nextAddr = config₃.nextAddr ∧
-    config₂.pureMode = config₃.pureMode := by
+    config₂.pureMode = config₃.pureMode ∧
+    config₂.registry = config₃.registry := by
   intro h_eq
   cases fuel with
   | zero =>
@@ -175,10 +180,11 @@ lemma bevalOp_structure (e1 e2 : Expr) (op : Op) (fuel : Nat) (verbose : Bool)
               have h_var_eq : config₂.varEnv = config₃.varEnv := by rw [h_eq_cfg]
               have h_next_eq : config₂.nextAddr = config₃.nextAddr := by rw [h_eq_cfg]
               have h_pure_eq : config₂.pureMode = config₃.pureMode := by rw [h_eq_cfg]
+              have h_reg_eq : config₂.registry = config₃.registry := by rw [h_eq_cfg]
               rw [h_eq_val] at h_evalOp
               subst h_eq_cfg
               simp only [Nat.add_sub_cancel]
-              exact ⟨config₁, config₂, v₁, v₂, h_beval1, h_beval2, h_evalOp, h_mem_eq, h_var_eq, h_next_eq, h_pure_eq⟩
+              exact ⟨config₁, config₂, v₁, v₂, h_beval1, h_beval2, h_evalOp, h_mem_eq, h_var_eq, h_next_eq, h_pure_eq, h_reg_eq⟩
           | none =>
               simp [h_evalOp] at h_eq
         · next h_oof =>
@@ -276,6 +282,7 @@ lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     config₂.nextAddr = config₁.nextAddr + 1 ∧
     config₂.varEnv = config₁.varEnv ∧
     config₂.pureMode = config₁.pureMode ∧
+    config₂.registry = config₁.registry ∧
     v = Value.loc a := by
   intro h_eq
   cases fuel with
@@ -292,7 +299,8 @@ lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     simp only [Nat.add_sub_cancel]
     refine ⟨config', n, config'.nextAddr, h_beval1, rfl, ?_⟩
     simp [freshAddr] at h_eq_cfg h_eq_val
-    exact ⟨by rw [← h_eq_cfg], by rw [← h_eq_cfg], by rw [← h_eq_cfg], by rw [← h_eq_cfg], by rw [← h_eq_val]⟩
+    exact ⟨by rw [← h_eq_cfg], by rw [← h_eq_cfg], by rw [← h_eq_cfg], by rw [← h_eq_cfg], by rw [← h_eq_cfg],
+      by rw [← h_eq_val]⟩
 
 -- Helper lemma: extract evaluation structure from successful beval of deref
 lemma bevalDeref_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
@@ -307,7 +315,8 @@ lemma bevalDeref_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     config₁.memory = config'.memory ∧
     config₁.varEnv = config'.varEnv ∧
     config₁.nextAddr = config'.nextAddr ∧
-    config₁.pureMode = config'.pureMode := by
+    config₁.pureMode = config'.pureMode ∧
+    config₁.registry = config'.registry := by
   intro h_eq
   cases fuel with
   | zero =>
@@ -325,7 +334,8 @@ lemma bevalDeref_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
     obtain ⟨h_eq_cfg, h_eq_val⟩ := h_eq
     simp only [Nat.add_sub_cancel]
     have h_lookup' : config'.memory.lookup a = some n := h_mem_some
-    refine ⟨config', a, n, heq_beval, h_lookup', h_eq_val.symm, ?_, ?_, ?_, ?_⟩
+    refine ⟨config', a, n, heq_beval, h_lookup', h_eq_val.symm, ?_, ?_, ?_, ?_, ?_⟩
+    · rw [← h_eq_cfg]
     · rw [← h_eq_cfg]
     · rw [← h_eq_cfg]
     · rw [← h_eq_cfg]
@@ -345,7 +355,8 @@ lemma bevalAssign_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     config₂.memory = config₁'.memory.update a n ∧
     config₂.varEnv = config₁'.varEnv ∧
     config₂.nextAddr = config₁'.nextAddr ∧
-    config₂.pureMode = config₁'.pureMode := by
+    config₂.pureMode = config₁'.pureMode ∧
+    config₂.registry = config₁'.registry := by
   intro h_eq
   cases fuel with
   | zero =>
@@ -362,7 +373,8 @@ lemma bevalAssign_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     rename_i config₁' n heq_beval2
     obtain ⟨h_eq_cfg, h_eq_val⟩ := h_eq
     simp only [Nat.add_sub_cancel]
-    refine ⟨config₁, config₁', a, n, heq_beval1, heq_beval2, h_eq_val.symm, ?_, ?_, ?_, ?_⟩
+    refine ⟨config₁, config₁', a, n, heq_beval1, heq_beval2, h_eq_val.symm, ?_, ?_, ?_, ?_, ?_⟩
+    · rw [← h_eq_cfg]
     · rw [← h_eq_cfg]
     · rw [← h_eq_cfg]
     · rw [← h_eq_cfg]
@@ -434,6 +446,16 @@ lemma bevalApp_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
 -- Registry preservation
 -- ================================================================
 
+private lemma Config.registry_update_varEnv (c : Config) (ρ : VarEnv) :
+    ({ c with varEnv := ρ }).registry = c.registry := rfl
+
+private lemma Config.ext_fields {c c' : Config} (hm : c.memory = c'.memory) (hv : c.varEnv = c'.varEnv)
+    (hn : c.nextAddr = c'.nextAddr) (hp : c.pureMode = c'.pureMode) (hr : c.registry = c'.registry) :
+    c = c' := by
+  cases c; cases c'
+  simp at hm hv hn hp hr ⊢
+  exact ⟨hm, hv, hn, hp, hr⟩
+
 /-- `bevalFunctionBody` does not modify the extern registry. It either errors
     out or produces a final config constructed via `{ currentConfig with ... }`
     which leaves the registry slot untouched. -/
@@ -458,6 +480,184 @@ private lemma bevalFunctionBody_preserves_registry (fuel : Nat) (verbose : Bool)
     · simp at heval
     · simp at heval
 
+/-- Successful `Expr.app` evaluation only changes `memory`, `nextAddr`, `varEnv`,
+    and `pureMode` relative to the post-callee config `cfg₂`; `.registry` agrees
+    with `cfg₂` on every success path (including extern dispatch and
+    `bevalFunctionBody`). -/
+private lemma bevalApp_success_registry_eq (fuel' : Nat) (verbose : Bool)
+    (cfg₀ cfg' cfg'' cfg_final : Config) (e1 e2 : Expr) (v₂ vv v : Value)
+    (h₂ : LeanPoison.beval fuel' cfg₀ e2 verbose = .success cfg' v₂)
+    (h₁ : LeanPoison.beval fuel' cfg' e1 verbose = .success cfg'' vv)
+    (hmain : LeanPoison.beval (fuel' + 1) cfg₀ (Expr.app e1 e2) verbose =
+        .success cfg_final v) :
+    cfg_final.registry = cfg''.registry := by
+  unfold LeanPoison.beval at hmain
+  simp [h₂, h₁] at hmain
+  cases vv <;> simp at hmain <;> try contradiction
+  case closure x body env =>
+    match body with
+    | Expr.externFn _id _argName _argTyp _retSpec _eff =>
+      simp at hmain
+      split at hmain <;> try contradiction
+      split at hmain <;> try contradiction
+      split at hmain <;> try contradiction
+      split at hmain <;> try contradiction
+      split at hmain <;> try contradiction
+      injection hmain with hcfg _
+      subst hcfg
+      rfl
+    | b =>
+      cases hp : cfg''.pureMode with
+      | false =>
+        cases hb : b with
+        | externFn id argName argTyp retSpec eff =>
+          simp [hb, hp] at hmain
+          split at hmain <;> try contradiction
+          split at hmain <;> try contradiction
+          split at hmain <;> try contradiction
+          split at hmain <;> try contradiction
+          injection hmain with hcfg _
+          subst hcfg
+          rfl
+        | _ =>
+          simp [hb, hp] at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ b false v
+            (by simpa [hb] using hmain)
+      | true =>
+        cases b <;> simp [hp] at hmain
+  case peClosure x body env =>
+    match body with
+    | Expr.externPfn _id _argName _argTyp _retSpec =>
+      simp at hmain
+      split at hmain <;> try contradiction
+      split at hmain <;> try contradiction
+      split at hmain <;> try contradiction
+      split at hmain <;> try contradiction
+      injection hmain with hcfg _
+      subst hcfg
+      rfl
+    | b =>
+      cases htp : Expr.toPExpr? b with
+      | none =>
+        cases b with
+        | externPfn id argName argTyp retSpec =>
+          simp at hmain
+          split at hmain <;> try contradiction
+          split at hmain <;> try contradiction
+          split at hmain <;> try contradiction
+          split at hmain <;> try contradiction
+          injection hmain with hcfg _
+          subst hcfg
+          rfl
+        | unit => simp [Expr.toPExpr?] at htp
+        | num _ => simp [Expr.toPExpr?] at htp
+        | bool _ => simp [Expr.toPExpr?] at htp
+        | str _ => simp [Expr.toPExpr?] at htp
+        | var _ => simp [Expr.toPExpr?] at htp
+        | op _ _ _ => simp [htp] at hmain
+        | unaryop _ _ => simp [htp] at hmain
+        | ite _ _ _ => simp [htp] at hmain
+        | newRef _ => simp [htp] at hmain
+        | assign _ _ => simp [htp] at hmain
+        | deref _ => simp [htp] at hmain
+        | seq _ _ => simp [htp] at hmain
+        | vlet _ _ _ => simp [htp] at hmain
+        | fn _ _ _ _ => simp [htp] at hmain
+        | pfn _ _ _ _ => simp [htp] at hmain
+        | app _ _ => simp [htp] at hmain
+        | externVal _ _ _ _ => simp [htp] at hmain
+        | externFn _ _ _ _ _ => simp [htp] at hmain
+      | some _p =>
+        cases b with
+        | externPfn _ _ _ _ => simp [Expr.toPExpr?] at htp
+        | unit =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ Expr.unit true v
+            (by simpa using hmain)
+        | num n =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.num n) true v
+            (by simpa using hmain)
+        | bool b0 =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.bool b0) true v
+            (by simpa using hmain)
+        | str s =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.str s) true v
+            (by simpa using hmain)
+        | var x0 =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.var x0) true v
+            (by simpa using hmain)
+        | op e1 opName e2 =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.op e1 opName e2) true v
+            (by simpa using hmain)
+        | unaryop op e =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.unaryop op e) true v
+            (by simpa using hmain)
+        | ite e1 e2 e3 =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.ite e1 e2 e3) true v
+            (by simpa using hmain)
+        | newRef _ => simp [Expr.toPExpr?] at htp
+        | assign _ _ => simp [Expr.toPExpr?] at htp
+        | deref e =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.deref e) true v
+            (by simpa using hmain)
+        | seq _ _ => simp [Expr.toPExpr?] at htp
+        | vlet x0 e1 e2 =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.vlet x0 e1 e2) true v
+            (by simpa using hmain)
+        | fn _ _ _ _ => simp [Expr.toPExpr?] at htp
+        | pfn _ _ _ _ => simp [Expr.toPExpr?] at htp
+        | app e1 e2 =>
+          rw [htp] at hmain
+          simp at hmain
+          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.app e1 e2) true v
+            (by simpa using hmain)
+        | externVal _ _ _ _ => simp [Expr.toPExpr?] at htp
+        | externFn _ _ _ _ _ => simp [Expr.toPExpr?] at htp
+
+private lemma bevalApp_preserves_registry (fuel' : Nat) (verbose : Bool)
+    (cfg₀ cfg_final : Config) (e1 e2 : Expr) (v : Value)
+    (ih : ∀ (c₀ c₁ : Config) (e : Expr) (v : Value) (vb : Bool),
+      LeanPoison.beval fuel' c₀ e vb = .success c₁ v → c₁.registry = c₀.registry) :
+    LeanPoison.beval (fuel' + 1) cfg₀ (Expr.app e1 e2) verbose = .success cfg_final v →
+      cfg_final.registry = cfg₀.registry := by
+  intro hmain
+  cases hb2 : LeanPoison.beval fuel' cfg₀ e2 verbose with
+  | outOfFuel =>
+    simp [LeanPoison.beval, hb2] at hmain
+  | runtimeError msg =>
+    simp [LeanPoison.beval, hb2] at hmain
+  | success cfg' v₂ =>
+    cases hb1 : LeanPoison.beval fuel' cfg' e1 verbose with
+    | outOfFuel =>
+      simp [LeanPoison.beval, hb2, hb1] at hmain
+    | runtimeError msg =>
+      simp [LeanPoison.beval, hb2, hb1] at hmain
+    | success cfg'' vv =>
+      have hg2 : cfg'.registry = cfg₀.registry := ih _ _ _ _ _ hb2
+      have hg1 : cfg''.registry = cfg'.registry := ih _ _ _ _ _ hb1
+      have hgf : cfg_final.registry = cfg''.registry :=
+        bevalApp_success_registry_eq fuel' verbose cfg₀ cfg' cfg'' cfg_final e1 e2 v₂ vv v hb2 hb1 hmain
+      exact hgf.trans (hg1.trans hg2)
+
 /-- `beval` preserves the extern registry: the final config's `.registry` field
     is always equal to the initial config's `.registry`. This holds because
     `beval` and `bevalFunctionBody` only ever modify `.memory`, `.varEnv`,
@@ -475,40 +675,150 @@ lemma beval_preserves_registry (fuel : Nat) (cfg₀ cfg₁ : Config) (e : Expr)
     (v : Value) (verbose : Bool) :
   LeanPoison.beval fuel cfg₀ e verbose = .success cfg₁ v →
     cfg₁.registry = cfg₀.registry := by
-  -- TODO: FFI runtime — the lemma is semantically obvious (beval only
-  -- updates `.memory`, `.varEnv`, `.nextAddr`, `.pureMode` via record
-  -- updates; `.registry` is never written).  Proof by strong induction
-  -- on fuel + case analysis on `e`; the tactic script alignment with
-  -- `beval`'s nested `match` shape is being iterated in a follow-up.
-  sorry
-
-/-- Corollary: when the initial config has the default (empty) registry,
-    every reachable final config also does. -/
-lemma beval_registry_default {fuel : Nat} {μ : Memory} {ρ : VarEnv} {a : Address}
-    {pm : Bool} {cfg : Config} {e : Expr} {v : Value} {verbose : Bool} :
-  LeanPoison.beval fuel { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
-    e verbose = .success cfg v → cfg.registry = emptyExternRegistry := by
-  intro h
-  have := beval_preserves_registry fuel _ cfg e v verbose h
-  simpa using this
+  revert cfg₀ cfg₁ e v verbose
+  induction fuel with
+  | zero =>
+    intro cfg₀ cfg₁ e v verbose h
+    unfold LeanPoison.beval at h
+    simp at h
+  | succ n ih =>
+    intro cfg₀ cfg₁ e v verbose h
+    cases e with
+    | num _ =>
+      unfold LeanPoison.beval at h
+      simp at h
+      rcases h with ⟨rfl, _⟩
+      rfl
+    | bool _ =>
+      unfold LeanPoison.beval at h
+      simp at h
+      rcases h with ⟨rfl, _⟩
+      rfl
+    | unit =>
+      unfold LeanPoison.beval at h
+      simp at h
+      rcases h with ⟨rfl, _⟩
+      rfl
+    | str _ =>
+      unfold LeanPoison.beval at h
+      simp at h
+      rcases h with ⟨rfl, _⟩
+      rfl
+    | var x =>
+      cases h_lookup : cfg₀.varEnv.lookup x with
+      | none =>
+        simp [LeanPoison.beval, h_lookup] at h
+      | some val =>
+        have heval :
+            LeanPoison.beval (Nat.succ n) cfg₀ (Expr.var x) verbose = EvalResult.success cfg₀ val := by
+          simp [LeanPoison.beval, h_lookup]
+        rw [heval] at h
+        injection h with hcfg hval
+        subst hcfg
+        rfl
+    | op e1 op e2 =>
+      have hstruct := bevalOp_structure e1 e2 op (Nat.succ n) verbose cfg₀ cfg₁ v h
+      rcases hstruct with ⟨cfg_mid, cfg_mid2, v1, v2, h1, h2, hop, hm, hv, hn, hp, hreg⟩
+      exact (hreg.symm.trans ((ih _ _ _ _ _ h2).trans (ih _ _ _ _ _ h1)))
+    | unaryop op e1 =>
+      have hstruct := bevalUnaryOp_structure op e1 (Nat.succ n) verbose cfg₀ cfg₁ v h
+      rcases hstruct with ⟨cfg_mid, v1, h1, _, _, _, _, _, hreg⟩
+      exact hreg.symm.trans (ih _ _ _ _ _ h1)
+    | newRef e1 =>
+      have hstruct := bevalNewRef_structure e1 (Nat.succ n) verbose cfg₀ cfg₁ v h
+      rcases hstruct with ⟨cfg_mid, num, a, h1, ha, _, hnext, hvar, hpure, hreg, _⟩
+      subst ha
+      have h1' := by simpa [Nat.succ_sub_one] using h1
+      exact hreg.trans (ih cfg₀ cfg_mid e1 (Value.num num) verbose h1')
+    | deref e1 =>
+      have hstruct := bevalDeref_structure e1 (Nat.succ n) verbose cfg₀ cfg₁ v h
+      rcases hstruct with ⟨cfg_mid, a, nloc, h1, _, _, hmem, hvar, hnext, hpure, hreg⟩
+      have h1' := by simpa [Nat.succ_sub_one] using h1
+      exact hreg.trans (ih cfg₀ cfg_mid e1 (Value.loc a) verbose h1')
+    | assign e1 e2 =>
+      have hstruct := bevalAssign_structure e1 e2 (Nat.succ n) verbose cfg₀ cfg₁ v h
+      rcases hstruct with ⟨cfgL, cfgR, a, num, h1, h2, _, hmem, hvar, hnext, hpure, hreg⟩
+      exact hreg.trans ((ih _ _ _ _ _ h2).trans (ih _ _ _ _ _ h1))
+    | seq e1 e2 =>
+      have hstruct := bevalSeq_structure e1 e2 (Nat.succ n) verbose cfg₀ cfg₁ v h
+      rcases hstruct with ⟨cfg_mid, _, h1, h2⟩
+      exact (ih _ _ _ _ _ h2).trans (ih _ _ _ _ _ h1)
+    | ite e1 e2 e3 =>
+      have hstruct := bevalIte_structure e1 e2 e3 (Nat.succ n) verbose cfg₀ cfg₁ v h
+      rcases hstruct with ⟨cfg_mid, b, h1, hbranch⟩
+      cases hbranch with
+      | inl htrue =>
+        rcases htrue with ⟨_, h2⟩
+        exact (ih _ _ _ _ _ h2).trans (ih _ _ _ _ _ h1)
+      | inr hfalse =>
+        rcases hfalse with ⟨_, h3⟩
+        exact (ih _ _ _ _ _ h3).trans (ih _ _ _ _ _ h1)
+    | vlet x e1 e2 =>
+      have hstruct := bevalVlet_structure x e1 e2 (Nat.succ n) verbose cfg₀ cfg₁ v h
+      rcases hstruct with ⟨cfg₁', cfg₂, cfg₃, v1, h1, hcfg2, h2, hcfg_final⟩
+      have hreg₂ : cfg₂.registry = cfg₁'.registry := by simp [hcfg2, Config.registry_update_varEnv]
+      have hreg₃ : cfg₃.registry = cfg₂.registry := ih _ _ _ _ _ h2
+      have hreg_final : cfg₁.registry = cfg₃.registry := by simp [hcfg_final, Config.registry_update_varEnv]
+      exact hreg_final.trans (hreg₃.trans (hreg₂.trans (ih _ _ _ _ _ h1)))
+    | fn x t body t' =>
+      unfold LeanPoison.beval at h
+      simp at h
+      rcases h with ⟨rfl, _⟩; rfl
+    | pfn x t body t' =>
+      unfold LeanPoison.beval at h
+      simp at h
+      rcases h with ⟨rfl, _⟩; rfl
+    | app e1 e2 =>
+      exact bevalApp_preserves_registry n verbose cfg₀ cfg₁ e1 e2 v ih h
+    | externVal id typ poison pred =>
+      unfold LeanPoison.beval at h
+      cases hscr : cfg₀.registry[id]? with
+      | none =>
+        simp [hscr] at h
+      | some impl =>
+        cases impl with
+        | val v' =>
+            simp [hscr] at h
+            split_ifs at h; try contradiction
+            · rcases h with ⟨rfl, _⟩; rfl
+        | fn _ =>
+            simp [hscr] at h
+        | pfn _ =>
+            simp [hscr] at h
+    | externFn id argName argTyp retSpec eff =>
+      unfold LeanPoison.beval at h
+      cases hscr : cfg₀.registry[id]? with
+      | none =>
+        simp [hscr] at h
+      | some impl =>
+        cases impl with
+        | fn _ =>
+            simp [hscr] at h
+            rcases h with ⟨rfl, _⟩; rfl
+        | val _ =>
+            simp [hscr] at h
+        | pfn _ =>
+            simp [hscr] at h
+    | externPfn id argName argTyp retSpec =>
+      unfold LeanPoison.beval at h
+      cases hscr : cfg₀.registry[id]? with
+      | none =>
+        simp [hscr] at h
+      | some impl =>
+        cases impl with
+        | pfn _ =>
+            simp [hscr] at h
+            rcases h with ⟨rfl, _⟩; rfl
+        | val _ =>
+            simp [hscr] at h
+        | fn _ =>
+            simp [hscr] at h
 
 /-- Corollary: `terminatesTo` preserves the extern registry. -/
 lemma terminatesTo_preserves_registry {e : Expr} {c₀ c₁ : Config} {out : Value} :
   terminatesTo e c₀ c₁ out → c₁.registry = c₀.registry := by
   intro ⟨fuel, verbose, h⟩
   exact beval_preserves_registry fuel c₀ c₁ e out verbose h
-
-/-- Rewriting lemma: if a `terminatesTo` chain starts from a config with the
-    default (empty) registry, the intermediate `cfg₀` also has the default
-    registry, and we may rewrite any `terminatesTo e cfg₀ c₁ out` into the
-    "registry-stripped" literal form that proof scaffolding expects. -/
-lemma terminatesTo_registry_strip {e : Expr} {cfg₀ c₁ : Config} {out : Value}
-    (h_reg : cfg₀.registry = emptyExternRegistry)
-    (ht : terminatesTo e cfg₀ c₁ out) :
-  terminatesTo e { memory := cfg₀.memory, varEnv := cfg₀.varEnv, nextAddr := cfg₀.nextAddr, pureMode := cfg₀.pureMode } c₁ out := by
-  have heq : cfg₀ = { memory := cfg₀.memory, varEnv := cfg₀.varEnv, nextAddr := cfg₀.nextAddr, pureMode := cfg₀.pureMode } :=
-    config_eq_of_registry_default cfg₀ h_reg
-  rw [← heq]; exact ht
 
 -- ================================================================
 -- bevalFunctionBody_to_terminatesTo
@@ -677,7 +987,7 @@ lemma terminatesTo_unaryop_inv' (op : UnaryOp) (e : Expr) (c₀ c₁ : Config) (
               c₁.pureMode = c₁'.pureMode := by
   intro ⟨fuel, verbose, hbeval⟩
   have hstruct := bevalUnaryOp_structure op e fuel verbose c₀ c₁ v hbeval
-  rcases hstruct with ⟨cfg', v', hbeval_e, hevalOp, hmem, hvar, hnext, hpure_mode⟩
+  rcases hstruct with ⟨cfg', v', hbeval_e, hevalOp, hmem, hvar, hnext, hpure_mode, _⟩
   exact ⟨cfg', v', ⟨fuel - 1, verbose, hbeval_e⟩, hevalOp, hmem.symm, hvar.symm, hnext.symm, hpure_mode.symm⟩
 
 /-- Inversion lemma for terminatesTo on newRef.
@@ -692,7 +1002,7 @@ lemma terminatesTo_newRef_inv' (e : Expr) (c₀ c₁ : Config) (v : Value) :
               c₁.pureMode = c₁'.pureMode := by
   intro ⟨fuel, verbose, hbeval⟩
   have hstruct := bevalNewRef_structure e fuel verbose c₀ c₁ v hbeval
-  rcases hstruct with ⟨cfg', n, a, hbeval_e, ha_eq, hmem, hnext, hvar, hpure_mode, hv⟩
+  rcases hstruct with ⟨cfg', n, a, hbeval_e, ha_eq, hmem, hnext, hvar, hpure_mode, _, hv⟩
   refine ⟨cfg', n, ⟨fuel - 1, verbose, hbeval_e⟩, ?_, ?_, ?_, ?_, ?_⟩
   · rw [hv, ha_eq]
   · simp only [hmem, ha_eq, Memory.update]
@@ -712,7 +1022,7 @@ lemma terminatesTo_deref_inv' (e : Expr) (c₀ c₁ : Config) (v : Value) :
               c₁.pureMode = c₁'.pureMode := by
   intro ⟨fuel, verbose, hbeval⟩
   have hstruct := bevalDeref_structure e fuel verbose c₀ c₁ v hbeval
-  rcases hstruct with ⟨cfg', a, n, hbeval_e, hlookup, hv, hmem, hvar, hnext, hpure⟩
+  rcases hstruct with ⟨cfg', a, n, hbeval_e, hlookup, hv, hmem, hvar, hnext, hpure, _⟩
   exact ⟨cfg', a, n, ⟨fuel - 1, verbose, hbeval_e⟩, hlookup, hv, hmem, hvar, hnext, hpure⟩
 
 /-- Helper lemma: in evaluation, `pureMode` is preserved through evaluation.
@@ -761,14 +1071,14 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
           rw [h.1]
         | op e1 op e2 =>
           have hstruct := bevalOp_structure e1 e2 op (fuel' + 1) verbose c₀ c₁ v hpure
-          rcases hstruct with ⟨cfg₁, cfg₂, v1, v2, hbeval1, hbeval2, _, _, _, _, h_pure_eq⟩
+          rcases hstruct with ⟨cfg₁, cfg₂, v1, v2, hbeval1, hbeval2, _, _, _, _, h_pure_eq, _⟩
           have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
           have hrec₁ := ih fuel' h_fuel e1 c₀ cfg₁ v1 verbose hbeval1
           have hrec₂ := ih fuel' h_fuel e2 cfg₁ cfg₂ v2 verbose hbeval2
           rw [h_pure_eq.symm, hrec₂, hrec₁]
         | unaryop op e1 =>
           have hstruct := bevalUnaryOp_structure op e1 (fuel' + 1) verbose c₀ c₁ v hpure
-          rcases hstruct with ⟨cfg₁, v1, hbeval1, _, _, _, _, h_pure_eq⟩
+          rcases hstruct with ⟨cfg₁, v1, hbeval1, _, _, _, _, h_pure_eq, _⟩
           have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
           have hrec₁ := ih fuel' h_fuel e1 c₀ cfg₁ v1 verbose hbeval1
           rw [h_pure_eq.symm, hrec₁]
@@ -806,19 +1116,19 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
             rw [hrec₃, hrec₁]
         | newRef e1 =>
           have hstruct := bevalNewRef_structure e1 (fuel' + 1) verbose c₀ c₁ v hpure
-          rcases hstruct with ⟨cfg₁, _, _, hbeval1, _, _, _, _, h_pure_eq, _⟩
+          rcases hstruct with ⟨cfg₁, _, _, hbeval1, _, _, _, _, h_pure_eq, _, _⟩
           have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
           have hrec₁ := ih fuel' h_fuel e1 c₀ cfg₁ _ verbose hbeval1
           rw [h_pure_eq, hrec₁]
         | deref e1 =>
           have hstruct := bevalDeref_structure e1 (fuel' + 1) verbose c₀ c₁ v hpure
-          rcases hstruct with ⟨cfg₁, _, _, hbeval1, _, _, _, _, _, h_pure_eq⟩
+          rcases hstruct with ⟨cfg₁, _, _, hbeval1, _, _, _, _, _, h_pure_eq, _⟩
           have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
           have hrec₁ := ih fuel' h_fuel e1 c₀ cfg₁ _ verbose hbeval1
           rw [h_pure_eq, hrec₁]
         | assign e1 e2 =>
           have hstruct := bevalAssign_structure e1 e2 (fuel' + 1) verbose c₀ c₁ v hpure
-          rcases hstruct with ⟨cfg₁, cfg₁', _, _, hbeval1, hbeval2, _, _, _, _, h_pure_eq⟩
+          rcases hstruct with ⟨cfg₁, cfg₁', _, _, hbeval1, hbeval2, _, _, _, _, h_pure_eq, _⟩
           have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
           have hrec₁ := ih fuel' h_fuel e1 c₀ cfg₁ _ verbose hbeval1
           have hrec₂ := ih fuel' h_fuel e2 cfg₁ cfg₁' _ verbose hbeval2
@@ -939,12 +1249,9 @@ lemma terminatesTo_op_inv' (e₁ : Expr) (op : Op) (e₂ : Expr) (c₀ c₂ : Co
                 c₂.pureMode = c₀.pureMode := by
   intro ⟨fuel, verbose, hbeval⟩
   have hstruct := bevalOp_structure e₁ e₂ op fuel verbose c₀ c₂ v hbeval
-  rcases hstruct with ⟨cfg₁, cfg₂, v₁, v₂, hbeval_e1, hbeval_e2, hevalOp, hmem, hvar, hnext, hpure_mode⟩
-  have hbeval_e2' : LeanPoison.beval (fuel - 1) cfg₁ e₂ verbose = .success c₂ v₂ := by
-    -- TODO: FFI runtime — Config gained a `registry` field; the `Config.mk.injEq`
-    -- expansion requires a 5th argument for registry equality that the caller
-    -- has not been re-plumbed to supply.
-    sorry
+  rcases hstruct with ⟨cfg₁, cfg₂, v₁, v₂, hbeval_e1, hbeval_e2, hevalOp, hmem, hvar, hnext, hpure_mode, hreg⟩
+  have hcfg₂ : cfg₂ = c₂ := Config.ext_fields hmem hvar hnext hpure_mode hreg
+  have hbeval_e2' : LeanPoison.beval (fuel - 1) cfg₁ e₂ verbose = .success c₂ v₂ := hcfg₂ ▸ hbeval_e2
   refine ⟨cfg₁, v₁, v₂, ⟨fuel - 1, verbose, hbeval_e1⟩, ⟨fuel - 1, verbose, hbeval_e2'⟩, hevalOp, ?_, ?_⟩
   · exact terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
   · have hrec₁ := terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
@@ -1000,7 +1307,7 @@ lemma terminatesTo_assign_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Valu
                            c₂.pureMode = c₁'.pureMode := by
   intro ⟨fuel, verbose, hbeval⟩
   have hstruct := bevalAssign_structure e₁ e₂ fuel verbose c₀ c₂ v hbeval
-  rcases hstruct with ⟨cfg₁, cfg₁', a, n, hbeval_e1, hbeval_e2, hv, hmem, hvar, hnext, hpure_mode⟩
+  rcases hstruct with ⟨cfg₁, cfg₁', a, n, hbeval_e1, hbeval_e2, hv, hmem, hvar, hnext, hpure_mode, _⟩
   refine ⟨cfg₁, cfg₁', a, n, ⟨fuel - 1, verbose, hbeval_e1⟩, ⟨fuel - 1, verbose, hbeval_e2⟩, hv, ?_, ?_, ?_, ?_⟩
   · rw [hmem]; rfl  -- .update = .insert for ExtTreeMap
   · exact hvar
@@ -1120,7 +1427,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             have hstruct :=
               bevalOp_structure e1 e2 op (fuel' + 1) verbose config₀ config₁ v h_eval
             rcases hstruct with
-              ⟨cfg₁1, cfg₁2, v1, v2, hbeval1, hbeval2, _h_evalOp, _h_mem, _h_var, h_next, _h_pure⟩
+              ⟨cfg₁1, cfg₁2, v1, v2, hbeval1, hbeval2, _h_evalOp, _h_mem, _h_var, h_next, _h_pure, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             have hle1 :=
               IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
@@ -1134,7 +1441,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
         | succ fuel' =>
             have hstruct :=
               bevalUnaryOp_structure op e1 (fuel' + 1) verbose config₀ config₁ v h_eval
-            rcases hstruct with ⟨cfg₁1, v1, hbeval1, _h_evalOp, _h_mem, _h_var, h_next, _h_pure⟩
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1, _h_evalOp, _h_mem, _h_var, h_next, _h_pure, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
             simpa [h_next] using hle1
@@ -1163,7 +1470,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
         | succ fuel' =>
             have hstruct :=
               bevalNewRef_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
-            rcases hstruct with ⟨cfg₁1, n, a, hbeval1, _ha, _hmem, h_next, _hvar, _hval⟩
+            rcases hstruct with ⟨cfg₁1, n, a, hbeval1, _ha, _hmem, h_next, _hvar, _hpure, _, _hval⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.num n) hbeval1
             have hle1' : config₀.nextAddr ≤ cfg₁1.nextAddr + 1 :=
@@ -1175,7 +1482,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
         | succ fuel' =>
             have hstruct :=
               bevalAssign_structure e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
-            rcases hstruct with ⟨cfg₁, cfg₁', a, n, hbeval1, hbeval2, _, _, _, hnext, _⟩
+            rcases hstruct with ⟨cfg₁, cfg₁', a, n, hbeval1, hbeval2, _, _, _, hnext, _, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁ (Value.loc a) hbeval1
             have hle2 := IH_converted fuel' h_fuel e2 cfg₁ cfg₁' (Value.num n) hbeval2
@@ -1187,7 +1494,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
         | succ fuel' =>
             have hstruct :=
               bevalDeref_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
-            rcases hstruct with ⟨cfg₁1, a, n, hbeval1, _, _, hmem, hvar, hnext, hpure⟩
+            rcases hstruct with ⟨cfg₁1, a, n, hbeval1, _, _, hmem, hvar, hnext, hpure, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.loc a) hbeval1
             -- config₁ = cfg₁1 since all fields match
@@ -1296,7 +1603,7 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
             have hstruct :=
               bevalOp_structure e1 e2 op (fuel' + 1) verbose cfg₀ cfg₁ v hbeval
             rcases hstruct with
-              ⟨cfg₁1, cfg₁2, v1, v2, hbeval1', hbeval2', _h_evalOp, _h_mem, _h_var, h_next, h_pure_eq⟩
+              ⟨cfg₁1, cfg₁2, v1, v2, hbeval1', hbeval2', _h_evalOp, _h_mem, _h_var, h_next, h_pure_eq, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             simp [Expr.toPExpr?] at h_pure
             cases h_pe1 : Expr.toPExpr? e1 with
@@ -1322,7 +1629,7 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
         | unaryop op e1 =>
             have hstruct :=
               bevalUnaryOp_structure op e1 (fuel' + 1) verbose cfg₀ cfg₁ v hbeval
-            rcases hstruct with ⟨cfg₁1, v1, hbeval1', _h_evalOp, _h_mem, _h_var, h_next, h_pure_eq⟩
+            rcases hstruct with ⟨cfg₁1, v1, hbeval1', _h_evalOp, _h_mem, _h_var, h_next, h_pure_eq, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             simp [Expr.toPExpr?] at h_pure
             cases h_pe1 : Expr.toPExpr? e1 with
@@ -1392,7 +1699,7 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
                 refine ⟨?_, ?_, ?_⟩
                 · calc cfg₁.nextAddr = cfg₁1.nextAddr := hnext
                     _ = cfg₀.nextAddr := h1.1
-                · calc cfg₁.pureMode = cfg₁1.pureMode := hpure_eq
+                · calc cfg₁.pureMode = cfg₁1.pureMode := hpure_eq.1
                     _ = true := h1.2.1
                 · calc cfg₁.memory = cfg₁1.memory := hmem
                     _ = cfg₀.memory := h1.2.2
@@ -1462,15 +1769,6 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
         | newRef _ | assign _ _ | seq _ _ | fn _ _ _ _ | pfn _ _ _ _
         | externVal _ _ _ | externFn _ _ _ _ | externPfn _ _ _ =>
             simp [Expr.toPExpr?] at h_pure
-
-private lemma beval_pure_nextAddr_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Config) (v : Value)
-    (verbose : Bool) (pe : PExpr) :
-    Expr.toPExpr? e = some pe →
-    cfg₀.pureMode = true →
-    LeanPoison.beval fuel cfg₀ e verbose = .success cfg₁ v →
-    cfg₁.nextAddr = cfg₀.nextAddr := by
-  intro h_pure h_pm hbeval
-  exact (beval_pure_config_eq e fuel cfg₀ cfg₁ v verbose pe h_pure h_pm hbeval).1
 
 lemma beval_pure_memory_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Config) (v : Value)
     (verbose : Bool) (pe : PExpr) :
@@ -1667,7 +1965,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           have hstruct :=
             bevalOp_structure e1 e2 op (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with
-            ⟨cfg₁1, cfg₁2, v1, v2, hbeval1', hbeval2', h_evalOp, h_mem, h_var, h_next, _h_pure⟩
+            ⟨cfg₁1, cfg₁2, v1, v2, hbeval1', hbeval2', h_evalOp, h_mem, h_var, h_next, _h_pure, _⟩
           have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ hbeval1'
           have hih2 := ih e2 cfg₁1 cfg₁2 v2 hih1.1 hbeval2'
           constructor
@@ -1684,7 +1982,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
       | unaryop op e1 =>
           have hstruct :=
             bevalUnaryOp_structure op e1 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
-          rcases hstruct with ⟨cfg₁1, v1, hbeval1', h_evalOp, h_mem, h_var, h_next, _h_pure⟩
+          rcases hstruct with ⟨cfg₁1, v1, hbeval1', h_evalOp, h_mem, h_var, h_next, _h_pure, _⟩
           have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ hbeval1'
           constructor
           · rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
@@ -1713,7 +2011,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
       | newRef e1 =>
           have hstruct :=
             bevalNewRef_structure e1 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
-          rcases hstruct with ⟨cfg₁1, n, a, hbeval1, ha, hmem_eq, hnext_eq, hvar_eq, _hpure_eq, hval_eq⟩
+          rcases hstruct with ⟨cfg₁1, n, a, hbeval1, ha, hmem_eq, hnext_eq, hvar_eq, _hpure_eq, _, hval_eq⟩
           have hih1 := ih e1 cfg₀ cfg₁1 (Value.num n) hwf₀ hbeval1
           constructor
           · rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
@@ -1750,7 +2048,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
       | assign e1 e2 =>
           have hstruct :=
             bevalAssign_structure e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
-          rcases hstruct with ⟨cfgA, cfgB, a, n, hbeval1, hbeval2, hv, hmem, hvar, hnext, hpure⟩
+          rcases hstruct with ⟨cfgA, cfgB, a, n, hbeval1, hbeval2, hv, hmem, hvar, hnext, hpure, _⟩
           have hih1 := ih e1 cfg₀ cfgA (Value.loc a) hwf₀ hbeval1
           have hih2 := ih e2 cfgA cfgB (Value.num n) hih1.1 hbeval2
           have hloc_lt : a < cfgA.nextAddr := by
@@ -1786,7 +2084,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
       | deref e1 =>
           have hstruct :=
             bevalDeref_structure e1 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
-          rcases hstruct with ⟨config', a, n, hbeval1, _, hv, hmem, hvar, hnext, hpure⟩
+          rcases hstruct with ⟨config', a, n, hbeval1, _, hv, hmem, hvar, hnext, hpure, _⟩
           have hih1 := ih e1 cfg₀ config' (Value.loc a) hwf₀ hbeval1
           constructor
           · -- cfg₁ has same fields as config'
@@ -1849,4 +2147,3 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
       | externPfn _id _name _t _ret =>
           -- TODO: FFI runtime — same as `externFn`.
           sorry
-
