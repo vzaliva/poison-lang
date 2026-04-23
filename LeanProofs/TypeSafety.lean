@@ -3455,6 +3455,9 @@ private lemma typecheckUnaryOp_regime_mono (ctx : TypeContext) (op : UnaryOp) (e
 
 -- Regime monotonicity: Typechecking can only drop regime entries (never change values or add new entries)
 -- Replaces regime_immutability which becomes false once typing invalidates R
+
+private lemma TypecheckM_pure_eq {α} (a : α) : (Pure.pure a : TypecheckM α) = Except.ok a := rfl
+
 /-- Helper: when `typecheckExternFn` accepts an extern, the result is
     structurally the success record (the two front-guards `checkExternInput…`
     have succeeded). We state this as an inversion lemma so downstream proofs
@@ -3471,13 +3474,49 @@ lemma typecheckExternFn_ok_res_eq
             memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
             nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
             regime' := ctx.regime } := by
-  -- TODO: FFI runtime — purely syntactic inversion through the two
-  -- `checkExternInputFirstOrder` / `checkExternReturnInputsFirstOrder`
-  -- guards; straightforward but tactically verbose.
-  sorry
+  intro h
+  have h1ok : checkExternInputFirstOrder argTyp = .ok PUnit.unit := by
+    cases argTyp
+    case int | bool | unit | string =>
+      simp [checkExternInputFirstOrder, TypecheckM_pure_eq]
+    case ref t =>
+      cases t
+      case int =>
+        simp [checkExternInputFirstOrder, TypecheckM_pure_eq]
+      case bool | unit | string | ref _t' | arrow _t1 _t2 =>
+        exfalso
+        unfold typecheckExternFn at h
+        simp [checkExternInputFirstOrder, bind, Except.bind] at h
+    case arrow a b =>
+        exfalso
+        unfold typecheckExternFn at h
+        simp [checkExternInputFirstOrder, bind, Except.bind] at h
+  have h2ok : checkExternReturnInputsFirstOrder retSpec = .ok PUnit.unit := by
+    let c := checkExternReturnInputsFirstOrder retSpec
+    cases c_eq : c with
+    | error e =>
+      have c_err : checkExternReturnInputsFirstOrder retSpec = .error e := c_eq
+      unfold typecheckExternFn at h
+      rw [h1ok, c_err] at h
+      cases h
+    | ok a =>
+      have hca : checkExternReturnInputsFirstOrder retSpec = .ok a := c_eq
+      have ha' : a = PUnit.unit := Subsingleton.elim a PUnit.unit
+      exact hca.trans (congrArg Except.ok ha')
+  have hdef :
+      typecheckExternFn ctx arg argTyp retSpec effects
+        = .ok { qualType :=
+                  ⟨ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
+                    [FnTClosure.extern arg retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)],
+                    ctx.pc, Predicate.noPred⟩,
+                memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
+                nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
+                regime' := ctx.regime } := by
+    simp [typecheckExternFn, h1ok, h2ok, bind, Except.bind, TypecheckM_pure_eq]
+  exact (by injection h.symm.trans hdef)
 
 lemma typecheckExternPfn_ok_res_eq
-    (ctx : TypeContext) (arg : Name) (argTyp : Typ)
+  (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (res : TypeResult) :
     typecheckExternPfn ctx arg argTyp retSpec = .ok res →
     res = { qualType :=
@@ -3487,7 +3526,46 @@ lemma typecheckExternPfn_ok_res_eq
             memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
             nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
             regime' := ctx.regime } := by
-  sorry
+  intro h
+  have h1ok : checkExternInputFirstOrder argTyp = .ok PUnit.unit := by
+    cases argTyp
+    case int | bool | unit | string =>
+      simp [checkExternInputFirstOrder, TypecheckM_pure_eq]
+    case ref t =>
+      cases t
+      case int =>
+        simp [checkExternInputFirstOrder, TypecheckM_pure_eq]
+      case bool | unit | string | ref _t' | arrow _t1 _t2 =>
+        exfalso
+        unfold typecheckExternPfn at h
+        simp [checkExternInputFirstOrder, bind, Except.bind] at h
+    case arrow a b =>
+        exfalso
+        unfold typecheckExternPfn at h
+        simp [checkExternInputFirstOrder, bind, Except.bind] at h
+  have h2ok : checkExternReturnInputsFirstOrder retSpec = .ok PUnit.unit := by
+    let c := checkExternReturnInputsFirstOrder retSpec
+    cases c_eq : c with
+    | error e =>
+      have c_err : checkExternReturnInputsFirstOrder retSpec = .error e := c_eq
+      unfold typecheckExternPfn at h
+      rw [h1ok, c_err] at h
+      cases h
+    | ok a =>
+      have hca : checkExternReturnInputsFirstOrder retSpec = .ok a := c_eq
+      have ha' : a = PUnit.unit := Subsingleton.elim a PUnit.unit
+      exact hca.trans (congrArg Except.ok ha')
+  have hdef :
+      typecheckExternPfn ctx arg argTyp retSpec
+        = .ok { qualType :=
+                  ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
+                    [PFnTClosure.extern arg retSpec (VarTypeEnv.toCaptured ctx.varEnv)],
+                    ctx.pc, Predicate.noPred⟩,
+                memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
+                nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
+                regime' := ctx.regime } := by
+    simp [typecheckExternPfn, h1ok, h2ok, bind, Except.bind, TypecheckM_pure_eq]
+  exact (by injection h.symm.trans hdef)
 
 private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
     typecheck ctx e fuel = .ok res →
