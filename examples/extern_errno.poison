@@ -1,0 +1,3 @@
+-- Test: built-in extern val @21 (errno : ref int) is dereferenced to its
+-- driver-supplied initial value (0).
+let errno = extern val @21 : (ref int :> clean {}) in !errno

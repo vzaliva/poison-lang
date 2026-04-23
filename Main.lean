@@ -45,8 +45,16 @@ def versionNo := "1.0"
 --   @10 : outer pure-fn stage of curried `max` (int -> ...)
 --   @11 : inner pure-fn stage of curried `max`, expects captured `a` in env
 --   @12 : pure `abs` (int -> int)
+--   @20 : extern val ZERO  : int         (constant 0)
+--   @21 : extern val errno : ref int     (driver-allocated cell, init 0)
+--   @22 : extern fn  set_err n : (int) -> unit   (writes n into !errno)
 -- See `doc/ffi-runtime-design.md` and `doc/poison-lang-description.tex`.
 -- ----------------------------------------------------------------------------
+
+/-- Driver-chosen runtime address for the `errno` cell (`@21`). Placed high
+    so the driver-supplied cell is visually distinct from program-allocated
+    ones in test goldens; `Config.nextAddr` still starts at `0`. -/
+private def errnoAddr : Address := 1000000
 
 private def outerMaxImpl
     : VarEnv → Value → Memory → Except ExternError Value
@@ -69,21 +77,45 @@ private def absImpl
   | _, Value.num n, _ => .ok (Value.num (Int.ofNat n.natAbs))
   | _, _, _           => .error (.implFailure 12 "expected int argument")
 
-/-- Build the default registry shipped with the interpreter. Registrations
-    cannot collide (ids are hard-coded literals), so `register` failures are
-    impossible at runtime; `panic!` is only defensive. -/
-def defaultRegistry : ExternRegistry := Id.run do
+/-- `set_err n` writes `n` into the `errno` cell and returns `unit`. No new
+    allocation, so `nextAddr` is threaded through unchanged. -/
+private def setErrImpl
+    : VarEnv → Value → Memory → Address →
+      Except ExternError (Value × Memory × Address)
+  | _, Value.num n, mem, next =>
+      .ok (Value.unit, Memory.update mem errnoAddr n, next)
+  | _, _, _, _ => .error (.implFailure 22 "expected int argument")
+
+/-- Bundled initial runtime state shipped with the interpreter: the registry,
+    pre-populated memory (the `errno` cell), and `nextAddr` (unchanged at `0`
+    since `errnoAddr` sits above the program-visible allocation range). -/
+structure DefaultInitialState where
+  memory   : Memory
+  nextAddr : Address
+  registry : ExternRegistry
+
+/-- Registry/insert helper. `register` failures are impossible here because
+    all ids are hard-coded literals; `panic!` is purely defensive. -/
+private def regInsert (reg : ExternRegistry) (id : ExternId) (impl : ExternImpl)
+    : ExternRegistry :=
+  match register reg id impl with
+  | .ok r => r
+  | .error e => panic! s!"defaultInitialState: {e}"
+
+/-- Build the default registry and driver-supplied initial memory/cursor. -/
+def defaultInitialState : DefaultInitialState :=
+  let mem0 : Memory := Memory.update emptyMemory errnoAddr 0
   let r0 : ExternRegistry := ∅
-  let r1 := match register r0 10 (.pfn outerMaxImpl) with
-           | .ok r => r
-           | .error e => panic! s!"defaultRegistry: {e}"
-  let r2 := match register r1 11 (.pfn innerMaxImpl) with
-           | .ok r => r
-           | .error e => panic! s!"defaultRegistry: {e}"
-  let r3 := match register r2 12 (.pfn absImpl) with
-           | .ok r => r
-           | .error e => panic! s!"defaultRegistry: {e}"
-  return r3
+  let r1 := regInsert r0 10 (.pfn outerMaxImpl)
+  let r2 := regInsert r1 11 (.pfn innerMaxImpl)
+  let r3 := regInsert r2 12 (.pfn absImpl)
+  let r4 := regInsert r3 20 (.val (Value.num 0))
+  let r5 := regInsert r4 21 (.val (Value.loc errnoAddr))
+  let r6 := regInsert r5 22 (.fn setErrImpl)
+  { memory := mem0, nextAddr := 0, registry := r6 }
+
+/-- Back-compat alias: older call sites that just want the registry. -/
+def defaultRegistry : ExternRegistry := defaultInitialState.registry
 
 private def initialTypeContext (regime : Regime) : TypeContext :=
   {
@@ -250,7 +282,8 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
         match typecheckExprVerbose expr regime with
         | .ok resultType =>
             printDoc (formatTypecheckPassedVerbose resultType)
-            let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false, defaultRegistry⟩
+            let st := defaultInitialState
+            let initialConfig : Config := ⟨st.memory, emptyVarEnv, st.nextAddr, false, st.registry⟩
             let result := LeanPoison.beval defaultFuel initialConfig expr verbose
             handleEvalResult result verbose
         | .error errorMsg =>
@@ -263,7 +296,8 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
         match typecheckExprSimple expr regime with
         | .ok qualType =>
             printDoc (formatTypecheckPassedSimple qualType)
-            let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false, defaultRegistry⟩
+            let st := defaultInitialState
+            let initialConfig : Config := ⟨st.memory, emptyVarEnv, st.nextAddr, false, st.registry⟩
             let result := LeanPoison.beval defaultFuel initialConfig expr verbose
             handleEvalResult result verbose
         | .error errorMsg =>
@@ -383,7 +417,8 @@ def main (args : List String) : IO UInt32 := do
         IO.println "Enter a blank line after an expression to evaluate it."
         let tmp ← IO.Process.output { cmd := "mktemp", args := #["--tmpdir", "repl-XXXXXX.poison"] }
         let tmpPath := tmp.stdout.trim
-        let initialConfig := ⟨ emptyMemory, emptyVarEnv,  0, false, defaultRegistry ⟩
+        let st := defaultInitialState
+        let initialConfig := ⟨ st.memory, emptyVarEnv, st.nextAddr, false, st.registry ⟩
         replLoop initialConfig tmpPath
       else
         let regime := opts.regime.getD emptyRegime
@@ -404,7 +439,8 @@ def main (args : List String) : IO UInt32 := do
                   | .ok resultType =>
                       printDoc (formatTypecheckPassedVerbose resultType)
                       IO.println ""
-                      let initialConfig : Config := ⟨emptyMemory, emptyVarEnv, 0, false, defaultRegistry⟩
+                      let st := defaultInitialState
+                      let initialConfig : Config := ⟨st.memory, emptyVarEnv, st.nextAddr, false, st.registry⟩
                       let result := LeanPoison.beval defaultFuel initialConfig expr true
                       handleEvalResult result true
                   | .error errorMsg =>

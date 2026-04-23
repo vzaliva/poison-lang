@@ -5,4 +5,4 @@ Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: {}
 Result: 7
 Final state:
 Variable environment: []
-  Memory: []
+  Memory: [(1000000, 0)]

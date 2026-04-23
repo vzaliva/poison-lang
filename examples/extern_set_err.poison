@@ -1,0 +1,7 @@
+-- Test: built-in impure extern fn @22 (set_err) writes its argument into
+-- the errno cell; a subsequent deref of @21 observes the write.
+let errno   = extern val @21 : (ref int :> clean {}) in
+let set_err = extern fn @22 n : (int) -> ((unit :> clean {})) ,
+                effects: { !errno :> (int :> clean {}) } in
+let u = set_err 42 in
+!errno
