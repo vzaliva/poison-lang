@@ -950,7 +950,7 @@ def parseReturnType (retType : ExternReturn):Typ :=
 
 /-- Require that an executable extern's input type is first-order: one of
     `{int, bool, unit, string, ref int}`.  Function-typed inputs are rejected
-    (design: `doc/ffi-runtime-design.md`, §Registry).  Arrow and non-int ref
+    (design: `doc/ffi-proposal.md`).  Arrow and non-int ref
     types are forbidden at declaration sites. -/
 def checkExternInputFirstOrder (argTyp : Typ) : TypecheckM Unit :=
   match argTyp with
@@ -973,7 +973,7 @@ def checkExternReturnInputsFirstOrder : ExternReturn → TypecheckM Unit
 /-- Typecheck extern impure function.  Per-declaration, rejects function-
     typed and non-`ref int` reference inputs — both at the top-level argument
     and inside every nested return descriptor.  See
-    `doc/ffi-runtime-design.md`, §Registry. -/
+    `doc/ffi-proposal.md`. -/
 def typecheckExternFn (ctx : TypeContext) (arg : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (effects : List Effect) : TypecheckM TypeResult := do
   checkExternInputFirstOrder argTyp

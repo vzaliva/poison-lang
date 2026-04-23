@@ -48,7 +48,7 @@ def versionNo := "1.0"
 --   @20 : extern val ZERO  : int         (constant 0)
 --   @21 : extern val errno : ref int     (driver-allocated cell, init 0)
 --   @22 : extern fn  set_err n : (int) -> unit   (writes n into !errno)
--- See `doc/ffi-runtime-design.md` and `doc/poison-lang-description.tex`.
+-- See `doc/ffi-proposal.md` and `doc/poison-lang-description.tex`.
 -- ----------------------------------------------------------------------------
 
 /-- Driver-chosen runtime address for the `errno` cell (`@21`). Placed high

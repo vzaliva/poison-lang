@@ -48,7 +48,7 @@ def hasKey (env : VarEnv) (x : Name) : Prop :=
 end VarEnv
 
 -- ----------------------------------------------------------------------------
--- FFI runtime support (see `doc/ffi-runtime-design.md`).
+-- FFI runtime support (see `doc/ffi-proposal.md`).
 -- ----------------------------------------------------------------------------
 
 /-- Errors surfaced by the extern dispatcher. All five cases travel through

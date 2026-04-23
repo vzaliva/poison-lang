@@ -12,11 +12,11 @@ how FFI is handled in:
 1. runtime / semantics;
 2. proofs / reasoning.
 
-The runtime part now has a more detailed sub-proposal in
-`doc/ffi-runtime-design.md`. That document is authoritative for the concrete
-runtime design and operational details. This top-level proposal should stay at
-the level of capabilities, constraints, proof interfaces, and major design
-choices.
+The runtime part is implemented. The source of truth for concrete runtime
+design and operational details is now the code under `LeanPoison/` —
+chiefly `Runtime.lean` and `BigStep.lean`. This document stays at the level
+of capabilities, constraints, proof interfaces, driver-supplied contracts,
+and major design choices.
 
 ## Scope
 
@@ -31,8 +31,8 @@ choices.
   reuse, where a separately verified Poison component is treated abstractly as
   an extern boundary; building the actual pipeline is out of scope.
 - This document records required capabilities, proof interfaces, and open
-  questions, without duplicating the operational detail now recorded in
-  `doc/ffi-runtime-design.md`.
+  questions, without duplicating the operational detail that lives in the
+  Lean implementation (`LeanPoison/Runtime.lean`, `LeanPoison/BigStep.lean`).
 
 ## Glossary
 
@@ -59,8 +59,8 @@ choices.
   Poison components.
 - Designing tooling details such as hot reloading, debugging, or deployment
   workflows.
-- Repeating the detailed runtime rules that now live in
-  `doc/ffi-runtime-design.md`.
+- Repeating the detailed runtime rules that are recorded directly in the
+  Lean implementation.
 
 ## Current Baseline
 
@@ -144,8 +144,10 @@ choices.
 - `R-RUN-5`: The runtime side must provide a documented error taxonomy covering
   at least missing implementation, kind mismatch, basic-shape mismatch,
   nested-return mismatch, and extern-implementation failure.
-- `R-RUN-6`: Detailed runtime rules, driver obligations, and operational
-  examples should live in `doc/ffi-runtime-design.md`, not be duplicated here.
+- `R-RUN-6`: Detailed operational rules live in the Lean implementation
+  (`LeanPoison/Runtime.lean`, `LeanPoison/BigStep.lean`) and are not
+  duplicated here. Driver-supplied contracts that the proof layer consumes
+  are captured in "Driver Registry Contracts" in Part I below.
 
 ### Typing Baseline and Specification Alignment
 
@@ -192,8 +194,9 @@ choices.
   executable semantics, and what remains axiomatic or evidence-backed.
 - `S-3`: The proposal explains how `ExternAxioms.lean` is preserved, extended,
   or repackaged.
-- `S-4`: The runtime overview here stays consistent with
-  `doc/ffi-runtime-design.md` rather than re-specifying it independently.
+- `S-4`: The runtime overview here stays consistent with the Lean
+  implementation (`LeanPoison/Runtime.lean`, `LeanPoison/BigStep.lean`)
+  rather than re-specifying it independently.
 - `S-5`: The proposal is stress-tested against multiple examples, even if they
   are not fully written out here.
 
@@ -205,8 +208,6 @@ choices.
 - `LeanPoison/Typecheck.lean`, if the extern contract vocabulary changes.
 - `LeanProofs/`: `ExternAxioms.lean`, `StepFR.lean`,
   `FaultRobustnessProofs.lean`, and downstream proof modules.
-- `doc/ffi-runtime-design.md`, which carries the detailed runtime
-  sub-proposal.
 - `poison-lang-spec/poison-lang.ott` and `doc/poison-lang-description.tex`.
 - Examples/tests for executable extern design.
 
@@ -214,9 +215,11 @@ choices.
 
 ### Runtime Status
 
-The runtime side is no longer just an open sketch. Its high-level shape is now
-decided, and the concrete operational design is recorded in
-`doc/ffi-runtime-design.md`.
+The runtime side is implemented. The source of truth for exact operational
+detail is now the code in `LeanPoison/Runtime.lean` (datatypes `ExternImpl`,
+`ExternRegistry`, `ExternError`, the `register` helper, `valueMatchesTyp`,
+and the `registry` field of `Config`) and `LeanPoison/BigStep.lean` (extern
+dispatch prologue, application branches, and nested-return shape validation).
 
 This top-level proposal only needs the following runtime summary:
 
@@ -239,21 +242,101 @@ This top-level proposal only needs the following runtime summary:
   obligations;
 - executable extern input types are restricted to first-order surface types,
   which keeps callbacks out of scope in the current phase;
-- the current reference story supports `extern val` at type `ref int`, with the
-  detailed driver obligations spelled out in the runtime sub-proposal.
+- the current reference story supports `extern val` at type `ref int`, with
+  the detailed driver obligations recorded below under "Driver Registry
+  Contracts".
+
+### Extern Callable Value Shape
+
+The proof layer treats "this runtime value is an extern callable" as a
+structural predicate on `Value`. Concretely:
+
+- An impure extern callable is exactly a value of the form
+  `Value.closure argName (Expr.externFn id argTyp ret effects) env`.
+- A pure extern callable is exactly a value of the form
+  `Value.peClosure argName (Expr.externPfn id argTyp ret) env`.
+- `extern fn` and `extern pfn` capture the surrounding runtime environment
+  at the point where the extern expression is evaluated: their summaries
+  may mention Poison variables in scope, so later calls must retain the
+  producing environment. They behave like ordinary closures in this respect
+  and never mutate `env`.
+- `extern val` captures nothing; it is looked up directly in the registry.
+- Registry identity and dispatch depend only on the wrapped extern AST node
+  (and its `id`), never on the captured environment. Proofs that compare or
+  transport extern callables can therefore ignore `env` when only identity
+  is at stake.
+
+Nested returned callables use the same shape with the nested descriptor's
+`id`. Any other value returned where a nested callable is expected is
+rejected at dispatch.
+
+### Driver Registry Contracts
+
+These are the semantic assumptions that the FR / wfConfig proof layer is
+allowed to consume about registered implementations. They are driver
+obligations, not runtime-checked invariants.
+
+Flat contracts (apply to every registered `ExternImpl`):
+
+- `D-REG-1`: One identifier maps to one registered implementation; the
+  registry rejects a second registration under the same id.
+- `D-REG-2`: The extern kind of the registered implementation agrees with
+  the extern AST kind of the declaration sharing its id
+  (`ExternImpl.val` / `.pfn` / `.fn` vs `externVal` / `externPfn` /
+  `externFn`). Disagreement is a driver bug.
+
+Pure-callable contracts (`ExternImpl.pfn`):
+
+- `D-PFN-1`: The implementation receives `VarEnv`, argument `Value`, and
+  `Memory` as read-only inputs. It does not return an updated environment
+  or memory; pure externs do not allocate or mutate runtime state.
+
+Impure-callable contracts (`ExternImpl.fn`):
+
+- `D-FN-1`: The returned `(mem', addr')` pair is well-formed: `mem'` is
+  well-formed with respect to `addr'`.
+- `D-FN-2`: Address monotonicity: `addr ≤ addr'`, where `addr` is the
+  `Config.nextAddr` observed by the call. This keeps any pre-existing
+  `varEnv` well-formed with respect to the post-call `nextAddr`.
+
+Reference-typed `extern val` contracts (`ExternImpl.val (Value.loc a)` for
+a declaration at type `ref int`):
+
+- `D-REF-1`: The registered `Value.loc a` satisfies `a < Config.nextAddr`
+  in the initial configuration. `Config.nextAddr` must be initialised above
+  every driver-supplied address present in the initial memory.
+- `D-REF-2`: `Config.memory` is populated at `a` with an integer before any
+  evaluation that could dereference it.
+- `D-REF-3`: The address `a` is stable across all evaluations of that
+  declaration in a given run.
+- `D-REF-4`: Distinct extern ids registered as ref-typed `extern val`
+  resolve to distinct addresses, so the registry never introduces aliasing.
+  Sharing of an extern reference across multiple Poison names must be
+  expressed through ordinary `let` binding, not by repeating the extern
+  declaration.
+
+These contracts are the expected shape of the evidence interface discussed
+in "Part II: Proofs / Reasoning". They are the natural companion to the
+Category B obligations below: the `wfConfig` preservation gap for
+`ExternImpl.fn` consumes `D-FN-1` / `D-FN-2`, and the `externVal`
+well-formedness gap for `ref int` consumes `D-REF-1`.
 
 ### What This Runtime Part No Longer Needs To Settle Here
 
-The following are now delegated to `doc/ffi-runtime-design.md`:
+The following are now recorded directly in code and are not re-specified in
+this proposal:
 
-- exact runtime representation of extern implementations;
-- exact registry API and duplicate-registration behaviour;
-- exact `beval` dispatch structure;
-- shape-checking rules for arguments, simple returns, and nested returns;
-- exact error constructors/messages;
-- driver obligations for reference-typed extern values;
-- detailed curried examples such as the built-in `max` externs;
-- the precise fuel accounting for extern dispatch.
+- exact runtime representation of extern implementations
+  (`LeanPoison/Runtime.lean`);
+- exact registry API and duplicate-registration behaviour
+  (`register` in `LeanPoison/Runtime.lean`);
+- exact `beval` dispatch structure (`LeanPoison/BigStep.lean`);
+- shape-checking rules for arguments, simple returns, and nested returns
+  (`valueMatchesTyp` and the application branches in `BigStep.lean`);
+- exact error constructors/messages (`ExternError` in `Runtime.lean`);
+- the precise fuel accounting for extern dispatch (`BigStep.lean`);
+- detailed curried examples such as the built-in `max` externs
+  (driver setup in `Main.lean` plus the extern tests under `examples/`).
 
 ### High-Level Direction
 
@@ -264,8 +347,8 @@ The following are now delegated to `doc/ffi-runtime-design.md`:
   setting this means supplying an extern registry to evaluation.
 - Keep the runtime model shallow: execution checks kind/basic shape, while
   typing and proofs continue to carry poison-level meaning.
-- Use the runtime sub-proposal for concrete operational choices, and keep this
-  top-level document at the capability/interface level.
+- Defer to the Lean implementation for concrete operational choices, and keep
+  this document at the capability/interface level.
 
 ## Part II: Proofs / Reasoning
 
@@ -386,8 +469,9 @@ are mechanical to close without any extern guarantees.
   property?
 - If new semantics assumptions are needed, should they live beside the current
   ones in `LeanProofs/ExternAxioms.lean` or in a separate module?
-- How much of the runtime sub-proposal should be reflected in proof-facing
-  lemmas directly, and how much should stay hidden behind abstract evidence?
+- How much of the concrete runtime (as implemented in `LeanPoison/Runtime.lean`
+  and `LeanPoison/BigStep.lean`) should be reflected in proof-facing lemmas
+  directly, and how much should stay hidden behind abstract evidence?
 - What is the status of polymorphic or generic extern summaries, if any?
 
 ## Design Decisions / Constraints
@@ -410,6 +494,6 @@ are mechanical to close without any extern guarantees.
 - The interface should be suitable for modelling separately verified Poison
   components, even though building the actual separate-compilation pipeline is
   out of scope.
-- `doc/ffi-runtime-design.md` is the detailed runtime companion to this
-  top-level proposal and should be treated as authoritative for runtime
-  mechanics.
+- The Lean implementation (`LeanPoison/Runtime.lean`,
+  `LeanPoison/BigStep.lean`) is authoritative for runtime mechanics; this
+  proposal defers to it for operational detail.

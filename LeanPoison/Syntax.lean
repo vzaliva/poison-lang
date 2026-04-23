@@ -143,7 +143,7 @@ inductive EffectTarget where
 
 /-- Extern identifier: author-chosen runtime handle assigned at each extern
     declaration site (both top-level and nested). See
-    `doc/ffi-runtime-design.md`. -/
+    `doc/ffi-proposal.md`. -/
 abbrev ExternId := Nat
 
 mutual
