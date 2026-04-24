@@ -1,4 +1,4 @@
-# FFI Axioms Alternative: Externs as FR-Preserving Boundary Steps
+# FFI Axioms: Externs as FR-Preserving Boundary Steps
 
 Status: design proposal.
 
@@ -32,8 +32,8 @@ concludes:
 
 That bundle is the right contract for externs. `StepFRPost` is just a name for
 that conclusion bundle. It is not an extra extern obligation and not a separate
-proof layer. The alternative approach is to factor this bundle into a named
-predicate, then require registered externs to produce it at extern boundaries.
+proof layer. The proposal factors this bundle into a named predicate, then
+requires registered externs to produce it at extern boundaries.
 
 ```lean
 /-- The existing large conjunction at the end of `StepFR`, factored out.
@@ -116,10 +116,15 @@ inductive ExternBoundaryKind where
   | callFn
   | callPfn
 
+inductive ExternDeclarationKind where
+  | val
+  | fn
+  | pfn
+
 /-- Static declaration shape extracted from the source program. -/
 structure ExternDeclaration where
   id      : ExternId
-  kind    : ExternBoundaryKind
+  kind    : ExternDeclarationKind
   typ     : Typ
   argName : Option Name
   retSpec : Option ExternReturn
@@ -336,10 +341,20 @@ abbrev TrustedRegistry := Std.HashMap ExternId TrustedExternEntry
 def TrustedRegistry.toRuntimeRegistry (tr : TrustedRegistry) : ExternRegistry :=
   tr.mapValues (fun entry => entry.impl)
 
-/-- The trusted entry under an id agrees with the declaration shape found in
-    the program at that id. -/
-def TrustedRegistryMatchesProgram (e : Expr) (tr : TrustedRegistry) : Prop :=
-  ProgramDeclsMatch e (tr.mapValues (fun entry => entry.decl))
+/-- Predicate saying expression `e` contains an extern declaration with id `id`
+    and declaration shape `d`. The concrete definition is a structural walk
+    over `Expr`. -/
+def ExternDeclarationInProgram
+    (e : Expr) (id : ExternId) (d : ExternDeclaration) : Prop := ...
+
+/-- A trusted entry is allowed only when its declaration shape agrees with the
+    extern declaration under the same id in the program. This is intentionally
+    partial: declarations may appear in the program without trusted entries. -/
+def TrustedRegistryAgreesWithProgram (e : Expr) (tr : TrustedRegistry) : Prop :=
+  ∀ {id d entry},
+    ExternDeclarationInProgram e id d →
+    tr.get? id = some entry →
+    entry.decl = d
 ```
 
 The top-level theorem then becomes relative to both inputs:
@@ -348,7 +363,7 @@ The top-level theorem then becomes relative to both inputs:
 theorem TypeSystemEnforcesFaultRobustness
     (e : Expr)
     (tr : TrustedRegistry)
-    (hDecls : TrustedRegistryMatchesProgram e tr)
+    (hTrust : TrustedRegistryAgreesWithProgram e tr)
     (extTyping : ExternTypingAssumptions)
     (s : InputSpec) (obs : ObservableSpec) :
   TypeSystemEnforcesFaultRobustness_spec e s obs := ...
@@ -360,7 +375,7 @@ projection of the trusted registry, for example by requiring the initial
 configs' `registry` fields to equal `tr.toRuntimeRegistry`.
 
 Typing-side extern reasoning uses `extTyping`. Structural induction decomposes
-`hDecls` for subexpressions while reusing the same trusted registry. Call sites
+`hTrust` for subexpressions while reusing the same trusted registry. Call sites
 that need the relational boundary contract look up the trusted entry by id; if
 `tr.get? id = some entry`, then `entry.spec.fr` is the relational boundary
 contract, `entry.spec.single` is the single-run clean-pc contract, and
@@ -371,12 +386,12 @@ an implementation." If a trusted entry is absent, the projected runtime registry
 has no implementation for that id; dispatch is a runtime error, not a
 successful boundary event.
 
-## How This Addresses Existing Sorries
+## Proof Gaps Addressed
 
 ### `bevalApp_structure`
 
-`LeanProofs/SemanticsProperties.lean` currently has a `bevalApp_structure`
-sorry because the old inversion lemma assumed only user-closure dispatch. The
+`LeanProofs/SemanticsProperties.lean` has a `bevalApp_structure`
+gap because the existing inversion lemma assumes only user-closure dispatch. The
 extern runtime adds extra successful branches for extern closure bodies.
 
 Under this approach, the inversion lemma should be strengthened to return one
@@ -412,7 +427,7 @@ reference, it cannot supply the `wf` field.
 
 ### Former `terminatesTo_extern_absurd` sites
 
-The current FR proof closes extern declaration cases vacuously under an empty
+The FR proof currently closes extern declaration cases vacuously under an empty
 registry. Once a populated registry is threaded into the theorem, successful
 extern declaration evaluations are no longer contradictory.
 
@@ -457,7 +472,8 @@ The replacement contents would be:
 - `TrustedExternEntry`
 - `TrustedRegistry`
 - `TrustedRegistry.toRuntimeRegistry`
-- `TrustedRegistryMatchesProgram`
+- `ExternDeclarationInProgram`
+- `TrustedRegistryAgreesWithProgram`
 - `ExternBoundaryRun`
 - `StepFRPost` or an import of it from `StepFR.lean`
 - `ExternBoundaryFR`
@@ -476,7 +492,7 @@ for extern declarations in unexecuted branches that still typecheck.
 When an extern actually executes successfully, the boundary witness supplies
 `StepFRPost`. That postcondition includes the tag-meaning, regime-consistency,
 and agreement facts needed after the boundary. If a local proof site still wants
-the old theorem names, keep compatibility lemmas such as
+the existing theorem names, keep compatibility lemmas such as
 `externTagSoundness_of_assumptions` or `externGuardProvenance_of_assumptions`;
 they should read from `ExternTypingAssumptions`, not from global `axiom`
 declarations.
@@ -488,8 +504,9 @@ This approach still requires a few structural changes.
 - Extern ids must be recoverable at type-level extern call sites. Today
   `FnTClosure.extern` and `PFnTClosure.extern` do not carry `ExternId`, so the
   proof cannot look up the matching registry evidence during `StepFRApp`.
-- The top-level FR theorem must thread a trusted registry and must ensure the
-  evaluated configs use that registry.
+- The top-level FR theorem must thread `ExternTypingAssumptions`, a trusted
+  registry, and the program/registry agreement predicate, and must ensure the
+  evaluated configs use the projected runtime registry.
 - `valueHasETyp`, `deepValueQTypProperty`, and closure agreement need explicit
   support for extern closures, or the boundary witness must provide equivalent
   typing/agreement evidence for returned extern callables.
