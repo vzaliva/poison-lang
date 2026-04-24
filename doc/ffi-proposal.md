@@ -12,7 +12,7 @@ This document has two parts:
 1. **Part I — Runtime baseline (implemented).** A short, factual summary of
    what the runtime already does, with the source of truth being the code in
    `LeanPoison/Runtime.lean`, `LeanPoison/BigStep.lean`, and (on the typing
-   side) `LeanProofs/ExternAxioms.lean`. Detailed operational rules are not
+   side) `LeanProofs/ExternTypingAssumptions.lean`. Detailed operational rules are not
    duplicated here.
 2. **Part II — Proofs / reasoning.** The live design work: what evidence the
    proof layer needs about trusted externs, how it is indexed, and how it
@@ -67,9 +67,12 @@ The runtime side is in place. The source of truth is the code:
   of `Config`.
 - `LeanPoison/BigStep.lean` — extern dispatch prologue, application
   branches, nested-return shape validation, and fuel accounting.
-- `LeanProofs/ExternAxioms.lean` — the typing-side contract floor:
-  `externTagSoundness` (fresh-tag soundness for summary-generated tags) and
-  `externGuardProvenance` (provenance of impure extern summaries).
+- `LeanProofs/ExternTypingAssumptions.lean` — the typing-side contract floor:
+  `ExternTypingAssumptions.tagSoundness` (fresh-tag soundness for
+  summary-generated tags) and `ExternTypingAssumptions.guardProvenance`
+  (provenance of impure extern summaries), packaged as fields of the
+  `ExternTypingAssumptions` structure that callers must supply to instantiate
+  the FR theorem.
 
 ### Runtime Summary
 
@@ -176,11 +179,16 @@ These contracts are the evidence interface the proof layer consumes. The
 
 ### Typing Baseline
 
-The typing-side contract floor is `LeanProofs/ExternAxioms.lean`:
+The typing-side contract floor is `LeanProofs/ExternTypingAssumptions.lean`,
+which exposes the `ExternTypingAssumptions` structure with two fields:
 
-- `externTagSoundness` — fresh-tag soundness for summary-generated tags.
-- `externGuardProvenance` — provenance of impure extern summaries in the
-  FR development.
+- `tagSoundness` — fresh-tag soundness for summary-generated tags.
+- `guardProvenance` — provenance of impure extern summaries in the FR
+  development.
+
+The fault-robustness theorem is relative to a witness of
+`ExternTypingAssumptions`: callers must supply (or postulate) one to
+instantiate it.
 
 Any new semantics-side evidence introduced by Part II must compose with
 this baseline rather than replace it wholesale.
@@ -222,7 +230,8 @@ without inspecting Lean implementation code.
 - How FR evidence is indexed by extern identity (including for nested
   returned callables).
 - How any new semantics-side assumptions relate to the existing
-  typing-side axioms in `ExternAxioms.lean`.
+  typing-side `ExternTypingAssumptions` fields in
+  `ExternTypingAssumptions.lean`.
 - How callable values returned by externs are handled by FR.
 - Whether the same interface can stand in for a separately verified Poison
   component linked through an extern boundary.
@@ -276,7 +285,7 @@ mechanical to close without any extern guarantees.
 ### Guarantee Interface Options
 
 Any new guarantee interface should be compared against the
-`ExternAxioms.lean` baseline, not designed in isolation.
+`ExternTypingAssumptions.lean` baseline, not designed in isolation.
 
 1. **Top-level theorem interface.** One theorem per trusted extern, close
    to the final FR statement.
@@ -293,11 +302,11 @@ Any new guarantee interface should be compared against the
    effect provenance, value/memory agreement) from which the required
    `StepFR` facts are derived.
    - Pros: modular, close to the true semantic obligations, most
-     natural fit for extending `ExternAxioms.lean`.
+     natural fit for extending `ExternTypingAssumptions.lean`.
    - Cons: heavier user-facing API.
 
 Options 1 and 2 may repackage or subsume parts of the current baseline.
-Option 3 extends `ExternAxioms.lean` with explicit semantics-side
+Option 3 extends `ExternTypingAssumptions.lean` with explicit semantics-side
 assumptions beside the two typing-side ones already there.
 
 ### High-Level Direction
@@ -316,7 +325,7 @@ assumptions beside the two typing-side ones already there.
 
 - `S-1`: The proof layer discharges the three pending obligations above
   using an id-indexed evidence interface that composes with
-  `ExternAxioms.lean`.
+  `ExternTypingAssumptions.lean`.
 - `S-2`: FR handles callable values returned by externs — including
   nested returned callables — without special-casing them outside the
   id-indexed story.
@@ -324,8 +333,8 @@ assumptions beside the two typing-side ones already there.
   Poison component, even though the separate-compilation pipeline itself
   is out of scope.
 - `S-4`: The relationship between new semantics-side assumptions and the
-  existing typing-side axioms is explicit: what is preserved, extended,
-  or repackaged.
+  existing typing-side `ExternTypingAssumptions` fields is explicit: what is
+  preserved, extended, or repackaged.
 - `S-5`: The design is stress-tested against multiple examples, even if
   they are not all written out here.
 
@@ -333,7 +342,7 @@ assumptions beside the two typing-side ones already there.
 
 Primarily on the proof side:
 
-- `LeanProofs/ExternAxioms.lean` — likely extended with semantics-side
+- `LeanProofs/ExternTypingAssumptions.lean` — likely extended with semantics-side
   evidence.
 - `LeanProofs/SemanticsProperties.lean` — `wfConfig` preservation for
   `app` (fn sub-case) and `externVal` (ref int sub-case).
@@ -360,8 +369,9 @@ All open questions are now on the proof side:
   unavoidable?
 - Beyond within-run determinism, what additional stability properties
   are needed for trusted externs?
-- Are the current typing-side axioms already too strong for unsafe
-  externs, or should unsafe externs sit entirely outside that baseline?
+- Are the current typing-side `ExternTypingAssumptions` fields already too
+  strong for unsafe externs, or should unsafe externs sit entirely outside
+  that baseline?
 - Is the proposed extern/evidence interface strong enough to model
   separate compilation, with FR proved once for a component and reused
   by a client program?
@@ -370,7 +380,7 @@ All open questions are now on the proof side:
   safe guarantees support a stronger theorem? Does FR itself imply the
   desired soundness property?
 - If new semantics assumptions are needed, should they live beside the
-  current ones in `LeanProofs/ExternAxioms.lean` or in a separate
+  current ones in `LeanProofs/ExternTypingAssumptions.lean` or in a separate
   module?
 - How much of the concrete runtime should be reflected in proof-facing
   lemmas directly, and how much should stay hidden behind abstract
@@ -390,7 +400,7 @@ All open questions are now on the proof side:
   outside the object-language semantics.
 - The executable design restricts extern inputs to first-order types;
   higher-order callback stories are deferred.
-- `ExternAxioms.lean` is the known typing-side contract floor. Any
+- `ExternTypingAssumptions.lean` is the known typing-side contract floor. Any
   semantics-side extension should connect to that baseline rather than
   replace it wholesale.
 - Unsafe externs are outside FR in the current plan.

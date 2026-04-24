@@ -20,6 +20,7 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (predSat : PredSat)
   (tm : TagMeaning) : Prop :=
     PredSatLaws predSat tm →
+    ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
@@ -71,14 +72,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht hpc
+  intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_seq_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctx hwfTm res1 htc1'
   have hTm1 : wfTagMeaningCtx tm (ctxAfter ctx res1) :=
-    typecheckExpr_preserves_wfTagMeaningCtx tm ctx e1 fuel' res1 hwfTm htc1'
+    typecheckExpr_preserves_wfTagMeaningCtx hExtTyping tm ctx e1 fuel' res1 hwfTm htc1'
   have hwf1 : wfTypeContext (ctxAfter ctx res1) :=
     wfTypeContext_of_wfTypeResult ctx res1
       (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' res1 hwf htc1')
@@ -87,7 +88,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
     typecheckExpr_preserves_regimeConsistentWithCtx ctx e1 fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
-    hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
+    hIH1 hpredlaws hExtTyping hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hctxCons a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
@@ -119,7 +120,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
   have ht_e2' : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
     rw [← hcfg1_eq]; exact ht_e2
   rcases
-    hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
+    hIH2 hpredlaws hExtTyping hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
       hθ1wf hwf1' hric1' hreg1' hctxCons1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1' ht_e2' hpc1
     with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2, _hfresh2⟩
@@ -137,7 +138,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
         ∃ qt_mid, res1.memEnv'.lookup l = some qt_mid ∧ qtypCleanUnder res1.regime' qt_mid := by
     intro l _qt_in qt_out _hlookup_in hlookup_out hclean_out
     rcases
-      typecheckExpr_clean_lookup_origin_of_pc_true
+      typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
         (by simpa [hctx', ctxAfter] using htc2')
         hwf1
@@ -158,7 +159,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_seq_parametric
     by_cases hcontains_mid : (ctxAfter ctx res1).memEnv.contains l
     · -- l introduced by e1's typing, inherited for e2
       obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
-        typecheckExpr_clean_lookup_origin_of_pc_true
+        typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
           (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
           (by simpa [hctx', ctxAfter] using htc2')
           hwf1
@@ -207,14 +208,14 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht hpc
+  intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_seq_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctx hwfTm res1 htc1'
   have hTm1 : wfTagMeaningCtx tm (ctxAfter ctx res1) :=
-    typecheckExpr_preserves_wfTagMeaningCtx tm ctx e1 fuel' res1 hwfTm htc1'
+    typecheckExpr_preserves_wfTagMeaningCtx hExtTyping tm ctx e1 fuel' res1 hwfTm htc1'
   have hwf1 : wfTypeContext (ctxAfter ctx res1) :=
     wfTypeContext_of_wfTypeResult ctx res1
       (typecheckExpr_preserves_wfTypeResult ctx e1 fuel' res1 hwf htc1')
@@ -223,7 +224,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     typecheckExpr_preserves_regimeConsistentWithCtxMasked masked ctx e1 fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
-    hIH1 hpredlaws hwfTm μ ρ θ cfg1 v1
+    hIH1 hpredlaws hExtTyping hwfTm μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
@@ -263,7 +264,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   have ht_e2' : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
     rw [← hcfg1_eq]; exact ht_e2
   rcases
-    hIH2 hpredlaws hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
+    hIH2 hpredlaws hExtTyping hwfTm' cfg1.memory cfg1.varEnv θ1 cf o
       hθ1wf hwf1' hric1' hreg1' hmasked_none1' hctxCons1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1' ht_e2' hpc1
     with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2, _hfresh2⟩
@@ -281,7 +282,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
         ∃ qt_mid, res1.memEnv'.lookup l = some qt_mid ∧ qtypCleanUnder res1.regime' qt_mid := by
     intro l _qt_in qt_out _hlookup_in hlookup_out hclean_out
     rcases
-      typecheckExpr_clean_lookup_origin_of_pc_true
+      typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
         (by simpa [hctx', ctxAfter] using htc2')
         hwf1
@@ -301,7 +302,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     intro l qt hnotIn hlookup hclean
     by_cases hcontains_mid : (ctxAfter ctx res1).memEnv.contains l
     · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
-        typecheckExpr_clean_lookup_origin_of_pc_true
+        typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
           (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
           (by simpa [hctx', ctxAfter] using htc2')
           hwf1
@@ -355,7 +356,7 @@ lemma stepFR_seq
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctxᵢ hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for seq
@@ -367,7 +368,7 @@ lemma stepFR_seq
   rcases hstruct₁ with ⟨cfg₁1, v₁1, ht₁_e1, ht₁_e2, hpm₁1, hpm₁2⟩
   -- Apply IH for e1
   have hstep_e1 :=
-    hIH1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
+    hIH1 hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 v₀1 v₁1
       hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
@@ -425,7 +426,7 @@ lemma stepFR_seq
   -- Use regime monotonicity to relate them
   have h_mono : Regime.monotoneStep ctxᵢ.regime res1.regime' := regime_monotone ctxᵢ e1 fuel' res1 htc1'
   have hstep_e2 :=
-    hIH2 hpredlaws hwfTm' cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
+    hIH2 hpredlaws hExtTyping hwfTm' cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
       hθ₀1wf hθ₁1wf hwf1' htagBounded1' hric₀1' hric₁1' htagR1' hcwr₀1' hcwr₁1' hagree_clean1'
       cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1' hwfcf₁1'

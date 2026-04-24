@@ -1,19 +1,31 @@
 # FFI Axioms: Externs as FR-Preserving Boundary Steps
 
-Status: design proposal.
+Status: the `ExternTypingAssumptions` structure is implemented and threaded
+through the fault-robustness proof; the broader extern-boundary design below
+is a proposal.
 
-This document proposes a high-level proof interface for trusted externs.  The
-proof assumes one FR-shaped property at every successful extern boundary,
-rather than exposing frame, address, initialization, and non-leakage details to
-the core language theorem.
+This document covers two pieces of the FFI trust story:
 
-The intended theorem is relative:
+1. The `ExternTypingAssumptions` structure (in
+   `LeanProofs/ExternTypingAssumptions.lean`), which packages the two typing-side
+   assumptions extern typechecking depends on. The fault-robustness theorem is
+   relative to a witness of this structure: every consumer threads it through
+   the proof, and the public API requires callers to supply (or postulate) one.
+
+2. A proposed extern-boundary contract framework that would extend the same
+   pattern to runtime extern dispatch, replacing per-implementation reasoning
+   with a single FR-shaped property at every successful extern boundary. This
+   would hide frame, address, initialization, and non-leakage details behind a
+   per-extern witness rather than exposing them to the core language theorem.
+
+The intended top-level theorem (with the boundary contract in place) is
+relative:
 
 > The Poison type system enforces fault-robustness for programs whose
 > registered externs satisfy the extern-boundary FR contract.
 
-This keeps the core language proof focused on Poison semantics and typechecking,
-while making the FFI trust boundary explicit.
+This keeps the core language proof focused on Poison semantics and
+typechecking, while making the FFI trust boundary explicit.
 
 ## Core Idea
 
@@ -365,20 +377,19 @@ application proofs consume.
 
 ## Extern Assumptions and Registry Evidence
 
-The theorem should receive extern assumptions explicitly. This removes
-hard-coded domain axioms from the Lean environment and avoids requiring
-implementation proofs for externs that are declared but never registered. It
-does not, by itself, make the current extern typing assumptions easier to
-prove; it makes that trust boundary explicit.
+The fault-robustness theorem accepts extern assumptions as explicit inputs,
+keeping the trust boundary visible at the public API and avoiding
+implementation proofs for externs that are declared but never registered.
 
 There are two trust inputs:
 
-- `ExternTypingAssumptions`: generic assumptions about extern typechecking
-  machinery, replacing the current global axioms in
-  `LeanProofs/ExternAxioms.lean`;
-- `TrustedRegistry`: per-implementation evidence only for extern ids that are
-  present in the runtime registry. Each trusted entry stores the implementation,
-  the declaration shape it implements, and the boundary proof for that pair.
+- `ExternTypingAssumptions` (implemented in `LeanProofs/ExternTypingAssumptions.lean`):
+  generic assumptions about extern typechecking machinery, threaded through
+  every consumer.
+- `TrustedRegistry` (proposed): per-implementation evidence only for extern
+  ids that are present in the runtime registry. Each trusted entry would store
+  the implementation, the declaration shape it implements, and the boundary
+  proof for that pair.
 
 This distinction matters for conditionals. Both branches of an `if` typecheck,
 so extern declarations in an unexecuted branch may still need the generic
@@ -386,9 +397,10 @@ typing assumptions. But if that branch is not executed, there is no successful
 extern boundary run, so no implementation-level boundary proof is consumed.
 
 ```lean
-/-- Explicit replacement for the current global axioms in
-    `LeanProofs/ExternAxioms.lean`. These assumptions are generic facts about
-    extern typechecking, not per-runtime-implementation safety facts. -/
+/-- Generic typing-side assumptions about the extern typechecking machinery.
+    Defined in `LeanProofs/ExternTypingAssumptions.lean` and threaded through the
+    fault-robustness proof. These assumptions are generic facts about extern
+    typechecking, not per-runtime-implementation safety facts. -/
 structure ExternTypingAssumptions where
   tagSoundness :
     ∀ (tm : TagMeaning) (mapping : TagMapping)
@@ -534,21 +546,25 @@ When application evaluates a closure whose body is `Expr.externFn` or
 The witness supplies the postconditions that the ordinary user-closure proof
 would otherwise derive structurally from the function body.
 
-## Relationship to `LeanProofs/ExternAxioms.lean`
+## Relationship to `LeanProofs/ExternTypingAssumptions.lean`
 
-`LeanProofs/ExternAxioms.lean` currently contains two global axioms:
+`LeanProofs/ExternTypingAssumptions.lean` contains:
 
-- `externTagSoundness`
-- `externGuardProvenance`
+- `TagMappingRespectsTagMeaning` — the semantic predicate that fresh-tag
+  allocation must respect a `TagMeaning`.
+- `trustedGuardedCell` — a cell predicate used by impure-extern guard
+  provenance.
+- `ImpureExternCallOk` — an existential witness that an impure extern call
+  succeeded.
+- `ExternTypingAssumptions` — the structure with two fields:
+  - `tagSoundness` (Contract A): fresh-tag allocation respects an arbitrary
+    `TagMeaning`.
+  - `guardProvenance` (Contract B): impure-extern guard provenance under a
+    poisoned program counter.
 
-In this proposal, that file becomes the home for explicit extern assumptions
-and the extern-boundary interface. The global axioms should be retired rather
-than extended: their current logical content becomes fields of
-`ExternTypingAssumptions`, passed explicitly through the proof stack.
+If the extern-boundary design above is implemented, this file would also
+contain:
 
-The replacement contents would be:
-
-- `ExternTypingAssumptions`
 - `ExternDeclaration`
 - `TrustedExternEntry`
 - `TrustedRegistry`
@@ -569,19 +585,16 @@ The replacement contents would be:
 - `ExternBoundarySpec`
 - helper lemmas for looking up declaration and implementation evidence
 
-The current `externTagSoundness` and `externGuardProvenance` obligations are
-generic typing-side assumptions. They are not per-implementation facts and
-should not live in `TrustedRegistry`. Typing-side extern reasoning consumes
+`ExternTypingAssumptions.tagSoundness` and `.guardProvenance` are generic
+typing-side assumptions. They are not per-implementation facts and do not
+belong in `TrustedRegistry`. Typing-side extern reasoning consumes
 `extTyping.tagSoundness` and `extTyping.guardProvenance` explicitly, including
 for extern declarations in unexecuted branches that still typecheck.
 
-When an extern actually executes successfully, the boundary witness supplies
-`StepFRPost`. That postcondition includes the tag-meaning, regime-consistency,
-and agreement facts needed after the boundary. If a local proof site still wants
-the existing theorem names, keep compatibility lemmas such as
-`externTagSoundness_of_assumptions` or `externGuardProvenance_of_assumptions`;
-they should read from `ExternTypingAssumptions`, not from global `axiom`
-declarations.
+If the extern-boundary design lands, a successful extern execution would
+additionally produce a boundary witness supplying `StepFRPost`. That
+postcondition includes the tag-meaning, regime-consistency, and agreement
+facts needed after the boundary.
 
 ## Required Structural Refactors
 
@@ -743,12 +756,11 @@ shared facts.
 
 ## Open Questions / TODO
 
-- Revisit the shape of `externTagSoundness` and `externGuardProvenance`.
-  Moving them into `ExternTypingAssumptions` removes global axioms, but their
-  logical content is still unchanged. `externTagSoundness` may be too strong
+- Revisit the shape of `ExternTypingAssumptions.tagSoundness` and
+  `ExternTypingAssumptions.guardProvenance`. The first may be too strong
   because it asks tag allocation to respect an arbitrary `TagMeaning`; if so,
-  reformulate it as an assumption that extern tag allocation provides or extends
-  a compatible tag meaning. `externGuardProvenance` likewise needs either a
+  reformulate it as an assumption that extern tag allocation provides or
+  extends a compatible tag meaning. The second likewise needs either a
   derivation from more structural extern-call facts or an explicitly scoped
   trust story parallel to tag soundness.
 - Decide where registry agreement belongs in the public FR API:

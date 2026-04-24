@@ -21,6 +21,7 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (predSat : PredSat)
   (tm : TagMeaning) : Prop :=
     PredSatLaws predSat tm →
+    ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
@@ -293,14 +294,14 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   have hstruct := terminatesTo_newRef_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg', n, ht_e, ho, hmem, _hnext, hvar, _hpm⟩
   rcases
-    hIH hpredlaws hwfTm μ ρ θ cfg' (Value.num n)
+    hIH hpredlaws hExtTyping hwfTm μ ρ θ cfg' (Value.num n)
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
     with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
@@ -535,7 +536,7 @@ lemma stepFR_newRef
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for newRef
@@ -547,7 +548,7 @@ lemma stepFR_newRef
   rcases hstruct₁ with ⟨cfg₁', n₁, ht₁_e, ho₁, hmem₁, hnext₁, hvar₁, hpm₁⟩
   -- Apply IH for e
   have hstep_e :=
-    hIH hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
+    hIH hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
       hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨hresTm1, hstep_e⟩
   rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hTm1, hwf1, _htagBounded1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩

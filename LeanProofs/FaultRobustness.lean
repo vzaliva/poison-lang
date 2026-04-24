@@ -5,6 +5,7 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.RegimeConsistency
+import LeanProofs.ExternTypingAssumptions
 import LeanProofs.TypeSafety
 import LeanProofs.SemanticsProperties
 import Mathlib.Data.List.Forall2
@@ -694,6 +695,7 @@ def TypeSystemEnforcesFaultRobustness_spec
       ∀ (predSat : PredSat) (tm : TagMeaning),
         wfTagMeaningCtx tm ctx →
         PredSatLaws predSat tm →
+        ExternTypingAssumptions →
         ((∃ (fuel : Nat) (res : TypeResult),
           typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →

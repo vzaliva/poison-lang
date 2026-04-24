@@ -2361,7 +2361,7 @@ private lemma stepFR_ite_true
   (hetyp : res.qualType.etyp = res2.qualType.etyp) :
   StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
   classical
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
@@ -2380,7 +2380,7 @@ private lemma stepFR_ite_true
     simp [wfTypeContext] at hwf ⊢
     exact hwf
   have hstep_e1 :=
-    hIH_e1 hpredlaws hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+    hIH_e1 hpredlaws hExtTyping hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
       hθ₀ hθ₁ hwf_pure htagBounded_pure hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
@@ -2641,7 +2641,7 @@ private lemma stepFR_ite_true
   have hwfcf₀1' : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
     rw [← hcfg₀1_eq]; exact hwfcf₀1
   have hstep_e2 :=
-    hIH_e2 hpredlaws hwfTm_true
+    hIH_e2 hpredlaws hExtTyping hwfTm_true
       cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
       hθ₀1wf hθ₁1wf hwf_true htagBounded_true hric₀1' hric₁1' htagR_true
@@ -2781,7 +2781,7 @@ private lemma stepFR_ite_false
   (hetyp : res.qualType.etyp = res3.qualType.etyp) :
   StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
   classical
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
@@ -2800,7 +2800,7 @@ private lemma stepFR_ite_false
     simp [wfTypeContext] at hwf ⊢
     exact hwf
   have hstep_e1 :=
-    hIH_e1 hpredlaws hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+    hIH_e1 hpredlaws hExtTyping hwfTm_pure μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
       hθ₀ hθ₁ hwf_pure htagBounded_pure hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
@@ -3116,7 +3116,7 @@ private lemma stepFR_ite_false
   have hwfcf₀1'_e3 : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
     rw [← hcfg₀1_eq_e3]; exact hwfcf₀1
   have hstep_e3 :=
-    hIH_e3 hpredlaws hwfTm_false
+    hIH_e3 hpredlaws hExtTyping hwfTm_false
       cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cf₀ cf₁ o₀ o₁
       hθ₀1wf hθ₁1wf hwf_false' htagBounded_false hric₀1'_f hric₁1'_f htagR_false'
@@ -3425,7 +3425,7 @@ private lemma stepFR_ite_standard
   (hpredNo : res.qualType.pred = Predicate.noPred) :
   StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
   classical
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Invert ite evaluation (world-free)
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -3439,7 +3439,7 @@ private lemma stepFR_ite_standard
   have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctxᵢ hwfTm htagBounded res1 htc1'
   have hstep_e1 :=
-    hIH_e1 hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
+    hIH_e1 hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
       hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨hresTm1, hstep_e1⟩
@@ -3605,7 +3605,7 @@ private lemma stepFR_ite_standard
           have hwfcf₀1'_m4 : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
             rw [← hcfg₀1_eq_m4]; exact hwfcf₀1
           have hstep_e2 :=
-            hIH_e2 hpredlaws hwfTm_ctx''
+            hIH_e2 hpredlaws hExtTyping hwfTm_ctx''
               cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
               cf₀ cf₁ o₀ o₁
               hθ₀1wf hθ₁1wf hwf_ctx'' htagBounded_ctx'' hric₀1_ctx'' hric₁1_ctx'' htagR_ctx''
@@ -3791,10 +3791,10 @@ private lemma stepFR_ite_standard
                     hlookup_back_join_to_res2 h)
           have hresTm :
               QTypRespectsTagMeaning tm res.qualType :=
-            typecheckExpr_preserves_QTypRespectsTagMeaning
+            typecheckExpr_preserves_QTypRespectsTagMeaning hExtTyping
               tm ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwfTm htc
           have hwfTm_final : wfTagMeaningCtx tm (ctxAfter ctxᵢ res) :=
-            typecheckExpr_preserves_wfTagMeaningCtx
+            typecheckExpr_preserves_wfTagMeaningCtx hExtTyping
               tm ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwfTm htc
           have hwf_final : wfTypeContext (ctxAfter ctxᵢ res) :=
             wfTypeContext_of_wfTypeResult ctxᵢ res
@@ -4010,13 +4010,13 @@ private lemma stepFR_ite_standard
           have hwfcf₁1_s : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode } := by
             rw [← hcfg₁1_eq_s]; exact hwfcf₁1
           rcases
-              hsingle_e2 hpredlaws hwfTm_ctx''
+              hsingle_e2 hpredlaws hExtTyping hwfTm_ctx''
                 cfg₀1.memory cfg₀1.varEnv θ₀1 cf₀ o₀
                 hθ₀1wf hwf_ctx'' hric₀1_ctx'' htagR_ctx''
                 hcwr₀1_ctx'' cfg₀1.nextAddr cfg₀1.pureMode hwfcf₀1_s ht₀_e2'' hpc''
             with ⟨θ₀2, hθext₀2, hvtyp₀2, hric₀2, hcwr₀2, hvalc₀2, hpres₂, _hfresh₂⟩
           rcases
-              hsingle_e3 hpredlaws hwfTm_ctxForE3
+              hsingle_e3 hpredlaws hExtTyping hwfTm_ctxForE3
                 cfg₁1.memory cfg₁1.varEnv θ₁1 cf₁ o₁
                 hθ₁1wf hwf_ctxForE3 hric₁1_ctxForE3 htagR_ctxForE3
                 hcwr₁1_ctxForE3 cfg₁1.nextAddr cfg₁1.pureMode hwfcf₁1_s ht₁_e3'' hpcForE3
@@ -4104,10 +4104,10 @@ private lemma stepFR_ite_standard
             exact (beval_preserves_varEnv e3 fuel₁w verbose₁w cfg₁1 cf₁ o₁ heval₁w).symm
           have hresTm :
               QTypRespectsTagMeaning tm res.qualType :=
-            typecheckExpr_preserves_QTypRespectsTagMeaning
+            typecheckExpr_preserves_QTypRespectsTagMeaning hExtTyping
               tm ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwfTm htc
           have hwfTm_final : wfTagMeaningCtx tm (ctxAfter ctxᵢ res) :=
-            typecheckExpr_preserves_wfTagMeaningCtx
+            typecheckExpr_preserves_wfTagMeaningCtx hExtTyping
               tm ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwfTm htc
           have hwf_final : wfTypeContext (ctxAfter ctxᵢ res) :=
             wfTypeContext_of_wfTypeResult ctxᵢ res
@@ -4277,7 +4277,7 @@ private lemma stepFR_ite_standard
                           native_decide
                         exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                   rcases
-                      typecheckExpr_clean_lookup_origin_of_pc_true
+                      typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
                         ctx'' e2 fuel' res2 htc2' hwf_ctx'' hpc''
                         l qt2 hlookup2 hcontains_ctx'' hclean2
                     with ⟨qt_in, hlookup_in, hclean_in⟩
@@ -4714,13 +4714,13 @@ private lemma stepFR_ite_standard
           have hwfcf₁1_s2 : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode } := by
             rw [← hcfg₁1_eq_s2]; exact hwfcf₁1
           rcases
-              hsingle_e3 hpredlaws hwfTm_ctxForE3
+              hsingle_e3 hpredlaws hExtTyping hwfTm_ctxForE3
                 cfg₀1.memory cfg₀1.varEnv θ₀1 cf₀ o₀
                 hθ₀1wf hwf_ctxForE3 hric₀1_ctxForE3 htagR_ctxForE3
                 hcwr₀1_ctxForE3 cfg₀1.nextAddr cfg₀1.pureMode hwfcf₀1_s2 ht₀_e3'' hpcForE3
             with ⟨θ₀3, hθext₀3, hvtyp₀3, hric₀3, hcwr₀3, hvalc₀3, hpres₃, _hfresh₃⟩
           rcases
-              hsingle_e2 hpredlaws hwfTm_ctx''
+              hsingle_e2 hpredlaws hExtTyping hwfTm_ctx''
                 cfg₁1.memory cfg₁1.varEnv θ₁1 cf₁ o₁
                 hθ₁1wf hwf_ctx'' hric₁1_ctx'' htagR_ctx''
                 hcwr₁1_ctx'' cfg₁1.nextAddr cfg₁1.pureMode hwfcf₁1_s2 ht₁_e2'' hpc''
@@ -4808,10 +4808,10 @@ private lemma stepFR_ite_standard
             exact (beval_preserves_varEnv e2 fuel₁w verbose₁w cfg₁1 cf₁ o₁ heval₁w).symm
           have hresTm :
               QTypRespectsTagMeaning tm res.qualType :=
-            typecheckExpr_preserves_QTypRespectsTagMeaning
+            typecheckExpr_preserves_QTypRespectsTagMeaning hExtTyping
               tm ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwfTm htc
           have hwfTm_final : wfTagMeaningCtx tm (ctxAfter ctxᵢ res) :=
-            typecheckExpr_preserves_wfTagMeaningCtx
+            typecheckExpr_preserves_wfTagMeaningCtx hExtTyping
               tm ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwfTm htc
           have hwf_final : wfTypeContext (ctxAfter ctxᵢ res) :=
             wfTypeContext_of_wfTypeResult ctxᵢ res
@@ -4979,7 +4979,7 @@ private lemma stepFR_ite_standard
                           native_decide
                         exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                   rcases
-                      typecheckExpr_clean_lookup_origin_of_pc_true
+                      typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
                         ctxForE3 e3 fuel' res3 htc3' hwf_ctxForE3 hpcForE3
                         l qt3 hlookup3 hcontains_ctxForE3 hclean3
                     with ⟨qt_in, hlookup_in, hclean_in⟩
@@ -5406,7 +5406,7 @@ private lemma stepFR_ite_standard
           have hwfcf₀1'_e3m : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
             rw [← hcfg₀1_eq_e3m]; exact hwfcf₀1
           have hstep_e3 :=
-            hIH_e3 hpredlaws hwfTm_ctxForE3
+            hIH_e3 hpredlaws hExtTyping hwfTm_ctxForE3
               cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
               cf₀ cf₁ o₀ o₁
               hθ₀1wf hθ₁1wf hwf_ctxForE3 htagBounded_ctxForE3 hric₀1_ctxForE3 hric₁1_ctxForE3 htagR_ctxForE3
@@ -5625,10 +5625,10 @@ private lemma stepFR_ite_standard
                     hlookup_back_join_to_res3 h)
           have hresTm :
               QTypRespectsTagMeaning tm res.qualType :=
-            typecheckExpr_preserves_QTypRespectsTagMeaning
+            typecheckExpr_preserves_QTypRespectsTagMeaning hExtTyping
               tm ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwfTm htc
           have hwfTm_final : wfTagMeaningCtx tm (ctxAfter ctxᵢ res) :=
-            typecheckExpr_preserves_wfTagMeaningCtx
+            typecheckExpr_preserves_wfTagMeaningCtx hExtTyping
               tm ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) res hwfTm htc
           have hwf_final : wfTypeContext (ctxAfter ctxᵢ res) :=
             wfTypeContext_of_wfTypeResult ctxᵢ res

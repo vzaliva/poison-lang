@@ -1162,7 +1162,8 @@ from a clean program counter ($pc = \text{false}$) with an empty tag environment
 
 If typechecking $e$ under this context succeeds and the inferred typing result satisfies the
 observable constraints, then for \emph{any} abstract predicate satisfaction relation
-$\text{PredSat}$ satisfying the axioms, the program $e$ satisfies the fault robustness property with
+$\text{PredSat}$ satisfying the predicate-satisfaction laws and \emph{any}
+\texttt{ExternTypingAssumptions} witness, the program $e$ satisfies the fault robustness property with
 respect to $S$, $\text{obs}$, and $\text{PredSat}$.
 \end{theorem}
 
@@ -1222,11 +1223,17 @@ are on the critical path of the proof even though that branch never reaches
 runtime dispatch.
 Externs therefore affect the FR proof only at the \emph{typechecking summary}
 layer: the proof surface concerns what the typechecker states about external
-code. Two axioms pin the typechecker's extern summaries to the proof layer,
-one for fresh guard tags and one for impure memory effects; neither obligation
-is derivable from the syntactic shape of the typechecker alone.
+code. Two typing-side assumptions, packaged as fields of the
+\texttt{ExternTypingAssumptions} structure (defined in
+\texttt{LeanProofs/ExternTypingAssumptions.lean}), pin the typechecker's extern summaries
+to the proof layer---one for fresh guard tags and one for impure memory
+effects; neither obligation is derivable from the syntactic shape of the
+typechecker alone. The fault-robustness theorem is relative to a witness of
+\texttt{ExternTypingAssumptions}: a caller must supply (or postulate) one to
+instantiate the theorem, making this trust boundary explicit at the public API
+rather than implicit in global axioms.
 
-\paragraph{Tag meaning for fresh guards (\texttt{externTagSoundness}).}
+\paragraph{Tag meaning for fresh guards (\texttt{ExternTypingAssumptions.tagSoundness}).}
 Extern typechecking resolves symbolic predicates using
 \texttt{collectAndAllocExternTags} and \texttt{resolveSyntaxPred}, and the
 resulting predicates may mention freshly allocated tags. A \texttt{TagMeaning}
@@ -1236,20 +1243,21 @@ type $qt$ \emph{respects} a tag meaning $tm$
 (\texttt{QTypRespectsTagMeaning}~$tm~qt$) when every closure-backed guard
 reachable inside $qt$ is mapped by $tm$ to the closure that tag was allocated
 to name. Guard-only predicates do not add an extra obligation at this layer.
-The axiom states that when extern typechecking allocates fresh tags
-and resolves symbolic predicates, those fresh tags are already interpreted
-correctly by the chosen $tm$. It is the trust boundary behind all downstream
-corollaries showing that extern values, pure extern applications, and impure
-extern applications produce qualified types that respect $tm$.
+The \texttt{tagSoundness} field states that when extern typechecking allocates
+fresh tags and resolves symbolic predicates, those fresh tags are already
+interpreted correctly by the chosen $tm$. It is the trust boundary behind all
+downstream corollaries showing that extern values, pure extern applications,
+and impure extern applications produce qualified types that respect $tm$.
 
-\paragraph{Guard provenance for impure memory effects (\texttt{externGuardProvenance}).}
+\paragraph{Guard provenance for impure memory effects (\texttt{ExternTypingAssumptions.guardProvenance}).}
 An impure extern summary may modify memory under a poisoned program counter,
-overwriting cells with resolved guard predicates. The axiom says that trusted
-output cells do not manufacture trust out of nowhere: if a memory cell in the
-post-call state is trusted because it carries an active guard tag, that trust
-must trace back to a corresponding guarded-and-active cell at the same location
-in the pre-call state. In other words, impure extern type summaries may move
-or preserve guarded trust, but they may not invent it. 
+overwriting cells with resolved guard predicates. The \texttt{guardProvenance}
+field says that trusted output cells do not manufacture trust out of nowhere:
+if a memory cell in the post-call state is trusted because it carries an
+active guard tag, that trust must trace back to a corresponding
+guarded-and-active cell at the same location in the pre-call state. In other
+words, impure extern type summaries may move or preserve guarded trust, but
+they may not invent it.
 
 \subsubsection*{Structural Agreement for Function Values}
 

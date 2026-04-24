@@ -18,6 +18,7 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (predSat : PredSat)
   (tm : TagMeaning) : Prop :=
     PredSatLaws predSat tm →
+    ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
@@ -535,7 +536,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       typecheckVar_preserves_nextLoc ctxᵢ name res htc',
       typecheckVar_preserves_nextTag ctxᵢ name res htc',
       typecheckVar_preserves_regime ctxᵢ name res htc']
-  intro _hpredlaws _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none hctxCons a pm hwfcfg ht _hpc
+  intro _hpredlaws _hExtTyping _hwfTm μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none hctxCons a pm hwfcfg ht _hpc
   rcases
     terminatesTo_var_inv' name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
@@ -565,7 +566,7 @@ lemma stepFR_var
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFR ctxᵢ (Expr.var name) res predSat tm := by
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' name

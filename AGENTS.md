@@ -97,7 +97,7 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `Progress.lean` - Progress (well-typed expressions evaluate or diverge, never get stuck)
 - `MemoryMonotonicity.lean` - Memory monotonicity (evaluation only adds locations, never removes)
 
-**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`, `ExternAxioms.lean` (semantic contracts for extern typechecking used in fault-robustness)
+**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`, `ExternTypingAssumptions.lean` (semantic contracts for extern typechecking used in fault-robustness)
 
 **Module visibility / `private` discipline:** declarations used only within their declaring file are marked `private`. The `private` keyword scopes the binding to the file, which keeps the public surface of each module small and gives reviewers a quick read of "what is this module's API." When adding a new helper, default to `private` until another file actually needs it.
 
@@ -149,7 +149,7 @@ To add a test:
 ### Proof Development Guidelines
 
 - **No testing**: Proofs are verified by compilation, not runtime tests
-- **Extern semantics**: Fault-robustness for extern-backed typing relies on the axioms in `ExternAxioms.lean`; keep that boundary minimal and consistent with `RegimeConsistency` / typechecking
+- **Extern semantics**: Fault-robustness for extern-backed typing relies on the `ExternTypingAssumptions` structure in `ExternTypingAssumptions.lean`; keep that boundary minimal and consistent with `RegimeConsistency` / typechecking
 - **Conservative `sorry` use**: When you are proving deliberately, use `sorry` sparingly. The goal is to **decrease** the number of `sorry` statements (shrinking proof surface), not increase them. Adding more `sorry` goes in the wrong direction
 - **Specification style**: Prefer **declarative / logical** specifications over functional encodings when both are reasonable (for example, membership predicates instead of `filter`-style definitions)
 - **Inductive predicates**: For proof-relevant properties, prefer **inductive predicates** over `Bool` helpers so inversion is straightforward

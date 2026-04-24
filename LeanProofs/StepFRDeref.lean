@@ -18,6 +18,7 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (predSat : PredSat)
   (tm : TagMeaning) : Prop :=
     PredSatLaws predSat tm →
+    ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
@@ -373,14 +374,14 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
     simpa [Nat.succ_sub_one] using htc1
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm⟩
   rcases
-    hIH hpredlaws hwfTm μ ρ θ cfg' (Value.loc a')
+    hIH hpredlaws hExtTyping hwfTm μ ρ θ cfg' (Value.loc a')
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
     with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres', _hfresh'⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
@@ -436,7 +437,7 @@ lemma stepFR_deref
     simpa [Nat.succ_sub_one] using htc1
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm htagBounded res1 htc1'
   -- Invert deref evaluation (world-free)
@@ -448,7 +449,7 @@ lemma stepFR_deref
   rcases hstruct₁ with ⟨cfg₁', a₁', n₁, ht₁_e, hlookup₁, hv₁, hmem₁, hvar₁, hnext₁, hpm₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
-    hIH hpredlaws hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
+    hIH hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
       hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨hresTm_e, hstep_e⟩
   rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, _hvtyp₀, _hvtyp₁, _hTm', hwf', _htagBounded', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩

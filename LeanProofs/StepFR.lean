@@ -16,7 +16,7 @@ import LeanProofs.Aux
 import LeanProofs.SemanticsProperties
 import LeanProofs.Equality
 import LeanProofs.RegimeConsistency
-import LeanProofs.ExternAxioms
+import LeanProofs.ExternTypingAssumptions
 import LeanProofs.VarEnvPreservation
 import LeanProofs.MemoryMonotonicity
 import Std.Data.ExtTreeMap.Lemmas
@@ -227,6 +227,7 @@ def StepFR
   (predSat : PredSat)
   (tm : TagMeaning) : Prop :=
     PredSatLaws predSat tm →
+    ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
     ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
@@ -850,6 +851,7 @@ def StepFRSingleRunFinalCleanPcTrue
   (predSat : PredSat)
   (tm : TagMeaning) : Prop :=
     PredSatLaws predSat tm →
+    ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
@@ -881,6 +883,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
   (predSat : PredSat)
   (tm : TagMeaning) : Prop :=
     PredSatLaws predSat tm →
+    ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
@@ -5163,9 +5166,10 @@ private lemma returnSpecToQTyp_pred_preserves (typ : Typ) (poison : Bool)
 -- Step 5a corollaries: validate the unified axiom on §2.4 and §2.2-simple
 -- --------------------------------------------------------------------------
 
-/-- Corollary of `externTagSoundness`: `typecheckExternVal`
+/-- Corollary of `ExternTypingAssumptions.tagSoundness`: `typecheckExternVal`
     result `QTyp` respects tag meaning. -/
 private lemma typecheckExternVal_QTypRespectsTagMeaning_corollary
+    (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
     (res : TypeResult)
     (htc : typecheckExternVal ctx typ poison pred = .ok res) :
@@ -5193,7 +5197,7 @@ private lemma typecheckExternVal_QTypRespectsTagMeaning_corollary
                      Except.ok.injEq] at htc
           subst htc; simp only
           -- Apply the unified axiom
-          have hcompat := externTagSoundness tm tagMapping [pred] ctx.varEnv
+          have hcompat := extTyping.tagSoundness tm tagMapping [pred] ctx.varEnv
             ctx.nextTag nextTag' halloc
           have hpredTm := resolveSyntaxPred_respectsTagMeaning tm pred ctx.varEnv tagMapping [pred]
             resolvedPred hcompat (List.Mem.head _) hresolved
@@ -5231,6 +5235,7 @@ private lemma QTypRespectsTagMeaning_noPred_poison_transport
     Pure extern result QTyp respects tag meaning (all `ExternReturn` cases).
     Simple case uses the unified axiom; nested cases use captured-env transfer. -/
 lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary
+    (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning)
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -5268,7 +5273,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary
             simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly
             let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
               ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-            have hcompat := externTagSoundness tm tagMapping [spred] unifiedEnv
+            have hcompat := extTyping.tagSoundness tm tagMapping [spred] unifiedEnv
               result2.nextTag' nextTag' halloc
             have hpredTm := resolveSyntaxPred_respectsTagMeaning tm spred unifiedEnv tagMapping
               [spred] resolvedPred hcompat (List.Mem.head _) hresolved
@@ -5452,6 +5457,7 @@ private lemma extern_loop_allCellsRespect
 /-- Conjunct 1: all cells in the post-loop memEnv of an impure extern application
     respect tag meaning.  Only requires `hwf` (input wf) and `happly`. -/
 private lemma applyFnTClosure_extern_ok_memCellsRespect
+    (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning)
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -5476,7 +5482,7 @@ private lemma applyFnTClosure_extern_ok_memCellsRespect
         with hunifiedEnv
       have hcompat : TagMappingRespectsTagMeaning tm allocRes.1
           (collectExternPreds retSpec effects) unifiedEnv :=
-        externTagSoundness tm allocRes.1
+        extTyping.tagSoundness tm allocRes.1
           (collectExternPreds retSpec effects) unifiedEnv result2.nextTag' allocRes.2 hcollect
       -- Initial cells from hwf
       have hinit : ∀ l qt, result2.memEnv'.lookup l = some qt → QTypRespectsTagMeaning tm qt := by
@@ -5678,6 +5684,7 @@ lemma applyFnTClosure_extern_ok_memEnv_poison_origin
     Requires `hcapTm` (captured env entries respect tm) and `hargTm` (arg QTyp respects tm)
     in addition to `hwf` and `happly`. -/
 lemma applyFnTClosure_extern_ok_qualTypeRespects
+    (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning)
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -5718,7 +5725,7 @@ lemma applyFnTClosure_extern_ok_qualTypeRespects
                   (collectExternPreds (ExternReturn.simple typ poison spred) effects)
                   ((VarTypeEnv.ofCaptured capturedEnv).update x
                     ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) :=
-                externTagSoundness tm allocRes.1
+                extTyping.tagSoundness tm allocRes.1
                   (collectExternPreds (ExternReturn.simple typ poison spred) effects)
                   ((VarTypeEnv.ofCaptured capturedEnv).update x
                     ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
@@ -5778,6 +5785,7 @@ lemma applyFnTClosure_extern_ok_qualTypeRespects
 /-- Structural: given the focused effect-write contract and the unchanged varEnv,
     the full wfTagMeaningCtx is preserved through extern application. -/
 lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
+  (extTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -5804,7 +5812,7 @@ lemma applyFnTClosure_extern_ok_wfTagMeaningCtx
         -- Guard desc from memEnv: use the proved memCellsRespect lemma
         rename_i l qtRoot hqtinqt hlookup_mem
         exact (applyFnTClosure_extern_ok_memCellsRespect
-          tm ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel
+          extTyping tm ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel
           x retSpec effects capturedEnv r hwf happly l qtRoot hlookup_mem) hqtinqt hqd
 
 /-- Helper: if resolveSyntaxPred produces a guardClosure predicate, the tag came from the mapping. -/
@@ -7384,6 +7392,7 @@ lemma QTypRespectsTagMeaning_joinStep
     exact h1 (QTypInQTyp.self _) (by simp [qtypGuardDesc?, hp1])
 
 private lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
+  (extTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -7447,10 +7456,11 @@ private lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
           exact EnvRespectsTagMeaning_mix tm ctx.varEnv result1.memEnv'
             bodyCtx.varEnv result3.memEnv' hctxTm1 hIH
   | extern x retSpec effects capturedEnv =>
-    exact applyFnTClosure_extern_ok_wfTagMeaningCtx tm ctx st1 st2 p p1 argEtyp argPoison argPred
+    exact applyFnTClosure_extern_ok_wfTagMeaningCtx extTyping tm ctx st1 st2 p p1 argEtyp argPoison argPred
       result1 fuel x retSpec effects capturedEnv r hctxTm1 happly
 
 private lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
+  (extTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -7533,10 +7543,11 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
         ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         hargTm rfl rfl
     intro qt' k d hinq hqd
-    exact (applyFnTClosure_extern_ok_qualTypeRespects tm ctx st1 st2 p p1 argEtyp argPoison
+    exact (applyFnTClosure_extern_ok_qualTypeRespects extTyping tm ctx st1 st2 p p1 argEtyp argPoison
       argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 hcapTm hargTm' happly) hinq hqd
 
 private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
+  (extTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -7565,7 +7576,7 @@ private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
     ⟨tcl, htcl_mem, happly⟩
   exact
     applyFnTClosure_ok_wfTagMeaningCtx_byIH
-      (tm := tm) (bodyIH := bodyIH)
+      (extTyping := extTyping) (tm := tm) (bodyIH := bodyIH)
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (tcls := tcls)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
@@ -7573,6 +7584,7 @@ private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
       hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
 
 private lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
+  (extTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -7601,7 +7613,7 @@ private lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
     ⟨tcl, htcl_mem, happly⟩
   exact
     applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
-      (tm := tm) (bodyIH := bodyIH)
+      (extTyping := extTyping) (tm := tm) (bodyIH := bodyIH)
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (tcls := tcls)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
@@ -7679,6 +7691,7 @@ private lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
     rwa [hmem]
 
 private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
+  (extTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List PFnTClosure)
@@ -7761,7 +7774,7 @@ private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
         ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         hargTm rfl rfl
     intro qt' k d hinq hqd
-    exact (applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary tm ctx st1 st2 p p1 argEtyp
+    exact (applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary extTyping tm ctx st1 st2 p p1 argEtyp
       argPoison argPred result1 fuel x retSpec capturedEnv r hctxTm1 hcapTm hargTm' happly) hinq hqd
 
 private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
@@ -7801,6 +7814,7 @@ private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
       hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
 
 private lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
+  (extTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List PFnTClosure)
@@ -7829,7 +7843,7 @@ private lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
     ⟨tcl, htcl_mem, happly⟩
   exact
     applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
-      (tm := tm) (bodyIH := bodyIH)
+      (extTyping := extTyping) (tm := tm) (bodyIH := bodyIH)
       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
       (tcls := tcls)
       (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
@@ -8071,7 +8085,8 @@ private lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
     are in tm. Since ctxAfter preserves varEnv, the varEnv side is automatic. For memEnv,
     we track how each expression form transforms memEnv and use join/update lemmas. -/
 
-private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
+private lemma typecheckExpr_preserves_wfTagMeaningCtx_main
+    (extTyping : ExternTypingAssumptions) :
     ∀ (fuel : Nat) (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     wfTagMeaningCtx tm ctx →
     typecheck ctx e fuel = .ok res →
@@ -8192,7 +8207,7 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
             simp only [] at htc
             have htc' := by simpa using htc
             exact ⟨typecheckExternVal_preserves_wfTagMeaningCtx tm ctx typ poison pred res hwf htc',
-                   typecheckExternVal_QTypRespectsTagMeaning_corollary tm ctx typ poison pred res htc'⟩
+                   typecheckExternVal_QTypRespectsTagMeaning_corollary extTyping tm ctx typ poison pred res htc'⟩
         | externFn _id arg argTyp retSpec effects =>
             have htc_res := typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc
             subst htc_res
@@ -8549,7 +8564,7 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                     have hresults_tm :
                         ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) :=
                       mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
-                        (tm := tm)
+                        (extTyping := extTyping) (tm := tm)
                         (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
                         (tcls := tcls)
                         (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
@@ -8561,7 +8576,7 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                     have hresults_qtm :
                         ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType :=
                       mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
-                        (tm := tm)
+                        (extTyping := extTyping) (tm := tm)
                         (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
                         (tcls := tcls)
                         (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
@@ -8611,7 +8626,7 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                     have hresults_qtm :
                         ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType :=
                       mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
-                        (tm := tm)
+                        (extTyping := extTyping) (tm := tm)
                         (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
                         (tcls := tcls)
                         (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
@@ -8640,18 +8655,20 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main :
                           h_join h_first_qtm h_rest_qtm ⟩
 
 lemma typecheckExpr_preserves_wfTagMeaningCtx
+    (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hwf : wfTagMeaningCtx tm ctx)
     (htc : typecheck ctx e fuel = .ok res) :
     wfTagMeaningCtx tm (ctxAfter ctx res) :=
-  (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).1
+  (typecheckExpr_preserves_wfTagMeaningCtx_main extTyping fuel tm ctx e res hwf htc).1
 
 lemma typecheckExpr_preserves_QTypRespectsTagMeaning
+    (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (hwf : wfTagMeaningCtx tm ctx)
     (htc : typecheck ctx e fuel = .ok res) :
     QTypRespectsTagMeaning tm res.qualType :=
-  (typecheckExpr_preserves_wfTagMeaningCtx_main fuel tm ctx e res hwf htc).2
+  (typecheckExpr_preserves_wfTagMeaningCtx_main extTyping fuel tm ctx e res hwf htc).2
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Shared clean-lookup infrastructure (moved from StepFRApp.lean)
@@ -9704,6 +9721,7 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
           rw [hmem_eq]; exact hlookup
 
 private lemma typecheckExpr_lookup_origin_of_pc_true_split
+  (extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -10674,7 +10692,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                           have hcall_src : ImpureExternCallOk ctx srcRes :=
                             ⟨st1, st2, p, p1, etyp2, p2, pred2, result1, fuelApp,
                              x, retSpec, effects, capturedEnv, happly_src⟩
-                          rcases externGuardProvenance ctx srcRes hcall_src hpc l k qt_src
+                          rcases extTyping.guardProvenance ctx srcRes hcall_src hpc l k qt_src
                               ⟨hlookup_src, htag_src, hreg_src', hnotfun_src⟩ with
                             ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
                           exact ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
@@ -10801,6 +10819,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                  fun k hg hr hfn => ⟨qt_out, hlookup_out, hg, hr, hfn⟩⟩
 
 private lemma typecheckExpr_lookup_poison_origin_of_pc_true
+  (extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -10811,10 +10830,11 @@ private lemma typecheckExpr_lookup_poison_origin_of_pc_true
     qt_out.poison = false →
     ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false := by
   intro l qt_out hlookup_out hpre hpoison_out
-  exact (typecheckExpr_lookup_origin_of_pc_true_split
+  exact (typecheckExpr_lookup_origin_of_pc_true_split extTyping
       (ctx := ctx) (e := e) (fuel := fuel) (res := res) htc hwf hpc l qt_out hlookup_out hpre).1 hpoison_out
 
 private lemma typecheckExpr_lookup_guard_origin_of_pc_true
+  (extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -10830,11 +10850,12 @@ private lemma typecheckExpr_lookup_guard_origin_of_pc_true
       ctx.regime.lookup? k = some true ∧
       qt_in.etyp.isFunctionType = false := by
   intro l qt_out k hlookup_out hpre htag hk hnotfun
-  exact (typecheckExpr_lookup_origin_of_pc_true_split
+  exact (typecheckExpr_lookup_origin_of_pc_true_split extTyping
       (ctx := ctx) (e := e) (fuel := fuel) (res := res) htc hwf hpc l qt_out hlookup_out hpre).2
       k htag hk hnotfun
 
 lemma typecheckExpr_clean_lookup_origin_of_pc_true
+  (extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -10847,13 +10868,13 @@ lemma typecheckExpr_clean_lookup_origin_of_pc_true
   intro l qt_out hlookup_out hpre hclean_out
   cases hclean_out with
   | clean hpoison_out =>
-      rcases typecheckExpr_lookup_poison_origin_of_pc_true
+      rcases typecheckExpr_lookup_poison_origin_of_pc_true extTyping
           (ctx := ctx) (e := e) (fuel := fuel) (res := res)
           htc hwf hpc l qt_out hlookup_out hpre hpoison_out with
         ⟨qt_in, hlookup_in, hpoison_in⟩
       exact ⟨qt_in, hlookup_in, qtypCleanUnder.clean hpoison_in⟩
   | guard k htag hk hnotfun =>
-      rcases typecheckExpr_lookup_guard_origin_of_pc_true
+      rcases typecheckExpr_lookup_guard_origin_of_pc_true extTyping
           (ctx := ctx) (e := e) (fuel := fuel) (res := res)
           htc hwf hpc l qt_out k hlookup_out hpre htag hk hnotfun with
         ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
@@ -10861,6 +10882,7 @@ lemma typecheckExpr_clean_lookup_origin_of_pc_true
 
 
 lemma typecheckExpr_lookup_clean_back_of_pc_true
+  (extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -10871,7 +10893,7 @@ lemma typecheckExpr_lookup_clean_back_of_pc_true
     qtypCleanUnder res.regime' qt_out →
     qtypCleanUnder ctx.regime qt_in := by
   intro l qt_in qt_out hlookup_in hlookup_out hclean_out
-  rcases typecheckExpr_clean_lookup_origin_of_pc_true
+  rcases typecheckExpr_clean_lookup_origin_of_pc_true extTyping
       (ctx := ctx) (e := e) (fuel := fuel) (res := res)
       htc hwf hpc l qt_out hlookup_out
       (memEnv_contains_of_lookup_some ctx.memEnv l qt_in hlookup_in)
