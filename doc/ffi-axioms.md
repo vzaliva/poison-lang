@@ -483,15 +483,74 @@ admits two live axioms becomes axiom-free.
 
 ## Sorries discharged
 
-| `sorry` location | Layer | Evidence consumed | Notes |
-|------------------|-------|-------------------|-------|
-| `SemanticsProperties.lean` — `app` fn-case `wfConfig` preservation | impl | `implEv.frame` (C), `implEv.addrMono` (D) | C gives `wfMem addr' mem'` via frame + int-only heap; D gives `wfVarEnv addr' cfg.varEnv` via monotonicity. |
-| `SemanticsProperties.lean` — `externVal` `ref int` `wfConfig` preservation | impl | `implEv.refInBounds` (E) + proven `nextAddr` monotonicity | E at init, monotonicity transports to intermediate `cfg`. |
-| `FaultRobustnessProofs.lean` — `terminatesTo_extern_absurd` × 6 | typing (+ impl for `ref int` val) | `declEv.tagSoundness` (A); `implEv.refInBounds` (E) only for the `externVal (ref int)` subcase | Six FR obligations at extern *declaration* sites (three in the masked single-run theorem, three in the step theorem, one per extern form). A covers tag-mapping coherence for the declared predicates in all three forms — pure typing-layer. E is the one impl-layer touch: only the `externVal` of type `ref int` requires the registered runtime `.val (.loc a)` to lie below `nextAddr`. Contracts B, C, D are *not* consumed here because declarations do not invoke dispatch; they are consumed inside `StepFRApp` at the application of extern closures. |
+Status below is as of the current `ffi` branch.
 
-Other extern-related `sorry`s concern top-level extern *declarations*
-(which leave `Config` unchanged) and close mechanically without any
-evidence.
+| `sorry` location | Layer | Evidence consumed | Current status | Notes |
+|------------------|-------|-------------------|----------------|-------|
+| `SemanticsProperties.lean:425` — `app` fn-case `wfConfig` preservation | impl | `implEv.frame` (C), `implEv.addrMono` (D) | ⏳ open | C gives `wfMem addr' mem'` via frame + int-only heap; D gives `wfVarEnv addr' cfg.varEnv` via monotonicity. |
+| `SemanticsProperties.lean:1899` — `externVal` `ref int` `wfConfig` preservation | impl | `implEv.refInBounds` (E) + proven `nextAddr` monotonicity | ⏳ open | E at init, monotonicity transports to intermediate `cfg`. |
+| `FaultRobustnessProofs.lean` — former `terminatesTo_extern_absurd` × 6 | typing (+ impl for `ref int` val) | `declEv.tagSoundness` (A); `implEv.refInBounds` (E) only for the `externVal (ref int)` subcase | ✅ **currently vacuous** — closed without any FFI evidence | See "Vacuous-premise note" below. |
+
+### Vacuous-premise note on the six `terminatesTo_extern_absurd` sites
+
+These six sites currently close **without any `sorry` and without
+consuming Contracts A or E**. The reason is a property of the present
+FR theorem statement, not of the extern contracts:
+
+- The theorem instantiates `terminatesTo` against a `Config` literal
+  that omits the `registry` field, so `Config.registry` defaults to
+  `emptyExternRegistry` (the default in `LeanPoison/Syntax.lean`).
+- Under an empty registry, `beval` for any of `externVal` / `externFn`
+  / `externPfn` returns `.runtimeError (ExternError.format (.missing
+  id))` — the registry lookup fails.
+- `terminatesTo` is the success relation, so the premise is
+  unsatisfiable. Each of the six cases closes by `cases fuel` + `simp
+  [LeanPoison.beval, emptyExternRegistry] at hbeval`.
+
+This is an honest proof, but it reveals that the current top-level FR
+statement is **trivially true for extern declarations** — it silently
+assumes no extern can ever succeed. When the evidence-registry refactor
+threads a populated `Config.registry` (and the corresponding
+`TrustedRegistry` with `declEv` / `implEv`) into the theorem, these
+six cases will re-open and become real obligations:
+
+- Three sites (`externFn`, `externPfn`, plus the non-ref subcase of
+  `externVal`) will consume `declEv.tagSoundness` (Contract A).
+- Three sites for `externVal` (one of them doubling with the above
+  where the declared type is `ref int`) will additionally consume
+  `implEv.refInBounds` (Contract E).
+- Contracts B, C, D remain out of scope here because these sites are
+  at extern *declaration* form, not at extern call dispatch. They are
+  consumed inside `StepFRApp` when an extern closure is actually
+  applied.
+
+### `FnTClosure.extern` representation gap (follow-up)
+
+While closing the six vacuous sites, a structural gap surfaced that
+will bite when the registry is populated: `valueHasETyp.closure` and
+`deepValueQTypProperty.closure` currently only match
+`FnTClosure.regular` members; neither has a constructor for
+`FnTClosure.extern`. Under the vacuous-premise closure this is never
+reached, but once a populated registry is threaded in, the FR theorem
+will need either:
+
+- an additional constructor on `valueHasETyp` / `deepValueQTypProperty`
+  for `FnTClosure.extern`; or
+- Contract A to directly supply the value-typing witness for extern
+  closures at each call site.
+
+Flagging this as a design follow-up for the evidence-registry refactor
+— the choice between "extend the inductive" and "have A do the work"
+affects both the shape of Contract A in the bundle and the overall
+size of the refactor.
+
+### Other extern-related sorries
+
+All other extern-related `sorry`s in the proof development concern
+top-level extern *declarations* (which leave `Config` unchanged) and
+close mechanically without any evidence — the same pattern as the six
+former `terminatesTo_extern_absurd` sites, and for the same reason
+(empty-registry default in the theorem statement).
 
 ## Overlap audit
 

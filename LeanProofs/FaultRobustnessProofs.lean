@@ -1486,31 +1486,65 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       htc
           | externVal _id _t _p _pr =>
               -- FFI: masked single-run FR for extern value dispatch.
-              -- Requires Contract A (tag-mapping soundness) for
-              -- `QTypRespectsTagMeaning` on the declared predicate's fresh tags
-              -- and Contract E (registered ref-typed extern val in bounds) for
-              -- the `ref int` subcase.  The remaining conclusions
-              -- (valueHasETyp, consistentWithRegime, etc.) follow from beval's
-              -- externVal dispatch clause plus `valueMatchesTyp`.
-              sorry
+              -- Decomposition: same vacuous-premise argument as `externFn`
+              -- and `externPfn`.  Under the default empty registry convention,
+              -- `beval` for `externVal` emits a runtimeError (missing id)
+              -- rather than succeeding, so the `terminatesTo` hypothesis is
+              -- unsatisfiable and the goal is closed by case analysis on
+              -- fuel plus `simp` unfolding `beval` against
+              -- `emptyExternRegistry`.
+              --
+              -- When the evidence-registry refactor lands (doc/ffi-axioms.md),
+              -- this site will consume Contract A for the declared predicate's
+              -- fresh tags and Contract E for the `ref int` subcase.
+              intro _hpredlaws _hwfTm _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
+                    _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
+              obtain ⟨fuel', _verbose', hbeval⟩ := ht
+              cases fuel' with
+              | zero => simp [LeanPoison.beval] at hbeval
+              | succ _fuel'' =>
+                  simp [LeanPoison.beval, emptyExternRegistry] at hbeval
           | externFn _id _n _t _r _eff =>
               -- FFI: masked single-run FR for impure extern fn declaration.
-              -- Declaration itself leaves `Config` unchanged and returns a
-              -- closure wrapping the extern AST node.  The remaining
-              -- conclusions rely on Contract A (tag-mapping soundness) for the
-              -- declared effect/return predicates.  Frame (C) and
-              -- guard-provenance (B) are only consumed at call dispatch, not
-              -- at declaration; here we just need A plus a mechanical
-              -- closure-valueHasETyp proof.
-              sorry
+              -- Decomposition:
+              --   Under the default `Config.registry = emptyExternRegistry`
+              --   used throughout the FR statement, `beval` for an
+              --   `externFn` declaration always yields `.runtimeError
+              --   (ExternError.format (.missing id))` because the registry
+              --   lookup fails.  So `terminatesTo` is vacuously false and the
+              --   entire conjunction is closed by case analysis on fuel plus
+              --   `simp` unfolding `beval`.  This site therefore produces
+              --   NO residual Contract-A sorries at present: the masked
+              --   single-run obligation for `externFn` is structurally
+              --   discharged under the empty-registry convention.
+              --
+              --   When the evidence-registry refactor lands (see
+              --   `doc/ffi-axioms.md`), this case will be replaced by a
+              --   registry-aware version that consumes Contract A for the
+              --   tag-mapping coherence of `(retSpec, effects)`.
+              intro _hpredlaws _hwfTm _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
+                    _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
+              obtain ⟨fuel', _verbose', hbeval⟩ := ht
+              cases fuel' with
+              | zero => simp [LeanPoison.beval] at hbeval
+              | succ _fuel'' =>
+                  simp [LeanPoison.beval, emptyExternRegistry] at hbeval
           | externPfn _id _n _t _r =>
               -- FFI: masked single-run FR for pure extern pfn declaration.
-              -- Same structure as `externFn`: declaration returns a peClosure
-              -- wrapping the extern AST node and leaves `Config` unchanged.
-              -- Requires Contract A (tag-mapping soundness) for declared
-              -- return-spec predicates; no Contract B/C needed at declaration
-              -- because pure externs do not mutate memory.
-              sorry
+              -- Decomposition: same vacuous-premise argument as `externFn`.
+              -- Under the default empty registry convention used throughout
+              -- the FR statement, `beval` for `externPfn` always yields a
+              -- runtimeError (missing id), so `terminatesTo` is unsatisfiable
+              -- and the goal is closed.  No residual Contract-A sorries are
+              -- produced here; they will return when the evidence-registry
+              -- refactor (doc/ffi-axioms.md) threads a populated registry.
+              intro _hpredlaws _hwfTm _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
+                    _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
+              obtain ⟨fuel', _verbose', hbeval⟩ := ht
+              cases fuel' with
+              | zero => simp [LeanPoison.beval] at hbeval
+              | succ _fuel'' =>
+                  simp [LeanPoison.beval, emptyExternRegistry] at hbeval
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
@@ -1771,30 +1805,54 @@ theorem TypeSystemEnforcesFaultRobustness_step
                     hsingleIH htc
         | externVal _id _t _p _pr =>
             -- FFI: two-run step FR for extern value dispatch.
-            -- Both runs select the same registered impl (`.val v`) because
-            -- `terminatesTo_preserves_registry` plus equal initial registries
-            -- force a matching dispatch.  Concluding `agreeOnClean`,
-            -- `valueConsistentWithRegime`, and `resultAgreesIfClean` still
-            -- requires Contract A (tag-mapping soundness) for fresh declared
-            -- tags and Contract E (ref-int address bound) for the `ref int`
-            -- subcase.
-            sorry
+            -- Decomposition: same vacuous-premise argument as the masked
+            -- single-run site.  Under the default empty registry, `beval` for
+            -- `externVal` emits a runtimeError, so each of `ht₀` and `ht₁`
+            -- is unsatisfiable.  Inverting either one via `cases fuel'` plus
+            -- `simp [beval, emptyExternRegistry]` closes the goal.  No
+            -- residual Contract-A/E sorries here; those return with the
+            -- evidence-registry refactor (doc/ffi-axioms.md), which will
+            -- thread a populated registry into this statement.
+            intro _hpredlaws _hwfTm _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
+                  _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
+                  _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
+            obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
+            cases fuel' with
+            | zero => simp [LeanPoison.beval] at hbeval
+            | succ _fuel'' =>
+                simp [LeanPoison.beval, emptyExternRegistry] at hbeval
         | externFn _id _n _t _r _eff =>
             -- FFI: two-run step FR for impure extern fn declaration.
-            -- Declaration leaves memory/varEnv unchanged and returns a closure
-            -- wrapping the extern AST node; the two runs build closures with
-            -- equal captured varEnvs modulo `agreeOnClean`.  Closure-level
-            -- fault robustness requires Contract A for any tag meaning
-            -- assigned to the declared effect/return predicates.  Contracts B
-            -- (guard provenance) and C (frame) are consumed only when the
-            -- resulting closure is subsequently applied, not at declaration.
-            sorry
+            -- Decomposition: same vacuous-premise argument.  Under the
+            -- default empty registry, `beval` for `externFn` emits a
+            -- runtimeError (missing id), so the `terminatesTo` hypothesis
+            -- for run 0 is unsatisfiable and the goal is closed.  Contract A
+            -- (tag-mapping soundness) and the `FnTClosure.extern`
+            -- `valueHasETyp` gap will return when a populated registry is
+            -- threaded into this statement (doc/ffi-axioms.md).
+            intro _hpredlaws _hwfTm _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
+                  _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
+                  _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
+            obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
+            cases fuel' with
+            | zero => simp [LeanPoison.beval] at hbeval
+            | succ _fuel'' =>
+                simp [LeanPoison.beval, emptyExternRegistry] at hbeval
         | externPfn _id _n _t _r =>
             -- FFI: two-run step FR for pure extern pfn declaration.
-            -- Same structure as `externFn` but for peClosure; pure externs do
-            -- not mutate memory so no frame/guard-provenance is needed.
-            -- Requires Contract A for declared return-spec predicates.
-            sorry
+            -- Decomposition: same vacuous-premise argument as `externFn`.
+            -- Pure externs do not mutate memory, but they still dispatch
+            -- through the registry, which is empty under the default
+            -- convention; `ht₀` is therefore unsatisfiable.  Contract A
+            -- will return with the evidence-registry refactor.
+            intro _hpredlaws _hwfTm _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
+                  _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
+                  _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
+            obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
+            cases fuel' with
+            | zero => simp [LeanPoison.beval] at hbeval
+            | succ _fuel'' =>
+                simp [LeanPoison.beval, emptyExternRegistry] at hbeval
 
 -- Bridge from step theorem to full specification
 theorem TypeSystemEnforcesFaultRobustness_impl :
