@@ -754,26 +754,26 @@ is to prove lower-level implementation facts once, then derive
 the FR, single-run, and `ExternBoundaryPreservesWF` projections from those
 shared facts.
 
-## Open Questions / TODO
+## Open Questions
 
-- Revisit the shape of `ExternTypingAssumptions.tagSoundness` and
-  `ExternTypingAssumptions.guardProvenance`. The first may be too strong
-  because it asks tag allocation to respect an arbitrary `TagMeaning`; if so,
-  reformulate it as an assumption that extern tag allocation provides or
-  extends a compatible tag meaning. The second likewise needs either a
-  derivation from more structural extern-call facts or an explicitly scoped
-  trust story parallel to tag soundness.
-- Decide where registry agreement belongs in the public FR API:
-  `FaultRobustnessSpec` itself or `InputSpec`. The trusted-boundary proof is
-  not meaningful until successful runs use `tr.toRuntimeRegistry` instead of
-  the default empty registry.
-- Decide whether `ExternBoundaryPreservesWF` should remain a field of
-  `ExternBoundarySpec` or be exposed only as a derived projection from the
-  constructor API. It should not become an independent third proof burden for
-  drivers.
-- Finalize the exact `ExternCallEntry` / `BodyEntryInputsAgree` payload. It
-  must include enough captured-env and argument information for `StepFRApp` to
-  plug the extern boundary proof in where the user-closure body IH is used.
+1. Revisit the shape of `ExternTypingAssumptions.tagSoundness`. It may be too
+   strong because it asks tag allocation to respect an arbitrary `TagMeaning`;
+   if so, reformulate it as an assumption that extern tag allocation provides
+   or extends a compatible tag meaning.
+2. Revisit the shape of `ExternTypingAssumptions.guardProvenance`. It needs
+   either a derivation from more structural extern-call facts or an explicitly
+   scoped trust story parallel to tag soundness.
+3. Decide where registry agreement belongs in the public FR API:
+   `FaultRobustnessSpec` itself or `InputSpec`. The trusted-boundary proof is
+   not meaningful until successful runs use `tr.toRuntimeRegistry` instead of
+   the default empty registry.
+4. Decide whether `ExternBoundaryPreservesWF` should remain a field of
+   `ExternBoundarySpec` or be exposed only as a derived projection from the
+   constructor API. It should not become an independent third proof burden for
+   drivers.
+5. Finalize the exact `ExternCallEntry` / `BodyEntryInputsAgree` payload. It
+   must include enough captured-env and argument information for `StepFRApp` to
+   plug the extern boundary proof in where the user-closure body IH is used.
 
 The resulting theorem is a clean relative statement: Poison's type system
 enforces fault-robustness assuming every registered extern boundary is itself
