@@ -759,7 +759,11 @@ shared facts.
 1. Revisit the shape of `ExternTypingAssumptions.tagSoundness`. It may be too
    strong because it asks tag allocation to respect an arbitrary `TagMeaning`;
    if so, reformulate it as an assumption that extern tag allocation provides
-   or extends a compatible tag meaning.
+   or extends a compatible tag meaning. See `doc/tagsoundness-axiom.md` for the
+   detailed plan to eliminate this axiom by threading `TagMeaning` as ghost
+   state through typechecking, including the `TagMeaningPreservesBelow` design,
+   the `if`-join story, and the `PredSatLawsForGeneratedExtensions` package
+   needed to recover predicate-satisfaction laws on the extended tag meaning.
 2. Revisit the shape of `ExternTypingAssumptions.guardProvenance`. It needs
    either a derivation from more structural extern-call facts or an explicitly
    scoped trust story parallel to tag soundness.
