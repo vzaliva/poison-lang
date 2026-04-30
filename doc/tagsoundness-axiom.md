@@ -25,13 +25,13 @@ The fix has two parts:
 - structural plumbing: thread `TagMeaning` through typechecking and extend it
   at every extern allocation site;
 - a semantic extern delta: when a new extern guard descriptor is inserted,
-  assume, for now globally, that `predSat` is lawful for that descriptor.
+  assume, for now via a broad trust-bundle field, that `predSat` is lawful for
+  that descriptor.
 
 The first part should be proved. The second part is the remaining trust input.
-To minimize proof-interface churn while the structural threading lands, this
-document stages it as a temporary global axiom named `externPredSatDelta` in
-`LeanProofs/ExternTypingAssumptions.lean`. The FFI registry design in
-`doc/ffi-axioms.md` should later replace that axiom with per-extern evidence.
+This document stages it as a temporary field named `externPredSatDelta` in
+`ExternTypingAssumptions`. The FFI registry design in `doc/ffi-axioms.md`
+should later replace that broad field with per-extern evidence.
 
 ## Proposal Overview
 
@@ -44,7 +44,7 @@ The refactor introduces five pieces:
 3. **Extern batch extension predicate** describing the exact `TagMeaning`
    insertions caused by one `collectAndAllocExternTags` /
    `resolveSyntaxPred` batch.
-4. **Temporary extern predicate-satisfaction axiom**
+4. **Temporary extern predicate-satisfaction field**
    `externPredSatDelta`: if `PredSatLaws predSat tm` holds before an extern
    batch, and the batch structurally extends `tm` to `tm'`, then
    `PredSatLaws predSat tm'` holds.
@@ -151,7 +151,7 @@ This theorem is structural. It does not by itself say anything about
 `predSat`; it only says the proof table contains the descriptors that
 typechecking just allocated.
 
-## Temporary Global Axiom `externPredSatDelta`
+## Temporary `ExternTypingAssumptions.externPredSatDelta`
 
 `PredSat` is opaque:
 
@@ -163,33 +163,37 @@ So the fact that `tm'` contains a new descriptor at tag `k` does not prove that
 `predSat k μ v` has the meaning prescribed by that descriptor. That is the
 real semantic trust input.
 
-For this refactor, introduce a temporary global axiom in
-`LeanProofs/ExternTypingAssumptions.lean`:
+For this refactor, replace `ExternTypingAssumptions.tagSoundness` with an
+`externPredSatDelta` field:
 
 ```lean
-/-- Temporary global extern trust input.
+structure ExternTypingAssumptions where
+  /-- Temporary broad extern trust input.
 
-    This axiom avoids threading a new evidence structure through the whole
-    proof while `TagMeaning` threading is being implemented. It must be
-    replaced by per-extern registry evidence; see `doc/ffi-axioms.md`. -/
-axiom externPredSatDelta
-    (predSat : PredSat)
-    {tm tm' : TagMeaning}
-    {nextTag nextTag' : Tag}
-    {mapping : TagMapping}
-    {preds : List SyntaxPredicate}
-    {env : VarTypeEnv} :
-    PredSatLaws predSat tm →
-    ExternBatchTagMeaningExtension tm nextTag mapping preds env nextTag' tm' →
-    PredSatLaws predSat tm'
+      This field keeps the current evidence-passing discipline: callers must
+      supply a witness, and the kernel does not assume the statement
+      unconditionally. It should be replaced by per-extern registry evidence;
+      see `doc/ffi-axioms.md`. -/
+  externPredSatDelta :
+    ∀ (predSat : PredSat)
+      {tm tm' : TagMeaning}
+      {nextTag nextTag' : Tag}
+      {mapping : TagMapping}
+      {preds : List SyntaxPredicate}
+      {env : VarTypeEnv},
+      PredSatLaws predSat tm →
+      ExternBatchTagMeaningExtension tm nextTag mapping preds env nextTag' tm' →
+      PredSatLaws predSat tm'
+
+  guardProvenance : ...
 ```
 
 This is stronger than the intended final API because it ranges over all extern
 batches, not over trusted extern declarations in the program. That is
 acceptable as a staging point: it isolates the semantic assumption behind one
-named axiom while the structural threading work lands.
+explicit caller-supplied field while the structural threading work lands.
 
-The registry version should replace this global axiom with id-indexed evidence:
+The registry version should replace this broad field with id-indexed evidence:
 each trusted extern entry supplies the descriptor laws for the guard descriptors
 that its declared return/effect summaries can allocate.
 
@@ -236,6 +240,23 @@ The public wrapper's uniqueness theorem uses a fuel-coherence lemma: successful
 typechecks of the same `(ctx, e)` that produce the same `res` also produce the
 same canonical extension.
 
+Fuel-coherence is an explicit proof obligation:
+
+```lean
+theorem IsCanonicalExtensionAtFuel.fuel_coherent
+    {tm ctx e res tm₁ tm₂ fuel₁ fuel₂} :
+    typecheckExpr ctx e fuel₁ = .ok res →
+    typecheckExpr ctx e fuel₂ = .ok res →
+    IsCanonicalExtensionAtFuel tm ctx e fuel₁ res tm₁ →
+    IsCanonicalExtensionAtFuel tm ctx e fuel₂ res tm₂ →
+    tm₁ = tm₂
+```
+
+The intended proof follows the usual successful-fuel discipline for the
+typechecker: success at two fuel values yields the same deterministic
+typecheck trace for the portion of fuel actually consumed, so the
+constructor-by-constructor tag-meaning extension is the same.
+
 ## Threading Theorems
 
 The basic theorem is structural:
@@ -266,6 +287,7 @@ the extern batches that typechecking allocates:
 
 ```lean
 theorem typecheck_preserves_predSatLaws
+    (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
     (fuel : Nat) (res : TypeResult) :
     PredSatLaws predSat tm →
@@ -285,7 +307,7 @@ theorem typecheck_preserves_predSatLaws
 
 This uses a streaming direction: the proof starts with laws for the current
 table and obtains laws for the extended table after each allocation step. The
-price is exactly the temporary global axiom `externPredSatDelta`.
+price is exactly the temporary `extTyping.externPredSatDelta` field.
 
 ## Joins, Branches, and Closure Alternatives
 
@@ -351,6 +373,12 @@ Pick one before threading the proof. Whichever option is chosen, ensure the
 non-supply fields (`qualType`, `memEnv'`, `tagEnv'`, `regime'`) are identical
 across iterations. Only the supply cursors should differ.
 
+Sequencing changes the concrete tag numbers assigned to later closure
+alternatives. Audit golden outputs, regression assertions, and proof fixtures
+that inspect printed `TypeResult`s or otherwise pin concrete tag values. The
+semantic contract is freshness and descriptor preservation, not stability of
+particular fresh names.
+
 ## Threading Through `StepFR`
 
 `StepFR` is stated over the input tag table and returns the output tag table.
@@ -365,7 +393,8 @@ The step theorem should consume:
 - the current `tm`;
 - `wfTagMeaningCtx tm ctx`;
 - `TagMeaningBounded tm ctx.nextTag`;
-- `PredSatLaws predSat tm`.
+- `PredSatLaws predSat tm`;
+- `ExternTypingAssumptions`.
 
 The conclusion gains an existential post-`tm'` with:
 
@@ -424,22 +453,27 @@ The public theorem adds one initial tag-meaning premise:
 TagMeaningBounded tm ctx.nextTag
 ```
 
+This is a genuine new public premise. For the common instantiation `tm = {}`,
+it is immediate; callers that seed `tm` with pre-allocated descriptors must
+show that all such descriptor tags are below the initial fresh-tag cursor.
+
 The tag-meaning assumptions at the FR boundary are:
 
 ```lean
 wfTagMeaningCtx tm ctx →
 TagMeaningBounded tm ctx.nextTag →
 PredSatLaws predSat tm →
+ExternTypingAssumptions →
 ...
 ```
 
 `tagSoundness` is not a public theorem input. The structural compatibility
 fact for resolved extern predicates is proved for the output tag table, and
-`PredSatLaws` is advanced through extern allocation by the temporary global
-axiom `externPredSatDelta`.
+`PredSatLaws` is advanced through extern allocation by
+`ExternTypingAssumptions.externPredSatDelta`.
 
-`ExternTypingAssumptions.guardProvenance` remains a public FR input. The
-temporary global axiom is not passed by theorem users.
+`ExternTypingAssumptions` remains a public FR input. During this staging step,
+it contains `externPredSatDelta` and `guardProvenance`.
 
 The theorem does not expose `tm'`, `IsCanonicalExtension`, or typecheck fuel in
 the postcondition. Those are proof-internal witnesses used to establish the
@@ -450,15 +484,22 @@ existing observable-equivalence conclusion.
 Build artifacts in this order. Earlier items are independently useful and
 later items depend on them.
 
+Before the broad `StepFR` signature change, check the current proof debt in
+the per-operator files. Any open `sorry` or fragile placeholder proof in a
+per-operator lemma should either be discharged first or explicitly carried
+through the interface change with a removal plan. The `StepFR` threading pass
+touches every per-operator module, so unresolved local proof gaps multiply the
+revisit cost.
+
 1. `ExtTreeMap.IsSubmap` in `Aux.lean` (refl, trans, fresh-insert) and the
    `TagMeaningExtends` `abbrev`. `TagMeaningBounded` plus preservation lemmas.
    Transport lemmas for `EnvRespectsTagMeaning`, `wfTagMeaningCtx`, and
    `QTypRespectsTagMeaning` along `⊑`.
 2. `ExternBatchTagMeaningExtension` plus the derived
    `TagMappingRespectsTagMeaning` projection for the output table.
-3. The temporary global axiom `externPredSatDelta` in
-   `LeanProofs/ExternTypingAssumptions.lean`, plus helper lemmas saying one
-   extern batch extends `PredSatLaws`.
+3. Replace `ExternTypingAssumptions.tagSoundness` with the temporary
+   `externPredSatDelta` field, plus helper lemmas saying one extern batch
+   extends `PredSatLaws`.
 4. `IsCanonicalExtensionAtFuel` (inductive predicate) plus `unique`,
    per-constructor composition lemmas, and the `⊑` projection.
    `IsCanonicalExtension` wrapper plus fuel-erasure and uniqueness lemmas.
@@ -466,10 +507,10 @@ later items depend on them.
 5. Typechecker change: sequence `nextTag` through `applyFnTClosure` /
    `applyPFnTClosure`, picking refactor-vs-shim per the implementation note
    above. Update existing extern-allocation tests and rebuild.
-6. `StepFR` interface change: thread the input `tm`, output `tm'`, and
-   `PredSatLaws predSat tm'` through every per-operator lemma and the FR
-   orchestrator. The step-theorem wrapper continues to supply fuel to the
-   typecheck-threading lemmas.
+6. `StepFR` interface change: thread the input `tm`, output `tm'`,
+   `PredSatLaws predSat tm'`, and `ExternTypingAssumptions` through every
+   per-operator lemma and the FR orchestrator. The step-theorem wrapper
+   continues to supply fuel to the typecheck-threading lemmas.
 
 ## Expected Proof Surface
 
@@ -487,8 +528,8 @@ Threading lemmas, introduced before changing per-case proofs:
 - `ExternBatchTagMeaningExtension` for one extern allocation batch.
 - `ExternBatchTagMeaningExtension.respects`, deriving
   `TagMappingRespectsTagMeaning` for the output `tm'`.
-- `externPredSatDelta`, a temporary global axiom in
-  `LeanProofs/ExternTypingAssumptions.lean`.
+- `ExternTypingAssumptions.externPredSatDelta`, a temporary broad field
+  replacing `tagSoundness`.
 - `PredSatLaws.extend_extern_batch`, a small wrapper around
   `externPredSatDelta`.
 - `IsCanonicalExtensionAtFuel` (deterministic inductive) with `unique`,
@@ -498,7 +539,7 @@ Threading lemmas, introduced before changing per-case proofs:
 - Per-allocation helpers for `typecheckExternVal`, extern
   `applyFnTClosure`, and extern `applyPFnTClosure`.
 - FR-boundary inputs: `tmInit`, `TagMeaningBounded tmInit ctxInit.nextTag`,
-  and `PredSatLaws predSat tmInit`.
+  `PredSatLaws predSat tmInit`, and `ExternTypingAssumptions`.
 - `StepFR` interface change: conclusion gains `tm'`,
   `IsCanonicalExtension tm ctx e res tm'`, `tm ⊑ tm'`,
   `TagMeaningBounded`, `wfTagMeaningCtx`, `QTypRespectsTagMeaning`, and
@@ -515,7 +556,7 @@ Threading lemmas, introduced before changing per-case proofs:
 - `tagSoundness` is no longer a public assumption; resolved-predicate
   compatibility is proved for the output table `tm'`.
 - `PredSatLaws` is streamed forward from `tm` to `tm'` using the temporary
-  global axiom `externPredSatDelta`.
+  `ExternTypingAssumptions.externPredSatDelta` field.
 - The public theorem does not require callers to predict a final tag table.
 - Once the FFI registry design is implemented, `externPredSatDelta` should be
   replaced by per-extern registry evidence for the guard descriptors each

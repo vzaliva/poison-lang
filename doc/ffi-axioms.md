@@ -583,8 +583,9 @@ contain:
 - `ExternBoundaryWFRun`
 - `ExternBoundaryPreservesWF`
 - `ExternBoundarySpec`
-- the registry-scoped replacement for the temporary global axiom
-  `externPredSatDelta` described in `doc/tagsoundness-axiom.md`
+- the registry-scoped replacement for the temporary broad
+  `ExternTypingAssumptions.externPredSatDelta` field described in
+  `doc/tagsoundness-axiom.md`
 - helper lemmas for looking up declaration and implementation evidence
 
 `doc/tagsoundness-axiom.md` proposes eliminating
@@ -596,12 +597,11 @@ descriptors. The remaining semantic part is temporarily named
 `PredSatLaws` from the input table to the output table.
 
 That temporary `externPredSatDelta` is intentionally broader than the final
-FFI interface. It is staged as a global axiom in
-`LeanProofs/ExternTypingAssumptions.lean` to avoid threading a new evidence
-bundle while `TagMeaning` threading is implemented. Once the tag-threading
-refactor lands, it should be incorporated into `TrustedRegistry` /
-`ExternBoundarySpec` as per-extern evidence and the global axiom should be
-removed. Typing-side reasoning for extern
+FFI interface. It is staged as a caller-supplied field of
+`ExternTypingAssumptions`, replacing `tagSoundness`, so the kernel does not
+assume it unconditionally. Once the tag-threading refactor lands, it should be
+incorporated into `TrustedRegistry` / `ExternBoundarySpec` as per-extern
+evidence and the broad field should be removed. Typing-side reasoning for extern
 declarations in unexecuted branches may still need declaration-level evidence,
 because those branches typecheck even when no runtime boundary event occurs.
 
@@ -778,11 +778,11 @@ shared facts.
 1. Implement the `ExternTypingAssumptions.tagSoundness` replacement described
    in `doc/tagsoundness-axiom.md`: thread `TagMeaning` as ghost state through
    typechecking, prove the structural extern-batch extension lemmas, sequence
-   closure-alternative tag allocation, and use the temporary global axiom
-   `externPredSatDelta` to stream `PredSatLaws` from each input table to its
-   output table. After that lands, move the `externPredSatDelta` obligation
-   into the trusted registry interface as per-extern evidence and delete the
-   global axiom.
+   closure-alternative tag allocation, and use the temporary
+   `ExternTypingAssumptions.externPredSatDelta` field to stream `PredSatLaws`
+   from each input table to its output table. After that lands, move the
+   `externPredSatDelta` obligation into the trusted registry interface as
+   per-extern evidence and delete the broad field.
 2. Revisit the shape of `ExternTypingAssumptions.guardProvenance`. It needs
    either a derivation from more structural extern-call facts or an explicitly
    scoped trust story parallel to tag soundness.
