@@ -1,0 +1,8 @@
+{
+  "project": "poison",
+  "extra_skills": [
+    "~/.claude/skills/proof-step",
+    "~/.claude/skills/proof-step-review",
+    "~/.claude/skills/proof-planning"
+  ]
+}
