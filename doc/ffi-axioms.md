@@ -587,25 +587,23 @@ contain:
 - `ExternBoundaryWFRun`
 - `ExternBoundaryPreservesWF`
 - `ExternBoundarySpec`
-- the registry-scoped replacement for the temporary broad
-  `ExternTypingAssumptions.externPredSatDelta` field described in
-  `doc/tagsoundness-axiom.md`
+- the registry-scoped replacement for the broad
+  `ExternTypingAssumptions.externPredSatDelta` field
 - helper lemmas for looking up declaration and implementation evidence
 
-The tag-meaning threading refactor threads `TagMeaning` through typechecking.
-The structural part is generic: extern allocation extends the output tag table
-with exactly the resolved guard descriptors. The remaining semantic part is
-temporarily named `externPredSatDelta`: an extern-generated descriptor batch
-extends `PredSatLaws` from the input table to the output table.
+`TagMeaning` is threaded through typechecking, and structural extern allocation
+extends the output tag table with exactly the resolved guard descriptors via
+`ExternBatchTagMeaningExtension`. The remaining semantic part is the
+`externPredSatDelta` field: an extern-generated descriptor batch extends
+`PredSatLaws` from the input table to the output table.
 
-That temporary `externPredSatDelta` is intentionally broader than the final
-FFI interface. It is staged as a caller-supplied field of
-`ExternTypingAssumptions`, so the kernel does not assume it unconditionally. It
-should be incorporated into `TrustedRegistry` / `ExternBoundarySpec` as
-per-extern evidence and the broad field should be removed. Typing-side reasoning
-for extern declarations in unexecuted branches may still need declaration-level
-evidence, because those branches typecheck even when no runtime boundary event
-occurs.
+`externPredSatDelta` is intentionally broader than the final FFI interface. It
+is a caller-supplied field of `ExternTypingAssumptions`, so the kernel does not
+assume it unconditionally. It should be incorporated into `TrustedRegistry` /
+`ExternBoundarySpec` as per-extern evidence and the broad field should be
+removed. Typing-side reasoning for extern declarations in unexecuted branches
+may still need declaration-level evidence, because those branches typecheck
+even when no runtime boundary event occurs.
 
 `ExternTypingAssumptions.guardProvenance` remains a separate generic
 typing-side assumption until it receives an analogous registry-scoped
