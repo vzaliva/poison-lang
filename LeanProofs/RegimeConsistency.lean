@@ -377,9 +377,11 @@ theorem QTypRespectsTagMeaning_mono
     context `ctx` on expression `e`.
 
     This is a *semantic* packaging — it records the four threaded properties
-    without enumerating typecheck cases.  The fuel-indexed inductive variant
-    promised by the doc is left as a follow-up: per-case `StepFR` proofs in
-    Phase 6 construct witnesses for this Prop inline at each operator. -/
+    without enumerating typecheck cases.  Per-case `StepFR` proofs construct
+    witnesses for this Prop inline at each operator: leaves use `tm' = tm`,
+    composites thread the canonical extension produced by subexpression IHs,
+    and `app` / `externVal` construct post-allocation witnesses via
+    `ExternBatchTagMeaningExtension`. -/
 def IsCanonicalExtension
     (tm : TagMeaning) (ctx : TypeContext) (_e : Expr)
     (res : TypeResult) (tm' : TagMeaning) : Prop :=

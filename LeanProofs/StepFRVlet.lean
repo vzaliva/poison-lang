@@ -54,9 +54,6 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
         CtxCons ValCons ctx e res predSat tm
 
--- (VletCtxConsBodyStart: deleted as unused; see git history)
-
--- (VletCtxConsFinish: deleted as unused; see git history)
 
 private def VletValConsFinish
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
@@ -110,11 +107,6 @@ private lemma runtimeInstantiatesCtx_vlet_body_start
       have hne := VarEnv_lookup_update_ne ρ x y v hy
       simpa [hne] using hv0
 
--- (consistentWithRegime_vlet_body_start: deleted as unused; see git history)
-
--- (consistentWithRegime_vlet_finish: deleted as unused; see git history)
-
--- (valueConsistentWithRegime_vlet_finish: deleted as unused; see git history)
 
 private lemma consistentWithRegimeMasked_vlet_body_start
   (masked : Tag → Prop) (predSat : PredSat)
@@ -1598,12 +1590,6 @@ lemma stepFR_vlet
 
 -- World-free version of stepFRW_fn
 
-
-
--- The legacy stepFRSingleRunFinalCleanPcTrue_vlet_parametric helper was
--- retired during Layer 5 of the tagsoundness-axiom refactor (Phase 6).  It
--- consumed typecheckExpr_preserves_wfTagMeaningCtx and 
--- typecheckExpr_preserves_QTypRespectsTagMeaning but had no live callers.
 
 lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   (masked : Tag → Prop)

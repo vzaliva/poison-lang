@@ -53,11 +53,6 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
         CtxCons ValCons ctx e res predSat tm
 
--- The legacy `stepFRSingleRunFinalCleanPcTrue_seq_parametric` helper was
--- retired during Layer 5 of the tagsoundness-axiom refactor (Phase 6).  It
--- consumed the contaminated same-`tm` preservation API
--- (`typecheckExpr_preserves_wfTagMeaningCtx`) but had no live callers.
-
 lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   (masked : Tag → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)

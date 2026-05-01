@@ -3789,7 +3789,6 @@ lemma regime_monotone (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeRes
   simpa [ctxAfter] using typecheck_regime_mono_main ctx e fuel res htc
 
 
-
 -- Helper lemmas for advanceNextTag functions monotonicity
 
 lemma joinTypeResults_nextTag_eq_max
@@ -6805,7 +6804,6 @@ private lemma normalizeAppResultByProvenance_predTagBounded {p1p : Poison} {qt :
   · exact trivial -- noPred case
   · exact hb
 
--- (forall_mem_of_mapM: deleted as unused; see git history)
 
 /-- Generalized: resolveSyntaxPred produces a bounded pred when all mapping values are < t'. -/
 private lemma resolveSyntaxPred_predTagBounded_of_mapping
@@ -12619,7 +12617,6 @@ private lemma applyPFnTClosure_wfTypeResult
       · simp [pure, Except.pure] at htc
         subst htc; exact hwf_fn
 
--- (mapM_applyFnTClosure_member_nextLoc_mono: deleted as unused; see git history)
 
 /-- applyPFnTClosure preserves nextLoc monotonicity. -/
 private lemma applyPFnTClosure_nextLoc_mono
@@ -12671,7 +12668,6 @@ private lemma applyPFnTClosure_nextLoc_mono
     · -- nestedPfn: nextLoc' = r1.nextLoc'
       simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
 
--- (mapM_applyPFnTClosure_member_nextLoc_mono: deleted as unused; see git history)
 
 /-- mapM of applyFnTClosure gives wfTypeResult for all results -/
 lemma mapM_applyFnTClosure_forall_wfTypeResult
@@ -12957,7 +12953,6 @@ private lemma applyFnTClosure_refLocsResultOutputs
       split <;> simp [bind, Except.bind, pure, Except.pure, normalizeAppResultByProvenance]
         <;> intro h <;> (try rcases h with ⟨rfl, rfl⟩) <;> split <;> exact ⟨trivial, trivial⟩
 
--- (mapM_applyFnTClosure_forall_refLocs: deleted as unused; see git history)
 
 /-- Per-PFnTClosure ref-locs: applyPFnTClosure with combined IH gives refLocsResultOutputs. -/
 private lemma applyPFnTClosure_refLocsResultOutputs
@@ -13317,8 +13312,6 @@ private lemma applyPFnClosuresThreaded_forall_refLocs
                     exact hfirstNext
                 | inr hmem =>
                     exact htail.2 r hmem
-
--- (mapM_applyPFnTClosure_forall_refLocs: deleted as unused; see git history)
 
 
 /-- Abbreviation for the three-part ref-location context inputs. -/

@@ -685,7 +685,6 @@ private lemma consistentWithRegimeMasked_app_parrow_body_start
 --
 -- Suggested proof strategy:
 -- unfold `applyFnTClosure` and split on fuel.
--- (applyFnTClosure_ok_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma applyFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -740,15 +739,6 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
     rw [htag, hreg]
     exact hreg1
 
--- (applyFnTClosure_ok_QTypRespectsTagMeaning: deleted as unused; see git history)
-
--- (mapM_applyFnTClosure_forall_wfTagMeaningCtx: deleted as unused; see git history)
-
--- (mapM_applyFnTClosure_forall_regimeConsistentWithCtx: deleted as unused; see git history)
-
--- (mapM_applyFnTClosure_forall_QTypRespectsTagMeaning: deleted as unused; see git history)
-
--- (applyFnTClosureAtCursor_ok_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma applyFnTClosureAtCursor_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -776,7 +766,6 @@ private lemma applyFnTClosureAtCursor_ok_regimeConsistentWithCtx
       (result1 := resultCursor) (fuel := fuel) (tcl := tcl) (r := r)
       hregCursor happlyOld
 
--- (applyFnTClosureAtCursor_ok_QTypRespectsTagMeaning: deleted as unused; see git history)
 
 private lemma threaded_applyFnTClosure_forall_wfTypeResult
     (fuel_top : Nat)
@@ -915,7 +904,6 @@ private lemma joinTypeResults_tagEnvConsistentWithRegime
   joinTypeResults_tagEnvConsistentWithRegime' ctx first rest res h_join h_first h_rest
 
 -- Any deep sub-type of a tag-meaning-respecting type also respects tag meaning.
--- (joinTypeResults_QTypRespectsTagMeaning: deleted as unused; see git history)
 -- Inversion for regular pure-closures: from
 -- `applyPFnTClosure (PFnTClosure.regular x pbody tenv) ... fuel = .ok first`,
 -- extract that the application ran with positive fuel.
@@ -936,13 +924,10 @@ private lemma applyPFnTClosure_regular_structure
 -- derivation and successful return-type subtype check.
 
 -- Specialized extraction for pure-closure application maps used in `stepFR_app`.
--- (applyPFnTClosure_ok_of_mem_mapM: deleted as unused; see git history)
 
 -- Combined extraction for regular pure-closures from a successful application map.
 -- Gives the selected closure's successful application together with body-typing inversion.
--- (applyPFnTClosure_regular_inv_of_mapM_mem: deleted as unused; see git history)
 
--- (applyPFnTClosure_ok_of_mem_threaded: deleted as unused; see git history)
 
 private lemma applyPFnTClosure_regular_inv_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1165,7 +1150,6 @@ private lemma applyPFnTClosure_ok_wfTypeResult
         cases happly
         exact hwf1
 
--- (applyPFnTClosure_ok_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1218,15 +1202,6 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
     rw [htag, hreg]
     exact hreg1
 
--- (applyPFnTClosure_ok_QTypRespectsTagMeaning: deleted as unused; see git history)
-
--- (mapM_applyPFnTClosure_forall_wfTypeResult': deleted as unused; see git history)
-
--- (mapM_applyPFnTClosure_forall_wfTagMeaningCtx: deleted as unused; see git history)
-
--- (mapM_applyPFnTClosure_forall_regimeConsistentWithCtx: deleted as unused; see git history)
-
--- (mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning: deleted as unused; see git history)
 
 private lemma applyPFnTClosureAtCursor_ok_wfTypeResult
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1267,7 +1242,6 @@ private lemma applyPFnTClosureAtCursor_ok_wfTypeResult
         (hArgCRL := etypClosuresCapturedRefLocsBounded_mono hargClosLocs hcursorLoc)
         (r := r) happlyOld
 
--- (applyPFnTClosureAtCursor_ok_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma applyPFnTClosureAtCursor_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1295,7 +1269,6 @@ private lemma applyPFnTClosureAtCursor_ok_regimeConsistentWithCtx
       (result1 := resultCursor) (fuel := fuel) (tcl := tcl) (r := r)
       hregCursor happlyOld
 
--- (applyPFnTClosureAtCursor_ok_QTypRespectsTagMeaning: deleted as unused; see git history)
 
 private lemma threaded_applyPFnTClosure_forall_wfTypeResult
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1527,7 +1500,6 @@ private lemma closureCapturedVarsRegime_peClosure_extract
       exact ⟨σ, pbody, hpure, hmem, hP.1, hP.2, fun y qt_y v_y hy hv =>
         closureCapturedVarsRegime.intro (hrec y qt_y v_y hy hv)⟩
 
--- (join_transport_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma valueConsistentWithRegime_transport_normalizeAppResultByProvenance
   (predSat : PredSat) (R : Regime) (p p1 : Poison) (qt : QTyp)
@@ -1843,9 +1815,6 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
             have hr := Except.ok.inj happly; subst hr; simp
 
 
-
-
-
 private lemma joinTypeResults_poison_pred_of_head_true_noPred
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
@@ -2126,10 +2095,8 @@ private lemma stepFR_app_parrow_sync_from_clean
     have : ETyp.ref _ = ETyp.parrow st1 st2 p tcls := hetyp'.symm.trans hetyp
     simp at this
 
--- (stepFR_app_arrow_extract_shared_member: deleted as unused; see git history)
 
 -- Pure-arrow analog of shared-member extraction.
--- (stepFR_app_parrow_extract_shared_member: deleted as unused; see git history)
 
 private def StepFRAppClosureBodyStart
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)

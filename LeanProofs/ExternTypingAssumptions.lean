@@ -83,7 +83,6 @@ theorem respects
     TagMappingRespectsTagMeaning tm' mapping preds env :=
   h.2.2.1
 
--- (nextTag_le: deleted as unused; see git history)
 
 end ExternBatchTagMeaningExtension
 
@@ -514,10 +513,12 @@ theorem ExternBatchTagMeaningExtension.canonical_singleton
                 rw [ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert]
                 simp
 
-/-- Phase 6 bridge (general extern batch): given a successful
-    `collectAndAllocExternTags` run and an input table bounded by the incoming
-    fresh-tag cursor, construct the canonical tag-meaning table for the whole
-    batch. -/
+/-- Canonical extension for a general extern batch: given a successful
+    `collectAndAllocExternTags` run and an input table bounded by the
+    incoming fresh-tag cursor, construct the canonical tag-meaning table
+    for the whole batch.  `canonical_singleton` above handles the
+    singleton-pred case directly; this lemma generalizes to multi-pred
+    batches via the recursive `buildBatchTm` construction. -/
 theorem ExternBatchTagMeaningExtension.canonical_general
     (tm : TagMeaning) (preds : List SyntaxPredicate) (env : VarTypeEnv)
     (mapping : TagMapping) (nextTag nextTag' : Tag)

@@ -4317,7 +4317,6 @@ lemma var_valueHasETyp_of_typecheck
 -- Transfer consistentWithRegime using monotoneStep
 -- When Regime.monotoneStep R R', if consistentWithRegime holds for R, it holds for R'
 -- (R' has fewer entries, so fewer constraints need to be checked)
--- (consistentWithRegime_monotone: deleted as unused; see git history)
 
 lemma consistentWithRegimeMasked_monotone
     (masked : Tag → Prop) (predSat : PredSat) (R R' : Regime) (ctx : TypeContext)
@@ -4726,16 +4725,12 @@ private lemma applyFnTClosure_regular_inv
 
 -- If `List.mapM f xs` succeeds and `x ∈ xs`, then `f x` succeeded for some output
 -- appearing in the mapped result list.
--- (list_mapM_ok_mem_input_exists_output: deleted as unused; see git history)
 
 -- Specialized extraction for closure-application maps used in `stepFR_app`.
--- (applyFnTClosure_ok_of_mem_mapM: deleted as unused; see git history)
 
 -- Combined extraction for regular closures from a successful application map.
 -- Gives the selected closure's successful application together with body-typing inversion.
--- (applyFnTClosure_regular_inv_of_mapM_mem: deleted as unused; see git history)
 
--- (applyClosuresThreaded_ok_mem_input_exists_output_pre: deleted as unused; see git history)
 
 private lemma applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bounds_pre
   {α : Type}
@@ -4780,7 +4775,6 @@ private lemma applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bound
                     ⟨y, hy, cursor', htag, hloc, happly⟩
                   exact ⟨y, by simp [hy], cursor', htag, hloc, happly⟩
 
--- (applyFnTClosure_ok_of_mem_threaded: deleted as unused; see git history)
 
 lemma applyFnTClosure_regular_inv_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -4861,10 +4855,8 @@ lemma applyFnTClosure_regular_inv_of_threaded_mem
     by simpa [cursorState] using htc_body, hsub, hfirst_eq⟩
 
 -- Forall₂ gives an existence for membership on the right.
--- (list_Forall2_exists_of_mem_right: deleted as unused; see git history)
 
 -- If `List.mapM f xs` succeeds and `y ∈ ys`, then some `x ∈ xs` maps to `y`.
--- (list_mapM_ok_mem_output_exists_input: deleted as unused; see git history)
 
 lemma applyClosuresThreaded_ok_mem_output_exists_input
   {α : Type}
@@ -4925,7 +4917,6 @@ lemma applyClosuresThreaded_ok_cons_head
                 exact hthread.1
               exact ⟨x, xs, rfl, by simpa [hy] using hfirst⟩
 
--- (applyClosuresThreaded_ok_mem_input_exists_output: deleted as unused; see git history)
 
 lemma applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bounds
   {α : Type}
@@ -7988,7 +7979,6 @@ lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
       ⟨tm', _tagMapping, _nextTag', hbatch, hbounded', hwf, hqtm⟩
     exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hbounded', hwf, hqtm⟩
 
--- (applyFnTClosure_ok_QTypRespectsTagMeaning_byIH: deleted as unused; see git history)
 
 lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
   (_hExtTyping : ExternTypingAssumptions)
@@ -8154,7 +8144,6 @@ lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
               rw [← happly]
         exact ⟨tm, ExtTreeMap.IsSubmap.refl tm, by rwa [htag_eq], hwf, hqtm⟩
 
--- (applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH: deleted as unused; see git history)
 
 private lemma applyFnClosuresThreaded_ok_tagMeaning_byIH
   (hExtTyping : ExternTypingAssumptions)
@@ -9886,13 +9875,13 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
           exact False.elim (hnotApp e1 e2 rfl)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- Phase 4: structural canonical-extension threading theorems.
+-- Structural canonical-extension threading theorems.
 --
--- These are the public threading theorems Phase 6 will consume to obtain
--- a `tm'` witness for each subexpression in the per-operator FR proofs.
--- Non-allocating leaves use `tm' = tm`; composite cases thread the canonical
--- extension produced by their subexpression IHs.  The direct `app` and
--- `externVal` branches construct their own post-allocation witnesses.
+-- These are the public threading theorems consumed by per-operator FR proofs
+-- to obtain a `tm'` witness for each subexpression.  Non-allocating leaves
+-- use `tm' = tm`; composite cases thread the canonical extension produced
+-- by their subexpression IHs.  The direct `app` and `externVal` branches
+-- construct their own post-allocation witnesses.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 /-- For any successful typecheck, there is a canonical extension `tm'` of the
@@ -10114,11 +10103,12 @@ theorem typecheck_extends_tagMeaning
 /-- For any successful typecheck, there is a canonical extension `tm'` of the
     input tag meaning `tm`, and `PredSatLaws predSat tm'` survives.
 
-    With `tm' = tm`, this is immediate from the input hypothesis.  The
-    semantic content of streaming `PredSatLaws` across genuine extern
-    allocations is captured by `ExternTypingAssumptions.externPredSatDelta`
-    (Phase 3), which Phase 6's per-operator extern proofs invoke directly
-    when they construct a non-trivial `tm'`. -/
+    Non-allocating leaves use `tm' = tm` and the laws pass through
+    unchanged.  Composite cases thread `tm'` through subexpression IHs and
+    advance `PredSatLaws` along the chain.  At extern allocation steps the
+    advancement uses `ExternTypingAssumptions.externPredSatDelta` (the
+    semantic delta that survives one structural extern batch), composed
+    via `PredSatLaws.extend_extern_batch`. -/
 theorem typecheck_preserves_predSatLaws
     (extTyping : ExternTypingAssumptions)
     (predSat : PredSat)
@@ -10378,7 +10368,6 @@ theorem StepFRSingleRunTagMeaningPost.refl_of_ctxAfter_eq
       h_resp,
       h_wf_after⟩
 
--- (typecheck_canonical_extension_fuel_coherent: deleted as unused; see git history)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Shared clean-lookup infrastructure (moved from StepFRApp.lean)
