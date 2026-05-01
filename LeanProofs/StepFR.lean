@@ -8684,6 +8684,568 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaning_byIH
                     · intro qt' k d hinq hqd
                       exact hqTail r hr' hinq hqd
 
+private lemma applyFnTClosure_ok_tagMeaningPredSat_byIH
+  (hExtTyping : ExternTypingAssumptions)
+  (predSat : PredSat)
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List FnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (IH :
+    ∀ (m : Nat), m < fuel →
+      ∀ (tm_i : TagMeaning) (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
+      typecheck ctx_i e_i m = .ok res_i →
+      wfTagMeaningCtx tm_i ctx_i →
+      TagMeaningBounded tm_i ctx_i.nextTag →
+      PredSatLaws predSat tm_i →
+      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ PredSatLaws predSat tm')
+  (tcl : FnTClosure) (r : TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hbounded : TagMeaningBounded tm result1.nextTag')
+  (h_laws : PredSatLaws predSat tm)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hmem_tcl : tcl ∈ tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (happly :
+    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  ∃ tm',
+    tm ⊑ tm' ∧
+    TagMeaningBounded tm' r.nextTag' ∧
+    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
+    QTypRespectsTagMeaning tm' r.qualType ∧
+    PredSatLaws predSat tm' := by
+  cases tcl with
+  | regular x body env =>
+    cases fuel with
+    | zero => simp [applyFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyFnTClosure, bind, Except.bind] at happly
+      split at happly
+      · exact absurd happly (Except.error_ne_ok _ _)
+      · next result3 htcBody =>
+        cases hqt3 : result3.qualType with
+        | mk etyp3 p3 pred3 =>
+        simp only [hqt3] at happly
+        split at happly
+        · simp at happly
+        · next _hsub =>
+          simp only [pure, Except.pure] at happly
+          cases happly
+          set bodyCtx := { ctx with
+              pc := joinPoison p (joinPoison p1 ctx.pc),
+              memEnv := result1.memEnv',
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
+              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+              nextLoc := result1.nextLoc', regime := result1.regime' }
+          have htcBody' : typecheck bodyCtx body fuel' = .ok result3 := by
+            simpa [typecheck] using htcBody
+          have hargTm' : QTypRespectsTagMeaning tm
+              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+            QTypRespectsTagMeaning_transport_etyp_pred tm
+              ⟨argEtyp, argPoison, argPred⟩
+              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              hargTm rfl rfl
+          have hwf_body : wfTagMeaningCtx tm bodyCtx := by
+            simpa [bodyCtx, ctxAfter] using
+              wfTagMeaningCtx_closure_body tm ctx result1 result1.qualType st1 st2 p tcls
+                x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
+          rcases IH fuel' (Nat.lt_succ_self _) tm bodyCtx body result3
+              htcBody' hwf_body (by simpa [bodyCtx] using hbounded) h_laws with
+            ⟨tmBody, hcanonBody, h_lawsBody⟩
+          have hextBody : tm ⊑ tmBody := hcanonBody.1
+          have hctxTm1Body : wfTagMeaningCtx tmBody (ctxAfter ctx result1) :=
+            wfTagMeaningCtx_mono hextBody hctxTm1
+          have hIH : wfTagMeaningCtx tmBody (ctxAfter bodyCtx result3) :=
+            hcanonBody.2.2.1
+          refine ⟨tmBody, hextBody, ?_, ?_, ?_, h_lawsBody⟩
+          · exact hcanonBody.2.1
+          · unfold wfTagMeaningCtx at hctxTm1Body hIH ⊢
+            simp only [ctxAfter] at hctxTm1Body hIH ⊢
+            exact EnvRespectsTagMeaning_mix tmBody ctx.varEnv result1.memEnv'
+              bodyCtx.varEnv result3.memEnv' hctxTm1Body hIH
+          · have hresTm3 : QTypRespectsTagMeaning tmBody ⟨etyp3, p3, pred3⟩ := by
+              rw [← hqt3]
+              exact hcanonBody.2.2.2
+            simp only [normalizeAppResultByProvenance]
+            split
+            · intro q' k' d' hinq hgd
+              exact QTypRespectsTagMeaning_of_etyp_noPred tmBody ⟨etyp3, p3, pred3⟩
+                ⟨etyp3, true, Predicate.noPred⟩ hresTm3 rfl rfl hinq hgd
+            · intro q' k' d' hinq hgd
+              exact QTypRespectsTagMeaning_transport_etyp_pred tmBody ⟨etyp3, p3, pred3⟩
+                ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
+  | extern x retSpec effects capturedEnv =>
+    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt := by
+      intro name qt hmem
+      intro qtDeep k d hinqDeep hqd
+      have hmemCap : (name, qt) ∈ fnCapturedEnv
+          (FnTClosure.extern x retSpec effects capturedEnv) :=
+        by simpa [fnCapturedEnv] using hmem
+      have hroot : QTypInQTyp qt result1.qualType :=
+        QTypInQTyp.in_arrow qt result1.qualType st1 st2 p tcls
+          (FnTClosure.extern x retSpec effects capturedEnv) name hetyp1 hmem_tcl hmemCap
+      exact hresTm1 (QTypInQTyp.trans qtDeep qt result1.qualType hinqDeep hroot) hqd
+    have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+      QTypRespectsTagMeaning_transport_etyp_pred tm
+        ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        hargTm rfl rfl
+    rcases applyFnTClosure_extern_canonical_batch tm ctx st1 st2 p p1 argEtyp argPoison
+        argPred result1 fuel x retSpec effects capturedEnv r
+        hctxTm1 hbounded hcapTm hargTm' happly with
+      ⟨tm', _tagMapping, _nextTag', hbatch, hbounded', hwf, hqtm⟩
+    exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hbounded', hwf, hqtm,
+      PredSatLaws.extend_extern_batch hExtTyping predSat h_laws hbatch⟩
+
+private lemma applyPFnTClosure_ok_tagMeaningPredSat_byIH
+  (hExtTyping : ExternTypingAssumptions)
+  (predSat : PredSat)
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (tcls : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (fuel : Nat)
+  (IH :
+    ∀ (m : Nat), m < fuel →
+      ∀ (tm_i : TagMeaning) (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
+      typecheck ctx_i e_i m = .ok res_i →
+      wfTagMeaningCtx tm_i ctx_i →
+      TagMeaningBounded tm_i ctx_i.nextTag →
+      PredSatLaws predSat tm_i →
+      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ PredSatLaws predSat tm')
+  (tcl : PFnTClosure) (r : TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hbounded : TagMeaningBounded tm result1.nextTag')
+  (h_laws : PredSatLaws predSat tm)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hmem_tcl : tcl ∈ tcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (happly :
+    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
+  ∃ tm',
+    tm ⊑ tm' ∧
+    TagMeaningBounded tm' r.nextTag' ∧
+    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
+    QTypRespectsTagMeaning tm' r.qualType ∧
+    PredSatLaws predSat tm' := by
+  cases tcl with
+  | regular x body env =>
+    cases fuel with
+    | zero => simp [applyPFnTClosure] at happly
+    | succ fuel' =>
+      simp only [applyPFnTClosure, bind, Except.bind] at happly
+      split at happly
+      · exact absurd happly (Except.error_ne_ok _ _)
+      · next result3 htcBody =>
+        cases hqt3 : result3.qualType with
+        | mk etyp3 p3 pred3 =>
+        simp only [hqt3] at happly
+        split at happly
+        · simp at happly
+        · next _hsub =>
+          simp only [pure, Except.pure] at happly
+          cases happly
+          set bodyCtx := { ctx with
+              pc := joinPoison p (joinPoison ctx.pc p1),
+              memEnv := result1.memEnv',
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
+              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+              pureCtx := true,
+              nextLoc := result1.nextLoc', regime := result1.regime' }
+          have htcBody' : typecheck bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by
+            simpa [typecheck] using htcBody
+          have hargTm' : QTypRespectsTagMeaning tm
+              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+            QTypRespectsTagMeaning_transport_etyp_pred tm
+              ⟨argEtyp, argPoison, argPred⟩
+              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              hargTm rfl rfl
+          have hwf_body : wfTagMeaningCtx tm bodyCtx := by
+            simpa [bodyCtx, ctxAfter] using
+              wfTagMeaningCtx_pclosure_body tm ctx result1 result1.qualType st1 st2 p tcls
+                x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+                hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
+          rcases IH fuel' (Nat.lt_succ_self _) tm bodyCtx (PExpr.toExpr body) result3
+              htcBody' hwf_body (by simpa [bodyCtx] using hbounded) h_laws with
+            ⟨tmBody, hcanonBody, h_lawsBody⟩
+          have hextBody : tm ⊑ tmBody := hcanonBody.1
+          have hctxTm1Body : wfTagMeaningCtx tmBody (ctxAfter ctx result1) :=
+            wfTagMeaningCtx_mono hextBody hctxTm1
+          have hIH : wfTagMeaningCtx tmBody (ctxAfter bodyCtx result3) :=
+            hcanonBody.2.2.1
+          refine ⟨tmBody, hextBody, ?_, ?_, ?_, h_lawsBody⟩
+          · exact hcanonBody.2.1
+          · unfold wfTagMeaningCtx at hctxTm1Body hIH ⊢
+            simp only [ctxAfter] at hctxTm1Body hIH ⊢
+            exact EnvRespectsTagMeaning_mix tmBody ctx.varEnv result1.memEnv'
+              bodyCtx.varEnv result3.memEnv' hctxTm1Body hIH
+          · have hresTm3 : QTypRespectsTagMeaning tmBody ⟨etyp3, p3, pred3⟩ := by
+              rw [← hqt3]
+              exact hcanonBody.2.2.2
+            simp only [normalizeAppResultByProvenance]
+            split
+            · intro q' k' d' hinq hgd
+              exact QTypRespectsTagMeaning_of_etyp_noPred tmBody ⟨etyp3, p3, pred3⟩
+                ⟨etyp3, true, Predicate.noPred⟩ hresTm3 rfl rfl hinq hgd
+            · intro q' k' d' hinq hgd
+              exact QTypRespectsTagMeaning_transport_etyp_pred tmBody ⟨etyp3, p3, pred3⟩
+                ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
+  | extern x retSpec capturedEnv =>
+    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+        QTypRespectsTagMeaning tm qt := by
+      intro name qt hmem qt' k d hinq' hqd'
+      exact hresTm1
+        (QTypInQTyp.trans qt' qt result1.qualType hinq'
+          (QTypInQTyp.in_parrow qt result1.qualType st1 st2 p tcls
+            (PFnTClosure.extern x retSpec capturedEnv) name hetyp1 hmem_tcl hmem))
+        hqd'
+    have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+      QTypRespectsTagMeaning_transport_etyp_pred tm
+        ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        hargTm rfl rfl
+    cases retSpec with
+    | simple typ poison spred =>
+        rcases applyPFnTClosure_extern_simple_canonical_batch tm ctx st1 st2 p p1
+            argEtyp argPoison argPred result1 fuel x typ poison spred capturedEnv r
+            hctxTm1 hbounded hcapTm hargTm' happly with
+          ⟨tm', _tagMapping, _nextTag', hbatch, hbounded', hwf, hqtm⟩
+        exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hbounded', hwf, hqtm,
+          PredSatLaws.extend_extern_batch hExtTyping predSat h_laws hbatch⟩
+    | nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
+        have hmem := applyPFnTClosure_extern_memEnv_eq ctx st1 st2 p p1
+          argEtyp argPoison argPred result1 r fuel x
+          (ExternReturn.nestedFn _ innerArg innerArgTyp innerRet innerEffects) capturedEnv happly
+        have hwf : wfTagMeaningCtx tm (ctxAfter ctx r) := by
+          simp only [wfTagMeaningCtx, ctxAfter] at hctxTm1 ⊢
+          rwa [hmem]
+        have hqtm : QTypRespectsTagMeaning tm r.qualType :=
+          applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
+            (tm := tm) (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+            (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+            (result2 := result1) (fuel := fuel) (x := x)
+            (retSpec := ExternReturn.nestedFn _ innerArg innerArgTyp innerRet innerEffects)
+            (capturedEnv := capturedEnv) (r := r) hctxTm1 hcapTm hargTm'
+            (fun {typ} {poison} {spred} hsimple _tagMapping _nextTag' _halloc => by
+              cases hsimple)
+            happly
+        have htag_eq : r.nextTag' = result1.nextTag' := by
+          cases fuel with
+          | zero => simp [applyPFnTClosure] at happly
+          | succ fuel' =>
+              unfold applyPFnTClosure at happly
+              simp only [pure, Except.pure] at happly
+              simp only [Except.ok.injEq] at happly
+              rw [← happly]
+        exact ⟨tm, ExtTreeMap.IsSubmap.refl tm, by rwa [htag_eq], hwf, hqtm, h_laws⟩
+    | nestedPfn _ innerArg innerArgTyp innerRet =>
+        have hmem := applyPFnTClosure_extern_memEnv_eq ctx st1 st2 p p1
+          argEtyp argPoison argPred result1 r fuel x
+          (ExternReturn.nestedPfn _ innerArg innerArgTyp innerRet) capturedEnv happly
+        have hwf : wfTagMeaningCtx tm (ctxAfter ctx r) := by
+          simp only [wfTagMeaningCtx, ctxAfter] at hctxTm1 ⊢
+          rwa [hmem]
+        have hqtm : QTypRespectsTagMeaning tm r.qualType :=
+          applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
+            (tm := tm) (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+            (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+            (result2 := result1) (fuel := fuel) (x := x)
+            (retSpec := ExternReturn.nestedPfn _ innerArg innerArgTyp innerRet)
+            (capturedEnv := capturedEnv) (r := r) hctxTm1 hcapTm hargTm'
+            (fun {typ} {poison} {spred} hsimple _tagMapping _nextTag' _halloc => by
+              cases hsimple)
+            happly
+        have htag_eq : r.nextTag' = result1.nextTag' := by
+          cases fuel with
+          | zero => simp [applyPFnTClosure] at happly
+          | succ fuel' =>
+              unfold applyPFnTClosure at happly
+              simp only [pure, Except.pure] at happly
+              simp only [Except.ok.injEq] at happly
+              rw [← happly]
+        exact ⟨tm, ExtTreeMap.IsSubmap.refl tm, by rwa [htag_eq], hwf, hqtm, h_laws⟩
+
+private lemma applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
+  (hExtTyping : ExternTypingAssumptions)
+  (predSat : PredSat)
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (allTcls todo : List FnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+  (IH :
+    ∀ (m : Nat), m < fuel →
+      ∀ (tm_i : TagMeaning) (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
+      typecheck ctx_i e_i m = .ok res_i →
+      wfTagMeaningCtx tm_i ctx_i →
+      TagMeaningBounded tm_i ctx_i.nextTag →
+      PredSatLaws predSat tm_i →
+      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ PredSatLaws predSat tm')
+  (first : TypeResult) (rest : List TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hbounded : TagMeaningBounded tm cursor.1)
+  (h_laws : PredSatLaws predSat tm)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p allTcls)
+  (hmem_todo : ∀ tcl, tcl ∈ todo → tcl ∈ allTcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (hthread :
+    applyClosuresThreaded
+      (fun tcl cursor =>
+        applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+          ctx result1 cursor fuel)
+      todo cursor = .ok (first :: rest)) :
+  ∃ (tm' : TagMeaning) (last : TypeResult),
+    tm ⊑ tm' ∧
+    last ∈ first :: rest ∧
+    TagMeaningBounded tm' last.nextTag' ∧
+    (∀ r, r ∈ first :: rest → wfTagMeaningCtx tm' (ctxAfter ctx r)) ∧
+    (∀ r, r ∈ first :: rest → QTypRespectsTagMeaning tm' r.qualType) ∧
+    PredSatLaws predSat tm' := by
+  induction todo generalizing tm cursor first rest with
+  | nil =>
+      simp [applyClosuresThreaded, pure, Except.pure] at hthread
+  | cons tcl todo ih =>
+      simp [applyClosuresThreaded, bind, Except.bind] at hthread
+      cases hhead :
+          applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+            ctx result1 cursor fuel with
+      | error err =>
+          simp [hhead] at hthread
+      | ok head =>
+          simp [hhead] at hthread
+          cases htail :
+              applyClosuresThreaded
+                (fun tcl cursor =>
+                  applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+                    ctx result1 cursor fuel)
+                todo (head.nextTag', head.nextLoc') with
+          | error err =>
+              simp [htail] at hthread
+          | ok tailResults =>
+              simp [htail, pure, Except.pure] at hthread
+              have hhead_eq : head = first := hthread.1
+              have htail_eq : tailResults = rest := hthread.2
+              let cursorResult : TypeResult :=
+                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+              have hctxCursor : wfTagMeaningCtx tm (ctxAfter ctx cursorResult) := by
+                simpa [ctxAfter, cursorResult] using hctxTm1
+              have hresCursor : QTypRespectsTagMeaning tm cursorResult.qualType := by
+                intro qt' k d hinq hqd
+                exact hresTm1 (by simpa [cursorResult] using hinq) hqd
+              have hetypCursor :
+                  cursorResult.qualType.etyp = ETyp.arrow st1 st2 p allTcls := by
+                simpa [cursorResult] using hetyp1
+              have happlyOld :
+                  applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
+                    ctx cursorResult fuel = .ok head := by
+                unfold applyFnTClosure
+                unfold applyFnTClosureAtCursor at hhead
+                simpa [cursorResult] using hhead
+              rcases applyFnTClosure_ok_tagMeaningPredSat_byIH
+                  (hExtTyping := hExtTyping) (predSat := predSat) (tm := tm)
+                  (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                  (tcls := allTcls)
+                  (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+                  (result1 := cursorResult) (fuel := fuel)
+                  (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i =>
+                    IH m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i)
+                  (tcl := tcl) (r := head)
+                  hctxCursor hresCursor (by simpa [cursorResult] using hbounded) h_laws
+                  hetypCursor (hmem_todo tcl (by simp)) hargTm happlyOld with
+                ⟨tmHead, hextHead, hboundedHead, hwfHead, hqHead, h_lawsHead⟩
+              cases tailResults with
+              | nil =>
+                  refine ⟨tmHead, head, hextHead, by simp [← hhead_eq, ← htail_eq],
+                    hboundedHead, ?_, ?_, h_lawsHead⟩
+                  · intro r hr
+                    have hr' : r = head := by
+                      simpa [← hhead_eq, ← htail_eq] using hr
+                    rw [hr']
+                    exact hwfHead
+                  · intro r hr
+                    have hr' : r = head := by
+                      simpa [← hhead_eq, ← htail_eq] using hr
+                    rw [hr']
+                    intro qt' k d hinq hqd
+                    exact hqHead hinq hqd
+              | cons tailFirst tailRest =>
+                  have hctxHeadBase : wfTagMeaningCtx tmHead (ctxAfter ctx result1) :=
+                    wfTagMeaningCtx_mono hextHead hctxTm1
+                  have hresHeadBase : QTypRespectsTagMeaning tmHead result1.qualType :=
+                    QTypRespectsTagMeaning_mono hextHead hresTm1
+                  have hargHead : QTypRespectsTagMeaning tmHead
+                      ⟨argEtyp, argPoison, argPred⟩ :=
+                    QTypRespectsTagMeaning_mono hextHead hargTm
+                  rcases ih tmHead (head.nextTag', head.nextLoc') tailFirst tailRest
+                      hctxHeadBase hresHeadBase hboundedHead h_lawsHead
+                      (fun tcl htcl => hmem_todo tcl (by simp [htcl]))
+                      hargHead htail with
+                    ⟨tmTail, last, hextTail, hlastTail, hboundedLast,
+                      hwfTail, hqTail, h_lawsTail⟩
+                  refine ⟨tmTail, last, ExtTreeMap.IsSubmap.trans hextHead hextTail,
+                    ?_, hboundedLast, ?_, ?_, h_lawsTail⟩
+                  · simp [← hhead_eq, ← htail_eq, hlastTail]
+                  · intro r hr
+                    have hr' : r = head ∨ r ∈ tailFirst :: tailRest := by
+                      simpa [← hhead_eq, ← htail_eq] using hr
+                    rcases hr' with hr' | hr'
+                    · rw [hr']
+                      exact wfTagMeaningCtx_mono hextTail hwfHead
+                    · exact hwfTail r hr'
+                  · intro r hr
+                    have hr' : r = head ∨ r ∈ tailFirst :: tailRest := by
+                      simpa [← hhead_eq, ← htail_eq] using hr
+                    rcases hr' with hr' | hr'
+                    · rw [hr']
+                      intro qt' k d hinq hqd
+                      exact (QTypRespectsTagMeaning_mono hextTail hqHead) hinq hqd
+                    · intro qt' k d hinq hqd
+                      exact hqTail r hr' hinq hqd
+
+private lemma applyPFnClosuresThreaded_ok_tagMeaningPredSat_byIH
+  (hExtTyping : ExternTypingAssumptions)
+  (predSat : PredSat)
+  (tm : TagMeaning)
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (allTcls todo : List PFnTClosure)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result1 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+  (IH :
+    ∀ (m : Nat), m < fuel →
+      ∀ (tm_i : TagMeaning) (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
+      typecheck ctx_i e_i m = .ok res_i →
+      wfTagMeaningCtx tm_i ctx_i →
+      TagMeaningBounded tm_i ctx_i.nextTag →
+      PredSatLaws predSat tm_i →
+      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ PredSatLaws predSat tm')
+  (first : TypeResult) (rest : List TypeResult)
+  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
+  (hbounded : TagMeaningBounded tm cursor.1)
+  (h_laws : PredSatLaws predSat tm)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p allTcls)
+  (hmem_todo : ∀ tcl, tcl ∈ todo → tcl ∈ allTcls)
+  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
+  (hthread :
+    applyClosuresThreaded
+      (fun tcl cursor =>
+        applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+          ctx result1 cursor fuel)
+      todo cursor = .ok (first :: rest)) :
+  ∃ (tm' : TagMeaning) (last : TypeResult),
+    tm ⊑ tm' ∧
+    last ∈ first :: rest ∧
+    TagMeaningBounded tm' last.nextTag' ∧
+    (∀ r, r ∈ first :: rest → wfTagMeaningCtx tm' (ctxAfter ctx r)) ∧
+    (∀ r, r ∈ first :: rest → QTypRespectsTagMeaning tm' r.qualType) ∧
+    PredSatLaws predSat tm' := by
+  induction todo generalizing tm cursor first rest with
+  | nil =>
+      simp [applyClosuresThreaded, pure, Except.pure] at hthread
+  | cons tcl todo ih =>
+      simp [applyClosuresThreaded, bind, Except.bind] at hthread
+      cases hhead :
+          applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+            ctx result1 cursor fuel with
+      | error err =>
+          simp [hhead] at hthread
+      | ok head =>
+          simp [hhead] at hthread
+          cases htail :
+              applyClosuresThreaded
+                (fun tcl cursor =>
+                  applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+                    ctx result1 cursor fuel)
+                todo (head.nextTag', head.nextLoc') with
+          | error err =>
+              simp [htail] at hthread
+          | ok tailResults =>
+              simp [htail, pure, Except.pure] at hthread
+              have hhead_eq : head = first := hthread.1
+              have htail_eq : tailResults = rest := hthread.2
+              let cursorResult : TypeResult :=
+                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+              have hctxCursor : wfTagMeaningCtx tm (ctxAfter ctx cursorResult) := by
+                simpa [ctxAfter, cursorResult] using hctxTm1
+              have hresCursor : QTypRespectsTagMeaning tm cursorResult.qualType := by
+                intro qt' k d hinq hqd
+                exact hresTm1 (by simpa [cursorResult] using hinq) hqd
+              have hetypCursor :
+                  cursorResult.qualType.etyp = ETyp.parrow st1 st2 p allTcls := by
+                simpa [cursorResult] using hetyp1
+              have happlyOld :
+                  applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
+                    ctx cursorResult fuel = .ok head := by
+                unfold applyPFnTClosure
+                unfold applyPFnTClosureAtCursor at hhead
+                simpa [cursorResult] using hhead
+              rcases applyPFnTClosure_ok_tagMeaningPredSat_byIH
+                  (hExtTyping := hExtTyping) (predSat := predSat) (tm := tm)
+                  (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                  (tcls := allTcls)
+                  (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
+                  (result1 := cursorResult) (fuel := fuel)
+                  (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i =>
+                    IH m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i)
+                  (tcl := tcl) (r := head)
+                  hctxCursor hresCursor (by simpa [cursorResult] using hbounded) h_laws
+                  hetypCursor (hmem_todo tcl (by simp)) hargTm happlyOld with
+                ⟨tmHead, hextHead, hboundedHead, hwfHead, hqHead, h_lawsHead⟩
+              cases tailResults with
+              | nil =>
+                  refine ⟨tmHead, head, hextHead, by simp [← hhead_eq, ← htail_eq],
+                    hboundedHead, ?_, ?_, h_lawsHead⟩
+                  · intro r hr
+                    have hr' : r = head := by
+                      simpa [← hhead_eq, ← htail_eq] using hr
+                    rw [hr']
+                    exact hwfHead
+                  · intro r hr
+                    have hr' : r = head := by
+                      simpa [← hhead_eq, ← htail_eq] using hr
+                    rw [hr']
+                    intro qt' k d hinq hqd
+                    exact hqHead hinq hqd
+              | cons tailFirst tailRest =>
+                  have hctxHeadBase : wfTagMeaningCtx tmHead (ctxAfter ctx result1) :=
+                    wfTagMeaningCtx_mono hextHead hctxTm1
+                  have hresHeadBase : QTypRespectsTagMeaning tmHead result1.qualType :=
+                    QTypRespectsTagMeaning_mono hextHead hresTm1
+                  have hargHead : QTypRespectsTagMeaning tmHead
+                      ⟨argEtyp, argPoison, argPred⟩ :=
+                    QTypRespectsTagMeaning_mono hextHead hargTm
+                  rcases ih tmHead (head.nextTag', head.nextLoc') tailFirst tailRest
+                      hctxHeadBase hresHeadBase hboundedHead h_lawsHead
+                      (fun tcl htcl => hmem_todo tcl (by simp [htcl]))
+                      hargHead htail with
+                    ⟨tmTail, last, hextTail, hlastTail, hboundedLast,
+                      hwfTail, hqTail, h_lawsTail⟩
+                  refine ⟨tmTail, last, ExtTreeMap.IsSubmap.trans hextHead hextTail,
+                    ?_, hboundedLast, ?_, ?_, h_lawsTail⟩
+                  · simp [← hhead_eq, ← htail_eq, hlastTail]
+                  · intro r hr
+                    have hr' : r = head ∨ r ∈ tailFirst :: tailRest := by
+                      simpa [← hhead_eq, ← htail_eq] using hr
+                    rcases hr' with hr' | hr'
+                    · rw [hr']
+                      exact wfTagMeaningCtx_mono hextTail hwfHead
+                    · exact hwfTail r hr'
+                  · intro r hr
+                    have hr' : r = head ∨ r ∈ tailFirst :: tailRest := by
+                      simpa [← hhead_eq, ← htail_eq] using hr
+                    rcases hr' with hr' | hr'
+                    · rw [hr']
+                      intro qt' k d hinq hqd
+                      exact (QTypRespectsTagMeaning_mono hextTail hqHead) hinq hqd
+                    · intro qt' k d hinq hqd
+                      exact hqTail r hr' hinq hqd
+
 private lemma applyFnTClosure_ok_wfTagMeaningCtx_sameTm_byIH
   (extTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
@@ -10406,6 +10968,10 @@ theorem typecheck_preserves_predSatLaws
     (h_laws : PredSatLaws predSat tm)
     (htc : typecheck ctx e fuel = .ok res) :
     ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ PredSatLaws predSat tm' := by
+  revert predSat tm ctx e res
+  induction fuel using Nat.strong_induction_on with
+  | h fuel IH =>
+  intro predSat tm ctx e res h_wf h_bounded h_laws htc
   cases e with
   | num n =>
       exact ⟨tm,
@@ -10473,10 +11039,136 @@ theorem typecheck_preserves_predSatLaws
           (Expr.pfn x paramType body returnType) fuel res h_wf h_bounded htc,
         h_laws⟩
   | app e1 e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.app e1 e2)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      unfold typecheck typecheckExpr at htc
+      cases fuel with
+      | zero => simp at htc
+      | succ fuel' =>
+          cases fuel' with
+          | zero =>
+              simp [typecheckApp] at htc
+          | succ fuel'' =>
+              have htcApp : typecheckApp ctx e1 e2 (Nat.succ fuel'') = .ok res := htc
+              obtain ⟨result2, result1, etyp2, p2, pred2, hqt2, htc2, htc1,
+                h_arrow_or_parrow⟩ :=
+                typecheckApp_arrow_structure_full ctx e1 e2 fuel'' res htcApp
+              have htc2' : typecheck ctx e2 fuel'' = .ok result2 := by
+                simpa [typecheck] using htc2
+              rcases IH fuel'' (by omega) predSat tm ctx e2 result2
+                  h_wf h_bounded h_laws htc2' with
+                ⟨tm2, hcanon2, h_laws2⟩
+              have htc1' : typecheck (ctxAfter ctx result2) e1 fuel'' = .ok result1 := by
+                simpa [typecheck, ctxAfter] using htc1
+              rcases IH fuel'' (by omega) predSat tm2 (ctxAfter ctx result2) e1 result1
+                  hcanon2.2.2.1 hcanon2.2.1 h_laws2 htc1' with
+                ⟨tm1, hcanon1, h_laws1⟩
+              have hext_tm_tm2 : tm ⊑ tm2 := hcanon2.1
+              have hext_tm2_tm1 : tm2 ⊑ tm1 := hcanon1.1
+              have hext_tm_tm1 : tm ⊑ tm1 :=
+                ExtTreeMap.IsSubmap.trans hext_tm_tm2 hext_tm2_tm1
+              have hctxTm1 : wfTagMeaningCtx tm1 (ctxAfter ctx result1) :=
+                hcanon1.2.2.1
+              have hresTm1 : QTypRespectsTagMeaning tm1 result1.qualType :=
+                hcanon1.2.2.2
+              have hargTm2 : QTypRespectsTagMeaning tm2 ⟨etyp2, p2, pred2⟩ := by
+                rw [← hqt2]
+                exact hcanon2.2.2.2
+              have hargTm1 : QTypRespectsTagMeaning tm1 ⟨etyp2, p2, pred2⟩ :=
+                QTypRespectsTagMeaning_mono hext_tm2_tm1 hargTm2
+              cases h_arrow_or_parrow with
+              | inl h_arrow =>
+                  obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1,
+                    _hnpure, _hnempty, _hsub, hthread, heq_results, h_join⟩ := h_arrow
+                  rcases applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
+                      (hExtTyping := extTyping) (predSat := predSat) (tm := tm1)
+                      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                      (allTcls := tcls) (todo := tcls)
+                      (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                      (result1 := result1) (cursor := (result1.nextTag', result1.nextLoc'))
+                      (fuel := fuel'')
+                      (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i =>
+                        IH m (by omega) predSat tm_i ctx_i e_i res_i
+                          hwf_i hb_i h_laws_i htc_i)
+                      (first := first) (rest := rest)
+                      hctxTm1 hresTm1 hcanon1.2.1 h_laws1
+                      hetyp1 (fun tcl htcl => htcl) hargTm1
+                      (by simpa [heq_results] using hthread) with
+                    ⟨tmFinal, last, hextClosures, hlast_mem, hboundedLast,
+                      hwfResults, hqResults, h_lawsFinal⟩
+                  have hlast_le_res : last.nextTag' ≤ res.nextTag' := by
+                    have hmax := joinTypeResults_nextTag_eq_max ctx first rest res h_join
+                    have hlast_mem_tags :
+                        last.nextTag' ∈ first.nextTag' :: rest.map TypeResult.nextTag' := by
+                      cases hlast_mem with
+                      | head =>
+                          simp
+                      | tail _ hlast =>
+                          exact List.mem_cons_of_mem _
+                            (List.mem_map.mpr ⟨last, hlast, rfl⟩)
+                    rw [hmax]
+                    exact List.le_max_of_mem hlast_mem_tags
+                  have hboundedRes : TagMeaningBounded tmFinal res.nextTag' :=
+                    hboundedLast.mono hlast_le_res
+                  have hwfJoin : wfTagMeaningCtx tmFinal (ctxAfter ctx res) :=
+                    join_transport_wfTagMeaningCtx_byFirst tmFinal ctx first rest res h_join
+                      (hwfResults first (by simp))
+                  have hqFirst : QTypRespectsTagMeaning tmFinal first.qualType :=
+                    hqResults first (by simp)
+                  have hqRest : ∀ r ∈ rest, QTypRespectsTagMeaning tmFinal r.qualType := by
+                    intro r hr
+                    exact hqResults r (by simp [hr])
+                  exact ⟨tmFinal,
+                    ⟨ExtTreeMap.IsSubmap.trans hext_tm_tm1 hextClosures,
+                      hboundedRes, hwfJoin,
+                      joinTypeResults_QTypRespectsTagMeaning_byMembers tmFinal ctx first rest
+                        res h_join hqFirst hqRest⟩,
+                    h_lawsFinal⟩
+              | inr h_parrow =>
+                  obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1,
+                    _hnempty, _hsub, hthread, heq_results, h_join⟩ := h_parrow
+                  rcases applyPFnClosuresThreaded_ok_tagMeaningPredSat_byIH
+                      (hExtTyping := extTyping) (predSat := predSat) (tm := tm1)
+                      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+                      (allTcls := tcls) (todo := tcls)
+                      (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+                      (result1 := result1) (cursor := (result1.nextTag', result1.nextLoc'))
+                      (fuel := fuel'')
+                      (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i =>
+                        IH m (by omega) predSat tm_i ctx_i e_i res_i
+                          hwf_i hb_i h_laws_i htc_i)
+                      (first := first) (rest := rest)
+                      hctxTm1 hresTm1 hcanon1.2.1 h_laws1
+                      hetyp1 (fun tcl htcl => htcl) hargTm1
+                      (by simpa [heq_results] using hthread) with
+                    ⟨tmFinal, last, hextClosures, hlast_mem, hboundedLast,
+                      hwfResults, hqResults, h_lawsFinal⟩
+                  have hlast_le_res : last.nextTag' ≤ res.nextTag' := by
+                    have hmax := joinTypeResults_nextTag_eq_max ctx first rest res h_join
+                    have hlast_mem_tags :
+                        last.nextTag' ∈ first.nextTag' :: rest.map TypeResult.nextTag' := by
+                      cases hlast_mem with
+                      | head =>
+                          simp
+                      | tail _ hlast =>
+                          exact List.mem_cons_of_mem _
+                            (List.mem_map.mpr ⟨last, hlast, rfl⟩)
+                    rw [hmax]
+                    exact List.le_max_of_mem hlast_mem_tags
+                  have hboundedRes : TagMeaningBounded tmFinal res.nextTag' :=
+                    hboundedLast.mono hlast_le_res
+                  have hwfJoin : wfTagMeaningCtx tmFinal (ctxAfter ctx res) :=
+                    join_transport_wfTagMeaningCtx_byFirst tmFinal ctx first rest res h_join
+                      (hwfResults first (by simp))
+                  have hqFirst : QTypRespectsTagMeaning tmFinal first.qualType :=
+                    hqResults first (by simp)
+                  have hqRest : ∀ r ∈ rest, QTypRespectsTagMeaning tmFinal r.qualType := by
+                    intro r hr
+                    exact hqResults r (by simp [hr])
+                  exact ⟨tmFinal,
+                    ⟨ExtTreeMap.IsSubmap.trans hext_tm_tm1 hextClosures,
+                      hboundedRes, hwfJoin,
+                      joinTypeResults_QTypRespectsTagMeaning_byMembers tmFinal ctx first rest
+                        res h_join hqFirst hqRest⟩,
+                    h_lawsFinal⟩
   | ite e1 e2 e3 =>
       exact ⟨tm,
         typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.ite e1 e2 e3)
