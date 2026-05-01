@@ -20,7 +20,7 @@ lemma stepFR_literal
   (hpredNo : res.qualType.pred = Predicate.noPred)
   (hctxAfter : ctxAfter ctx res = ctx) :
   StepFR ctx e res predSat tm := by
-  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for literals
   have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -32,7 +32,15 @@ lemma stepFR_literal
       simp [qtypGuardDesc?, hpredNo]
     intro qt' k d hinq hqd
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun hguard) hinq hqd
-  refine ⟨hresTm, ?_⟩
+  have hbounded_res : TagMeaningBounded tm res.nextTag' := by
+    have hnext : res.nextTag' = ctx.nextTag := by
+      have hctx := congrArg TypeContext.nextTag hctxAfter
+      simpa [ctxAfter] using hctx
+    simpa [hnext] using hTmBounded
+  have hcanon : IsCanonicalExtension tm ctx e res tm := by
+    refine IsCanonicalExtension.refl hbounded_res ?_ hresTm
+    simpa [hctxAfter] using hwfTm
+  refine ⟨tm, hcanon, hpredlaws, hresTm, ?_⟩
   -- StepFR existential has structure:
   -- ∃ θ₀' θ₁', wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
   --   valueHasETyp θ₀' o₀ res.qualType.etyp ∧ valueHasETyp θ₁' o₁ res.qualType.etyp ∧
@@ -96,7 +104,14 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
     ctx e res predSat tm := by
-  intro _hpredlaws _hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
+  intro hpredlaws _hExtTyping hwfTm hTmBounded
+  refine ⟨?_, ?_⟩
+  · exact
+      StepFRSingleRunTagMeaningPost.refl_of_ctxAfter_eq
+        hpredlaws hwfTm hTmBounded hctxAfter
+        (QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType
+          hnotfun (by simp [qtypGuardDesc?, hpredNo]))
+  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf

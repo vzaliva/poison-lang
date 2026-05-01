@@ -42,7 +42,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro _hpredlaws _hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
+  intro hpredlaws hExtTyping hwfTm hTmBounded
+  refine ⟨?_, ?_⟩
+  · exact
+      StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
+        (Expr.fn x paramType body returnType) (Nat.succ fuel) res
+        hwfTm hTmBounded hpredlaws htc
+  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   subst hcf
@@ -155,7 +161,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro _hpredlaws _hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
+      intro hpredlaws hExtTyping hwfTm hTmBounded
+      refine ⟨?_, ?_⟩
+      · exact
+          StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
+            (Expr.pfn x paramType body returnType) (Nat.succ fuel) res
+            hwfTm hTmBounded hpredlaws htc
+      intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
       subst hcf
@@ -264,7 +276,7 @@ lemma stepFR_fn
     rfl
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -290,7 +302,11 @@ lemma stepFR_fn
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     intro qt' k d hinq hqd
     exact hresTm_expected (by simpa [hres] using hinq) (by simpa [hres] using hqd)
-  refine ⟨hresTm, ?_⟩
+  have hcanon : IsCanonicalExtension tm ctxᵢ (Expr.fn x paramType body returnType) res tm := by
+    refine IsCanonicalExtension.refl ?_ ?_ hresTm
+    · simpa [hres, res_expected] using hTmBounded
+    · simpa [hctxAfter] using hwfTm
+  refine ⟨tm, hcanon, hpredlaws, hresTm, ?_⟩
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
@@ -483,7 +499,6 @@ lemma stepFR_fn
             simp [qtypGuardTag, hres, res_expected]
           simp [hpred] at htag
         exact False.elim this
-
 -- World-free version of stepFRW_pfn
 
 lemma stepFR_pfn
@@ -520,7 +535,7 @@ lemma stepFR_pfn
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+      intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
       -- Use world-free inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
@@ -548,7 +563,11 @@ lemma stepFR_pfn
       have hresTm : QTypRespectsTagMeaning tm res.qualType := by
         intro qt' k d hinq hqd
         exact hresTm_expected (by simpa [hres] using hinq) (by simpa [hres] using hqd)
-      refine ⟨hresTm, ?_⟩
+      have hcanon : IsCanonicalExtension tm ctxᵢ (Expr.pfn x paramType body returnType) res tm := by
+        refine IsCanonicalExtension.refl ?_ ?_ hresTm
+        · simpa [hres, res_expected] using hTmBounded
+        · simpa [hctxAfter] using hwfTm
+      refine ⟨tm, hcanon, hpredlaws, hresTm, ?_⟩
       refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩

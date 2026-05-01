@@ -694,6 +694,7 @@ def TypeSystemEnforcesFaultRobustness_spec
       TagBoundedCtx ctx → -- all tags in varEnv/memEnv predicates and closures are below nextTag
       ∀ (predSat : PredSat) (tm : TagMeaning),
         wfTagMeaningCtx tm ctx →
+        TagMeaningBounded tm ctx.nextTag →
         PredSatLaws predSat tm →
         ExternTypingAssumptions →
         ((∃ (fuel : Nat) (res : TypeResult),

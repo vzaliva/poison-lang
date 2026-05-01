@@ -2322,10 +2322,10 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
       | error _err =>
           simp [h_tc1] at h_typecheck
 
--- A stronger arrow-case structure lemma for `typecheckApp` that exposes the `mapM` call and the
+  -- A stronger arrow-case structure lemma for `typecheckApp` that exposes the closure traversal and the
 -- subsequent `joinTypeResults` call. This is designed to support fault-robustness proofs for `app`.
 -- Full application structure: successful `typecheckApp` must go through either the `.arrow` or `.parrow`
--- branch, exposing the `mapM` call and the final `joinTypeResults`.
+  -- branch, exposing the closure traversal and the final `joinTypeResults`.
 lemma typecheckApp_arrow_structure_full
   (ctx : TypeContext) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult) :
   typecheckApp ctx e1 e2 (Nat.succ fuel') = .ok res →
@@ -2348,7 +2348,10 @@ lemma typecheckApp_arrow_structure_full
         ¬ ctx.pureCtx ∧
         tcls ≠ [] ∧
         isSubtype st1 result2.qualType = true ∧
-        List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel') tcls =
+        applyClosuresThreaded
+          (fun tcl cursor =>
+            applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel')
+          tcls (result1.nextTag', result1.nextLoc') =
           .ok results ∧
         results = first :: rest ∧
         joinTypeResults ctx first rest = .ok res)
@@ -2359,7 +2362,10 @@ lemma typecheckApp_arrow_structure_full
         result1.qualType.poison = p1 ∧
         tcls ≠ [] ∧
         isSubtype st1 result2.qualType = true ∧
-        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel') tcls =
+        applyClosuresThreaded
+          (fun tcl cursor =>
+            applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel')
+          tcls (result1.nextTag', result1.nextLoc') =
           .ok results ∧
         results = first :: rest ∧
         joinTypeResults ctx first rest = .ok res)
@@ -2406,15 +2412,17 @@ lemma typecheckApp_arrow_structure_full
                         have h_sub : isSubtype st1 result2.qualType = true := by
                           simpa [h_qt2] using h_sub0
                         simp [h_sub_val] at htc
-                        cases h_map :
-                            List.mapM
-                              (fun tcl =>
-                                applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel') tcls with
+                        cases h_thread :
+                            applyClosuresThreaded
+                              (fun tcl cursor =>
+                                applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                                  ctx result1 cursor fuel')
+                              tcls (result1.nextTag', result1.nextLoc') with
                         | error _err =>
-                            simp [h_map] at htc
+                            simp [h_thread] at htc
                             simp [h_empty] at htc
                         | ok results =>
-                            simp [h_map] at htc
+                            simp [h_thread] at htc
                             cases results with
                             | nil =>
                                 simp at htc
@@ -2441,7 +2449,7 @@ lemma typecheckApp_arrow_structure_full
                                     refine And.intro (by simp) ?_
                                     refine And.intro h_empty ?_
                                     refine And.intro h_sub ?_
-                                    refine And.intro (by simpa using h_map) ?_
+                                    refine And.intro (by simpa using h_thread) ?_
                                     refine And.intro rfl ?_
                                     simpa using h_join
           | parrow st1 st2 p tcls =>
@@ -2458,16 +2466,18 @@ lemma typecheckApp_arrow_structure_full
                     have h_sub : isSubtype st1 result2.qualType = true := by
                       simpa [h_qt2] using h_sub0
                     simp [h_sub_val] at htc
-                    cases h_map :
-                        List.mapM
-                          (fun tcl =>
-                            applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel') tcls with
+                    cases h_thread :
+                        applyClosuresThreaded
+                          (fun tcl cursor =>
+                            applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                              ctx result1 cursor fuel')
+                          tcls (result1.nextTag', result1.nextLoc') with
                     | error _err =>
-                        simp [h_map] at htc
+                        simp [h_thread] at htc
                         simp [h_empty] at htc
                         cases htc
                     | ok results =>
-                        simp [h_map] at htc
+                        simp [h_thread] at htc
                         cases results with
                         | nil =>
                             simp at htc
@@ -2494,7 +2504,7 @@ lemma typecheckApp_arrow_structure_full
                                 refine And.intro (by simp [h_qt1]) ?_
                                 refine And.intro h_empty ?_
                                 refine And.intro h_sub ?_
-                                refine And.intro (by simpa using h_map) ?_
+                                refine And.intro (by simpa using h_thread) ?_
                                 refine And.intro rfl ?_
                                 simpa using h_join
           | _ =>
@@ -3080,6 +3090,87 @@ lemma applyPFnTClosure_regime_mono
         simp only [pure, Except.pure, Except.ok.injEq] at happly
         rw [← happly]; exact regimeMonotone_refl r1.regime'
 
+lemma applyFnTClosureAtCursor_regime_mono
+    (tcl : FnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheck ctx' e m = .ok res' →
+          Regime.monotoneStep ctx'.regime res'.regime') :
+    applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2 →
+    Regime.monotoneStep r1.regime' r2.regime' := by
+  intro happly
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hOld :
+      applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel =
+        .ok r2 := by
+    unfold applyFnTClosure
+    unfold applyFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  simpa [rCursor] using
+    applyFnTClosure_regime_mono tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel IH hOld
+
+lemma applyPFnTClosureAtCursor_regime_mono
+    (tcl : PFnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheck ctx' e m = .ok res' →
+          Regime.monotoneStep ctx'.regime res'.regime') :
+    applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2 →
+    Regime.monotoneStep r1.regime' r2.regime' := by
+  intro happly
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hOld :
+      applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel =
+        .ok r2 := by
+    unfold applyPFnTClosure
+    unfold applyPFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  simpa [rCursor] using
+    applyPFnTClosure_regime_mono tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel IH hOld
+
+private lemma applyClosuresThreaded_forall
+    {α : Type} {P : TypeResult → Prop}
+    (applyOne : α → Tag × Loc → TypecheckM TypeResult)
+    (items : List α) (cursor : Tag × Loc) (results : List TypeResult)
+    (hOne : ∀ item cursor result, applyOne item cursor = .ok result → P result)
+    (hthread : applyClosuresThreaded applyOne items cursor = .ok results) :
+    ∀ result ∈ results, P result := by
+  induction items generalizing cursor results with
+  | nil =>
+      simp [applyClosuresThreaded, pure, Except.pure] at hthread
+      cases hthread
+      intro result hmem
+      cases hmem
+  | cons item rest ih =>
+      simp [applyClosuresThreaded, bind, Except.bind] at hthread
+      cases hfirst : applyOne item cursor with
+      | error _ =>
+          simp [hfirst] at hthread
+      | ok first =>
+          simp [hfirst] at hthread
+          cases hrest : applyClosuresThreaded applyOne rest (first.nextTag', first.nextLoc') with
+          | error _ =>
+              simp [hrest] at hthread
+          | ok restResults =>
+              simp [hrest, pure, Except.pure] at hthread
+              cases hthread
+              intro result hmem
+              simp at hmem
+              cases hmem with
+              | inl heq =>
+                  cases heq
+                  exact hOne item cursor first hfirst
+              | inr htail =>
+                  exact ih (first.nextTag', first.nextLoc') restResults hrest result htail
+
 private lemma typecheckVar_regime_mono (ctx : TypeContext) (x : Name) (res : TypeResult) :
     typecheckVar ctx x = .ok res →
     Regime.monotoneStep ctx.regime res.regime' := by
@@ -3194,12 +3285,17 @@ private lemma typecheckApp_regime_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel 
             exact IH fuel' h_fuel e1 ctx' res1 htce1'
           have hmap_prop :
               ∀ x ∈ (first :: rest), Regime.monotoneStep res1.regime' x.regime' := by
-            apply List.mapM_Except_preserves_property
-              (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx res1 fuel')
+            exact applyClosuresThreaded_forall
               (P := fun x => Regime.monotoneStep res1.regime' x.regime')
-            · intro tcl result htcl
-              exact applyFnTClosure_regime_mono tcl ctx st1 st2 p p1 etyp2 p2 pred2 res1 result fuel' IH' htcl
-            · simpa using hmap
+              (applyOne := fun tcl cursor =>
+                applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctx res1 cursor fuel')
+              tcls (res1.nextTag', res1.nextLoc') (first :: rest)
+              (by
+                intro tcl cursor result htcl
+                exact applyFnTClosureAtCursor_regime_mono tcl ctx st1 st2 p p1 etyp2 p2 pred2
+                  res1 result cursor fuel' IH' htcl)
+              (by simpa using hmap)
           have hfirst : Regime.monotoneStep res1.regime' first.regime' := by
             exact hmap_prop first (by simp)
           have hrest : ∀ x ∈ rest, Regime.monotoneStep res1.regime' x.regime' := by
@@ -3218,12 +3314,17 @@ private lemma typecheckApp_regime_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel 
             exact IH fuel' h_fuel e1 ctx' res1 htce1'
           have hmap_prop :
               ∀ x ∈ (first :: rest), Regime.monotoneStep res1.regime' x.regime' := by
-            apply List.mapM_Except_preserves_property
-              (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx res1 fuel')
+            exact applyClosuresThreaded_forall
               (P := fun x => Regime.monotoneStep res1.regime' x.regime')
-            · intro tcl result htcl
-              exact applyPFnTClosure_regime_mono tcl ctx st1 st2 p p1 etyp2 p2 pred2 res1 result fuel' IH' htcl
-            · simpa using hmap
+              (applyOne := fun tcl cursor =>
+                applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctx res1 cursor fuel')
+              tcls (res1.nextTag', res1.nextLoc') (first :: rest)
+              (by
+                intro tcl cursor result htcl
+                exact applyPFnTClosureAtCursor_regime_mono tcl ctx st1 st2 p p1 etyp2 p2 pred2
+                  res1 result cursor fuel' IH' htcl)
+              (by simpa using hmap)
           have hfirst : Regime.monotoneStep res1.regime' first.regime' := by
             exact hmap_prop first (by simp)
           have hrest : ∀ x ∈ rest, Regime.monotoneStep res1.regime' x.regime' := by
@@ -4040,7 +4141,7 @@ private lemma forIn_tag_incr_ge
     exact Nat.le_trans (Nat.le_succ _) (ih _ _ h)
 
 /-- collectAndAllocExternTags never decreases nextTag: the returned nextTag' ≥ input nextTag. -/
-private lemma collectAndAllocExternTags_nextTag_ge (preds : List SyntaxPredicate) (t : Tag)
+lemma collectAndAllocExternTags_nextTag_ge (preds : List SyntaxPredicate) (t : Tag)
     (map : ExtTreeMap TagIndex Tag) (t' : Tag) :
     collectAndAllocExternTags preds t = .ok (map, t') → t ≤ t' := by
   intro h
@@ -4141,7 +4242,7 @@ private lemma forIn_tag_mapping_values_lt
 
 /-- All concrete tags in the mapping produced by collectAndAllocExternTags are strictly less than
     the returned nextTag'. -/
-private lemma collectAndAllocExternTags_mapping_values_lt (preds : List SyntaxPredicate) (t : Tag)
+lemma collectAndAllocExternTags_mapping_values_lt (preds : List SyntaxPredicate) (t : Tag)
     (map : ExtTreeMap TagIndex Tag) (t' : Tag)
     (htc : collectAndAllocExternTags preds t = .ok (map, t'))
     (idx : TagIndex) (tag : Tag)
@@ -4167,6 +4268,304 @@ private lemma collectAndAllocExternTags_mapping_values_lt (preds : List SyntaxPr
         refine forIn_tag_mapping_values_lt v.snd ∅ t result ?_ hpass3 idx tag hget
         intro idx' tag' hget'
         simp [ExtTreeMap.get?_eq_getElem?] at hget'
+
+/-- Helper: the tag-allocating loop in collectAndAllocExternTags keeps mapping values
+    injective. Each inserted value is the current cursor, and every old value is strictly
+    below that cursor. -/
+private lemma forIn_tag_mapping_values_injective
+    (L : List (TagIndex × Name × Expr))
+    (init_map : ExtTreeMap TagIndex Tag compare) (init_tag : Tag)
+    (r : MProd (ExtTreeMap TagIndex Tag compare) Tag)
+    (hinit_lt : ∀ (idx : TagIndex) (tag : Tag), init_map.get? idx = some tag → tag < init_tag)
+    (hinit_inj : ∀ (idx₁ idx₂ : TagIndex) (tag : Tag),
+      init_map.get? idx₁ = some tag → init_map.get? idx₂ = some tag → idx₁ = idx₂)
+    (h : (forIn L ⟨init_map, init_tag⟩
+      (fun (x : TagIndex × Name × Expr) (r : MProd (ExtTreeMap TagIndex Tag compare) Tag) =>
+        (Except.ok (ForInStep.yield ⟨r.fst.insert x.1 r.snd, r.snd + 1⟩) : Except String _))
+      = Except.ok r)) :
+    ∀ (idx₁ idx₂ : TagIndex) (tag : Tag),
+      r.fst.get? idx₁ = some tag → r.fst.get? idx₂ = some tag → idx₁ = idx₂ := by
+  induction L generalizing init_map init_tag with
+  | nil =>
+    simp only [forIn, List.forIn'_nil, pure, Except.pure, Except.ok.injEq] at h
+    cases h
+    exact hinit_inj
+  | cons hd tl ih =>
+    simp only [forIn, List.forIn'_cons, bind, Except.bind] at h
+    refine ih (init_map.insert hd.1 init_tag) (init_tag + 1) ?_ ?_ h
+    · intro idx tag hget
+      rw [ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert] at hget
+      split at hget
+      · exact (Option.some.inj hget).symm ▸ Nat.lt_succ_self _
+      · rw [← ExtTreeMap.get?_eq_getElem?] at hget
+        exact Nat.lt_trans (hinit_lt idx tag hget) (Nat.lt_succ_self _)
+    · intro idx₁ idx₂ tag hget₁ hget₂
+      refine ExtTreeMap_insert_preserves_injectivity init_map hd.1 init_tag ?_ hinit_inj
+        idx₁ idx₂ tag hget₁ hget₂
+      intro idx hget
+      have hlt := hinit_lt idx init_tag hget
+      exact Nat.lt_irrefl _ hlt
+
+/-- The mapping produced by collectAndAllocExternTags is injective in its concrete tags. -/
+lemma collectAndAllocExternTags_mapping_values_injective (preds : List SyntaxPredicate) (t : Tag)
+    (map : ExtTreeMap TagIndex Tag) (t' : Tag)
+    (htc : collectAndAllocExternTags preds t = .ok (map, t'))
+    (idx₁ idx₂ : TagIndex) (tag : Tag)
+    (hget₁ : map.get? idx₁ = some tag)
+    (hget₂ : map.get? idx₂ = some tag) :
+    idx₁ = idx₂ := by
+  unfold collectAndAllocExternTags at htc
+  simp only [bind, Except.bind, pure, Except.pure] at htc
+  revert htc
+  split
+  · intro h; exact absurd h Except.noConfusion
+  · rename_i v _
+    split
+    · intro h; exact absurd h Except.noConfusion
+    · split
+      · intro h; exact absurd h Except.noConfusion
+      · rename_i result hpass3
+        intro htc
+        have heq := Except.ok.inj htc
+        have hmapEq := (Prod.mk.inj heq).1
+        rw [← hmapEq] at hget₁ hget₂
+        refine forIn_tag_mapping_values_injective v.snd ∅ t result ?_ ?_ hpass3
+          idx₁ idx₂ tag hget₁ hget₂
+        · intro idx tag hget
+          simp [ExtTreeMap.get?_eq_getElem?] at hget
+        · intro idx₁ idx₂ tag hget₁ hget₂
+          simp [ExtTreeMap.get?_eq_getElem?] at hget₁
+
+private abbrev CollectExternSeenState :=
+  MProd (List TagIndex) (List (TagIndex × Name × Expr))
+
+private def collectAndAllocExternTags_seenStep
+    (pred : SyntaxPredicate) (r : CollectExternSeenState) :
+    Except String (ForInStep CollectExternSeenState) :=
+  match pred with
+  | SyntaxPredicate.guardClosure idx name body =>
+      match r.snd.find? (fun (x : TagIndex × Name × Expr) => x.1 == idx) with
+      | some (_, name', body') =>
+          if ¬ name = name' ∨ beqExpr body body' = false then
+            Except.error s!"Conflicting guardClosure definitions for tag index {repr idx.val}"
+          else
+            Except.ok (ForInStep.yield ⟨r.fst, r.snd⟩)
+      | none =>
+          Except.ok (ForInStep.yield ⟨r.fst, r.snd ++ [(idx, name, body)]⟩)
+  | SyntaxPredicate.guardOnly idx =>
+      Except.ok (ForInStep.yield ⟨r.fst ++ [idx], r.snd⟩)
+  | SyntaxPredicate.noPred =>
+      Except.ok (ForInStep.yield ⟨r.fst, r.snd⟩)
+
+private lemma collectAndAllocExternTags_seenLoop_consistent
+    (xs : List SyntaxPredicate) (guardOnlyIndices : List TagIndex)
+    (seen : List (TagIndex × Name × Expr)) (r : CollectExternSeenState)
+    (hseen_cons : ∀ {idx : TagIndex} {arg₁ arg₂ : Name} {body₁ body₂ : Expr},
+      (idx, arg₁, body₁) ∈ seen →
+      (idx, arg₂, body₂) ∈ seen →
+      arg₁ = arg₂ ∧ body₁ = body₂)
+    (h : forIn xs ⟨guardOnlyIndices, seen⟩ collectAndAllocExternTags_seenStep = .ok r) :
+    (∀ {idx : TagIndex} {arg body arg' body'},
+      (idx, arg, body) ∈ seen →
+      SyntaxPredicate.guardClosure idx arg' body' ∈ xs →
+      arg = arg' ∧ body = body') ∧
+    (∀ {idx : TagIndex} {arg₁ arg₂ : Name} {body₁ body₂ : Expr},
+      SyntaxPredicate.guardClosure idx arg₁ body₁ ∈ xs →
+      SyntaxPredicate.guardClosure idx arg₂ body₂ ∈ xs →
+      arg₁ = arg₂ ∧ body₁ = body₂) := by
+  induction xs generalizing guardOnlyIndices seen with
+  | nil =>
+      constructor
+      · intro idx arg body arg' body' _ hmem
+        cases hmem
+      · intro idx arg₁ arg₂ body₁ body₂ hmem _
+        cases hmem
+  | cons pred rest ih =>
+      cases pred with
+      | noPred =>
+          simp only [collectAndAllocExternTags_seenStep, forIn, List.forIn'_cons,
+            bind, Except.bind] at h
+          have ihres := ih guardOnlyIndices seen hseen_cons h
+          constructor
+          · intro idx arg body arg' body' hseen hmem
+            simp at hmem
+            exact ihres.1 hseen hmem
+          · intro idx arg₁ arg₂ body₁ body₂ hmem₁ hmem₂
+            simp at hmem₁ hmem₂
+            exact ihres.2 hmem₁ hmem₂
+      | guardOnly idx₀ =>
+          simp only [collectAndAllocExternTags_seenStep, forIn, List.forIn'_cons,
+            bind, Except.bind] at h
+          have ihres := ih (guardOnlyIndices ++ [idx₀]) seen hseen_cons h
+          constructor
+          · intro idx arg body arg' body' hseen hmem
+            simp at hmem
+            exact ihres.1 hseen hmem
+          · intro idx arg₁ arg₂ body₁ body₂ hmem₁ hmem₂
+            simp at hmem₁ hmem₂
+            exact ihres.2 hmem₁ hmem₂
+      | guardClosure idx₀ arg₀ body₀ =>
+          simp only [forIn, List.forIn'_cons, bind, Except.bind] at h
+          simp only [collectAndAllocExternTags_seenStep] at h
+          cases hfind : List.find? (fun (x : TagIndex × Name × Expr) => x.1 == idx₀) seen with
+          | some found =>
+            rcases found with ⟨idxSeen, restFound⟩
+            rcases restFound with ⟨argSeen, bodySeen⟩
+            by_cases hconflict : ¬ arg₀ = argSeen ∨ beqExpr body₀ bodySeen = false
+            · simp [hfind, hconflict] at h
+            · simp [hfind, hconflict] at h
+              have hidxSeen : idxSeen = idx₀ := by
+                have hp := List.find?_some hfind
+                simpa using (LawfulBEq.eq_of_beq hp : idxSeen = idx₀)
+              have hfound_mem : (idxSeen, argSeen, bodySeen) ∈ seen :=
+                List.mem_of_find?_eq_some hfind
+              subst idxSeen
+              have hname_eq : arg₀ = argSeen := by
+                exact not_not.mp (fun hne => hconflict (Or.inl hne))
+              have hbody_eq : body₀ = bodySeen := by
+                have hp : beqExpr body₀ bodySeen = true := by
+                  cases hbody : beqExpr body₀ bodySeen
+                  · exact (hconflict (Or.inr hbody)).elim
+                  · rfl
+                exact LawfulBEq.eq_of_beq hp
+              have hfound_mem' : (idx₀, argSeen, bodySeen) ∈ seen := hfound_mem
+              have ihres := ih guardOnlyIndices seen hseen_cons h
+              constructor
+              · intro idx arg body arg' body' hseen hmem
+                simp only [List.mem_cons] at hmem
+                rcases hmem with hhead | htail
+                · have h_eqs :=
+                    (SyntaxPredicate.guardClosure.injEq idx arg' body' idx₀ arg₀ body₀).mp hhead
+                  obtain ⟨hidx, harg, hbody⟩ := h_eqs
+                  subst idx
+                  have hagree := hseen_cons hseen hfound_mem'
+                  exact ⟨hagree.1.trans hname_eq.symm |>.trans harg.symm,
+                    hagree.2.trans hbody_eq.symm |>.trans hbody.symm⟩
+                · exact ihres.1 hseen htail
+              · intro idx arg₁ arg₂ body₁ body₂ hmem₁ hmem₂
+                simp only [List.mem_cons] at hmem₁ hmem₂
+                rcases hmem₁ with hhead₁ | htail₁ <;> rcases hmem₂ with hhead₂ | htail₂
+                · have h_eqs₁ :=
+                    (SyntaxPredicate.guardClosure.injEq idx arg₁ body₁ idx₀ arg₀ body₀).mp hhead₁
+                  have h_eqs₂ :=
+                    (SyntaxPredicate.guardClosure.injEq idx arg₂ body₂ idx₀ arg₀ body₀).mp hhead₂
+                  obtain ⟨_, harg₁, hbody₁⟩ := h_eqs₁
+                  obtain ⟨_, harg₂, hbody₂⟩ := h_eqs₂
+                  exact ⟨harg₁.trans harg₂.symm, hbody₁.trans hbody₂.symm⟩
+                · have h_eqs₁ :=
+                    (SyntaxPredicate.guardClosure.injEq idx arg₁ body₁ idx₀ arg₀ body₀).mp hhead₁
+                  obtain ⟨hidx₁, harg₁, hbody₁⟩ := h_eqs₁
+                  subst idx
+                  have htail_agree := ihres.1 hfound_mem' htail₂
+                  exact ⟨harg₁.trans (hname_eq.trans htail_agree.1),
+                    hbody₁.trans (hbody_eq.trans htail_agree.2)⟩
+                · have h_eqs₂ :=
+                    (SyntaxPredicate.guardClosure.injEq idx arg₂ body₂ idx₀ arg₀ body₀).mp hhead₂
+                  obtain ⟨hidx₂, harg₂, hbody₂⟩ := h_eqs₂
+                  subst idx
+                  have htail_agree := ihres.1 hfound_mem' htail₁
+                  exact ⟨htail_agree.1.symm.trans (hname_eq.symm.trans harg₂.symm),
+                    htail_agree.2.symm.trans (hbody_eq.symm.trans hbody₂.symm)⟩
+                · exact ihres.2 htail₁ htail₂
+          | none =>
+            simp [hfind] at h
+            have htail :
+                forIn rest ⟨guardOnlyIndices, seen ++ [(idx₀, arg₀, body₀)]⟩
+                  collectAndAllocExternTags_seenStep = .ok r := by
+              simpa [collectAndAllocExternTags_seenStep] using h
+            have hseen_cons' :
+                ∀ {idx : TagIndex} {arg₁ arg₂ : Name} {body₁ body₂ : Expr},
+                  (idx, arg₁, body₁) ∈ seen ++ [(idx₀, arg₀, body₀)] →
+                  (idx, arg₂, body₂) ∈ seen ++ [(idx₀, arg₀, body₀)] →
+                  arg₁ = arg₂ ∧ body₁ = body₂ := by
+              intro idx arg₁ arg₂ body₁ body₂ hm₁ hm₂
+              simp only [List.mem_append, List.mem_singleton] at hm₁ hm₂
+              rcases hm₁ with hm₁ | hm₁ <;> rcases hm₂ with hm₂ | hm₂
+              · exact hseen_cons hm₁ hm₂
+              · cases hm₂
+                have hnone := (List.find?_eq_none.mp hfind) (idx₀, arg₁, body₁) hm₁
+                have hp : (((idx₀, arg₁, body₁) : TagIndex × Name × Expr).1 == idx₀) = true := by
+                  simp
+                exact (hnone hp).elim
+              · cases hm₁
+                have hnone := (List.find?_eq_none.mp hfind) (idx₀, arg₂, body₂) hm₂
+                have hp : (((idx₀, arg₂, body₂) : TagIndex × Name × Expr).1 == idx₀) = true := by
+                  simp
+                exact (hnone hp).elim
+              · cases hm₁
+                cases hm₂
+                exact ⟨rfl, rfl⟩
+            have ihres := ih guardOnlyIndices (seen ++ [(idx₀, arg₀, body₀)]) hseen_cons' htail
+            constructor
+            · intro idx arg body arg' body' hseen hmem
+              simp only [List.mem_cons] at hmem
+              rcases hmem with hhead | htail
+              · have h_eqs :=
+                  (SyntaxPredicate.guardClosure.injEq idx arg' body' idx₀ arg₀ body₀).mp hhead
+                obtain ⟨hidx, harg, hbody⟩ := h_eqs
+                subst idx
+                have hold : (idx₀, arg, body) ∈ seen ++ [(idx₀, arg₀, body₀)] := by
+                  exact List.mem_append_left _ hseen
+                have hnew : (idx₀, arg₀, body₀) ∈ seen ++ [(idx₀, arg₀, body₀)] := by
+                  exact List.mem_append_right _ (by simp)
+                have hagree := hseen_cons' hold hnew
+                exact ⟨hagree.1.trans harg.symm, hagree.2.trans hbody.symm⟩
+              · have hnew : (idx, arg, body) ∈ seen ++ [(idx₀, arg₀, body₀)] := by
+                  exact List.mem_append_left _ hseen
+                exact ihres.1 hnew htail
+            · intro idx arg₁ arg₂ body₁ body₂ hmem₁ hmem₂
+              simp only [List.mem_cons] at hmem₁ hmem₂
+              rcases hmem₁ with hhead₁ | htail₁ <;> rcases hmem₂ with hhead₂ | htail₂
+              · have h_eqs₁ :=
+                  (SyntaxPredicate.guardClosure.injEq idx arg₁ body₁ idx₀ arg₀ body₀).mp hhead₁
+                have h_eqs₂ :=
+                  (SyntaxPredicate.guardClosure.injEq idx arg₂ body₂ idx₀ arg₀ body₀).mp hhead₂
+                obtain ⟨_, harg₁, hbody₁⟩ := h_eqs₁
+                obtain ⟨_, harg₂, hbody₂⟩ := h_eqs₂
+                exact ⟨harg₁.trans harg₂.symm, hbody₁.trans hbody₂.symm⟩
+              · have h_eqs₁ :=
+                  (SyntaxPredicate.guardClosure.injEq idx arg₁ body₁ idx₀ arg₀ body₀).mp hhead₁
+                obtain ⟨hidx₁, harg₁, hbody₁⟩ := h_eqs₁
+                subst idx
+                have hnew : (idx₀, arg₀, body₀) ∈ seen ++ [(idx₀, arg₀, body₀)] := by
+                  exact List.mem_append_right _ (by simp)
+                have hagree := ihres.1 hnew htail₂
+                exact ⟨harg₁.trans hagree.1, hbody₁.trans hagree.2⟩
+              · have h_eqs₂ :=
+                  (SyntaxPredicate.guardClosure.injEq idx arg₂ body₂ idx₀ arg₀ body₀).mp hhead₂
+                obtain ⟨hidx₂, harg₂, hbody₂⟩ := h_eqs₂
+                subst idx
+                have hnew : (idx₀, arg₀, body₀) ∈ seen ++ [(idx₀, arg₀, body₀)] := by
+                  exact List.mem_append_right _ (by simp)
+                have hagree := ihres.1 hnew htail₁
+                exact ⟨hagree.1.symm.trans harg₂.symm, hagree.2.symm.trans hbody₂.symm⟩
+              · exact ihres.2 htail₁ htail₂
+
+/-- Successful extern-tag allocation rejects conflicting guardClosure definitions
+    for the same symbolic tag index. -/
+theorem collectAndAllocExternTags_consistent_preds
+    (preds : List SyntaxPredicate) (nextTag : Tag)
+    (mapping : TagMapping) (nextTag' : Tag)
+    (h_alloc : collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag'))
+    {idx : TagIndex} {arg₁ arg₂ : Name} {body₁ body₂ : Expr} :
+    SyntaxPredicate.guardClosure idx arg₁ body₁ ∈ preds →
+    SyntaxPredicate.guardClosure idx arg₂ body₂ ∈ preds →
+    arg₁ = arg₂ ∧ body₁ = body₂ := by
+  unfold collectAndAllocExternTags at h_alloc
+  simp only [bind, Except.bind, pure, Except.pure] at h_alloc
+  revert h_alloc
+  split
+  · intro h
+    exact absurd h Except.noConfusion
+  · rename_i v hpass1
+    intro h_alloc
+    have hpass1' :
+        forIn preds ⟨([] : List TagIndex), ([] : List (TagIndex × Name × Expr))⟩
+          collectAndAllocExternTags_seenStep = .ok v := by
+      simpa [collectAndAllocExternTags_seenStep] using hpass1
+    refine (collectAndAllocExternTags_seenLoop_consistent preds [] [] v ?_ hpass1').2
+    intro idx arg₁ arg₂ body₁ body₂ hmem
+    cases hmem
 
 /-- resolveSyntaxPred produces a predicate whose tag is bounded by t' when the tag mapping
     comes from collectAndAllocExternTags. -/
@@ -4431,29 +4830,19 @@ private lemma typecheckApp_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Expr
     rcases hsub1 : isSubtype t1 _
       <;> rw [hsub1] at htc
       <;> simp at htc
-    simp [bind, Except.bind] at htc
-    rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
-      <;> rw [happly] at htc
-      <;> simp at htc
-    rcases hcons :
-        List.cons r <$>
-          List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs⟩
-      <;> rw [hcons] at htc
-      <;> simp at htc
-    rcases hrs : rs with _ | ⟨r1, rs'⟩
-      <;> rw [hrs] at htc
-      <;> simp at htc
-    subst rs
-    simp [Functor.map, Except.map] at hcons
-    rcases hmap :
-        List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs''⟩
-      <;> rw [hmap] at hcons
-      <;> simp at hcons
-    rcases hcons with ⟨_, heq2⟩
-    subst r1
-    subst rs''
+    rcases happly :
+        applyFnTClosureAtCursor f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1
+          (res1.nextTag', res1.nextLoc') fuel' with _ | ⟨r⟩
+      <;> simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+    rcases hrest :
+        applyClosuresThreaded
+          (fun tcl cursor =>
+            applyFnTClosureAtCursor tcl t1 t2 p poison1 etyp2 poison2 pred2
+              ctx res1 cursor fuel')
+          fs' (r.nextTag', r.nextLoc') with _ | ⟨rs'⟩
+      <;> simp [hrest] at htc
+    have hjoin : joinTypeResults ctx r rs' = .ok res := by
+      simpa using htc
     have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
     have hcte2' : typecheck ctx e2 fuel' = .ok res2 := by
       simpa [typecheck] using hcte2
@@ -4468,12 +4857,17 @@ private lemma typecheckApp_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Expr
           typecheck ctx'' e m = .ok res' → ctx''.nextTag ≤ res'.nextTag' := by
       intro m hm e ctx'' res' htc'
       exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
+    have happly_old :
+        applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 fuel' = .ok r := by
+      unfold applyFnTClosure
+      unfold applyFnTClosureAtCursor at happly
+      simpa using happly
     have h_r_mono : res1.nextTag' ≤ r.nextTag' := by
-      exact applyFnTClosure_nextTag_mono_normal f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' happly
+      exact applyFnTClosure_nextTag_mono_normal f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' happly_old
     have h_join :
         res.nextTag' =
           List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) :=
-      joinTypeResults_nextTag_eq_max ctx r rs' res htc
+      joinTypeResults_nextTag_eq_max ctx r rs' res hjoin
     have h_ctx_le_r : ctx.nextTag ≤ r.nextTag' := by
       exact Nat.le_trans h2 (Nat.le_trans h_res2_le_res1 h_r_mono)
     have h_r_le_max :
@@ -4488,29 +4882,19 @@ private lemma typecheckApp_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Expr
     rcases hsub1 : isSubtype st1 _
       <;> rw [hsub1] at htc
       <;> simp at htc
-    simp [bind, Except.bind] at htc
-    rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
-      <;> rw [happly] at htc
-      <;> simp at htc
-    rcases hcons :
-        List.cons r <$>
-          List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs⟩
-      <;> rw [hcons] at htc
-      <;> simp at htc
-    rcases hrs : rs with _ | ⟨r1, rs'⟩
-      <;> rw [hrs] at htc
-      <;> simp at htc
-    subst rs
-    simp [Functor.map, Except.map] at hcons
-    rcases hmap :
-        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs''⟩
-      <;> rw [hmap] at hcons
-      <;> simp at hcons
-    rcases hcons with ⟨_, heq2⟩
-    subst r1
-    subst rs''
+    rcases happly :
+        applyPFnTClosureAtCursor f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1
+          (res1.nextTag', res1.nextLoc') fuel' with _ | ⟨r⟩
+      <;> simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+    rcases hrest :
+        applyClosuresThreaded
+          (fun tcl cursor =>
+            applyPFnTClosureAtCursor tcl st1 st2 p poison1 etyp2 poison2 pred2
+              ctx res1 cursor fuel')
+          fs' (r.nextTag', r.nextLoc') with _ | ⟨rs'⟩
+      <;> simp [hrest] at htc
+    have hjoin : joinTypeResults ctx r rs' = .ok res := by
+      simpa using htc
     have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
     have hcte2' : typecheck ctx e2 fuel' = .ok res2 := by
       simpa [typecheck] using hcte2
@@ -4525,12 +4909,17 @@ private lemma typecheckApp_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Expr
           typecheck ctx'' e m = .ok res' → ctx''.nextTag ≤ res'.nextTag' := by
       intro m hm e ctx'' res' htc'
       exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
+    have happly_old :
+        applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 fuel' = .ok r := by
+      unfold applyPFnTClosure
+      unfold applyPFnTClosureAtCursor at happly
+      simpa using happly
     have h_r_mono : res1.nextTag' ≤ r.nextTag' := by
-      exact applyPFnTClosure_nextTag_mono_normal f ctx st1 st2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' happly
+      exact applyPFnTClosure_nextTag_mono_normal f ctx st1 st2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' happly_old
     have h_join :
         res.nextTag' =
           List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) :=
-      joinTypeResults_nextTag_eq_max ctx r rs' res htc
+      joinTypeResults_nextTag_eq_max ctx r rs' res hjoin
     have h_ctx_le_r : ctx.nextTag ≤ r.nextTag' := by
       exact Nat.le_trans h2 (Nat.le_trans h_res2_le_res1 h_r_mono)
     have h_r_le_max :
@@ -5650,7 +6039,7 @@ private lemma capturedEnvBoundedN_mono : ∀ (n : Nat) {env : List (Name × QTyp
     | _ => intro _; trivial
 
 /-- Monotonicity for CapturedEnvFullBounded. -/
-private lemma CapturedEnvFullBounded_mono {env : List (Name × QTyp)} {nt nt' : Tag}
+lemma CapturedEnvFullBounded_mono {env : List (Name × QTyp)} {nt nt' : Tag}
     (h : CapturedEnvFullBounded env nt) (hle : nt ≤ nt') :
     CapturedEnvFullBounded env nt' :=
   fun n => capturedEnvBoundedN_mono n (h n) hle
@@ -5771,7 +6160,7 @@ private lemma CapturedEnvRefLocsBoundedN_mono :
     | _ => intro _; trivial
 
 /-- Monotonicity for CapturedEnvRefLocsFullBounded. -/
-private lemma CapturedEnvRefLocsFullBounded_mono {env : List (Name × QTyp)}
+lemma CapturedEnvRefLocsFullBounded_mono {env : List (Name × QTyp)}
     (h : CapturedEnvRefLocsFullBounded env nl) (hle : nl ≤ nl') :
     CapturedEnvRefLocsFullBounded env nl' :=
   fun n => CapturedEnvRefLocsBoundedN_mono n (h n) hle
@@ -6957,6 +7346,296 @@ private lemma applyPFnTClosure_predTagsBounded
         argEtyp argPoison argPred r1 r2 (fuel' + 1) x retSpec capturedEnv
         hpred_r1_mem henv_captured hpred_argPred hclosure_arg happly'
 
+lemma applyFnTClosureAtCursor_nextTag_mono_normal
+    (tcl : FnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck ctx' e m = .ok res' →
+      ctx'.nextTag ≤ res'.nextTag') :
+    applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2 →
+    cursor.1 ≤ r2.nextTag' := by
+  intro happly
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hOld :
+      applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel =
+        .ok r2 := by
+    unfold applyFnTClosure
+    unfold applyFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  simpa [rCursor] using
+    applyFnTClosure_nextTag_mono_normal tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel IH hOld
+
+lemma applyPFnTClosureAtCursor_nextTag_mono_normal
+    (tcl : PFnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck ctx' e m = .ok res' →
+      ctx'.nextTag ≤ res'.nextTag') :
+    applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2 →
+    cursor.1 ≤ r2.nextTag' := by
+  intro happly
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hOld :
+      applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel =
+        .ok r2 := by
+    unfold applyPFnTClosure
+    unfold applyPFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  simpa [rCursor] using
+    applyPFnTClosure_nextTag_mono_normal tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel IH hOld
+
+private lemma applyFnTClosureAtCursor_predTagsBounded
+    (tcl : FnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
+          closureEnvBoundedInCtx ctx' →
+          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
+          qtypPredTagBounded res'.qualType res'.nextTag' ∧
+          etypClosuresFullBounded res'.qualType.etyp res'.nextTag')
+    (hcursor : r1.nextTag' ≤ cursor.1)
+    (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
+    (henv_captured : match tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
+      | .extern _ _ _ env => CapturedEnvFullBounded env r1.nextTag')
+    (hpred_argPred : predTagBounded r1.nextTag' argPred)
+    (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
+    applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2 →
+    predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧
+    qtypPredTagBounded r2.qualType r2.nextTag' ∧
+    etypClosuresFullBounded r2.qualType.etyp r2.nextTag' := by
+  intro happly
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hOld :
+      applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel =
+        .ok r2 := by
+    unfold applyFnTClosure
+    unfold applyFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  cases tcl <;>
+    exact applyFnTClosure_predTagsBounded _ ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel IH
+      (by simpa [rCursor] using predTagsBoundedInMemEnv_mono hpred_r1_mem hcursor)
+      (by simpa [rCursor] using CapturedEnvFullBounded_mono henv_captured hcursor)
+      (by simpa [rCursor] using predTagBounded_mono hpred_argPred hcursor)
+      (by simpa [rCursor] using etypClosuresFullBounded_mono hclosure_arg hcursor)
+      hOld
+
+private lemma applyPFnTClosureAtCursor_predTagsBounded
+    (tcl : PFnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
+          closureEnvBoundedInCtx ctx' →
+          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
+          qtypPredTagBounded res'.qualType res'.nextTag' ∧
+          etypClosuresFullBounded res'.qualType.etyp res'.nextTag')
+    (hcursor : r1.nextTag' ≤ cursor.1)
+    (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
+    (henv_captured : match tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
+      | .extern _ _ env => CapturedEnvFullBounded env r1.nextTag')
+    (hpred_argPred : predTagBounded r1.nextTag' argPred)
+    (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
+    applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2 →
+    predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧
+    qtypPredTagBounded r2.qualType r2.nextTag' ∧
+    etypClosuresFullBounded r2.qualType.etyp r2.nextTag' := by
+  intro happly
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hOld :
+      applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel =
+        .ok r2 := by
+    unfold applyPFnTClosure
+    unfold applyPFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  cases tcl <;>
+    exact applyPFnTClosure_predTagsBounded _ ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel IH
+      (by simpa [rCursor] using predTagsBoundedInMemEnv_mono hpred_r1_mem hcursor)
+      (by simpa [rCursor] using CapturedEnvFullBounded_mono henv_captured hcursor)
+      (by simpa [rCursor] using predTagBounded_mono hpred_argPred hcursor)
+      (by simpa [rCursor] using etypClosuresFullBounded_mono hclosure_arg hcursor)
+      hOld
+
+private lemma applyFnClosuresThreaded_forall_predTagsBounded
+    (tcls : List FnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result_fn : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
+          closureEnvBoundedInCtx ctx' →
+          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
+          qtypPredTagBounded res'.qualType res'.nextTag' ∧
+          etypClosuresFullBounded res'.qualType.etyp res'.nextTag')
+    (hcursor : result_fn.nextTag' ≤ cursor.1)
+    (hpred_fn_mem : predTagsBoundedInMemEnv result_fn.memEnv' result_fn.nextTag')
+    (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env result_fn.nextTag'
+      | .extern _ _ _ env => CapturedEnvFullBounded env result_fn.nextTag')
+    (hargPred : predTagBounded result_fn.nextTag' argPred)
+    (hargClos : etypClosuresFullBounded argEtyp result_fn.nextTag')
+    (results : List TypeResult)
+    (hthread : applyClosuresThreaded
+      (fun tcl cursor =>
+        applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+          ctx result_fn cursor fuel)
+      tcls cursor = .ok results) :
+    (∀ r ∈ results, predTagsBoundedInMemEnv r.memEnv' r.nextTag' ∧
+      qtypPredTagBounded r.qualType r.nextTag' ∧
+      etypClosuresFullBounded r.qualType.etyp r.nextTag') ∧
+    (∀ r ∈ results, result_fn.nextTag' ≤ r.nextTag') := by
+  induction tcls generalizing cursor results with
+  | nil =>
+      simp [applyClosuresThreaded, pure, Except.pure] at hthread
+      cases hthread
+      constructor <;> intro r hr <;> cases hr
+  | cons tcl rest ih =>
+      simp [applyClosuresThreaded, bind, Except.bind] at hthread
+      cases hfirst :
+          applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+            ctx result_fn cursor fuel with
+      | error _ =>
+          simp [hfirst] at hthread
+      | ok first =>
+          simp [hfirst] at hthread
+          cases hrest :
+              applyClosuresThreaded
+                (fun tcl cursor =>
+                  applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+                    ctx result_fn cursor fuel)
+                rest (first.nextTag', first.nextLoc') with
+          | error _ =>
+              simp [hrest] at hthread
+          | ok restResults =>
+              simp [hrest, pure, Except.pure] at hthread
+              cases hthread
+              have hfirstProp :=
+                applyFnTClosureAtCursor_predTagsBounded tcl ctx st1 st2 p p1
+                  argEtyp argPoison argPred result_fn first cursor fuel IH hcursor
+                  hpred_fn_mem (hcaptLocs tcl (.head rest)) hargPred hargClos hfirst
+              have hfirstNext : result_fn.nextTag' ≤ first.nextTag' := by
+                have hmono := applyFnTClosureAtCursor_nextTag_mono_normal tcl ctx st1 st2 p p1
+                  argEtyp argPoison argPred result_fn first cursor fuel
+                  (fun m hm e c r htc => typecheck_normal_nextTag_mono c e m r htc) hfirst
+                exact Nat.le_trans hcursor hmono
+              have htail := ih (first.nextTag', first.nextLoc') hfirstNext
+                (fun t ht => hcaptLocs t (.tail tcl ht)) restResults hrest
+              constructor
+              · intro r hr
+                simp at hr
+                cases hr with
+                | inl heq =>
+                    cases heq
+                    exact hfirstProp
+                | inr hmem =>
+                    exact htail.1 r hmem
+              · intro r hr
+                simp at hr
+                cases hr with
+                | inl heq =>
+                    cases heq
+                    exact hfirstNext
+                | inr hmem =>
+                    exact htail.2 r hmem
+
+private lemma applyPFnClosuresThreaded_forall_predTagsBounded
+    (tcls : List PFnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result_fn : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (IH : ∀ m < fuel, ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheckExpr ctx' e' m = .ok res' → predTagsBoundedInCtx ctx' →
+          closureEnvBoundedInCtx ctx' →
+          predTagsBoundedInMemEnv res'.memEnv' res'.nextTag' ∧
+          qtypPredTagBounded res'.qualType res'.nextTag' ∧
+          etypClosuresFullBounded res'.qualType.etyp res'.nextTag')
+    (hcursor : result_fn.nextTag' ≤ cursor.1)
+    (hpred_fn_mem : predTagsBoundedInMemEnv result_fn.memEnv' result_fn.nextTag')
+    (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env result_fn.nextTag'
+      | .extern _ _ env => CapturedEnvFullBounded env result_fn.nextTag')
+    (hargPred : predTagBounded result_fn.nextTag' argPred)
+    (hargClos : etypClosuresFullBounded argEtyp result_fn.nextTag')
+    (results : List TypeResult)
+    (hthread : applyClosuresThreaded
+      (fun tcl cursor =>
+        applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+          ctx result_fn cursor fuel)
+      tcls cursor = .ok results) :
+    (∀ r ∈ results, predTagsBoundedInMemEnv r.memEnv' r.nextTag' ∧
+      qtypPredTagBounded r.qualType r.nextTag' ∧
+      etypClosuresFullBounded r.qualType.etyp r.nextTag') ∧
+    (∀ r ∈ results, result_fn.nextTag' ≤ r.nextTag') := by
+  induction tcls generalizing cursor results with
+  | nil =>
+      simp [applyClosuresThreaded, pure, Except.pure] at hthread
+      cases hthread
+      constructor <;> intro r hr <;> cases hr
+  | cons tcl rest ih =>
+      simp [applyClosuresThreaded, bind, Except.bind] at hthread
+      cases hfirst :
+          applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+            ctx result_fn cursor fuel with
+      | error _ =>
+          simp [hfirst] at hthread
+      | ok first =>
+          simp [hfirst] at hthread
+          cases hrest :
+              applyClosuresThreaded
+                (fun tcl cursor =>
+                  applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+                    ctx result_fn cursor fuel)
+                rest (first.nextTag', first.nextLoc') with
+          | error _ =>
+              simp [hrest] at hthread
+          | ok restResults =>
+              simp [hrest, pure, Except.pure] at hthread
+              cases hthread
+              have hfirstProp :=
+                applyPFnTClosureAtCursor_predTagsBounded tcl ctx st1 st2 p p1
+                  argEtyp argPoison argPred result_fn first cursor fuel IH hcursor
+                  hpred_fn_mem (hcaptLocs tcl (.head rest)) hargPred hargClos hfirst
+              have hfirstNext : result_fn.nextTag' ≤ first.nextTag' := by
+                have hmono := applyPFnTClosureAtCursor_nextTag_mono_normal tcl ctx st1 st2 p p1
+                  argEtyp argPoison argPred result_fn first cursor fuel
+                  (fun m hm e c r htc => typecheck_normal_nextTag_mono c e m r htc) hfirst
+                exact Nat.le_trans hcursor hmono
+              have htail := ih (first.nextTag', first.nextLoc') hfirstNext
+                (fun t ht => hcaptLocs t (.tail tcl ht)) restResults hrest
+              constructor
+              · intro r hr
+                simp at hr
+                cases hr with
+                | inl heq =>
+                    cases heq
+                    exact hfirstProp
+                | inr hmem =>
+                    exact htail.1 r hmem
+              · intro r hr
+                simp at hr
+                cases hr with
+                | inl heq =>
+                    cases heq
+                    exact hfirstNext
+                | inr hmem =>
+                    exact htail.2 r hmem
+
 /-- joinTypeResults preserves predTagsBounded: if the first result is bounded, and each rest
     result is bounded, the joined result is bounded at maxNextTag. -/
 private lemma joinTypeResults_predTagsBounded_memEnv
@@ -7806,10 +8485,10 @@ private lemma typecheckExpr_preserves_combined_main :
                   rcases fs with _ | ⟨f, fs'⟩ <;> simp at htcApp
                   rcases hsub1 : isSubtype t1 _
                     <;> rw [hsub1] at htcApp <;> simp at htcApp
-                  simp [bind, Except.bind] at htcApp
-                  rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _
-                    with _ | ⟨r⟩
-                    <;> rw [happly] at htcApp <;> simp at htcApp
+                  rcases happly :
+                      applyFnTClosureAtCursor f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1
+                        (res1.nextTag', res1.nextLoc') fuel'' with _ | ⟨r⟩
+                    <;> simp [applyClosuresThreaded, happly, bind, Except.bind] at htcApp
                   -- Get full 3-tuple for first closure result r
                   have hIH1_clos := hIH1.2.2
                   simp [hq1] at hIH1_clos
@@ -7817,55 +8496,38 @@ private lemma typecheckExpr_preserves_combined_main :
                       qtypPredTagBounded r.qualType r.nextTag' ∧
                       etypClosuresFullBounded r.qualType.etyp r.nextTag' := by
                     have hcapt_f := hIH1_clos f (List.Mem.head _)
-                    cases f with
-                    | regular x body env =>
-                      exact applyFnTClosure_predTagsBounded (.regular x body env) ctx t1 t2 p
-                        poison1 etyp2 poison2 pred2 res1 r fuel'' IH'
-                        hIH1.1 hcapt_f hpred2 hclosure_arg happly
-                    | extern arg retSpec effects env =>
-                      exact applyFnTClosure_predTagsBounded (.extern arg retSpec effects env) ctx
-                        t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'
-                        hIH1.1 hcapt_f hpred2 hclosure_arg happly
-                  -- Process remaining closures via mapM
-                  rcases hcons :
-                      List.cons r <$>
-                        List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-                      with _ | ⟨rs⟩
-                    <;> rw [hcons] at htcApp <;> simp at htcApp
-                  rcases hrs : rs with _ | ⟨r1, rs'⟩
-                    <;> rw [hrs] at htcApp <;> simp at htcApp
-                  subst rs
-                  -- Extract mapM from hcons: r = r1, mapM gives rs'
-                  have hmap : List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 fuel'') fs'
-                      = Except.ok rs' := by
-                    simp [Functor.map, Except.map] at hcons
-                    split at hcons <;> simp_all
-                  have hr_eq : r = r1 := by
-                    simp [Functor.map, Except.map] at hcons
-                    split at hcons <;> simp_all
-                  -- All rs' elements are bounded (via mapM + applyFnTClosure_predTagsBounded)
+                    exact applyFnTClosureAtCursor_predTagsBounded f ctx t1 t2 p
+                      poison1 etyp2 poison2 pred2 res1 r (res1.nextTag', res1.nextLoc')
+                      fuel'' IH' (Nat.le_refl _) hIH1.1 hcapt_f hpred2 hclosure_arg happly
+                  rcases hrest :
+                      applyClosuresThreaded
+                        (fun tcl cursor =>
+                          applyFnTClosureAtCursor tcl t1 t2 p poison1 etyp2 poison2 pred2
+                            ctx res1 cursor fuel'')
+                        fs' (r.nextTag', r.nextLoc') with _ | ⟨rs'⟩
+                    <;> simp [hrest] at htcApp
+                  have hjoin : joinTypeResults ctx r rs' = .ok res := by
+                    simpa using htcApp
+                  have hr_base_le : res1.nextTag' ≤ r.nextTag' := by
+                    have hmono := applyFnTClosureAtCursor_nextTag_mono_normal f ctx t1 t2 p
+                      poison1 etyp2 poison2 pred2 res1 r (res1.nextTag', res1.nextLoc')
+                      fuel'' (fun m hm e c r htc => typecheck_normal_nextTag_mono c e m r htc)
+                      happly
+                    simpa using hmono
+                  have htail := applyFnClosuresThreaded_forall_predTagsBounded fs' ctx t1 t2 p
+                    poison1 etyp2 poison2 pred2 res1 (r.nextTag', r.nextLoc') fuel''
+                    IH' hr_base_le hIH1.1 (fun t ht => hIH1_clos t (.tail f ht))
+                    hpred2 hclosure_arg rs' hrest
                   have hAllRs' : ∀ ri ∈ rs', predTagsBoundedInMemEnv ri.memEnv' ri.nextTag' ∧
                       qtypPredTagBounded ri.qualType ri.nextTag' ∧
-                      etypClosuresFullBounded ri.qualType.etyp ri.nextTag' :=
-                    forall_mem_of_mapM hmap fun tcl hmem ri happly_i => by
-                      have hcapt := hIH1_clos tcl (.tail _ hmem)
-                      cases tcl with
-                      | regular x body env =>
-                        exact applyFnTClosure_predTagsBounded (.regular x body env) ctx t1 t2 p
-                          poison1 etyp2 poison2 pred2 res1 ri fuel'' IH'
-                          hIH1.1 hcapt hpred2 hclosure_arg happly_i
-                      | extern arg retSpec effects env =>
-                        exact applyFnTClosure_predTagsBounded (.extern arg retSpec effects env) ctx
-                          t1 t2 p poison1 etyp2 poison2 pred2 res1 ri fuel'' IH'
-                          hIH1.1 hcapt hpred2 hclosure_arg happly_i
+                      etypClosuresFullBounded ri.qualType.etyp ri.nextTag' := htail.1
                   -- Use join lemmas: all results bounded, mono up to res.nextTag' = max
-                  rw [hr_eq] at hR
                   -- res.nextTag' is the max of all nextTag' values
-                  have hntmax := joinTypeResults_nextTag_eq_max ctx r1 rs' res htcApp
+                  have hntmax := joinTypeResults_nextTag_eq_max ctx r rs' res hjoin
                   -- Each result bounded at its own nextTag'; mono up to res.nextTag'
                   -- r1.nextTag' ≤ res.nextTag' (first of max list)
-                  have hr1_le : r1.nextTag' ≤ res.nextTag' := by
-                    rw [hntmax]; simpa [List.max] using foldl_max_ge_init r1.nextTag' _
+                  have hr1_le : r.nextTag' ≤ res.nextTag' := by
+                    rw [hntmax]; simpa [List.max] using foldl_max_ge_init r.nextTag' _
                   -- Each ri.nextTag' ≤ res.nextTag' (member of max list)
                   have hAllRs_at_nt : ∀ ri ∈ rs',
                       predTagsBoundedInMemEnv ri.memEnv' res.nextTag' ∧
@@ -7877,8 +8539,8 @@ private lemma typecheckExpr_preserves_combined_main :
                       exact foldl_max_ge_elem _ _ _ (List.mem_map.mpr ⟨ri, hri, rfl⟩)
                     exact ⟨predTagsBoundedInMemEnv_mono hb.1 hri_le,
                            predTagBounded_mono hb.2.1 hri_le⟩
-                  have hjPT := joinTypeResults_predTagsBounded_memEnv ctx r1 rs' res res.nextTag'
-                    htcApp (predTagsBoundedInMemEnv_mono hR.1 hr1_le) (predTagBounded_mono hR.2.1 hr1_le)
+                  have hjPT := joinTypeResults_predTagsBounded_memEnv ctx r rs' res res.nextTag'
+                    hjoin (predTagsBoundedInMemEnv_mono hR.1 hr1_le) (predTagBounded_mono hR.2.1 hr1_le)
                     hAllRs_at_nt
                   -- Closure part
                   have hAllRs_clos : ∀ ri ∈ rs', etypClosuresFullBounded ri.qualType.etyp res.nextTag' := by
@@ -7888,17 +8550,17 @@ private lemma typecheckExpr_preserves_combined_main :
                       exact foldl_max_ge_elem _ _ _ (List.mem_map.mpr ⟨ri, hri, rfl⟩)
                     exact etypClosuresFullBounded_mono (hAllRs' ri hri).2.2 hri_le
                   exact ⟨hjPT.1,
-                    ⟨hjPT.2, joinTypeResults_etypClosuresFullBounded ctx r1 rs' res res.nextTag'
-                      htcApp (etypClosuresFullBounded_mono hR.2.2 hr1_le) hAllRs_clos⟩⟩
+                    ⟨hjPT.2, joinTypeResults_etypClosuresFullBounded ctx r rs' res res.nextTag'
+                      hjoin (etypClosuresFullBounded_mono hR.2.2 hr1_le) hAllRs_clos⟩⟩
                 · -- parrow case
                   rename_i st1 st2 p tcls
                   rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htcApp
                   rcases hsub1 : isSubtype st1 _
                     <;> rw [hsub1] at htcApp <;> simp at htcApp
-                  simp [bind, Except.bind] at htcApp
-                  rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _
-                    with _ | ⟨r⟩
-                    <;> rw [happly] at htcApp <;> simp at htcApp
+                  rcases happly :
+                      applyPFnTClosureAtCursor f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1
+                        (res1.nextTag', res1.nextLoc') fuel'' with _ | ⟨r⟩
+                    <;> simp [applyClosuresThreaded, happly, bind, Except.bind] at htcApp
                   -- Get full 3-tuple for first closure result r
                   have hIH1_clos := hIH1.2.2
                   simp [hq1] at hIH1_clos
@@ -7906,52 +8568,35 @@ private lemma typecheckExpr_preserves_combined_main :
                       qtypPredTagBounded r.qualType r.nextTag' ∧
                       etypClosuresFullBounded r.qualType.etyp r.nextTag' := by
                     have hcapt_f := hIH1_clos f (List.Mem.head _)
-                    cases f with
-                    | regular x pbody env =>
-                      exact applyPFnTClosure_predTagsBounded (.regular x pbody env) ctx st1 st2 p
-                        poison1 etyp2 poison2 pred2 res1 r fuel'' IH'
-                        hIH1.1 hcapt_f hpred2 hclosure_arg happly
-                    | extern arg retSpec env =>
-                      exact applyPFnTClosure_predTagsBounded (.extern arg retSpec env) ctx st1 st2
-                        p poison1 etyp2 poison2 pred2 res1 r fuel'' IH'
-                        hIH1.1 hcapt_f hpred2 hclosure_arg happly
-                  -- Process remaining closures via mapM
-                  rcases hcons :
-                      List.cons r <$>
-                        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-                      with _ | ⟨rs⟩
-                    <;> rw [hcons] at htcApp <;> simp at htcApp
-                  rcases hrs : rs with _ | ⟨r1, rs'⟩
-                    <;> rw [hrs] at htcApp <;> simp at htcApp
-                  subst rs
-                  -- Extract mapM from hcons
-                  have hmap : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 fuel'') fs'
-                      = Except.ok rs' := by
-                    simp [Functor.map, Except.map] at hcons
-                    split at hcons <;> simp_all
-                  have hr_eq : r = r1 := by
-                    simp [Functor.map, Except.map] at hcons
-                    split at hcons <;> simp_all
-                  -- All rs' elements are bounded
+                    exact applyPFnTClosureAtCursor_predTagsBounded f ctx st1 st2 p
+                      poison1 etyp2 poison2 pred2 res1 r (res1.nextTag', res1.nextLoc')
+                      fuel'' IH' (Nat.le_refl _) hIH1.1 hcapt_f hpred2 hclosure_arg happly
+                  rcases hrest :
+                      applyClosuresThreaded
+                        (fun tcl cursor =>
+                          applyPFnTClosureAtCursor tcl st1 st2 p poison1 etyp2 poison2 pred2
+                            ctx res1 cursor fuel'')
+                        fs' (r.nextTag', r.nextLoc') with _ | ⟨rs'⟩
+                    <;> simp [hrest] at htcApp
+                  have hjoin : joinTypeResults ctx r rs' = .ok res := by
+                    simpa using htcApp
+                  have hr_base_le : res1.nextTag' ≤ r.nextTag' := by
+                    have hmono := applyPFnTClosureAtCursor_nextTag_mono_normal f ctx st1 st2 p
+                      poison1 etyp2 poison2 pred2 res1 r (res1.nextTag', res1.nextLoc')
+                      fuel'' (fun m hm e c r htc => typecheck_normal_nextTag_mono c e m r htc)
+                      happly
+                    simpa using hmono
+                  have htail := applyPFnClosuresThreaded_forall_predTagsBounded fs' ctx st1 st2 p
+                    poison1 etyp2 poison2 pred2 res1 (r.nextTag', r.nextLoc') fuel''
+                    IH' hr_base_le hIH1.1 (fun t ht => hIH1_clos t (.tail f ht))
+                    hpred2 hclosure_arg rs' hrest
                   have hAllRs' : ∀ ri ∈ rs', predTagsBoundedInMemEnv ri.memEnv' ri.nextTag' ∧
                       qtypPredTagBounded ri.qualType ri.nextTag' ∧
-                      etypClosuresFullBounded ri.qualType.etyp ri.nextTag' :=
-                    forall_mem_of_mapM hmap fun tcl hmem ri happly_i => by
-                      have hcapt := hIH1_clos tcl (.tail _ hmem)
-                      cases tcl with
-                      | regular x pbody env =>
-                        exact applyPFnTClosure_predTagsBounded (.regular x pbody env) ctx st1 st2 p
-                          poison1 etyp2 poison2 pred2 res1 ri fuel'' IH'
-                          hIH1.1 hcapt hpred2 hclosure_arg happly_i
-                      | extern arg retSpec env =>
-                        exact applyPFnTClosure_predTagsBounded (.extern arg retSpec env) ctx st1 st2
-                          p poison1 etyp2 poison2 pred2 res1 ri fuel'' IH'
-                          hIH1.1 hcapt hpred2 hclosure_arg happly_i
+                      etypClosuresFullBounded ri.qualType.etyp ri.nextTag' := htail.1
                   -- Join: mono everything up to res.nextTag' = max of all nextTag'
-                  rw [hr_eq] at hR
-                  have hntmax := joinTypeResults_nextTag_eq_max ctx r1 rs' res htcApp
-                  have hr1_le : r1.nextTag' ≤ res.nextTag' := by
-                    rw [hntmax]; simpa [List.max] using foldl_max_ge_init r1.nextTag' _
+                  have hntmax := joinTypeResults_nextTag_eq_max ctx r rs' res hjoin
+                  have hr1_le : r.nextTag' ≤ res.nextTag' := by
+                    rw [hntmax]; simpa [List.max] using foldl_max_ge_init r.nextTag' _
                   have hAllRs_at_nt : ∀ ri ∈ rs',
                       predTagsBoundedInMemEnv ri.memEnv' res.nextTag' ∧
                       predTagBounded res.nextTag' ri.qualType.pred := by
@@ -7962,8 +8607,8 @@ private lemma typecheckExpr_preserves_combined_main :
                       exact foldl_max_ge_elem _ _ _ (List.mem_map.mpr ⟨ri, hri, rfl⟩)
                     exact ⟨predTagsBoundedInMemEnv_mono hb.1 hri_le,
                            predTagBounded_mono hb.2.1 hri_le⟩
-                  have hjPT := joinTypeResults_predTagsBounded_memEnv ctx r1 rs' res res.nextTag'
-                    htcApp (predTagsBoundedInMemEnv_mono hR.1 hr1_le) (predTagBounded_mono hR.2.1 hr1_le)
+                  have hjPT := joinTypeResults_predTagsBounded_memEnv ctx r rs' res res.nextTag'
+                    hjoin (predTagsBoundedInMemEnv_mono hR.1 hr1_le) (predTagBounded_mono hR.2.1 hr1_le)
                     hAllRs_at_nt
                   have hAllRs_clos : ∀ ri ∈ rs', etypClosuresFullBounded ri.qualType.etyp res.nextTag' := by
                     intro ri hri
@@ -7972,8 +8617,8 @@ private lemma typecheckExpr_preserves_combined_main :
                       exact foldl_max_ge_elem _ _ _ (List.mem_map.mpr ⟨ri, hri, rfl⟩)
                     exact etypClosuresFullBounded_mono (hAllRs' ri hri).2.2 hri_le
                   exact ⟨hjPT.1,
-                    ⟨hjPT.2, joinTypeResults_etypClosuresFullBounded ctx r1 rs' res res.nextTag'
-                      htcApp (etypClosuresFullBounded_mono hR.2.2 hr1_le) hAllRs_clos⟩⟩
+                    ⟨hjPT.2, joinTypeResults_etypClosuresFullBounded ctx r rs' res res.nextTag'
+                      hjoin (etypClosuresFullBounded_mono hR.2.2 hr1_le) hAllRs_clos⟩⟩
           | externVal _id typ poison pred =>
               -- Unfold typecheckExternVal to extract structure
               have htce : typecheckExternVal ctx typ poison pred = .ok res := htc
@@ -8505,23 +9150,19 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
     rcases fs with _ | ⟨f, fs'⟩ <;> simp at htc
     rcases hsub1 : isSubtype t1 _
       <;> rw [hsub1] at htc <;> simp at htc
-    simp [bind, Except.bind] at htc
-    rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
-      <;> rw [happly] at htc <;> simp at htc
-    rcases hcons :
-        List.cons r <$>
-          List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs⟩
-      <;> rw [hcons] at htc <;> simp at htc
-    rcases hrs : rs with _ | ⟨r1, rs'⟩
-      <;> rw [hrs] at htc <;> simp at htc
-    subst rs
-    simp [Functor.map, Except.map] at hcons
-    rcases hmap :
-        List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs''⟩
-      <;> rw [hmap] at hcons <;> simp at hcons
-    rcases hcons with ⟨_, heq2⟩; subst r1; subst rs''
+    rcases happly :
+        applyFnTClosureAtCursor f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1
+          (res1.nextTag', res1.nextLoc') fuel' with _ | ⟨r⟩
+      <;> simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+    rcases hrest :
+        applyClosuresThreaded
+          (fun tcl cursor =>
+            applyFnTClosureAtCursor tcl t1 t2 p poison1 etyp2 poison2 pred2
+              ctx res1 cursor fuel')
+          fs' (r.nextTag', r.nextLoc') with _ | ⟨rs'⟩
+      <;> simp [hrest] at htc
+    have hjoin : joinTypeResults ctx r rs' = .ok res := by
+      simpa using htc
     -- Get combined IH results for closure/pred evidence
     have hIH1_combined := typecheckExpr_preserves_combined_main ctx' e1 fuel' res1 htce1 hpredCtx' hclosureCtx'
     have hIH2_combined := typecheckExpr_preserves_combined_main ctx e2 fuel' res2 hcte2 hpred hclosure
@@ -8535,12 +9176,16 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
       exact etypClosuresFullBounded_mono h2 (typecheck_normal_nextTag_mono ctx' e1 fuel' res1 htce1)
     have hbound_r : tagEnvBounded r.tagEnv' r.nextTag' :=
       applyFnTClosure_tagEnvBounded_normal f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH'
-        hbound1 hIH1_combined.1 hcapt_f hpred2_bound hclosure_arg happly
+        hbound1 hIH1_combined.1 hcapt_f hpred2_bound hclosure_arg
+        (by
+          unfold applyFnTClosure
+          unfold applyFnTClosureAtCursor at happly
+          simpa using happly)
     have hboundJoin : tagEnvBounded res.tagEnv' r.nextTag' :=
-      joinTypeResults_tagEnvBounded ctx r rs' res r.nextTag' htc hbound_r
+      joinTypeResults_tagEnvBounded ctx r rs' res r.nextTag' hjoin hbound_r
     have h_join_next : res.nextTag' =
         List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) :=
-      joinTypeResults_nextTag_eq_max ctx r rs' res htc
+      joinTypeResults_nextTag_eq_max ctx r rs' res hjoin
     have h_r_le_max : r.nextTag' ≤
         List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) := by
       simpa [List.max] using foldl_max_ge_init r.nextTag' (rs'.map TypeResult.nextTag')
@@ -8550,23 +9195,19 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
     rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htc
     rcases hsub1 : isSubtype st1 _
       <;> rw [hsub1] at htc <;> simp at htc
-    simp [bind, Except.bind] at htc
-    rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
-      <;> rw [happly] at htc <;> simp at htc
-    rcases hcons :
-        List.cons r <$>
-          List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs⟩
-      <;> rw [hcons] at htc <;> simp at htc
-    rcases hrs : rs with _ | ⟨r1, rs'⟩
-      <;> rw [hrs] at htc <;> simp at htc
-    subst rs
-    simp [Functor.map, Except.map] at hcons
-    rcases hmap :
-        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs''⟩
-      <;> rw [hmap] at hcons <;> simp at hcons
-    rcases hcons with ⟨_, heq2⟩; subst r1; subst rs''
+    rcases happly :
+        applyPFnTClosureAtCursor f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1
+          (res1.nextTag', res1.nextLoc') fuel' with _ | ⟨r⟩
+      <;> simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+    rcases hrest :
+        applyClosuresThreaded
+          (fun tcl cursor =>
+            applyPFnTClosureAtCursor tcl st1 st2 p poison1 etyp2 poison2 pred2
+              ctx res1 cursor fuel')
+          fs' (r.nextTag', r.nextLoc') with _ | ⟨rs'⟩
+      <;> simp [hrest] at htc
+    have hjoin : joinTypeResults ctx r rs' = .ok res := by
+      simpa using htc
     have hbound_r : tagEnvBounded r.tagEnv' r.nextTag' :=
       by
         have hIH1_combined := typecheckExpr_preserves_combined_main ctx' e1 fuel' res1 htce1 hpredCtx' hclosureCtx'
@@ -8580,12 +9221,16 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
           have h2 := hIH2_combined.2.2; simp [hq2] at h2
           exact etypClosuresFullBounded_mono h2 (typecheck_normal_nextTag_mono ctx' e1 fuel' res1 htce1)
         exact applyPFnTClosure_tagEnvBounded_normal f ctx st1 st2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH'
-          hbound1 hIH1_combined.1 hcapt_f hpred2_bound hclosure_arg happly
+          hbound1 hIH1_combined.1 hcapt_f hpred2_bound hclosure_arg
+          (by
+            unfold applyPFnTClosure
+            unfold applyPFnTClosureAtCursor at happly
+            simpa using happly)
     have hboundJoin : tagEnvBounded res.tagEnv' r.nextTag' :=
-      joinTypeResults_tagEnvBounded ctx r rs' res r.nextTag' htc hbound_r
+      joinTypeResults_tagEnvBounded ctx r rs' res r.nextTag' hjoin hbound_r
     have h_join_next : res.nextTag' =
         List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) :=
-      joinTypeResults_nextTag_eq_max ctx r rs' res htc
+      joinTypeResults_nextTag_eq_max ctx r rs' res hjoin
     have h_r_le_max : r.nextTag' ≤
         List.max (r.nextTag' :: rs'.map TypeResult.nextTag') (by intro h; cases h) := by
       simpa [List.max] using foldl_max_ge_init r.nextTag' (rs'.map TypeResult.nextTag')
@@ -9662,24 +10307,19 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     rcases hsub1 : isSubtype t1 _
       <;> rw [hsub1] at htc
       <;> simp at htc
-    simp [bind, Except.bind] at htc
-    rcases happly : applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
-      <;> rw [happly] at htc
-      <;> simp at htc
-    rcases hcons : List.cons r <$> List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs⟩
-      <;> rw [hcons] at htc
-      <;> simp at htc
-    rcases hrs : rs with _ | ⟨r1, rs'⟩
-      <;> rw [hrs] at htc
-      <;> simp at htc
-    subst rs
-    simp [Functor.map, Except.map] at hcons
-    rcases hmap : List.mapM (fun tcl => applyFnTClosure tcl t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs' with _ | ⟨rs''⟩
-      <;> rw [hmap] at hcons
-      <;> simp at hcons
-    rcases hcons with ⟨heq1, heq2⟩
-    subst r1
-    subst rs''
+    rcases happly :
+        applyFnTClosureAtCursor f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1
+          (res1.nextTag', res1.nextLoc') fuel' with _ | ⟨r⟩
+      <;> simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+    rcases hrest :
+        applyClosuresThreaded
+          (fun tcl cursor =>
+            applyFnTClosureAtCursor tcl t1 t2 p poison1 etyp2 poison2 pred2
+              ctx res1 cursor fuel')
+          fs' (r.nextTag', r.nextLoc') with _ | ⟨rs'⟩
+      <;> simp [hrest] at htc
+    have hjoin : joinTypeResults ctx r rs' = .ok res := by
+      simpa using htc
     -- ctx.nextLoc <= res1.nextLoc (by IH on htce1)
     -- res1.nextLoc = ctx'.nextLoc
     -- ctx'.nextLoc <= res2.nextLoc (by IH on hcte2)
@@ -9699,12 +10339,17 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
           typecheck ctx'' e m = .ok res' → ctx''.nextLoc ≤ res'.nextLoc' := by
       intro m hm e ctx'' res' htc'
       exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
+    have happly_old :
+        applyFnTClosure f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1 fuel' = .ok r := by
+      unfold applyFnTClosure
+      unfold applyFnTClosureAtCursor at happly
+      simpa using happly
     have h_r : res1.nextLoc' ≤ r.nextLoc' := by
-      exact applyFnTClosure_nextLoc_mono f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' happly
+      exact applyFnTClosure_nextLoc_mono f ctx t1 t2 p poison1 etyp2 poison2 pred2 res1 r fuel' IH' happly_old
     have h_join :
         res.nextLoc' =
           List.max (r.nextLoc' :: rs'.map TypeResult.nextLoc') (by intro h; cases h) :=
-      joinTypeResults_nextLoc_eq_max ctx r rs' res htc
+      joinTypeResults_nextLoc_eq_max ctx r rs' res hjoin
     have h_r_le_res : r.nextLoc' ≤ res.nextLoc' := by
       have h_r_le_max :
           r.nextLoc' ≤
@@ -9723,29 +10368,19 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     rcases hsub1 : isSubtype st1 _
       <;> rw [hsub1] at htc
       <;> simp at htc
-    simp [bind, Except.bind] at htc
-    rcases happly : applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _ with _ | ⟨r⟩
-      <;> rw [happly] at htc
-      <;> simp at htc
-    rcases hcons :
-        List.cons r <$>
-          List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs⟩
-      <;> rw [hcons] at htc
-      <;> simp at htc
-    rcases hrs : rs with _ | ⟨r1, rs'⟩
-      <;> rw [hrs] at htc
-      <;> simp at htc
-    subst rs
-    simp [Functor.map, Except.map] at hcons
-    rcases hmap :
-        List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 _) fs'
-        with _ | ⟨rs''⟩
-      <;> rw [hmap] at hcons
-      <;> simp at hcons
-    rcases hcons with ⟨heq1, heq2⟩
-    subst r1
-    subst rs''
+    rcases happly :
+        applyPFnTClosureAtCursor f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1
+          (res1.nextTag', res1.nextLoc') fuel' with _ | ⟨r⟩
+      <;> simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+    rcases hrest :
+        applyClosuresThreaded
+          (fun tcl cursor =>
+            applyPFnTClosureAtCursor tcl st1 st2 p poison1 etyp2 poison2 pred2
+              ctx res1 cursor fuel')
+          fs' (r.nextTag', r.nextLoc') with _ | ⟨rs'⟩
+      <;> simp [hrest] at htc
+    have hjoin : joinTypeResults ctx r rs' = .ok res := by
+      simpa using htc
     have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
     have hcte2' : typecheck ctx e2 fuel' = .ok res2 := by
       simpa [typecheck] using hcte2
@@ -9758,31 +10393,36 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
           typecheck ctx'' e m = .ok res' → ctx''.nextLoc ≤ res'.nextLoc' := by
       intro m hm e ctx'' res' htc'
       exact IH m (Nat.lt_trans hm h_fuel) e ctx'' res' htc'
+    have happly_old :
+        applyPFnTClosure f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1 fuel' = .ok r := by
+      unfold applyPFnTClosure
+      unfold applyPFnTClosureAtCursor at happly
+      simpa using happly
     have h_r : res1.nextLoc' ≤ r.nextLoc' := by
-      unfold applyPFnTClosure at happly
+      unfold applyPFnTClosure at happly_old
       cases fuel' with
       | zero =>
-          simp at happly
+          simp at happly_old
       | succ fuel'' =>
           cases f with
           | regular x body env =>
-              simp [bind, Except.bind] at happly
+              simp [bind, Except.bind] at happly_old
               cases htc_body : typecheckExpr _ _ _ with
-              | error err =>
-                  rw [htc_body] at happly
-                  simp at happly
+              | error _ =>
+                  rw [htc_body] at happly_old
+                  simp at happly_old
               | ok r3 =>
-                  rw [htc_body] at happly
-                  simp at happly
+                  rw [htc_body] at happly_old
+                  simp at happly_old
                   rcases hq3 : r3.qualType with ⟨etyp3, poison3, pred3⟩
-                  simp [hq3] at happly
+                  simp [hq3] at happly_old
                   cases hsub : isSubtype st2 { etyp := etyp3, poison := poison3, pred := pred3 } with
                   | false =>
-                      rw [hsub] at happly
-                      simp at happly
+                      rw [hsub] at happly_old
+                      simp at happly_old
                   | true =>
-                      rw [hsub] at happly
-                      simp [pure, Except.pure] at happly
+                      rw [hsub] at happly_old
+                      simp [pure, Except.pure] at happly_old
                       set ctx'' : TypeContext :=
                         { pc := joinPoison p (joinPoison ctx.pc poison1),
                           regime := res1.regime',
@@ -9797,37 +10437,38 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       have htc_body' : typecheck ctx'' body.toExpr fuel'' = .ok r3 := by
                         simpa [typecheck, hctx''] using htc_body
                       have IH_body := IH' fuel'' (Nat.lt_succ_self fuel'') body.toExpr ctx'' r3 htc_body'
-                      cases happly
+                      cases happly_old
                       simpa using IH_body
           | extern x retSpec capturedEnv =>
-              simp [bind, Except.bind] at happly
-              split at happly
-              · -- simple case
-                split at happly
-                · simp at happly
-                · split at happly
-                  · simp at happly
-                  · unfold returnSpecToQTyp at happly
-                    split at happly
-                    · simp at happly
-                    · simp only [pure, Except.pure] at happly
-                      injection happly with happly
-                      cases happly
-                      rename_i _v _heqRet
-                      have hnl : _v.2 = res1.nextLoc' := by
-                        have h : returnSpecToQTyp _ _ _ res1.nextLoc' = Except.ok _v := _heqRet
+              simp [bind, Except.bind] at happly_old
+              split at happly_old
+              · split at happly_old
+                · simp at happly_old
+                · split at happly_old
+                  · simp at happly_old
+                  · unfold returnSpecToQTyp at happly_old
+                    split at happly_old
+                    · simp at happly_old
+                    · simp only [pure, Except.pure] at happly_old
+                      injection happly_old with happly_old
+                      cases happly_old
+                      rename_i v hret
+                      have hnl : v.2 = res1.nextLoc' := by
+                        have h : returnSpecToQTyp _ _ _ res1.nextLoc' = Except.ok v := hret
                         exact returnSpecToQTyp_preserves_nextLoc _ _ _ _ _ h
                       exact le_of_eq hnl.symm
-              · -- nestedFn case
-                simp only [pure, Except.pure] at happly
-                injection happly with happly; cases happly; simp
-              · -- nestedPfn case
-                simp only [pure, Except.pure] at happly
-                injection happly with happly; cases happly; simp
+              · simp only [pure, Except.pure] at happly_old
+                injection happly_old with happly_old
+                cases happly_old
+                simp
+              · simp only [pure, Except.pure] at happly_old
+                injection happly_old with happly_old
+                cases happly_old
+                simp
     have h_join :
         res.nextLoc' =
           List.max (r.nextLoc' :: rs'.map TypeResult.nextLoc') (by intro h; cases h) :=
-      joinTypeResults_nextLoc_eq_max ctx r rs' res htc
+      joinTypeResults_nextLoc_eq_max ctx r rs' res hjoin
     have h_r_le_res : r.nextLoc' ≤ res.nextLoc' := by
       have h_r_le_max :
           r.nextLoc' ≤
@@ -12517,6 +13158,278 @@ private lemma applyPFnTClosure_refLocsResultOutputs
       split <;> simp [bind, Except.bind, pure, Except.pure, normalizeAppResultByProvenance]
         <;> intro h <;> (try rcases h with ⟨rfl, rfl⟩) <;> split <;> exact ⟨trivial, trivial⟩
 
+lemma applyFnTClosureAtCursor_nextLoc_mono
+    (tcl : FnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (hcursorLoc : r1.nextLoc' ≤ cursor.2)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheck ctx' e m = .ok res' → ctx'.nextLoc ≤ res'.nextLoc')
+    (happly : applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2) :
+    r1.nextLoc' ≤ r2.nextLoc' := by
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have happly_old :
+      applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel = .ok r2 := by
+    unfold applyFnTClosure
+    unfold applyFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  have hmono :=
+    applyFnTClosure_nextLoc_mono tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel IH happly_old
+  exact Nat.le_trans hcursorLoc hmono
+
+lemma applyPFnTClosureAtCursor_nextLoc_mono
+    (tcl : PFnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+    (hcursorLoc : r1.nextLoc' ≤ cursor.2)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          typecheck ctx' e m = .ok res' → ctx'.nextLoc ≤ res'.nextLoc')
+    (happly : applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2) :
+    r1.nextLoc' ≤ r2.nextLoc' := by
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have happly_old :
+      applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel = .ok r2 := by
+    unfold applyPFnTClosure
+    unfold applyPFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  have hmono :=
+    applyPFnTClosure_nextLoc_mono tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel IH happly_old
+  exact Nat.le_trans hcursorLoc hmono
+
+private lemma applyFnTClosureAtCursor_refLocsResultOutputs
+    (fuel_top : Nat)
+    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (cursor : Tag × Loc) (fuel_call : Nat)
+    (h_call_lt : fuel_call < fuel_top)
+    (tcl : FnTClosure) (res : TypeResult)
+    (hwf_fn : wfTypeResult result_fn)
+    (hcursorLoc : result_fn.nextLoc' ≤ cursor.2)
+    (hcaptLocs : match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
+    (htc : applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+        ctx result_fn cursor fuel_call = .ok res) :
+    refLocsResultOutputs res := by
+  let rCursor : TypeResult := { result_fn with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hwf_cursor : wfTypeResult rCursor := by
+    intro l hl
+    exact Nat.lt_of_lt_of_le (hwf_fn l (by simpa [rCursor] using hl)) hcursorLoc
+  have hargLocs_cursor : etypRefLocsBounded argEtyp rCursor.nextLoc' :=
+    etypRefLocsBounded_mono hargLocs hcursorLoc
+  have hargClosLocs_cursor : etypClosuresCapturedRefLocsBounded argEtyp rCursor.nextLoc' :=
+    etypClosuresCapturedRefLocsBounded_mono hargClosLocs hcursorLoc
+  have htc_old :
+      applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
+        ctx rCursor fuel_call = .ok res := by
+    unfold applyFnTClosure
+    unfold applyFnTClosureAtCursor at htc
+    simpa [rCursor] using htc
+  cases tcl <;>
+    exact applyFnTClosure_refLocsResultOutputs fuel_top IH st1 st2 p p1
+      argEtyp argPoison argPred ctx rCursor fuel_call h_call_lt _ res
+      hwf_cursor (CapturedEnvRefLocsFullBounded_mono hcaptLocs hcursorLoc)
+      hargLocs_cursor hargClosLocs_cursor htc_old
+
+private lemma applyPFnTClosureAtCursor_refLocsResultOutputs
+    (fuel_top : Nat)
+    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (cursor : Tag × Loc) (fuel_call : Nat)
+    (h_call_lt : fuel_call < fuel_top)
+    (tcl : PFnTClosure) (res : TypeResult)
+    (hwf_fn : wfTypeResult result_fn)
+    (hcursorLoc : result_fn.nextLoc' ≤ cursor.2)
+    (hcaptLocs : match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
+    (htc : applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+        ctx result_fn cursor fuel_call = .ok res) :
+    refLocsResultOutputs res := by
+  let rCursor : TypeResult := { result_fn with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hwf_cursor : wfTypeResult rCursor := by
+    intro l hl
+    exact Nat.lt_of_lt_of_le (hwf_fn l (by simpa [rCursor] using hl)) hcursorLoc
+  have hargLocs_cursor : etypRefLocsBounded argEtyp rCursor.nextLoc' :=
+    etypRefLocsBounded_mono hargLocs hcursorLoc
+  have hargClosLocs_cursor : etypClosuresCapturedRefLocsBounded argEtyp rCursor.nextLoc' :=
+    etypClosuresCapturedRefLocsBounded_mono hargClosLocs hcursorLoc
+  have htc_old :
+      applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
+        ctx rCursor fuel_call = .ok res := by
+    unfold applyPFnTClosure
+    unfold applyPFnTClosureAtCursor at htc
+    simpa [rCursor] using htc
+  cases tcl <;>
+    exact applyPFnTClosure_refLocsResultOutputs fuel_top IH st1 st2 p p1
+      argEtyp argPoison argPred ctx rCursor fuel_call h_call_lt _ res
+      hwf_cursor (CapturedEnvRefLocsFullBounded_mono hcaptLocs hcursorLoc)
+      hargLocs_cursor hargClosLocs_cursor htc_old
+
+private lemma applyFnClosuresThreaded_forall_refLocs
+    (fuel_top : Nat)
+    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (cursor : Tag × Loc) (fuel_call : Nat)
+    (h_call_lt : fuel_call < fuel_top) (hwf_fn : wfTypeResult result_fn)
+    (hcursorLoc : result_fn.nextLoc' ≤ cursor.2)
+    (tcls : List FnTClosure) (results : List TypeResult)
+    (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
+    (hthread : applyClosuresThreaded
+      (fun tcl cursor =>
+        applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+          ctx result_fn cursor fuel_call)
+      tcls cursor = .ok results) :
+    (∀ r ∈ results, refLocsResultOutputs r) ∧
+    (∀ r ∈ results, result_fn.nextLoc' ≤ r.nextLoc') := by
+  induction tcls generalizing cursor results with
+  | nil =>
+      simp [applyClosuresThreaded, pure, Except.pure] at hthread
+      cases hthread
+      constructor <;> intro r hr <;> cases hr
+  | cons tcl rest ih =>
+      simp [applyClosuresThreaded, bind, Except.bind] at hthread
+      cases hfirst :
+          applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+            ctx result_fn cursor fuel_call with
+      | error _ =>
+          simp [hfirst] at hthread
+      | ok first =>
+          simp [hfirst] at hthread
+          cases hrest :
+              applyClosuresThreaded
+                (fun tcl cursor =>
+                  applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+                    ctx result_fn cursor fuel_call)
+                rest (first.nextTag', first.nextLoc') with
+          | error _ =>
+              simp [hrest] at hthread
+          | ok restResults =>
+              simp [hrest, pure, Except.pure] at hthread
+              cases hthread
+              have hfirstProp :=
+                applyFnTClosureAtCursor_refLocsResultOutputs fuel_top IH st1 st2 p p1
+                  argEtyp argPoison argPred ctx result_fn cursor fuel_call h_call_lt tcl first
+                  hwf_fn hcursorLoc (hcaptLocs tcl (.head rest)) hargLocs hargClosLocs hfirst
+              have hfirstNext : result_fn.nextLoc' ≤ first.nextLoc' :=
+                applyFnTClosureAtCursor_nextLoc_mono tcl ctx st1 st2 p p1 argEtyp argPoison
+                  argPred result_fn first cursor fuel_call hcursorLoc
+                  (fun m hm e c r htc => typecheck_nextLoc_mono c e m r htc) hfirst
+              have htail := ih (first.nextTag', first.nextLoc') hfirstNext restResults
+                (fun t ht => hcaptLocs t (.tail tcl ht)) hrest
+              constructor
+              · intro r hr
+                simp at hr
+                cases hr with
+                | inl heq =>
+                    cases heq
+                    exact hfirstProp
+                | inr hmem =>
+                    exact htail.1 r hmem
+              · intro r hr
+                simp at hr
+                cases hr with
+                | inl heq =>
+                    cases heq
+                    exact hfirstNext
+                | inr hmem =>
+                    exact htail.2 r hmem
+
+private lemma applyPFnClosuresThreaded_forall_refLocs
+    (fuel_top : Nat)
+    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result_fn : TypeResult) (cursor : Tag × Loc) (fuel_call : Nat)
+    (h_call_lt : fuel_call < fuel_top) (hwf_fn : wfTypeResult result_fn)
+    (hcursorLoc : result_fn.nextLoc' ≤ cursor.2)
+    (tcls : List PFnTClosure) (results : List TypeResult)
+    (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
+      | .extern _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
+    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
+    (hthread : applyClosuresThreaded
+      (fun tcl cursor =>
+        applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+          ctx result_fn cursor fuel_call)
+      tcls cursor = .ok results) :
+    (∀ r ∈ results, refLocsResultOutputs r) ∧
+    (∀ r ∈ results, result_fn.nextLoc' ≤ r.nextLoc') := by
+  induction tcls generalizing cursor results with
+  | nil =>
+      simp [applyClosuresThreaded, pure, Except.pure] at hthread
+      cases hthread
+      constructor <;> intro r hr <;> cases hr
+  | cons tcl rest ih =>
+      simp [applyClosuresThreaded, bind, Except.bind] at hthread
+      cases hfirst :
+          applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+            ctx result_fn cursor fuel_call with
+      | error _ =>
+          simp [hfirst] at hthread
+      | ok first =>
+          simp [hfirst] at hthread
+          cases hrest :
+              applyClosuresThreaded
+                (fun tcl cursor =>
+                  applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+                    ctx result_fn cursor fuel_call)
+                rest (first.nextTag', first.nextLoc') with
+          | error _ =>
+              simp [hrest] at hthread
+          | ok restResults =>
+              simp [hrest, pure, Except.pure] at hthread
+              cases hthread
+              have hfirstProp :=
+                applyPFnTClosureAtCursor_refLocsResultOutputs fuel_top IH st1 st2 p p1
+                  argEtyp argPoison argPred ctx result_fn cursor fuel_call h_call_lt tcl first
+                  hwf_fn hcursorLoc (hcaptLocs tcl (.head rest)) hargLocs hargClosLocs hfirst
+              have hfirstNext : result_fn.nextLoc' ≤ first.nextLoc' :=
+                applyPFnTClosureAtCursor_nextLoc_mono tcl ctx st1 st2 p p1 argEtyp argPoison
+                  argPred result_fn first cursor fuel_call hcursorLoc
+                  (fun m hm e c r htc => typecheck_nextLoc_mono c e m r htc) hfirst
+              have htail := ih (first.nextTag', first.nextLoc') hfirstNext restResults
+                (fun t ht => hcaptLocs t (.tail tcl ht)) hrest
+              constructor
+              · intro r hr
+                simp at hr
+                cases hr with
+                | inl heq =>
+                    cases heq
+                    exact hfirstProp
+                | inr hmem =>
+                    exact htail.1 r hmem
+              · intro r hr
+                simp at hr
+                cases hr with
+                | inl heq =>
+                    cases heq
+                    exact hfirstNext
+                | inr hmem =>
+                    exact htail.2 r hmem
+
 /-- mapM of applyPFnTClosure gives refLocsResultOutputs for all results -/
 private lemma mapM_applyPFnTClosure_forall_refLocs
     (fuel_top : Nat)
@@ -12968,53 +13881,83 @@ private lemma typecheckExpr_preserves_refLocs_main :
                       · simp [hsub] at htc
                       · push_neg at hsub
                         simp [hsub] at htc
-                        cases hmap : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2 ctx result1 fuel'') tcls with
-                        | error _ => simp [hmap] at htc
-                        | ok results =>
-                          simp [hmap] at htc
-                          have hcaptLocs : ∀ tcl ∈ tcls, match tcl with
-                              | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-                              | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc' := by
-                            intro tcl htcl; exact hClosRefLocs tcl htcl
-                          have hArgClosRefLocs : etypClosuresCapturedRefLocsBounded etyp2 result1.nextLoc' := by
-                            have := hIH_e2.2.2; simp [hqt2] at this
-                            exact etypClosuresCapturedRefLocsBounded_mono this hmono_e1
-                          have IH_wf : ∀ m < fuel'' + 1 + 1, ∀ (e : Expr) (ctx' : TypeContext)
-                              (res' : TypeResult), wfTypeContext ctx' →
-                              typecheck ctx' e m = .ok res' → wfTypeResult res' :=
-                            fun m hm e' c r' hwfc htc' => (IH' m (by omega) e' c r' hwfc htc').1
-                          have hall := mapM_applyFnTClosure_forall_refLocs
-                              (fuel'' + 1 + 1) IH' st1 st2 p p1_val etyp2 p2 pred2
-                              ctx result1 fuel'' (by omega) hwf1 tcls results
-                              hcaptLocs hArgRefLocs hArgClosRefLocs hmap
-                          cases hresults : results with
-                          | nil => subst hresults; simp at htc
-                          | cons firstResult restResults =>
-                            subst hresults; simp at htc
-                            -- Each member's refLocsResultOutputs gives bounds at its own nextLoc.
-                            -- joinTypeResults nextLoc = max of member nextLocs → transport via mono.
-                            -- Per-member at res.nextLoc' (join lemma inputs):
-                            have hrl_at_res : ∀ r ∈ firstResult :: restResults,
-                                etypRefLocsBounded r.qualType.etyp res.nextLoc' := by
-                              intro r hr
-                              have hro := hall r hr
-                              exact etypRefLocsBounded_mono hro.2.1
-                                (joinTypeResults_member_nextLoc_le ctx firstResult restResults res htc r hr)
-                            have hcrl_at_res : ∀ r ∈ firstResult :: restResults,
-                                etypClosuresCapturedRefLocsBounded r.qualType.etyp res.nextLoc' := by
-                              intro r hr
-                              have hro := hall r hr
-                              exact etypClosuresCapturedRefLocsBounded_mono hro.2.2
-                                (joinTypeResults_member_nextLoc_le ctx firstResult restResults res htc r hr)
-                            exact ⟨joinTypeResults_wfTypeResult ctx firstResult restResults res htc
-                                    ((hall firstResult (by simp)).1)
-                                    (fun r hr => (hall r (by simp [hr])).1),
-                              joinTypeResults_etypRefLocsBounded ctx firstResult restResults res htc
-                                (hrl_at_res _ (by simp))
-                                (fun r hr => hrl_at_res r (by simp [hr])),
-                              joinTypeResults_etypClosuresCapturedRefLocsBounded ctx firstResult restResults res htc
-                                (hcrl_at_res _ (by simp))
-                                (fun r hr => hcrl_at_res r (by simp [hr]))⟩
+                        cases tcls with
+                        | nil =>
+                            exact False.elim (hempty rfl)
+                        | cons firstClosure restClosures =>
+                          cases happly :
+                              applyFnTClosureAtCursor firstClosure st1 st2 p p1_val etyp2 p2
+                                pred2 ctx result1 (result1.nextTag', result1.nextLoc') fuel'' with
+                          | error _ =>
+                              simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+                          | ok firstResult =>
+                            simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+                            cases hrest :
+                                applyClosuresThreaded
+                                  (fun tcl cursor =>
+                                    applyFnTClosureAtCursor tcl st1 st2 p p1_val etyp2 p2
+                                      pred2 ctx result1 cursor fuel'')
+                                  restClosures (firstResult.nextTag', firstResult.nextLoc') with
+                            | error _ =>
+                                simp [hrest] at htc
+                            | ok restResults =>
+                              simp [hrest, pure, Except.pure] at htc
+                              have hjoin : joinTypeResults ctx firstResult restResults = .ok res := by
+                                simpa using htc
+                              have hcaptLocs :
+                                  ∀ tcl ∈ firstClosure :: restClosures, match tcl with
+                                    | .regular _ _ env =>
+                                        CapturedEnvRefLocsFullBounded env result1.nextLoc'
+                                    | .extern _ _ _ env =>
+                                        CapturedEnvRefLocsFullBounded env result1.nextLoc' := by
+                                intro tcl htcl
+                                exact hClosRefLocs tcl htcl
+                              have hArgClosRefLocs :
+                                  etypClosuresCapturedRefLocsBounded etyp2 result1.nextLoc' := by
+                                have := hIH_e2.2.2
+                                simp [hqt2] at this
+                                exact etypClosuresCapturedRefLocsBounded_mono this hmono_e1
+                              have hthread :
+                                  applyClosuresThreaded
+                                    (fun tcl cursor =>
+                                      applyFnTClosureAtCursor tcl st1 st2 p p1_val etyp2 p2
+                                        pred2 ctx result1 cursor fuel'')
+                                    (firstClosure :: restClosures)
+                                    (result1.nextTag', result1.nextLoc') =
+                                      .ok (firstResult :: restResults) := by
+                                simp [applyClosuresThreaded, happly, hrest, bind, Except.bind,
+                                  pure, Except.pure]
+                              have hall :=
+                                  (applyFnClosuresThreaded_forall_refLocs
+                                    (fuel'' + 1 + 1) IH' st1 st2 p p1_val etyp2 p2 pred2
+                                    ctx result1 (result1.nextTag', result1.nextLoc') fuel''
+                                    (by omega) hwf1 (Nat.le_refl _) (firstClosure :: restClosures)
+                                    (firstResult :: restResults) hcaptLocs hArgRefLocs
+                                    hArgClosRefLocs hthread).1
+                              -- Each member's refLocsResultOutputs gives bounds at its own nextLoc.
+                              -- joinTypeResults nextLoc = max of member nextLocs → transport via mono.
+                              -- Per-member at res.nextLoc' (join lemma inputs):
+                              have hrl_at_res : ∀ r ∈ firstResult :: restResults,
+                                  etypRefLocsBounded r.qualType.etyp res.nextLoc' := by
+                                intro r hr
+                                have hro := hall r hr
+                                exact etypRefLocsBounded_mono hro.2.1
+                                  (joinTypeResults_member_nextLoc_le ctx firstResult restResults res hjoin r hr)
+                              have hcrl_at_res : ∀ r ∈ firstResult :: restResults,
+                                  etypClosuresCapturedRefLocsBounded r.qualType.etyp res.nextLoc' := by
+                                intro r hr
+                                have hro := hall r hr
+                                exact etypClosuresCapturedRefLocsBounded_mono hro.2.2
+                                  (joinTypeResults_member_nextLoc_le ctx firstResult restResults res hjoin r hr)
+                              exact ⟨joinTypeResults_wfTypeResult ctx firstResult restResults res hjoin
+                                      ((hall firstResult (by simp)).1)
+                                      (fun r hr => (hall r (by simp [hr])).1),
+                                joinTypeResults_etypRefLocsBounded ctx firstResult restResults res hjoin
+                                  (hrl_at_res _ (by simp))
+                                  (fun r hr => hrl_at_res r (by simp [hr])),
+                                joinTypeResults_etypClosuresCapturedRefLocsBounded ctx firstResult restResults res hjoin
+                                  (hcrl_at_res _ (by simp))
+                                  (fun r hr => hcrl_at_res r (by simp [hr]))⟩
                 | parrow st1 st2 p tcls_p =>
                   simp at htc
                   by_cases hempty : tcls_p = []
@@ -13023,44 +13966,77 @@ private lemma typecheckExpr_preserves_refLocs_main :
                     by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                     · simp [hsub] at htc
                     · push_neg at hsub; simp [hsub] at htc
-                      cases hmap : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2 ctx result1 fuel'') tcls_p with
-                      | error _ => simp [hmap] at htc
-                      | ok results =>
-                        simp [hmap] at htc
-                        have hClosRefLocsP := hIH_e1.2.2
-                        simp [hqt1] at hClosRefLocsP
-                        have hcaptLocsP : ∀ tcl ∈ tcls_p, match tcl with
-                            | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-                            | .extern _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc' :=
-                          fun tcl htcl => hClosRefLocsP tcl htcl
-                        have hArgClosRefLocsP : etypClosuresCapturedRefLocsBounded etyp2 result1.nextLoc' := by
-                          have := hIH_e2.2.2; simp [hqt2] at this
-                          exact etypClosuresCapturedRefLocsBounded_mono this hmono_e1
-                        have hall := mapM_applyPFnTClosure_forall_refLocs
-                            (fuel'' + 1 + 1) IH' st1 st2 p p1_val etyp2 p2 pred2
-                            ctx result1 fuel'' (by omega) hwf1 tcls_p results
-                            hcaptLocsP hArgRefLocs hArgClosRefLocsP hmap
-                        cases hresults : results with
-                        | nil => subst hresults; simp at htc
-                        | cons firstResult restResults =>
-                          subst hresults; simp at htc
-                          have hrl_at_res : ∀ r ∈ firstResult :: restResults,
-                              etypRefLocsBounded r.qualType.etyp res.nextLoc' := by
-                            intro r hr; exact etypRefLocsBounded_mono (hall r hr).2.1
-                              (joinTypeResults_member_nextLoc_le ctx firstResult restResults res htc r hr)
-                          have hcrl_at_res : ∀ r ∈ firstResult :: restResults,
-                              etypClosuresCapturedRefLocsBounded r.qualType.etyp res.nextLoc' := by
-                            intro r hr; exact etypClosuresCapturedRefLocsBounded_mono (hall r hr).2.2
-                              (joinTypeResults_member_nextLoc_le ctx firstResult restResults res htc r hr)
-                          exact ⟨joinTypeResults_wfTypeResult ctx firstResult restResults res htc
-                                  ((hall firstResult (by simp)).1)
-                                  (fun r hr => (hall r (by simp [hr])).1),
-                            joinTypeResults_etypRefLocsBounded ctx firstResult restResults res htc
-                              (hrl_at_res _ (by simp))
-                              (fun r hr => hrl_at_res r (by simp [hr])),
-                            joinTypeResults_etypClosuresCapturedRefLocsBounded ctx firstResult restResults res htc
-                              (hcrl_at_res _ (by simp))
-                              (fun r hr => hcrl_at_res r (by simp [hr]))⟩
+                      cases tcls_p with
+                      | nil =>
+                          exact False.elim (hempty rfl)
+                      | cons firstClosure restClosures =>
+                        cases happly :
+                            applyPFnTClosureAtCursor firstClosure st1 st2 p p1_val etyp2 p2
+                              pred2 ctx result1 (result1.nextTag', result1.nextLoc') fuel'' with
+                        | error _ =>
+                            simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+                        | ok firstResult =>
+                          simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+                          cases hrest :
+                              applyClosuresThreaded
+                                (fun tcl cursor =>
+                                  applyPFnTClosureAtCursor tcl st1 st2 p p1_val etyp2 p2
+                                    pred2 ctx result1 cursor fuel'')
+                                restClosures (firstResult.nextTag', firstResult.nextLoc') with
+                          | error _ =>
+                              simp [hrest] at htc
+                          | ok restResults =>
+                            simp [hrest, pure, Except.pure] at htc
+                            have hjoin : joinTypeResults ctx firstResult restResults = .ok res := by
+                              simpa using htc
+                            have hClosRefLocsP := hIH_e1.2.2
+                            simp [hqt1] at hClosRefLocsP
+                            have hcaptLocsP :
+                                ∀ tcl ∈ firstClosure :: restClosures, match tcl with
+                                  | .regular _ _ env =>
+                                      CapturedEnvRefLocsFullBounded env result1.nextLoc'
+                                  | .extern _ _ env =>
+                                      CapturedEnvRefLocsFullBounded env result1.nextLoc' :=
+                              fun tcl htcl => hClosRefLocsP tcl htcl
+                            have hArgClosRefLocsP :
+                                etypClosuresCapturedRefLocsBounded etyp2 result1.nextLoc' := by
+                              have := hIH_e2.2.2
+                              simp [hqt2] at this
+                              exact etypClosuresCapturedRefLocsBounded_mono this hmono_e1
+                            have hthread :
+                                applyClosuresThreaded
+                                  (fun tcl cursor =>
+                                    applyPFnTClosureAtCursor tcl st1 st2 p p1_val etyp2 p2
+                                      pred2 ctx result1 cursor fuel'')
+                                  (firstClosure :: restClosures)
+                                  (result1.nextTag', result1.nextLoc') =
+                                    .ok (firstResult :: restResults) := by
+                              simp [applyClosuresThreaded, happly, hrest, bind, Except.bind,
+                                pure, Except.pure]
+                            have hall :=
+                                (applyPFnClosuresThreaded_forall_refLocs
+                                  (fuel'' + 1 + 1) IH' st1 st2 p p1_val etyp2 p2 pred2
+                                  ctx result1 (result1.nextTag', result1.nextLoc') fuel''
+                                  (by omega) hwf1 (Nat.le_refl _) (firstClosure :: restClosures)
+                                  (firstResult :: restResults) hcaptLocsP hArgRefLocs
+                                  hArgClosRefLocsP hthread).1
+                            have hrl_at_res : ∀ r ∈ firstResult :: restResults,
+                                etypRefLocsBounded r.qualType.etyp res.nextLoc' := by
+                              intro r hr; exact etypRefLocsBounded_mono (hall r hr).2.1
+                                (joinTypeResults_member_nextLoc_le ctx firstResult restResults res hjoin r hr)
+                            have hcrl_at_res : ∀ r ∈ firstResult :: restResults,
+                                etypClosuresCapturedRefLocsBounded r.qualType.etyp res.nextLoc' := by
+                              intro r hr; exact etypClosuresCapturedRefLocsBounded_mono (hall r hr).2.2
+                                (joinTypeResults_member_nextLoc_le ctx firstResult restResults res hjoin r hr)
+                            exact ⟨joinTypeResults_wfTypeResult ctx firstResult restResults res hjoin
+                                    ((hall firstResult (by simp)).1)
+                                    (fun r hr => (hall r (by simp [hr])).1),
+                              joinTypeResults_etypRefLocsBounded ctx firstResult restResults res hjoin
+                                (hrl_at_res _ (by simp))
+                                (fun r hr => hrl_at_res r (by simp [hr])),
+                              joinTypeResults_etypClosuresCapturedRefLocsBounded ctx firstResult restResults res hjoin
+                                (hcrl_at_res _ (by simp))
+                                (fun r hr => hcrl_at_res r (by simp [hr]))⟩
                 | _ => simp at htc
 
 
@@ -13426,56 +14402,47 @@ private lemma typecheckApp_mem_contains_preserved
                               · simp [hsub] at htc
                               · push_neg at hsub
                                 simp [hsub] at htc
-                                cases hmap :
-                                    List.mapM
-                                      (fun tcl =>
-                                        applyFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                          ctx result1 fuel') tcls with
-                                | error _ =>
-                                    simp [hmap] at htc
-                                | ok results =>
-                                    simp [hmap] at htc
-                                    cases hresults : results with
-                                    | nil =>
-                                        subst hresults
-                                        simp at htc
-                                    | cons firstResult restResults =>
-                                        subst hresults
-                                        simp at htc
-                                        have hforall2 :
-                                            List.Forall₂
-                                              (fun tcl r =>
-                                                applyFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                                  ctx result1 fuel' = .ok r)
-                                              tcls (firstResult :: restResults) := by
-                                          exact
-                                            List.mapM_Except_ok_implies_forall2 tcls
-                                              (fun tcl =>
-                                                applyFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                                  ctx result1 fuel')
-                                              (firstResult :: restResults)
-                                              (by simp [hmap])
-                                        have hflip :
-                                            List.Forall₂
-                                              (fun r tcl =>
-                                                applyFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                                  ctx result1 fuel' = .ok r)
-                                              (firstResult :: restResults) tcls :=
-                                          List.Forall₂.flip hforall2
-                                        rcases List.Forall2.exists_of_mem_left
-                                            (R := fun r tcl =>
-                                              applyFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                                ctx result1 fuel' = .ok r)
-                                            hflip firstResult (by simp) with
-                                          ⟨tcl0, _htclMem, happly⟩
-                                        have hcontains_first : firstResult.memEnv'.contains l :=
-                                          applyFnTClosure_mem_contains_preserved
-                                            fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
-                                            ctx result1 fuel' h_fuel tcl0 firstResult happly l hcontains1
-                                        exact
-                                          joinTypeResults_mem_contains_of_member
-                                            ctx firstResult firstResult restResults res htc
-                                            (by simp) l hcontains_first
+                                cases tcls with
+                                | nil =>
+                                    exact False.elim (hempty rfl)
+                                | cons firstClosure restClosures =>
+                                  cases happly :
+                                      applyFnTClosureAtCursor firstClosure st1 st2 p p1_val
+                                        etyp2 p2 pred2 ctx result1
+                                        (result1.nextTag', result1.nextLoc') fuel' with
+                                  | error _ =>
+                                      simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+                                  | ok firstResult =>
+                                    simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+                                    cases hrest :
+                                        applyClosuresThreaded
+                                          (fun tcl cursor =>
+                                            applyFnTClosureAtCursor tcl st1 st2 p p1_val
+                                              etyp2 p2 pred2 ctx result1 cursor fuel')
+                                          restClosures
+                                          (firstResult.nextTag', firstResult.nextLoc') with
+                                    | error _ =>
+                                        simp [hrest] at htc
+                                    | ok restResults =>
+                                      simp [hrest, pure, Except.pure] at htc
+                                      have hjoin :
+                                          joinTypeResults ctx firstResult restResults = .ok res := by
+                                        simpa using htc
+                                      have happly_old :
+                                          applyFnTClosure firstClosure st1 st2 p p1_val etyp2 p2 pred2
+                                            ctx result1 fuel' = .ok firstResult := by
+                                        unfold applyFnTClosure
+                                        unfold applyFnTClosureAtCursor at happly
+                                        simpa using happly
+                                      have hcontains_first : firstResult.memEnv'.contains l :=
+                                        applyFnTClosure_mem_contains_preserved
+                                          fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
+                                          ctx result1 fuel' h_fuel firstClosure firstResult
+                                          happly_old l hcontains1
+                                      exact
+                                        joinTypeResults_mem_contains_of_member
+                                          ctx firstResult firstResult restResults res hjoin
+                                          (by simp) l hcontains_first
                       | parrow st1 st2 p tcls_p =>
                           simp at htc
                           by_cases hempty : tcls_p = []
@@ -13486,56 +14453,47 @@ private lemma typecheckApp_mem_contains_preserved
                             · simp [hsub] at htc
                             · push_neg at hsub
                               simp [hsub] at htc
-                              cases hmap :
-                                  List.mapM
-                                    (fun tcl =>
-                                      applyPFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                        ctx result1 fuel') tcls_p with
-                              | error _ =>
-                                  simp [hmap] at htc
-                              | ok results =>
-                                  simp [hmap] at htc
-                                  cases hresults : results with
-                                  | nil =>
-                                      subst hresults
-                                      simp at htc
-                                  | cons firstResult restResults =>
-                                      subst hresults
-                                      simp at htc
-                                      have hforall2 :
-                                          List.Forall₂
-                                            (fun tcl r =>
-                                              applyPFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                                ctx result1 fuel' = .ok r)
-                                            tcls_p (firstResult :: restResults) := by
-                                        exact
-                                          List.mapM_Except_ok_implies_forall2 tcls_p
-                                            (fun tcl =>
-                                              applyPFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                                ctx result1 fuel')
-                                            (firstResult :: restResults)
-                                            (by simp [hmap])
-                                      have hflip :
-                                          List.Forall₂
-                                            (fun r tcl =>
-                                              applyPFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                                ctx result1 fuel' = .ok r)
-                                            (firstResult :: restResults) tcls_p :=
-                                        List.Forall₂.flip hforall2
-                                      rcases List.Forall2.exists_of_mem_left
-                                          (R := fun r tcl =>
-                                            applyPFnTClosure tcl st1 st2 p p1_val etyp2 p2 pred2
-                                              ctx result1 fuel' = .ok r)
-                                          hflip firstResult (by simp) with
-                                        ⟨tcl0, _htclMem, happly⟩
-                                      have hcontains_first : firstResult.memEnv'.contains l :=
-                                        applyPFnTClosure_mem_contains_preserved
-                                          fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
-                                          ctx result1 fuel' h_fuel tcl0 firstResult happly l hcontains1
-                                      exact
-                                        joinTypeResults_mem_contains_of_member
-                                          ctx firstResult firstResult restResults res htc
-                                          (by simp) l hcontains_first
+                              cases tcls_p with
+                              | nil =>
+                                  exact False.elim (hempty rfl)
+                              | cons firstClosure restClosures =>
+                                cases happly :
+                                    applyPFnTClosureAtCursor firstClosure st1 st2 p p1_val
+                                      etyp2 p2 pred2 ctx result1
+                                      (result1.nextTag', result1.nextLoc') fuel' with
+                                | error _ =>
+                                    simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+                                | ok firstResult =>
+                                  simp [applyClosuresThreaded, happly, bind, Except.bind] at htc
+                                  cases hrest :
+                                      applyClosuresThreaded
+                                        (fun tcl cursor =>
+                                          applyPFnTClosureAtCursor tcl st1 st2 p p1_val
+                                            etyp2 p2 pred2 ctx result1 cursor fuel')
+                                        restClosures
+                                        (firstResult.nextTag', firstResult.nextLoc') with
+                                  | error _ =>
+                                      simp [hrest] at htc
+                                  | ok restResults =>
+                                    simp [hrest, pure, Except.pure] at htc
+                                    have hjoin :
+                                        joinTypeResults ctx firstResult restResults = .ok res := by
+                                      simpa using htc
+                                    have happly_old :
+                                        applyPFnTClosure firstClosure st1 st2 p p1_val etyp2 p2 pred2
+                                          ctx result1 fuel' = .ok firstResult := by
+                                      unfold applyPFnTClosure
+                                      unfold applyPFnTClosureAtCursor at happly
+                                      simpa using happly
+                                    have hcontains_first : firstResult.memEnv'.contains l :=
+                                      applyPFnTClosure_mem_contains_preserved
+                                        fuel'.succ IH st1 st2 p p1_val etyp2 p2 pred2
+                                        ctx result1 fuel' h_fuel firstClosure firstResult
+                                        happly_old l hcontains1
+                                    exact
+                                      joinTypeResults_mem_contains_of_member
+                                        ctx firstResult firstResult restResults res hjoin
+                                        (by simp) l hcontains_first
                       | _ =>
                           simp at htc
 
@@ -14524,163 +15482,165 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                 · have hsubtype' : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
                                     simpa [hq2] using hsubtype
                                   simp [htclsNil, hsubtype'] at htcApp'
-                                  cases hmap :
-                                      List.mapM
-                                        (fun tcl =>
-                                          applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                            { ctx with pureCtx := true } result1 fuelApp)
-                                        tcls with
-                              | error err =>
-                                  simp [hmap] at htcApp'
-                                  cases htcApp'
-                              | ok results =>
-                                  cases results with
+                                  cases tcls with
                                   | nil =>
-                                      simp [hmap] at htcApp'
-                                      cases htcApp'
-                                  | cons first rest =>
-                                      simp [hmap] at htcApp'
-                                      have hjoin :
-                                          joinTypeResults { ctx with pureCtx := true } first rest = .ok res := by
-                                        exact htcApp'
-                                      have hforall2 :
-                                          List.Forall₂
-                                            (fun tcl r =>
-                                              applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                            tcls (first :: rest) := by
-                                        exact
-                                          List.mapM_Except_ok_implies_forall2 tcls
-                                            (fun tcl =>
-                                              applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                { ctx with pureCtx := true } result1 fuelApp)
-                                            (first :: rest) (by simp [hmap])
-                                      have hres_sub :
-                                          ∀ r ∈ (first :: rest), ∀ l,
-                                            r.memEnv'.contains l → ctx.memEnv.contains l := by
-                                        intro r hr l hrl
-                                        have hflip :
-                                            List.Forall₂
-                                              (fun r tcl =>
-                                                applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                  { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                              (first :: rest) tcls :=
-                                          List.Forall₂.flip hforall2
-                                        rcases List.Forall2.exists_of_mem_left
-                                            (R := fun r tcl =>
-                                              applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                            hflip r hr with
-                                          ⟨tcl, _htclMem, happly⟩
-                                        cases tcl with
-                                        | regular x pbody env =>
-                                            cases fuelApp with
-                                            | zero =>
-                                                simp [applyPFnTClosure] at happly
-                                            | succ fuelBody =>
-                                                unfold applyPFnTClosure at happly
-                                                simp [bind, Except.bind] at happly
-                                                cases htcBody :
-                                                    typecheckExpr
-                                                      { { ctx with pureCtx := true } with
-                                                        pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
-                                                        memEnv := result1.memEnv'
-                                                        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
-                                                            ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
-                                                        tagEnv := result1.tagEnv'
-                                                        pureCtx := true
-                                                        nextTag := result1.nextTag'
-                                                        nextLoc := result1.nextLoc'
-                                                        regime := result1.regime' }
-                                                      (PExpr.toExpr pbody) fuelBody with
-                                                | error err =>
-                                                    simp [htcBody] at happly
-                                                | ok result3 =>
-                                                    simp [htcBody] at happly
-                                                    cases hsubBodyRet : isSubtype st2 result3.qualType with
-                                                    | false =>
-                                                        cases hq3 : result3.qualType with
-                                                        | mk et3 p3 pred3 =>
-                                                            have hsubBodyRet' :
-                                                                isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
-                                                              simpa [hq3] using hsubBodyRet
-                                                            have hcontra : False := by
-                                                              simp [hsubBodyRet', hq3] at happly
-                                                            exact False.elim hcontra
-                                                    | true =>
-                                                        simp [hsubBodyRet, pure, Except.pure] at happly
-                                                        have hr_mem : r.memEnv'.contains l = result3.memEnv'.contains l := by
+                                      exact False.elim (htclsNil rfl)
+                                  | cons firstClosure restClosures =>
+                                    cases happlyFirst :
+                                        applyPFnTClosureAtCursor firstClosure st1 st2 p p1r etyp2 p2
+                                          pred2 { ctx with pureCtx := true } result1
+                                          (result1.nextTag', result1.nextLoc') fuelApp with
+                                    | error _ =>
+                                        simp [applyClosuresThreaded, happlyFirst, bind, Except.bind] at htcApp'
+                                        cases htcApp'
+                                    | ok first =>
+                                      simp [applyClosuresThreaded, happlyFirst, bind, Except.bind] at htcApp'
+                                      cases hrest :
+                                          applyClosuresThreaded
+                                            (fun tcl cursor =>
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                            restClosures (first.nextTag', first.nextLoc') with
+                                      | error _ =>
+                                          simp [hrest] at htcApp'
+                                          cases htcApp'
+                                      | ok rest =>
+                                        simp [hrest, pure, Except.pure] at htcApp'
+                                        have hjoin :
+                                            joinTypeResults { ctx with pureCtx := true } first rest = .ok res := by
+                                          exact htcApp'
+                                        have hthread :
+                                            applyClosuresThreaded
+                                              (fun tcl cursor =>
+                                                applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                  pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                              (firstClosure :: restClosures)
+                                              (result1.nextTag', result1.nextLoc') = .ok (first :: rest) := by
+                                          simp [applyClosuresThreaded, happlyFirst, hrest, bind, Except.bind,
+                                            pure, Except.pure]
+                                        have hOne :
+                                            ∀ tcl cursor r,
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2 pred2
+                                                { ctx with pureCtx := true } result1 cursor fuelApp = .ok r →
+                                              ∀ l, r.memEnv'.contains l → ctx.memEnv.contains l := by
+                                          intro tcl cursor r happly l hrl
+                                          cases tcl with
+                                          | regular x pbody env =>
+                                              cases fuelApp with
+                                              | zero =>
+                                                  simp [applyPFnTClosureAtCursor] at happly
+                                              | succ fuelBody =>
+                                                  unfold applyPFnTClosureAtCursor at happly
+                                                  simp [bind, Except.bind] at happly
+                                                  let ctxBody : TypeContext :=
+                                                    { { ctx with pureCtx := true } with
+                                                      pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
+                                                      memEnv := result1.memEnv'
+                                                      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                                        ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
+                                                      tagEnv := result1.tagEnv'
+                                                      pureCtx := true
+                                                      nextTag := cursor.1
+                                                      nextLoc := cursor.2
+                                                      regime := result1.regime' }
+                                                  cases htcBody :
+                                                      typecheckExpr ctxBody (PExpr.toExpr pbody) fuelBody with
+                                                  | error _ =>
+                                                      simp [ctxBody, htcBody] at happly
+                                                  | ok result3 =>
+                                                      simp [ctxBody, htcBody] at happly
+                                                      cases hsubBodyRet : isSubtype st2 result3.qualType with
+                                                      | false =>
                                                           cases hq3 : result3.qualType with
                                                           | mk et3 p3 pred3 =>
-                                                              simp [hq3] at happly
-                                                              have hrEq :
-                                                                  r =
-                                                                    { result3 with
-                                                                      qualType :=
-                                                                        normalizeAppResultByProvenance (joinPoison p1r p)
-                                                                          { result3.qualType with
-                                                                            poison := joinPoison p1r
-                                                                              (joinPoison p result3.qualType.poison) } } := by
-                                                                simpa [hq3] using happly.symm
-                                                              simp [hrEq]
-                                                        have hrl3 : result3.memEnv'.contains l := by
-                                                          simpa [hr_mem] using hrl
-                                                        let ctxBody :
-                                                            TypeContext :=
-                                                          { { ctx with pureCtx := true } with
-                                                            pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
-                                                            memEnv := result1.memEnv'
-                                                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
-                                                                ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
-                                                            tagEnv := result1.tagEnv'
-                                                            pureCtx := true
-                                                            nextTag := result1.nextTag'
-                                                            nextLoc := result1.nextLoc'
-                                                            regime := result1.regime' }
-                                                        have hpeBody :
-                                                            Expr.toPExpr? (PExpr.toExpr pbody) = some pbody := by
-                                                          simpa using toExpr_toPExpr? pbody
-                                                        have htcBody' :
-                                                            typecheckExpr { ctxBody with pureCtx := true }
-                                                              (PExpr.toExpr pbody) fuelBody = .ok result3 := by
-                                                          simpa [ctxBody] using htcBody
-                                                        have hsubBody :
-                                                            ∀ l, result3.memEnv'.contains l → ctxBody.memEnv.contains l :=
-                                                          ih fuelBody (by omega)
-                                                            ctxBody (PExpr.toExpr pbody) pbody result3
-                                                            hpeBody htcBody'
-                                                        have hctxBody : ctxBody.memEnv.contains l := hsubBody l hrl3
-                                                        have hl1 : result1.memEnv'.contains l := by
-                                                          simpa [ctxBody] using hctxBody
-                                                        exact hsub_fun l hl1
-                                        | extern x retSpec capturedEnv =>
-                                            have hmemEq := applyPFnTClosure_extern_memEnv_eq
-                                              _ _ _ _ _ _ _ _ result1 r fuelApp x retSpec capturedEnv happly
-                                            rw [hmemEq] at hrl
-                                            exact hsub_fun l hrl
-                                      have hfirst_sub :
-                                          ∀ l, first.memEnv'.contains l →
-                                            ({ ctx with pureCtx := true }).memEnv.contains l := by
-                                        intro l hl
-                                        have hctx : ctx.memEnv.contains l := hres_sub first (by simp) l hl
-                                        simpa using hctx
-                                      have hrest_sub :
-                                          ∀ r ∈ rest, ∀ l, r.memEnv'.contains l →
-                                            ({ ctx with pureCtx := true }).memEnv.contains l := by
-                                        intro r hr l hl
-                                        have hr' : r ∈ first :: rest := List.mem_cons_of_mem first hr
-                                        have hctx : ctx.memEnv.contains l := hres_sub r hr' l hl
-                                        simpa using hctx
-                                      have hsub_join :
-                                          ∀ l,
-                                            res.memEnv'.contains l →
-                                              ({ ctx with pureCtx := true }).memEnv.contains l :=
-                                        joinTypeResults_mem_subset
-                                          ({ ctx with pureCtx := true }) first rest res hjoin
-                                          hfirst_sub hrest_sub
-                                      have hctxPure : ({ ctx with pureCtx := true }).memEnv.contains l :=
-                                        hsub_join l hl
-                                      simpa using hctxPure
+                                                              have hsubBodyRet' :
+                                                                  isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                                                                simpa [hq3] using hsubBodyRet
+                                                              have hcontra : False := by
+                                                                simp [hsubBodyRet', hq3] at happly
+                                                              exact False.elim hcontra
+                                                      | true =>
+                                                          simp [hsubBodyRet, pure, Except.pure] at happly
+                                                          have hr_mem : r.memEnv'.contains l = result3.memEnv'.contains l := by
+                                                            cases hq3 : result3.qualType with
+                                                            | mk et3 p3 pred3 =>
+                                                                simp [hq3] at happly
+                                                                have hrEq :
+                                                                    r =
+                                                                      { result3 with
+                                                                        qualType :=
+                                                                          normalizeAppResultByProvenance (joinPoison p1r p)
+                                                                            { result3.qualType with
+                                                                              poison := joinPoison p1r
+                                                                                (joinPoison p result3.qualType.poison) } } := by
+                                                                  simpa [hq3] using happly.symm
+                                                                simp [hrEq]
+                                                          have hrl3 : result3.memEnv'.contains l := by
+                                                            simpa [hr_mem] using hrl
+                                                          have hpeBody :
+                                                              Expr.toPExpr? (PExpr.toExpr pbody) = some pbody := by
+                                                            simpa using toExpr_toPExpr? pbody
+                                                          have htcBody' :
+                                                              typecheckExpr { ctxBody with pureCtx := true }
+                                                                (PExpr.toExpr pbody) fuelBody = .ok result3 := by
+                                                            simpa [ctxBody] using htcBody
+                                                          have hsubBody :
+                                                              ∀ l, result3.memEnv'.contains l → ctxBody.memEnv.contains l :=
+                                                            ih fuelBody (by omega)
+                                                              ctxBody (PExpr.toExpr pbody) pbody result3
+                                                              hpeBody htcBody'
+                                                          have hctxBody : ctxBody.memEnv.contains l := hsubBody l hrl3
+                                                          have hl1 : result1.memEnv'.contains l := by
+                                                            simpa [ctxBody] using hctxBody
+                                                          exact hsub_fun l hl1
+                                          | extern x retSpec capturedEnv =>
+                                              let rCursor : TypeResult :=
+                                                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                                              have happly_old :
+                                                  applyPFnTClosure (.extern x retSpec capturedEnv) st1 st2 p p1r
+                                                    etyp2 p2 pred2 { ctx with pureCtx := true } rCursor fuelApp = .ok r := by
+                                                unfold applyPFnTClosure
+                                                unfold applyPFnTClosureAtCursor at happly
+                                                simpa [rCursor] using happly
+                                              have hmemEq := applyPFnTClosure_extern_memEnv_eq
+                                                _ _ _ _ _ _ _ _ rCursor r fuelApp x retSpec capturedEnv happly_old
+                                              rw [hmemEq] at hrl
+                                              have hl1 : result1.memEnv'.contains l := by
+                                                simpa [rCursor] using hrl
+                                              exact hsub_fun l hl1
+                                        have hres_sub :
+                                            ∀ r ∈ (first :: rest), ∀ l,
+                                              r.memEnv'.contains l → ctx.memEnv.contains l :=
+                                          applyClosuresThreaded_forall
+                                            (fun tcl cursor =>
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                            (firstClosure :: restClosures)
+                                            (result1.nextTag', result1.nextLoc') (first :: rest)
+                                            hOne hthread
+                                        have hfirst_sub :
+                                            ∀ l, first.memEnv'.contains l →
+                                              ({ ctx with pureCtx := true }).memEnv.contains l := by
+                                          intro l hl
+                                          have hctx : ctx.memEnv.contains l := hres_sub first (by simp) l hl
+                                          simpa using hctx
+                                        have hrest_sub :
+                                            ∀ r ∈ rest, ∀ l, r.memEnv'.contains l →
+                                              ({ ctx with pureCtx := true }).memEnv.contains l := by
+                                          intro r hr l hl
+                                          have hr' : r ∈ first :: rest := List.mem_cons_of_mem first hr
+                                          have hctx : ctx.memEnv.contains l := hres_sub r hr' l hl
+                                          simpa using hctx
+                                        have hsub_join :
+                                            ∀ l,
+                                              res.memEnv'.contains l →
+                                                ({ ctx with pureCtx := true }).memEnv.contains l :=
+                                          joinTypeResults_mem_subset
+                                            ({ ctx with pureCtx := true }) first rest res hjoin
+                                            hfirst_sub hrest_sub
+                                        have hctxPure : ({ ctx with pureCtx := true }).memEnv.contains l :=
+                                          hsub_join l hl
+                                        simpa using hctxPure
       case ite e1 e2 e3 =>
         cases hpe1 : Expr.toPExpr? e1 with
         | none =>
@@ -14983,146 +15943,141 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                 · have hsubtype' : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
                                     simpa [hq2] using hsubtype
                                   simp [htclsNil, hsubtype'] at htcApp'
-                                  cases hmap :
-                                      List.mapM
-                                        (fun tcl =>
-                                          applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                            { ctx with pureCtx := true } result1 fuelApp)
-                                        tcls with
-                                  | error err =>
-                                      simp [hmap] at htcApp'
-                                      cases htcApp'
-                                  | ok results =>
-                                      cases results with
-                                      | nil =>
-                                          simp [hmap] at htcApp'
+                                  cases tcls with
+                                  | nil =>
+                                      exact False.elim (htclsNil rfl)
+                                  | cons firstClosure restClosures =>
+                                    cases happlyFirst :
+                                        applyPFnTClosureAtCursor firstClosure st1 st2 p p1r etyp2 p2
+                                          pred2 { ctx with pureCtx := true } result1
+                                          (result1.nextTag', result1.nextLoc') fuelApp with
+                                    | error _ =>
+                                        simp [applyClosuresThreaded, happlyFirst, bind, Except.bind] at htcApp'
+                                        cases htcApp'
+                                    | ok first =>
+                                      simp [applyClosuresThreaded, happlyFirst, bind, Except.bind] at htcApp'
+                                      cases hrest :
+                                          applyClosuresThreaded
+                                            (fun tcl cursor =>
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                            restClosures (first.nextTag', first.nextLoc') with
+                                      | error _ =>
+                                          simp [hrest] at htcApp'
                                           cases htcApp'
-                                      | cons first rest =>
-                                          simp [hmap] at htcApp'
-                                          have hjoin :
-                                              joinTypeResults { ctx with pureCtx := true } first rest = .ok res := by
-                                            exact htcApp'
-                                          have hforall2 :
-                                              List.Forall₂
-                                                (fun tcl r =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                tcls (first :: rest) := by
-                                            exact
-                                              List.mapM_Except_ok_implies_forall2 tcls
-                                                (fun tcl =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp)
-                                                (first :: rest) (by simp [hmap])
-                                          have hres_reg :
-                                              ∀ r ∈ (first :: rest), r.regime'.lookup? k = some b := by
-                                            intro r hr
-                                            have hflip :
-                                                List.Forall₂
-                                                  (fun r tcl =>
-                                                    applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                      { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                  (first :: rest) tcls :=
-                                              List.Forall₂.flip hforall2
-                                            rcases List.Forall2.exists_of_mem_left
-                                                (R := fun r tcl =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                hflip r hr with
-                                              ⟨tcl, _htclMem, happly⟩
-                                            cases tcl with
-                                            | regular x pbody env =>
-                                                cases fuelApp with
-                                                | zero =>
-                                                    simp [applyPFnTClosure] at happly
-                                                | succ fuelBody =>
-                                                    unfold applyPFnTClosure at happly
-                                                    simp [bind, Except.bind] at happly
-                                                    cases htcBody :
-                                                        typecheckExpr
-                                                          { { ctx with pureCtx := true } with
-                                                            pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
-                                                            memEnv := result1.memEnv'
-                                                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
-                                                                ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
-                                                            tagEnv := result1.tagEnv'
-                                                            pureCtx := true
-                                                            nextTag := result1.nextTag'
-                                                            nextLoc := result1.nextLoc'
-                                                            regime := result1.regime' }
-                                                          (PExpr.toExpr pbody) fuelBody with
-                                                    | error err =>
-                                                        simp [htcBody] at happly
-                                                    | ok result3 =>
-                                                        simp [htcBody] at happly
-                                                        cases hsubBodyRet : isSubtype st2 result3.qualType with
-                                                        | false =>
+                                      | ok rest =>
+                                        simp [hrest, pure, Except.pure] at htcApp'
+                                        have hjoin :
+                                            joinTypeResults { ctx with pureCtx := true } first rest = .ok res := by
+                                          exact htcApp'
+                                        have hthread :
+                                            applyClosuresThreaded
+                                              (fun tcl cursor =>
+                                                applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                  pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                              (firstClosure :: restClosures)
+                                              (result1.nextTag', result1.nextLoc') = .ok (first :: rest) := by
+                                          simp [applyClosuresThreaded, happlyFirst, hrest, bind, Except.bind,
+                                            pure, Except.pure]
+                                        have hOne :
+                                            ∀ tcl cursor r,
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2 pred2
+                                                { ctx with pureCtx := true } result1 cursor fuelApp = .ok r →
+                                              r.regime'.lookup? k = some b := by
+                                          intro tcl cursor r happly
+                                          cases tcl with
+                                          | regular x pbody env =>
+                                              cases fuelApp with
+                                              | zero =>
+                                                  simp [applyPFnTClosureAtCursor] at happly
+                                              | succ fuelBody =>
+                                                  unfold applyPFnTClosureAtCursor at happly
+                                                  simp [bind, Except.bind] at happly
+                                                  let ctxBody : TypeContext :=
+                                                    { { ctx with pureCtx := true } with
+                                                      pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
+                                                      memEnv := result1.memEnv'
+                                                      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                                        ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
+                                                      tagEnv := result1.tagEnv'
+                                                      pureCtx := true
+                                                      nextTag := cursor.1
+                                                      nextLoc := cursor.2
+                                                      regime := result1.regime' }
+                                                  cases htcBody :
+                                                      typecheckExpr ctxBody (PExpr.toExpr pbody) fuelBody with
+                                                  | error _ =>
+                                                      simp [ctxBody, htcBody] at happly
+                                                  | ok result3 =>
+                                                      simp [ctxBody, htcBody] at happly
+                                                      cases hsubBodyRet : isSubtype st2 result3.qualType with
+                                                      | false =>
+                                                          cases hq3 : result3.qualType with
+                                                          | mk et3 p3 pred3 =>
+                                                              have hsubBodyRet' :
+                                                                  isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                                                                simpa [hq3] using hsubBodyRet
+                                                              have hcontra : False := by
+                                                                simp [hsubBodyRet', hq3] at happly
+                                                              exact False.elim hcontra
+                                                      | true =>
+                                                          simp [hsubBodyRet, pure, Except.pure] at happly
+                                                          have hpeBody :
+                                                              Expr.toPExpr? (PExpr.toExpr pbody) = some pbody := by
+                                                            simpa using toExpr_toPExpr? pbody
+                                                          have htcBody' :
+                                                              typecheckExpr { ctxBody with pureCtx := true }
+                                                                (PExpr.toExpr pbody) fuelBody = .ok result3 := by
+                                                            simpa [ctxBody] using htcBody
+                                                          have hregBody : result3.regime'.lookup? k = some b := by
+                                                            have hkBody : ctxBody.regime.lookup? k = some b := by
+                                                              simpa [ctxBody] using hreg_fun
+                                                            exact ih fuelBody (by omega) ctxBody (PExpr.toExpr pbody)
+                                                              pbody result3 hpeBody htcBody' k b hkBody
+                                                          have hrReg : r.regime' = result3.regime' := by
                                                             cases hq3 : result3.qualType with
                                                             | mk et3 p3 pred3 =>
-                                                                have hsubBodyRet' :
-                                                                    isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
-                                                                  simpa [hq3] using hsubBodyRet
-                                                                have hcontra : False := by
-                                                                  simp [hsubBodyRet', hq3] at happly
-                                                                exact False.elim hcontra
-                                                        | true =>
-                                                            simp [hsubBodyRet, pure, Except.pure] at happly
-                                                            let ctxBody :
-                                                                TypeContext :=
-                                                              { { ctx with pureCtx := true } with
-                                                                pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
-                                                                memEnv := result1.memEnv'
-                                                                varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
-                                                                    ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
-                                                                tagEnv := result1.tagEnv'
-                                                                pureCtx := true
-                                                                nextTag := result1.nextTag'
-                                                                nextLoc := result1.nextLoc'
-                                                                regime := result1.regime' }
-                                                            have hpeBody :
-                                                                Expr.toPExpr? (PExpr.toExpr pbody) = some pbody := by
-                                                              simpa using toExpr_toPExpr? pbody
-                                                            have htcBody' :
-                                                                typecheckExpr { ctxBody with pureCtx := true }
-                                                                  (PExpr.toExpr pbody) fuelBody = .ok result3 := by
-                                                              simpa [ctxBody] using htcBody
-                                                            have hregBody :
-                                                                result3.regime'.lookup? k = some b := by
-                                                              have hkBody : ctxBody.regime.lookup? k = some b := by
-                                                                simpa [ctxBody] using hreg_fun
-                                                              exact
-                                                                ih fuelBody (by omega)
-                                                                  ctxBody (PExpr.toExpr pbody) pbody result3
-                                                                  hpeBody htcBody' k b hkBody
-                                                            have hrReg :
-                                                                r.regime' = result3.regime' := by
-                                                              cases hq3 : result3.qualType with
-                                                              | mk et3 p3 pred3 =>
-                                                                  simp [hq3] at happly
-                                                                  have hrEq :
-                                                                      r =
-                                                                        { result3 with
-                                                                          qualType :=
-                                                                            normalizeAppResultByProvenance (joinPoison p1r p)
-                                                                              { result3.qualType with
-                                                                                poison := joinPoison p1r
-                                                                                  (joinPoison p result3.qualType.poison) } } := by
-                                                                    simpa [hq3] using happly.symm
-                                                                  simp [hrEq]
-                                                            simpa [hrReg] using hregBody
-                                            | extern x retSpec capturedEnv =>
-                                                have hregEq := applyPFnTClosure_extern_regime_eq
-                                                  _ _ _ _ _ _ _ _ result1 r fuelApp x retSpec capturedEnv happly
-                                                rw [hregEq]
-                                                exact hreg_fun
-                                          have hfirstReg : first.regime'.lookup? k = some b :=
-                                            hres_reg first (by simp)
-                                          have hrestReg : ∀ r ∈ rest, r.regime'.lookup? k = some b := by
-                                            intro r hr
-                                            exact hres_reg r (List.mem_cons_of_mem _ hr)
-                                          exact
-                                            joinTypeResults_regime_lookup_of_all
-                                              ({ ctx with pureCtx := true }) first rest res hjoin k b hfirstReg hrestReg
+                                                                simp [hq3] at happly
+                                                                have hrEq :
+                                                                    r =
+                                                                      { result3 with
+                                                                        qualType :=
+                                                                          normalizeAppResultByProvenance (joinPoison p1r p)
+                                                                            { result3.qualType with
+                                                                              poison := joinPoison p1r
+                                                                                (joinPoison p result3.qualType.poison) } } := by
+                                                                  simpa [hq3] using happly.symm
+                                                                simp [hrEq]
+                                                          simpa [hrReg] using hregBody
+                                          | extern x retSpec capturedEnv =>
+                                              let rCursor : TypeResult :=
+                                                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                                              have happly_old :
+                                                  applyPFnTClosure (.extern x retSpec capturedEnv) st1 st2 p p1r
+                                                    etyp2 p2 pred2 { ctx with pureCtx := true } rCursor fuelApp = .ok r := by
+                                                unfold applyPFnTClosure
+                                                unfold applyPFnTClosureAtCursor at happly
+                                                simpa [rCursor] using happly
+                                              have hregEq := applyPFnTClosure_extern_regime_eq
+                                                _ _ _ _ _ _ _ _ rCursor r fuelApp x retSpec capturedEnv happly_old
+                                              rw [hregEq]
+                                              simpa [rCursor] using hreg_fun
+                                        have hres_reg : ∀ r ∈ (first :: rest), r.regime'.lookup? k = some b :=
+                                          applyClosuresThreaded_forall
+                                            (fun tcl cursor =>
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                            (firstClosure :: restClosures)
+                                            (result1.nextTag', result1.nextLoc') (first :: rest)
+                                            hOne hthread
+                                        have hfirstReg : first.regime'.lookup? k = some b :=
+                                          hres_reg first (by simp)
+                                        have hrestReg : ∀ r ∈ rest, r.regime'.lookup? k = some b := by
+                                          intro r hr
+                                          exact hres_reg r (List.mem_cons_of_mem _ hr)
+                                        exact
+                                          joinTypeResults_regime_lookup_of_all
+                                            ({ ctx with pureCtx := true }) first rest res hjoin k b hfirstReg hrestReg
       case ite e1 e2 e3 =>
         cases hpe1 : Expr.toPExpr? e1 with
         | none =>
@@ -15419,145 +16374,141 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                 · have hsubtype' : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
                                     simpa [hq2] using hsubtype
                                   simp [htclsNil, hsubtype'] at htcApp'
-                                  cases hmap :
-                                      List.mapM
-                                        (fun tcl =>
-                                          applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                            { ctx with pureCtx := true } result1 fuelApp)
-                                        tcls with
-                                  | error err =>
-                                      simp [hmap] at htcApp'
-                                      cases htcApp'
-                                  | ok results =>
-                                      cases results with
-                                      | nil =>
-                                          simp [hmap] at htcApp'
+                                  cases tcls with
+                                  | nil =>
+                                      exact False.elim (htclsNil rfl)
+                                  | cons firstClosure restClosures =>
+                                    cases happlyFirst :
+                                        applyPFnTClosureAtCursor firstClosure st1 st2 p p1r etyp2 p2
+                                          pred2 { ctx with pureCtx := true } result1
+                                          (result1.nextTag', result1.nextLoc') fuelApp with
+                                    | error _ =>
+                                        simp [applyClosuresThreaded, happlyFirst, bind, Except.bind] at htcApp'
+                                        cases htcApp'
+                                    | ok first =>
+                                      simp [applyClosuresThreaded, happlyFirst, bind, Except.bind] at htcApp'
+                                      cases hrest :
+                                          applyClosuresThreaded
+                                            (fun tcl cursor =>
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                            restClosures (first.nextTag', first.nextLoc') with
+                                      | error _ =>
+                                          simp [hrest] at htcApp'
                                           cases htcApp'
-                                      | cons first rest =>
-                                          simp [hmap] at htcApp'
-                                          have hjoin :
-                                              joinTypeResults { ctx with pureCtx := true } first rest = .ok res := by
-                                            exact htcApp'
-                                          have hforall2 :
-                                              List.Forall₂
-                                                (fun tcl r =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                tcls (first :: rest) := by
-                                            exact
-                                              List.mapM_Except_ok_implies_forall2 tcls
-                                                (fun tcl =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp)
-                                                (first :: rest) (by simp [hmap])
-                                          have hres_mem :
-                                              ∀ r ∈ (first :: rest), r.memEnv'.lookup l = some qt := by
-                                            intro r hr
-                                            have hflip :
-                                                List.Forall₂
-                                                  (fun r tcl =>
-                                                    applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                      { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                  (first :: rest) tcls :=
-                                              List.Forall₂.flip hforall2
-                                            rcases List.Forall2.exists_of_mem_left
-                                                (R := fun r tcl =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                hflip r hr with
-                                              ⟨tcl, _htclMem, happly⟩
-                                            cases tcl with
-                                            | regular x pbody env =>
-                                                cases fuelApp with
-                                                | zero =>
-                                                    simp [applyPFnTClosure] at happly
-                                                | succ fuelBody =>
-                                                    unfold applyPFnTClosure at happly
-                                                    simp [bind, Except.bind] at happly
-                                                    cases htcBody :
-                                                        typecheckExpr
-                                                          { { ctx with pureCtx := true } with
-                                                            pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
-                                                            memEnv := result1.memEnv'
-                                                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
-                                                                ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
-                                                            tagEnv := result1.tagEnv'
-                                                            pureCtx := true
-                                                            nextTag := result1.nextTag'
-                                                            nextLoc := result1.nextLoc'
-                                                            regime := result1.regime' }
-                                                          (PExpr.toExpr pbody) fuelBody with
-                                                    | error err =>
-                                                        simp [htcBody] at happly
-                                                    | ok result3 =>
-                                                        simp [htcBody] at happly
-                                                        cases hsubBodyRet : isSubtype st2 result3.qualType with
-                                                        | false =>
+                                      | ok rest =>
+                                        simp [hrest, pure, Except.pure] at htcApp'
+                                        have hjoin :
+                                            joinTypeResults { ctx with pureCtx := true } first rest = .ok res := by
+                                          exact htcApp'
+                                        have hthread :
+                                            applyClosuresThreaded
+                                              (fun tcl cursor =>
+                                                applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                  pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                              (firstClosure :: restClosures)
+                                              (result1.nextTag', result1.nextLoc') = .ok (first :: rest) := by
+                                          simp [applyClosuresThreaded, happlyFirst, hrest, bind, Except.bind,
+                                            pure, Except.pure]
+                                        have hOne :
+                                            ∀ tcl cursor r,
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2 pred2
+                                                { ctx with pureCtx := true } result1 cursor fuelApp = .ok r →
+                                              r.memEnv'.lookup l = some qt := by
+                                          intro tcl cursor r happly
+                                          cases tcl with
+                                          | regular x pbody env =>
+                                              cases fuelApp with
+                                              | zero =>
+                                                  simp [applyPFnTClosureAtCursor] at happly
+                                              | succ fuelBody =>
+                                                  unfold applyPFnTClosureAtCursor at happly
+                                                  simp [bind, Except.bind] at happly
+                                                  let ctxBody : TypeContext :=
+                                                    { { ctx with pureCtx := true } with
+                                                      pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
+                                                      memEnv := result1.memEnv'
+                                                      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                                        ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
+                                                      tagEnv := result1.tagEnv'
+                                                      pureCtx := true
+                                                      nextTag := cursor.1
+                                                      nextLoc := cursor.2
+                                                      regime := result1.regime' }
+                                                  cases htcBody :
+                                                      typecheckExpr ctxBody (PExpr.toExpr pbody) fuelBody with
+                                                  | error _ =>
+                                                      simp [ctxBody, htcBody] at happly
+                                                  | ok result3 =>
+                                                      simp [ctxBody, htcBody] at happly
+                                                      cases hsubBodyRet : isSubtype st2 result3.qualType with
+                                                      | false =>
+                                                          cases hq3 : result3.qualType with
+                                                          | mk et3 p3 pred3 =>
+                                                              have hsubBodyRet' :
+                                                                  isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                                                                simpa [hq3] using hsubBodyRet
+                                                              have hcontra : False := by
+                                                                simp [hsubBodyRet', hq3] at happly
+                                                              exact False.elim hcontra
+                                                      | true =>
+                                                          simp [hsubBodyRet, pure, Except.pure] at happly
+                                                          have hpeBody :
+                                                              Expr.toPExpr? (PExpr.toExpr pbody) = some pbody := by
+                                                            simpa using toExpr_toPExpr? pbody
+                                                          have htcBody' :
+                                                              typecheckExpr { ctxBody with pureCtx := true }
+                                                                (PExpr.toExpr pbody) fuelBody = .ok result3 := by
+                                                            simpa [ctxBody] using htcBody
+                                                          have hlookupBodyCtx : ctxBody.memEnv.lookup l = some qt := by
+                                                            simpa [ctxBody] using hlookup_fun
+                                                          have hlookupBody : result3.memEnv'.lookup l = some qt :=
+                                                            ih fuelBody (by omega) ctxBody (PExpr.toExpr pbody)
+                                                              pbody result3 hpeBody htcBody' l qt hlookupBodyCtx
+                                                          have hrMem : r.memEnv' = result3.memEnv' := by
                                                             cases hq3 : result3.qualType with
                                                             | mk et3 p3 pred3 =>
-                                                                have hsubBodyRet' :
-                                                                    isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
-                                                                  simpa [hq3] using hsubBodyRet
-                                                                have hcontra : False := by
-                                                                  simp [hsubBodyRet', hq3] at happly
-                                                                exact False.elim hcontra
-                                                        | true =>
-                                                            simp [hsubBodyRet, pure, Except.pure] at happly
-                                                            let ctxBody :
-                                                                TypeContext :=
-                                                              { { ctx with pureCtx := true } with
-                                                                pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
-                                                                memEnv := result1.memEnv'
-                                                                varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
-                                                                    ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
-                                                                tagEnv := result1.tagEnv'
-                                                                pureCtx := true
-                                                                nextTag := result1.nextTag'
-                                                                nextLoc := result1.nextLoc'
-                                                                regime := result1.regime' }
-                                                            have hpeBody :
-                                                                Expr.toPExpr? (PExpr.toExpr pbody) = some pbody := by
-                                                              simpa using toExpr_toPExpr? pbody
-                                                            have htcBody' :
-                                                                typecheckExpr { ctxBody with pureCtx := true }
-                                                                  (PExpr.toExpr pbody) fuelBody = .ok result3 := by
-                                                              simpa [ctxBody] using htcBody
-                                                            have hlookupBodyCtx : ctxBody.memEnv.lookup l = some qt := by
-                                                              simpa [ctxBody] using hlookup_fun
-                                                            have hlookupBody :
-                                                                result3.memEnv'.lookup l = some qt :=
-                                                              ih fuelBody (by omega)
-                                                                ctxBody (PExpr.toExpr pbody) pbody result3
-                                                                hpeBody htcBody' l qt hlookupBodyCtx
-                                                            have hrMem :
-                                                                r.memEnv' = result3.memEnv' := by
-                                                              cases hq3 : result3.qualType with
-                                                              | mk et3 p3 pred3 =>
-                                                                  simp [hq3] at happly
-                                                                  have hrEq :
-                                                                      r =
-                                                                        { result3 with
-                                                                          qualType :=
-                                                                            normalizeAppResultByProvenance (joinPoison p1r p)
-                                                                              { result3.qualType with
-                                                                                poison := joinPoison p1r
-                                                                                  (joinPoison p result3.qualType.poison) } } := by
-                                                                    simpa [hq3] using happly.symm
-                                                                  simp [hrEq]
-                                                            simpa [hrMem] using hlookupBody
-                                            | extern x retSpec capturedEnv =>
-                                                have hmemEq := applyPFnTClosure_extern_memEnv_eq
-                                                  _ _ _ _ _ _ _ _ result1 r fuelApp x retSpec capturedEnv happly
-                                                rw [hmemEq]
-                                                exact hlookup_fun
-                                          have hfirstMem : first.memEnv'.lookup l = some qt :=
-                                            hres_mem first (by simp)
-                                          have hrestMem : ∀ r ∈ rest, r.memEnv'.lookup l = some qt := by
-                                            intro r hr
-                                            exact hres_mem r (List.mem_cons_of_mem _ hr)
-                                          exact
-                                            joinTypeResults_mem_lookup_of_all
-                                              ({ ctx with pureCtx := true }) first rest res hjoin l qt hfirstMem hrestMem
+                                                                simp [hq3] at happly
+                                                                have hrEq :
+                                                                    r =
+                                                                      { result3 with
+                                                                        qualType :=
+                                                                          normalizeAppResultByProvenance (joinPoison p1r p)
+                                                                            { result3.qualType with
+                                                                              poison := joinPoison p1r
+                                                                                (joinPoison p result3.qualType.poison) } } := by
+                                                                  simpa [hq3] using happly.symm
+                                                                simp [hrEq]
+                                                          simpa [hrMem] using hlookupBody
+                                          | extern x retSpec capturedEnv =>
+                                              let rCursor : TypeResult :=
+                                                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                                              have happly_old :
+                                                  applyPFnTClosure (.extern x retSpec capturedEnv) st1 st2 p p1r
+                                                    etyp2 p2 pred2 { ctx with pureCtx := true } rCursor fuelApp = .ok r := by
+                                                unfold applyPFnTClosure
+                                                unfold applyPFnTClosureAtCursor at happly
+                                                simpa [rCursor] using happly
+                                              have hmemEq := applyPFnTClosure_extern_memEnv_eq
+                                                _ _ _ _ _ _ _ _ rCursor r fuelApp x retSpec capturedEnv happly_old
+                                              rw [hmemEq]
+                                              simpa [rCursor] using hlookup_fun
+                                        have hres_mem : ∀ r ∈ (first :: rest), r.memEnv'.lookup l = some qt :=
+                                          applyClosuresThreaded_forall
+                                            (fun tcl cursor =>
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                            (firstClosure :: restClosures)
+                                            (result1.nextTag', result1.nextLoc') (first :: rest)
+                                            hOne hthread
+                                        have hfirstMem : first.memEnv'.lookup l = some qt :=
+                                          hres_mem first (by simp)
+                                        have hrestMem : ∀ r ∈ rest, r.memEnv'.lookup l = some qt := by
+                                          intro r hr
+                                          exact hres_mem r (List.mem_cons_of_mem _ hr)
+                                        exact
+                                          joinTypeResults_mem_lookup_of_all
+                                            ({ ctx with pureCtx := true }) first rest res hjoin l qt hfirstMem hrestMem
       case ite e1 e2 e3 =>
         cases hpe1 : Expr.toPExpr? e1 with
         | none =>
@@ -15901,151 +16852,148 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                 · have hsubtype' : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
                                     simpa [hq2] using hsubtype
                                   simp [htclsNil, hsubtype'] at htcApp'
-                                  cases hmap :
-                                      List.mapM
-                                        (fun tcl =>
-                                          applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                            { ctx with pureCtx := true } result1 fuelApp)
-                                        tcls with
-                                  | error err =>
-                                      simp [hmap] at htcApp'
-                                      cases htcApp'
-                                  | ok results =>
-                                      cases results with
-                                      | nil =>
-                                          simp [hmap] at htcApp'
+                                  cases tcls with
+                                  | nil =>
+                                      exact False.elim (htclsNil rfl)
+                                  | cons firstClosure restClosures =>
+                                    cases happlyFirst :
+                                        applyPFnTClosureAtCursor firstClosure st1 st2 p p1r etyp2 p2
+                                          pred2 { ctx with pureCtx := true } result1
+                                          (result1.nextTag', result1.nextLoc') fuelApp with
+                                    | error _ =>
+                                        simp [applyClosuresThreaded, happlyFirst, bind, Except.bind] at htcApp'
+                                        cases htcApp'
+                                    | ok first =>
+                                      simp [applyClosuresThreaded, happlyFirst, bind, Except.bind] at htcApp'
+                                      cases hrest :
+                                          applyClosuresThreaded
+                                            (fun tcl cursor =>
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                            restClosures (first.nextTag', first.nextLoc') with
+                                      | error _ =>
+                                          simp [hrest] at htcApp'
                                           cases htcApp'
-                                      | cons first rest =>
-                                          simp [hmap] at htcApp'
-                                          have hjoin :
-                                              joinTypeResults { ctx with pureCtx := true } first rest = .ok res := by
-                                            exact htcApp'
-                                          have hforall2 :
-                                              List.Forall₂
-                                                (fun tcl r =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                tcls (first :: rest) := by
-                                            exact
-                                              List.mapM_Except_ok_implies_forall2 tcls
-                                                (fun tcl =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp)
-                                                (first :: rest) (by simp [hmap])
-                                          have hres_mem :
-                                              ∀ r ∈ (first :: rest), r.memEnv'.lookup l = some qt := by
-                                            intro r hr
-                                            have hflip :
-                                                List.Forall₂
-                                                  (fun r tcl =>
-                                                    applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                      { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                  (first :: rest) tcls :=
-                                              List.Forall₂.flip hforall2
-                                            rcases List.Forall2.exists_of_mem_left
-                                                (R := fun r tcl =>
-                                                  applyPFnTClosure tcl st1 st2 p p1r etyp2 p2 pred2
-                                                    { ctx with pureCtx := true } result1 fuelApp = .ok r)
-                                                hflip r hr with
-                                              ⟨tcl, _htclMem, happly⟩
-                                            cases tcl with
-                                            | regular x pbody env =>
-                                                cases fuelApp with
-                                                | zero =>
-                                                    simp [applyPFnTClosure] at happly
-                                                | succ fuelBody =>
-                                                    unfold applyPFnTClosure at happly
-                                                    simp [bind, Except.bind] at happly
-                                                    cases htcBody :
-                                                        typecheckExpr
-                                                          { { ctx with pureCtx := true } with
-                                                            pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
-                                                            memEnv := result1.memEnv'
-                                                            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
-                                                                ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
-                                                            tagEnv := result1.tagEnv'
-                                                            pureCtx := true
-                                                            nextTag := result1.nextTag'
-                                                            nextLoc := result1.nextLoc'
-                                                            regime := result1.regime' }
-                                                          (PExpr.toExpr pbody) fuelBody with
-                                                    | error err =>
-                                                        simp [htcBody] at happly
-                                                    | ok result3 =>
-                                                        simp [htcBody] at happly
-                                                        cases hsubBodyRet : isSubtype st2 result3.qualType with
-                                                        | false =>
+                                      | ok rest =>
+                                        simp [hrest, pure, Except.pure] at htcApp'
+                                        have hjoin :
+                                            joinTypeResults { ctx with pureCtx := true } first rest = .ok res := by
+                                          exact htcApp'
+                                        have hthread :
+                                            applyClosuresThreaded
+                                              (fun tcl cursor =>
+                                                applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                  pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                              (firstClosure :: restClosures)
+                                              (result1.nextTag', result1.nextLoc') = .ok (first :: rest) := by
+                                          simp [applyClosuresThreaded, happlyFirst, hrest, bind, Except.bind,
+                                            pure, Except.pure]
+                                        have hOne :
+                                            ∀ tcl cursor r,
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2 pred2
+                                                { ctx with pureCtx := true } result1 cursor fuelApp = .ok r →
+                                              r.memEnv'.lookup l = some qt := by
+                                          intro tcl cursor r happly
+                                          cases tcl with
+                                          | regular x pbody env =>
+                                              cases fuelApp with
+                                              | zero =>
+                                                  simp [applyPFnTClosureAtCursor] at happly
+                                              | succ fuelBody =>
+                                                  unfold applyPFnTClosureAtCursor at happly
+                                                  simp [bind, Except.bind] at happly
+                                                  let ctxBody : TypeContext :=
+                                                    { { ctx with pureCtx := true } with
+                                                      pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
+                                                      memEnv := result1.memEnv'
+                                                      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                                        ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
+                                                      tagEnv := result1.tagEnv'
+                                                      pureCtx := true
+                                                      nextTag := cursor.1
+                                                      nextLoc := cursor.2
+                                                      regime := result1.regime' }
+                                                  cases htcBody :
+                                                      typecheckExpr ctxBody (PExpr.toExpr pbody) fuelBody with
+                                                  | error _ =>
+                                                      simp [ctxBody, htcBody] at happly
+                                                  | ok result3 =>
+                                                      simp [ctxBody, htcBody] at happly
+                                                      cases hsubBodyRet : isSubtype st2 result3.qualType with
+                                                      | false =>
+                                                          cases hq3 : result3.qualType with
+                                                          | mk et3 p3 pred3 =>
+                                                              have hsubBodyRet' :
+                                                                  isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                                                                simpa [hq3] using hsubBodyRet
+                                                              have hcontra : False := by
+                                                                simp [hsubBodyRet', hq3] at happly
+                                                              exact False.elim hcontra
+                                                      | true =>
+                                                          simp [hsubBodyRet, pure, Except.pure] at happly
+                                                          have hpeBody :
+                                                              Expr.toPExpr? (PExpr.toExpr pbody) = some pbody := by
+                                                            simpa using toExpr_toPExpr? pbody
+                                                          have htcBody' :
+                                                              typecheckExpr { ctxBody with pureCtx := true }
+                                                                (PExpr.toExpr pbody) fuelBody = .ok result3 := by
+                                                            simpa [ctxBody] using htcBody
+                                                          have hlookupBodyCtx : ctxBody.memEnv.lookup l = some qt := by
+                                                            simpa [ctxBody] using hlookup_fun
+                                                          have hRdefBody : ctxBody.regime.lookup? k ≠ none := by
+                                                            have hkBody : ctxBody.regime.lookup? k = some b := by
+                                                              simpa [ctxBody] using hreg_fun
+                                                            intro hnone
+                                                            rw [hkBody] at hnone
+                                                            contradiction
+                                                          have hlookupBody : result3.memEnv'.lookup l = some qt :=
+                                                            ih fuelBody (by omega) ctxBody (PExpr.toExpr pbody)
+                                                              pbody result3 hpeBody htcBody' l qt k
+                                                              hlookupBodyCtx hguard hRdefBody
+                                                          have hrMem : r.memEnv' = result3.memEnv' := by
                                                             cases hq3 : result3.qualType with
                                                             | mk et3 p3 pred3 =>
-                                                                have hsubBodyRet' :
-                                                                    isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
-                                                                  simpa [hq3] using hsubBodyRet
-                                                                have hcontra : False := by
-                                                                  simp [hsubBodyRet', hq3] at happly
-                                                                exact False.elim hcontra
-                                                        | true =>
-                                                            simp [hsubBodyRet, pure, Except.pure] at happly
-                                                            let ctxBody :
-                                                                TypeContext :=
-                                                              { { ctx with pureCtx := true } with
-                                                                pc := joinPoison p (joinPoison ({ ctx with pureCtx := true }).pc p1r)
-                                                                memEnv := result1.memEnv'
-                                                                varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
-                                                                    ⟨etyp2, joinPoison ({ ctx with pureCtx := true }).pc p2, pred2⟩
-                                                                tagEnv := result1.tagEnv'
-                                                                pureCtx := true
-                                                                nextTag := result1.nextTag'
-                                                                nextLoc := result1.nextLoc'
-                                                                regime := result1.regime' }
-                                                            have hpeBody :
-                                                                Expr.toPExpr? (PExpr.toExpr pbody) = some pbody := by
-                                                              simpa using toExpr_toPExpr? pbody
-                                                            have htcBody' :
-                                                                typecheckExpr { ctxBody with pureCtx := true }
-                                                                  (PExpr.toExpr pbody) fuelBody = .ok result3 := by
-                                                              simpa [ctxBody] using htcBody
-                                                            have hlookupBodyCtx : ctxBody.memEnv.lookup l = some qt := by
-                                                              simpa [ctxBody] using hlookup_fun
-                                                            have hRdefBody : ctxBody.regime.lookup? k ≠ none := by
-                                                              have hkBody : ctxBody.regime.lookup? k = some b := by
-                                                                simpa [ctxBody] using hreg_fun
-                                                              intro hnone
-                                                              rw [hkBody] at hnone
-                                                              contradiction
-                                                            have hlookupBody :
-                                                                result3.memEnv'.lookup l = some qt :=
-                                                              ih fuelBody (by omega)
-                                                                ctxBody (PExpr.toExpr pbody) pbody result3
-                                                                hpeBody htcBody' l qt k hlookupBodyCtx hguard hRdefBody
-                                                            have hrMem :
-                                                                r.memEnv' = result3.memEnv' := by
-                                                              cases hq3 : result3.qualType with
-                                                              | mk et3 p3 pred3 =>
-                                                                  simp [hq3] at happly
-                                                                  have hrEq :
-                                                                      r =
-                                                                        { result3 with
-                                                                          qualType :=
-                                                                            normalizeAppResultByProvenance (joinPoison p1r p)
-                                                                              { result3.qualType with
-                                                                                poison := joinPoison p1r
-                                                                                  (joinPoison p result3.qualType.poison) } } := by
-                                                                    simpa [hq3] using happly.symm
-                                                                  simp [hrEq]
-                                                            simpa [hrMem] using hlookupBody
-                                            | extern x retSpec capturedEnv =>
-                                                have hmemEq := applyPFnTClosure_extern_memEnv_eq
-                                                  _ _ _ _ _ _ _ _ result1 r fuelApp x retSpec capturedEnv happly
-                                                rw [hmemEq]
-                                                exact hlookup_fun
-                                          have hfirstMem : first.memEnv'.lookup l = some qt :=
-                                            hres_mem first (by simp)
-                                          have hrestMem : ∀ r ∈ rest, r.memEnv'.lookup l = some qt := by
-                                            intro r hr
-                                            exact hres_mem r (List.mem_cons_of_mem _ hr)
-                                          exact
-                                            joinTypeResults_mem_lookup_of_all
-                                              ({ ctx with pureCtx := true }) first rest res hjoin l qt hfirstMem hrestMem
+                                                                simp [hq3] at happly
+                                                                have hrEq :
+                                                                    r =
+                                                                      { result3 with
+                                                                        qualType :=
+                                                                          normalizeAppResultByProvenance (joinPoison p1r p)
+                                                                            { result3.qualType with
+                                                                              poison := joinPoison p1r
+                                                                                (joinPoison p result3.qualType.poison) } } := by
+                                                                  simpa [hq3] using happly.symm
+                                                                simp [hrEq]
+                                                          simpa [hrMem] using hlookupBody
+                                          | extern x retSpec capturedEnv =>
+                                              let rCursor : TypeResult :=
+                                                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                                              have happly_old :
+                                                  applyPFnTClosure (.extern x retSpec capturedEnv) st1 st2 p p1r
+                                                    etyp2 p2 pred2 { ctx with pureCtx := true } rCursor fuelApp = .ok r := by
+                                                unfold applyPFnTClosure
+                                                unfold applyPFnTClosureAtCursor at happly
+                                                simpa [rCursor] using happly
+                                              have hmemEq := applyPFnTClosure_extern_memEnv_eq
+                                                _ _ _ _ _ _ _ _ rCursor r fuelApp x retSpec capturedEnv happly_old
+                                              rw [hmemEq]
+                                              simpa [rCursor] using hlookup_fun
+                                        have hres_mem : ∀ r ∈ (first :: rest), r.memEnv'.lookup l = some qt :=
+                                          applyClosuresThreaded_forall
+                                            (fun tcl cursor =>
+                                              applyPFnTClosureAtCursor tcl st1 st2 p p1r etyp2 p2
+                                                pred2 { ctx with pureCtx := true } result1 cursor fuelApp)
+                                            (firstClosure :: restClosures)
+                                            (result1.nextTag', result1.nextLoc') (first :: rest)
+                                            hOne hthread
+                                        have hfirstMem : first.memEnv'.lookup l = some qt :=
+                                          hres_mem first (by simp)
+                                        have hrestMem : ∀ r ∈ rest, r.memEnv'.lookup l = some qt := by
+                                          intro r hr
+                                          exact hres_mem r (List.mem_cons_of_mem _ hr)
+                                        exact
+                                          joinTypeResults_mem_lookup_of_all
+                                            ({ ctx with pureCtx := true }) first rest res hjoin l qt hfirstMem hrestMem
       case ite e1 e2 e3 =>
         cases hpe1 : Expr.toPExpr? e1 with
         | none =>

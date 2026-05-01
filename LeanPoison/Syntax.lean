@@ -124,6 +124,24 @@ instance : OrientedCmp (compare : TagIndex → TagIndex → Ordering) where
     show compare a.val b.val = (compare b.val a.val).swap
     exact OrientedCmp.eq_swap (α := Nat)
 
+instance : ReflCmp (compare : TagIndex → TagIndex → Ordering) where
+  compare_self {a} := by
+    show compare a.val a.val = Ordering.eq
+    exact ReflCmp.compare_self
+
+instance : LawfulEqCmp (compare : TagIndex → TagIndex → Ordering) where
+  eq_of_compare {a b} h := by
+    have hval : a.val = b.val := by
+      have hcmp : compare a.val b.val = Ordering.eq := h
+      exact LawfulEqCmp.eq_of_compare hcmp
+    cases a with
+    | mk aval =>
+      cases b with
+      | mk bval =>
+        simp at hval
+        subst bval
+        rfl
+
 instance : TransCmp (compare : TagIndex → TagIndex → Ordering) where
   isLE_trans {a b c} (h1 : (compare a.val b.val).isLE = true)
       (h2 : (compare b.val c.val).isLE = true) := by

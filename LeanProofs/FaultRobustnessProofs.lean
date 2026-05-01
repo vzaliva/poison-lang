@@ -38,12 +38,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       ctxᵢ e res predSat tm := by
   intro fuel res htc
-  revert masked e ctxᵢ res htc
+  revert tm masked e ctxᵢ res htc
   induction fuel using Nat.strong_induction_on with
   | _ n IH =>
-      intro masked e ctxᵢ res htc
+      intro masked e ctxᵢ tm res htc
       have IH' :
-          ∀ m < n, ∀ (masked' : Tag → Prop) (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
+          ∀ m < n, ∀ (tm' : TagMeaning) (masked' : Tag → Prop) (e' : Expr)
+            (ctx' : TypeContext) (res' : TypeResult),
             typecheck ctx' e' m = .ok res' →
             StepFRSingleRunFinalCleanPcTrueMaskedRegParam
               masked'
@@ -51,9 +52,9 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                 consistentWithRegimeMasked masked' predSat ctx.regime ctx μ ρ θ)
               (fun R qt μ θ v =>
                 valueConsistentWithRegimeMasked masked' predSat R qt μ θ v)
-              ctx' e' res' predSat tm := by
-        intro m hm masked' e' ctx' res' htc'
-        exact IH m hm masked' e' ctx' res' htc'
+              ctx' e' res' predSat tm' := by
+        intro m hm tm' masked' e' ctx' res' htc'
+        exact IH m hm masked' e' ctx' tm' res' htc'
       cases n with
       | zero =>
           simp [typecheck, typecheckExpr] at htc
@@ -184,8 +185,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm e' ctx' res' htc' =>
-                          IH' m hm masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
           | unaryop uop e =>
               cases fuel with
@@ -202,8 +203,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm e' ctx' res' htc' =>
-                          IH' m hm masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
           | ite e1 e2 e3 =>
               cases fuel with
@@ -218,13 +219,22 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   · rcases h1 with
                       ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, _res3, htc2, _htc3,
                         hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', _hpoison, hetyp⟩
-                    intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
+                    intro hpredlaws hExtTyping hwfTm hTmBounded
+                    refine ⟨?_, ?_⟩
+                    · exact
+                        StepFRSingleRunTagMeaningPost.of_typecheck_preserves
+                          hExtTyping predSat tm ctxᵢ (Expr.ite e1 e2 e3)
+                          (Nat.succ (Nat.succ fuel')) res
+                          hwfTm hTmBounded hpredlaws htc
+                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
                     let ctxTrue : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
                     have htc1' : typecheck ctxPure e1 fuel' = .ok res1 := by
                       simpa [ctxPure, typecheck, Nat.succ_sub_one] using htc1
                     have hwfTm_pure : wfTagMeaningCtx tm ctxPure := by
                       simpa [ctxPure, wfTagMeaningCtx] using hwfTm
+                    have hTmBounded_pure : TagMeaningBounded tm ctxPure.nextTag := by
+                      simpa [ctxPure] using hTmBounded
                     have hwf_pure : wfTypeContext ctxPure := by
                       simpa [ctxPure, wfTypeContext] using hwf
                     have htagR_pure : regimeConsistentWithCtxMasked masked ctxPure := by
@@ -237,12 +247,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxPure, consistentWithRegimeMasked] using hcwr
                     have hpc_pure : ctxPure.pc = true := by
                       simpa [ctxPure] using hpc
-                    have hIH_e1 := IH' fuel' (by omega) masked e1 ctxPure res1 htc1'
+                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxPure res1 htc1'
                     have hstruct_rt := terminatesTo_ite_inv' e1 e2 e3
                       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
                     rcases hstruct_rt with ⟨cfg1, b, ht_e1, hbranch, _hpm1, _hpmf⟩
                     rcases
-                        hIH_e1 hpredlaws hExtTyping hwfTm_pure μ ρ θ cfg1 (Value.bool b)
+                        (hIH_e1 hpredlaws hExtTyping hwfTm_pure hTmBounded_pure).2
+                          μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf_pure hric htagR_pure hmasked_none_pure hcwr_pure
                           a pm hwfcfg ht_e1 hpc_pure
                       with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1, _hfresh1⟩
@@ -274,6 +285,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxTrue, typecheck, Nat.succ_sub_one] using htc2
                     have hwfTm_true : wfTagMeaningCtx tm ctxTrue := by
                       simpa [ctxTrue, wfTagMeaningCtx] using hwfTm
+                    have hTmBounded_true : TagMeaningBounded tm ctxTrue.nextTag := by
+                      simpa [ctxTrue] using hTmBounded
                     have hwf_true : wfTypeContext ctxTrue := by
                       simpa [ctxTrue, wfTypeContext] using hwf
                     have htagR_true : regimeConsistentWithCtxMasked masked ctxTrue := by
@@ -318,7 +331,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxTrue] using hpc
                     have hpredNo : res.qualType.pred = Predicate.noPred := by
                       exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
-                    have hIH_e2 := IH' fuel' (by omega) masked e2 ctxTrue res2 htc2'
+                    have hIH_e2 := IH' fuel' (by omega) tm masked e2 ctxTrue res2 htc2'
                     -- Thread extern registry.
                     have hreg_cfg1_t : cfg1.registry = emptyExternRegistry := by
                       simpa using terminatesTo_preserves_registry ht_e1
@@ -329,7 +342,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have ht_e2_t : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
                       rw [← hcfg1_eq_t]; exact ht_e2
                     rcases
-                        hIH_e2 hpredlaws hExtTyping hwfTm_true
+                        (hIH_e2 hpredlaws hExtTyping hwfTm_true hTmBounded_true).2
                           cfg1.memory cfg1.varEnv θ1 cf o
                           hθ1wf hwf_true hric1' htagR_true hmasked_none_true hcwr1'
                           cfg1.nextAddr cfg1.pureMode hwfcfg1_t
@@ -413,7 +426,14 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   · rcases h2 with
                       ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, _res2, res3, _htc2, htc3,
                         hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', _hpoison, hetyp⟩
-                    intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
+                    intro hpredlaws hExtTyping hwfTm hTmBounded
+                    refine ⟨?_, ?_⟩
+                    · exact
+                        StepFRSingleRunTagMeaningPost.of_typecheck_preserves
+                          hExtTyping predSat tm ctxᵢ (Expr.ite e1 e2 e3)
+                          (Nat.succ (Nat.succ fuel')) res
+                          hwfTm hTmBounded hpredlaws htc
+                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
                     let ctxFalse : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
                     let ctxFalse' : TypeContext :=
@@ -422,6 +442,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxPure, typecheck, Nat.succ_sub_one] using htc1
                     have hwfTm_pure : wfTagMeaningCtx tm ctxPure := by
                       simpa [ctxPure, wfTagMeaningCtx] using hwfTm
+                    have hTmBounded_pure : TagMeaningBounded tm ctxPure.nextTag := by
+                      simpa [ctxPure] using hTmBounded
                     have hwf_pure : wfTypeContext ctxPure := by
                       simpa [ctxPure, wfTypeContext] using hwf
                     have htagR_pure : regimeConsistentWithCtxMasked masked ctxPure := by
@@ -434,12 +456,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxPure, consistentWithRegimeMasked] using hcwr
                     have hpc_false : ctxFalse.pc = true := by
                       simpa [ctxFalse] using hpc
-                    have hIH_e1 := IH' fuel' (by omega) masked e1 ctxPure res1 htc1'
+                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxPure res1 htc1'
                     have hstruct_rt := terminatesTo_ite_inv' e1 e2 e3
                       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
                     rcases hstruct_rt with ⟨cfg1, b, ht_e1, hbranch, _hpm1, _hpmf⟩
                     rcases
-                        hIH_e1 hpredlaws hExtTyping hwfTm_pure μ ρ θ cfg1 (Value.bool b)
+                        (hIH_e1 hpredlaws hExtTyping hwfTm_pure hTmBounded_pure).2
+                          μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf_pure hric htagR_pure hmasked_none_pure hcwr_pure
                           a pm hwfcfg ht_e1 hpc
                       with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1, _hfresh1⟩
@@ -471,6 +494,16 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxFalse', ctxFalse, typecheck, Nat.succ_sub_one] using htc3
                     have hwfTm_false : wfTagMeaningCtx tm ctxFalse' := by
                       simpa [ctxFalse', ctxFalse, wfTagMeaningCtx] using hwfTm
+                    have hTmBounded_false : TagMeaningBounded tm ctxFalse'.nextTag := by
+                      have htc2_tc :
+                          typecheck { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' =
+                            .ok _res2 := by
+                        simpa [typecheck] using _htc2
+                      have hle : ctxᵢ.nextTag ≤ _res2.nextTag' :=
+                        typecheck_nextTag_mono
+                          { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+                          e2 fuel' _res2 htc2_tc
+                      simpa [ctxFalse', ctxFalse] using hTmBounded.mono hle
                     have hwf_false : wfTypeContext ctxFalse := by
                       simpa [ctxFalse, wfTypeContext] using hwf
                     have hwf_false' : wfTypeContext ctxFalse' := by
@@ -547,7 +580,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxFalse'] using hpc_false
                     have hpredNo : res.qualType.pred = Predicate.noPred := by
                       exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
-                    have hIH_e3 := IH' fuel' (by omega) masked e3 ctxFalse' res3 htc3'
+                    have hIH_e3 := IH' fuel' (by omega) tm masked e3 ctxFalse' res3 htc3'
                     -- Thread extern registry.
                     have hreg_cfg1_f : cfg1.registry = emptyExternRegistry := by
                       simpa using terminatesTo_preserves_registry ht_e1
@@ -558,7 +591,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have ht_e3_f : terminatesTo e3 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
                       rw [← hcfg1_eq_f]; exact ht_e3
                     rcases
-                        hIH_e3 hpredlaws hExtTyping hwfTm_false
+                        (hIH_e3 hpredlaws hExtTyping hwfTm_false hTmBounded_false).2
                           cfg1.memory cfg1.varEnv θ1 cf o
                           hθ1wf hwf_false' hric1'_f htagR_false' hmasked_none_false' hcwr1'_f
                           cfg1.nextAddr cfg1.pureMode hwfcfg1_f
@@ -644,19 +677,28 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                             hetyp.symm hcap2'
                   · obtain ⟨hstdCase, res1, htc1, hbool, res2, htc2, res3, htc3,
                       hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp, hpred⟩ := hstd
-                    intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
+                    intro hpredlaws hExtTyping hwfTm hTmBounded
+                    refine ⟨?_, ?_⟩
+                    · exact
+                        StepFRSingleRunTagMeaningPost.of_typecheck_preserves
+                          hExtTyping predSat tm ctxᵢ (Expr.ite e1 e2 e3)
+                          (Nat.succ (Nat.succ fuel')) res
+                          hwfTm hTmBounded hpredlaws htc
+                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
                     let ctx' : TypeContext := ctxAfter ctxᵢ res1
                     let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
                     let ctx'' : TypeContext := { ctx' with pc := pc' }
                     let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
                     have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
                       simpa [typecheck, Nat.succ_sub_one] using htc1
-                    have hIH_e1 := IH' fuel' (by omega) masked e1 ctxᵢ res1 htc1'
+                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxᵢ res1 htc1'
+                    have hIH_e1_inst := hIH_e1 hpredlaws hExtTyping hwfTm hTmBounded
+                    rcases hIH_e1_inst.1 with ⟨tm1, hcanon1, hpredlaws1, _hresTm1, hwfTm1⟩
                     have hstruct_rt := terminatesTo_ite_inv' e1 e2 e3
                       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
                     rcases hstruct_rt with ⟨cfg1, b, ht_e1, hbranch, _hpm1, _hpmf⟩
                     rcases
-                        hIH_e1 hpredlaws hExtTyping hwfTm μ ρ θ cfg1 (Value.bool b)
+                        hIH_e1_inst.2 μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf hric htagR hmasked_none hcwr
                           a pm hwfcfg ht_e1 hpc
                       with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
@@ -673,17 +715,17 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     have hmasked_none1 :
                         ∀ t, masked t → (ctxAfter ctxᵢ res1).regime.lookup? t = none :=
                       masked_lookup_none_of_monotoneStep hmasked_none hmono1
-                    have hwfTm1 : wfTagMeaningCtx tm (ctxAfter ctxᵢ res1) := by
-                      exact
-                        typecheckExpr_preserves_wfTagMeaningCtx hExtTyping
-                          tm ctxᵢ e1 fuel' res1 hwfTm htc1'
+                    have hTmBounded1 : TagMeaningBounded tm1 (ctxAfter ctxᵢ res1).nextTag := by
+                      simpa [ctxAfter] using IsCanonicalExtension.bounded hcanon1
                     have hwf1 : wfTypeResult res1 :=
                       typecheckExpr_preserves_wfTypeResult ctxᵢ e1 fuel' res1 hwf htc1'
                     have hwf_ctx' : wfTypeContext ctx' := by
                       simpa [ctx'] using wfTypeContext_of_wfTypeResult ctxᵢ res1 hwf1 hwf
                         (typecheck_nextLoc_mono ctxᵢ e1 fuel' res1 htc1')
-                    have hwfTm_ctx'' : wfTagMeaningCtx tm ctx'' := by
+                    have hwfTm_ctx'' : wfTagMeaningCtx tm1 ctx'' := by
                       simpa [ctx'', ctx', pc'] using hwfTm1
+                    have hTmBounded_ctx'' : TagMeaningBounded tm1 ctx''.nextTag := by
+                      simpa [ctx'', ctx', pc'] using hTmBounded1
                     have hwf_ctx'' : wfTypeContext ctx'' := by
                       simpa [ctx'', ctx', pc', wfTypeContext] using hwf_ctx'
                     have hric1_ctx'' :
@@ -712,7 +754,9 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         typecheck_nextTag_mono ctx'' e2 fuel' res2
                           (by simpa [ctx'', ctx', pc', typecheck, Nat.succ_sub_one] using htc2)
                       simpa [ctx'', ctx'] using this
-                    have hwfTm_ctxForE3 : wfTagMeaningCtx tm ctxForE3 := by
+                    have hTmBounded_ctxForE3 : TagMeaningBounded tm1 ctxForE3.nextTag := by
+                      simpa [ctxForE3, ctx'', ctx', pc'] using hTmBounded1.mono hnextTag_mono
+                    have hwfTm_ctxForE3 : wfTagMeaningCtx tm1 ctxForE3 := by
                       simpa [ctxForE3, ctx'', ctx', pc'] using hwfTm1
                     have hwf_ctxForE3 : wfTypeContext ctxForE3 := by
                       simp only [ctxForE3, wfTypeContext]
@@ -853,7 +897,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         cases hbranch with
                         | inl hbranch_true =>
                             have ht_e2 : terminatesTo e2 cfg1 cf o := hbranch_true.2
-                            have hIH_e2 := IH' fuel' (by omega) masked e2 ctx'' res2 htc2'
+                            have hIH_e2 := IH' fuel' (by omega) tm1 masked e2 ctx'' res2 htc2'
                             -- Thread extern registry.
                             have hreg_cfg1_std2 : cfg1.registry = emptyExternRegistry := by
                               simpa using terminatesTo_preserves_registry ht_e1
@@ -864,7 +908,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                             have ht_e2_std2 : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
                               rw [← hcfg1_eq_std2]; exact ht_e2
                             rcases
-                                hIH_e2 hpredlaws hExtTyping hwfTm_ctx'' cfg1.memory cfg1.varEnv θ1 cf o
+                                (hIH_e2 hpredlaws1 hExtTyping hwfTm_ctx'' hTmBounded_ctx'').2
+                                  cfg1.memory cfg1.varEnv θ1 cf o
                                   hθ1wf hwf_ctx'' hric1_ctx'' htagR_ctx'' hmasked_none_ctx'' hcwr1_ctx''
                                   cfg1.nextAddr cfg1.pureMode hwfcfg1_std2 ht_e2_std2 hpc''
                               with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
@@ -1110,7 +1155,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                     (by simp [hetyp]) hcap2_join
                         | inr hbranch_false =>
                             have ht_e3 : terminatesTo e3 cfg1 cf o := hbranch_false.2
-                            have hIH_e3 := IH' fuel' (by omega) masked e3 ctxForE3 res3 htc3'
+                            have hIH_e3 := IH' fuel' (by omega) tm1 masked e3 ctxForE3 res3 htc3'
                             -- Thread extern registry.
                             have hreg_cfg1_std3 : cfg1.registry = emptyExternRegistry := by
                               simpa using terminatesTo_preserves_registry ht_e1
@@ -1121,7 +1166,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                             have ht_e3_std3 : terminatesTo e3 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode } cf o := by
                               rw [← hcfg1_eq_std3]; exact ht_e3
                             rcases
-                                hIH_e3 hpredlaws hExtTyping hwfTm_ctxForE3
+                                (hIH_e3 hpredlaws1 hExtTyping hwfTm_ctxForE3 hTmBounded_ctxForE3).2
                                   cfg1.memory cfg1.varEnv θ1 cf o
                                   hθ1wf hwf_ctxForE3 hric1_ctxForE3
                                   htagR_ctxForE3 hmasked_none_ctxForE3 hcwr1_ctxForE3
@@ -1383,8 +1428,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm e' ctx' res' htc' =>
-                          IH' m hm masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
           | assign e1 e2 =>
               cases fuel with
@@ -1401,8 +1446,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm e' ctx' res' htc' =>
-                          IH' m hm masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
           | deref e =>
               cases fuel with
@@ -1419,8 +1464,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm e' ctx' res' htc' =>
-                          IH' m hm masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
           | seq e1 e2 =>
               cases fuel with
@@ -1437,8 +1482,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm e' ctx' res' htc' =>
-                          IH' m hm masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
           | vlet z e1 e2 =>
               cases fuel with
@@ -1455,8 +1500,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm e' ctx' res' htc' =>
-                          IH' m hm masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
           | fn name ty e1 ty2 =>
               exact
@@ -1481,8 +1526,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm e' ctx' res' htc' =>
-                          IH' m hm masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
           | externVal _id _t _p _pr =>
               -- FFI: masked single-run FR for extern value dispatch.
@@ -1497,7 +1542,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               -- When the evidence-registry refactor lands (doc/ffi-axioms.md),
               -- this site will consume Contract A for the declared predicate's
               -- fresh tags and Contract E for the `ref int` subcase.
-              intro _hpredlaws _hExtTyping _hwfTm _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
+              intro hpredlaws hExtTyping hwfTm hTmBounded
+              refine ⟨?_, ?_⟩
+              · exact
+                  StepFRSingleRunTagMeaningPost.of_typecheck_preserves
+                    hExtTyping predSat tm ctxᵢ (Expr.externVal _id _t _p _pr)
+                    (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
+              intro _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
                     _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
               obtain ⟨fuel', _verbose', hbeval⟩ := ht
               cases fuel' with
@@ -1522,7 +1573,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               --   `doc/ffi-axioms.md`), this case will be replaced by a
               --   registry-aware version that consumes Contract A for the
               --   tag-mapping coherence of `(retSpec, effects)`.
-              intro _hpredlaws _hExtTyping _hwfTm _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
+              intro hpredlaws hExtTyping hwfTm hTmBounded
+              refine ⟨?_, ?_⟩
+              · exact
+                  StepFRSingleRunTagMeaningPost.of_typecheck_preserves
+                    hExtTyping predSat tm ctxᵢ (Expr.externFn _id _n _t _r _eff)
+                    (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
+              intro _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
                     _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
               obtain ⟨fuel', _verbose', hbeval⟩ := ht
               cases fuel' with
@@ -1538,7 +1595,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               -- and the goal is closed.  No residual Contract-A sorries are
               -- produced here; they will return when the evidence-registry
               -- refactor (doc/ffi-axioms.md) threads a populated registry.
-              intro _hpredlaws _hExtTyping _hwfTm _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
+              intro hpredlaws hExtTyping hwfTm hTmBounded
+              refine ⟨?_, ?_⟩
+              · exact
+                  StepFRSingleRunTagMeaningPost.of_typecheck_preserves
+                    hExtTyping predSat tm ctxᵢ (Expr.externPfn _id _n _t _r)
+                    (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
+              intro _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
                     _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
               obtain ⟨fuel', _verbose', hbeval⟩ := ht
               cases fuel' with
@@ -1555,7 +1618,10 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
   have hmasked :=
     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked
       (masked := fun _ => False) e ctxᵢ predSat tm fuel res htc
-  intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hExtTyping hwfTm hTmBounded
+  have hmasked_inst := hmasked hpredlaws hExtTyping hwfTm hTmBounded
+  refine ⟨hmasked_inst.1, ?_⟩
+  intro μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht hpc
   have hreg_masked :
       regimeConsistentWithCtxMasked (fun _ => False) ctxᵢ := by
     intro k deps hlookup
@@ -1583,7 +1649,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
     intro k hk
     cases hk
   rcases
-      hmasked hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hreg_masked hmasked_none_init hcwr_masked a pm hwfcfg ht hpc
+      hmasked_inst.2 μ ρ θ cf o hθwf hwf hric hreg_masked hmasked_none_init hcwr_masked a pm hwfcfg ht hpc
     with ⟨θ', hθext, hvaltyp, hric', hcwr_masked', hvalc_masked', hpres, hfresh⟩
   have hmasked_none :
       ∀ k, (fun _ => False) k → (ctxAfter ctxᵢ res).regime.lookup? k = none := by
@@ -1617,10 +1683,10 @@ theorem TypeSystemEnforcesFaultRobustness_step
   intro fuel res htc
   -- Use strong induction on fuel, generalized over all e and ctxᵢ
   -- The key insight: we need IH to work for any expression, not just our specific e
-  revert e ctxᵢ res htc
+  revert tm e ctxᵢ res htc
   induction fuel using Nat.strong_induction_on with
   | _ n IH =>
-    intro e ctxᵢ res htc
+    intro e ctxᵢ tm res htc
     cases n with
     | zero =>
         simp [typecheck, typecheckExpr] at htc
@@ -1737,56 +1803,66 @@ theorem TypeSystemEnforcesFaultRobustness_step
             | zero =>
                 simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
             | succ fuel' =>
-                exact stepFR_op ctxᵢ predSat e1 e2 op fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
+                exact stepFR_op ctxᵢ predSat e1 e2 op fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
         | unaryop uop e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
             | succ fuel' =>
-                exact stepFR_unaryop ctxᵢ predSat e uop fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
+                exact stepFR_unaryop ctxᵢ predSat e uop fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
         | ite e1 e2 e3 =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckIf] at htc
             | succ fuel' =>
                 have hsingleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) := by
-                  intro m _hm e ctx' hwfTm' res' htc'
-                  exact TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue e ctx' predSat tm m res' htc'
+                  intro m _hm tmᵢ e ctx' hwfTm' _hTmBounded' res' htc'
+                  exact
+                    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
+                      e ctx' predSat tmᵢ m res' htc'
                 exact
                   stepFR_ite ctxᵢ predSat tm e1 e2 e3 fuel' res
-                    (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
+                    (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc))
                     hsingleIH htc
         | newRef e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckNewRef] at htc
             | succ fuel' =>
-                exact stepFR_newRef ctxᵢ predSat e fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
+                exact stepFR_newRef ctxᵢ predSat e fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
         | assign e1 e2 =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckAssign] at htc
             | succ fuel' =>
-                exact stepFR_assign ctxᵢ predSat tm e1 e2 fuel' res (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
+                exact stepFR_assign ctxᵢ predSat tm e1 e2 fuel' res (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
         | deref e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckDeref] at htc
             | succ fuel' =>
-                exact stepFR_deref ctxᵢ predSat tm e fuel' res (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
+                exact stepFR_deref ctxᵢ predSat tm e fuel' res (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
         | seq e1 e2 =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
             | succ fuel' =>
-                exact stepFR_seq ctxᵢ predSat e1 e2 fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
+                exact stepFR_seq ctxᵢ predSat e1 e2 fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
         | vlet z e1 e2 =>
             let vname := z
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
             | succ fuel' =>
-                exact stepFR_vlet ctxᵢ predSat vname e1 e2 fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH) htc
+                exact stepFR_vlet ctxᵢ predSat vname e1 e2 fuel' res tm (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
         | fn name ty e1 ty2 =>
             exact stepFR_fn ctxᵢ predSat tm name ty e1 ty2 fuel res htc
         | pfn name ty e1 ty2 =>
@@ -1797,11 +1873,14 @@ theorem TypeSystemEnforcesFaultRobustness_step
                 simp [typecheck, typecheckExpr, typecheckApp] at htc
             | succ fuel' =>
                 have hsingleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) := by
-                  intro m _hm e ctx' hwfTm' res' htc'
-                  exact TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue e ctx' predSat tm m res' htc'
+                  intro m _hm tmᵢ e ctx' hwfTm' _hTmBounded' res' htc'
+                  exact
+                    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
+                      e ctx' predSat tmᵢ m res' htc'
                 exact
                   stepFR_app ctxᵢ predSat tm e1 e2 fuel' res
-                    (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel')) IH)
+                    (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc))
                     hsingleIH htc
         | externVal _id _t _p _pr =>
             -- FFI: two-run step FR for extern value dispatch.
@@ -1813,7 +1892,7 @@ theorem TypeSystemEnforcesFaultRobustness_step
             -- residual Contract-A/E sorries here; those return with the
             -- evidence-registry refactor (doc/ffi-axioms.md), which will
             -- thread a populated registry into this statement.
-            intro _hpredlaws _hExtTyping _hwfTm _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
+            intro _hpredlaws _hExtTyping _hwfTm _hTmBounded _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
                   _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
                   _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
             obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
@@ -1830,7 +1909,7 @@ theorem TypeSystemEnforcesFaultRobustness_step
             -- (tag-mapping soundness) and the `FnTClosure.extern`
             -- `valueHasETyp` gap will return when a populated registry is
             -- threaded into this statement (doc/ffi-axioms.md).
-            intro _hpredlaws _hExtTyping _hwfTm _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
+            intro _hpredlaws _hExtTyping _hwfTm _hTmBounded _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
                   _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
                   _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
             obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
@@ -1845,7 +1924,7 @@ theorem TypeSystemEnforcesFaultRobustness_step
             -- through the registry, which is empty under the default
             -- convention; `ht₀` is therefore unsatisfiable.  Contract A
             -- will return with the evidence-registry refactor.
-            intro _hpredlaws _hExtTyping _hwfTm _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
+            intro _hpredlaws _hExtTyping _hwfTm _hTmBounded _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
                   _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
                   _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
             obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
@@ -1859,7 +1938,8 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
   (∀ e ctxᵢ predSat tm, TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm) →
   (∀ e s obs, TypeSystemEnforcesFaultRobustness_spec e s obs) := by
   intro hstep e s obs
-  rintro his _hos ctx hctx hwf _hpc hte htagBoundedInit predSat tm hwfTm hps hExtTyping ⟨fuel, res, htc, hobs⟩
+  rintro his _hos ctx hctx hwf _hpc hte htagBoundedInit predSat tm hwfTm hTmBounded
+    hps hExtTyping ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
   have hstep' := hstep e ctx predSat tm
@@ -1896,13 +1976,16 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
         predSat R s ctx μ₂ ρ₂ θ₂ hcrs₂' hric₂ (by simpa [hRdef] using htrustedInit₂) his hctx hWfRegime'
   have htagBounded : TagBoundedCtx ctx := htagBoundedInit
   have hstep_fr :=
-    hstep' hps hExtTyping hwfTm μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
+    hstep' hps hExtTyping hwfTm hTmBounded μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
       hθ₁ hθ₂ hwf htagBounded hric₁ hric₂ hreg hcwr₁ hcwr₂ hagree_clean
       a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
   -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ valueHasETyp ∧ valueHasETyp ∧
   --   wfTagMeaningCtx ∧ wfTypeContext ∧ TagBoundedCtx ∧ wfConfig ∧ wfConfig ∧ ... ∧ agreeOnClean ∧ resultAgreesIfClean
-  rcases hstep_fr with ⟨_hresTm, hstep_fr⟩
-  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hvtyp₁, _hvtyp₂, _hTm', _hwfctx', _htagBounded', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg', _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂, hret_agree⟩
+  rcases hstep_fr with ⟨_tm', _hcanon, _hpredlaws', _hresTm, hstep_fr⟩
+  rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hvtyp₁, _hvtyp₂, _hTm',
+    _hwfctx', _htagBounded', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg',
+    _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂,
+    hret_agree⟩
   refine ⟨θ₁', θ₂', hwfext₁, hwfext₂, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]

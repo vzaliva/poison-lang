@@ -1066,6 +1066,17 @@ def joinTypeResults (ctx : TypeContext) (firstResult : TypeResult) (restResults 
     return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
              nextLoc' := maxNextLoc, nextTag' := maxNextTag, regime' := joinedRegime }
 
+def applyClosuresThreaded {α : Type}
+    (applyOne : α → Tag × Loc → TypecheckM TypeResult)
+    (items : List α) (cursor : Tag × Loc) : TypecheckM (List TypeResult) :=
+  match items with
+  | [] => pure []
+  | item :: rest => do
+      let r ← applyOne item cursor
+      let rs ← applyClosuresThreaded applyOne rest (r.nextTag', r.nextLoc')
+      pure (r :: rs)
+termination_by items.length
+
 mutual
 
 -- Helper function to type check an expression with context
@@ -1294,6 +1305,78 @@ def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
 /-- Helper: Apply a single FnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single closure alternative.
 -/
+def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
+    (fuel : Nat) : TypecheckM TypeResult :=
+  match fuel with
+  | 0 => throw "Out of fuel in applyFnTClosure"
+  | fuel + 1 => do
+    match tcl with
+    | FnTClosure.regular x body env =>
+        -- Type the body with the closure's captured environment
+        -- pc = join p join p1 pc (Ott spec line 733: app_fn_singleton)
+        let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        let envMap := VarTypeEnv.ofCaptured env
+        let env' := VarTypeEnv.update envMap x argQt
+        let ctx'' := { ctx with pc := joinPoison p (joinPoison p1 ctx.pc),
+                                memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
+                                nextTag := cursor.1, nextLoc := cursor.2, regime := result2.regime' }
+        let result3 ← typecheckExpr ctx'' body fuel
+        let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
+
+        -- Check subtyping
+        if not (isSubtype st2 result3.qualType) then
+          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
+
+        -- Issue #111: taint app result by function poison (p, p1)
+        -- Issue #113: provenance gate - if join p1 p, force irrecoverable poison and no_pred
+        let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
+        let taintedQt := { result3.qualType with poison := taintedPoison }
+        return { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
+
+    | FnTClosure.extern x retSpec effects capturedEnv =>
+        let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
+
+        let allPreds := collectExternPreds retSpec effects
+        let (tagMapping, nextTag') ← collectAndAllocExternTags allPreds cursor.1
+
+        let mut memEnv := result2.memEnv'
+        let mut nextLoc := cursor.2
+        for effect in effects do
+          memEnv ← applyExternEffect effect unifiedEnv tagMapping ctx.pc memEnv
+
+        match retSpec with
+        | ExternReturn.simple typ poison pred =>
+            let resolvedPred ← resolveSyntaxPred pred unifiedEnv tagMapping
+            let (retQt, nextLoc') ← returnSpecToQTyp typ poison resolvedPred nextLoc
+
+            let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
+            let qt := ⟨retQt.etyp, poison', retQt.pred⟩
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := result2.regime' }
+
+        | ExternReturn.nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
+            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
+            let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
+            let poison' := joinPoison p1 (joinPoison p ctx.pc)
+            let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := nextTag', regime' := result2.regime' }
+
+        | ExternReturn.nestedPfn _ innerArg innerArgTyp innerRet =>
+            let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
+            let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
+            let poison' := joinPoison p1 (joinPoison p ctx.pc)
+            let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := nextTag', regime' := result2.regime' }
+termination_by fuel
+
 def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) : TypecheckM TypeResult :=
@@ -1363,11 +1446,80 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag', regime' := result2.regime' }
-termination_by fuel
 
 /-- Helper: Apply a single PFnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single pure closure alternative.
 -/
+def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
+    (fuel : Nat) : TypecheckM TypeResult :=
+  match fuel with
+  | 0 => throw "Out of fuel in applyPFnTClosure"
+  | fuel + 1 => do
+    match tcl with
+    | PFnTClosure.regular x body env =>
+        -- Type the body with the closure's captured environment in pure context
+        let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        let envMap := VarTypeEnv.ofCaptured env
+        let env' := VarTypeEnv.update envMap x argQt
+        let ctx'' := { ctx with pc := joinPoison p (joinPoison ctx.pc p1),
+                                memEnv := result2.memEnv', varEnv := env', tagEnv := result2.tagEnv',
+                                pureCtx := true, nextLoc := cursor.2, nextTag := cursor.1, regime := result2.regime' }
+        let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
+        let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
+
+        -- Check subtyping
+        if not (isSubtype st2 result3.qualType) then
+          throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
+
+        -- Issue #111: taint app result by function poison (p, p1)
+        -- Issue #113: provenance gate - if join p1 p, force irrecoverable poison and no_pred
+        let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
+        let taintedQt := { result3.qualType with poison := taintedPoison }
+        return { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
+
+    | PFnTClosure.extern x retSpec capturedEnv =>
+        let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
+
+        let mut nextLoc := cursor.2
+
+        match retSpec with
+        | ExternReturn.simple typ poison pred =>
+            let (tagMapping, nextTag') ← collectAndAllocExternTags [pred] cursor.1
+            let resolvedPred ← resolveSyntaxPred pred unifiedEnv tagMapping
+            let (retQt, nextLoc') ← returnSpecToQTyp typ poison resolvedPred nextLoc
+
+            let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
+            let qt := ⟨retQt.etyp, poison', retQt.pred⟩
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := result2.regime' }
+
+        | ExternReturn.nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
+            let innerTcl := FnTClosure.extern innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
+            let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
+            -- Issue #111: taint app result by function poison (p, p1)
+            -- Issue #113: provenance gate
+            let poison' := joinPoison p1 (joinPoison p ctx.pc)
+            let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := cursor.1, regime' := result2.regime' }
+
+        | ExternReturn.nestedPfn _ innerArg innerArgTyp innerRet =>
+            let innerTcl := PFnTClosure.extern innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv)
+            let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
+            -- Issue #111: taint app result by function poison (p, p1)
+            -- Issue #113: provenance gate
+            let poison' := joinPoison p1 (joinPoison p ctx.pc)
+            let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
+            let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+                     nextLoc' := nextLoc, nextTag' := cursor.1, regime' := result2.regime' }
+termination_by fuel
+
 def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (ctx : TypeContext) (result2 : TypeResult) (fuel : Nat) : TypecheckM TypeResult :=
@@ -1435,7 +1587,6 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := result2.nextTag', regime' := result2.regime' }
-termination_by fuel
 
 def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
@@ -1464,8 +1615,10 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if not (isSubtype st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
-      -- Apply each closure in the list using List.mapM
-      let results ← List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel) tcls
+      let results ← applyClosuresThreaded
+        (fun tcl cursor =>
+          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel)
+        tcls (result1.nextTag', result1.nextLoc')
 
       -- Check that we have at least one result and join them
       match results with
@@ -1480,8 +1633,10 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if not (isSubtype st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
-      -- Apply each closure in the list using List.mapM
-      let results ← List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 fuel) tcls
+      let results ← applyClosuresThreaded
+        (fun tcl cursor =>
+          applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel)
+        tcls (result1.nextTag', result1.nextLoc')
 
       -- Check that we have at least one result and join them
       match results with

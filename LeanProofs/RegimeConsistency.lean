@@ -3,6 +3,7 @@
 
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
+import LeanProofs.Aux
 import LeanProofs.TypeSafety
 import LeanProofs.SemanticsProperties
 import Std.Data.ExtTreeMap
@@ -32,6 +33,79 @@ namespace TagMeaning
   def hasKey (tm : TagMeaning) (k : Tag) : Prop :=
     tm.contains k
 end TagMeaning
+
+/-- `tm` extends to `tm'`: every binding of `tm` is preserved in `tm'`.
+    Insertions at fresh keys are allowed; overwrites and removals are forbidden.
+
+    Built on the generic `ExtTreeMap.IsSubmap` (`LeanProofs/Aux.lean`). -/
+abbrev TagMeaningExtends (tm tm' : TagMeaning) : Prop :=
+  ExtTreeMap.IsSubmap tm tm'
+
+infix:50 " ⊑ " => TagMeaningExtends
+
+theorem TagMeaningExtends.refl (tm : TagMeaning) : tm ⊑ tm :=
+  ExtTreeMap.IsSubmap.refl tm
+
+theorem TagMeaningExtends.trans {tm₁ tm₂ tm₃ : TagMeaning}
+    (h₁ : tm₁ ⊑ tm₂) (h₂ : tm₂ ⊑ tm₃) : tm₁ ⊑ tm₃ :=
+  ExtTreeMap.IsSubmap.trans h₁ h₂
+
+theorem TagMeaningExtends.lookup {tm tm' : TagMeaning} (h : tm ⊑ tm') {k : Tag} {d : GuardDesc}
+    (hlookup : tm.lookup k = some d) : tm'.lookup k = some d :=
+  h k d hlookup
+
+/-- `tm` contains no entries at or above `bound`. Threaded alongside
+    `wfTagMeaningCtx` so allocation at fresh tag `≥ bound` produces a submap. -/
+def TagMeaningBounded (tm : TagMeaning) (bound : Tag) : Prop :=
+  ∀ k d, tm.lookup k = some d → k < bound
+
+theorem TagMeaningBounded.empty {bound : Tag} :
+    TagMeaningBounded (∅ : TagMeaning) bound := by
+  intro k d hlookup
+  simp [TagMeaning.lookup] at hlookup
+
+/-- A bounded `tm` does not have a key at or above its bound. -/
+theorem TagMeaningBounded.lookup_none_of_ge
+    {tm : TagMeaning} {bound : Tag} (h : TagMeaningBounded tm bound)
+    {k : Tag} (hk : bound ≤ k) : tm.lookup k = none := by
+  by_contra hne
+  cases h_lookup : tm.lookup k with
+  | none => exact hne h_lookup
+  | some d =>
+      have hlt := h k d h_lookup
+      exact absurd (Nat.lt_of_lt_of_le hlt hk) (Nat.lt_irrefl _)
+
+/-- Inserting at a fresh key `≥ bound` yields a submap. -/
+theorem TagMeaningExtends.of_insert_fresh
+    (tm : TagMeaning) (k : Tag) (d : GuardDesc)
+    (h_fresh : tm.lookup k = none) :
+    tm ⊑ tm.update k d := by
+  unfold TagMeaning.update
+  exact ExtTreeMap.IsSubmap_of_insert_fresh tm k d h_fresh
+
+/-- After inserting at fresh tag `bound`, the new bound is `bound + 1`. -/
+theorem TagMeaningBounded.insert_succ
+    {tm : TagMeaning} {bound : Tag} (h : TagMeaningBounded tm bound) (d : GuardDesc) :
+    TagMeaningBounded (tm.update bound d) (bound + 1) := by
+  intro k d' hlookup
+  unfold TagMeaning.update TagMeaning.lookup at hlookup
+  rw [ExtTreeMap.get?_eq_getElem?] at hlookup
+  simp only [ExtTreeMap.getElem?_insert] at hlookup
+  by_cases h_eq : compare bound k = Ordering.eq
+  · have h_k_eq : bound = k := LawfulEqCmp.eq_of_compare h_eq
+    subst h_k_eq
+    exact Nat.lt_succ_self _
+  · simp [h_eq] at hlookup
+    rw [← ExtTreeMap.get?_eq_getElem?] at hlookup
+    have hlt := h k d' hlookup
+    exact Nat.lt_succ_of_lt hlt
+
+/-- Boundedness is monotone in the bound (a tighter bound implies a looser one). -/
+theorem TagMeaningBounded.mono {tm : TagMeaning} {b₁ b₂ : Tag}
+    (h : TagMeaningBounded tm b₁) (hle : b₁ ≤ b₂) :
+    TagMeaningBounded tm b₂ := by
+  intro k d hlookup
+  exact Nat.lt_of_lt_of_le (h k d hlookup) hle
 
 /-- Extract (tag, descriptor) from a guardClosure predicate. -/
 def qtypGuardDesc? (qt : QTyp) : Option (Tag × GuardDesc) :=
@@ -274,6 +348,107 @@ lemma wfTagMeaningCtx_varEnv_ext (tm : TagMeaning) (ctx : TypeContext) (x : Name
 /-- All deep guard descriptors reachable from `qt` are mapped by `tm`. -/
 @[reducible] def QTypRespectsTagMeaning (tm : TagMeaning) (qt : QTyp) : Prop :=
   ∀ {qt' k d}, QTypInQTyp qt' qt → qtypGuardDesc? qt' = some (k, d) → tm.lookup k = some d
+
+/-- Monotonicity of `EnvRespectsTagMeaning` along `⊑`: every required guard
+    descriptor stays mapped under the extended table. -/
+theorem EnvRespectsTagMeaning_mono
+    {tm tm' : TagMeaning} {σ : VarTypeEnv} {Γ : MemoryTypeEnv}
+    (hext : tm ⊑ tm') (h : EnvRespectsTagMeaning tm σ Γ) :
+    EnvRespectsTagMeaning tm' σ Γ :=
+  ⟨fun hdeep => hext.lookup (h.1 hdeep)⟩
+
+/-- Monotonicity of `wfTagMeaningCtx` along `⊑`. -/
+theorem wfTagMeaningCtx_mono
+    {tm tm' : TagMeaning} {ctx : TypeContext}
+    (hext : tm ⊑ tm') (h : wfTagMeaningCtx tm ctx) :
+    wfTagMeaningCtx tm' ctx :=
+  EnvRespectsTagMeaning_mono hext h
+
+/-- Monotonicity of `QTypRespectsTagMeaning` along `⊑`. -/
+theorem QTypRespectsTagMeaning_mono
+    {tm tm' : TagMeaning} {qt : QTyp}
+    (hext : tm ⊑ tm') (h : QTypRespectsTagMeaning tm qt) :
+    QTypRespectsTagMeaning tm' qt := by
+  intro qt' k d hinq hqd
+  exact hext.lookup (h hinq hqd)
+
+/-- Structural canonical extension predicate: `tm'` is a tag-meaning that
+    extends `tm` and is consistent with the typecheck result `res` from
+    context `ctx` on expression `e`.
+
+    This is a *semantic* packaging — it records the four threaded properties
+    without enumerating typecheck cases.  The fuel-indexed inductive variant
+    promised by the doc is left as a follow-up: per-case `StepFR` proofs in
+    Phase 6 construct witnesses for this Prop inline at each operator. -/
+def IsCanonicalExtension
+    (tm : TagMeaning) (ctx : TypeContext) (_e : Expr)
+    (res : TypeResult) (tm' : TagMeaning) : Prop :=
+  tm ⊑ tm' ∧
+  TagMeaningBounded tm' res.nextTag' ∧
+  wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
+  QTypRespectsTagMeaning tm' res.qualType
+
+namespace IsCanonicalExtension
+
+theorem extends_tm
+    {tm : TagMeaning} {ctx : TypeContext} {e : Expr}
+    {res : TypeResult} {tm' : TagMeaning}
+    (h : IsCanonicalExtension tm ctx e res tm') : tm ⊑ tm' :=
+  h.1
+
+theorem bounded
+    {tm : TagMeaning} {ctx : TypeContext} {e : Expr}
+    {res : TypeResult} {tm' : TagMeaning}
+    (h : IsCanonicalExtension tm ctx e res tm') :
+    TagMeaningBounded tm' res.nextTag' :=
+  h.2.1
+
+theorem wfCtx
+    {tm : TagMeaning} {ctx : TypeContext} {e : Expr}
+    {res : TypeResult} {tm' : TagMeaning}
+    (h : IsCanonicalExtension tm ctx e res tm') :
+    wfTagMeaningCtx tm' (ctxAfter ctx res) :=
+  h.2.2.1
+
+theorem respectsResult
+    {tm : TagMeaning} {ctx : TypeContext} {e : Expr}
+    {res : TypeResult} {tm' : TagMeaning}
+    (h : IsCanonicalExtension tm ctx e res tm') :
+    QTypRespectsTagMeaning tm' res.qualType :=
+  h.2.2.2
+
+end IsCanonicalExtension
+
+/-- Reflexive (non-allocating) canonical extension: when `tm' = tm` and the
+    output already satisfies the post-typecheck consistency facts, the
+    canonical-extension witness is immediate.
+
+    Most `typecheckExpr` cases (literals, variables, ops, fn/pfn,
+    sequencing, vlet, etc.) do not allocate fresh tags, so `tm' = tm`
+    works.  Allocating cases (`externVal`, closure-application extern
+    paths) construct `tm'` non-trivially using `ExternBatchTagMeaningExtension`. -/
+theorem IsCanonicalExtension.refl
+    {tm : TagMeaning} {ctx : TypeContext} {e : Expr} {res : TypeResult}
+    (h_bounded : TagMeaningBounded tm res.nextTag')
+    (h_wf : wfTagMeaningCtx tm (ctxAfter ctx res))
+    (h_resp : QTypRespectsTagMeaning tm res.qualType) :
+    IsCanonicalExtension tm ctx e res tm :=
+  ⟨ExtTreeMap.IsSubmap.refl tm, h_bounded, h_wf, h_resp⟩
+
+/-- Composition: chaining two canonical extensions through subexpressions
+    transitively combines the submap relation, advances boundedness through
+    the second cursor, and inherits the second extension's post-context
+    well-formedness and result respectfulness. -/
+theorem IsCanonicalExtension.trans
+    {tm tm₁ tm₂ : TagMeaning} {ctx ctx₁ : TypeContext} {e₁ e₂ : Expr}
+    {res₁ res₂ : TypeResult}
+    (h₁ : IsCanonicalExtension tm ctx e₁ res₁ tm₁)
+    (h₂ : IsCanonicalExtension tm₁ ctx₁ e₂ res₂ tm₂) :
+    tm ⊑ tm₂ ∧
+    TagMeaningBounded tm₂ res₂.nextTag' ∧
+    wfTagMeaningCtx tm₂ (ctxAfter ctx₁ res₂) ∧
+    QTypRespectsTagMeaning tm₂ res₂.qualType :=
+  ⟨ExtTreeMap.IsSubmap.trans h₁.1 h₂.1, h₂.2.1, h₂.2.2.1, h₂.2.2.2⟩
 
 /-- Transport `QTypRespectsTagMeaning` across qualified types with the same
     expression type and predicate (poison may differ). -/

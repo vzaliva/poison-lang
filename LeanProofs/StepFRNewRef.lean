@@ -294,14 +294,20 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hExtTyping hwfTm μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
+  intro hpredlaws hExtTyping hwfTm hTmBounded
+  refine ⟨?_, ?_⟩
+  · exact
+      StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
+        (Expr.newRef e) (Nat.succ (Nat.succ fuel')) res
+        hwfTm hTmBounded hpredlaws htc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hwfTm res1 htc1'
+    e ctxᵢ hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_newRef_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
   rcases hstruct with ⟨cfg', n, ht_e, ho, hmem, _hnext, hvar, _hpm⟩
   rcases
-    hIH hpredlaws hExtTyping hwfTm μ ρ θ cfg' (Value.num n)
+    (hIH hpredlaws hExtTyping hwfTm hTmBounded).2 μ ρ θ cfg' (Value.num n)
       hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
     with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
@@ -536,7 +542,7 @@ lemma stepFR_newRef
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for newRef
@@ -548,9 +554,9 @@ lemma stepFR_newRef
   rcases hstruct₁ with ⟨cfg₁', n₁, ht₁_e, ho₁, hmem₁, hnext₁, hvar₁, hpm₁⟩
   -- Apply IH for e
   have hstep_e :=
-    hIH hpredlaws hExtTyping hwfTm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
+    hIH hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
       hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
-  rcases hstep_e with ⟨hresTm1, hstep_e⟩
+  rcases hstep_e with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e⟩
   rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hTm1, hwf1, _htagBounded1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
   -- Derive regime equality: newRef preserves regime (res.regime' = res1.regime')
   -- From typecheckNewRef_structure, we already have h_regime
@@ -1393,13 +1399,13 @@ lemma stepFR_newRef
   have hres1_desc :
       ∀ {qt k d}, QTypInQTyp qt res1.qualType →
         qtypGuardDesc? qt = some (k, d) →
-        tm.lookup k = some d := by
+        tm1.lookup k = some d := by
     intro qt k d hinq hqd
     exact hresTm1 hinq hqd
   have hstored_desc :
       ∀ {qt k d}, QTypInQTyp qt storedQt →
         qtypGuardDesc? qt = some (k, d) →
-        tm.lookup k = some d := by
+        tm1.lookup k = some d := by
     intro qt k d hinq hqd
     have hnotfun : storedQt.etyp.isFunctionType = false := by
       simp [storedQt, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
@@ -1413,20 +1419,26 @@ lemma stepFR_newRef
     have hqd' : qtypGuardDesc? res1.qualType = some (k, d) := by
       simpa [storedQt, qtypGuardDesc?, hpc_false] using hqd
     exact hres1_desc (QTypInQTyp.self res1.qualType) hqd'
-  have hEnvTm_res1 : EnvRespectsTagMeaning tm ctxᵢ.varEnv res1.memEnv' := by
+  have hEnvTm_res1 : EnvRespectsTagMeaning tm1 ctxᵢ.varEnv res1.memEnv' := by
     simpa [wfTagMeaningCtx, ctxAfter] using _hTm1
-  have hEnvTm_res : EnvRespectsTagMeaning tm ctxᵢ.varEnv res.memEnv' := by
-    have hEnvTm_upd : EnvRespectsTagMeaning tm ctxᵢ.varEnv (res1.memEnv'.update l storedQt) := by
-      exact EnvRespectsTagMeaning_memEnv_ext tm ctxᵢ.varEnv res1.memEnv' l storedQt (by simp [storedQt]) hEnvTm_res1 hstored_desc
+  have hEnvTm_res : EnvRespectsTagMeaning tm1 ctxᵢ.varEnv res.memEnv' := by
+    have hEnvTm_upd : EnvRespectsTagMeaning tm1 ctxᵢ.varEnv (res1.memEnv'.update l storedQt) := by
+      exact EnvRespectsTagMeaning_memEnv_ext tm1 ctxᵢ.varEnv res1.memEnv' l storedQt (by simp [storedQt]) hEnvTm_res1 hstored_desc
     simpa [h_mem, storedQt, updateMemEnv] using hEnvTm_upd
-  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+  have hresTm : QTypRespectsTagMeaning tm1 res.qualType := by
     have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
       simp [h_etyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
     have hguard : qtypGuardDesc? res.qualType = none := by
       simp [qtypGuardDesc?, h_pred]
     intro qt' k d hinq hqd
-    exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun_res hguard) hinq hqd
-  refine ⟨hresTm, ?_⟩
+    exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm1 res.qualType hnotfun_res hguard) hinq hqd
+  have hwfTm_final : wfTagMeaningCtx tm1 (ctxAfter ctxᵢ res) :=
+    wfTagMeaningCtx_ctxAfter tm1 ctxᵢ res hEnvTm_res
+  have hcanon_newRef : IsCanonicalExtension tm ctxᵢ (Expr.newRef e) res tm1 := by
+    exact ⟨IsCanonicalExtension.extends_tm hcanon1,
+      by simpa [h_ntag] using IsCanonicalExtension.bounded hcanon1,
+      hwfTm_final, hresTm⟩
+  refine ⟨tm1, hcanon_newRef, hpredlaws1, hresTm, ?_⟩
   refine ⟨θ₀', θ₁', ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
@@ -1449,7 +1461,7 @@ lemma stepFR_newRef
       exact ExtTreeMap.getElem?_insert_self
     exact valueHasETyp.loc (l := l) hlookup (by simp [LocSet.singleton])
   · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res)
-    exact wfTagMeaningCtx_ctxAfter tm ctxᵢ res hEnvTm_res
+    exact hwfTm_final
   · -- wfTypeContext (ctxAfter ctxᵢ res)
     exact hwf_result
   · -- TagBoundedCtx (ctxAfter ctxᵢ res)

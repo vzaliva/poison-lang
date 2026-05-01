@@ -128,6 +128,50 @@ lemma ExtTreeMap_insert_preserves_injectivity
       rw [← ExtTreeMap.get?_eq_getElem?] at hlookup1 hlookup2
       exact h_inj k₁ k₂ a hlookup1 hlookup2
 
+/-- `m` is a submap of `m'`: every key/value entry of `m` is preserved in `m'`.
+
+    Insertions at fresh keys are allowed; overwrites and removals are forbidden.
+    Used as the foundation for `TagMeaningExtends` (`⊑`) on `TagMeaning`. -/
+abbrev ExtTreeMap.IsSubmap
+    {α : Type} {compare : α → α → Ordering} [TransCmp compare]
+    {β : Type} (m m' : ExtTreeMap α β compare) : Prop :=
+  ∀ k v, m.get? k = some v → m'.get? k = some v
+
+theorem ExtTreeMap.IsSubmap.refl
+    {α : Type} {compare : α → α → Ordering} [TransCmp compare]
+    {β : Type} (m : ExtTreeMap α β compare) : ExtTreeMap.IsSubmap m m :=
+  fun _ _ h => h
+
+theorem ExtTreeMap.IsSubmap.trans
+    {α : Type} {compare : α → α → Ordering} [TransCmp compare]
+    {β : Type} {m₁ m₂ m₃ : ExtTreeMap α β compare}
+    (h₁ : ExtTreeMap.IsSubmap m₁ m₂) (h₂ : ExtTreeMap.IsSubmap m₂ m₃) :
+    ExtTreeMap.IsSubmap m₁ m₃ :=
+  fun k v h => h₂ k v (h₁ k v h)
+
+theorem ExtTreeMap.IsSubmap_of_insert_fresh
+    {α : Type} {compare : α → α → Ordering} [TransCmp compare] [LawfulEqCmp compare]
+    {β : Type} (m : ExtTreeMap α β compare) (k : α) (v : β)
+    (h_fresh : m.get? k = none) :
+    ExtTreeMap.IsSubmap m (m.insert k v) := by
+  intro k' v' hlookup
+  by_cases h_eq : compare k k' = Ordering.eq
+  · have h_k_eq : k = k' := LawfulEqCmp.eq_of_compare h_eq
+    subst h_k_eq
+    rw [hlookup] at h_fresh
+    exact (Option.noConfusion h_fresh)
+  · rw [ExtTreeMap.get?_eq_getElem?]
+    simp only [ExtTreeMap.getElem?_insert, h_eq, if_false]
+    rw [← ExtTreeMap.get?_eq_getElem?]
+    exact hlookup
+
+theorem ExtTreeMap.IsSubmap.lookup_preserved
+    {α : Type} {compare : α → α → Ordering} [TransCmp compare]
+    {β : Type} {m m' : ExtTreeMap α β compare}
+    (h : ExtTreeMap.IsSubmap m m') {k : α} {v : β}
+    (hlookup : m.get? k = some v) : m'.get? k = some v :=
+  h k v hlookup
+
 -- ================================================================
 -- List + Except: foldlM / mapM preserve properties
 -- ================================================================
