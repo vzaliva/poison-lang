@@ -83,14 +83,7 @@ theorem respects
     TagMappingRespectsTagMeaning tm' mapping preds env :=
   h.2.2.1
 
-/-- The fresh-tag cursor only advances. -/
-theorem nextTag_le
-    {tm : TagMeaning} {nextTag : Tag} {mapping : TagMapping}
-    {preds : List SyntaxPredicate} {env : VarTypeEnv}
-    {nextTag' : Tag} {tm' : TagMeaning}
-    (h : ExternBatchTagMeaningExtension tm nextTag mapping preds env nextTag' tm') :
-    nextTag ≤ nextTag' :=
-  h.2.2.2
+-- (nextTag_le: deleted as unused; see git history)
 
 end ExternBatchTagMeaningExtension
 

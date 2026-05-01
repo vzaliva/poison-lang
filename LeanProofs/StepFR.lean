@@ -4735,37 +4735,7 @@ private lemma applyFnTClosure_regular_inv
 -- Gives the selected closure's successful application together with body-typing inversion.
 -- (applyFnTClosure_regular_inv_of_mapM_mem: deleted as unused; see git history)
 
-private lemma applyClosuresThreaded_ok_mem_input_exists_output_pre
-  {α : Type}
-  (applyOne : α → Tag × Loc → TypecheckM TypeResult)
-  {xs : List α} {cursor : Tag × Loc} {results : List TypeResult} {x : α}
-  (hthread : applyClosuresThreaded applyOne xs cursor = .ok results)
-  (hmem : x ∈ xs) :
-  ∃ y, y ∈ results ∧ ∃ cursor', applyOne x cursor' = .ok y := by
-  induction xs generalizing cursor results with
-  | nil =>
-      simp at hmem
-  | cons x0 xs ih =>
-      simp [applyClosuresThreaded, bind, Except.bind] at hthread
-      cases hfirst : applyOne x0 cursor with
-      | error _ =>
-          simp [hfirst] at hthread
-      | ok first =>
-          simp [hfirst] at hthread
-          cases hrest : applyClosuresThreaded applyOne xs (first.nextTag', first.nextLoc') with
-          | error _ =>
-              simp [hrest] at hthread
-          | ok rest =>
-              simp [hrest, pure, Except.pure] at hthread
-              cases hthread
-              simp at hmem
-              cases hmem with
-              | inl hx =>
-                  subst hx
-                  exact ⟨first, by simp, cursor, hfirst⟩
-              | inr hx =>
-                  rcases ih hrest hx with ⟨y, hy, cursor', happly⟩
-                  exact ⟨y, by simp [hy], cursor', happly⟩
+-- (applyClosuresThreaded_ok_mem_input_exists_output_pre: deleted as unused; see git history)
 
 private lemma applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bounds_pre
   {α : Type}
@@ -4955,37 +4925,7 @@ lemma applyClosuresThreaded_ok_cons_head
                 exact hthread.1
               exact ⟨x, xs, rfl, by simpa [hy] using hfirst⟩
 
-lemma applyClosuresThreaded_ok_mem_input_exists_output
-  {α : Type}
-  (applyOne : α → Tag × Loc → TypecheckM TypeResult)
-  {xs : List α} {cursor : Tag × Loc} {results : List TypeResult} {x : α}
-  (hthread : applyClosuresThreaded applyOne xs cursor = .ok results)
-  (hmem : x ∈ xs) :
-  ∃ y, y ∈ results ∧ ∃ cursor', applyOne x cursor' = .ok y := by
-  induction xs generalizing cursor results with
-  | nil =>
-      simp at hmem
-  | cons x0 xs ih =>
-      simp [applyClosuresThreaded, bind, Except.bind] at hthread
-      cases hfirst : applyOne x0 cursor with
-      | error _ =>
-          simp [hfirst] at hthread
-      | ok first =>
-          simp [hfirst] at hthread
-          cases hrest : applyClosuresThreaded applyOne xs (first.nextTag', first.nextLoc') with
-          | error _ =>
-              simp [hrest] at hthread
-          | ok rest =>
-              simp [hrest, pure, Except.pure] at hthread
-              cases hthread
-              simp at hmem
-              cases hmem with
-              | inl hx =>
-                  subst hx
-                  exact ⟨first, by simp, cursor, hfirst⟩
-              | inr hx =>
-                  rcases ih hrest hx with ⟨y, hy, cursor', happly⟩
-                  exact ⟨y, by simp [hy], cursor', happly⟩
+-- (applyClosuresThreaded_ok_mem_input_exists_output: deleted as unused; see git history)
 
 lemma applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bounds
   {α : Type}
@@ -8048,41 +7988,7 @@ lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
       ⟨tm', _tagMapping, _nextTag', hbatch, hbounded', hwf, hqtm⟩
     exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hbounded', hwf, hqtm⟩
 
-lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List FnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (IH :
-    ∀ (m : Nat), m < fuel →
-      ∀ (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
-      typecheck ctx_i e_i m = .ok res_i →
-      wfTagMeaningCtx tm ctx_i →
-      TagMeaningBounded tm ctx_i.nextTag →
-      ∃ tm', IsCanonicalExtension tm ctx_i e_i res_i tm')
-  (tcl : FnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm result1.nextTag')
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    TagMeaningBounded tm' r.nextTag' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType :=
-  applyFnTClosure_ok_wfTagMeaningCtx_byIH
-    (_hExtTyping := hExtTyping) (tm := tm) (IH := IH)
-    (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-    (tcls := tcls)
-    (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-    (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
-    hctxTm1 hresTm1 hbounded hetyp1 hmem_tcl hargTm happly
+-- (applyFnTClosure_ok_QTypRespectsTagMeaning_byIH: deleted as unused; see git history)
 
 lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
   (_hExtTyping : ExternTypingAssumptions)
@@ -8248,41 +8154,7 @@ lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
               rw [← happly]
         exact ⟨tm, ExtTreeMap.IsSubmap.refl tm, by rwa [htag_eq], hwf, hqtm⟩
 
-lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List PFnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (IH :
-    ∀ (m : Nat), m < fuel →
-      ∀ (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
-      typecheck ctx_i e_i m = .ok res_i →
-      wfTagMeaningCtx tm ctx_i →
-      TagMeaningBounded tm ctx_i.nextTag →
-      ∃ tm', IsCanonicalExtension tm ctx_i e_i res_i tm')
-  (tcl : PFnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm result1.nextTag')
-  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    TagMeaningBounded tm' r.nextTag' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType :=
-  applyPFnTClosure_ok_wfTagMeaningCtx_byIH
-    (_hExtTyping := hExtTyping) (tm := tm) (IH := IH)
-    (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-    (tcls := tcls)
-    (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-    (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
-    hctxTm1 hresTm1 hbounded hetyp1 hmem_tcl hargTm happly
+-- (applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH: deleted as unused; see git history)
 
 private lemma applyFnClosuresThreaded_ok_tagMeaning_byIH
   (hExtTyping : ExternTypingAssumptions)
@@ -10506,30 +10378,7 @@ theorem StepFRSingleRunTagMeaningPost.refl_of_ctxAfter_eq
       h_resp,
       h_wf_after⟩
 
-/-- Fuel-coherence of the canonical extension witness produced by
-    `typecheck_extends_tagMeaning`.  Two successful typechecks of the same
-    `(ctx, e)` at different fuel values that produce the same `res` admit
-    canonical-extension witnesses related by reflexivity (since both
-    witnesses are `tm`).  This is the wrapper-level analogue of the doc's
-    `IsCanonicalExtensionAtFuel.fuel_coherent`; the structural inductive
-    fuel-indexed predicate is left as a follow-up. -/
-theorem typecheck_canonical_extension_fuel_coherent
-    (extTyping : ExternTypingAssumptions)
-    (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
-    (fuel₁ _fuel₂ : Nat) (res : TypeResult)
-    (h_wf : wfTagMeaningCtx tm ctx)
-    (h_bounded : TagMeaningBounded tm ctx.nextTag)
-    (htc₁ : typecheck ctx e fuel₁ = .ok res)
-    (_htc₂ : typecheck ctx e _fuel₂ = .ok res) :
-    ∀ (tm₁ tm₂ : TagMeaning),
-      IsCanonicalExtension tm ctx e res tm₁ →
-      IsCanonicalExtension tm ctx e res tm₂ →
-      ∃ tm', IsCanonicalExtension tm ctx e res tm' := by
-  -- Both fuels produce the same `res`; the canonical witness `tm` works for
-  -- both.  The predicate `IsCanonicalExtension` does not refer to fuel, so
-  -- coherence is trivial at this layer.
-  intro _tm₁ _tm₂ _h₁ _h₂
-  exact typecheck_extends_tagMeaning extTyping tm ctx e fuel₁ res h_wf h_bounded htc₁
+-- (typecheck_canonical_extension_fuel_coherent: deleted as unused; see git history)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Shared clean-lookup infrastructure (moved from StepFRApp.lean)

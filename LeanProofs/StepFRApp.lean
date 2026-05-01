@@ -685,107 +685,7 @@ private lemma consistentWithRegimeMasked_app_parrow_body_start
 --
 -- Suggested proof strategy:
 -- unfold `applyFnTClosure` and split on fuel.
-private lemma applyFnTClosure_ok_wfTagMeaningCtx
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List FnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (tcl : FnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm result1.nextTag')
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType := by
-  cases tcl with
-  | regular x body env =>
-    cases fuel with
-    | zero => simp [applyFnTClosure] at happly
-    | succ fuel' =>
-      simp only [applyFnTClosure, bind, Except.bind] at happly
-      split at happly
-      · exact absurd happly (Except.error_ne_ok _ _)
-      · next result3 htcBody =>
-        cases hqt3 : result3.qualType with
-        | mk etyp3 p3 pred3 =>
-        simp only [hqt3] at happly
-        split at happly
-        · simp at happly
-        · next hsub =>
-          simp only [pure, Except.pure] at happly
-          cases happly
-          -- r = { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
-          -- ctxAfter ctx r has varEnv = ctx.varEnv, memEnv = result3.memEnv'
-          set bodyCtx := { ctx with
-              pc := joinPoison p (joinPoison p1 ctx.pc),
-              memEnv := result1.memEnv',
-              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
-              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
-              nextLoc := result1.nextLoc', regime := result1.regime' }
-          have htcBody' : typecheck bodyCtx body fuel' = .ok result3 := by simpa using htcBody
-          -- Body context wfTagMeaningCtx
-          have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
-            QTypRespectsTagMeaning_transport_etyp_pred tm
-              ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-              hargTm rfl rfl
-          have hwf_body : wfTagMeaningCtx tm bodyCtx := by
-            simpa [bodyCtx, ctxAfter] using
-              wfTagMeaningCtx_closure_body tm ctx result1 result1.qualType st1 st2 p tcls
-                x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-                hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
-          rcases typecheck_extends_tagMeaning hExtTyping tm bodyCtx body fuel' result3
-              hwf_body hbounded htcBody' with
-            ⟨tmBody, hcanonBody⟩
-          have hextBody : tm ⊑ tmBody := IsCanonicalExtension.extends_tm hcanonBody
-          have hctxTm1Body : wfTagMeaningCtx tmBody (ctxAfter ctx result1) :=
-            wfTagMeaningCtx_mono hextBody hctxTm1
-          have hIH : wfTagMeaningCtx tmBody (ctxAfter bodyCtx result3) :=
-            IsCanonicalExtension.wfCtx hcanonBody
-          refine ⟨tmBody, hextBody, ?_, ?_⟩
-          · -- Mix: inVar from hctxTm1Body (ctx.varEnv), inMem from hIH (result3.memEnv')
-            unfold wfTagMeaningCtx at hctxTm1Body hIH ⊢
-            simp only [ctxAfter] at hctxTm1Body hIH ⊢
-            exact EnvRespectsTagMeaning_mix tmBody ctx.varEnv result1.memEnv'
-              bodyCtx.varEnv result3.memEnv' hctxTm1Body hIH
-          · have hresTm3 : QTypRespectsTagMeaning tmBody ⟨etyp3, p3, pred3⟩ := by
-              rw [← hqt3]
-              exact IsCanonicalExtension.respectsResult hcanonBody
-            simp only [normalizeAppResultByProvenance]
-            split
-            · intro q' k' d' hinq hgd
-              exact QTypRespectsTagMeaning_of_etyp_noPred tmBody ⟨etyp3, p3, pred3⟩
-                ⟨etyp3, true, Predicate.noPred⟩ hresTm3 rfl rfl hinq hgd
-            · intro q' k' d' hinq hgd
-              exact QTypRespectsTagMeaning_transport_etyp_pred tmBody ⟨etyp3, p3, pred3⟩
-                ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
-  | extern x retSpec effects capturedEnv =>
-    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
-        QTypRespectsTagMeaning tm qt := by
-      intro name qt hmem
-      intro qtDeep k d hinqDeep hqd
-      have hmemCap : (name, qt) ∈ fnCapturedEnv (FnTClosure.extern x retSpec effects capturedEnv) :=
-        by simpa [fnCapturedEnv] using hmem
-      have hroot : QTypInQTyp qt result1.qualType :=
-        QTypInQTyp.in_arrow qt result1.qualType st1 st2 p tcls
-          (FnTClosure.extern x retSpec effects capturedEnv) name hetyp1 hmem_tcl hmemCap
-      exact hresTm1 (QTypInQTyp.trans qtDeep qt result1.qualType hinqDeep hroot) hqd
-    have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
-      QTypRespectsTagMeaning_transport_etyp_pred tm
-        ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        hargTm rfl rfl
-    rcases applyFnTClosure_extern_canonical_batch tm ctx st1 st2 p p1 argEtyp argPoison
-        argPred result1 fuel x retSpec effects capturedEnv r
-        hctxTm1 hbounded hcapTm hargTm' happly with
-      ⟨tm', _tagMapping, _nextTag', hbatch, _hbounded', hwf, hqtm⟩
-    exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hwf, hqtm⟩
+-- (applyFnTClosure_ok_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma applyFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -840,33 +740,7 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
     rw [htag, hreg]
     exact hreg1
 
-private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List FnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (tcl : FnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm result1.nextTag')
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType :=
-  applyFnTClosure_ok_wfTagMeaningCtx
-    (hExtTyping := hExtTyping) (tm := tm)
-    (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-    (tcls := tcls)
-    (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-    (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
-    hctxTm1 hresTm1 hbounded hetyp1 hmem_tcl hargTm happly
+-- (applyFnTClosure_ok_QTypRespectsTagMeaning: deleted as unused; see git history)
 
 -- (mapM_applyFnTClosure_forall_wfTagMeaningCtx: deleted as unused; see git history)
 
@@ -874,50 +748,7 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning
 
 -- (mapM_applyFnTClosure_forall_QTypRespectsTagMeaning: deleted as unused; see git history)
 
-private lemma applyFnTClosureAtCursor_ok_wfTagMeaningCtx
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List FnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
-  (tcl : FnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm cursor.1)
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-      ctx result1 cursor fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType := by
-  let resultCursor : TypeResult := { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
-  have hctxCursor : wfTagMeaningCtx tm (ctxAfter ctx resultCursor) := by
-    simpa [ctxAfter, resultCursor] using hctxTm1
-  have hresCursor : QTypRespectsTagMeaning tm resultCursor.qualType := by
-    intro qt' k d hinq hqd
-    exact hresTm1 (by simpa [resultCursor] using hinq) hqd
-  have hetypCursor : resultCursor.qualType.etyp = ETyp.arrow st1 st2 p tcls := by
-    simpa [resultCursor] using hetyp1
-  have happlyOld :
-      applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
-        ctx resultCursor fuel = .ok r := by
-    unfold applyFnTClosure
-    unfold applyFnTClosureAtCursor at happly
-    simpa [resultCursor] using happly
-  exact
-    applyFnTClosure_ok_wfTagMeaningCtx
-      (hExtTyping := hExtTyping) (tm := tm)
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-      (tcls := tcls)
-      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := resultCursor) (fuel := fuel) (tcl := tcl) (r := r)
-      hctxCursor hresCursor (by simpa [resultCursor] using hbounded)
-      hetypCursor hmem_tcl hargTm happlyOld
+-- (applyFnTClosureAtCursor_ok_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma applyFnTClosureAtCursor_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -945,50 +776,7 @@ private lemma applyFnTClosureAtCursor_ok_regimeConsistentWithCtx
       (result1 := resultCursor) (fuel := fuel) (tcl := tcl) (r := r)
       hregCursor happlyOld
 
-private lemma applyFnTClosureAtCursor_ok_QTypRespectsTagMeaning
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List FnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
-  (tcl : FnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm cursor.1)
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-      ctx result1 cursor fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType := by
-  let resultCursor : TypeResult := { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
-  have hctxCursor : wfTagMeaningCtx tm (ctxAfter ctx resultCursor) := by
-    simpa [ctxAfter, resultCursor] using hctxTm1
-  have hresCursor : QTypRespectsTagMeaning tm resultCursor.qualType := by
-    intro qt' k d hinq hqd
-    exact hresTm1 (by simpa [resultCursor] using hinq) hqd
-  have hetypCursor : resultCursor.qualType.etyp = ETyp.arrow st1 st2 p tcls := by
-    simpa [resultCursor] using hetyp1
-  have happlyOld :
-      applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
-        ctx resultCursor fuel = .ok r := by
-    unfold applyFnTClosure
-    unfold applyFnTClosureAtCursor at happly
-    simpa [resultCursor] using happly
-  exact
-    (applyFnTClosure_ok_QTypRespectsTagMeaning
-      (hExtTyping := hExtTyping) (tm := tm)
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-      (tcls := tcls)
-      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := resultCursor) (fuel := fuel) (tcl := tcl) (r := r)
-      hctxCursor hresCursor (by simpa [resultCursor] using hbounded)
-      hetypCursor hmem_tcl hargTm happlyOld)
+-- (applyFnTClosureAtCursor_ok_QTypRespectsTagMeaning: deleted as unused; see git history)
 
 private lemma threaded_applyFnTClosure_forall_wfTypeResult
     (fuel_top : Nat)
@@ -1377,140 +1165,7 @@ private lemma applyPFnTClosure_ok_wfTypeResult
         cases happly
         exact hwf1
 
-private lemma applyPFnTClosure_ok_wfTagMeaningCtx
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List PFnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (tcl : PFnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm result1.nextTag')
-  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType := by
-  cases tcl with
-  | regular x body env =>
-    cases fuel with
-    | zero => simp [applyPFnTClosure] at happly
-    | succ fuel' =>
-      simp only [applyPFnTClosure, bind, Except.bind] at happly
-      split at happly
-      · exact absurd happly (Except.error_ne_ok _ _)
-      · next result3 htcBody =>
-        cases hqt3 : result3.qualType with
-        | mk etyp3 p3 pred3 =>
-        simp only [hqt3] at happly
-        split at happly
-        · simp at happly
-        · next hsub =>
-          simp only [pure, Except.pure] at happly
-          cases happly
-          set bodyCtx := { ctx with
-              pc := joinPoison p (joinPoison ctx.pc p1),
-              memEnv := result1.memEnv',
-              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
-              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
-              pureCtx := true,
-              nextLoc := result1.nextLoc', regime := result1.regime' }
-          have htcBody' : typecheck bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by simpa using htcBody
-          have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
-            QTypRespectsTagMeaning_transport_etyp_pred tm
-              ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-              hargTm rfl rfl
-          have hwf_body : wfTagMeaningCtx tm bodyCtx := by
-            simpa [bodyCtx, ctxAfter] using
-              wfTagMeaningCtx_pclosure_body tm ctx result1 result1.qualType st1 st2 p tcls
-                x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-                hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
-          rcases typecheck_extends_tagMeaning hExtTyping tm bodyCtx (PExpr.toExpr body)
-              fuel' result3 hwf_body hbounded htcBody' with
-            ⟨tmBody, hcanonBody⟩
-          have hextBody : tm ⊑ tmBody := IsCanonicalExtension.extends_tm hcanonBody
-          have hctxTm1Body : wfTagMeaningCtx tmBody (ctxAfter ctx result1) :=
-            wfTagMeaningCtx_mono hextBody hctxTm1
-          have hIH : wfTagMeaningCtx tmBody (ctxAfter bodyCtx result3) :=
-            IsCanonicalExtension.wfCtx hcanonBody
-          refine ⟨tmBody, hextBody, ?_, ?_⟩
-          · unfold wfTagMeaningCtx at hctxTm1Body hIH ⊢
-            simp only [ctxAfter] at hctxTm1Body hIH ⊢
-            exact EnvRespectsTagMeaning_mix tmBody ctx.varEnv result1.memEnv'
-              bodyCtx.varEnv result3.memEnv' hctxTm1Body hIH
-          · have hresTm3 : QTypRespectsTagMeaning tmBody ⟨etyp3, p3, pred3⟩ := by
-              rw [← hqt3]
-              exact IsCanonicalExtension.respectsResult hcanonBody
-            simp only [normalizeAppResultByProvenance]
-            split
-            · intro q' k' d' hinq hgd
-              exact QTypRespectsTagMeaning_of_etyp_noPred tmBody ⟨etyp3, p3, pred3⟩
-                ⟨etyp3, true, Predicate.noPred⟩ hresTm3 rfl rfl hinq hgd
-            · intro q' k' d' hinq hgd
-              exact QTypRespectsTagMeaning_transport_etyp_pred tmBody ⟨etyp3, p3, pred3⟩
-                ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
-  | extern x retSpec capturedEnv =>
-    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
-        QTypRespectsTagMeaning tm qt := by
-      intro name qt hmem qt' k d hinq' hqd'
-      exact hresTm1
-        (QTypInQTyp.trans qt' qt result1.qualType hinq'
-          (QTypInQTyp.in_parrow qt result1.qualType st1 st2 p tcls
-            (PFnTClosure.extern x retSpec capturedEnv) name hetyp1 hmem_tcl hmem))
-        hqd'
-    have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
-      QTypRespectsTagMeaning_transport_etyp_pred tm
-        ⟨argEtyp, argPoison, argPred⟩ ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        hargTm rfl rfl
-    cases retSpec with
-    | simple typ poison spred =>
-        rcases applyPFnTClosure_extern_simple_canonical_batch tm ctx st1 st2 p p1
-            argEtyp argPoison argPred result1 fuel x typ poison spred capturedEnv r
-            hctxTm1 hbounded hcapTm hargTm' happly with
-          ⟨tm', _tagMapping, _nextTag', hbatch, _hbounded', hwf, hqtm⟩
-        exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hwf, hqtm⟩
-    | nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
-        have hmem := applyPFnTClosure_extern_memEnv_eq ctx st1 st2 p p1
-          argEtyp argPoison argPred result1 r fuel x
-          (ExternReturn.nestedFn _ innerArg innerArgTyp innerRet innerEffects) capturedEnv happly
-        have hwf : wfTagMeaningCtx tm (ctxAfter ctx r) := by
-          simp only [wfTagMeaningCtx, ctxAfter] at hctxTm1 ⊢
-          rwa [hmem]
-        have hqtm : QTypRespectsTagMeaning tm r.qualType :=
-          applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
-            (tm := tm) (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-            (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-            (result2 := result1) (fuel := fuel) (x := x)
-            (retSpec := ExternReturn.nestedFn _ innerArg innerArgTyp innerRet innerEffects)
-            (capturedEnv := capturedEnv) (r := r) hctxTm1 hcapTm hargTm'
-            (fun {typ} {poison} {spred} hsimple _tagMapping _nextTag' _halloc => by
-              cases hsimple)
-            happly
-        exact ⟨tm, ExtTreeMap.IsSubmap.refl tm, hwf, hqtm⟩
-    | nestedPfn _ innerArg innerArgTyp innerRet =>
-        have hmem := applyPFnTClosure_extern_memEnv_eq ctx st1 st2 p p1
-          argEtyp argPoison argPred result1 r fuel x
-          (ExternReturn.nestedPfn _ innerArg innerArgTyp innerRet) capturedEnv happly
-        have hwf : wfTagMeaningCtx tm (ctxAfter ctx r) := by
-          simp only [wfTagMeaningCtx, ctxAfter] at hctxTm1 ⊢
-          rwa [hmem]
-        have hqtm : QTypRespectsTagMeaning tm r.qualType :=
-          applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
-            (tm := tm) (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-            (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-            (result2 := result1) (fuel := fuel) (x := x)
-            (retSpec := ExternReturn.nestedPfn _ innerArg innerArgTyp innerRet)
-            (capturedEnv := capturedEnv) (r := r) hctxTm1 hcapTm hargTm'
-            (fun {typ} {poison} {spred} hsimple _tagMapping _nextTag' _halloc => by
-              cases hsimple)
-            happly
-        exact ⟨tm, ExtTreeMap.IsSubmap.refl tm, hwf, hqtm⟩
+-- (applyPFnTClosure_ok_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1563,33 +1218,7 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
     rw [htag, hreg]
     exact hreg1
 
-private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List PFnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (tcl : PFnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm result1.nextTag')
-  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType :=
-  applyPFnTClosure_ok_wfTagMeaningCtx
-    (hExtTyping := hExtTyping) (tm := tm)
-    (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-    (tcls := tcls)
-    (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-    (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
-    hctxTm1 hresTm1 hbounded hetyp1 hmem_tcl hargTm happly
+-- (applyPFnTClosure_ok_QTypRespectsTagMeaning: deleted as unused; see git history)
 
 -- (mapM_applyPFnTClosure_forall_wfTypeResult': deleted as unused; see git history)
 
@@ -1638,50 +1267,7 @@ private lemma applyPFnTClosureAtCursor_ok_wfTypeResult
         (hArgCRL := etypClosuresCapturedRefLocsBounded_mono hargClosLocs hcursorLoc)
         (r := r) happlyOld
 
-private lemma applyPFnTClosureAtCursor_ok_wfTagMeaningCtx
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List PFnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
-  (tcl : PFnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm cursor.1)
-  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-      ctx result1 cursor fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType := by
-  let resultCursor : TypeResult := { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
-  have hctxCursor : wfTagMeaningCtx tm (ctxAfter ctx resultCursor) := by
-    simpa [ctxAfter, resultCursor] using hctxTm1
-  have hresCursor : QTypRespectsTagMeaning tm resultCursor.qualType := by
-    intro qt' k d hinq hqd
-    exact hresTm1 (by simpa [resultCursor] using hinq) hqd
-  have hetypCursor : resultCursor.qualType.etyp = ETyp.parrow st1 st2 p tcls := by
-    simpa [resultCursor] using hetyp1
-  have happlyOld :
-      applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
-        ctx resultCursor fuel = .ok r := by
-    unfold applyPFnTClosure
-    unfold applyPFnTClosureAtCursor at happly
-    simpa [resultCursor] using happly
-  exact
-    applyPFnTClosure_ok_wfTagMeaningCtx
-      (hExtTyping := hExtTyping) (tm := tm)
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-      (tcls := tcls)
-      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := resultCursor) (fuel := fuel) (tcl := tcl) (r := r)
-      hctxCursor hresCursor (by simpa [resultCursor] using hbounded)
-      hetypCursor hmem_tcl hargTm happlyOld
+-- (applyPFnTClosureAtCursor_ok_wfTagMeaningCtx: deleted as unused; see git history)
 
 private lemma applyPFnTClosureAtCursor_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -1709,50 +1295,7 @@ private lemma applyPFnTClosureAtCursor_ok_regimeConsistentWithCtx
       (result1 := resultCursor) (fuel := fuel) (tcl := tcl) (r := r)
       hregCursor happlyOld
 
-private lemma applyPFnTClosureAtCursor_ok_QTypRespectsTagMeaning
-  (hExtTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List PFnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
-  (tcl : PFnTClosure) (r : TypeResult)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hbounded : TagMeaningBounded tm cursor.1)
-  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
-  (hmem_tcl : tcl ∈ tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (happly :
-    applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-      ctx result1 cursor fuel = .ok r) :
-  ∃ tm',
-    tm ⊑ tm' ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
-    QTypRespectsTagMeaning tm' r.qualType := by
-  let resultCursor : TypeResult := { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
-  have hctxCursor : wfTagMeaningCtx tm (ctxAfter ctx resultCursor) := by
-    simpa [ctxAfter, resultCursor] using hctxTm1
-  have hresCursor : QTypRespectsTagMeaning tm resultCursor.qualType := by
-    intro qt' k d hinq hqd
-    exact hresTm1 (by simpa [resultCursor] using hinq) hqd
-  have hetypCursor : resultCursor.qualType.etyp = ETyp.parrow st1 st2 p tcls := by
-    simpa [resultCursor] using hetyp1
-  have happlyOld :
-      applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
-        ctx resultCursor fuel = .ok r := by
-    unfold applyPFnTClosure
-    unfold applyPFnTClosureAtCursor at happly
-    simpa [resultCursor] using happly
-  exact
-    (applyPFnTClosure_ok_QTypRespectsTagMeaning
-      (hExtTyping := hExtTyping) (tm := tm)
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-      (tcls := tcls)
-      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := resultCursor) (fuel := fuel) (tcl := tcl) (r := r)
-      hctxCursor hresCursor (by simpa [resultCursor] using hbounded)
-      hetypCursor hmem_tcl hargTm happlyOld)
+-- (applyPFnTClosureAtCursor_ok_QTypRespectsTagMeaning: deleted as unused; see git history)
 
 private lemma threaded_applyPFnTClosure_forall_wfTypeResult
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
