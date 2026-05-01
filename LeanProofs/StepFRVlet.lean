@@ -54,37 +54,9 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
         CtxCons ValCons ctx e res predSat tm
 
-private def VletCtxConsBodyStart
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
-  ∀ (ctx : TypeContext) (result1 : TypeResult) (x : Name)
-    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (v : Value),
-    CtxCons (ctxAfter ctx result1) μ ρ θ →
-    ValCons (ctxAfter ctx result1).regime result1.qualType μ θ v →
-    let ctx' : TypeContext :=
-      { ctx with
-        memEnv := result1.memEnv'
-        varEnv := ctx.varEnv.update x result1.qualType
-        tagEnv := result1.tagEnv'
-        nextLoc := result1.nextLoc'
-        nextTag := result1.nextTag'
-        regime := result1.regime' }
-    CtxCons ctx' μ (ρ.update x v) θ
+-- (VletCtxConsBodyStart: deleted as unused; see git history)
 
-private def VletCtxConsFinish
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (predSat : PredSat) (tm : TagMeaning) : Prop :=
-  ∀ (ctx ctx' : TypeContext) (result1 result2 result : TypeResult)
-    (cfg1 cfg3 cf : Config) (θ1 θ2 : RealizationMap),
-    PredSatLaws predSat tm →
-    cf = { cfg3 with varEnv := cfg1.varEnv } →
-    result.memEnv' = result2.memEnv' →
-    result.regime' = result2.regime' →
-    Regime.monotoneStep (ctxAfter ctx result1).regime (ctxAfter ctx' result2).regime →
-    CtxCons (ctxAfter ctx result1) cfg1.memory cfg1.varEnv θ1 →
-    CtxCons (ctxAfter ctx' result2) cfg3.memory cfg3.varEnv θ2 →
-    wfExtendsMap θ1 θ2 →
-    CtxCons (ctxAfter ctx result) cf.memory cf.varEnv θ2
+-- (VletCtxConsFinish: deleted as unused; see git history)
 
 private def VletValConsFinish
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
@@ -138,164 +110,11 @@ private lemma runtimeInstantiatesCtx_vlet_body_start
       have hne := VarEnv_lookup_update_ne ρ x y v hy
       simpa [hne] using hv0
 
-private lemma consistentWithRegime_vlet_body_start
-  (predSat : PredSat)
-  (ctx : TypeContext) (result1 : TypeResult) (x : Name)
-  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (v : Value)
-  (hcwr : consistentWithRegime predSat (ctxAfter ctx result1).regime (ctxAfter ctx result1) μ ρ θ)
-  (hvalc : valueConsistentWithRegime predSat (ctxAfter ctx result1).regime result1.qualType μ θ v) :
-  let ctx' : TypeContext :=
-    { ctx with
-      memEnv := result1.memEnv'
-      varEnv := ctx.varEnv.update x result1.qualType
-      tagEnv := result1.tagEnv'
-      nextLoc := result1.nextLoc'
-      nextTag := result1.nextTag'
-      regime := result1.regime' }
-  consistentWithRegime predSat ctx'.regime ctx' μ (ρ.update x v) θ := by
-  intro ctx'
-  refine ⟨?_, ?_, ?_⟩
-  · intro l qt k hlookup hguard hRdef
-    have hlookup' : (ctxAfter ctx result1).memEnv.lookup l = some qt := by
-      simpa [ctxAfter, ctx'] using hlookup
-    have hRdef' : (ctxAfter ctx result1).regime.lookup? k ≠ none := by
-      simpa [ctxAfter, ctx'] using hRdef
-    simpa [ctxAfter, ctx'] using hcwr.1 l qt k hlookup' hguard hRdef'
-  · intro y qt k hlookup hguard hRdef
-    by_cases hy : y = x
-    · subst y
-      have hlookup_x :
-          (ctx.varEnv.update x result1.qualType).lookup x = some qt := by
-        simpa [ctx'] using hlookup
-      have hqt : qt = result1.qualType := by
-        have hself :
-            (ctx.varEnv.update x result1.qualType).lookup x = some result1.qualType :=
-          VarTypeEnv_lookup_update_eq ctx.varEnv x result1.qualType
-        exact Option.some.inj (hlookup_x.symm.trans hself)
-      subst hqt
-      exact
-        varsRegime_of_valueConsistentWithRegime_active
-          (predSat := predSat) (R := result1.regime') (μ := μ)
-          (θ := θ) (ρ := ρ.update x v) (x := x) (qt := result1.qualType)
-          (v := v) (k := k)
-          (by simp [VarEnv.update, VarEnv.lookup])
-          hguard
-          (by simpa [ctxAfter, ctx'] using hRdef)
-          (by simpa [ctxAfter, ctx'] using hvalc)
-    · have hlookup_old : ctx.varEnv.lookup y = some qt := by
-        have hne :=
-          VarTypeEnv_lookup_update_ne ctx.varEnv x y result1.qualType hy
-        simpa [ctxAfter, ctx', hne] using hlookup
-      have hRdef' : (ctxAfter ctx result1).regime.lookup? k ≠ none := by
-        simpa [ctxAfter, ctx'] using hRdef
-      have hvars := hcwr.2.1 y qt k hlookup_old hguard hRdef'
-      have hne := VarEnv_lookup_update_ne ρ x y v hy
-      cases hvars with
-      | noPred_ok hnp =>
-          exact varsRegime.noPred_ok (y, qt) hnp
-      | guardOnly_ok k' hgo =>
-          exact varsRegime.guardOnly_ok (y, qt) k' hgo
-      | withPred_ok k' arg_name pred_body var_env v0 b hpred hreg hlookup_v hcons =>
-          have hlookup_v' : (ρ.update x v).lookup y = some v0 := by
-            simpa [hne] using hlookup_v
-          exact varsRegime.withPred_ok (y, qt) k' arg_name pred_body var_env v0 b hpred hreg hlookup_v' hcons
-  · intro y qt v' hlookup hlookup_v
-    by_cases hy : y = x
-    · subst y
-      have hlookup_x :
-          (ctx.varEnv.update x result1.qualType).lookup x = some qt := by
-        simpa [ctx'] using hlookup
-      have hqt : qt = result1.qualType := by
-        have hself :
-            (ctx.varEnv.update x result1.qualType).lookup x = some result1.qualType :=
-          VarTypeEnv_lookup_update_eq ctx.varEnv x result1.qualType
-        exact Option.some.inj (hlookup_x.symm.trans hself)
-      have hv' : v' = v := by
-        have hself : (ρ.update x v).lookup x = some v := by
-          simp [VarEnv.update, VarEnv.lookup]
-        have hlookup_v' : (ρ.update x v).lookup x = some v' := by
-          simpa [VarEnv.update, VarEnv.lookup] using hlookup_v
-        exact Option.some.inj (hlookup_v'.symm.trans hself)
-      subst hqt hv'
-      exact valueConsistentWithRegime_closureCapturedVarsRegime (by simpa [ctxAfter, ctx'] using hvalc)
-    · have hlookup_old : ctx.varEnv.lookup y = some qt := by
-        have hne :=
-          VarTypeEnv_lookup_update_ne ctx.varEnv x y result1.qualType hy
-        simpa [ctxAfter, ctx', hne] using hlookup
-      have hlookup_v_old : ρ.lookup y = some v' := by
-        have hne := VarEnv_lookup_update_ne ρ x y v hy
-        simpa [hne] using hlookup_v
-      exact hcwr.2.2 y qt v' hlookup_old hlookup_v_old
+-- (consistentWithRegime_vlet_body_start: deleted as unused; see git history)
 
-private lemma consistentWithRegime_vlet_finish
-  (predSat : PredSat) (tm : TagMeaning)
-  (ctx ctx' : TypeContext) (result1 result2 result : TypeResult)
-  (cfg1 cfg3 cf : Config) (θ1 θ2 : RealizationMap)
-  (hpredlaws : PredSatLaws predSat tm)
-  (hcf_eq : cf = { cfg3 with varEnv := cfg1.varEnv })
-  (h_mem : result.memEnv' = result2.memEnv')
-  (h_ret_regime : result.regime' = result2.regime')
-  (h_mono_e2 : Regime.monotoneStep (ctxAfter ctx result1).regime (ctxAfter ctx' result2).regime)
-  (hcwr1 : consistentWithRegime predSat (ctxAfter ctx result1).regime
-    (ctxAfter ctx result1) cfg1.memory cfg1.varEnv θ1)
-  (hcwr2 : consistentWithRegime predSat (ctxAfter ctx' result2).regime
-    (ctxAfter ctx' result2) cfg3.memory cfg3.varEnv θ2)
-  (hθext : wfExtendsMap θ1 θ2) :
-  consistentWithRegime predSat (ctxAfter ctx result).regime (ctxAfter ctx result)
-    cf.memory cf.varEnv θ2 := by
-  have hctxAfter_regime_eq : (ctxAfter ctx result).regime = (ctxAfter ctx' result2).regime := by
-    simp [ctxAfter, h_ret_regime]
-  have hpred_compat :
-      ∀ (qt : QTyp) (v' : Value),
-        qtypPredHolds predSat qt cfg1.memory v' ↔ qtypPredHolds predSat qt cf.memory v' := by
-    intro qt v'
-    exact qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ1 cfg1.memory cf.memory qt v'
-  have hcwr1_mono :
-      consistentWithRegime predSat (ctxAfter ctx' result2).regime
-        (ctxAfter ctx result1) cfg1.memory cfg1.varEnv θ1 := by
-    exact
-      consistentWithRegime_monotone
-        predSat (ctxAfter ctx result1).regime (ctxAfter ctx' result2).regime
-        (ctxAfter ctx result1) cfg1.memory cfg1.varEnv θ1 h_mono_e2 hcwr1
-  refine ⟨?_, ?_, ?_⟩
-  · intro l qt k hlookup hguard hkR
-    have hlookup' : (ctxAfter ctx' result2).memEnv.lookup l = some qt := by
-      simpa [ctxAfter, h_mem] using hlookup
-    have hkR' : (ctxAfter ctx' result2).regime.lookup? k ≠ none := by
-      simpa [hctxAfter_regime_eq] using hkR
-    have hloc := hcwr2.1 l qt k hlookup' hguard hkR'
-    simpa [hctxAfter_regime_eq, hcf_eq] using hloc
-  · intro u qt k hlookup hguard hkR
-    have hkR1 : (ctxAfter ctx' result2).regime.lookup? k ≠ none := by
-      simpa [hctxAfter_regime_eq] using hkR
-    have hlookup1 : (ctxAfter ctx result1).varEnv.lookup u = some qt := by
-      simpa [ctxAfter] using hlookup
-    have hvar1 := hcwr1_mono.2.1 u qt k hlookup1 hguard hkR1
-    have hvar1' := varsRegime_transport_predHolds hpred_compat hvar1
-    simpa [hctxAfter_regime_eq, hcf_eq] using hvar1'
-  · intro u qt v_u hlookup hlookup_v
-    have hlookup1 : (ctxAfter ctx result1).varEnv.lookup u = some qt := by
-      simpa [ctxAfter] using hlookup
-    have hlookup_v1 : cfg1.varEnv.lookup u = some v_u := by
-      simpa [hcf_eq] using hlookup_v
-    have hcap1 := hcwr1_mono.2.2 u qt v_u hlookup1 hlookup_v1
-    have hcap1' :
-        closureCapturedVarsRegime predSat (ctxAfter ctx result).regime qt
-          cfg1.memory θ1 v_u := by
-      simpa [hctxAfter_regime_eq] using hcap1
-    exact closureCapturedVarsRegime_transport_μ_θ hpred_compat hθext.1 hcap1'
+-- (consistentWithRegime_vlet_finish: deleted as unused; see git history)
 
-private lemma valueConsistentWithRegime_vlet_finish
-  (predSat : PredSat) :
-  VletValConsFinish (valueConsistentWithRegime predSat) := by
-  intro R R' qt qt' μ μ' θ o hμ hR hetyp hpred hval
-  subst hμ
-  subst R'
-  exact
-    valueConsistentWithRegime_transport_pred
-      (predSat := predSat) (R := R)
-      (qt := qt) (qt' := qt') (μ := μ') (v := o)
-      hpred (hetyp := hetyp) hval
+-- (valueConsistentWithRegime_vlet_finish: deleted as unused; see git history)
 
 private lemma consistentWithRegimeMasked_vlet_body_start
   (masked : Tag → Prop) (predSat : PredSat)

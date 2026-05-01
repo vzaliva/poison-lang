@@ -4317,57 +4317,7 @@ lemma var_valueHasETyp_of_typecheck
 -- Transfer consistentWithRegime using monotoneStep
 -- When Regime.monotoneStep R R', if consistentWithRegime holds for R, it holds for R'
 -- (R' has fewer entries, so fewer constraints need to be checked)
-lemma consistentWithRegime_monotone
-    (predSat : PredSat) (R R' : Regime) (ctx : TypeContext)
-    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-    (h_mono : Regime.monotoneStep R R')
-    (h_cwr : consistentWithRegime predSat R ctx μ ρ θ) :
-    consistentWithRegime predSat R' ctx μ ρ θ := by
-  simp only [consistentWithRegime] at h_cwr ⊢
-  refine ⟨?_, ?_, ?_⟩
-  · -- Location regime consistency
-    intro l qt k hlookup hguard hR'def
-    cases hk' : R'.lookup? k with
-    | none => exact absurd hk' hR'def
-    | some b =>
-        have hRdef : R.lookup? k ≠ none := h_mono.2 k hR'def
-        cases hk : R.lookup? k with
-        | none => exact absurd hk hRdef
-        | some b' =>
-            have h := h_mono.1 k b' hk
-            cases h with
-            | inl h_eq =>
-                have hb_eq : b' = b := by
-                  have : some b' = some b := h_eq.symm.trans hk'
-                  exact Option.some.inj this
-                have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
-                have h_locsR := h_cwr.1 l qt k hlookup hguard hRdef
-                exact locsRegime_monotone h_mono hguard hk' h_locsR
-            | inr h_none =>
-                simp [h_none] at hk'
-  · -- Variable regime consistency (similar)
-    intro x qt k hlookup hguard hR'def
-    cases hk' : R'.lookup? k with
-    | none => exact absurd hk' hR'def
-    | some b =>
-        have hRdef : R.lookup? k ≠ none := h_mono.2 k hR'def
-        cases hk : R.lookup? k with
-        | none => exact absurd hk hRdef
-        | some b' =>
-            have h := h_mono.1 k b' hk
-            cases h with
-            | inl h_eq =>
-                have hb_eq : b' = b := by
-                  have : some b' = some b := h_eq.symm.trans hk'
-                  exact Option.some.inj this
-                have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
-                have h_varsR := h_cwr.2.1 x qt k hlookup hguard hRdef
-                exact varsRegime_monotone h_mono hguard hk' h_varsR
-            | inr h_none =>
-                simp [h_none] at hk'
-  · -- Third conjunct: closureCapturedVarsRegime monotone under h_mono.
-    intro x qt v hlookup hρ
-    exact closureCapturedVarsRegime_monotone h_mono (h_cwr.2.2 x qt v hlookup hρ)
+-- (consistentWithRegime_monotone: deleted as unused; see git history)
 
 lemma consistentWithRegimeMasked_monotone
     (masked : Tag → Prop) (predSat : PredSat) (R R' : Regime) (ctx : TypeContext)
@@ -4776,82 +4726,14 @@ private lemma applyFnTClosure_regular_inv
 
 -- If `List.mapM f xs` succeeds and `x ∈ xs`, then `f x` succeeded for some output
 -- appearing in the mapped result list.
-lemma list_mapM_ok_mem_input_exists_output
-  {α β ε : Type}
-  (f : α → Except ε β) :
-  ∀ {xs ys x}, List.mapM f xs = .ok ys → x ∈ xs →
-    ∃ y, y ∈ ys ∧ f x = .ok y := by
-  intro xs ys x hmap hmem
-  have hforall2 : List.Forall₂ (fun x y => f x = Except.ok y) xs ys :=
-    List.mapM_Except_ok_implies_forall2 xs f ys hmap
-  rcases List.Forall2.exists_of_mem_left (R := fun x y => f x = Except.ok y) hforall2 x hmem with
-    ⟨y, hy, hxy⟩
-  exact ⟨y, hy, hxy⟩
+-- (list_mapM_ok_mem_input_exists_output: deleted as unused; see git history)
 
 -- Specialized extraction for closure-application maps used in `stepFR_app`.
-lemma applyFnTClosure_ok_of_mem_mapM
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (tcls : List FnTClosure) (results : List TypeResult) (tcl : FnTClosure)
-  (hmap : List.mapM
-      (fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
-      tcls = .ok results)
-  (hmem : tcl ∈ tcls) :
-  ∃ r, r ∈ results ∧
-    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r := by
-  simpa using
-    (list_mapM_ok_mem_input_exists_output
-      (f := fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel)
-      (xs := tcls) (ys := results) (x := tcl) hmap hmem)
+-- (applyFnTClosure_ok_of_mem_mapM: deleted as unused; see git history)
 
 -- Combined extraction for regular closures from a successful application map.
 -- Gives the selected closure's successful application together with body-typing inversion.
-lemma applyFnTClosure_regular_inv_of_mapM_mem
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (bodyState : TypeResult) (fuel : Nat)
-  (tcls : List FnTClosure) (results : List TypeResult)
-  (x : Name) (body : Expr) (tenv : CapturedVarEnv)
-  (hmap : List.mapM
-      (fun tcl' => applyFnTClosure tcl' st1 st2 p p1 argEtyp argPoison argPred ctx bodyState fuel)
-      tcls = .ok results)
-  (hmem : FnTClosure.regular x body tenv ∈ tcls) :
-  ∃ fuelBody first result3,
-    applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
-      argEtyp argPoison argPred ctx bodyState fuel = .ok first ∧
-    fuel = Nat.succ fuelBody ∧
-    typecheckExpr
-      { ctx with
-        pc := joinPoison p (joinPoison p1 ctx.pc)
-        memEnv := bodyState.memEnv'
-        varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-        tagEnv := bodyState.tagEnv'
-        nextTag := bodyState.nextTag'
-        nextLoc := bodyState.nextLoc'
-        regime := bodyState.regime' } body fuelBody = .ok result3 ∧
-    isSubtype st2 result3.qualType = true ∧
-    first =
-      { result3 with
-        qualType :=
-          normalizeAppResultByProvenance (joinPoison p1 p)
-            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
-  rcases applyFnTClosure_ok_of_mem_mapM
-      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel tcls results
-      (FnTClosure.regular x body tenv) hmap hmem with
-    ⟨first, _hfirst_mem, happly⟩
-  rcases applyFnTClosure_regular_structure
-      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel x body tenv first happly with
-    ⟨fuelBody, hfuel⟩
-  have happly_succ :
-      applyFnTClosure (FnTClosure.regular x body tenv) st1 st2 p p1
-        argEtyp argPoison argPred ctx bodyState (Nat.succ fuelBody) = .ok first := by
-    simpa [hfuel] using happly
-  rcases applyFnTClosure_regular_inv
-      ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuelBody x body tenv first happly_succ with
-    ⟨result3, htc_body, hsub, hfirst_eq⟩
-  exact ⟨fuelBody, first, result3, happly, hfuel, htc_body, hsub, hfirst_eq⟩
+-- (applyFnTClosure_regular_inv_of_mapM_mem: deleted as unused; see git history)
 
 private lemma applyClosuresThreaded_ok_mem_input_exists_output_pre
   {α : Type}
@@ -4928,27 +4810,7 @@ private lemma applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bound
                     ⟨y, hy, cursor', htag, hloc, happly⟩
                   exact ⟨y, by simp [hy], cursor', htag, hloc, happly⟩
 
-lemma applyFnTClosure_ok_of_mem_threaded
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (tcls : List FnTClosure) (results : List TypeResult) (tcl : FnTClosure)
-  (hthread :
-    applyClosuresThreaded
-      (fun tcl' cursor =>
-        applyFnTClosureAtCursor tcl' st1 st2 p p1 argEtyp argPoison argPred
-          ctx result1 cursor fuel)
-      tcls (result1.nextTag', result1.nextLoc') = .ok results)
-  (hmem : tcl ∈ tcls) :
-  ∃ r, r ∈ results ∧ ∃ cursor,
-    applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-      ctx result1 cursor fuel = .ok r := by
-  simpa using
-    (applyClosuresThreaded_ok_mem_input_exists_output_pre
-      (applyOne := fun tcl' cursor =>
-        applyFnTClosureAtCursor tcl' st1 st2 p p1 argEtyp argPoison argPred
-          ctx result1 cursor fuel)
-      hthread hmem)
+-- (applyFnTClosure_ok_of_mem_threaded: deleted as unused; see git history)
 
 lemma applyFnTClosure_regular_inv_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -5029,40 +4891,10 @@ lemma applyFnTClosure_regular_inv_of_threaded_mem
     by simpa [cursorState] using htc_body, hsub, hfirst_eq⟩
 
 -- Forall₂ gives an existence for membership on the right.
-private lemma list_Forall2_exists_of_mem_right
-    {α β : Type} {R : α → β → Prop} {xs : List α} {ys : List β} :
-    List.Forall₂ R xs ys →
-    ∀ y ∈ ys, ∃ x, x ∈ xs ∧ R x y := by
-  intro h
-  induction h with
-  | nil =>
-      intro y hy
-      cases hy
-  | cons hxy _htail ih =>
-      intro y hymem
-      simp [List.mem_cons] at hymem
-      cases hymem with
-      | inl hyeq =>
-          subst hyeq
-          exact ⟨_, by simp, hxy⟩
-      | inr hyrest =>
-          rcases ih y hyrest with ⟨x, hxmem, hR⟩
-          exact ⟨x, by simp [hxmem], hR⟩
+-- (list_Forall2_exists_of_mem_right: deleted as unused; see git history)
 
 -- If `List.mapM f xs` succeeds and `y ∈ ys`, then some `x ∈ xs` maps to `y`.
-lemma list_mapM_ok_mem_output_exists_input
-  {α β ε : Type}
-  (f : α → Except ε β)
-  {xs : List α} {ys : List β} {y : β}
-  (hmap : List.mapM f xs = .ok ys)
-  (hmem : y ∈ ys) :
-  ∃ x, x ∈ xs ∧ f x = .ok y := by
-  have hforall2 :
-      List.Forall₂ (fun x y => f x = Except.ok y) xs ys :=
-    List.mapM_Except_ok_implies_forall2 xs f ys hmap
-  rcases list_Forall2_exists_of_mem_right (R := fun x y => f x = Except.ok y) hforall2 y hmem with
-    ⟨x, hxmem, hxy⟩
-  exact ⟨x, hxmem, hxy⟩
+-- (list_mapM_ok_mem_output_exists_input: deleted as unused; see git history)
 
 lemma applyClosuresThreaded_ok_mem_output_exists_input
   {α : Type}
@@ -8371,79 +8203,9 @@ private lemma applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
     exact (applyFnTClosure_extern_ok_qualTypeRespects extTyping tm ctx st1 st2 p p1 argEtyp argPoison
       argPred result1 fuel x retSpec effects capturedEnv r hctxTm1 hcapTm hargTm' happly) hinq hqd
 
-private lemma mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH
-  (extTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List FnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (results : List TypeResult)
-  (bodyIH :
-    ∀ (fuel' : Nat), fuel' < fuel →
-      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
-      wfTagMeaningCtx tm ctx →
-      typecheck ctx e fuel' = .ok res →
-      wfTagMeaningCtx tm (ctxAfter ctx res))
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (hmap :
-    List.mapM
-      (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
-      tcls = .ok results) :
-  ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) := by
-  intro r hr
-  rcases list_mapM_ok_mem_output_exists_input
-      (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
-      (hmap := hmap) (hmem := hr) with
-    ⟨tcl, htcl_mem, happly⟩
-  exact
-    applyFnTClosure_ok_wfTagMeaningCtx_byIH
-      (extTyping := extTyping) (tm := tm) (bodyIH := bodyIH)
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-      (tcls := tcls)
-      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
-      hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
+-- (mapM_applyFnTClosure_forall_wfTagMeaningCtx_byIH: deleted as unused; see git history)
 
-private lemma mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH
-  (extTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List FnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (results : List TypeResult)
-  (bodyIH :
-    ∀ (fuel' : Nat), fuel' < fuel →
-      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
-      wfTagMeaningCtx tm ctx →
-      typecheck ctx e fuel' = .ok res →
-      QTypRespectsTagMeaning tm res.qualType)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (hmap :
-    List.mapM
-      (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
-      tcls = .ok results) :
-  ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType := by
-  intro r hr
-  rcases list_mapM_ok_mem_output_exists_input
-      (f := fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
-      (hmap := hmap) (hmem := hr) with
-    ⟨tcl, htcl_mem, happly⟩
-  exact
-    applyFnTClosure_ok_QTypRespectsTagMeaning_byIH
-      (extTyping := extTyping) (tm := tm) (bodyIH := bodyIH)
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-      (tcls := tcls)
-      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
-      hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
+-- (mapM_applyFnTClosure_forall_QTypRespectsTagMeaning_byIH: deleted as unused; see git history)
 
 private lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
   (tm : TagMeaning)
@@ -8602,78 +8364,9 @@ private lemma applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
     exact (applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_corollary extTyping tm ctx st1 st2 p p1 argEtyp
       argPoison argPred result1 fuel x retSpec capturedEnv r hctxTm1 hcapTm hargTm' happly) hinq hqd
 
-private lemma mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List PFnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (results : List TypeResult)
-  (bodyIH :
-    ∀ (fuel' : Nat), fuel' < fuel →
-      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
-      wfTagMeaningCtx tm ctx →
-      typecheck ctx e fuel' = .ok res →
-      wfTagMeaningCtx tm (ctxAfter ctx res))
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (hmap :
-    List.mapM
-      (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
-      tcls = .ok results) :
-  ∀ r, r ∈ results → wfTagMeaningCtx tm (ctxAfter ctx r) := by
-  intro r hr
-  rcases list_mapM_ok_mem_output_exists_input
-      (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
-      (hmap := hmap) (hmem := hr) with
-    ⟨tcl, htcl_mem, happly⟩
-  exact
-    applyPFnTClosure_ok_wfTagMeaningCtx_byIH
-      (tm := tm) (bodyIH := bodyIH)
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-      (tcls := tcls)
-      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
-      hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
+-- (mapM_applyPFnTClosure_forall_wfTagMeaningCtx_byIH: deleted as unused; see git history)
 
-private lemma mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH
-  (extTyping : ExternTypingAssumptions)
-  (tm : TagMeaning)
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (tcls : List PFnTClosure)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (fuel : Nat)
-  (results : List TypeResult)
-  (bodyIH :
-    ∀ (fuel' : Nat), fuel' < fuel →
-      ∀ (ctx : TypeContext) (e : Expr) (res : TypeResult),
-      wfTagMeaningCtx tm ctx →
-      typecheck ctx e fuel' = .ok res →
-      QTypRespectsTagMeaning tm res.qualType)
-  (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
-  (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
-  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
-  (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
-  (hmap :
-    List.mapM
-      (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
-      tcls = .ok results) :
-  ∀ r, r ∈ results → QTypRespectsTagMeaning tm r.qualType := by
-  intro r hr
-  rcases list_mapM_ok_mem_output_exists_input
-      (f := fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result1 fuel)
-      (hmap := hmap) (hmem := hr) with
-    ⟨tcl, htcl_mem, happly⟩
-  exact
-    applyPFnTClosure_ok_QTypRespectsTagMeaning_byIH
-      (extTyping := extTyping) (tm := tm) (bodyIH := bodyIH)
-      (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-      (tcls := tcls)
-      (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
-      (result1 := result1) (fuel := fuel) (tcl := tcl) (r := r)
-      hctxTm1 hresTm1 hetyp1 htcl_mem hargTm happly
+-- (mapM_applyPFnTClosure_forall_QTypRespectsTagMeaning_byIH: deleted as unused; see git history)
 
 private lemma applyFnTClosureAtCursor_ok_wfTagMeaningCtx_byIH
   (extTyping : ExternTypingAssumptions)

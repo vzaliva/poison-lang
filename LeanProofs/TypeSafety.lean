@@ -6805,29 +6805,7 @@ private lemma normalizeAppResultByProvenance_predTagBounded {p1p : Poison} {qt :
   · exact trivial -- noPred case
   · exact hb
 
-/-- If mapM f xs = ok ys, then for each y ∈ ys there exists x ∈ xs with f x = ok y. -/
-private lemma forall_mem_of_mapM {α β : Type} {ε : Type} {f : α → Except ε β}
-    {xs : List α} {ys : List β} {P : β → Prop}
-    (hmap : List.mapM f xs = Except.ok ys)
-    (hprop : ∀ x ∈ xs, ∀ y, f x = Except.ok y → P y) :
-    ∀ y ∈ ys, P y := by
-  induction xs generalizing ys with
-  | nil => simp [List.mapM_nil, pure, Except.pure] at hmap; subst ys; intro y hy; simp at hy
-  | cons hd tl ih =>
-    simp [List.mapM_cons, bind, Except.bind] at hmap
-    cases hhd : f hd with
-    | error err => rw [hhd] at hmap; simp at hmap
-    | ok b =>
-      rw [hhd] at hmap; simp at hmap
-      cases htl : List.mapM f tl with
-      | error err => rw [htl] at hmap; simp at hmap
-      | ok rest =>
-        rw [htl] at hmap; simp [pure, Except.pure] at hmap
-        subst ys
-        intro y hy
-        cases hy with
-        | head _ => exact hprop hd (.head _) b hhd
-        | tail _ hmem => exact ih htl (fun x hx y' hy' => hprop x (.tail _ hx) y' hy') y hmem
+-- (forall_mem_of_mapM: deleted as unused; see git history)
 
 /-- Generalized: resolveSyntaxPred produces a bounded pred when all mapping values are < t'. -/
 private lemma resolveSyntaxPred_predTagBounded_of_mapping
@@ -12641,32 +12619,7 @@ private lemma applyPFnTClosure_wfTypeResult
       · simp [pure, Except.pure] at htc
         subst htc; exact hwf_fn
 
-/-- Every result from mapM applyFnTClosure has nextLoc' ≥ result_fn.nextLoc'. -/
-lemma mapM_applyFnTClosure_member_nextLoc_mono
-    (st1 st2 : Typ) (p p1 : Poison)
-    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-    (ctx : TypeContext) (result_fn : TypeResult) (fuel : Nat)
-    (tcls : List FnTClosure) (results : List TypeResult)
-    (hmapM : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel) tcls = .ok results) :
-    ∀ r ∈ results, result_fn.nextLoc' ≤ r.nextLoc' := by
-  induction tcls generalizing results with
-  | nil => simp [List.mapM_nil, pure, Except.pure] at hmapM; cases hmapM; intro r hr; cases hr
-  | cons tcl tcls' ih =>
-    simp [List.mapM_cons, bind, Except.bind] at hmapM
-    cases h1 : applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel with
-    | error _ => simp [h1] at hmapM
-    | ok r1 =>
-      simp [h1] at hmapM
-      cases h2 : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel) tcls' with
-      | error _ => simp [h2] at hmapM
-      | ok rs' =>
-        simp [h2, pure, Except.pure] at hmapM; cases hmapM
-        intro r hr; simp at hr
-        cases hr with
-        | inl heq => subst heq
-                     exact applyFnTClosure_nextLoc_mono tcl ctx st1 st2 p p1 argEtyp argPoison argPred
-                       result_fn r fuel (fun m hm e' c r' htc' => typecheck_nextLoc_mono c e' m r' htc') h1
-        | inr htail => exact ih rs' h2 r htail
+-- (mapM_applyFnTClosure_member_nextLoc_mono: deleted as unused; see git history)
 
 /-- applyPFnTClosure preserves nextLoc monotonicity. -/
 private lemma applyPFnTClosure_nextLoc_mono
@@ -12718,32 +12671,7 @@ private lemma applyPFnTClosure_nextLoc_mono
     · -- nestedPfn: nextLoc' = r1.nextLoc'
       simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
 
-/-- Every result from mapM applyPFnTClosure has nextLoc' ≥ result_fn.nextLoc'. -/
-lemma mapM_applyPFnTClosure_member_nextLoc_mono
-    (st1 st2 : Typ) (p p1 : Poison)
-    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-    (ctx : TypeContext) (result_fn : TypeResult) (fuel : Nat)
-    (tcls : List PFnTClosure) (results : List TypeResult)
-    (hmapM : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel) tcls = .ok results) :
-    ∀ r ∈ results, result_fn.nextLoc' ≤ r.nextLoc' := by
-  induction tcls generalizing results with
-  | nil => simp [List.mapM_nil, pure, Except.pure] at hmapM; cases hmapM; intro r hr; cases hr
-  | cons tcl tcls' ih =>
-    simp [List.mapM_cons, bind, Except.bind] at hmapM
-    cases h1 : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel with
-    | error _ => simp [h1] at hmapM
-    | ok r1 =>
-      simp [h1] at hmapM
-      cases h2 : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel) tcls' with
-      | error _ => simp [h2] at hmapM
-      | ok rs' =>
-        simp [h2, pure, Except.pure] at hmapM; cases hmapM
-        intro r hr; simp at hr
-        cases hr with
-        | inl heq => subst heq
-                     exact applyPFnTClosure_nextLoc_mono tcl ctx st1 st2 p p1 argEtyp argPoison argPred
-                       result_fn r fuel (fun m hm e' c r' htc' => typecheck_nextLoc_mono c e' m r' htc') h1
-        | inr htail => exact ih rs' h2 r htail
+-- (mapM_applyPFnTClosure_member_nextLoc_mono: deleted as unused; see git history)
 
 /-- mapM of applyFnTClosure gives wfTypeResult for all results -/
 lemma mapM_applyFnTClosure_forall_wfTypeResult
@@ -13029,47 +12957,7 @@ private lemma applyFnTClosure_refLocsResultOutputs
       split <;> simp [bind, Except.bind, pure, Except.pure, normalizeAppResultByProvenance]
         <;> intro h <;> (try rcases h with ⟨rfl, rfl⟩) <;> split <;> exact ⟨trivial, trivial⟩
 
-/-- mapM of applyFnTClosure gives refLocsResultOutputs for all results -/
-private lemma mapM_applyFnTClosure_forall_refLocs
-    (fuel_top : Nat)
-    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
-        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
-    (st1 st2 : Typ) (p p1 : Poison)
-    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-    (ctx : TypeContext) (result_fn : TypeResult) (fuel_call : Nat)
-    (h_call_lt : fuel_call < fuel_top) (hwf_fn : wfTypeResult result_fn)
-    (tcls : List FnTClosure) (results : List TypeResult)
-    (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
-      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
-      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
-    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
-    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
-    (hmapM : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call) tcls = .ok results) :
-    ∀ r ∈ results, refLocsResultOutputs r := by
-  induction tcls generalizing results with
-  | nil =>
-    simp [List.mapM_nil, pure, Except.pure] at hmapM
-    cases hmapM; intro r hr; cases hr
-  | cons tcl tcls' ih =>
-    simp [List.mapM_cons, bind, Except.bind] at hmapM
-    cases h1 : applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call with
-    | error _ => simp [h1] at hmapM
-    | ok r1 =>
-      simp [h1] at hmapM
-      cases h2 : List.mapM (fun tcl => applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call) tcls' with
-      | error _ => simp [h2] at hmapM
-      | ok rs' =>
-        simp [h2, pure, Except.pure] at hmapM
-        cases hmapM
-        intro r hr; simp at hr
-        cases hr with
-        | inl heq =>
-          subst heq
-          exact applyFnTClosure_refLocsResultOutputs fuel_top IH st1 st2 p p1 argEtyp argPoison argPred
-            ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls'))
-            hargLocs hargClosLocs h1
-        | inr htail =>
-          exact ih rs' (fun t ht => hcaptLocs t (.tail tcl ht)) h2 r htail
+-- (mapM_applyFnTClosure_forall_refLocs: deleted as unused; see git history)
 
 /-- Per-PFnTClosure ref-locs: applyPFnTClosure with combined IH gives refLocsResultOutputs. -/
 private lemma applyPFnTClosure_refLocsResultOutputs
@@ -13430,47 +13318,7 @@ private lemma applyPFnClosuresThreaded_forall_refLocs
                 | inr hmem =>
                     exact htail.2 r hmem
 
-/-- mapM of applyPFnTClosure gives refLocsResultOutputs for all results -/
-private lemma mapM_applyPFnTClosure_forall_refLocs
-    (fuel_top : Nat)
-    (IH : ∀ m < fuel_top, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
-        wfTypeContext ctx' → typecheck ctx' e m = .ok res' → refLocsResultOutputs res')
-    (st1 st2 : Typ) (p p1 : Poison)
-    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-    (ctx : TypeContext) (result_fn : TypeResult) (fuel_call : Nat)
-    (h_call_lt : fuel_call < fuel_top) (hwf_fn : wfTypeResult result_fn)
-    (tcls : List PFnTClosure) (results : List TypeResult)
-    (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
-      | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
-      | .extern _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
-    (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
-    (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
-    (hmapM : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call) tcls = .ok results) :
-    ∀ r ∈ results, refLocsResultOutputs r := by
-  induction tcls generalizing results with
-  | nil =>
-    simp [List.mapM_nil, pure, Except.pure] at hmapM
-    cases hmapM; intro r hr; cases hr
-  | cons tcl tcls' ih =>
-    simp [List.mapM_cons, bind, Except.bind] at hmapM
-    cases h1 : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call with
-    | error _ => simp [h1] at hmapM
-    | ok r1 =>
-      simp [h1] at hmapM
-      cases h2 : List.mapM (fun tcl => applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call) tcls' with
-      | error _ => simp [h2] at hmapM
-      | ok rs' =>
-        simp [h2, pure, Except.pure] at hmapM
-        cases hmapM
-        intro r hr; simp at hr
-        cases hr with
-        | inl heq =>
-          subst heq
-          exact applyPFnTClosure_refLocsResultOutputs fuel_top IH st1 st2 p p1 argEtyp argPoison argPred
-            ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls'))
-            hargLocs hargClosLocs h1
-        | inr htail =>
-          exact ih rs' (fun t ht => hcaptLocs t (.tail tcl ht)) h2 r htail
+-- (mapM_applyPFnTClosure_forall_refLocs: deleted as unused; see git history)
 
 
 /-- Abbreviation for the three-part ref-location context inputs. -/
