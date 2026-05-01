@@ -1226,9 +1226,10 @@ layer: the proof surface concerns what the typechecker states about external
 code. Two typing-side assumptions, packaged as fields of the
 \texttt{ExternTypingAssumptions} structure (defined in
 \texttt{LeanProofs/ExternTypingAssumptions.lean}), pin the typechecker's extern summaries
-to the proof layer---one for fresh guard tags and one for impure memory
-effects; neither obligation is derivable from the syntactic shape of the
-typechecker alone. The fault-robustness theorem is relative to a witness of
+to the proof layer: one for preserving abstract predicate laws across an extern
+allocation batch, and one for impure memory effects. The structural facts about
+which fresh tag denotes which guard descriptor are derived from the allocation
+trace itself. The fault-robustness theorem is relative to a witness of
 \texttt{ExternTypingAssumptions}: a caller must supply (or postulate) one to
 instantiate the theorem, making this trust boundary explicit at the public API
 rather than implicit in global axioms.
@@ -1262,32 +1263,15 @@ in the batch is mapped by $tm'$ to its descriptor.  The batch predicate's
 for the output table $tm'$ structurally, without trusting any axiom about
 arbitrary input tables.
 
-Phase~5 of the \texttt{tagsoundness-axiom} refactor (see
-\texttt{doc/tagsoundness-axiom.md}) sequenced the fresh-tag and fresh-location
-supply through closure alternatives in \texttt{typecheckApp}: each closure
-alternative starts where the previous one ended via the
-\texttt{applyClosuresThreaded} iterator, so allocation ranges across
-alternatives are disjoint by construction.  This is the precondition for
-composing per-alternative \texttt{TagMeaning} extensions into a joined
-extension at function-application sites.
-
-\paragraph{Tag-soundness trust input (\texttt{ExternTypingAssumptions.tagSoundness}).}
-Until Phase~6b of the refactor, the original \texttt{tagSoundness} field
-remains a public field of \texttt{ExternTypingAssumptions}.  It states that
-when extern typechecking allocates fresh tags and resolves symbolic
-predicates, those fresh tags are already interpreted correctly by the chosen
-$tm$.  This is the trust boundary behind all current downstream corollaries
-showing that extern values, pure extern applications, and impure extern
-applications produce qualified types that respect $tm$.  Phase~6b's atomic
-migration retires this field in favour of the structural
-\texttt{ExternBatchTagMeaningExtension.respects} projection above; once
-Phase~6b lands, the \texttt{tagSoundness} field is removed and the
-compatibility fact for resolved extern predicates is proved structurally on
-the output table.
+The typechecker sequences the fresh-tag and fresh-location supply through
+closure alternatives in \texttt{typecheckApp}: each closure alternative starts
+where the previous one ended via the \texttt{applyClosuresThreaded} iterator, so
+allocation ranges across alternatives are disjoint by construction.  This is
+the precondition for composing per-alternative \texttt{TagMeaning} extensions
+into a joined extension at function-application sites.
 
 \paragraph{PredSat extension across one extern batch (\texttt{ExternTypingAssumptions.externPredSatDelta}).}
-Even after \texttt{tagSoundness} is removed, one residual semantic input
-about extern allocation remains.  When a typecheck step extends a tag
+One semantic input about extern allocation remains.  When a typecheck step extends a tag
 meaning $tm$ to $tm'$ by allocating one extern batch, the abstract
 predicate-satisfaction relation $\text{PredSat}$ that was lawful against
 $tm$ must remain lawful against $tm'$.  Structurally, the batch only
@@ -1297,9 +1281,8 @@ field captures exactly this transport: given
 \texttt{PredSatLaws}~\textit{predSat}~tm and an
 \texttt{ExternBatchTagMeaningExtension} from $tm$ to $tm'$, it asserts
 \texttt{PredSatLaws}~\textit{predSat}~tm'.  This is a temporary broad trust
-input, narrower than \texttt{tagSoundness} (it ranges over batch extensions
-rather than over arbitrary input tables) but still broader than the intended
-final API.  The follow-up FFI registry design
+input: it ranges over all structurally valid extern batch extensions, so it is
+still broader than the intended final API.  The follow-up FFI registry design
 (\texttt{doc/ffi-axioms.md}) replaces this broad field with per-extern
 registry evidence: each trusted extern declaration supplies the descriptor
 laws for the guard descriptors that its declared return and effect summaries
@@ -1428,11 +1411,12 @@ captured typing environment).  The laws are stated relative to the
 \texttt{TagMeaning} threaded through typechecking: a step that does not
 allocate fresh tags carries the same $tm$, and a step that allocates extends
 it to $tm \sqsubseteq tm'$ via \texttt{ExternBatchTagMeaningExtension}.
-Monotonicity of \texttt{PredSatLaws} along $\sqsubseteq$ is supplied by
-\texttt{ExternTypingAssumptions.externPredSatDelta}, so a $\text{PredSat}$
-that is lawful against $tm$ remains lawful against $tm'$.  This guarantees
-that the same tag cannot silently change meaning across the derivation while
-allowing the table to grow with each extern allocation batch.
+The \texttt{ExternTypingAssumptions.externPredSatDelta} field supplies the
+corresponding \texttt{PredSatLaws} transport for each structural extern-batch
+extension, so a $\text{PredSat}$ that is lawful against $tm$ remains lawful
+against $tm'$.  This guarantees that the same tag cannot silently change
+meaning across the derivation while allowing the table to grow with each extern
+allocation batch.
 
 \paragraph{Informal reading of the two laws.}
 Before reading the formal statements, it is helpful to understand their intent

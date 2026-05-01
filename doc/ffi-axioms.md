@@ -402,13 +402,6 @@ extern boundary run, so no implementation-level boundary proof is consumed.
     fault-robustness proof. These assumptions are generic facts about extern
     typechecking, not per-runtime-implementation safety facts. -/
 structure ExternTypingAssumptions where
-  tagSoundness :
-    ∀ (tm : TagMeaning) (mapping : TagMapping)
-      (preds : List SyntaxPredicate) (env : VarTypeEnv)
-      (nextTag nextTag' : Tag),
-      collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag') →
-      TagMappingRespectsTagMeaning tm mapping preds env
-
   guardProvenance :
     ∀ (ctx : TypeContext) (r : TypeResult),
       ImpureExternCallOk ctx r →
@@ -416,6 +409,17 @@ structure ExternTypingAssumptions where
       ∀ (l : Loc) (k : Tag) (qt_out : QTyp),
         trustedGuardedCell r.memEnv' r.regime' l k qt_out →
         ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in
+
+  externPredSatDelta :
+    ∀ (predSat : PredSat)
+      {tm tm' : TagMeaning}
+      {nextTag nextTag' : Tag}
+      {mapping : TagMapping}
+      {preds : List SyntaxPredicate}
+      {env : VarTypeEnv},
+      PredSatLaws predSat tm →
+      ExternBatchTagMeaningExtension tm nextTag mapping preds env nextTag' tm' →
+      PredSatLaws predSat tm'
 
 structure TrustedExternEntry where
   decl : ExternDeclaration
@@ -557,10 +561,10 @@ would otherwise derive structurally from the function body.
 - `ImpureExternCallOk` — an existential witness that an impure extern call
   succeeded.
 - `ExternTypingAssumptions` — the structure with two fields:
-  - `tagSoundness` (Contract A): fresh-tag allocation respects an arbitrary
-    `TagMeaning`.
-  - `guardProvenance` (Contract B): impure-extern guard provenance under a
+  - `guardProvenance` (Contract A): impure-extern guard provenance under a
     poisoned program counter.
+  - `externPredSatDelta` (Contract B): `PredSatLaws` preservation across one
+    structural extern allocation batch.
 
 If the extern-boundary design above is implemented, this file would also
 contain:
@@ -588,22 +592,20 @@ contain:
   `doc/tagsoundness-axiom.md`
 - helper lemmas for looking up declaration and implementation evidence
 
-`doc/tagsoundness-axiom.md` proposes eliminating
-`ExternTypingAssumptions.tagSoundness` by threading `TagMeaning` through
-typechecking. The structural part is generic and should be proved:
-extern allocation extends the output tag table with exactly the resolved guard
-descriptors. The remaining semantic part is temporarily named
-`externPredSatDelta`: an extern-generated descriptor batch extends
-`PredSatLaws` from the input table to the output table.
+The tag-meaning threading refactor threads `TagMeaning` through typechecking.
+The structural part is generic: extern allocation extends the output tag table
+with exactly the resolved guard descriptors. The remaining semantic part is
+temporarily named `externPredSatDelta`: an extern-generated descriptor batch
+extends `PredSatLaws` from the input table to the output table.
 
 That temporary `externPredSatDelta` is intentionally broader than the final
 FFI interface. It is staged as a caller-supplied field of
-`ExternTypingAssumptions`, replacing `tagSoundness`, so the kernel does not
-assume it unconditionally. Once the tag-threading refactor lands, it should be
-incorporated into `TrustedRegistry` / `ExternBoundarySpec` as per-extern
-evidence and the broad field should be removed. Typing-side reasoning for extern
-declarations in unexecuted branches may still need declaration-level evidence,
-because those branches typecheck even when no runtime boundary event occurs.
+`ExternTypingAssumptions`, so the kernel does not assume it unconditionally. It
+should be incorporated into `TrustedRegistry` / `ExternBoundarySpec` as
+per-extern evidence and the broad field should be removed. Typing-side reasoning
+for extern declarations in unexecuted branches may still need declaration-level
+evidence, because those branches typecheck even when no runtime boundary event
+occurs.
 
 `ExternTypingAssumptions.guardProvenance` remains a separate generic
 typing-side assumption until it receives an analogous registry-scoped
@@ -775,17 +777,11 @@ shared facts.
 
 ## Open Questions
 
-1. Implement the `ExternTypingAssumptions.tagSoundness` replacement described
-   in `doc/tagsoundness-axiom.md`: thread `TagMeaning` as ghost state through
-   typechecking, prove the structural extern-batch extension lemmas, sequence
-   closure-alternative tag allocation, and use the temporary
-   `ExternTypingAssumptions.externPredSatDelta` field to stream `PredSatLaws`
-   from each input table to its output table. After that lands, move the
-   `externPredSatDelta` obligation into the trusted registry interface as
-   per-extern evidence and delete the broad field.
+1. Move the `ExternTypingAssumptions.externPredSatDelta` obligation into the
+   trusted registry interface as per-extern evidence and delete the broad field.
 2. Revisit the shape of `ExternTypingAssumptions.guardProvenance`. It needs
    either a derivation from more structural extern-call facts or an explicitly
-   scoped trust story parallel to tag soundness.
+   scoped trust story parallel to the predicate-law registry evidence.
 3. Decide where registry agreement belongs in the public FR API:
    `FaultRobustnessSpec` itself or `InputSpec`. The trusted-boundary proof is
    not meaningful until successful runs use `tr.toRuntimeRegistry` instead of

@@ -2,20 +2,20 @@
   ExternTypingAssumptions.lean — the semantic contract floor for extern
   typechecking in the fault-robustness proof.
 
-  Extern type-checking has two obligations that cannot be discharged
-  structurally:
+  Extern type-checking has two semantic obligations that are currently supplied
+  at the fault-robustness trust boundary:
 
-  * fresh-tag coherence with an arbitrary `TagMeaning` (Contract A,
-    `ExternTypingAssumptions.tagSoundness`); and
-  * guard provenance across impure extern summaries (Contract B,
+  * guard provenance across impure extern summaries (Contract A,
     `ExternTypingAssumptions.guardProvenance`).
+  * `PredSatLaws` preservation across one structural extern allocation batch
+    (Contract B, `ExternTypingAssumptions.externPredSatDelta`).
 
   Both contracts live as fields of `ExternTypingAssumptions`, threaded
   explicitly through the fault-robustness proof.  This replaces the prior
   global postulates: callers must supply (or postulate) an
   `ExternTypingAssumptions` value to instantiate the FR theorem, making
   the trust boundary explicit at the public API.  See `doc/ffi-axioms.md`
-  for the broader extern-boundary design this is the first step of.
+  for the broader extern-boundary design.
 -/
 
 import LeanPoison.Syntax
@@ -74,9 +74,7 @@ theorem bounded
     TagMeaningBounded tm' nextTag' :=
   h.2.1
 
-/-- The structural compatibility projection.  This replaces the role of the
-    old `tagSoundness` axiom: instead of asserting compatibility with an
-    arbitrary input `tm`, we read it off the canonical extension `tm'`. -/
+/-- The structural compatibility projection for the canonical extension. -/
 theorem respects
     {tm : TagMeaning} {nextTag : Tag} {mapping : TagMapping}
     {preds : List SyntaxPredicate} {env : VarTypeEnv}
@@ -416,16 +414,12 @@ private lemma buildBatchTm_fold_lookup_of_guard_mem
           exact h_cons (List.mem_cons_of_mem pred hmem₁) (List.mem_cons_of_mem pred hmem₂)
         exact ih (buildBatchTmStep mapping env acc pred) h_cons_tail htail
 
-/-- Phase 6 bridge (singleton case): given a successful `collectAndAllocExternTags`
+/-- Singleton bridge: given a successful `collectAndAllocExternTags`
     on a singleton predicate list, plus the input `tm` bounded by `nextTag`
     and the standard mapping-range bounds (proved structurally by
     `collectAndAllocExternTags_mapping_values_ge` / `_lt`), construct a
     canonical tag-meaning extension `tm'` that satisfies the structural
     batch-extension predicate.
-
-    This is the structural replacement for the 4-of-5 `tagSoundness` call
-    sites that allocate from a singleton predicate (at lines 5548, 5624,
-    plus two more inside extern paths in `StepFR.lean`).
 
     Multi-predicate batches use `canonical_general`, which additionally
     consumes the allocator success witness to recover the conflict-check
@@ -589,26 +583,16 @@ abbrev ImpureExternCallOk (ctx : TypeContext) (r : TypeResult) : Prop :=
       argEtyp argPoison argPred ctx result2 fuel = .ok r
 
 /-- Generic typing-side assumptions about the extern typechecking machinery.
-    These contracts are not per-implementation facts; they govern fresh-tag
-    allocation and impure-extern guard provenance for the typechecker as a
-    whole.
+    These contracts are not per-implementation facts; they govern impure-extern
+    guard provenance and preservation of `PredSatLaws` across structural extern
+    allocation batches.
 
     The fault-robustness theorem is relative to these assumptions: callers
     must supply (or postulate) an `ExternTypingAssumptions` to instantiate
     it.  See `doc/ffi-axioms.md` for the longer-term plan to discharge these
     structurally from the extern-boundary contract. -/
 structure ExternTypingAssumptions where
-  /-- **Contract A: Tag Meaning Soundness.** The tag mapping produced by
-      fresh-tag allocation respects any tag meaning `tm`.  Cannot be derived
-      structurally because `tm` is universally quantified and
-      `wfTagMeaningCtx` does not constrain it on fresh tags. -/
-  tagSoundness :
-    ∀ (tm : TagMeaning) (mapping : TagMapping)
-      (preds : List SyntaxPredicate) (env : VarTypeEnv)
-      (nextTag nextTag' : Tag),
-      collectAndAllocExternTags preds nextTag = .ok (mapping, nextTag') →
-      TagMappingRespectsTagMeaning tm mapping preds env
-  /-- **Contract B: Guard Provenance for Impure Externs.** If `r` is the
+  /-- **Contract A: Guard Provenance for Impure Externs.** If `r` is the
       result of an impure extern call from `ctx` under a poisoned pc, every
       trusted guarded non-function cell in the output traces back pointwise
       to a trusted guarded non-function cell at the same location in the
@@ -622,18 +606,16 @@ structure ExternTypingAssumptions where
       ∀ (l : Loc) (k : Tag) (qt_out : QTyp),
         trustedGuardedCell r.memEnv' r.regime' l k qt_out →
         ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in
-  /-- **Contract C (staging): PredSat extension across one extern allocation
+  /-- **Contract B (staging): PredSat extension across one extern allocation
       batch.**  When `tm` extends to `tm'` via a single extern batch (the
       structural `ExternBatchTagMeaningExtension` predicate) and `predSat`
       already satisfies `PredSatLaws` against `tm`, those laws survive in
       the extended table.
 
-      This is a temporary broad trust input.  It replaces the role of
-      `tagSoundness` for streaming `PredSatLaws` forward through the
-      threading.  The intended replacement is per-extern registry evidence
-      (see `doc/ffi-axioms.md`); until then, the field ranges over all
-      extern batches rather than over only the trusted extern declarations
-      a program names. -/
+      This is a temporary broad trust input.  The intended replacement is
+      per-extern registry evidence (see `doc/ffi-axioms.md`); until then,
+      the field ranges over all extern batches rather than over only the
+      trusted extern declarations a program names. -/
   externPredSatDelta :
     ∀ (predSat : PredSat)
       {tm tm' : TagMeaning}

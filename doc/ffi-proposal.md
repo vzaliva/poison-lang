@@ -68,11 +68,11 @@ The runtime side is in place. The source of truth is the code:
 - `LeanPoison/BigStep.lean` — extern dispatch prologue, application
   branches, nested-return shape validation, and fuel accounting.
 - `LeanProofs/ExternTypingAssumptions.lean` — the typing-side contract floor:
-  `ExternTypingAssumptions.tagSoundness` (fresh-tag soundness for
-  summary-generated tags) and `ExternTypingAssumptions.guardProvenance`
-  (provenance of impure extern summaries), packaged as fields of the
-  `ExternTypingAssumptions` structure that callers must supply to instantiate
-  the FR theorem.
+  `ExternTypingAssumptions.externPredSatDelta` (predicate-law preservation
+  across structural extern allocation batches) and
+  `ExternTypingAssumptions.guardProvenance` (provenance of impure extern
+  summaries), packaged as fields of the `ExternTypingAssumptions` structure
+  that callers must supply to instantiate the FR theorem.
 
 ### Runtime Summary
 
@@ -182,7 +182,8 @@ These contracts are the evidence interface the proof layer consumes. The
 The typing-side contract floor is `LeanProofs/ExternTypingAssumptions.lean`,
 which exposes the `ExternTypingAssumptions` structure with two fields:
 
-- `tagSoundness` — fresh-tag soundness for summary-generated tags.
+- `externPredSatDelta` — predicate-law preservation across one structural
+  extern allocation batch.
 - `guardProvenance` — provenance of impure extern summaries in the FR
   development.
 
@@ -298,7 +299,7 @@ Any new guarantee interface should be compared against the
      `terminatesTo_extern_absurd` replacement above.
    - Cons: exposes some proof internals.
 
-3. **Fine-grained assumptions.** Smaller obligations (tag soundness,
+3. **Fine-grained assumptions.** Smaller obligations (predicate-law extension,
    effect provenance, value/memory agreement) from which the required
    `StepFR` facts are derived.
    - Pros: modular, close to the true semantic obligations, most
