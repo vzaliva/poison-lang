@@ -784,7 +784,7 @@ private lemma applyFnTClosure_ok_wfTagMeaningCtx
     rcases applyFnTClosure_extern_canonical_batch tm ctx st1 st2 p p1 argEtyp argPoison
         argPred result1 fuel x retSpec effects capturedEnv r
         hctxTm1 hbounded hcapTm hargTm' happly with
-      ⟨tm', _tagMapping, _nextTag', hbatch, hwf, hqtm⟩
+      ⟨tm', _tagMapping, _nextTag', hbatch, _hbounded', hwf, hqtm⟩
     exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hwf, hqtm⟩
 
 private lemma applyFnTClosure_ok_regimeConsistentWithCtx
@@ -1473,7 +1473,7 @@ private lemma applyPFnTClosure_ok_wfTagMeaningCtx
         rcases applyPFnTClosure_extern_simple_canonical_batch tm ctx st1 st2 p p1
             argEtyp argPoison argPred result1 fuel x typ poison spred capturedEnv r
             hctxTm1 hbounded hcapTm hargTm' happly with
-          ⟨tm', _tagMapping, _nextTag', hbatch, hwf, hqtm⟩
+          ⟨tm', _tagMapping, _nextTag', hbatch, _hbounded', hwf, hqtm⟩
         exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hwf, hqtm⟩
     | nestedFn _ innerArg innerArgTyp innerRet innerEffects =>
         have hmem := applyPFnTClosure_extern_memEnv_eq ctx st1 st2 p p1
