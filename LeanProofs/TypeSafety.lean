@@ -3792,7 +3792,7 @@ lemma regime_monotone (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeRes
 
 -- Helper lemmas for advanceNextTag functions monotonicity
 
-private lemma joinTypeResults_nextTag_eq_max
+lemma joinTypeResults_nextTag_eq_max
   (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
     joinTypeResults ctx r rs = .ok res →
     res.nextTag' = List.max (r.nextTag' :: rs.map TypeResult.nextTag') (by intro h; cases h) := by
@@ -4778,7 +4778,7 @@ private lemma applyPFnTClosure_nextTag_mono_normal
           · simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
           · simp only [pure, Except.pure, Except.ok.injEq] at happly; rw [← happly]
 
-private lemma foldl_max_ge_init (a : Nat) (xs : List Nat) :
+lemma foldl_max_ge_init (a : Nat) (xs : List Nat) :
     a ≤ List.foldl max a xs := by
   induction xs generalizing a with
   | nil =>
