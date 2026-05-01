@@ -777,9 +777,12 @@ shared facts.
 
 1. Move the `ExternTypingAssumptions.externPredSatDelta` obligation into the
    trusted registry interface as per-extern evidence and delete the broad field.
-2. Revisit the shape of `ExternTypingAssumptions.guardProvenance`. It needs
-   either a derivation from more structural extern-call facts or an explicitly
-   scoped trust story parallel to the predicate-law registry evidence.
+2. Revisit the shape of `ExternTypingAssumptions.guardProvenance`.
+   [`ffi-guardProvenance.md`](ffi-guardProvenance.md) traces the axiom to a
+   typechecker-side bug: `applyExternEffect` does not erase predicates under
+   poisoned `pc`, while assignment already does. Fix the typechecker to mirror
+   assignment, then `guardProvenance` becomes structurally provable and the
+   field can be removed.
 3. Decide where registry agreement belongs in the public FR API:
    `FaultRobustnessSpec` itself or `InputSpec`. The trusted-boundary proof is
    not meaningful until successful runs use `tr.toRuntimeRegistry` instead of
