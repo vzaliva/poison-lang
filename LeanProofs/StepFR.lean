@@ -10702,38 +10702,689 @@ private lemma typecheckExpr_preserves_wfTagMeaningCtx_main
                       , joinTypeResults_QTypRespectsTagMeaning_byMembers tm ctx first rest res
                           h_join h_first_qtm h_rest_qtm ⟩
 
-private lemma typecheck_extends_tagMeaning_refl_from_main
-    (extTyping : ExternTypingAssumptions)
+private lemma typecheck_extends_tagMeaning_nonApp_byIH
+    (_extTyping : ExternTypingAssumptions)
+    (P : TagMeaning → Prop)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
     (fuel : Nat) (res : TypeResult)
     (h_wf : wfTagMeaningCtx tm ctx)
     (h_bounded : TagMeaningBounded tm ctx.nextTag)
-    (htc : typecheck ctx e fuel = .ok res) :
-    IsCanonicalExtension tm ctx e res tm := by
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · exact ExtTreeMap.IsSubmap.refl tm
-  · exact h_bounded.mono (typecheck_nextTag_mono ctx e fuel res htc)
-  · exact (typecheckExpr_preserves_wfTagMeaningCtx_main extTyping fuel tm ctx e res h_wf htc).1
-  · exact (typecheckExpr_preserves_wfTagMeaningCtx_main extTyping fuel tm ctx e res h_wf htc).2
+    (htc : typecheck ctx e fuel = .ok res)
+    (hP : P tm)
+    (hnotApp : ∀ e1 e2, e ≠ Expr.app e1 e2)
+    (hnotExternVal : ∀ id typ poison pred, e ≠ Expr.externVal id typ poison pred)
+    (IH : ∀ m, m < fuel →
+      ∀ (tm_i : TagMeaning) (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
+        wfTagMeaningCtx tm_i ctx_i →
+        TagMeaningBounded tm_i ctx_i.nextTag →
+        P tm_i →
+        typecheck ctx_i e_i m = .ok res_i →
+        ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ P tm') :
+    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ P tm' := by
+  have htc_full := htc
+  unfold typecheck at htc
+  cases fuel with
+  | zero =>
+      unfold typecheckExpr at htc
+      simp at htc
+  | succ fuel' =>
+      unfold typecheckExpr at htc
+      cases e with
+      | num n =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx (Expr.num n) (Nat.succ fuel') res htc_full)
+          unfold typecheckInt at htc
+          simp [pure, Except.pure] at htc
+          cases htc
+          refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+          · exact hb_res
+          · simpa [wfTagMeaningCtx, ctxAfter]
+          · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ rfl rfl
+      | bool b =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx (Expr.bool b) (Nat.succ fuel') res htc_full)
+          unfold typecheckBool at htc
+          simp [pure, Except.pure] at htc
+          cases htc
+          refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+          · exact hb_res
+          · simpa [wfTagMeaningCtx, ctxAfter]
+          · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ rfl rfl
+      | unit =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx Expr.unit (Nat.succ fuel') res htc_full)
+          unfold typecheckUnit at htc
+          simp [pure, Except.pure] at htc
+          cases htc
+          refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+          · exact hb_res
+          · simpa [wfTagMeaningCtx, ctxAfter]
+          · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ rfl rfl
+      | str s =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx (Expr.str s) (Nat.succ fuel') res htc_full)
+          unfold typecheckString at htc
+          simp [pure, Except.pure] at htc
+          cases htc
+          refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+          · exact hb_res
+          · simpa [wfTagMeaningCtx, ctxAfter]
+          · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _ rfl rfl
+      | var x =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx (Expr.var x) (Nat.succ fuel') res htc_full)
+          simp at htc
+          unfold typecheckVar at htc
+          simp only [bind, Except.bind] at htc
+          cases hlookup : ctx.varEnv.lookup x with
+          | none => simp [hlookup] at htc
+          | some qt =>
+            simp [hlookup] at htc
+            cases qt with
+            | mk etyp poison pred =>
+              simp at htc
+              cases pred with
+              | noPred =>
+                  simp [pure, Except.pure] at htc
+                  cases htc
+                  refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+                  · exact hb_res
+                  · simpa [wfTagMeaningCtx, ctxAfter]
+                  · exact QTypRespectsTagMeaning_transport_etyp_noGuard tm
+                      ⟨etyp, poison, Predicate.noPred⟩ _
+                      (wfTagMeaningCtx_var_lookup_qtyp tm ctx x _ h_wf hlookup)
+                      (by simp) (by simp [qtypGuardDesc?])
+              | guardOnly k =>
+                  simp at htc
+                  cases hfn : etyp.isFunctionType with
+                  | false =>
+                    simp [hfn] at htc
+                    revert htc
+                    generalize ctx.tagEnv[k]? = tv
+                    cases tv with
+                    | none =>
+                        intro htc
+                        simp at htc
+                        cases htc
+                        refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+                        · exact hb_res
+                        · simpa [wfTagMeaningCtx, ctxAfter]
+                        · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _
+                            hfn (by simp [qtypGuardDesc?])
+                    | some tv =>
+                        cases tv with
+                        | mk val deps =>
+                          cases val <;> intro htc <;> simp at htc <;> cases htc <;>
+                            refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+                          · exact hb_res
+                          · simpa [wfTagMeaningCtx, ctxAfter]
+                          · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _
+                              hfn (by simp [qtypGuardDesc?])
+                          · exact hb_res
+                          · simpa [wfTagMeaningCtx, ctxAfter]
+                          · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _
+                              hfn (by simp [qtypGuardDesc?])
+                  | true => simp [hfn] at htc
+              | guardClosure k tcls ptcls body_t =>
+                  simp at htc
+                  cases hfn : etyp.isFunctionType with
+                  | false =>
+                    simp [hfn] at htc
+                    have hqt_orig :
+                        QTypRespectsTagMeaning tm
+                          ⟨etyp, poison, Predicate.guardClosure k tcls ptcls body_t⟩ :=
+                      wfTagMeaningCtx_var_lookup_qtyp tm ctx x _ h_wf hlookup
+                    revert htc
+                    generalize ctx.tagEnv[k]? = tv
+                    cases tv with
+                    | none =>
+                        intro htc
+                        simp at htc
+                        cases htc
+                        refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+                        · exact hb_res
+                        · simpa [wfTagMeaningCtx, ctxAfter]
+                        · exact QTypRespectsTagMeaning_transport_etyp_pred tm
+                            ⟨etyp, poison, Predicate.guardClosure k tcls ptcls body_t⟩
+                            ⟨etyp, joinPoison ctx.pc poison,
+                              Predicate.guardClosure k tcls ptcls body_t⟩
+                            hqt_orig rfl rfl
+                    | some tv =>
+                        cases tv with
+                        | mk val deps =>
+                          cases val <;> intro htc <;> simp at htc <;> cases htc <;>
+                            refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+                          · exact hb_res
+                          · simpa [wfTagMeaningCtx, ctxAfter]
+                          · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _
+                              hfn (by simp [qtypGuardDesc?])
+                          · exact hb_res
+                          · simpa [wfTagMeaningCtx, ctxAfter]
+                          · exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm _
+                              hfn (by simp [qtypGuardDesc?])
+                  | true => simp [hfn] at htc
+      | fn x st1 body st2 =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx (Expr.fn x st1 body st2) (Nat.succ fuel') res
+                htc_full)
+          unfold typecheckFn at htc
+          simp [pure, Except.pure] at htc
+          cases htc
+          refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+          · exact hb_res
+          · simpa [wfTagMeaningCtx, ctxAfter]
+          · exact QTypRespectsTagMeaning_fn_regular tm ctx x st1 st2 ctx.pc body h_wf
+      | pfn x st1 body st2 =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx (Expr.pfn x st1 body st2) (Nat.succ fuel') res
+                htc_full)
+          unfold typecheckPfn at htc
+          simp [bind, Except.bind] at htc
+          cases h_topexpr : body.toPExpr with
+          | error _ => simp [h_topexpr] at htc
+          | ok pbody =>
+              simp [h_topexpr, pure, Except.pure] at htc
+              subst htc
+              refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+              · exact hb_res
+              · simpa [wfTagMeaningCtx, ctxAfter]
+              · exact QTypRespectsTagMeaning_pfn_regular tm ctx x st1 st2 ctx.pc pbody h_wf
+      | externVal id typ poison pred =>
+          exact False.elim (hnotExternVal id typ poison pred rfl)
+      | externFn id arg argTyp retSpec effects =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx (Expr.externFn id arg argTyp retSpec effects)
+                (Nat.succ fuel') res htc_full)
+          have htc_res := typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc
+          subst htc_res
+          refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+          · exact hb_res
+          · simpa [wfTagMeaningCtx, ctxAfter]
+          · exact QTypRespectsTagMeaning_fn_extern tm ctx _ _ _ ctx.pc _ _ h_wf
+      | externPfn id arg argTyp retSpec =>
+          have hb_res : TagMeaningBounded tm res.nextTag' :=
+            h_bounded.mono
+              (typecheck_nextTag_mono ctx (Expr.externPfn id arg argTyp retSpec)
+                (Nat.succ fuel') res htc_full)
+          have htc_res := typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc
+          subst htc_res
+          refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
+          · exact hb_res
+          · simpa [wfTagMeaningCtx, ctxAfter]
+          · exact QTypRespectsTagMeaning_pfn_extern tm ctx _ _ _ ctx.pc _ h_wf
+      | unaryop op e1 =>
+          have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
+          rcases hstruct with
+            ⟨result1, result_etyp, htc1, hopEtyp, hmemEnv, _htagEnv, _hnextLoc,
+              hnextTag, _hregime, hetyp, _hpoison, hpred⟩
+          have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
+            simpa using htc1
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+            ⟨tm1, hcanon1, hP1⟩
+          have hresTm : QTypRespectsTagMeaning tm1 res.qualType := by
+            have hnf : result_etyp.isFunctionType = false := by
+              have : result_etyp = .bool := by
+                revert hopEtyp
+                unfold opUnaryEType?
+                split <;> simp [eq_comm]
+              subst this
+              decide
+            apply QTypRespectsTagMeaning_of_nonFunction_noGuard
+            · rw [hetyp]
+              exact hnf
+            · simp [qtypGuardDesc?, hpred]
+          refine ⟨tm1, ?_, hP1⟩
+          exact ⟨IsCanonicalExtension.extends_tm hcanon1,
+            by simpa [hnextTag] using IsCanonicalExtension.bounded hcanon1,
+            by simpa [wfTagMeaningCtx, ctxAfter, hmemEnv] using
+              IsCanonicalExtension.wfCtx hcanon1,
+            hresTm⟩
+      | deref e1 =>
+          cases fuel' with
+          | zero =>
+              simp [typecheckDeref] at htc
+          | succ fuel'' =>
+              have hstruct := typecheckDeref_structure ctx e1 (Nat.succ fuel'') res htc
+              rcases hstruct with
+                ⟨result1, htc1, hmem, _htag, _hloc, hnextTag, _hregime⟩
+              have htc1' : typecheck ctx e1 fuel'' = .ok result1 := by
+                simpa [typecheck] using htc1
+              rcases IH fuel'' (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+                ⟨tm1, hcanon1, hP1⟩
+              have hresTm : QTypRespectsTagMeaning tm1 res.qualType :=
+                typecheckDeref_qtypRespects tm1 ctx e1 fuel'' res result1
+                  (by simpa [ctxAfter] using IsCanonicalExtension.wfCtx hcanon1)
+                  (by simpa using htc1) htc
+              refine ⟨tm1, ?_, hP1⟩
+              exact ⟨IsCanonicalExtension.extends_tm hcanon1,
+                by simpa [hnextTag] using IsCanonicalExtension.bounded hcanon1,
+                by simpa [wfTagMeaningCtx, ctxAfter, hmem] using
+                  IsCanonicalExtension.wfCtx hcanon1,
+                hresTm⟩
+      | newRef e1 =>
+          have hstruct := typecheckNewRef_structure ctx e1 fuel' res htc
+          rcases hstruct with
+            ⟨result1, l, htc1, hl, hInt, hRef_res, _hpoison_res, hpred_res,
+              hmem_res, _htag_res, _hnextLoc_res, hnextTag_res, _hregime_res⟩
+          have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
+            simpa using htc1
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+            ⟨tm1, hcanon1, hP1⟩
+          let storedQt : QTyp :=
+            ⟨ETyp.int, joinPoison ctx.pc result1.qualType.poison,
+              if ctx.pc then Predicate.noPred else result1.qualType.pred⟩
+          have hstored_qtm : QTypRespectsTagMeaning tm1 storedQt := by
+            by_cases hpc : ctx.pc = true
+            · have hnotfun : storedQt.etyp.isFunctionType = false := by
+                simp [storedQt, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+              have hguard : qtypGuardDesc? storedQt = none := by
+                simp [storedQt, hpc, qtypGuardDesc?]
+              exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm1 storedQt hnotfun hguard
+            · exact
+                QTypRespectsTagMeaning_transport_etyp_pred tm1 result1.qualType storedQt
+                  (IsCanonicalExtension.respectsResult hcanon1)
+                  (by simpa [storedQt] using hInt.symm)
+                  (by simp [storedQt, hpc])
+          have hEnv_res : EnvRespectsTagMeaning tm1 ctx.varEnv res.memEnv' := by
+            have hEnv1 : EnvRespectsTagMeaning tm1 ctx.varEnv result1.memEnv' := by
+              simpa [wfTagMeaningCtx, ctxAfter] using IsCanonicalExtension.wfCtx hcanon1
+            rw [hmem_res, hl]
+            exact
+              EnvRespectsTagMeaning_updateMemEnv
+                tm1 ctx.varEnv result1.memEnv' result1.nextLoc' storedQt rfl hEnv1 hstored_qtm
+          have hresTm : QTypRespectsTagMeaning tm1 res.qualType := by
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hRef_res, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            have hguard : qtypGuardDesc? res.qualType = none := by
+              simp [qtypGuardDesc?, hpred_res]
+            intro qt' k d hinq hqd
+            exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm1 res.qualType
+              hnotfun hguard hinq hqd
+          refine ⟨tm1, ?_, hP1⟩
+          exact ⟨IsCanonicalExtension.extends_tm hcanon1,
+            by simpa [hnextTag_res] using IsCanonicalExtension.bounded hcanon1,
+            wfTagMeaningCtx_ctxAfter tm1 ctx res hEnv_res,
+            hresTm⟩
+      | op e1 op e2 =>
+          have hstruct := typecheckOp_structure ctx e1 e2 op fuel' res htc
+          rcases hstruct with
+            ⟨result1, result2, result_etyp, htc1, htc2, hopEtyp, hmemEnv, _htagEnv,
+              _hnextLoc, hnextTag, _hregime, hetyp, _hpoison, hpred⟩
+          have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
+            simpa using htc1
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+            ⟨tm1, hcanon1, hP1⟩
+          have hwf_mid : wfTagMeaningCtx tm1 (updateCtxFromResult ctx result1) := by
+            simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using
+              IsCanonicalExtension.wfCtx hcanon1
+          have hb_mid : TagMeaningBounded tm1 (updateCtxFromResult ctx result1).nextTag := by
+            simpa [updateCtxFromResult] using IsCanonicalExtension.bounded hcanon1
+          have htc2' :
+              typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
+            simpa using htc2
+          rcases IH (fuel' - 1) (by omega) tm1 (updateCtxFromResult ctx result1) e2
+              result2 hwf_mid hb_mid hP1 htc2' with
+            ⟨tm2, hcanon2, hP2⟩
+          have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
+          have hresTm : QTypRespectsTagMeaning tm2 res.qualType := by
+            have hnf : result_etyp.isFunctionType = false := by
+              have : result_etyp = .int ∨ result_etyp = .bool := by
+                revert hopEtyp
+                unfold opEType?
+                split <;> simp [eq_comm] <;> tauto
+              rcases this with rfl | rfl <;> decide
+            apply QTypRespectsTagMeaning_of_nonFunction_noGuard
+            · rw [hetyp]
+              exact hnf
+            · simp [qtypGuardDesc?, hpred]
+          refine ⟨tm2, ?_, hP2⟩
+          exact ⟨hcanon_trans.1,
+            by simpa [hnextTag] using hcanon_trans.2.1,
+            by simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult, hmemEnv] using
+              hcanon_trans.2.2.1,
+            hresTm⟩
+      | seq e1 e2 =>
+          have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
+          rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
+          have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
+            simpa using htc1
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+            ⟨tm1, hcanon1, hP1⟩
+          have hwf_mid : wfTagMeaningCtx tm1 ctx' := by
+            rw [hctx']
+            simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using
+              IsCanonicalExtension.wfCtx hcanon1
+          have hb_mid : TagMeaningBounded tm1 ctx'.nextTag := by
+            rw [hctx']
+            simpa [updateCtxFromResult] using IsCanonicalExtension.bounded hcanon1
+          have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok res := by
+            simpa using htc2
+          rcases IH (fuel' - 1) (by omega) tm1 ctx' e2 res hwf_mid hb_mid hP1 htc2' with
+            ⟨tm2, hcanon2, hP2⟩
+          have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
+          refine ⟨tm2, ?_, hP2⟩
+          exact ⟨hcanon_trans.1, hcanon_trans.2.1,
+            by simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult, hctx'] using
+              hcanon_trans.2.2.1,
+            hcanon_trans.2.2.2⟩
+      | vlet x e1 e2 =>
+          have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
+          rcases hstruct with
+            ⟨result1, result2, ctx', htc1, hctx', htc2, hetyp_res, hmemEnv, _htagEnv,
+              _hnextLoc, hnextTag, _hregime, _hpoison_res, hpred_res⟩
+          have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
+            simpa using htc1
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+            ⟨tm1, hcanon1, hP1⟩
+          have hwf_mid : wfTagMeaningCtx tm1 ctx' := by
+            rw [hctx']
+            have hwf_after : wfTagMeaningCtx tm1 (ctxAfter ctx result1) :=
+              IsCanonicalExtension.wfCtx hcanon1
+            simp only [wfTagMeaningCtx, ctxAfter] at hwf_after
+            let ctxBase : TypeContext :=
+              ⟨ctx.pc, result1.regime', result1.memEnv', ctx.varEnv, result1.tagEnv',
+               result1.nextLoc', result1.nextTag', ctx.pureCtx⟩
+            exact wfTagMeaningCtx_varEnv_ext tm1 ctxBase x result1.qualType
+              (by simpa [wfTagMeaningCtx, ctxAfter, ctxBase] using hwf_after)
+              (IsCanonicalExtension.respectsResult hcanon1)
+          have hb_mid : TagMeaningBounded tm1 ctx'.nextTag := by
+            rw [hctx']
+            simpa using IsCanonicalExtension.bounded hcanon1
+          have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok result2 := by
+            simpa using htc2
+          rcases IH (fuel' - 1) (by omega) tm1 ctx' e2 result2 hwf_mid hb_mid hP1 htc2' with
+            ⟨tm2, hcanon2, hP2⟩
+          have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
+          have hresTm : QTypRespectsTagMeaning tm2 res.qualType :=
+            QTypRespectsTagMeaning_transport_etyp_pred tm2 result2.qualType res.qualType
+              (IsCanonicalExtension.respectsResult hcanon2)
+              (by rw [hetyp_res]) (by rw [hpred_res])
+          have hTm_final : wfTagMeaningCtx tm2 (ctxAfter ctx res) := by
+            have hcanon2_wf := IsCanonicalExtension.wfCtx hcanon2
+            unfold wfTagMeaningCtx at hcanon2_wf ⊢
+            simp only [ctxAfter, hmemEnv]
+            have hTm2' :
+                EnvRespectsTagMeaning tm2 (ctx.varEnv.update x result1.qualType)
+                  result2.memEnv' := by
+              simpa [hctx'] using hcanon2_wf
+            refine EnvRespectsTagMeaning_of_update tm2 x ctx.varEnv result1.qualType
+              result2.memEnv' hTm2' ?_
+            intro qt hlookup
+            exact QTypRespectsTagMeaning_mono hcanon_trans.1
+              (wfTagMeaningCtx_var_lookup_qtyp tm ctx x qt h_wf hlookup)
+          refine ⟨tm2, ?_, hP2⟩
+          exact ⟨hcanon_trans.1, by simpa [hnextTag] using hcanon_trans.2.1,
+            hTm_final, hresTm⟩
+      | assign e1 e2 =>
+          have hstruct := typecheckAssign_structure ctx e1 e2 fuel' res htc
+          rcases hstruct with
+            ⟨result1s, result2s, _ls, htc1s, _hRef, htc2s, _hInt, _hnextLoc,
+              hnextTag, _hregime, hetyp_res, _hpoison_res, hpred_res⟩
+          have hmem_formula := typecheckAssign_memEnv_formula ctx e1 e2 fuel' res htc
+          rcases hmem_formula with
+            ⟨result1, result2, ls, htc1, _hRef, htc2, _hInt, hmem_res, _hRegime⟩
+          have hresult1_eq : result1 = result1s := by
+            have h :
+                (Except.ok result1 : TypecheckM TypeResult) = Except.ok result1s := by
+              rw [← htc1, ← htc1s]
+            exact Except.ok.inj h
+          subst result1s
+          have hresult2_eq : result2 = result2s := by
+            have h :
+                (Except.ok result2 : TypecheckM TypeResult) = Except.ok result2s := by
+              rw [← htc2, ← htc2s]
+            exact Except.ok.inj h
+          subst result2s
+          have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
+            simpa [typecheck] using htc1
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+            ⟨tm1, hcanon1, hP1⟩
+          have hwf_mid : wfTagMeaningCtx tm1 (updateCtxFromResult ctx result1) := by
+            simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using
+              IsCanonicalExtension.wfCtx hcanon1
+          have hb_mid : TagMeaningBounded tm1 (updateCtxFromResult ctx result1).nextTag := by
+            simpa [updateCtxFromResult] using IsCanonicalExtension.bounded hcanon1
+          have htc2' :
+              typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
+            simpa [typecheck] using htc2
+          rcases IH (fuel' - 1) (by omega) tm1 (updateCtxFromResult ctx result1) e2
+              result2 hwf_mid hb_mid hP1 htc2' with
+            ⟨tm2, hcanon2, hP2⟩
+          have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
+          let storedPred : Predicate :=
+            if result1.qualType.poison = true ∨ ctx.pc = true then Predicate.noPred
+            else result2.qualType.pred
+          let storedQt : QTyp :=
+            { etyp := ETyp.int
+              poison := joinPoison ctx.pc
+                (joinPoison result1.qualType.poison result2.qualType.poison)
+              pred := storedPred }
+          have hstored_pred_respects : PredRespectsTagMeaning tm2 storedPred := by
+            intro k arg_name pred_body var_env hpred
+            by_cases hwrite : result1.qualType.poison = true ∨ ctx.pc = true
+            · simp [storedPred, hwrite] at hpred
+            · have hpred_res2 :
+                  result2.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env := by
+                simpa [storedPred, hwrite] using hpred
+              have hqd2 :
+                  qtypGuardDesc? result2.qualType =
+                    some (k, { argName := arg_name, body := pred_body, capEnv := var_env }) := by
+                simp [qtypGuardDesc?, hpred_res2]
+              exact IsCanonicalExtension.respectsResult hcanon2
+                (QTypInQTyp.self result2.qualType) hqd2
+          have hstored_qtyp : QTypRespectsTagMeaning tm2 storedQt := by
+            unfold storedQt
+            exact
+              QTypRespectsTagMeaning_int_of_predRespects tm2
+                (joinPoison ctx.pc
+                  (joinPoison result1.qualType.poison result2.qualType.poison))
+                storedPred hstored_pred_respects
+          have hEnvTm_res2 : EnvRespectsTagMeaning tm2 ctx.varEnv result2.memEnv' := by
+            simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using
+              IsCanonicalExtension.wfCtx hcanon2
+          have hEnvTm_res : EnvRespectsTagMeaning tm2 ctx.varEnv res.memEnv' := by
+            rw [hmem_res]
+            cases hls : Std.ExtTreeSet.toList ls with
+            | nil =>
+                simp
+                exact
+                  EnvRespectsTagMeaning_updateLocsetWeak
+                    tm2 ctx.varEnv result2.memEnv' ls
+                    (joinPoison ctx.pc
+                      (joinPoison result1.qualType.poison result2.qualType.poison))
+                    storedPred hEnvTm_res2 hstored_pred_respects
+            | cons x xs =>
+                cases xs with
+                | nil =>
+                    simp
+                    exact
+                      EnvRespectsTagMeaning_updateMemEnv
+                        tm2 ctx.varEnv result2.memEnv' x storedQt (by simp [storedQt])
+                        hEnvTm_res2 hstored_qtyp
+                | cons y ys =>
+                    simp
+                    exact
+                      EnvRespectsTagMeaning_updateLocsetWeak
+                        tm2 ctx.varEnv result2.memEnv' ls
+                        (joinPoison ctx.pc
+                          (joinPoison result1.qualType.poison result2.qualType.poison))
+                        storedPred hEnvTm_res2 hstored_pred_respects
+          have hresTm : QTypRespectsTagMeaning tm2 res.qualType := by
+            have hnotfun : res.qualType.etyp.isFunctionType = false := by
+              simp [hetyp_res, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            have hguard : qtypGuardDesc? res.qualType = none := by
+              simp [qtypGuardDesc?, hpred_res]
+            intro qt' k d hinq hqd
+            exact QTypRespectsTagMeaning_of_nonFunction_noGuard tm2 res.qualType
+              hnotfun hguard hinq hqd
+          refine ⟨tm2, ?_, hP2⟩
+          exact ⟨hcanon_trans.1, by simpa [hnextTag] using hcanon_trans.2.1,
+            wfTagMeaningCtx_ctxAfter tm2 ctx res hEnvTm_res, hresTm⟩
+      | ite e1 e2 e3 =>
+          simp at htc
+          have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
+          cases hstruct with
+          | inl h1 =>
+              rcases h1 with
+                ⟨k, deps, _, _, res1, _htc1, _hbool, res2, res3, htc2, _htc3,
+                  hmemEnv, _htagEnv, _hnextLoc, hnextTag, _hregime, _hpoison, hetyp_res⟩
+              let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+              have htc2' : typecheck ctxTrue e2 (fuel' - 1) = .ok res2 := by
+                simpa [typecheck, ctxTrue] using htc2
+              have hwf_true : wfTagMeaningCtx tm ctxTrue := by
+                simpa [wfTagMeaningCtx, ctxTrue] using h_wf
+              have hb_true : TagMeaningBounded tm ctxTrue.nextTag := by
+                simpa [ctxTrue] using h_bounded
+              rcases IH (fuel' - 1) (by omega) tm ctxTrue e2 res2 hwf_true hb_true hP
+                  htc2' with
+                ⟨tm2, hcanon2, hP2⟩
+              have hresTm : QTypRespectsTagMeaning tm2 res.qualType :=
+                QTypRespectsTagMeaning_of_etyp_noPred tm2 res2.qualType res.qualType
+                  (IsCanonicalExtension.respectsResult hcanon2) hetyp_res
+                  (typecheckIf_pred_noPred ctx e1 e2 e3 fuel' res htc)
+              have hwfFinal : wfTagMeaningCtx tm2 (ctxAfter ctx res) := by
+                simpa [wfTagMeaningCtx, ctxAfter, ctxTrue, hmemEnv] using
+                  IsCanonicalExtension.wfCtx hcanon2
+              refine ⟨tm2, ?_, hP2⟩
+              exact ⟨IsCanonicalExtension.extends_tm hcanon2,
+                (IsCanonicalExtension.bounded hcanon2).mono
+                  (by rw [hnextTag]; exact Nat.le_max_left _ _),
+                hwfFinal, hresTm⟩
+          | inr h_rest =>
+            cases h_rest with
+            | inl h2 =>
+                rcases h2 with
+                  ⟨k, deps, _, _, res1, _htc1, _hbool, res2, res3, htc2, htc3,
+                    hmemEnv, _htagEnv, _hnextLoc, hnextTag, _hregime, _hpoison,
+                    hetyp_res⟩
+                let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ({ value := true, deps := deps } : TagVal) }
+                let ctxFalse : TypeContext :=
+                  { ctx with tagEnv := ctx.tagEnv.insert k ({ value := false, deps := deps } : TagVal), nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                have htc2' : typecheck ctxTrue e2 (fuel' - 1) = .ok res2 := by
+                  simpa [typecheck, ctxTrue] using htc2
+                have hnextTag2 : ctx.nextTag ≤ res2.nextTag' := by
+                  simpa [ctxTrue] using
+                    typecheck_nextTag_mono ctxTrue e2 (fuel' - 1) res2 htc2'
+                have htc3' : typecheck ctxFalse e3 (fuel' - 1) = .ok res3 := by
+                  simpa [typecheck, ctxFalse] using htc3
+                have hwf_false : wfTagMeaningCtx tm ctxFalse := by
+                  simpa [wfTagMeaningCtx, ctxFalse] using h_wf
+                have hb_false : TagMeaningBounded tm ctxFalse.nextTag := by
+                  simpa [ctxFalse] using h_bounded.mono hnextTag2
+                rcases IH (fuel' - 1) (by omega) tm ctxFalse e3 res3 hwf_false hb_false hP
+                    htc3' with
+                  ⟨tm3, hcanon3, hP3⟩
+                have hresTm : QTypRespectsTagMeaning tm3 res.qualType :=
+                  QTypRespectsTagMeaning_of_etyp_noPred tm3 res3.qualType res.qualType
+                    (IsCanonicalExtension.respectsResult hcanon3) hetyp_res
+                    (typecheckIf_pred_noPred ctx e1 e2 e3 fuel' res htc)
+                have hwfFinal : wfTagMeaningCtx tm3 (ctxAfter ctx res) := by
+                  simpa [wfTagMeaningCtx, ctxAfter, ctxFalse, hmemEnv] using
+                    IsCanonicalExtension.wfCtx hcanon3
+                refine ⟨tm3, ?_, hP3⟩
+                exact ⟨IsCanonicalExtension.extends_tm hcanon3,
+                  (IsCanonicalExtension.bounded hcanon3).mono
+                    (by rw [hnextTag]; exact Nat.le_max_right _ _),
+                  hwfFinal, hresTm⟩
+            | inr hstd =>
+                obtain
+                  ⟨_hstdCase, res1, htc1, _hbool, res2, htc2, res3, htc3_raw,
+                    hmemEnv, _htagEnv, _hnextLoc, hnextTag, _hregime, _hpoison,
+                    hetyp_res, hpred_res⟩ := hstd
+                let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+                let pc' := joinPoison ctx.pc res1.qualType.poison
+                let ctx'' := { ctx1 with pc := pc' }
+                have htc1' : typecheck ctx e1 (fuel' - 1) = .ok res1 := by
+                  simpa [typecheck] using htc1
+                rcases IH (fuel' - 1) (by omega) tm ctx e1 res1 h_wf h_bounded hP
+                    htc1' with
+                  ⟨tm1, hcanon1, hP1⟩
+                have hwf_mid : wfTagMeaningCtx tm1 ctx'' := by
+                  simp only [wfTagMeaningCtx, ctx'', ctx1]
+                  simpa [wfTagMeaningCtx, ctxAfter] using
+                    IsCanonicalExtension.wfCtx hcanon1
+                have hb_mid : TagMeaningBounded tm1 ctx''.nextTag := by
+                  simpa [ctx'', ctx1] using IsCanonicalExtension.bounded hcanon1
+                have htc2' : typecheck ctx'' e2 (fuel' - 1) = .ok res2 := by
+                  simpa [typecheck, ctx'', ctx1, pc'] using htc2
+                rcases IH (fuel' - 1) (by omega) tm1 ctx'' e2 res2 hwf_mid hb_mid
+                    hP1 htc2' with
+                  ⟨tm2, hcanon2, hP2⟩
+                let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                have htc3' : typecheck ctxForE3 e3 (fuel' - 1) = .ok res3 := by
+                  simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3_raw
+                have hwf_mid3 : wfTagMeaningCtx tm2 ctxForE3 := by
+                  have hwf_ctx''_tm2 : wfTagMeaningCtx tm2 ctx'' :=
+                    wfTagMeaningCtx_mono (IsCanonicalExtension.extends_tm hcanon2) hwf_mid
+                  simpa [wfTagMeaningCtx, ctxForE3, ctx'', ctx1] using hwf_ctx''_tm2
+                have hb_mid3 : TagMeaningBounded tm2 ctxForE3.nextTag := by
+                  simpa [ctxForE3] using IsCanonicalExtension.bounded hcanon2
+                rcases IH (fuel' - 1) (by omega) tm2 ctxForE3 e3 res3 hwf_mid3 hb_mid3
+                    hP2 htc3' with
+                  ⟨tm3, hcanon3, hP3⟩
+                have hcanon12 := IsCanonicalExtension.trans hcanon1 hcanon2
+                have hext_tm_tm3 : tm ⊑ tm3 :=
+                  ExtTreeMap.IsSubmap.trans hcanon12.1
+                    (IsCanonicalExtension.extends_tm hcanon3)
+                have hEnv2_tm3 : EnvRespectsTagMeaning tm3 ctx.varEnv res2.memEnv' := by
+                  have hEnv2_tm2 : EnvRespectsTagMeaning tm2 ctx.varEnv res2.memEnv' := by
+                    simpa [wfTagMeaningCtx, ctxAfter, ctx'', ctx1] using
+                      IsCanonicalExtension.wfCtx hcanon2
+                  exact EnvRespectsTagMeaning_mono
+                    (IsCanonicalExtension.extends_tm hcanon3) hEnv2_tm2
+                have hTm_final : wfTagMeaningCtx tm3 (ctxAfter ctx res) := by
+                  simp only [wfTagMeaningCtx, ctxAfter]
+                  rw [hmemEnv]
+                  exact EnvRespectsTagMeaning_joinMemEnvsStrong' tm3 ctx.varEnv
+                    res2.memEnv' res3.memEnv' hEnv2_tm3
+                have hresTm : QTypRespectsTagMeaning tm3 res.qualType := by
+                  cases hq2 : res2.qualType with
+                  | mk e2' p2 pred2 =>
+                  cases hq3 : res3.qualType with
+                  | mk e3' p3 pred3 =>
+                    have hjoin_qt : QTypRespectsTagMeaning tm3
+                        ⟨joinETyps e2' e3' p2 p3, joinPoison p2 p3,
+                          joinPredicates pred2 pred3⟩ :=
+                      QTypRespectsTagMeaning_joinStep tm3 e2' e3' p2 p3 pred2 pred3
+                        (QTypRespectsTagMeaning_mono
+                          (IsCanonicalExtension.extends_tm hcanon3)
+                          (hq2 ▸ IsCanonicalExtension.respectsResult hcanon2))
+                        (hq3 ▸ IsCanonicalExtension.respectsResult hcanon3)
+                    simp only [hq2, hq3] at hetyp_res
+                    intro q' k' d' hinq hgd
+                    exact QTypRespectsTagMeaning_of_etyp_noPred tm3
+                      ⟨joinETyps e2' e3' p2 p3, joinPoison p2 p3,
+                        joinPredicates pred2 pred3⟩
+                      res.qualType hjoin_qt hetyp_res hpred_res hinq hgd
+                refine ⟨tm3, ?_, hP3⟩
+                exact ⟨hext_tm_tm3,
+                  (IsCanonicalExtension.bounded hcanon3).mono
+                    (by rw [hnextTag]; exact Nat.le_max_right _ _),
+                  hTm_final, hresTm⟩
+      | app e1 e2 =>
+          exact False.elim (hnotApp e1 e2 rfl)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Phase 4: structural canonical-extension threading theorems.
 --
 -- These are the public threading theorems Phase 6 will consume to obtain
 -- a `tm'` witness for each subexpression in the per-operator FR proofs.
--- Witnessed by `tm' = tm`: the input table itself is a valid canonical
--- extension once we add boundedness mono and the existing wfTagMeaningCtx /
--- QTypRespects facts produced by `typecheckExpr_preserves_wfTagMeaningCtx_main`.
--- The narrow `extTyping`-mediated facts inside that helper will be reproved
--- without `tagSoundness` in Phase 6b's atomic migration; the public theorems
--- here continue to hold under the new derivation.
+-- Non-allocating leaves use `tm' = tm`; composite cases thread the canonical
+-- extension produced by their subexpression IHs.  The direct `app` and
+-- `externVal` branches construct their own post-allocation witnesses.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 /-- For any successful typecheck, there is a canonical extension `tm'` of the
-    input tag meaning `tm`.  In the witness produced here, `tm' = tm`: the
-    submap is reflexive, the boundedness lifts via `typecheck_nextTag_mono`,
-    and the post-context plus result-respectfulness facts come from the
-    existing `typecheckExpr_preserves_wfTagMeaningCtx_main` infrastructure. -/
+    input tag meaning `tm`.  Leaves are witnessed by `tm' = tm`; composites
+    thread the `tm'` produced by recursive typechecks. -/
 theorem typecheck_extends_tagMeaning
     (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
@@ -10746,59 +11397,60 @@ theorem typecheck_extends_tagMeaning
   induction fuel using Nat.strong_induction_on with
   | h fuel IH =>
   intro tm ctx e res h_wf h_bounded htc
+  have nonAppCase
+      (hnotApp : ∀ e1 e2, e ≠ Expr.app e1 e2)
+      (hnotExternVal : ∀ id typ poison pred, e ≠ Expr.externVal id typ poison pred) :
+      ∃ tm', IsCanonicalExtension tm ctx e res tm' := by
+    rcases typecheck_extends_tagMeaning_nonApp_byIH
+        (_extTyping := extTyping) (P := fun _ => True)
+        (tm := tm) (ctx := ctx) (e := e) (fuel := fuel) (res := res)
+        h_wf h_bounded htc True.intro hnotApp hnotExternVal
+        (fun m hm tm_i ctx_i e_i res_i hwf_i hb_i _ htc_i => by
+          rcases IH m hm tm_i ctx_i e_i res_i hwf_i hb_i htc_i with
+            ⟨tm', hcanon⟩
+          exact ⟨tm', hcanon, True.intro⟩) with
+      ⟨tm', hcanon, _⟩
+    exact ⟨tm', hcanon⟩
   cases e with
   | num n =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.num n)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | bool b =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.bool b)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | unit =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx Expr.unit
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | str s =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.str s)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | var x =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.var x)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | op e1 op e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.op e1 op e2)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | newRef e1 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.newRef e1)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | assign e1 e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.assign e1 e2)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | deref e1 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.deref e1)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | seq e1 e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.seq e1 e2)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | vlet x e1 e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.vlet x e1 e2)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | fn x paramType body returnType =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx
-          (Expr.fn x paramType body returnType) fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | pfn x paramType body returnType =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx
-          (Expr.pfn x paramType body returnType) fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | app e1 e2 =>
       unfold typecheck typecheckExpr at htc
       cases fuel with
@@ -10926,13 +11578,11 @@ theorem typecheck_extends_tagMeaning
                       joinTypeResults_QTypRespectsTagMeaning_byMembers tmFinal ctx first rest
                         res h_join hqFirst hqRest⟩⟩
   | ite e1 e2 e3 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.ite e1 e2 e3)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | unaryop op e1 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.unaryop op e1)
-          fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | externVal id typ poison pred =>
       unfold typecheck typecheckExpr at htc
       cases fuel with
@@ -10942,13 +11592,11 @@ theorem typecheck_extends_tagMeaning
             typecheckExternVal_extends_tagMeaning tm ctx id typ poison pred res
               h_wf h_bounded htc
   | externFn id arg argTyp retSpec effects =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx
-          (Expr.externFn id arg argTyp retSpec effects) fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | externPfn id arg argTyp retSpec =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx
-          (Expr.externPfn id arg argTyp retSpec) fuel res h_wf h_bounded htc⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
 
 /-- For any successful typecheck, there is a canonical extension `tm'` of the
     input tag meaning `tm`, and `PredSatLaws predSat tm'` survives.
@@ -10972,72 +11620,57 @@ theorem typecheck_preserves_predSatLaws
   induction fuel using Nat.strong_induction_on with
   | h fuel IH =>
   intro predSat tm ctx e res h_wf h_bounded h_laws htc
+  have nonAppCase
+      (hnotApp : ∀ e1 e2, e ≠ Expr.app e1 e2)
+      (hnotExternVal : ∀ id typ poison pred, e ≠ Expr.externVal id typ poison pred) :
+      ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ PredSatLaws predSat tm' := by
+    exact
+      typecheck_extends_tagMeaning_nonApp_byIH
+        (_extTyping := extTyping) (P := PredSatLaws predSat)
+        (tm := tm) (ctx := ctx) (e := e) (fuel := fuel) (res := res)
+        h_wf h_bounded htc h_laws hnotApp hnotExternVal
+        (fun m hm tm_i ctx_i e_i res_i hwf_i hb_i h_laws_i htc_i =>
+          IH m hm predSat tm_i ctx_i e_i res_i hwf_i hb_i h_laws_i htc_i)
   cases e with
   | num n =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.num n)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | bool b =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.bool b)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | unit =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx Expr.unit
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | str s =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.str s)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | var x =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.var x)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | op e1 op e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.op e1 op e2)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | newRef e1 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.newRef e1)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | assign e1 e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.assign e1 e2)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | deref e1 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.deref e1)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | seq e1 e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.seq e1 e2)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | vlet x e1 e2 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.vlet x e1 e2)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | fn x paramType body returnType =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx
-          (Expr.fn x paramType body returnType) fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | pfn x paramType body returnType =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx
-          (Expr.pfn x paramType body returnType) fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | app e1 e2 =>
       unfold typecheck typecheckExpr at htc
       cases fuel with
@@ -11170,15 +11803,11 @@ theorem typecheck_preserves_predSatLaws
                         res h_join hqFirst hqRest⟩,
                     h_lawsFinal⟩
   | ite e1 e2 e3 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.ite e1 e2 e3)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | unaryop op e1 =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx (Expr.unaryop op e1)
-          fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | externVal id typ poison pred =>
       unfold typecheck typecheckExpr at htc
       cases fuel with
@@ -11189,15 +11818,11 @@ theorem typecheck_preserves_predSatLaws
             ⟨tm', _tagMapping, _nextTag', hbatch, hcanon⟩
           exact ⟨tm', hcanon, PredSatLaws.extend_extern_batch extTyping predSat h_laws hbatch⟩
   | externFn id arg argTyp retSpec effects =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx
-          (Expr.externFn id arg argTyp retSpec effects) fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
   | externPfn id arg argTyp retSpec =>
-      exact ⟨tm,
-        typecheck_extends_tagMeaning_refl_from_main extTyping tm ctx
-          (Expr.externPfn id arg argTyp retSpec) fuel res h_wf h_bounded htc,
-        h_laws⟩
+      exact nonAppCase (by intro e1 e2 h; cases h)
+        (by intro id typ poison pred h; cases h)
 
 theorem StepFRSingleRunTagMeaningPost.of_typecheck_preserves
     (extTyping : ExternTypingAssumptions)
