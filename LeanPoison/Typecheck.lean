@@ -1297,7 +1297,11 @@ def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
           | ETyp.ref ls =>
               let resolvedPred ← resolveSyntaxPred effect.pred unifiedEnv tagMapping
               let effectQt := effectSpecToQTyp effect.poison resolvedPred
-              let storedQt := ⟨effectQt.etyp, joinPoison pc effectQt.poison, effectQt.pred⟩
+              -- Control-poisoned writes erase predicates in memory, mirroring
+              -- assignment.  This keeps fresh extern-allocated guard tags from
+              -- ever being installed under poisoned `pc`.
+              let storedPred := if pc then Predicate.noPred else effectQt.pred
+              let storedQt := ⟨effectQt.etyp, joinPoison pc effectQt.poison, storedPred⟩
               return LocSet.fold ls memEnv (fun acc l => updateMemEnv acc l storedQt)
           | _ => throw s!"Effect target {v} must be a reference type"
       | none => throw s!"Effect target {v} not found in environment"

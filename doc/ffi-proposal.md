@@ -69,10 +69,9 @@ The runtime side is in place. The source of truth is the code:
   branches, nested-return shape validation, and fuel accounting.
 - `LeanProofs/ExternTypingAssumptions.lean` — the typing-side contract floor:
   `ExternTypingAssumptions.externPredSatDelta` (predicate-law preservation
-  across structural extern allocation batches) and
-  `ExternTypingAssumptions.guardProvenance` (provenance of impure extern
-  summaries), packaged as fields of the `ExternTypingAssumptions` structure
-  that callers must supply to instantiate the FR theorem.
+  across structural extern allocation batches), packaged as a field of the
+  `ExternTypingAssumptions` structure that callers must supply to
+  instantiate the FR theorem.
 
 ### Runtime Summary
 
@@ -180,12 +179,15 @@ These contracts are the evidence interface the proof layer consumes. The
 ### Typing Baseline
 
 The typing-side contract floor is `LeanProofs/ExternTypingAssumptions.lean`,
-which exposes the `ExternTypingAssumptions` structure with two fields:
+which exposes the `ExternTypingAssumptions` structure with a single field:
 
 - `externPredSatDelta` — predicate-law preservation across one structural
   extern allocation batch.
-- `guardProvenance` — provenance of impure extern summaries in the FR
-  development.
+
+A previous `guardProvenance` field was removed once the typechecker was
+tightened to erase predicates on extern effect writes under poisoned `pc`
+(mirroring assignment); the guard-origin trace is now structurally provable
+via `applyFnTClosure_extern_ok_memEnv_guard_origin` in `StepFR.lean`.
 
 The fault-robustness theorem is relative to a witness of
 `ExternTypingAssumptions`: callers must supply (or postulate) one to

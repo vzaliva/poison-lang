@@ -6983,8 +6983,12 @@ private lemma applyFnTClosure_extern_predTagsBounded
                   have hStoredBounded : qtypPredTagBounded
                       (⟨(effectSpecToQTyp eff.poison resolvedPred_eff).etyp,
                         joinPoison ctx.pc (effectSpecToQTyp eff.poison resolvedPred_eff).poison,
-                        (effectSpecToQTyp eff.poison resolvedPred_eff).pred⟩ : QTyp) nextTag' := by
-                    simp [effectSpecToQTyp, qtypPredTagBounded]; exact hResBounded
+                        if ctx.pc = true then Predicate.noPred
+                          else (effectSpecToQTyp eff.poison resolvedPred_eff).pred⟩ : QTyp)
+                      nextTag' := by
+                    by_cases hpc : ctx.pc = true
+                    · simp [hpc, qtypPredTagBounded, predTagBounded]
+                    · simp [hpc, effectSpecToQTyp, qtypPredTagBounded]; exact hResBounded
                   exact locset_fold_updateMemEnv_predBounded _ r _ nextTag' hr hStoredBounded
               · simp at happlyEffect -- non-ref: error
             · simp at happlyEffect -- none: error

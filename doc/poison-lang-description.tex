@@ -312,6 +312,23 @@ predicates to concrete predicates for that use only. Nested returned externs
 remain symbolic until they are themselves applied, ensuring separate calls get
 independent tags.
 
+Extern \emph{effects} write to memory at the locations named by their target
+references, just as ordinary assignment does. Like assignment, extern effect
+writes are sensitive to the poison status of the program counter, and the
+spec encodes the dichotomy as paired rules: each impure-extern application
+rule (\texttt{app\_extern\_fn\_simple}, \texttt{app\_extern\_fn\_nested\_fn},
+\texttt{app\_extern\_fn\_nested\_pfn}) appears in a \texttt{\_clean} variant
+(side condition \texttt{pc = clean}, using the \texttt{resolveEffects}
+auxiliary that stores resolved predicates verbatim) and a \texttt{\_poisoned}
+variant (side condition \texttt{pc = poisoned}, using the
+\texttt{resolveEffectsPoisoned} auxiliary that erases predicates to
+\texttt{no\_pred}). This mirrors the rule-level pattern used elsewhere in the
+spec for binary distinctions (e.g., \texttt{if\_known\_true} /
+\texttt{if\_known\_false}, \texttt{assign\_singleton} /
+\texttt{assign\_singleton\_poisoned\_ref}) and prevents an untrusted extern
+call under control-poisoned conditions from installing fresh guard tags that
+would spuriously make the written locations clean under a regime.
+
 \subsection{Pure Expressions}
 
 The language includes a syntactic subset called \emph{pure expressions} (\texttt{pe}) that exclude side-effecting operations. Pure expressions cannot:
@@ -1223,16 +1240,20 @@ are on the critical path of the proof even though that branch never reaches
 runtime dispatch.
 Externs therefore affect the FR proof only at the \emph{typechecking summary}
 layer: the proof surface concerns what the typechecker states about external
-code. Two typing-side assumptions, packaged as fields of the
+code. One typing-side assumption, packaged as a field of the
 \texttt{ExternTypingAssumptions} structure (defined in
-\texttt{LeanProofs/ExternTypingAssumptions.lean}), pin the typechecker's extern summaries
-to the proof layer: one for preserving abstract predicate laws across an extern
-allocation batch, and one for impure memory effects. The structural facts about
-which fresh tag denotes which guard descriptor are derived from the allocation
-trace itself. The fault-robustness theorem is relative to a witness of
+\texttt{LeanProofs/ExternTypingAssumptions.lean}), pins the typechecker's
+extern summaries to the proof layer: preserving abstract predicate laws
+across an extern allocation batch. The structural facts about which fresh
+tag denotes which guard descriptor are derived from the allocation trace
+itself. A previous guard-provenance assumption was removed once the
+typechecker was tightened to erase predicates on extern effect writes under
+poisoned \texttt{pc} (mirroring assignment); the guard-origin trace is now
+structurally provable.
+The fault-robustness theorem is relative to a witness of
 \texttt{ExternTypingAssumptions}: a caller must supply (or postulate) one to
-instantiate the theorem, making this trust boundary explicit at the public API
-rather than implicit in global axioms.
+instantiate the theorem, making this trust boundary explicit at the public
+API rather than implicit in global axioms.
 
 \paragraph{Tag meaning for fresh guards.}
 Extern typechecking resolves symbolic predicates using
@@ -1288,15 +1309,18 @@ registry evidence: each trusted extern declaration supplies the descriptor
 laws for the guard descriptors that its declared return and effect summaries
 can allocate.
 
-\paragraph{Guard provenance for impure memory effects (\texttt{ExternTypingAssumptions.guardProvenance}).}
+\paragraph{Guard provenance for impure memory effects (structural).}
 An impure extern summary may modify memory under a poisoned program counter,
-overwriting cells with resolved guard predicates. The \texttt{guardProvenance}
-field says that trusted output cells do not manufacture trust out of nowhere:
-if a memory cell in the post-call state is trusted because it carries an
-active guard tag, that trust must trace back to a corresponding
-guarded-and-active cell at the same location in the pre-call state. In other
-words, impure extern type summaries may move or preserve guarded trust, but
-they may not invent it.
+but the typechecker's \texttt{applyExternEffect} now erases the stored
+predicate to \texttt{noPred} when \texttt{pc} is poisoned, exactly mirroring
+assignment under poisoned \texttt{pc}. As a result, no extern
+effect can install a guard predicate under control-poisoned conditions, and
+any post-call cell that carries an active guard tag must trace back to a
+guarded cell that already existed before the call. This is now proved
+structurally in \texttt{StepFR.lean} as
+\texttt{applyFnTClosure\_extern\_ok\_memEnv\_guard\_origin}, replacing what
+was previously a generic typing-side trust input
+(\texttt{ExternTypingAssumptions.guardProvenance}).
 
 \subsubsection*{Structural Agreement for Function Values}
 

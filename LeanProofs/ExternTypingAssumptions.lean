@@ -2,20 +2,22 @@
   ExternTypingAssumptions.lean — the semantic contract floor for extern
   typechecking in the fault-robustness proof.
 
-  Extern type-checking has two semantic obligations that are currently supplied
-  at the fault-robustness trust boundary:
+  Extern type-checking has one remaining semantic obligation supplied at the
+  fault-robustness trust boundary:
 
-  * guard provenance across impure extern summaries (Contract A,
-    `ExternTypingAssumptions.guardProvenance`).
   * `PredSatLaws` preservation across one structural extern allocation batch
-    (Contract B, `ExternTypingAssumptions.externPredSatDelta`).
+    (`ExternTypingAssumptions.externPredSatDelta`).
 
-  Both contracts live as fields of `ExternTypingAssumptions`, threaded
-  explicitly through the fault-robustness proof.  This replaces the prior
-  global postulates: callers must supply (or postulate) an
-  `ExternTypingAssumptions` value to instantiate the FR theorem, making
-  the trust boundary explicit at the public API.  See `doc/ffi-axioms.md`
-  for the broader extern-boundary design.
+  A previous `guardProvenance` field has been removed: the typechecker now
+  erases predicates on extern effect writes under poisoned `pc` (mirroring
+  assignment), making the guard-origin trace structurally provable via
+  `applyFnTClosure_extern_ok_memEnv_guard_origin` in `StepFR.lean`.  See
+  `doc/ffi-axioms.md` for the broader extern-boundary design.
+
+  The contract lives as a field of `ExternTypingAssumptions`, threaded
+  explicitly through the fault-robustness proof.  Callers must supply (or
+  postulate) an `ExternTypingAssumptions` value to instantiate the FR
+  theorem, making the trust boundary explicit at the public API.
 -/
 
 import LeanPoison.Syntax
@@ -558,48 +560,20 @@ theorem ExternBatchTagMeaningExtension.canonical_general
       buildBatchTm_fold_lookup_of_guard_mem tm mapping preds env h_cons h_inj
         hmap hmem hbody
 
-/-- A memory cell is trusted by an active guard tag when it is present in
-    `memEnv`, carries a guard tag `k` that is active in `regime`, and is not
-    a function-valued cell. -/
-abbrev trustedGuardedCell (memEnv : MemoryTypeEnv) (regime : Regime)
-    (l : Loc) (k : Tag) (qt : QTyp) : Prop :=
-  memEnv.lookup l = some qt ∧
-  qtypGuardTag qt = some k ∧
-  regime.lookup? k = some true ∧
-  qt.etyp.isFunctionType = false
-
-/-- `r` is the result of some successful `applyFnTClosure` call against an
-    impure extern closure from context `ctx`. -/
-abbrev ImpureExternCallOk (ctx : TypeContext) (r : TypeResult) : Prop :=
-  ∃ st1 st2 p p1 argEtyp argPoison argPred result2 fuel
-    x retSpec effects capturedEnv,
-    applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
-      argEtyp argPoison argPred ctx result2 fuel = .ok r
-
 /-- Generic typing-side assumptions about the extern typechecking machinery.
-    These contracts are not per-implementation facts; they govern impure-extern
-    guard provenance and preservation of `PredSatLaws` across structural extern
-    allocation batches.
+    Currently a single contract: preservation of `PredSatLaws` across one
+    structural extern allocation batch.
 
-    The fault-robustness theorem is relative to these assumptions: callers
+    The fault-robustness theorem is relative to this assumption: callers
     must supply (or postulate) an `ExternTypingAssumptions` to instantiate
-    it.  See `doc/ffi-axioms.md` for the longer-term plan to discharge these
-    structurally from the extern-boundary contract. -/
+    it.  See `doc/ffi-axioms.md` for the longer-term plan to discharge it
+    structurally from the extern-boundary contract.
+
+    A previous `guardProvenance` field has been removed: the typechecker
+    now erases predicates on extern effect writes under poisoned `pc`
+    (mirroring assignment), making the guard-origin trace structurally
+    provable via `applyFnTClosure_extern_ok_memEnv_guard_origin`. -/
 structure ExternTypingAssumptions where
-  /-- **Contract A: Guard Provenance for Impure Externs.** If `r` is the
-      result of an impure extern call from `ctx` under a poisoned pc, every
-      trusted guarded non-function cell in the output traces back pointwise
-      to a trusted guarded non-function cell at the same location in the
-      input.  The poison analogue is structural
-      (`applyFnTClosure_extern_ok_memEnv_poison_origin`) and not part of
-      this contract. -/
-  guardProvenance :
-    ∀ (ctx : TypeContext) (r : TypeResult),
-      ImpureExternCallOk ctx r →
-      ctx.pc = true →
-      ∀ (l : Loc) (k : Tag) (qt_out : QTyp),
-        trustedGuardedCell r.memEnv' r.regime' l k qt_out →
-        ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in
   /-- **Contract B (staging): PredSat extension across one extern allocation
       batch.**  When `tm` extends to `tm'` via a single extern batch (the
       structural `ExternBatchTagMeaningExtension` predicate) and `predSat`

@@ -398,18 +398,13 @@ extern boundary run, so no implementation-level boundary proof is consumed.
 
 ```lean
 /-- Generic typing-side assumptions about the extern typechecking machinery.
-    Defined in `LeanProofs/ExternTypingAssumptions.lean` and threaded through the
-    fault-robustness proof. These assumptions are generic facts about extern
-    typechecking, not per-runtime-implementation safety facts. -/
+    Defined in `LeanProofs/ExternTypingAssumptions.lean` and threaded through
+    the fault-robustness proof.  Previously also carried a `guardProvenance`
+    field; that was removed once the typechecker was tightened to erase
+    predicates on extern effect writes under poisoned `pc` (mirroring
+    assignment), which made the guard-origin trace structurally provable via
+    `applyFnTClosure_extern_ok_memEnv_guard_origin`. -/
 structure ExternTypingAssumptions where
-  guardProvenance :
-    ∀ (ctx : TypeContext) (r : TypeResult),
-      ImpureExternCallOk ctx r →
-      ctx.pc = true →
-      ∀ (l : Loc) (k : Tag) (qt_out : QTyp),
-        trustedGuardedCell r.memEnv' r.regime' l k qt_out →
-        ∃ qt_in, trustedGuardedCell ctx.memEnv ctx.regime l k qt_in
-
   externPredSatDelta :
     ∀ (predSat : PredSat)
       {tm tm' : TagMeaning}
@@ -556,15 +551,18 @@ would otherwise derive structurally from the function body.
 
 - `TagMappingRespectsTagMeaning` — the semantic predicate that fresh-tag
   allocation must respect a `TagMeaning`.
-- `trustedGuardedCell` — a cell predicate used by impure-extern guard
-  provenance.
-- `ImpureExternCallOk` — an existential witness that an impure extern call
-  succeeded.
-- `ExternTypingAssumptions` — the structure with two fields:
-  - `guardProvenance` (Contract A): impure-extern guard provenance under a
-    poisoned program counter.
-  - `externPredSatDelta` (Contract B): `PredSatLaws` preservation across one
-    structural extern allocation batch.
+- `ExternBatchTagMeaningExtension` — the structural extension predicate for
+  one extern allocation batch (submap, boundedness, respects).
+- `ExternTypingAssumptions` — the structure with one field:
+  - `externPredSatDelta`: `PredSatLaws` preservation across one structural
+    extern allocation batch.
+
+A previous `guardProvenance` field (with supporting predicates
+`trustedGuardedCell` and `ImpureExternCallOk`) was removed once the
+typechecker was tightened to erase predicates on extern effect writes under
+poisoned `pc`, mirroring assignment.  The guard-origin trace is now
+structurally provable via `applyFnTClosure_extern_ok_memEnv_guard_origin` in
+`StepFR.lean`.
 
 If the extern-boundary design above is implemented, this file would also
 contain:
@@ -605,10 +603,11 @@ removed. Typing-side reasoning for extern declarations in unexecuted branches
 may still need declaration-level evidence, because those branches typecheck
 even when no runtime boundary event occurs.
 
-`ExternTypingAssumptions.guardProvenance` remains a separate generic
-typing-side assumption until it receives an analogous registry-scoped
-reformulation. Typing-side extern reasoning consumes it explicitly, including
-for extern declarations in unexecuted branches that still typecheck.
+`ExternTypingAssumptions.guardProvenance` no longer exists: the typechecker
+fix to `applyExternEffect` (predicate erasure under poisoned `pc`, mirroring
+assignment) makes the guard-origin trace structurally provable, so the field
+was removed and the call site at the impure-extern dispatch path now invokes
+`applyFnTClosure_extern_ok_memEnv_guard_origin` directly.
 
 If the extern-boundary design lands, a successful extern execution would
 additionally produce a boundary witness supplying `StepFRPost`. That
@@ -777,21 +776,15 @@ shared facts.
 
 1. Move the `ExternTypingAssumptions.externPredSatDelta` obligation into the
    trusted registry interface as per-extern evidence and delete the broad field.
-2. Revisit the shape of `ExternTypingAssumptions.guardProvenance`.
-   [`ffi-guardProvenance.md`](ffi-guardProvenance.md) traces the axiom to a
-   typechecker-side bug: `applyExternEffect` does not erase predicates under
-   poisoned `pc`, while assignment already does. Fix the typechecker to mirror
-   assignment, then `guardProvenance` becomes structurally provable and the
-   field can be removed.
-3. Decide where registry agreement belongs in the public FR API:
+2. Decide where registry agreement belongs in the public FR API:
    `FaultRobustnessSpec` itself or `InputSpec`. The trusted-boundary proof is
    not meaningful until successful runs use `tr.toRuntimeRegistry` instead of
    the default empty registry.
-4. Decide whether `ExternBoundaryPreservesWF` should remain a field of
+3. Decide whether `ExternBoundaryPreservesWF` should remain a field of
    `ExternBoundarySpec` or be exposed only as a derived projection from the
    constructor API. It should not become an independent third proof burden for
    drivers.
-5. Finalize the exact `ExternCallEntry` / `BodyEntryInputsAgree` payload. It
+4. Finalize the exact `ExternCallEntry` / `BodyEntryInputsAgree` payload. It
    must include enough captured-env and argument information for `StepFRApp` to
    plug the extern boundary proof in where the user-closure body IH is used.
 

@@ -5670,12 +5670,37 @@ private lemma applyExternEffect_preserves_allCellsRespect
         simp [pure, Except.pure] at happly; subst happly
         have hpredTm := resolveSyntaxPred_respectsTagMeaning tm effect.pred unifiedEnv
           tagMapping allPreds resolvedPred hcompat hpred hresolve
+        -- Under `pc = true` the stored pred is `noPred` (PredRespectsTagMeaning
+        -- is vacuous); under `pc = false` it is the resolved pred (existing
+        -- argument applies).  Both branches produce a PredRespects fact for
+        -- the stored predicate.
+        have hstoredPredTm :
+            PredRespectsTagMeaning tm
+              (if pc = true then Predicate.noPred
+                 else (effectSpecToQTyp effect.poison resolvedPred).pred) := by
+          by_cases hpc : pc = true
+          · simp [hpc]
+            intro k an pb ve hEq; cases hEq
+          · simp [hpc, effectSpecToQTyp]; exact hpredTm
         have hstoredTm : QTypRespectsTagMeaning tm
-            ⟨ETyp.int, joinPoison pc (effect.poison : Poison), resolvedPred⟩ := by
+            ⟨(effectSpecToQTyp effect.poison resolvedPred).etyp,
+             joinPoison pc (effectSpecToQTyp effect.poison resolvedPred).poison,
+             if pc = true then Predicate.noPred
+               else (effectSpecToQTyp effect.poison resolvedPred).pred⟩ := by
+          have hetyp : (effectSpecToQTyp effect.poison resolvedPred).etyp = ETyp.int := by
+            simp [effectSpecToQTyp]
           intro qt' k d hinq hqd
-          exact (QTypRespectsTagMeaning_int_of_predRespects tm _ resolvedPred hpredTm) hinq hqd
+          rw [hetyp] at hinq
+          exact QTypRespectsTagMeaning_int_of_predRespects tm
+            (joinPoison pc (effectSpecToQTyp effect.poison resolvedPred).poison)
+            (if pc = true then Predicate.noPred
+               else (effectSpecToQTyp effect.poison resolvedPred).pred)
+            hstoredPredTm hinq hqd
         exact locset_fold_updateMemEnv_allCellsRespect tm ls memEnv
-          ⟨ETyp.int, joinPoison pc (effect.poison : Poison), resolvedPred⟩
+          ⟨(effectSpecToQTyp effect.poison resolvedPred).etyp,
+           joinPoison pc (effectSpecToQTyp effect.poison resolvedPred).poison,
+           if pc = true then Predicate.noPred
+             else (effectSpecToQTyp effect.poison resolvedPred).pred⟩
           hinit hstoredTm rfl
     · simp at happly
   · simp at happly
@@ -5852,10 +5877,12 @@ private lemma applyExternEffect_preserves_clean_lookup
       · rename_i resolvedPred _hresolve
         simp [pure, Except.pure] at happly
         subst happly
-        -- After substitution, memEnv' = LocSet.fold ls memEnv (fun acc l => updateMemEnv acc l storedQt)
-        -- where storedQt = ⟨ETyp.int, joinPoison true effect.poison, resolvedPred⟩ = ⟨ETyp.int, true, resolvedPred⟩
+        -- Under `pc = true`, applyExternEffect erases the stored predicate
+        -- to noPred (mirroring assignment).  storedQt has poison=true and
+        -- pred=noPred, so any post-cell that is unpoisoned must not have
+        -- been written.
         set storedQt : QTyp :=
-          ⟨ETyp.int, joinPoison true effect.poison, resolvedPred⟩ with hstoredDef
+          ⟨ETyp.int, joinPoison true effect.poison, Predicate.noPred⟩ with hstoredDef
         have hstoredPoison : storedQt.poison = true := by
           simp [hstoredDef, joinPoison]
         have hstored_int : storedQt.etyp = ETyp.int := by simp [hstoredDef]
@@ -5875,6 +5902,56 @@ private lemma applyExternEffect_preserves_clean_lookup
             storedQt hmem
           rw [heq] at hlookup
           exact ⟨qt, hlookup, hpoison⟩
+    · simp at happly
+  · simp at happly
+
+/-- Guard-tag analogue of `applyExternEffect_preserves_clean_lookup`.  Under
+    `pc = true`, `applyExternEffect` erases the stored predicate to `noPred`,
+    so any post-cell with a guard tag must not have been written.  The
+    conclusion gives the *same* `qt` (a lookup equality), which lets
+    downstream consumers transport any property of `qt` (etyp, regime, etc.)
+    backward without re-deriving it. -/
+private lemma applyExternEffect_preserves_guard_lookup
+    (effect : Effect)
+    (unifiedEnv : VarTypeEnv)
+    (tagMapping : TagMapping)
+    (memEnv memEnv' : MemoryTypeEnv)
+    (happly : applyExternEffect effect unifiedEnv tagMapping true memEnv = .ok memEnv')
+    (l : Loc) (qt : QTyp) (k : Tag)
+    (hlookup : memEnv'.lookup l = some qt)
+    (htag : qtypGuardTag qt = some k) :
+    memEnv.lookup l = some qt := by
+  unfold applyExternEffect at happly
+  simp only [bind, Except.bind] at happly
+  split at happly
+  · rename_i qtVar _hlookup_var
+    split at happly
+    · rename_i ls _hls
+      split at happly
+      · simp at happly
+      · rename_i resolvedPred _hresolve
+        simp [pure, Except.pure] at happly
+        subst happly
+        set storedQt : QTyp :=
+          ⟨ETyp.int, joinPoison true effect.poison, Predicate.noPred⟩ with hstoredDef
+        have hstored_int : storedQt.etyp = ETyp.int := by simp [hstoredDef]
+        have hstoredNoTag : qtypGuardTag storedQt = none := by
+          simp [hstoredDef, qtypGuardTag]
+        simp only [LocSet.fold, Std.ExtTreeSet.foldl_eq_foldl_toList,
+          effectSpecToQTyp] at hlookup
+        by_cases hmem : l ∈ ls.toList
+        · -- Written cell: stored qt has no guard tag, contradicting htag
+          have heq := list_fold_updateMemEnv_lookup_eq_of_mem ls.toList memEnv l
+            storedQt hmem hstored_int
+          rw [heq] at hlookup
+          have hqt : qt = storedQt := (Option.some.inj hlookup).symm
+          rw [hqt, hstoredNoTag] at htag
+          cases htag
+        · -- Not written: lookup unchanged
+          have heq := list_fold_updateMemEnv_lookup_eq_of_not_mem ls.toList memEnv l
+            storedQt hmem
+          rw [heq] at hlookup
+          exact hlookup
     · simp at happly
   · simp at happly
 
@@ -5977,6 +6054,104 @@ lemma applyFnTClosure_extern_ok_memEnv_poison_origin
         rw [hpc] at hloop'
         exact forIn_effects_loop_preserves_clean_lookup effects unifiedEnv allocRes.1
           result2.memEnv' memEnvLoop hloop' l qt_out hlookup hpoison
+
+/-- Guard-tag analogue of `forIn_effects_loop_preserves_clean_lookup`.  Returns
+    a lookup equality (same `qt`) so downstream consumers can transport any
+    property of `qt` backward through the loop. -/
+private lemma forIn_effects_loop_preserves_guard_lookup
+    (effects : List Effect)
+    (unifiedEnv : VarTypeEnv)
+    (tagMapping : TagMapping)
+    (memEnv memEnv' : MemoryTypeEnv)
+    (hloop : forIn effects memEnv (fun effect r =>
+        match applyExternEffect effect unifiedEnv tagMapping true r with
+        | Except.error err => Except.error err
+        | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnv')
+    (l : Loc) (qt : QTyp) (k : Tag)
+    (hlookup : memEnv'.lookup l = some qt)
+    (htag : qtypGuardTag qt = some k) :
+    memEnv.lookup l = some qt := by
+  induction effects generalizing memEnv with
+  | nil =>
+    simp only [List.forIn_nil, pure, Except.pure, Except.ok.injEq] at hloop
+    subst hloop; exact hlookup
+  | cons h t ih =>
+    simp only [List.forIn_cons, bind, Except.bind] at hloop
+    split at hloop
+    · simp at hloop
+    · rename_i step heq
+      split at hloop
+      · rename_i _b
+        split at heq
+        · simp at heq
+        · rename_i _v _; simp at heq
+      · rename_i memEnv1
+        have happly1 : applyExternEffect h unifiedEnv tagMapping true memEnv = .ok memEnv1 := by
+          split at heq
+          · simp at heq
+          · rename_i v happly1
+            simp only [Except.ok.injEq, ForInStep.yield.injEq] at heq; subst heq; exact happly1
+        have hlookup_mid : memEnv1.lookup l = some qt := ih memEnv1 hloop
+        exact applyExternEffect_preserves_guard_lookup h unifiedEnv tagMapping
+          memEnv memEnv1 happly1 l qt k hlookup_mid htag
+
+/-- Guard origin for impure externs: under `ctx.pc = true`, a guard-tagged
+    cell in the post-extern memEnv traces back pointwise to a guard-tagged
+    cell in `result2.memEnv'`.  The remaining step from `result2.memEnv'`
+    to `ctx.memEnv` is handled at the call site (parallel to the poison
+    origin lemma).  This replaces what was previously the
+    `extTyping.guardProvenance` trust input. -/
+lemma applyFnTClosure_extern_ok_memEnv_guard_origin
+    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result2 : TypeResult) (fuel : Nat)
+    (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+    (r : TypeResult)
+    (happly : applyFnTClosure (FnTClosure.extern x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r)
+    (hpc : ctx.pc = true)
+    (l : Loc) (qt_out : QTyp) (k : Tag)
+    (hlookup : r.memEnv'.lookup l = some qt_out)
+    (htag : qtypGuardTag qt_out = some k) :
+    result2.memEnv'.lookup l = some qt_out := by
+  cases fuel with
+  | zero => simp [applyFnTClosure] at happly
+  | succ n =>
+    simp only [applyFnTClosure, bind, Except.bind] at happly
+    split at happly
+    · simp at happly
+    · rename_i allocRes _hcollect
+      set unifiedEnv := (VarTypeEnv.ofCaptured capturedEnv).update x
+        { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred }
+        with _hunifiedEnv
+      split at happly
+      · simp at happly
+      · rename_i memEnvLoop hloop
+        have hmem_eq : r.memEnv' = memEnvLoop := by
+          split at happly
+          · split at happly
+            · simp at happly
+            · rename_i _vpred _heqpred
+              split at happly
+              · simp at happly
+              · simp only [pure, Except.pure, Except.ok.injEq] at happly
+                subst happly; rfl
+          · simp only [pure, Except.pure, Except.ok.injEq] at happly
+            subst happly; rfl
+          · simp only [pure, Except.pure, Except.ok.injEq] at happly
+            subst happly; rfl
+        rw [hmem_eq] at hlookup
+        have hloop' : forIn effects result2.memEnv' (fun effect r =>
+            match applyExternEffect effect unifiedEnv allocRes.1 ctx.pc r with
+            | Except.error err => Except.error err
+            | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnvLoop := by
+          convert hloop using 2
+          funext effect r
+          simp only [pure, Except.pure]
+          split <;> simp_all
+        rw [hpc] at hloop'
+        exact forIn_effects_loop_preserves_guard_lookup effects unifiedEnv allocRes.1
+          result2.memEnv' memEnvLoop hloop' l qt_out k hlookup htag
 
 /-- Conjunct 2: the result QTyp of an impure extern application respects tag meaning.
     Requires `hcapTm` (captured env entries respect tm) and `hargTm` (arg QTyp respects tm)
@@ -11420,7 +11595,7 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
           rw [hmem_eq]; exact hlookup
 
 private lemma typecheckExpr_lookup_origin_of_pc_true_split
-  (extTyping : ExternTypingAssumptions)
+  (_extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -12488,15 +12663,28 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                             unfold applyFnTClosure
                             unfold applyFnTClosureAtCursor at happly_src
                             simpa [rCursor] using happly_src
-                          have hreg_src' : srcRes.regime'.lookup? k = some true := by
-                            simpa [ctxAfter] using hreg_src
-                          have hcall_src : ImpureExternCallOk ctx srcRes :=
-                            ⟨st1, st2, p, p1, etyp2, p2, pred2, rCursor, fuelApp,
-                             x, retSpec, effects, capturedEnv, happly_old⟩
-                          rcases extTyping.guardProvenance ctx srcRes hcall_src hpc l k qt_src
-                              ⟨hlookup_src, htag_src, hreg_src', hnotfun_src⟩ with
-                            ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
-                          exact ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
+                          -- Structural backward trace: under `pc = true`,
+                          -- `applyFnTClosure` (extern) cannot install a guard
+                          -- tag (predicate-erasure fix in `applyExternEffect`),
+                          -- so the guard-tagged post-cell traces back to the
+                          -- same `qt_src` in the pre-extern memEnv (rCursor's
+                          -- memEnv = result1's memEnv).
+                          have hlookup_rCursor : rCursor.memEnv'.lookup l = some qt_src :=
+                            applyFnTClosure_extern_ok_memEnv_guard_origin
+                              ctx st1 st2 p p1 etyp2 p2 pred2 rCursor fuelApp x retSpec effects
+                              capturedEnv srcRes happly_old hpc l qt_src k hlookup_src htag_src
+                          have hlookup_result1 : result1.memEnv'.lookup l = some qt_src := by
+                            simpa [rCursor] using hlookup_rCursor
+                          have hreg_eq : srcRes.regime' = rCursor.regime' :=
+                            applyFnTClosure_extern_regime_eq ctx st1 st2 p p1 etyp2 p2 pred2
+                              rCursor srcRes fuelApp x retSpec effects capturedEnv happly_old
+                          have hreg_result1 : result1.regime'.lookup? k = some true := by
+                            have hreg_src' : srcRes.regime'.lookup? k = some true := by
+                              simpa [ctxAfter] using hreg_src
+                            simpa [rCursor, hreg_eq] using hreg_src'
+                          exact
+                            hbackToCtx_guard qt_src k hlookup_result1 htag_src
+                              hreg_result1 hnotfun_src
                     rcases joinTypeResults_mem_contains_head_or_rest
                         ctx first rest res h_join l hcontains_res with
                       hhead | ⟨srcRes, hsrc_rest, hsrc_contains⟩

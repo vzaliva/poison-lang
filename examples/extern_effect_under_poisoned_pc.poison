@@ -1,0 +1,24 @@
+-- Smoke test for the predicate-erasure fix in `applyExternEffect`.
+-- After the fix, an extern with `effects:` invoked under poisoned pc must
+-- store noPred at the target cell, mirroring assignment.
+--
+-- Test design: get poisoned pc *without* the if-join masking the result.
+-- We define a function `f` inside two branches of an if (so the fn itself
+-- inherits poisoned pc as its arrow's internal poison) and then call `f`
+-- outside the if.  Body pc on call = caller_pc ⊔ p_internal ⊔ p_value = true,
+-- yet there is only one call site executing the extern effect, so the
+-- post-call MemoryTypeEnv at !errno reflects the predicate-erasure behavior
+-- directly, with no two-branch join hiding the predicate.
+--
+-- BEFORE fix: !errno would show (true, guardClosure k 1 ...).
+-- AFTER  fix: !errno shows (true, {}) — predicate erased.
+let errno   = extern val @21 : (ref int :> clean {}) in
+let set_err = extern fn @22 n : (int) -> ((unit :> clean {})) ,
+                effects: { !errno :> (int :> poisoned { 1, v => v >= 0 }) } in
+let dirty   = extern val @5 : (bool :> poisoned { 1, v => v }) in
+let f = if dirty then
+          fn x : int => set_err x : unit
+        else
+          fn x : int => set_err x : unit
+in
+f 42
