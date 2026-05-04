@@ -4,6 +4,13 @@ Status: the `ExternTypingAssumptions` structure is implemented and threaded
 through the fault-robustness proof; the broader extern-boundary design below
 is a proposal.
 
+Recent work records the runtime call boundary in `BevalAppSuccess` (`externFn` /
+`externPfn` cases of successful `Expr.app`), and factors the typing-side tag-meaning
+bundle as `BoundaryTagMeaningPost` in `LeanProofs/StepFR.lean` (reachable from
+`typecheck` via `StepFRApp.boundary_tag_meaning_post_of_typecheck`). A concrete
+`TrustedRegistry` / program-wide registry agreement layer is **deferred** until
+that boundary packaging is exercised end-to-end in the step proofs.
+
 This document covers two pieces of the FFI trust story:
 
 1. The `ExternTypingAssumptions` structure (in

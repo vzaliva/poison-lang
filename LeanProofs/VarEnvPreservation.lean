@@ -125,17 +125,37 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool)
                     exact hVar₁.trans (ih' e₃ config' config₁ v hEval₃)
             | app e₁ e₂ =>
                 rcases bevalApp_structure e₁ e₂ (fuel' + 1) verbose config₀ config₁ v hEval with
-                  ⟨configArg, configFn, vArg, x, body, env, hEvalArg, hBranch, _hPureFinal⟩
+                  ⟨configArg, configFn, vArg, hcase⟩
+                have hEvalArg :
+                    LeanPoison.beval fuel' config₀ e₂ verbose = .success configArg vArg := by
+                  cases hcase <;> assumption
                 have hArg : config₀.varEnv = configArg.varEnv := ih' e₂ config₀ configArg vArg hEvalArg
-                cases hBranch with
-                | inl hReg =>
-                    rcases hReg with ⟨hEvalFn, _hPureFalse, hBody⟩
-                    have hFn : configArg.varEnv = configFn.varEnv := ih' e₁ configArg configFn (Value.closure x body env) hEvalFn
+                cases hcase with
+                | @userFn x body env he2 he1 hNot hpureFalse hBody hpfinal =>
+                    have hFn :
+                        configArg.varEnv = configFn.varEnv :=
+                      ih' e₁ configArg configFn (Value.closure x body env) he1
                     exact hArg.trans (hFn.trans (bevalFunctionBody_preserves_varEnv fuel' verbose configFn config₁ env x vArg body false v hBody))
-                | inr hPure =>
-                    rcases hPure with ⟨hEvalFn, _hBodyPure, hBody⟩
-                    have hFn : configArg.varEnv = configFn.varEnv := ih' e₁ configArg configFn (Value.peClosure x body env) hEvalFn
+                | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
+                    have hFn :
+                        configArg.varEnv = configFn.varEnv :=
+                      ih' e₁ configArg configFn (Value.peClosure x body env) he1
                     exact hArg.trans (hFn.trans (bevalFunctionBody_preserves_varEnv fuel' verbose configFn config₁ env x vArg body true v hBody))
+                | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArgTy vRaw mem' addr' hImpl hValRet
+                    hcfg =>
+                    have hFn :
+                        configArg.varEnv = configFn.varEnv :=
+                      ih' e₁ configArg configFn
+                        (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) he1
+                    rw [hcfg]
+                    exact hArg.trans hFn
+                | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArgTy vRaw hImpl hValRet hcfg =>
+                    have hFn :
+                        configArg.varEnv = configFn.varEnv :=
+                      ih' e₁ configArg configFn
+                        (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) he1
+                    rw [hcfg]
+                    exact hArg.trans hFn
             | externVal _id _typ _poison _pred =>
                 unfold LeanPoison.beval at hEval
                 simp at hEval

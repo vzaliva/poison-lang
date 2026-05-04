@@ -216,6 +216,16 @@ inductive Expr : Type where
 
 end
 
+/-- `e` is the impure callable wrapper `extern fn` AST node. -/
+inductive Expr.IsExternFnAst : Expr → Prop where
+  | mk {id : ExternId} {x : Name} {argTyp : Typ} {retSpec : ExternReturn} {eff : List Effect} :
+      Expr.IsExternFnAst (Expr.externFn id x argTyp retSpec eff)
+
+/-- `e` is the pure callable wrapper `extern pfn` AST node. -/
+inductive Expr.IsExternPfnAst : Expr → Prop where
+  | mk {id : ExternId} {x : Name} {argTyp : Typ} {retSpec : ExternReturn} :
+      Expr.IsExternPfnAst (Expr.externPfn id x argTyp retSpec)
+
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where

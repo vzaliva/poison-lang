@@ -911,6 +911,40 @@ def StepFRSingleRunTagMeaningPost
     QTypRespectsTagMeaning tm' res.qualType ∧
     wfTagMeaningCtx tm' (ctxAfter ctx res)
 
+/-- Tag-meaning facts at a typing boundary, without an expression spine.
+
+    For ordinary source steps, this follows from `IsCanonicalExtension` (the
+    extension facts) plus `PredSatLaws` on the extended meaning.
+
+    For extern call boundaries inside `Expr.app`, the same bundle is meant to
+    be produced from the boundary witness rather than from `IsCanonicalExtension`
+    on a single source expression (see `doc/ffi-axioms.md`). -/
+def BoundaryTagMeaningPost
+    (ctx : TypeContext) (res : TypeResult) (predSat : PredSat) (tm tm' : TagMeaning) :
+    Prop :=
+  tm ⊑ tm' ∧
+  TagMeaningBounded tm' res.nextTag' ∧
+  wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
+  QTypRespectsTagMeaning tm' res.qualType ∧
+  PredSatLaws predSat tm'
+
+theorem BoundaryTagMeaningPost.of_isCanonical_predSat
+    {tm tm' : TagMeaning} {ctx : TypeContext} {e : Expr} {res : TypeResult} {predSat : PredSat}
+    (hco : IsCanonicalExtension tm ctx e res tm') (hl : PredSatLaws predSat tm') :
+    BoundaryTagMeaningPost ctx res predSat tm tm' :=
+  ⟨IsCanonicalExtension.extends_tm hco,
+    IsCanonicalExtension.bounded hco,
+    IsCanonicalExtension.wfCtx hco,
+    IsCanonicalExtension.respectsResult hco,
+    hl⟩
+
+theorem StepFRSingleRunTagMeaningPost.to_boundary
+    {ctx : TypeContext} {e : Expr} {res : TypeResult} {predSat : PredSat} {tm : TagMeaning}
+    (h : StepFRSingleRunTagMeaningPost ctx e res predSat tm) :
+    ∃ tm', BoundaryTagMeaningPost ctx res predSat tm tm' := by
+  rcases h with ⟨tm', hcanon, hlaws, _, _⟩
+  exact ⟨tm', BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hlaws⟩
+
 def StepFRSingleRunFinalCleanPcTrue
   (ctx : TypeContext)
   (e : Expr)

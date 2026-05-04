@@ -31,6 +31,26 @@ private lemma cfg_pureMode_eq_of_terminatesTo
   rw [this]
   rw [h]
 
+/-- From a successful `typecheck` judgement, extract the `BoundaryTagMeaningPost` bundle.
+
+This bridges the probe-shaped tag-meaning post (`BoundaryTagMeaningPost` in `StepFR.lean`)
+to the existing canonical-extension predicate used throughout single-run FR lemmas.
+
+Runtime extern `app` witnesses live in `LeanProofs/BevalAppSuccess.lean` (`externFn` /
+`externPfn`); current step proofs still assume an empty runtime registry, so those branches
+remain vacuous until `TrustedRegistry` threading lands. -/
+theorem boundary_tag_meaning_post_of_typecheck
+    (extTyping : ExternTypingAssumptions) (predSat : PredSat) (tm : TagMeaning) (ctx : TypeContext)
+    (e : Expr) (fuel : Nat) (res : TypeResult)
+    (h_wf : wfTagMeaningCtx tm ctx)
+    (h_bounded : TagMeaningBounded tm ctx.nextTag)
+    (h_laws : PredSatLaws predSat tm)
+    (htc : typecheck ctx e fuel = .ok res) :
+    ∃ tm', BoundaryTagMeaningPost ctx res predSat tm tm' :=
+  StepFRSingleRunTagMeaningPost.to_boundary
+    (StepFRSingleRunTagMeaningPost.of_typecheck_preserves extTyping predSat tm ctx e fuel res
+      h_wf h_bounded h_laws htc)
+
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -2253,7 +2273,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     e2 ctxᵢ hwfTm hTmBounded result2 htc2'
   have hIH_e2_inst := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH_e2_inst.1 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hTm2⟩
-  have hstruct := terminatesTo_app_inv' e1 e2 cinit cf o ht
+  have hstruct := terminatesTo_app_inv' e1 e2 cinit cf o rfl ht
   rcases hstruct with h_clo | h_peclo
   · rcases h_clo with
       ⟨c₂', v₂, c₁, x, body, env, evalCfg, ht_e2, ht_e1, _hpm1, ht_body, heq_cfg, hpm_e2, _⟩
@@ -2836,7 +2856,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     e2 ctxᵢ hwfTm hTmBounded result2 htc2'
   have hIH_e2_inst := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH_e2_inst.1 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hTm2⟩
-  have hstruct := terminatesTo_app_inv' e1 e2 cinit cf o ht
+  have hstruct := terminatesTo_app_inv' e1 e2 cinit cf o rfl ht
   rcases hstruct with h_clo | h_peclo
   · rcases h_clo with
       ⟨c₂', v₂, c₁, x, body, env, _evalCfg, ht_e2, ht_e1, _hpm1, _ht_body, _heq_cfg, hpm_e2, _⟩
@@ -3553,8 +3573,8 @@ lemma stepFR_app
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
         _, _, _, _, _, _, _, _, _, _, _⟩
       exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
-    have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ ht₀
-    have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ ht₁
+    have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ rfl ht₀
+    have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ rfl ht₁
     -- Handle runtime closure/peClosure splits for the arrow-typed branch.
     rcases hstruct₀ with h_clo₀ | h_peclo₀
     · rcases hstruct₁ with h_clo₁ | h_peclo₁
@@ -6202,8 +6222,8 @@ lemma stepFR_app
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
         _, _, _, _, _, _, _, _, _, _, _⟩
       exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
-    have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ ht₀
-    have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ ht₁
+    have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ rfl ht₀
+    have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ rfl ht₁
     -- Handle runtime closure/peClosure splits for the parrow-typed branch.
     rcases hstruct₀ with h_clo₀ | h_peclo₀
     · rcases hstruct₁ with h_clo₁ | h_peclo₁
