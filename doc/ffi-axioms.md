@@ -31,9 +31,11 @@ typechecking, while making the FFI trust boundary explicit.
 
 The current step theorem already states the exact postcondition the proof needs
 after evaluating a well-typed expression. In `LeanProofs/StepFR.lean`, `StepFR`
+first produces a canonical extension of the incoming tag meaning and then
 concludes:
 
-- the result type respects the tag meaning,
+- the result type respects the extended tag meaning,
+- `PredSatLaws` holds for the extended tag meaning,
 - output values have the computed enriched type,
 - output configs are well-formed,
 - runtime states instantiate the post type context,
@@ -42,12 +44,40 @@ concludes:
 - output values are regime-consistent,
 - and clean outputs agree.
 
-That bundle is the right contract for externs. `StepFRPost` is just a name for
-that conclusion bundle. It is not an extra extern obligation and not a separate
-proof layer. The proposal factors this bundle into a named predicate, then
-requires registered externs to produce it at extern boundaries.
+That bundle is the right contract for externs, but the tag-meaning layer must
+remain explicit. `StepFR` does not merely prove facts under the incoming
+`tm`; it returns some `tm'` such that `tm'` is the canonical extension for this
+typed boundary and `PredSatLaws predSat tm'` holds. `StepFRPost` is just a name
+for that full conclusion bundle. It is not an extra extern obligation and not a
+separate proof layer. The proposal factors this bundle into named predicates,
+then requires registered externs to produce it at extern boundaries.
 
 ```lean
+/-- The tag-meaning part of the existing `StepFR` conclusion, abstracted away
+    from syntax so it can also describe semantic extern call boundaries.
+
+    For ordinary expression steps, this is obtained from
+    `IsCanonicalExtension tm ctx e res tm'` plus `PredSatLaws predSat tm'`.
+    For extern call boundaries, the boundary run facts must expose the same
+    structural extension information directly, because the boundary is a
+    semantic sub-event inside application rather than a source expression.
+
+    `BoundaryTagMeaningPost` is produced by the boundary witness and consumed by
+    the surrounding FR step.  For extern tag batches, the intended construction
+    path is:
+    `ExternBatchTagMeaningExtension tm nextTag mapping preds env nextTag' tm'`
+    for the structural part, then
+    `ExternTypingAssumptions.externPredSatDelta` for
+    `PredSatLaws predSat tm'`. -/
+def BoundaryTagMeaningPost
+    (ctx : TypeContext) (res : TypeResult)
+    (predSat : PredSat) (tm tm' : TagMeaning) : Prop :=
+  tm ⊑ tm' ∧
+  TagMeaningBounded tm' res.nextTag' ∧
+  wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
+  QTypRespectsTagMeaning tm' res.qualType ∧
+  PredSatLaws predSat tm'
+
 /-- The existing large conjunction at the end of `StepFR`, factored out.
     This is not an additional property; it is the postcondition already
     required by the main FR proof. -/
@@ -56,13 +86,13 @@ def StepFRPost
     (predSat : PredSat) (tm : TagMeaning)
     (θ₀ θ₁ : RealizationMap)
     (cf₀ cf₁ : Config) (o₀ o₁ : Value) : Prop :=
-  QTypRespectsTagMeaning tm res.qualType ∧
+  ∃ tm',
+  BoundaryTagMeaningPost ctx res predSat tm tm' ∧
   ∃ θ₀' θ₁',
     wfExtendsMap θ₀ θ₀' ∧
     wfExtendsMap θ₁ θ₁' ∧
     valueHasETyp θ₀' o₀ res.qualType.etyp ∧
     valueHasETyp θ₁' o₁ res.qualType.etyp ∧
-    wfTagMeaningCtx tm (ctxAfter ctx res) ∧
     wfTypeContext (ctxAfter ctx res) ∧
     TagBoundedCtx (ctxAfter ctx res) ∧
     wfConfig cf₀ ∧
@@ -86,9 +116,17 @@ def StepFRPost
 ```
 
 Once `StepFRPost` exists, `StepFR` becomes easier to read: its conclusion is
-just `StepFRPost ...`. The FR boundary fields also conclude `StepFRPost ...`;
-that is why applying an extern-boundary witness gives the extern case exactly
-the facts the ordinary `StepFR` proof would need.
+just `StepFRPost ...`, with the ordinary expression case discharging
+`BoundaryTagMeaningPost` from `IsCanonicalExtension` plus
+`PredSatLaws predSat tm'`. The FR boundary fields also conclude
+`StepFRPost ...`; that is why applying an extern-boundary witness gives the
+extern case exactly the facts the ordinary `StepFR` proof would need.
+
+Today's `StepFR` also states `QTypRespectsTagMeaning tm' res.qualType` and
+`wfTagMeaningCtx tm' (ctxAfter ctx res)` outside `IsCanonicalExtension`, even
+though both are already projections of `IsCanonicalExtension`. Refactoring its
+conclusion to `StepFRPost` should collapse those duplicates rather than
+preserve them.
 
 The boundary FR contracts should be understood as the same run-to-post pattern
 as `StepFR`, but with different run relations. `StepFR` starts from two
@@ -218,6 +256,7 @@ def ExternDeclBoundaryFR
     (predSat : PredSat) (tm : TagMeaning),
     PredSatLaws predSat tm →
     wfTagMeaningCtx tm ctx →
+    TagMeaningBounded tm ctx.nextTag →
     ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv)
       (θ₀ θ₁ : RealizationMap)
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
@@ -250,6 +289,7 @@ def ExternCallBoundaryFR
     entry₁.bodyCtx = ctx →
     PredSatLaws predSat tm →
     wfTagMeaningCtx tm ctx →
+    TagMeaningBounded tm ctx.nextTag →
     -- `BodyEntryInputsAgree` packages the full StepFR input-hypothesis set at
     -- the closure-body-entry context: wfRealizationMap, wfTypeContext,
     -- TagBoundedCtx, runtimeInstantiatesCtx for both runs,
@@ -266,10 +306,14 @@ def ExternCallBoundaryFR
 `ExternDeclBoundaryFR` is the extern-declaration analogue of `StepFR`.
 `ExternCallBoundaryFR` is the extern-call analogue of the user-closure body IH
 inside `StepFRApp`: its context is the body-entry context, not the caller's
-top-level application context. Any low-level facts about effects, address
-allocation, memory domain, predicate satisfaction, or return-value non-leakage
-are internal ways to justify these contracts; they are not required by the core
-Poison theorem.
+top-level application context. Both contracts must provide the tag-meaning
+extension hidden inside `StepFRPost`. For declaration boundaries this should
+line up with the same `IsCanonicalExtension` story as an ordinary extern
+expression. For call boundaries it should be a boundary-specific structural
+witness for the tags allocated while typechecking the extern closure member.
+Any low-level facts about effects, address allocation, memory domain, predicate
+satisfaction, or return-value non-leakage are internal ways to justify these
+contracts; they are not required by the core Poison theorem.
 
 ## Single-Run Boundary Contract
 
@@ -279,6 +323,13 @@ The proof stack also has one-run facts. In `LeanProofs/StepFR.lean`,
 `StepFR`, but with one successful run instead of two. They produce the
 single-run preservation facts needed when the final pc is clean.
 
+There is also a smaller `StepFRSingleRunTagMeaningPost` helper in the current
+code. It is essentially the tag-meaning fragment captured by
+`BoundaryTagMeaningPost` (with some redundant projections from
+`IsCanonicalExtension`). Factoring `BoundaryTagMeaningPost` should let that
+helper become the one-run analogue of the same shared tag-meaning post rather
+than a separate copy of the pattern.
+
 Externs should get the same treatment. The boundary interface should include
 single-run declaration and call contracts whose conclusions mirror the existing
 `StepFRSingle...` postcondition, but whose run premises are
@@ -287,9 +338,11 @@ single-run declaration and call contracts whose conclusions mirror the existing
 ```lean
 def ExternBoundarySinglePost
     (ctx : TypeContext) (res : TypeResult)
-    (predSat : PredSat)
+    (predSat : PredSat) (tm : TagMeaning)
     (θ : RealizationMap)
     (μ : Memory) (cf : Config) (o : Value) : Prop :=
+  ∃ tm',
+  BoundaryTagMeaningPost ctx res predSat tm tm' ∧
   ∃ θ',
     wfExtendsMap θ θ' ∧
     valueHasETyp θ' o res.qualType.etyp ∧
@@ -307,6 +360,7 @@ def ExternDeclBoundarySingle
     (predSat : PredSat) (tm : TagMeaning),
     PredSatLaws predSat tm →
     wfTagMeaningCtx tm ctx →
+    TagMeaningBounded tm ctx.nextTag →
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
       wfRealizationMap θ →
@@ -320,12 +374,14 @@ def ExternDeclBoundarySingle
           { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
           cf o →
         ctx.pc = true →
-        ExternBoundarySinglePost ctx res predSat θ μ cf o
+        ExternBoundarySinglePost ctx res predSat tm θ μ cf o
 
 def ExternCallBoundarySingle
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
   -- Same single-run clean-pc postcondition, stated at the call body's
-  -- `ExternCallEntry.bodyCtx` and `ExternCallEntry.unifiedEnv`.
+  -- `ExternCallEntry.bodyCtx` and `ExternCallEntry.unifiedEnv`.  This should
+  -- thread `tm` and conclude `ExternBoundarySinglePost`, exactly as the
+  -- declaration contract above does.
   ...
 
 /-- Forgetful view of either declaration or call boundary runs for operational
@@ -576,6 +632,7 @@ contain:
 - `ExternDeclBoundaryRun`
 - `ExternCallEntry`
 - `ExternCallBoundaryRun`
+- `BoundaryTagMeaningPost`
 - `StepFRPost` or an import of it from `StepFR.lean`
 - `ExternDeclBoundaryFR`
 - `ExternCallBoundaryFR`
@@ -591,9 +648,14 @@ contain:
 
 `TagMeaning` is threaded through typechecking, and structural extern allocation
 extends the output tag table with exactly the resolved guard descriptors via
-`ExternBatchTagMeaningExtension`. The remaining semantic part is the
-`externPredSatDelta` field: an extern-generated descriptor batch extends
-`PredSatLaws` from the input table to the output table.
+`ExternBatchTagMeaningExtension`. This structural extension is part of the
+boundary postcondition: a successful extern boundary must not only return
+runtime agreement facts, it must also identify the extended tag meaning under
+which those facts are stated. The boundary postcondition consumes
+`PredSatLaws predSat tm'`; for extern-generated descriptor batches, the intended
+way to construct that conjunct is exactly the existing
+`externPredSatDelta` field applied to the corresponding
+`ExternBatchTagMeaningExtension`.
 
 `externPredSatDelta` is intentionally broader than the final FFI interface. It
 is a caller-supplied field of `ExternTypingAssumptions`, so the kernel does not
@@ -603,6 +665,14 @@ removed. Typing-side reasoning for extern declarations in unexecuted branches
 may still need declaration-level evidence, because those branches typecheck
 even when no runtime boundary event occurs.
 
+This is why the boundary contracts above do not take an
+`ExternTypingAssumptions` premise directly. The current `StepFR` needs that
+premise so it can call `externPredSatDelta` while proving extern-batch tag
+extensions. A per-extern boundary witness instead provides
+`PredSatLaws predSat tm'` for its own batch as part of `BoundaryTagMeaningPost`,
+which is the localized replacement for the broad assumption at successful
+boundary points.
+
 `ExternTypingAssumptions.guardProvenance` no longer exists: the typechecker
 fix to `applyExternEffect` (predicate erasure under poisoned `pc`, mirroring
 assignment) makes the guard-origin trace structurally provable, so the field
@@ -611,8 +681,9 @@ was removed and the call site at the impure-extern dispatch path now invokes
 
 If the extern-boundary design lands, a successful extern execution would
 additionally produce a boundary witness supplying `StepFRPost`. That
-postcondition includes the tag-meaning, regime-consistency, and agreement
-facts needed after the boundary.
+postcondition includes the canonical tag-meaning extension, `PredSatLaws` for
+the extended table, and the regime-consistency and agreement facts needed after
+the boundary.
 
 ## Required Structural Refactors
 
@@ -670,6 +741,11 @@ threading.
 Before any end-to-end extern proof, make extern closures and call boundaries
 first-class proof objects:
 
+- factor the `StepFR` conclusion so the tag-meaning extension layer is explicit
+  (`BoundaryTagMeaningPost` / `StepFRPost`);
+- fold the existing `StepFRSingleRunTagMeaningPost` pattern into the same
+  `BoundaryTagMeaningPost` abstraction instead of maintaining a parallel
+  tag-meaning postcondition;
 - add `ExternId` to `FnTClosure.extern` and `PFnTClosure.extern`;
 - teach `valueHasETyp`, `valueConsistentWithRegime`, `resultAgreesIfClean`,
   and closure-agreement helpers about extern closures;
