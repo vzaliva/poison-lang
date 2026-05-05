@@ -8,6 +8,8 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
+variable {registry : ExternRegistry}
+
 lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   (masked : Tag → Prop)
   
@@ -19,7 +21,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.fn x paramType body returnType) res predSat tm := by
+    ctxᵢ (Expr.fn x paramType body returnType) res predSat tm (registry := registry) := by
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -50,7 +52,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
         hwfTm hTmBounded hpredlaws htc
   intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' x paramType body returnType
-    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   subst hcf
   have hvaltyp : valueHasETyp θ o res.qualType.etyp := by
     subst ho
@@ -118,7 +120,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       (_predSat := predSat) (ctx := ctxᵢ) (res := res) (tm := tm)
       (μ := μ) (ρ := ρ) (θ := θ)
-      (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+      (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry })
       (o := o) (a := a) (pm := pm)
       hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hmasked_none hwfcfg
 
@@ -134,7 +136,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm := by
+    ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm (registry := registry) := by
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -169,7 +171,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
             hwfTm hTmBounded hpredlaws htc
       intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' x paramType body returnType
-        { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+        { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
       subst hcf
       have hto : Expr.toPExpr? body = some pbody :=
         Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
@@ -241,7 +243,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
             valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
           (_predSat := predSat) (ctx := ctxᵢ) (res := res) (tm := tm)
           (μ := μ) (ρ := ρ) (θ := θ)
-          (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+          (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry })
           (o := o) (a := a) (pm := pm)
           hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hmasked_none hwfcfg
 
@@ -252,7 +254,7 @@ lemma stepFR_fn
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.fn x paramType body returnType) res predSat tm := by
+  StepFR ctxᵢ (Expr.fn x paramType body returnType) res predSat tm (registry := registry) := by
   -- Extract typecheck result
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -279,9 +281,9 @@ lemma stepFR_fn
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   have ⟨hcf₁, ho₁⟩ := terminatesTo_fn_inv' x paramType body returnType
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   subst hcf₀ hcf₁
   have hcap' :
       agreeCapturedEnv predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
@@ -507,7 +509,7 @@ lemma stepFR_pfn
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm := by
+  StepFR ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm (registry := registry) := by
   -- Extract typecheck result
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -538,9 +540,9 @@ lemma stepFR_pfn
       intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
       -- Use world-free inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
-        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
       have ⟨hcf₁, ho₁⟩ := terminatesTo_pfn_inv' x paramType body returnType
-        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
       subst hcf₀ hcf₁
       have hcap' :
           agreeCapturedEnv predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=

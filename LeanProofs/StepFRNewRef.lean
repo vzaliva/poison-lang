@@ -11,6 +11,8 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
+variable {registry : ExternRegistry}
+
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -31,8 +33,8 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       regimeConsistentWithCtx ctx →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
-        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -52,7 +54,7 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
     ∀ (res : TypeResult),
       typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-        CtxCons ValCons ctx e res predSat tm
+        CtxCons ValCons ctx e res predSat tm (registry := registry)
 
 private def NewRefCtxConsFinish
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -280,13 +282,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.newRef e) res predSat tm := by
+    ctxᵢ (Expr.newRef e) res predSat tm (registry := registry) := by
   classical
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
@@ -304,7 +306,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_newRef_inv' e
-    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg', n, ht_e, ho, hmem, _hnext, hvar, _hpm⟩
   rcases
     (hIH hpredlaws hExtTyping hwfTm hTmBounded).2 μ ρ θ cfg' (Value.num n)
@@ -532,9 +534,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
 lemma stepFR_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.newRef e) res predSat tm := by
+  StepFR ctxᵢ (Expr.newRef e) res predSat tm (registry := registry) := by
   -- Parse typecheck result
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
@@ -547,10 +549,10 @@ lemma stepFR_newRef
     e ctxᵢ hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for newRef
   have hstruct₀ := terminatesTo_newRef_inv' e
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀', n₀, ht₀_e, ho₀, hmem₀, hnext₀, hvar₀, hpm₀⟩
   have hstruct₁ := terminatesTo_newRef_inv' e
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁', n₁, ht₁_e, ho₁, hmem₁, hnext₁, hvar₁, hpm₁⟩
   -- Apply IH for e
   have hstep_e :=

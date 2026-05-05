@@ -32,6 +32,18 @@ def resultAgreesIfClean (predSat : PredSat) (R : Regime) (μ₀ μ₁ : Memory)
   qtypCleanUnder R qt →
     agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁
 
+/-- Rewrite a configuration as an explicit record while preserving an arbitrary
+    extern registry.  This is the registry-parametric counterpart of the older
+    default-registry coercion used by recursive IH calls. -/
+lemma config_eq_of_registry (cfg : Config) (registry : ExternRegistry)
+    (h : cfg.registry = registry) :
+  cfg = { memory := cfg.memory, varEnv := cfg.varEnv,
+          nextAddr := cfg.nextAddr, pureMode := cfg.pureMode, registry := registry } := by
+  cases cfg with
+  | mk _ _ _ _ _ =>
+      simp only [Config.mk.injEq, true_and]
+      exact h
+
 -- When qt.poison = true and qt.pred = noPred, qtypCleanUnder is impossible,
 -- so resultAgreesIfClean is vacuously true.
 lemma resultAgreesIfClean_of_poison_noPred
@@ -268,7 +280,8 @@ def StepFR
   (e : Expr)
   (res : TypeResult)
   (predSat : PredSat)
-  (tm : TagMeaning) : Prop :=
+  (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry) : Prop :=
     PredSatLaws predSat tm →
     ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
@@ -284,10 +297,10 @@ def StepFR
       consistentWithRegime predSat ctx.regime ctx μ₁ ρ₁ θ₁ →
       agreeOnClean predSat ctx.regime ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
       ∀ (a₀ a₁ : Address) (pm : Bool),
-        wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } →  -- initial config₀ well-formed
-        wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →  -- initial config₁ well-formed
-        terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
-        terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+        wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } →
+        wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } →
+        terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ →
+        terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ →
         StepFRPost ctx e res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
 
 -- Step theorem spec derived from typing (context-driven).
@@ -297,10 +310,11 @@ def TypeSystemEnforcesFaultRobustness_step_spec
   (e : Expr)
   (ctxᵢ : TypeContext)
   (predSat : PredSat)
-  (tm : TagMeaning) : Prop :=
+  (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (fuel : Nat) (res : TypeResult),
     typecheck ctxᵢ e fuel = .ok res →
-      StepFR ctxᵢ e res predSat tm
+      StepFR ctxᵢ e res predSat tm (registry := registry)
 
 -- Local inversion lemmas for valueHasETyp (used before valueHasETyp_num_etyp is defined).
 private lemma valueHasETyp_etyp_num {θ : RealizationMap} {n : Int} {t : ETyp} (h : valueHasETyp θ (Value.num n) t) : t = ETyp.int := by cases h; rfl
@@ -843,8 +857,9 @@ lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
   {cf : Config} {o : Value}
   {a : Address} {pm : Bool}
+  {registry : ExternRegistry}
   (hctxAfter : ctxAfter ctx res = ctx)
-  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm})
+  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry})
   (hvaltyp : valueHasETyp θ o res.qualType.etyp)
   (hctxCons : CtxCons ctx μ ρ θ)
   (hvalc : ValCons ctx.regime res.qualType μ θ o)
@@ -853,7 +868,7 @@ lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   (hric : runtimeInstantiatesCtx ctx μ ρ θ)
   (_hreg : regimeConsistentWithCtxMasked masked ctx)
   (_hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
-  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm}) :
+  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}) :
   ∃ (θ' : RealizationMap),
     wfExtendsMap θ θ' ∧
     valueHasETyp θ' o res.qualType.etyp ∧
@@ -874,6 +889,7 @@ def StepFRSingleRunFinalCleanPcTruePost
   (ctx : TypeContext)
   (res : TypeResult)
   (predSat : PredSat)
+  {registry : ExternRegistry}
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (cf : Config) (o : Value)
   (_hθwf : wfRealizationMap θ)
@@ -882,7 +898,7 @@ def StepFRSingleRunFinalCleanPcTruePost
   (_hreg : regimeConsistentWithCtx ctx)
   (_hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
   (_a : Address) (pm : Bool)
-  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := _a, pureMode := pm}) :
+  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := _a, pureMode := pm, registry := registry}) :
   Prop :=
   ∃ (θ' : RealizationMap),
     wfExtendsMap θ θ' ∧
@@ -901,6 +917,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctx : TypeContext)
   (res : TypeResult)
+  {registry : ExternRegistry}
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (cf : Config) (o : Value)
   (_hθwf : wfRealizationMap θ)
@@ -910,7 +927,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
   (_hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
   (_hctxCons : CtxCons ctx μ ρ θ)
   (_a : Address) (pm : Bool)
-  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := _a, pureMode := pm}) :
+  (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := _a, pureMode := pm, registry := registry}) :
   Prop :=
   ∃ (θ' : RealizationMap),
     wfExtendsMap θ θ' ∧
@@ -972,7 +989,8 @@ def StepFRSingleRunFinalCleanPcTrue
   (e : Expr)
   (res : TypeResult)
   (predSat : PredSat)
-  (tm : TagMeaning) : Prop :=
+  (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry) : Prop :=
     PredSatLaws predSat tm →
     ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
@@ -986,10 +1004,11 @@ def StepFRSingleRunFinalCleanPcTrue
       (hreg : regimeConsistentWithCtx ctx) →
       (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ) →
       ∀ (a : Address) (pm : Bool),
-        (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm}) →
-        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm} cf o →
+        (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}) →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry} cf o →
         ctx.pc = true →
-        StepFRSingleRunFinalCleanPcTruePost ctx res predSat μ ρ θ cf o
+        StepFRSingleRunFinalCleanPcTruePost ctx res predSat
+          (registry := registry) μ ρ θ cf o
           hθwf hwf hric hreg hcwr a pm hwfcfg
 
 def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
@@ -1000,7 +1019,8 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
   (e : Expr)
   (res : TypeResult)
   (predSat : PredSat)
-  (tm : TagMeaning) : Prop :=
+  (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry) : Prop :=
     PredSatLaws predSat tm →
     ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
@@ -1015,11 +1035,11 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
       (hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none) →
       (hctxCons : CtxCons ctx μ ρ θ) →
       ∀ (a : Address) (pm : Bool),
-        (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm}) →
-        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm} cf o →
+        (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}) →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry} cf o →
         ctx.pc = true →
         StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
-          masked CtxCons ValCons ctx res μ ρ θ cf o
+          masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
           hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
 
 -- TypeSystemEnforcesFaultRobustness_impl_proof
@@ -4526,26 +4546,29 @@ lemma valueHasETyp_of_evalUnaryOp
 section StepFR_IH_Abbrevs
 variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
 
-abbrev StepFR_IH : Prop :=
+abbrev StepFR_IH (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   let _tmAnchor := tm
   ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
     wfTagMeaningCtx tmᵢ ctxᵢ →
     TagBoundedCtx ctxᵢ →
-    ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res → StepFR ctxᵢ e res predSat tmᵢ
+    ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res →
+      StepFR ctxᵢ e res predSat tmᵢ (registry := registry)
 
-abbrev StepFRSingleRunFinalCleanPcTrue_IH : Prop :=
+abbrev StepFRSingleRunFinalCleanPcTrue_IH
+    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   let _tmAnchor := tm
   ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
     wfTagMeaningCtx tmᵢ ctxᵢ →
     TagMeaningBounded tmᵢ ctxᵢ.nextTag →
     ∀ (res : TypeResult),
       typecheck ctxᵢ e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ
+      StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
 
 abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
     (masked : Tag → Prop)
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
+    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   let _tmAnchor := tm
   ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctx : TypeContext),
     wfTagMeaningCtx tmᵢ ctx →
@@ -4553,14 +4576,16 @@ abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
     ∀ (res : TypeResult),
       typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-        masked CtxCons ValCons ctx e res predSat tmᵢ
+        masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
 
 -- Convert strong-induction IH (no wfTagMeaningCtx/TagBoundedCtx) to StepFR_IH; extra premises are unused
 lemma StepFR_IH_of_induction
+  {registry : ExternRegistry}
   (IH : ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext)
     (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res → StepFR ctxᵢ e res predSat tmᵢ) :
-  StepFR_IH predSat tm fuel :=
+    typecheck ctxᵢ e m = .ok res →
+      StepFR ctxᵢ e res predSat tmᵢ (registry := registry)) :
+  StepFR_IH predSat tm fuel (registry := registry) :=
   fun m hm {tmᵢ} e ctxᵢ _hwfTm _htagBounded res htc =>
     IH m hm (tmᵢ := tmᵢ) e ctxᵢ res htc
 
@@ -4568,13 +4593,14 @@ lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
   (masked : Tag → Prop)
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  {registry : ExternRegistry}
   (IH : ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctx : TypeContext)
     (res : TypeResult),
     typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-        masked CtxCons ValCons ctx e res predSat tmᵢ) :
+        masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-    predSat tm fuel masked CtxCons ValCons :=
+    predSat tm fuel (registry := registry) masked CtxCons ValCons :=
   fun m hm {tmᵢ} e ctx _hwfTm _hBounded res htc =>
     IH m hm (tmᵢ := tmᵢ) e ctx res htc
 

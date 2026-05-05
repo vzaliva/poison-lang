@@ -1020,11 +1020,14 @@ structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
   match_iff : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
                   (fuel : Nat)
                   (k : Tag) (deps : Deps)
-                  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (addr : Address) (pm : Bool) (cfg : Config)
+                  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (addr : Address)
+                  (pm : Bool) (registry : ExternRegistry) (cfg : Config)
                   (v : Value) (b : Bool),
     EnvRespectsTagMeaning tm σ Γ →
     matchGuard condition Γ σ fuel = .ok (k, deps) →
-    terminatesTo condition { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm} cfg (Value.bool b) →
+    terminatesTo condition
+      { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm, registry := registry }
+      cfg (Value.bool b) →
     ( (∃ (x : Name) (qt : QTyp),
           σ.lookup x = some qt ∧
           qtypGuardTag qt = some k ∧

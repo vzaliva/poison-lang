@@ -8,6 +8,8 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
+variable {registry : ExternRegistry}
+
 lemma stepFR_literal
   
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -19,13 +21,13 @@ lemma stepFR_literal
   (hnotref : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls)
   (hpredNo : res.qualType.pred = Predicate.noPred)
   (hctxAfter : ctxAfter ctx res = ctx) :
-  StepFR ctx e res predSat tm := by
+  StepFR ctx e res predSat tm (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Use world-free inversion lemma for literals
   have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' e v hval
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   have ⟨hcf₁, ho₁⟩ := terminatesTo_literal_inv' e v hval
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   subst hcf₀ hcf₁
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     have hguard : qtypGuardDesc? res.qualType = none := by
@@ -103,7 +105,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctx e res predSat tm := by
+    ctx e res predSat tm (registry := registry) := by
   intro hpredlaws _hExtTyping hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
@@ -113,7 +115,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
           hnotfun (by simp [qtypGuardDesc?, hpredNo]))
   intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_literal_inv' e v hval
-    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   subst hcf
   have hvalc :
       valueConsistentWithRegimeMasked masked predSat ctx.regime res.qualType μ θ o := by
@@ -130,6 +132,6 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       (_predSat := predSat) (ctx := ctx) (res := res) (tm := tm)
       (μ := μ) (ρ := ρ) (θ := θ)
-      (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+      (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry })
       (o := o) (a := a) (pm := pm)
       hctxAfter rfl (ho ▸ hvtyp θ) hcwr hvalc hwfTm hwf hric hreg hmasked_none hwfcfg

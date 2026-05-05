@@ -11,6 +11,8 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
+variable {registry : ExternRegistry}
+
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -31,8 +33,8 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       regimeConsistentWithCtx ctx →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
-        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -52,7 +54,7 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
     ∀ (res : TypeResult),
       typecheck ctx e m = .ok res →
       StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-        CtxCons ValCons ctx e res predSat tm
+        CtxCons ValCons ctx e res predSat tm (registry := registry)
 
 
 private def VletValConsFinish
@@ -284,9 +286,9 @@ private lemma valueConsistentWithRegimeMasked_vlet_finish
 lemma stepFR_vlet
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
+  StepFR ctxᵢ (Expr.vlet vname e1 e2) res predSat tm (registry := registry) := by
   -- Parse typecheck result
   have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_vlet_succ] using htc
@@ -304,10 +306,10 @@ lemma stepFR_vlet
     e1 ctxᵢ hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for vlet
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, v₀1, cfg₀3, ht₀_e1, ht₀_e2, hcf₀_eq, hpm₀1, hpm₀2⟩
   have hstruct₁ := terminatesTo_vlet_inv' vname e1 e2
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁1, v₁1, cfg₁3, ht₁_e1, ht₁_e2, hcf₁_eq, hpm₁1, hpm₁2⟩
   -- Define intermediate configs with extended varEnv
   let cfg₀2 : Config := { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 }
@@ -355,14 +357,14 @@ lemma stepFR_vlet
     simpa [ctxAfter] using hric₁1
   -- hv₀1_typed, hv₁1_typed come from IH1 (StepFR now includes valueHasETyp)
   -- wfValue from wfConfig_preserved (needs terminatesTo)
-  have ht₀_e1_w : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 :=
+  have ht₀_e1_w : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cfg₀1 v₀1 :=
     ht₀_e1
-  have ht₁_e1_w : terminatesTo e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 :=
+  have ht₁_e1_w : terminatesTo e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cfg₁1 v₁1 :=
     ht₁_e1
   have hv₀1_wf : wfValue cfg₀1.nextAddr v₀1 :=
-    (wfConfig_preserved e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
+    (wfConfig_preserved e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cfg₀1 v₀1 ht₀_e1_w hwfcfg₀).2
   have hv₁1_wf : wfValue cfg₁1.nextAddr v₁1 :=
-    (wfConfig_preserved e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
+    (wfConfig_preserved e1 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cfg₁1 v₁1 ht₁_e1_w hwfcfg₁).2
   have hreg_ctx' : regimeConsistentWithCtx ctx' := by
     -- ctx'.regime = res1.regime', need to derive from htagR1 and regime_monotone
     unfold regimeConsistentWithCtx at htagR1 ⊢
@@ -883,22 +885,22 @@ lemma stepFR_vlet
   -- Thread extern registry: cfg₀1 and cfg₁1 inherit default registry from
   -- initial config (via beval_preserves_registry). cfg₀2/cfg₁2 are updates of
   -- these so their registry field is also the default.
-  have hreg_cfg₀1 : cfg₀1.registry = emptyExternRegistry := by
+  have hreg_cfg₀1 : cfg₀1.registry = registry := by
     simpa using terminatesTo_preserves_registry ht₀_e1
-  have hreg_cfg₁1 : cfg₁1.registry = emptyExternRegistry := by
+  have hreg_cfg₁1 : cfg₁1.registry = registry := by
     simpa using terminatesTo_preserves_registry ht₁_e1
   have ht₀_e2_ih : terminatesTo e2
-      { memory := cfg₀2.memory, varEnv := cfg₀2.varEnv, nextAddr := cfg₀2.nextAddr, pureMode := cfg₀2.pureMode }
+      { memory := cfg₀2.memory, varEnv := cfg₀2.varEnv, nextAddr := cfg₀2.nextAddr, pureMode := cfg₀2.pureMode, registry := registry }
       cfg₀3 o₀ := by
-    have h : cfg₀1.registry = emptyExternRegistry := hreg_cfg₀1
+    have h : cfg₀1.registry = registry := hreg_cfg₀1
     have tmp := ht₀_e2
     rw [h] at tmp
-    show terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv.update vname v₀1, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } cfg₀3 o₀
+    show terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv.update vname v₀1, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } cfg₀3 o₀
     exact tmp
   have ht₁_e2_ih : terminatesTo e2
-      { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode }
+      { memory := cfg₁2.memory, varEnv := cfg₁2.varEnv, nextAddr := cfg₁2.nextAddr, pureMode := cfg₀2.pureMode, registry := registry }
       cfg₁3 o₁ := by
-    have h : cfg₁1.registry = emptyExternRegistry := hreg_cfg₁1
+    have h : cfg₁1.registry = registry := hreg_cfg₁1
     have tmp := ht₁_e2'
     rw [h] at tmp
     exact tmp
@@ -1602,13 +1604,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.vlet vname e1 e2) res predSat tm := by
+    ctxᵢ (Expr.vlet vname e1 e2) res predSat tm (registry := registry) := by
   have htc' : typecheckVlet ctxᵢ vname e1 e2 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_vlet_succ] using htc
   obtain ⟨res1, res2, ctx', htc1, hctx', htc2, h_ret_etyp, h_mem, _h_tag, _h_loc, _h_ntag,
@@ -1626,7 +1628,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
         hwfTm hTmBounded hpredlaws htc
   intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_vlet_inv' vname e1 e2
-    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg1, v1, cfg3, ht_e1, ht_e2, hcf_eq, _hpm1, _hpm_final⟩
   let cfg2 : Config := { cfg1 with varEnv := cfg1.varEnv.update vname v1 }
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
@@ -1698,10 +1700,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' hTmBounded' res2 htc2'
   -- Thread extern registry: cfg1 inherits default registry from initial config.
-  have hreg_cfg1 : cfg1.registry = emptyExternRegistry := by
+  have hreg_cfg1 : cfg1.registry = registry := by
     simpa using terminatesTo_preserves_registry ht_e1
   have ht_e2_ih : terminatesTo e2
-      { memory := cfg2.memory, varEnv := cfg2.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode }
+      { memory := cfg2.memory, varEnv := cfg2.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode, registry := registry }
       cfg3 o := by
     have tmp := ht_e2
     rw [hreg_cfg1] at tmp

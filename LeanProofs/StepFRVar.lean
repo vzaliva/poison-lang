@@ -8,6 +8,8 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
+variable {registry : ExternRegistry}
+
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -28,8 +30,8 @@ private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
       regimeConsistentWithCtx ctx →
       CtxCons ctx μ ρ θ →
       ∀ (a : Address) (pm : Bool),
-        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
-        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } →
+        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o →
         ctx.pc = true →
         ∃ (θ' : RealizationMap),
           wfExtendsMap θ θ' ∧
@@ -526,7 +528,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v =>
       valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.var name) res predSat tm := by
+    ctxᵢ (Expr.var name) res predSat tm (registry := registry) := by
   have htc' : typecheckVar ctxᵢ name = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
@@ -544,7 +546,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
   intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none hctxCons a pm hwfcfg ht _hpc
   rcases
     terminatesTo_var_inv' name
-      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o ht
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
     with ⟨v, hlookup, hcf, ho⟩
   subst hcf
   have hvaltyp : valueHasETyp θ o res.qualType.etyp := by
@@ -570,14 +572,14 @@ lemma stepFR_var
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.var name) res predSat tm := by
+  StepFR ctxᵢ (Expr.var name) res predSat tm (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' name
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   have hinv₁ := terminatesTo_var_inv' name
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   rcases hinv₀ with ⟨v₀', hlookup₀, hcf₀, hv₀⟩
   rcases hinv₁ with ⟨v₁', hlookup₁, hcf₁, hv₁⟩
   -- Substitute: o₀ = v₀', o₁ = v₁'

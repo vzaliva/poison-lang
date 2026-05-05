@@ -9,6 +9,8 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
+variable {registry : ExternRegistry}
+
 private def matchGuard_checkNoPredOnArrow (qt : QTyp) : TypecheckM Unit := do
   match qt.etyp with
   | ETyp.arrow _ _ _ _ | ETyp.parrow _ _ _ _ =>
@@ -2058,14 +2060,14 @@ private lemma guard_branch_alignment
     matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps) →
     ctx.regime.lookup? k = some b →
     terminatesTo cond
-      { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀ }
+      { memory := μ₀, varEnv := ρ₀, nextAddr := l₀, pureMode := pm₀, registry := registry }
       cfg' (Value.bool b') →
     b' = b := by
   intro hmatch hregime hterm
   rcases howner with ⟨v, hv_owner⟩
   have hmatch_iff_v : (b' = true ↔ predSat k μ₀ v) := by
     exact hpred.match_iff cond ctx.memEnv ctx.varEnv fuel k deps
-      μ₀ ρ₀ θ₀ l₀ pm₀ cfg' v b' hwfTm hmatch hterm (by
+      μ₀ ρ₀ θ₀ l₀ pm₀ registry cfg' v b' hwfTm hmatch hterm (by
         cases hv_owner with
         | inl hvar =>
             rcases hvar with ⟨x, qt, arg_name, pred_body, var_env, hlookup, hpred_qt, hvar⟩
@@ -2328,7 +2330,7 @@ theorem matchGuard_runtime_branch_alignment
     (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps))
     (hregime : ctx.regime.lookup? k = some b)
     (hterm : terminatesTo cond
-      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
       cfg' (Value.bool b')) :
     b' = b := by
   have howner := matchGuard_ok_runtime_owner ctx μ ρ θ cond k deps hmatch hric
@@ -2339,7 +2341,7 @@ theorem matchGuard_runtime_branch_alignment
 private lemma stepFR_ite_true
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
   (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
   (hregime_true : ctxᵢ.regime.lookup? k = some true)
@@ -2359,16 +2361,16 @@ private lemma stepFR_ite_true
   (hregime' : res.regime' = res2.regime')
   (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc res2.qualType.poison)
   (hetyp : res.qualType.etyp = res2.qualType.etyp) :
-  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm (registry := registry) := by
   classical
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
     hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm
     hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
   have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
   have htc1' : typecheck { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
@@ -2618,8 +2620,8 @@ private lemma stepFR_ite_true
   have hcfg₁1_eq :
       cfg₁1 =
         { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
-          pureMode := cfg₀1.pureMode } := by
-    have hreg_cfg₁1_local : cfg₁1.registry = emptyExternRegistry := by
+          pureMode := cfg₀1.pureMode, registry := registry } := by
+    have hreg_cfg₁1_local : cfg₁1.registry = registry := by
       simpa using terminatesTo_preserves_registry ht₁_e1
     cases cfg₁1 with
     | mk m v n pm r =>
@@ -2628,23 +2630,23 @@ private lemma stepFR_ite_true
       simpa using hreg_cfg₁1_local
   have ht₁_e2' : terminatesTo e2
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
-        pureMode := cfg₀1.pureMode }
+        pureMode := cfg₀1.pureMode, registry := registry }
       cf₁ o₁ := by
     rw [← hcfg₁1_eq]
     exact ht₁_e2
   have hwfcf₁1' : wfConfig
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
-        pureMode := cfg₀1.pureMode } := by
+        pureMode := cfg₀1.pureMode, registry := registry } := by
     rw [← hcfg₁1_eq]
     exact hwfcf₁1
   -- Thread extern registry for cfg₀1 so ht₀_e2 matches the IH's expected config.
-  have hreg_cfg₀1 : cfg₀1.registry = emptyExternRegistry := by
+  have hreg_cfg₀1 : cfg₀1.registry = registry := by
     simpa using terminatesTo_preserves_registry ht₀_e1
-  have hcfg₀1_eq : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } :=
-    config_eq_of_registry_default cfg₀1 hreg_cfg₀1
-  have ht₀_e2' : terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } cf₀ o₀ := by
+  have hcfg₀1_eq : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } :=
+    config_eq_of_registry cfg₀1 registry hreg_cfg₀1
+  have ht₀_e2' : terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } cf₀ o₀ := by
     rw [← hcfg₀1_eq]; exact ht₀_e2
-  have hwfcf₀1' : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
+  have hwfcf₀1' : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } := by
     rw [← hcfg₀1_eq]; exact hwfcf₀1
   have hstep_e2 :=
     hIH_e2 hpredlaws hExtTyping hwfTm_true hTmBounded_true
@@ -2769,7 +2771,7 @@ private lemma stepFR_ite_true
 private lemma stepFR_ite_false
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
   (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
   (hregime_false : ctxᵢ.regime.lookup? k = some false)
@@ -2790,16 +2792,16 @@ private lemma stepFR_ite_false
   (hregime' : res.regime' = res3.regime')
   (hpoison : res.qualType.poison = joinPoison ctxᵢ.pc res3.qualType.poison)
   (hetyp : res.qualType.etyp = res3.qualType.etyp) :
-  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm (registry := registry) := by
   classical
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
     hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm
     hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
   have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
   have htc1' : typecheck { ctxᵢ with pureCtx := true } e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
@@ -3097,8 +3099,8 @@ private lemma stepFR_ite_false
   have hcfg₁1_eq :
       cfg₁1 =
         { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
-          pureMode := cfg₀1.pureMode } := by
-    have hreg_cfg₁1_local : cfg₁1.registry = emptyExternRegistry := by
+          pureMode := cfg₀1.pureMode, registry := registry } := by
+    have hreg_cfg₁1_local : cfg₁1.registry = registry := by
       simpa using terminatesTo_preserves_registry ht₁_e1
     cases cfg₁1 with
     | mk m v n pm r =>
@@ -3107,13 +3109,13 @@ private lemma stepFR_ite_false
       simpa using hreg_cfg₁1_local
   have ht₁_e3' : terminatesTo e3
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
-        pureMode := cfg₀1.pureMode }
+        pureMode := cfg₀1.pureMode, registry := registry }
       cf₁ o₁ := by
     rw [← hcfg₁1_eq]
     exact ht₁_e3
   have hwfcf₁1' : wfConfig
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr,
-        pureMode := cfg₀1.pureMode } := by
+        pureMode := cfg₀1.pureMode, registry := registry } := by
     rw [← hcfg₁1_eq]
     exact hwfcf₁1
   -- Transfer properties from ctxFalse to ctxFalse' (only nextLoc/nextTag differ)
@@ -3129,13 +3131,13 @@ private lemma stepFR_ite_false
       cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simp only [agreeOnClean, ctxFalse', ctxFalse] at hagree1' ⊢; exact hagree1'
   -- Thread extern registry for cfg₀1.
-  have hreg_cfg₀1_e3 : cfg₀1.registry = emptyExternRegistry := by
+  have hreg_cfg₀1_e3 : cfg₀1.registry = registry := by
     simpa using terminatesTo_preserves_registry ht₀_e1
-  have hcfg₀1_eq_e3 : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } :=
-    config_eq_of_registry_default cfg₀1 hreg_cfg₀1_e3
-  have ht₀_e3' : terminatesTo e3 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } cf₀ o₀ := by
+  have hcfg₀1_eq_e3 : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } :=
+    config_eq_of_registry cfg₀1 registry hreg_cfg₀1_e3
+  have ht₀_e3' : terminatesTo e3 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } cf₀ o₀ := by
     rw [← hcfg₀1_eq_e3]; exact ht₀_e3
-  have hwfcf₀1'_e3 : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
+  have hwfcf₀1'_e3 : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } := by
     rw [← hcfg₀1_eq_e3]; exact hwfcf₀1
   have hstep_e3 :=
     hIH_e3 hpredlaws hExtTyping hwfTm_false hTmBounded_false
@@ -3423,8 +3425,8 @@ lemma typecheckIf_standard_compat_from_existing_hyps
 private lemma stepFR_ite_standard
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
   (res1 res2 res3 : TypeResult)
   (htc1 : typecheckExpr ctxᵢ e1 fuel' = .ok res1)
@@ -3450,17 +3452,17 @@ private lemma stepFR_ite_standard
             joinETyps res2.qualType.etyp res3.qualType.etyp
               res2.qualType.poison res3.qualType.poison)
   (hpredNo : res.qualType.pred = Predicate.noPred) :
-  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm (registry := registry) := by
   classical
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
     hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm
     hwfcfg₀ hwfcfg₁ ht₀ ht₁
   -- Invert ite evaluation (world-free)
   have hstruct₀ := terminatesTo_ite_inv' e1 e2 e3
-    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ ht₀
+    { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, b₀, ht₀_e1, hbranch₀, hpm₀1, hpm₀_final⟩
   have hstruct₁ := terminatesTo_ite_inv' e1 e2 e3
-    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ ht₁
+    { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁1, b₁, ht₁_e1, hbranch₁, hpm₁1, hpm₁_final⟩
   -- Apply IH to e1 (without pureCtx in this mode)
   have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
@@ -3607,8 +3609,8 @@ private lemma stepFR_ite_standard
                 { memory := cfg₁1.memory
                 , varEnv := cfg₁1.varEnv
                 , nextAddr := cfg₁1.nextAddr
-                , pureMode := cfg₀1.pureMode } := by
-            have hreg_cfg₁1_local : cfg₁1.registry = emptyExternRegistry := by
+                , pureMode := cfg₀1.pureMode, registry := registry } := by
+            have hreg_cfg₁1_local : cfg₁1.registry = registry := by
               simpa using terminatesTo_preserves_registry ht₁_e1
             cases cfg₁1 with
             | mk m v n pm r =>
@@ -3619,7 +3621,7 @@ private lemma stepFR_ite_standard
               { memory := cfg₁1.memory
               , varEnv := cfg₁1.varEnv
               , nextAddr := cfg₁1.nextAddr
-              , pureMode := cfg₀1.pureMode }
+              , pureMode := cfg₀1.pureMode, registry := registry }
               cf₁ o₁ := by
             rw [← hcfg₁1_eq]
             exact ht₁_e2
@@ -3627,20 +3629,20 @@ private lemma stepFR_ite_standard
               { memory := cfg₁1.memory
               , varEnv := cfg₁1.varEnv
               , nextAddr := cfg₁1.nextAddr
-              , pureMode := cfg₀1.pureMode } := by
+              , pureMode := cfg₀1.pureMode, registry := registry } := by
             rw [← hcfg₁1_eq]
             exact hwfcf₁1
           have hIH_e2 :=
             IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               e2 ctx'' hwfTm_ctx'' htagBounded_ctx'' res2 htc2'
           -- Thread extern registry for cfg₀1.
-          have hreg_cfg₀1_m4 : cfg₀1.registry = emptyExternRegistry := by
+          have hreg_cfg₀1_m4 : cfg₀1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₀_e1
-          have hcfg₀1_eq_m4 : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } :=
-            config_eq_of_registry_default cfg₀1 hreg_cfg₀1_m4
-          have ht₀_e2'' : terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } cf₀ o₀ := by
+          have hcfg₀1_eq_m4 : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } :=
+            config_eq_of_registry cfg₀1 registry hreg_cfg₀1_m4
+          have ht₀_e2'' : terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } cf₀ o₀ := by
             rw [← hcfg₀1_eq_m4]; exact ht₀_e2
-          have hwfcf₀1'_m4 : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
+          have hwfcf₀1'_m4 : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } := by
             rw [← hcfg₀1_eq_m4]; exact hwfcf₀1
           have hstep_e2 :=
             hIH_e2 hpredlaws1 hExtTyping hwfTm_ctx'' hTmBounded_ctx''
@@ -4026,29 +4028,29 @@ private lemma stepFR_ite_standard
           have hpcForE3 : ctxForE3.pc = true := by
             simpa [ctxForE3, ctx'', pc'] using hpc_true
           have hsingle_e2 :
-              StepFRSingleRunFinalCleanPcTrue ctx'' e2 res2 predSat tm1 :=
+              StepFRSingleRunFinalCleanPcTrue ctx'' e2 res2 predSat tm1 (registry := registry) :=
             singleIH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               e2 ctx'' hwfTm_ctx'' hTmBounded_ctx'' res2 htc2'
           have hsingle_e3 :
-              StepFRSingleRunFinalCleanPcTrue ctxForE3 e3 res3 predSat tm1 :=
+              StepFRSingleRunFinalCleanPcTrue ctxForE3 e3 res3 predSat tm1 (registry := registry) :=
             singleIH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               e3 ctxForE3 hwfTm_ctxForE3 hTmBounded_ctxForE3 res3 htc3'
           -- Thread extern registry for cfg₀1 and cfg₁1.
-          have hreg_cfg₀1_s : cfg₀1.registry = emptyExternRegistry := by
+          have hreg_cfg₀1_s : cfg₀1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₀_e1
-          have hreg_cfg₁1_s : cfg₁1.registry = emptyExternRegistry := by
+          have hreg_cfg₁1_s : cfg₁1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₁_e1
-          have hcfg₀1_eq_s : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } :=
-            config_eq_of_registry_default cfg₀1 hreg_cfg₀1_s
-          have hcfg₁1_eq_s : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode } :=
-            config_eq_of_registry_default cfg₁1 hreg_cfg₁1_s
-          have ht₀_e2'' : terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } cf₀ o₀ := by
+          have hcfg₀1_eq_s : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } :=
+            config_eq_of_registry cfg₀1 registry hreg_cfg₀1_s
+          have hcfg₁1_eq_s : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode, registry := registry } :=
+            config_eq_of_registry cfg₁1 registry hreg_cfg₁1_s
+          have ht₀_e2'' : terminatesTo e2 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } cf₀ o₀ := by
             rw [← hcfg₀1_eq_s]; exact ht₀_e2
-          have ht₁_e3'' : terminatesTo e3 { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode } cf₁ o₁ := by
+          have ht₁_e3'' : terminatesTo e3 { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode, registry := registry } cf₁ o₁ := by
             rw [← hcfg₁1_eq_s]; exact ht₁_e3
-          have hwfcf₀1_s : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
+          have hwfcf₀1_s : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } := by
             rw [← hcfg₀1_eq_s]; exact hwfcf₀1
-          have hwfcf₁1_s : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode } := by
+          have hwfcf₁1_s : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode, registry := registry } := by
             rw [← hcfg₁1_eq_s]; exact hwfcf₁1
           rcases
               (hsingle_e2 hpredlaws1 hExtTyping hwfTm_ctx'' hTmBounded_ctx'').2
@@ -4733,29 +4735,29 @@ private lemma stepFR_ite_standard
           have hpcForE3 : ctxForE3.pc = true := by
             simpa [ctxForE3, ctx'', pc'] using hpc_true
           have hsingle_e2 :
-              StepFRSingleRunFinalCleanPcTrue ctx'' e2 res2 predSat tm1 :=
+              StepFRSingleRunFinalCleanPcTrue ctx'' e2 res2 predSat tm1 (registry := registry) :=
             singleIH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               e2 ctx'' hwfTm_ctx'' hTmBounded_ctx'' res2 htc2'
           have hsingle_e3 :
-              StepFRSingleRunFinalCleanPcTrue ctxForE3 e3 res3 predSat tm1 :=
+              StepFRSingleRunFinalCleanPcTrue ctxForE3 e3 res3 predSat tm1 (registry := registry) :=
             singleIH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               e3 ctxForE3 hwfTm_ctxForE3 hTmBounded_ctxForE3 res3 htc3'
           -- Thread extern registry for cfg₀1 and cfg₁1.
-          have hreg_cfg₀1_s2 : cfg₀1.registry = emptyExternRegistry := by
+          have hreg_cfg₀1_s2 : cfg₀1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₀_e1
-          have hreg_cfg₁1_s2 : cfg₁1.registry = emptyExternRegistry := by
+          have hreg_cfg₁1_s2 : cfg₁1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₁_e1
-          have hcfg₀1_eq_s2 : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } :=
-            config_eq_of_registry_default cfg₀1 hreg_cfg₀1_s2
-          have hcfg₁1_eq_s2 : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode } :=
-            config_eq_of_registry_default cfg₁1 hreg_cfg₁1_s2
-          have ht₀_e3'' : terminatesTo e3 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } cf₀ o₀ := by
+          have hcfg₀1_eq_s2 : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } :=
+            config_eq_of_registry cfg₀1 registry hreg_cfg₀1_s2
+          have hcfg₁1_eq_s2 : cfg₁1 = { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode, registry := registry } :=
+            config_eq_of_registry cfg₁1 registry hreg_cfg₁1_s2
+          have ht₀_e3'' : terminatesTo e3 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } cf₀ o₀ := by
             rw [← hcfg₀1_eq_s2]; exact ht₀_e3
-          have ht₁_e2'' : terminatesTo e2 { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode } cf₁ o₁ := by
+          have ht₁_e2'' : terminatesTo e2 { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode, registry := registry } cf₁ o₁ := by
             rw [← hcfg₁1_eq_s2]; exact ht₁_e2
-          have hwfcf₀1_s2 : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
+          have hwfcf₀1_s2 : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } := by
             rw [← hcfg₀1_eq_s2]; exact hwfcf₀1
-          have hwfcf₁1_s2 : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode } := by
+          have hwfcf₁1_s2 : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode, registry := registry } := by
             rw [← hcfg₁1_eq_s2]; exact hwfcf₁1
           rcases
               (hsingle_e3 hpredlaws1 hExtTyping hwfTm_ctxForE3 hTmBounded_ctxForE3).2
@@ -5415,8 +5417,8 @@ private lemma stepFR_ite_standard
                 { memory := cfg₁1.memory
                 , varEnv := cfg₁1.varEnv
                 , nextAddr := cfg₁1.nextAddr
-                , pureMode := cfg₀1.pureMode } := by
-            have hreg_cfg₁1_local : cfg₁1.registry = emptyExternRegistry := by
+                , pureMode := cfg₀1.pureMode, registry := registry } := by
+            have hreg_cfg₁1_local : cfg₁1.registry = registry := by
               simpa using terminatesTo_preserves_registry ht₁_e1
             cases cfg₁1 with
             | mk m v n pm r =>
@@ -5427,7 +5429,7 @@ private lemma stepFR_ite_standard
               { memory := cfg₁1.memory
               , varEnv := cfg₁1.varEnv
               , nextAddr := cfg₁1.nextAddr
-              , pureMode := cfg₀1.pureMode }
+              , pureMode := cfg₀1.pureMode, registry := registry }
               cf₁ o₁ := by
             rw [← hcfg₁1_eq]
             exact ht₁_e3
@@ -5435,20 +5437,20 @@ private lemma stepFR_ite_standard
               { memory := cfg₁1.memory
               , varEnv := cfg₁1.varEnv
               , nextAddr := cfg₁1.nextAddr
-              , pureMode := cfg₀1.pureMode } := by
+              , pureMode := cfg₀1.pureMode, registry := registry } := by
             rw [← hcfg₁1_eq]
             exact hwfcf₁1
           have hIH_e3 :=
             IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               e3 ctxForE3 hwfTm_ctxForE3 htagBounded_ctxForE3 res3 htc3'
           -- Thread extern registry for cfg₀1.
-          have hreg_cfg₀1_e3m : cfg₀1.registry = emptyExternRegistry := by
+          have hreg_cfg₀1_e3m : cfg₀1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₀_e1
-          have hcfg₀1_eq_e3m : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } :=
-            config_eq_of_registry_default cfg₀1 hreg_cfg₀1_e3m
-          have ht₀_e3'' : terminatesTo e3 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } cf₀ o₀ := by
+          have hcfg₀1_eq_e3m : cfg₀1 = { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } :=
+            config_eq_of_registry cfg₀1 registry hreg_cfg₀1_e3m
+          have ht₀_e3'' : terminatesTo e3 { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } cf₀ o₀ := by
             rw [← hcfg₀1_eq_e3m]; exact ht₀_e3
-          have hwfcf₀1'_e3m : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode } := by
+          have hwfcf₀1'_e3m : wfConfig { memory := cfg₀1.memory, varEnv := cfg₀1.varEnv, nextAddr := cfg₀1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } := by
             rw [← hcfg₀1_eq_e3m]; exact hwfcf₀1
           have hstep_e3 :=
             hIH_e3 hpredlaws1 hExtTyping hwfTm_ctxForE3 hTmBounded_ctxForE3
@@ -5858,10 +5860,10 @@ private lemma stepFR_ite_standard
 lemma stepFR_ite
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm := by
+  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm (registry := registry) := by
   classical
   -- Parse typecheck result
   have htc' : typecheckIf ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
