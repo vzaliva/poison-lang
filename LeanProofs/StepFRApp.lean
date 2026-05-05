@@ -2407,6 +2407,28 @@ private theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
   | succ fuel_b' =>
       simp [LeanPoison.beval, hreg_c₁₀, emptyExternRegistry] at hbeval_b
 
+/-- Provider-shaped adapter for the future registry lookup: a static
+    `FnTClosure.extern` member of the arrow closure list produces the side-0
+    boundary contract.  The empty-registry instance below ignores the key, but a
+    future `TrustedRegistryAgreesWithProgram` instance should use this membership
+    to look up the matching per-id boundary spec. -/
+private def ExternCallBoundaryFRFnSide0Provider
+    (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+    (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure) : Prop :=
+  ∀ {id₀ : ExternId} {x₀ : Name} {retSpec₀ : ExternReturn} {eff₀ : List Effect}
+    {tenv₀ : CapturedVarEnv},
+    FnTClosure.extern id₀ x₀ retSpec₀ eff₀ tenv₀ ∈ tcls →
+    ExternCallBoundaryFRFnSide0Contract ctxᵢ predSat tm e1 e2 res
+
+/-- Empty-registry provider: any static extern member maps to the vacuous
+    side-0 boundary contract. -/
+private theorem ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry
+    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
+    ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls := by
+  intro _id₀ _x₀ _retSpec₀ _eff₀ _tenv₀ _htcl
+  exact ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
+
 /-- Spike-stage shape of the two-run `ExternCallBoundaryFR.fn` contract for the
     side-1 extern-closure arm in `stepFR_app`.  This mirrors the side-0 payload
     test while keeping the two slices separate until both are validated. -/
@@ -2475,6 +2497,25 @@ private theorem ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
   | zero => simp [LeanPoison.beval] at hbeval_b
   | succ fuel_b' =>
       simp [LeanPoison.beval, hreg_c₁₁, emptyExternRegistry] at hbeval_b
+
+/-- Provider-shaped adapter for side 1, mirroring
+    `ExternCallBoundaryFRFnSide0Provider`. -/
+private def ExternCallBoundaryFRFnSide1Provider
+    (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+    (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure) : Prop :=
+  ∀ {id₁ : ExternId} {x₁ : Name} {retSpec₁ : ExternReturn} {eff₁ : List Effect}
+    {tenv₁ : CapturedVarEnv},
+    FnTClosure.extern id₁ x₁ retSpec₁ eff₁ tenv₁ ∈ tcls →
+    ExternCallBoundaryFRFnSide1Contract ctxᵢ predSat tm e1 e2 res
+
+/-- Empty-registry provider: any static extern member maps to the vacuous
+    side-1 boundary contract. -/
+private theorem ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry
+    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
+    ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls := by
+  intro _id₁ _x₁ _retSpec₁ _eff₁ _tenv₁ _htcl
+  exact ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
 
 private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (masked : Tag → Prop)
@@ -3811,12 +3852,12 @@ lemma stepFR_app
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
-    have extCallSpec₀ :
-        ExternCallBoundaryFRFnSide0Contract ctxᵢ predSat tm e1 e2 res :=
-      ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
-    have extCallSpec₁ :
-        ExternCallBoundaryFRFnSide1Contract ctxᵢ predSat tm e1 e2 res :=
-      ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
+    have extProvider₀ :
+        ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls :=
+      ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry
+    have extProvider₁ :
+        ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls :=
+      ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry
     -- Local helper capturing the shared IH_e2 → IH_e1 ritual. Used by the
     -- "impossible" mixed-constructor branches below to derive valueHasETyp of
     -- each run's output value at `result1.qualType.etyp`, which is then
@@ -3895,6 +3936,7 @@ lemma stepFR_app
           -- Probe 2 two-run slice: validate that side 0 can supply the
           -- future FR extern-call contract payload, including static
           -- membership in the arrow closure list.
+          have extCallSpec₀ := extProvider₀ htcl₀
           change StepFRAppliedPost ctxᵢ (Expr.app e1 e2) res predSat tm
             θ₀ θ₁ cf₀ cf₁ o₀ o₁
           exact
@@ -3910,6 +3952,7 @@ lemma stepFR_app
           -- Probe 2 two-run slice: side 1 mirrors the side-0 contract payload
           -- shape while keeping the slices separate until both sides are
           -- validated.
+          have extCallSpec₁ := extProvider₁ htcl₁
           change StepFRAppliedPost ctxᵢ (Expr.app e1 e2) res predSat tm
             θ₀ θ₁ cf₀ cf₁ o₀ o₁
           exact
