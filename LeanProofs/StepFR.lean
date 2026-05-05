@@ -1813,6 +1813,62 @@ lemma valueConsistentWithRegimeMasked_unmask
           (R := R) (qt := qt) (μ := μ) (θ := θ) (v := v)
           hmasked_none hcap)
 
+private lemma capturedVarsRegimeProperty_to_masked
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ : Memory}
+  {σcap : CapturedVarEnv} {ρcap : VarEnv}
+  (h : capturedVarsRegimeProperty predSat R μ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap := by
+  intro x qt_x k_x hlookup hguard hRdef
+  exact Or.inr (h x qt_x k_x hlookup hguard hRdef)
+
+lemma closureCapturedVarsRegime_to_masked
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (h : closureCapturedVarsRegime predSat R qt μ θ v) :
+  closureCapturedVarsRegimeMasked masked predSat R qt μ θ v := by
+  cases h with
+  | intro hdeep =>
+      exact
+        deepValueQTypProperty_mono
+          (fun _ _ hP => ⟨capturedVarsRegimeProperty_to_masked hP.1, hP.2⟩)
+          hdeep
+
+lemma consistentWithRegime_to_masked
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+  (h : consistentWithRegime predSat R ctx μ ρ θ) :
+  consistentWithRegimeMasked masked predSat R ctx μ ρ θ := by
+  rcases h with ⟨hlocs, hvars, hclos⟩
+  refine ⟨?_, ?_, ?_⟩
+  · intro l qt k hlookup hguard hRdef
+    exact Or.inr (hlocs l qt k hlookup hguard hRdef)
+  · intro x qt k hlookup hguard hRdef
+    exact Or.inr (hvars x qt k hlookup hguard hRdef)
+  · intro x qt v hlookup hρ
+    exact closureCapturedVarsRegime_to_masked (masked := masked) (hclos x qt v hlookup hρ)
+
+lemma valueConsistentWithRegime_to_masked
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
+  (h : valueConsistentWithRegime predSat R qt μ θ v) :
+  valueConsistentWithRegimeMasked masked predSat R qt μ θ v := by
+  cases h with
+  | noTag htag hcap =>
+      exact valueConsistentWithRegimeMasked.noTag htag
+        (closureCapturedVarsRegime_to_masked (masked := masked) hcap)
+  | guardOnly_ok k hgo hcap =>
+      exact valueConsistentWithRegimeMasked.guardOnly_ok k hgo
+        (closureCapturedVarsRegime_to_masked (masked := masked) hcap)
+  | notInRegime k htag hknone hcap =>
+      exact valueConsistentWithRegimeMasked.notInRegime k htag hknone
+        (closureCapturedVarsRegime_to_masked (masked := masked) hcap)
+  | inRegimeTrue k htag hktrue hholds hcap =>
+      exact valueConsistentWithRegimeMasked.inRegimeTrue k htag hktrue hholds
+        (closureCapturedVarsRegime_to_masked (masked := masked) hcap)
+  | inRegimeFalse k htag hkfalse hnot hcap =>
+      exact valueConsistentWithRegimeMasked.inRegimeFalse k htag hkfalse hnot
+        (closureCapturedVarsRegime_to_masked (masked := masked) hcap)
+
 -- For guard-closure predicates, `valueConsistentWithRegime` determines the same
 -- predicate-consistency obligation needed by `varsRegime.withPred_ok`.
 lemma valueConsistentWithRegime_guardClosure_consistency

@@ -2299,6 +2299,80 @@ private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
   | succ fuel_b' =>
       simp [LeanPoison.beval, hreg_c₁, emptyExternRegistry] at hbeval_b
 
+private lemma cfg_pureMode_registry_eq_of_terminatesTo
+    {e : Expr} {c₀ c' : Config} {v : Value} {pm : Bool}
+    {registry : ExternRegistry}
+    (ht : terminatesTo e c₀ c' v) (hinit : c₀.pureMode = pm)
+    (hreg : c₀.registry = registry) :
+    c'.pureMode = pm ∧
+    c' =
+      { memory := c'.memory, varEnv := c'.varEnv, nextAddr := c'.nextAddr,
+        pureMode := pm, registry := registry } := by
+  have h : c'.pureMode = pm := (terminatesTo_preserves_pureMode e c₀ c' v ht).trans hinit
+  refine ⟨h, ?_⟩
+  have hreg' : c'.registry = registry :=
+    (terminatesTo_preserves_registry ht).trans hreg
+  rw [← h]
+  exact config_eq_of_registry c' registry hreg'
+
+private lemma terminatesTo_app_inv_full_empty_user_only
+    (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value)
+    (hreg : c₀.registry = emptyExternRegistry) :
+    terminatesTo (Expr.app e₁ e₂) c₀ c₂ v →
+    (∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr)
+        (env : VarEnv) (evalConfig : Config),
+      terminatesTo e₂ c₀ c₂' v₂ ∧
+      terminatesTo e₁ c₂' c₁ (Value.closure x body env) ∧
+      c₁.pureMode = false ∧
+      terminatesTo body { c₁ with varEnv := env.update x v₂, pureMode := false }
+        evalConfig v ∧
+      c₂ = ({ c₁ with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := c₁.pureMode } : Config) ∧
+      c₂'.pureMode = c₀.pureMode ∧
+      c₂.pureMode = c₀.pureMode) ∨
+    (∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr)
+        (env : VarEnv) (evalConfig : Config),
+      terminatesTo e₂ c₀ c₂' v₂ ∧
+      terminatesTo e₁ c₂' c₁ (Value.peClosure x body env) ∧
+      Expr.toPExpr? body ≠ none ∧
+      terminatesTo body { c₁ with varEnv := env.update x v₂, pureMode := true }
+        evalConfig v ∧
+      c₂ = c₁ ∧
+      c₂'.pureMode = c₀.pureMode ∧
+      c₂.pureMode = c₀.pureMode) := by
+  intro ht
+  cases terminatesTo_app_inv_full e₁ e₂ c₀ c₂ v ht with
+  | @userFn c₂' v₂ c₁ x body env evalConfig ht_e2 ht_e1 _hNot hpureMode ht_body
+      hcfg hpure_e2 hpure_final =>
+      left
+      refine ⟨c₂', v₂, c₁, x, body, env, evalConfig, ht_e2, ht_e1, hpureMode, ?_,
+        ?_, hpure_e2, hpure_final⟩
+      · simpa using ht_body
+      · simpa using hcfg
+  | @externFn c₂' _v₂ c₁ _x _y id _argTyp _retSpec _eff _env _impl _vRaw _mem'
+      _addr' ht_e2 ht_e1 _hpure hGet _hArg _hImpl _hValRet _hcfg _hpure_e2 _ =>
+      exfalso
+      have hreg2 : c₂'.registry = emptyExternRegistry :=
+        (terminatesTo_preserves_registry ht_e2).trans hreg
+      have hreg1 : c₁.registry = emptyExternRegistry :=
+        (terminatesTo_preserves_registry ht_e1).trans hreg2
+      rw [hreg1] at hGet
+      simp [emptyExternRegistry] at hGet
+  | @userPfn c₂' v₂ c₁ x body env evalConfig ht_e2 ht_e1 _hNot htoPExpr ht_body
+      hcfg hpure_e2 hpure_final =>
+      right
+      refine ⟨c₂', v₂, c₁, x, body, env, evalConfig, ht_e2, ht_e1, htoPExpr, ?_,
+        hcfg, hpure_e2, hpure_final⟩
+      simpa using ht_body
+  | @externPfn c₂' _v₂ c₁ _x _y id _argTyp _retSpec _env _impl _vRaw ht_e2 ht_e1
+      hGet _hArg _hImpl _hValRet _hcfg _hpure_e2 _ =>
+      exfalso
+      have hreg2 : c₂'.registry = emptyExternRegistry :=
+        (terminatesTo_preserves_registry ht_e2).trans hreg
+      have hreg1 : c₁.registry = emptyExternRegistry :=
+        (terminatesTo_preserves_registry ht_e1).trans hreg2
+      rw [hreg1] at hGet
+      simp [emptyExternRegistry] at hGet
+
 /-- Spike-stage shape of the two-run `ExternCallBoundaryFR.fn` contract for the
     side-0 extern-closure arm in `stepFR_app`.
 
@@ -2556,10 +2630,10 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     e2 ctxᵢ hwfTm hTmBounded result2 htc2'
   have hIH_e2_inst := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH_e2_inst.1 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hTm2⟩
-  have hstruct := terminatesTo_app_inv' e1 e2 cinit cf o rfl ht
-  rcases hstruct with h_clo | h_peclo
-  · rcases h_clo with
-      ⟨c₂', v₂, c₁, x, body, env, evalCfg, ht_e2, ht_e1, _hpm1, ht_body, heq_cfg, hpm_e2, _⟩
+  have hstruct := terminatesTo_app_inv_full e1 e2 cinit cf o ht
+  cases hstruct with
+  | @userFn c₂' v₂ c₁ x body env evalCfg ht_e2 ht_e1 _hNotExtern _hpm1
+      ht_body heq_cfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
         hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
@@ -3051,8 +3125,17 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
             (ctx := ctxᵢ) (first := first) (src := firstA) (rest := rest) (res := res)
             (θ := θ_body) (v := o)
             h_join hfirstA_mem' (hfirstA_etyp ▸ hv_body_typed)
-  · rcases h_peclo with
-      ⟨c₂', v₂, c₁, x, body, env, _evalCfg, ht_e2, ht_e1, _htoPExpr, _ht_body, _hcf, hpm_e2, _⟩
+  | @externFn c₂' _v₂ c₁ _x _y id _argTyp _retSpec _eff _env _impl _vRaw _mem' _addr'
+      ht_e2 ht_e1 _hpure hGet _hArg _hImpl _hValRet _hcfg _hpm_e2 _ =>
+      exfalso
+      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+        (terminatesTo_preserves_registry ht_e1).trans hreg2'
+      rw [hreg_c₁] at hGet
+      simp [emptyExternRegistry] at hGet
+  | @userPfn c₂' v₂ c₁ x body env _evalCfg ht_e2 ht_e1 _hNotExtern _htoPExpr
+      _ht_body _hcf hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
         hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
@@ -3097,6 +3180,15 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       ⟨_st1, _st2, _p, _ptcls, hparr⟩
     rw [hetyp1] at hparr
     cases hparr
+  | @externPfn c₂' _v₂ c₁ _x _y id _argTyp _retSpec _env _impl _vRaw
+      ht_e2 ht_e1 hGet _hArg _hImpl _hValRet _hcfg _hpm_e2 _ =>
+      exfalso
+      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+        (terminatesTo_preserves_registry ht_e1).trans hreg2'
+      rw [hreg_c₁] at hGet
+      simp [emptyExternRegistry] at hGet
 
 private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (masked : Tag → Prop)
@@ -3147,10 +3239,10 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     e2 ctxᵢ hwfTm hTmBounded result2 htc2'
   have hIH_e2_inst := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH_e2_inst.1 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hTm2⟩
-  have hstruct := terminatesTo_app_inv' e1 e2 cinit cf o rfl ht
-  rcases hstruct with h_clo | h_peclo
-  · rcases h_clo with
-      ⟨c₂', v₂, c₁, x, body, env, _evalCfg, ht_e2, ht_e1, _hpm1, _ht_body, _heq_cfg, hpm_e2, _⟩
+  have hstruct := terminatesTo_app_inv_full e1 e2 cinit cf o ht
+  cases hstruct with
+  | @userFn c₂' v₂ c₁ x body env _evalCfg ht_e2 ht_e1 _hNotExtern _hpm1
+      _ht_body _heq_cfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
         hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
@@ -3195,8 +3287,17 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       ⟨_st1, _st2, _p, _tcls, harrow⟩
     rw [hetyp1] at harrow
     cases harrow
-  · rcases h_peclo with
-      ⟨c₂', v₂, c₁, x, body, env, evalCfg, ht_e2, ht_e1, _htoPExpr_body, ht_body, hcf, hpm_e2, _⟩
+  | @externFn c₂' _v₂ c₁ _x _y id _argTyp _retSpec _eff _env _impl _vRaw _mem' _addr'
+      ht_e2 ht_e1 _hpure hGet _hArg _hImpl _hValRet _hcfg _hpm_e2 _ =>
+      exfalso
+      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+        (terminatesTo_preserves_registry ht_e1).trans hreg2'
+      rw [hreg_c₁] at hGet
+      simp [emptyExternRegistry] at hGet
+  | @userPfn c₂' v₂ c₁ x body env evalCfg ht_e2 ht_e1 _hNotExtern _htoPExpr_body
+      ht_body hcf hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
         hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
@@ -3262,7 +3363,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     | peClosure_extern _ _ _ =>
         -- Probe 2 vertical-slice discharge.  The peClosure_extern constructor
         -- forces `body = Expr.externPfn id y argTyp retSpec` for some implicits,
-        -- but `terminatesTo_app_inv'`'s peClosure case provides
+        -- but the user pure-closure branch of full app inversion provides
         -- `_htoPExpr_body : Expr.toPExpr? body ≠ none`.  For extern bodies
         -- `Expr.toPExpr?` returns `none` (`Expr.toPExpr?` falls through to `_ => none`
         -- for `externPfn`), so the precondition is contradictory.
@@ -3716,6 +3817,15 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             (ctx := ctxᵢ) (first := first) (src := firstA) (rest := rest) (res := res)
             (θ := θ_body) (v := o)
             h_join hfirstA_mem' (hfirstA_etyp ▸ hv_body_typed)
+  | @externPfn c₂' _v₂ c₁ _x _y id _argTyp _retSpec _env _impl _vRaw
+      ht_e2 ht_e1 hGet _hArg _hImpl _hValRet _hcfg _hpm_e2 _ =>
+      exfalso
+      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+        (terminatesTo_preserves_registry ht_e1).trans hreg2'
+      rw [hreg_c₁] at hGet
+      simp [emptyExternRegistry] at hGet
 
 private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (masked : Tag → Prop)
@@ -3882,8 +3992,8 @@ lemma stepFR_app
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
         _, _, _, _, _, _, _, _, _, _, _⟩
       exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
-    have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ rfl ht₀
-    have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ rfl ht₁
+    have hstruct₀ := terminatesTo_app_inv_full_empty_user_only e1 e2 cinit₀ cf₀ o₀ rfl ht₀
+    have hstruct₁ := terminatesTo_app_inv_full_empty_user_only e1 e2 cinit₁ cf₁ o₁ rfl ht₁
     -- Handle runtime closure/peClosure splits for the arrow-typed branch.
     rcases hstruct₀ with h_clo₀ | h_peclo₀
     · rcases hstruct₁ with h_clo₁ | h_peclo₁
@@ -6559,8 +6669,8 @@ lemma stepFR_app
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
         _, _, _, _, _, _, _, _, _, _, _⟩
       exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
-    have hstruct₀ := terminatesTo_app_inv' e1 e2 cinit₀ cf₀ o₀ rfl ht₀
-    have hstruct₁ := terminatesTo_app_inv' e1 e2 cinit₁ cf₁ o₁ rfl ht₁
+    have hstruct₀ := terminatesTo_app_inv_full_empty_user_only e1 e2 cinit₀ cf₀ o₀ rfl ht₀
+    have hstruct₁ := terminatesTo_app_inv_full_empty_user_only e1 e2 cinit₁ cf₁ o₁ rfl ht₁
     -- Handle runtime closure/peClosure splits for the parrow-typed branch.
     rcases hstruct₀ with h_clo₀ | h_peclo₀
     · rcases hstruct₁ with h_clo₁ | h_peclo₁
@@ -6622,7 +6732,7 @@ lemma stepFR_app
         | peClosure_extern _ _ _ =>
           -- Same `Expr.toPExpr?` vacuity as the single-run parrow case.
           -- `peClosure_extern` forces `body₀ = Expr.externPfn …` but `htoP₀`
-          -- (from the peClosure inversion of `terminatesTo_app_inv'`) requires
+          -- (from the user pure-closure branch of full app inversion) requires
           -- `Expr.toPExpr? body₀ ≠ none`, which is false for extern bodies.
           exact absurd (by simp [Expr.toPExpr?]) htoP₀
         | peClosure hpure₀ htcl₀ henv₀_typing hcover₀ =>
