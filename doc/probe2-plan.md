@@ -4,20 +4,20 @@
 
 Probe 1 baseline is clean. The six `StepFRApp.lean` `closure_extern` / `peClosure_extern` arms that Probe 1 introduced were already discharged by local-hypothesis vacuity (see "Probe 1 cleanup history" below). `StepFRApp.lean` now has zero `sorry`, the build is green, and `make test` passes 95/95.
 
-**The current Probe 2 goal is no longer "discharge the six sorries"** — that is done. The goal is to **validate the boundary-contract payload shape** so that when registries actually populate (Probes 4–5), the existing arrow vacuity discharges can be cleanly replaced with real contract invocations *without* discovering a payload-fit problem mid-refactor.
+**The current Probe 2 goal is no longer "discharge the six sorries"** — that is done. The goal is to **validate the boundary-contract payload shape** so that when registries actually populate (Probes 4–5), the existing arrow vacuity discharges can be cleanly replaced with real contract invocations *without* discovering a payload-fit problem mid-refactor. The first single-run arrow slice validated the operational payload; the follow-up slice validated the static `FnTClosure.extern … ∈ tcls` membership payload.
 
 The arrow vacuity discharges (lines ~2342, ~3636, ~3641 in current `StepFRApp.lean`) are **specific to the current empty-registry theorem** and must be replaced in a future populated-registry theorem. The parrow vacuity arguments stay sound regardless (they rely on `Expr.toPExpr?` returning `none` for `externPfn`, a property of the language definition), so only the three arrow sites carry future replacement work under populated registries.
 
-## Scope of This Step
+## Static-Membership Slice Scope
 
 1. **Keep the current clean baseline.** No new `sorry`, no new `axiom`, no top-level theorem changes.
-2. **Boundary/registry infrastructure is future work** unless this spike proves the contract shape fits at the consumption point.
-3. **Do not introduce `TrustedRegistry`** in this step.
-4. **Introduce only a local contract-shaped hypothesis** at one arrow site, named close to the future API (e.g. `ExternCallBoundarySingleFnContract`).
-5. **Shape the hypothesis like the future `ExternCallBoundarySingle.fn`**: it takes the local extern call payload available at the proof site and returns exactly the single-run postcondition this branch needs.
-6. **Replace the inline vacuity proof at that one arrow site** with an invocation of this contract-shaped hypothesis.
-7. **Discharge the contract hypothesis at the caller** using the existing empty-registry vacuity, not by adding registry plumbing.
-8. **Stop after one site builds.**
+2. **Do not introduce `TrustedRegistry`** in this step.
+3. **Extend the local contract-shaped hypothesis** at the existing single-run arrow site with the static typing-side membership premise:
+   `FnTClosure.extern id x retSpec eff tenv ∈ tcls`.
+4. **Keep runtime and static captured environments distinct.** The runtime closure environment is `env : VarEnv`; the closure-list payload uses `tenv : CapturedVarEnv`.
+5. **Supply `tcls` and `htcl` from the existing proof site.** `tcls` comes from the arrow type being inverted; `htcl` comes directly from the `valueHasETyp.closure_extern` constructor.
+6. **Discharge the strengthened contract at the caller** using the same empty-registry vacuity. The default discharge should ignore `tcls`, `tenv`, and `htcl`.
+7. **Stop after this one site builds.**
 
 ## Spike Target
 
@@ -43,7 +43,7 @@ The arrow vacuity discharges (lines ~2342, ~3636, ~3641 in current `StepFRApp.le
 
 ## Spike Outcome (post-execution)
 
-**Status:** ✅ Spike complete. Single arrow site refactored to consume a contract-shaped hypothesis named `ExternCallBoundarySingleFnContract`. Caller discharges the contract via `ExternCallBoundarySingleFnContract.of_emptyExternRegistry`, which uses the existing empty-registry vacuity argument. **No new `sorry`, no new `axiom`, no top-level theorem changes.** `lake build LeanProofs` clean. `make test` 95/95. `git diff --check` clean. `StepFRApp.lean` still has zero `sorry`.
+**Status:** ✅ Spike complete. Single arrow site refactored to consume a contract-shaped hypothesis named `ExternCallBoundarySingleFnContract`. Caller discharges the contract via `ExternCallBoundarySingleFnContract.of_emptyExternRegistry`, which uses the existing empty-registry vacuity argument. The follow-up static-membership slice also succeeded: the contract now takes `tcls`, `tenv`, and `FnTClosure.extern id x retSpec eff tenv ∈ tcls`; the consuming branch supplies the membership directly from `closure_extern htcl`. **No new `sorry`, no new `axiom`, no top-level theorem changes.** `lake build LeanProofs` clean. `make test` 95/95. `git diff --check` clean. `StepFRApp.lean` still has zero `sorry`.
 
 ### Contract shape that fit cleanly
 
@@ -67,12 +67,14 @@ private def ExternCallBoundarySingleFnContract
     -- Operational extern-call payload from the proof site
     (c₂' : Config) (v₂ : Value) (c₁ : Config) (evalCfg : Config)
     (id : ExternId) (x y : Name) (argTyp : Typ) (retSpec : ExternReturn)
-    (eff : List Effect) (capturedEnv : VarEnv),
+    (eff : List Effect) (tcls : List FnTClosure) (tenv : CapturedVarEnv)
+    (env : VarEnv),
+    FnTClosure.extern id x retSpec eff tenv ∈ tcls →
     terminatesTo e2 { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } c₂' v₂ →
     terminatesTo e1 c₂' c₁
-      (Value.closure x (Expr.externFn id y argTyp retSpec eff) capturedEnv) →
+      (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) →
     terminatesTo (Expr.externFn id y argTyp retSpec eff)
-      { c₁ with varEnv := VarEnv.update capturedEnv x v₂, pureMode := false }
+      { c₁ with varEnv := VarEnv.update env x v₂, pureMode := false }
       evalCfg o →
     cf = { c₁ with memory := evalCfg.memory, nextAddr := evalCfg.nextAddr,
                    pureMode := c₁.pureMode } →
@@ -84,17 +86,18 @@ private def ExternCallBoundarySingleFnContract
 
 ### What payload was needed (and fit cleanly)
 
-The contract takes 30 parameters, organized into three blocks:
+The strengthened contract takes 33 parameters/hypotheses, organized into four blocks:
 
 1. **Initial-state payload (14 params).** `μ ρ θ cf o` plus the seven well-formedness / runtime-instantiation / regime / masked-registry / wfConfig hypotheses, plus the `a pm` address-mode-pair. Every one of these is in scope at the discharge site by the time `cases hv₁_arrow` runs — they came from the lemma's outer signature.
-2. **Operational extern-call payload (11 params).** `c₂' v₂ c₁ evalCfg` from `terminatesTo_app_inv'` peClosure→closure case destructure; `id x y argTyp retSpec eff capturedEnv` from the `closure_extern` constructor's implicit unification with `body = Expr.externFn id y argTyp retSpec eff`. All 11 are in scope at the discharge site.
-3. **Operational predicates (5 hypotheses).** Three `terminatesTo` chain links (`e2`, `e1`, body), the output-config equation `cf = { c₁ with … }`, and `ctxᵢ.pc = true`. All five are direct destructure outputs of `terminatesTo_app_inv'` plus the surrounding lemma's `hpc` premise.
+2. **Runtime/static extern-call payload (13 params).** `c₂' v₂ c₁ evalCfg` from `terminatesTo_app_inv'`; `id x y argTyp retSpec eff env` from the runtime closure/body; and `tcls tenv` from the typing-side closure-list evidence. The runtime `env : VarEnv` and static `tenv : CapturedVarEnv` are intentionally distinct.
+3. **Static membership evidence (1 hypothesis).** `FnTClosure.extern id x retSpec eff tenv ∈ tcls`, supplied directly by the `htcl` field of `valueHasETyp.closure_extern`.
+4. **Operational predicates (5 hypotheses).** Three `terminatesTo` chain links (`e2`, `e1`, body), the output-config equation `cf = { c₁ with … }`, and `ctxᵢ.pc = true`. All five are direct destructure outputs of `terminatesTo_app_inv'` plus the surrounding lemma's `hpc` premise.
 
-**Everything the contract needs comes from local hypotheses at the discharge site.** No global premise-widening, no fabricated facts, no need to thread `TrustedRegistry` or any other infrastructure into the lemma signature. The payload-fit question — "does the future contract shape match what the proof site can supply?" — answers cleanly: **yes**.
+**Everything the strengthened contract needs comes from local hypotheses at the discharge site.** No global premise-widening, no fabricated facts, no need to thread `TrustedRegistry` or any other infrastructure into the lemma signature. The payload-fit question — "does the future contract shape match what the proof site can supply?" — answers cleanly for this single-run arrow site: **yes**.
 
 ### Default discharge under empty registry
 
-Bundled as `ExternCallBoundarySingleFnContract.of_emptyExternRegistry` (next to the contract definition). It introduces all 30 contract parameters, then derives False from the chain `cinit (default Config.mk → emptyExternRegistry) → c₂' (terminatesTo_preserves_registry) → c₁ → body's call config → terminatesTo on Expr.externFn under empty registry fails (beval returns runtimeError)`. ~14 lines, mechanical.
+Bundled as `ExternCallBoundarySingleFnContract.of_emptyExternRegistry` (next to the contract definition). It introduces all contract parameters, ignores the static `tcls` / `tenv` / membership payload, then derives False from the chain `cinit (default Config.mk → emptyExternRegistry) → c₂' (terminatesTo_preserves_registry) → c₁ → body's call config → terminatesTo on Expr.externFn under empty registry fails (beval returns runtimeError)`. ~14 lines, mechanical.
 
 The caller (`stepFRSingleRunFinalCleanPcTrue_app_maskedReg` in `StepFRApp.lean`) passes `ExternCallBoundarySingleFnContract.of_emptyExternRegistry` directly into the parametric lemma's `extCallSpec` argument. No top-level theorem signature changed; no `TrustedRegistry` introduced.
 
@@ -107,23 +110,22 @@ Neither redesign required widening the contract or adding global premises.
 
 ### What this tells us about the next step
 
-**The single-run arrow consumption point is validated.** The contract type fits one proof site cleanly, with all 30 parameters supplied from local hypotheses already in scope.
+**The single-run arrow consumption point is validated.** The contract type fits one proof site cleanly, including static closure-list membership; all parameters are supplied from local hypotheses already in scope.
 
 **Several risks remain unvalidated and should be treated as future work, not as mechanical follow-on:**
 
 - **Two-run payload fit.** `stepFR_app`'s arrow case (lines ~3636, ~3641 post-cleanup) involves *two* `terminatesTo_app_inv'` destructures with cross-side closure-list synchronization (`agreeCapturedEnv`-flavored constraints). The single-run spike says nothing about whether a two-run boundary contract's payload aligns with what the cross-side proof needs, particularly for shared closure-list membership and synchronized argument-value evidence.
-- **Static `FnTClosure.extern … ∈ tcls` / captured-env evidence.** The current spike contract takes the operational `terminatesTo` chain but does **not** require static evidence that the dispatched extern actually appears as a `FnTClosure.extern id x retSpec eff capturedEnv` member of the closure-list `tcls` from the typing context. A future registry-keyed contract will likely need this membership fact to discharge the registry lookup correctly (the registry maps `id` → impl, but the proof needs to relate the runtime `id` back to a typing-side `tcls` member). The next slice should validate this explicitly — extend the contract with the membership premise, see whether it can be supplied at the discharge site, and check whether the empty-registry default discharge can still be provided without it.
+- **Registry agreement from static membership.** The single-run site now supplies `FnTClosure.extern id x retSpec eff tenv ∈ tcls`, but no `TrustedRegistryAgreesWithProgram` relation exists yet to turn that static membership into a registry lookup and boundary-spec witness.
 - **`TrustedRegistry` lookup mechanism.** Replacing `ExternCallBoundarySingleFnContract.of_emptyExternRegistry` with a per-id registry lookup that delegates to `ExternBoundarySpec.callSingle` is unvalidated. The lookup needs to thread the extern id from the consumption site to the registry key; any mismatch in how `id` is exposed (through the closure-list, through the closure body, through `runtimeInstantiatesCtx`) will surface here.
 - **Top-level theorem threading.** Adding `TrustedRegistry` and `TrustedRegistryAgreesWithProgram` to `FaultRobustnessSpec` and propagating both to every consumer of the registry-relative theorem changes a public API surface. None of that has been validated.
 
 Generalization order (post-spike, when ready):
-1. Add the static `FnTClosure.extern … ∈ tcls` membership premise to `ExternCallBoundarySingleFnContract` and reverify that the discharge site can supply it (from `htcl` on the `closure_extern` constructor) and that the empty-registry default discharge still works. **Validate this before generalizing further.**
-2. Mirror the (extended) contract for the other two arrow sites (`stepFR_app` arrow case, sides 0 and 1). Surface and address two-run payload-fit issues.
-3. **Skip parrow sites.** Their `Expr.toPExpr?` vacuity stays sound under populated registries, so they don't need contracts.
-4. Build the `TrustedRegistry` layer: replace `ExternCallBoundarySingleFnContract.of_emptyExternRegistry` with a registry-keyed lookup that delegates to a per-id `ExternBoundarySpec`.
-5. Thread `TrustedRegistry` through `FaultRobustnessSpec`. Top-level theorem becomes registry-relative.
+1. Mirror the strengthened contract for the other two arrow sites (`stepFR_app` arrow case, sides 0 and 1). Surface and address two-run payload-fit issues.
+2. **Skip parrow sites.** Their `Expr.toPExpr?` vacuity stays sound under populated registries, so they don't need contracts.
+3. Build the `TrustedRegistry` layer: replace `ExternCallBoundarySingleFnContract.of_emptyExternRegistry` with a registry-keyed lookup that delegates to a per-id `ExternBoundarySpec`.
+4. Thread `TrustedRegistry` through `FaultRobustnessSpec`. Top-level theorem becomes registry-relative.
 
-But none of that is in scope for this spike. The spike's only job was to validate one single-run arrow site's contract-shape fit at the consumption point, and that's done.
+The completed slices validated the single-run arrow site's operational payload and static membership payload. They do not validate the two-run shape or registry plumbing.
 
 ---
 

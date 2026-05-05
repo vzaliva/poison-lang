@@ -2233,7 +2233,8 @@ private theorem stepFRApp_joinValConsFromMember_masked
     Local payload (the parts that must come from the proof site):
     - the chain of operational evidence (`terminatesTo` on `e2`, `e1`, body),
     - the static extern declaration data extracted by the `closure_extern`
-      cases (`id`, `argTyp`, `retSpec`, `eff`, captured env),
+      cases (`id`, `argTyp`, `retSpec`, `eff`, `tenv`, membership in `tcls`),
+    - the runtime closure environment used to evaluate the extern body,
     - the witness that the closure body is `Expr.externFn id y …`,
     - the output-config equation linking `cf` to the body's evaluation. -/
 private def ExternCallBoundarySingleFnContract
@@ -2254,12 +2255,14 @@ private def ExternCallBoundarySingleFnContract
     (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
     (c₂' : Config) (v₂ : Value) (c₁ : Config) (evalCfg : Config)
     (id : ExternId) (x y : Name) (argTyp : Typ) (retSpec : ExternReturn)
-    (eff : List Effect) (capturedEnv : VarEnv),
+    (eff : List Effect) (tcls : List FnTClosure) (tenv : CapturedVarEnv)
+    (env : VarEnv),
+    FnTClosure.extern id x retSpec eff tenv ∈ tcls →
     terminatesTo e2 { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } c₂' v₂ →
     terminatesTo e1 c₂' c₁
-      (Value.closure x (Expr.externFn id y argTyp retSpec eff) capturedEnv) →
+      (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) →
     terminatesTo (Expr.externFn id y argTyp retSpec eff)
-      { c₁ with varEnv := VarEnv.update capturedEnv x v₂, pureMode := false }
+      { c₁ with varEnv := VarEnv.update env x v₂, pureMode := false }
       evalCfg o →
     cf = { c₁ with memory := evalCfg.memory, nextAddr := evalCfg.nextAddr,
                    pureMode := c₁.pureMode } →
@@ -2279,8 +2282,8 @@ private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
     {e1 e2 : Expr} :
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 := by
   intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
-        c₂' v₂ c₁ evalCfg id x y argTyp retSpec eff capturedEnv
-        ht_e2 ht_e1 ht_body _hcf _hpc
+        c₂' v₂ c₁ evalCfg id x y argTyp retSpec eff _tcls _tenv _env
+        _htcl ht_e2 ht_e1 ht_body _hcf _hpc
   exfalso
   -- Trace registry preservation from the default initial config (which has
   -- `registry = emptyExternRegistry` by `Config.mk` default) through `e2` and
@@ -2413,14 +2416,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hv₁_arrow : valueHasETyp θ1 (Value.closure x body env) (ETyp.arrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_arrow with
-    | closure_extern _ _ _ =>
+    | closure_extern htcl _henv _hcover =>
         -- Probe 2 spike: invoke the contract-shaped hypothesis with the local
         -- extern call payload from this proof site.  The contract returns
         -- exactly the single-run post the lemma needs to deliver.
         exact extCallSpec μ ρ θ cf o
           hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg
-          c₂' v₂ c₁ evalCfg _ x _ _ _ _ env
-          ht_e2 ht_e1 ht_body heq_cfg hpc
+          c₂' v₂ c₁ evalCfg _ x _ _ _ _ tcls _ env
+          htcl ht_e2 ht_e1 ht_body heq_cfg hpc
     | closure _ _ _ =>
         obtain ⟨σcap, hσcap_mem, hσcap_typing, hcwr_body_for⟩ :=
           ctxBodyStart
