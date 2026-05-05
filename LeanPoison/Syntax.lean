@@ -467,11 +467,11 @@ structure QTyp where
 -- Separate typing closures for impure and pure functions
 inductive FnTClosure : Type where
   | regular : Name → Expr → List (Name × QTyp) → FnTClosure
-  | extern : Name → ExternReturn → List Effect → List (Name × QTyp) → FnTClosure
+  | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp) → FnTClosure
 
 inductive PFnTClosure : Type where
   | regular : Name → PExpr → List (Name × QTyp) → PFnTClosure
-  | extern : Name → ExternReturn → List (Name × QTyp) → PFnTClosure
+  | extern : ExternId → Name → ExternReturn → List (Name × QTyp) → PFnTClosure
 
 -- Enriched type (full type)
 -- Arrow types now carry non-empty lists of closures (merged typing closures)
@@ -587,15 +587,15 @@ def beqETyp : ETyp → ETyp → Bool
 def beqFnTClosure : FnTClosure → FnTClosure → Bool
   | FnTClosure.regular x1 e1 env1, FnTClosure.regular x2 e2 env2 =>
     x1 == x2 && e1 == e2 && beqVarEnv env1 env2
-  | FnTClosure.extern x1 ret1 eff1 env1, FnTClosure.extern x2 ret2 eff2 env2 =>
-    x1 == x2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2 && beqVarEnv env1 env2
+  | FnTClosure.extern id1 x1 ret1 eff1 env1, FnTClosure.extern id2 x2 ret2 eff2 env2 =>
+    id1 == id2 && x1 == x2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2 && beqVarEnv env1 env2
   | _, _ => false
 
 def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
   | PFnTClosure.regular x1 e1 env1, PFnTClosure.regular x2 e2 env2 =>
     x1 == x2 && e1 == e2 && beqVarEnv env1 env2
-  | PFnTClosure.extern x1 ret1 env1, PFnTClosure.extern x2 ret2 env2 =>
-    x1 == x2 && beqExternReturn ret1 ret2 && beqVarEnv env1 env2
+  | PFnTClosure.extern id1 x1 ret1 env1, PFnTClosure.extern id2 x2 ret2 env2 =>
+    id1 == id2 && x1 == x2 && beqExternReturn ret1 ret2 && beqVarEnv env1 env2
   | _, _ => false
 
 def beqVarEnv : CapturedVarEnv → CapturedVarEnv → Bool

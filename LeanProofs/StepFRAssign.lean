@@ -856,7 +856,7 @@ private lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
     (_hEtyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
     (hClosFull : ∀ tcl ∈ tcls, match tcl with
         | .regular _ _ env => CapturedEnvFullBounded env result1.nextTag'
-        | .extern _ _ _ env => CapturedEnvFullBounded env result1.nextTag')
+        | .extern _ _ _ _ env => CapturedEnvFullBounded env result1.nextTag')
     (hPredM1 : predTagsBoundedInMemEnv result1.memEnv' result1.nextTag')
     (hArgPred : qtypPredTagBounded ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ result1.nextTag')
     (hArgClos : etypClosuresFullBounded (⟨etyp2, joinPoison ctx.pc p2, pred2⟩ : QTyp).etyp result1.nextTag')
@@ -1112,15 +1112,15 @@ private lemma typecheckApp_arrow_branch_guardClosure_pred_implies_tag_absent
                                               regime := result1.regime' }
                                             body result3 htcBody hbodyBounded (by simpa [hq3] using hpred3)
                                         simpa [hfirstEq] using hnone3
-                | extern x retSpec effects capturedEnv =>
+                | extern id x retSpec effects capturedEnv =>
                     have happly_old :
-                        applyFnTClosure (.extern x retSpec effects capturedEnv) st1 st2 p p1
+                        applyFnTClosure (.extern id x retSpec effects capturedEnv) st1 st2 p p1
                           etyp2 p2 pred2 ctx result1 fuel' = .ok first := by
                       unfold applyFnTClosure
                       unfold applyFnTClosureAtCursor at happly
                       simpa using happly
                     exact applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded ctx st1 st2 p p1
-                      etyp2 p2 pred2 result1 fuel' x retSpec effects capturedEnv first
+                      etyp2 p2 pred2 result1 fuel' id x retSpec effects capturedEnv first
                       hbound_result1 happly_old
                       k arg_name pred_body var_env hfirstPredQ
               have hjoinedTagNone : joined.2.2.2.2.1.get? k = none := by
@@ -1191,7 +1191,7 @@ private lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
     (_hEtyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
     (hClosFull : ∀ tcl ∈ tcls, match tcl with
         | .regular _ _ env => CapturedEnvFullBounded env result1.nextTag'
-        | .extern _ _ env => CapturedEnvFullBounded env result1.nextTag')
+        | .extern _ _ _ env => CapturedEnvFullBounded env result1.nextTag')
     (hPredM1 : predTagsBoundedInMemEnv result1.memEnv' result1.nextTag')
     (hArgPred : qtypPredTagBounded ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ result1.nextTag')
     (hArgClos : etypClosuresFullBounded (⟨etyp2, joinPoison ctx.pc p2, pred2⟩ : QTyp).etyp result1.nextTag')
@@ -1450,15 +1450,15 @@ private lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                                               regime := result1.regime' }
                                             (PExpr.toExpr pbody) result3 htcBody hbodyBounded (by simpa [hq3] using hpred3)
                                         simpa [hfirstEq] using hnone3
-                | extern x retSpec capturedEnv =>
+                | extern id x retSpec capturedEnv =>
                     have happly_old :
-                        applyPFnTClosure (.extern x retSpec capturedEnv) st1 st2 p p1
+                        applyPFnTClosure (.extern id x retSpec capturedEnv) st1 st2 p p1
                           etyp2 p2 pred2 ctx result1 fuel' = .ok first := by
                       unfold applyPFnTClosure
                       unfold applyPFnTClosureAtCursor at happly
                       simpa using happly
                     exact applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded ctx st1 st2 p p1
-                      etyp2 p2 pred2 result1 fuel' x retSpec capturedEnv first
+                      etyp2 p2 pred2 result1 fuel' id x retSpec capturedEnv first
                       hbound_result1 happly_old
                       k arg_name pred_body var_env hfirstPredQ
               have hjoinedTagNone : joined.2.2.2.2.1.get? k = none := by
@@ -1695,16 +1695,16 @@ private lemma guardClosure_pred_implies_tag_absent
             htc' hbounded.1 k arg_name pred_body var_env hpred
       | externFn _id arg argTyp retSpec effects =>
           exfalso
-          have htc' : typecheckExternFn ctx arg argTyp retSpec effects = .ok res := by
+          have htc' : typecheckExternFn ctx _id arg argTyp retSpec effects = .ok res := by
             simpa [typecheckExpr] using htc
-          have hres_eq := typecheckExternFn_ok_res_eq ctx arg argTyp retSpec effects res htc'
+          have hres_eq := typecheckExternFn_ok_res_eq ctx _id arg argTyp retSpec effects res htc'
           subst hres_eq
           simp at hpred
       | externPfn _id arg argTyp retSpec =>
           exfalso
-          have htc' : typecheckExternPfn ctx arg argTyp retSpec = .ok res := by
+          have htc' : typecheckExternPfn ctx _id arg argTyp retSpec = .ok res := by
             simpa [typecheckExpr] using htc
-          have hres_eq := typecheckExternPfn_ok_res_eq ctx arg argTyp retSpec res htc'
+          have hres_eq := typecheckExternPfn_ok_res_eq ctx _id arg argTyp retSpec res htc'
           subst hres_eq
           simp at hpred
 

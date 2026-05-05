@@ -750,11 +750,11 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
           · simp [ctxAfter]
           · simp [ctxAfter]
           · exact hIH
-  | extern x retSpec effects capturedEnv =>
+  | extern id x retSpec effects capturedEnv =>
     have htag := applyFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred
-      result1 r fuel x retSpec effects capturedEnv happly
+      result1 r fuel id x retSpec effects capturedEnv happly
     have hreg := applyFnTClosure_extern_regime_eq ctx st1 st2 p p1 argEtyp argPoison argPred
-      result1 r fuel x retSpec effects capturedEnv happly
+      result1 r fuel id x retSpec effects capturedEnv happly
     simp only [regimeConsistentWithCtx, ctxAfter]
     rw [htag, hreg]
     exact hreg1
@@ -798,7 +798,7 @@ private lemma threaded_applyFnTClosure_forall_wfTypeResult
     (tcls : List FnTClosure) (results : List TypeResult)
     (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+      | .extern _ _ _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result1.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
     (hthread :
@@ -1076,7 +1076,7 @@ private lemma applyPFnTClosure_ok_wfTypeResult
   (tcl : PFnTClosure)
   (hcaptLocs : match tcl with
     | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-    | .extern _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+    | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
   (hArgRL : etypRefLocsBounded argEtyp result1.nextLoc')
   (hArgCRL : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
   (r : TypeResult)
@@ -1213,11 +1213,11 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
           · simp [ctxAfter]
           · simp [ctxAfter]
           · exact hIH
-  | extern x retSpec capturedEnv =>
+  | extern id x retSpec capturedEnv =>
     have htag := applyPFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred
-      result1 r fuel x retSpec capturedEnv happly
+      result1 r fuel id x retSpec capturedEnv happly
     have hreg := applyPFnTClosure_extern_regime_eq ctx st1 st2 p p1 argEtyp argPoison argPred
-      result1 r fuel x retSpec capturedEnv happly
+      result1 r fuel id x retSpec capturedEnv happly
     simp only [regimeConsistentWithCtx, ctxAfter]
     rw [htag, hreg]
     exact hreg1
@@ -1231,7 +1231,7 @@ private lemma applyPFnTClosureAtCursor_ok_wfTypeResult
     (tcl : PFnTClosure)
     (hcaptLocs : match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-      | .extern _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result1.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
     (r : TypeResult)
@@ -1298,7 +1298,7 @@ private lemma threaded_applyPFnTClosure_forall_wfTypeResult
     (tcls : List PFnTClosure) (results : List TypeResult)
     (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-      | .extern _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+      | .extern _ _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result1.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
     (hthread :
@@ -2337,6 +2337,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hv₁_arrow : valueHasETyp θ1 (Value.closure x body env) (ETyp.arrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_arrow with
+    | closure_extern _ _ _ =>
+        -- Vacuity discharge: `closure_extern` forces `body = Expr.externFn id y …`,
+        -- but under empty registry `terminatesTo` on `Expr.externFn` cannot succeed
+        -- (the registry lookup returns `none`).
+        exfalso
+        have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+          (terminatesTo_preserves_registry ht_e1).trans hreg2'
+        obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht_body
+        cases fuel_b with
+        | zero => simp [LeanPoison.beval] at hbeval_b
+        | succ fuel_b' =>
+            simp [LeanPoison.beval, hreg_c₁, emptyExternRegistry] at hbeval_b
     | closure _ _ _ =>
         obtain ⟨σcap, hσcap_mem, hσcap_typing, hcwr_body_for⟩ :=
           ctxBodyStart
@@ -2968,6 +2980,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hv₁_parrow : valueHasETyp θ1 (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_parrow with
+    | peClosure_extern _ _ _ =>
+        -- Probe 2 vertical-slice discharge.  The peClosure_extern constructor
+        -- forces `body = Expr.externPfn id y argTyp retSpec` for some implicits,
+        -- but `terminatesTo_app_inv'`'s peClosure case provides
+        -- `_htoPExpr_body : Expr.toPExpr? body ≠ none`.  For extern bodies
+        -- `Expr.toPExpr?` returns `none` (`Expr.toPExpr?` falls through to `_ => none`
+        -- for `externPfn`), so the precondition is contradictory.
+        exact absurd (by simp [Expr.toPExpr?]) _htoPExpr_body
     | peClosure _ _ _ _ =>
         obtain ⟨σcap, pbody, htoPExpr, hσcap_mem, hσcap_typing, hcwr_body_for⟩ :=
           ctxBodyStart
@@ -3611,8 +3631,34 @@ lemma stepFR_app
         have hv₁1_arrow : valueHasETyp θ₁1 (Value.closure x₁ body₁ env₁) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
         -- Invert closure typing for both runs
         cases hv₀1_arrow with
+        | closure_extern _ _ _ =>
+          -- Same empty-registry vacuity argument as the single-run arrow case,
+          -- applied to side 0.  body₀ = Expr.externFn id y …; under empty
+          -- registry beval can't succeed.
+          exfalso
+          have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
+            simpa using terminatesTo_preserves_registry ht₀_e2
+          have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
+            (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
+          obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht₀_body
+          cases fuel_b with
+          | zero => simp [LeanPoison.beval] at hbeval_b
+          | succ fuel_b' =>
+              simp [LeanPoison.beval, hreg_c₁₀, emptyExternRegistry] at hbeval_b
         | closure htcl₀ henv₀_typing hcover₀ =>
         cases hv₁1_arrow with
+        | closure_extern _ _ _ =>
+          -- Same vacuity argument for side 1.
+          exfalso
+          have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
+            simpa using terminatesTo_preserves_registry ht₁_e2
+          have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
+            (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+          obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht₁_body
+          cases fuel_b with
+          | zero => simp [LeanPoison.beval] at hbeval_b
+          | succ fuel_b' =>
+              simp [LeanPoison.beval, hreg_c₁₁, emptyExternRegistry] at hbeval_b
         | closure htcl₁ henv₁_typing hcover₁ =>
         -- Synchronization is used only under a clean-result assumption for `result1`.
         -- Keep it deferred to avoid requiring a global clean fact at this point.
@@ -6282,8 +6328,17 @@ lemma stepFR_app
         have hv₁1_parrow : valueHasETyp θ₁1 (Value.peClosure x₁ body₁ env₁) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
         -- Invert peClosure typing for both runs
         cases hv₀1_parrow with
+        | peClosure_extern _ _ _ =>
+          -- Same `Expr.toPExpr?` vacuity as the single-run parrow case.
+          -- `peClosure_extern` forces `body₀ = Expr.externPfn …` but `htoP₀`
+          -- (from the peClosure inversion of `terminatesTo_app_inv'`) requires
+          -- `Expr.toPExpr? body₀ ≠ none`, which is false for extern bodies.
+          exact absurd (by simp [Expr.toPExpr?]) htoP₀
         | peClosure hpure₀ htcl₀ henv₀_typing hcover₀ =>
         cases hv₁1_parrow with
+        | peClosure_extern _ _ _ =>
+          -- Same vacuity argument for side 1 via `htoP₁`.
+          exact absurd (by simp [Expr.toPExpr?]) htoP₁
         | peClosure hpure₁ htcl₁ henv₁_typing hcover₁ =>
         -- Synchronization is used only under a clean-result assumption for `result1`.
         -- Keep it deferred to avoid requiring a global clean fact at this point.

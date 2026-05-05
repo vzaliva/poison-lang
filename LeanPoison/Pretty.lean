@@ -273,8 +273,10 @@ partial def reprFnTClosure : FnTClosure → Nat → Std.Format
       Std.Format.text " " ++
       Std.Format.paren (reprExpr body 0) ++
       Std.Format.text " " ++ reprVarEnv env 0
-  | FnTClosure.extern x ret eff env, _ =>
-      Std.Format.text "extern " ++
+  | FnTClosure.extern id x ret eff env, _ =>
+      Std.Format.text "extern @" ++
+      Std.Format.text (toString id) ++
+      Std.Format.text " " ++
       Std.Format.text x ++
       Std.Format.text " " ++
       Std.Format.paren (externReturnInline ret) ++
@@ -290,8 +292,10 @@ partial def reprPFnTClosure : PFnTClosure → Nat → Std.Format
       Std.Format.text " " ++
       Std.Format.paren (reprPExpr body 0) ++
       Std.Format.text " " ++ reprVarEnv env 0
-  | PFnTClosure.extern x ret env, _ =>
-      Std.Format.text "extern " ++
+  | PFnTClosure.extern id x ret env, _ =>
+      Std.Format.text "extern @" ++
+      Std.Format.text (toString id) ++
+      Std.Format.text " " ++
       Std.Format.text x ++
       Std.Format.text " " ++
       Std.Format.paren (externReturnInline ret) ++

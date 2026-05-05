@@ -126,13 +126,13 @@ mutual
     (∃ st1 st2 p tcls, qt.etyp = ETyp.arrow st1 st2 p tcls ∧
      (∀ tcl ∈ tcls, match tcl with
      | FnTClosure.regular _ _ env => P (VarTypeEnv.ofCaptured env)
-     | FnTClosure.extern _ _ _ env => P (VarTypeEnv.ofCaptured env))) →
+     | FnTClosure.extern _ _ _ _ env => P (VarTypeEnv.ofCaptured env))) →
     deepQTypProperty P qt
   | parrow (P : VarTypeEnv → Prop) (qt : QTyp) :
     (∃ st1 st2 p tcls, qt.etyp = ETyp.parrow st1 st2 p tcls ∧
      (∀ tcl ∈ tcls, match tcl with
      | PFnTClosure.regular _ _ env => P (VarTypeEnv.ofCaptured env)
-     | PFnTClosure.extern _ _ env => P (VarTypeEnv.ofCaptured env))) →
+     | PFnTClosure.extern _ _ _ env => P (VarTypeEnv.ofCaptured env))) →
     deepQTypProperty P qt
   | other (P : VarTypeEnv → Prop) (qt : QTyp) :
     nonClosureQTyp qt →
@@ -166,15 +166,15 @@ mutual
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | FnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | FnTClosure.extern _ _ _ env₂ =>
+            | FnTClosure.extern _ _ _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
-      | FnTClosure.extern _ _ _ env₁ =>
+      | FnTClosure.extern _ _ _ _ env₁ =>
           ∃ st1' st2' p' tcls₂,
             qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | FnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | FnTClosure.extern _ _ _ env₂ =>
+            | FnTClosure.extern _ _ _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
@@ -187,15 +187,15 @@ mutual
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | PFnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | PFnTClosure.extern _ _ env₂ =>
+            | PFnTClosure.extern _ _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
-      | PFnTClosure.extern _ _ env₁ =>
+      | PFnTClosure.extern _ _ _ env₁ =>
           ∃ st1' st2' p' tcls₂,
             qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | PFnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | PFnTClosure.extern _ _ env₂ =>
+            | PFnTClosure.extern _ _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | other (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
