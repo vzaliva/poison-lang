@@ -5,11 +5,12 @@ through the fault-robustness proof; the broader extern-boundary design below
 is a proposal.
 
 Recent work records the runtime call boundary in `BevalAppSuccess` (`externFn` /
-`externPfn` cases of successful `Expr.app`), and factors the typing-side tag-meaning
+`externPfn` cases of successful `Expr.app`), factors the typing-side tag-meaning
 bundle as `BoundaryTagMeaningPost` in `LeanProofs/StepFR.lean` (reachable from
-`typecheck` via `StepFRApp.boundary_tag_meaning_post_of_typecheck`). A concrete
-`TrustedRegistry` / program-wide registry agreement layer is **deferred** until
-that boundary packaging is exercised end-to-end in the step proofs.
+`typecheck` via `StepFRApp.boundary_tag_meaning_post_of_typecheck`), and adds
+the first shared `TrustedRegistry` / extern-boundary scaffolding. The remaining
+work is to thread that scaffolding through a registry-aware step theorem; this
+is tracked as Probe 2 in `doc/probe2-plan.md`.
 
 This document covers two pieces of the FFI trust story:
 
@@ -766,7 +767,33 @@ This is a prerequisite for even simple call examples such as `abs`, because the
 caller must first evaluate an extern `pfn` declaration to a closure value before
 the call boundary can execute.
 
-### Probe 2: Boundary Constructors
+Implementation note: the current shared `StepFRPost` is a transitional factoring
+of the existing `StepFR` conclusion and still carries the source expression /
+`IsCanonicalExtension` shape. If Probe 2 discovers that real boundary consumers
+must prove `IsCanonicalExtension` for an arbitrary `postExpr`, finish the
+`BoundaryTagMeaningPost` refactor before continuing.
+
+### Probe 2: Registry-Aware Boundary Consumption
+
+Before proving concrete extern drivers, make the step theorem consume trusted
+boundary evidence under a populated runtime registry. This is the sub-task
+tracked in `doc/probe2-plan.md`.
+
+At minimum:
+
+- make `StepFR` and the single-run IH families registry-parametric;
+- replace top-level `externVal` / `externFn` / `externPfn` empty-registry
+  contradictions with `ExternBoundarySpec` declaration evidence;
+- switch application proofs to the full app inversion that exposes successful
+  extern dispatch;
+- bridge static extern closure-list membership to trusted registry lookup;
+- prove the populated-registry theorem for `TrustedRegistry.toRuntimeRegistry`.
+
+This probe is deliberately high-risk-first. It validates that the proof stack
+can actually consume boundary evidence before investing in reusable driver
+constructors.
+
+### Probe 3: Boundary Constructors
 
 Write constructor lemmas before proving concrete drivers directly against the
 full `StepFRPost` conjunction. At minimum:
@@ -781,10 +808,10 @@ These constructors should derive the FR, single-run, and WF projections from a
 small implementation-specific behavior lemma. Concrete drivers should not have
 to assemble the raw `StepFRPost` conjunction by hand.
 
-### Probe 3: End-to-End `abs`
+### Probe 4: End-to-End `abs`
 
-After the structural prerequisites and `pureUnaryCleanInt` constructor exist,
-prove a trusted entry for built-in `abs` (`@12`):
+After the registry-aware theorem path and `pureUnaryCleanInt` constructor
+exist, prove a trusted entry for built-in `abs` (`@12`):
 
 - construct the `TrustedExternEntry` for `@12`;
 - prove its `ExternBoundarySpec`;
@@ -797,7 +824,7 @@ evidence can actually be packaged, looked up, and consumed by the `StepFR`
 extern branch. It does not test nested returned callables, so it is not enough
 to validate the whole design.
 
-### Probe 4: Built-In Curried `max`
+### Probe 5: Built-In Curried `max`
 
 Next prove `ExternBoundarySpec` for the built-in curried `max` externs:
 
@@ -829,18 +856,18 @@ After `@10` / `@11`, the next low-risk sanity checks are:
 - `@22`, an impure extern function that updates the `errno` cell without
   allocating.
 
-### Probe 5: API Stability
+### Probe 6: API Stability
 
 The FR boundary fields are intentionally coupled to `StepFRPost`. That is a
 maintenance cost: if the main FR postcondition changes, every direct boundary
 witness changes too.
 
-The mitigation is the constructor layer from Probe 2. Concrete drivers prove
+The mitigation is the constructor layer from Probe 3. Concrete drivers prove
 compact facts about their implementation and invoke those constructors. If
 `StepFRPost` changes, most edits stay inside the constructors rather than every
 registered extern proof.
 
-### Probe 6: Single-Run Boundary Facts
+### Probe 7: Single-Run Boundary Facts
 
 The single-run fields overlap with the two-run postcondition, but they serve a
 different consumer: the existing `StepFRSingle...` lemmas. They should remain
