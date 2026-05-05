@@ -2224,6 +2224,77 @@ private theorem stepFRApp_joinValConsFromMember_masked
       (rest := rest) (res := res) (μ := μ) (θ := θ) (v := v)
       h_join h_src hval
 
+/-- Spike-stage shape of `ExternCallBoundarySingle.fn` (see `doc/probe2-plan.md`).
+    For a future populated registry this would be the boundary contract that
+    turns extern dispatch evidence into the surrounding `Expr.app` post.  For
+    the current empty-registry FR convention the operational premise is
+    unsatisfiable, so the contract is vacuously dischargeable at the caller.
+
+    Local payload (the parts that must come from the proof site):
+    - the chain of operational evidence (`terminatesTo` on `e2`, `e1`, body),
+    - the static extern declaration data extracted by the `closure_extern`
+      cases (`id`, `argTyp`, `retSpec`, `eff`, captured env),
+    - the witness that the closure body is `Expr.externFn id y …`,
+    - the output-config equation linking `cf` to the body's evaluation. -/
+private def ExternCallBoundarySingleFnContract
+    (masked : Tag → Prop)
+    (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+    (ctxᵢ : TypeContext) (res : TypeResult)
+    (e1 e2 : Expr) : Prop :=
+  ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (cf : Config) (o : Value)
+    (hθwf : wfRealizationMap θ)
+    (hwf : wfTypeContext ctxᵢ)
+    (hric : runtimeInstantiatesCtx ctxᵢ μ ρ θ)
+    (hreg : regimeConsistentWithCtxMasked masked ctxᵢ)
+    (hmasked_none : ∀ k, masked k → ctxᵢ.regime.lookup? k = none)
+    (hctxCons : CtxCons ctxᵢ μ ρ θ)
+    (a : Address) (pm : Bool)
+    (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+    (c₂' : Config) (v₂ : Value) (c₁ : Config) (evalCfg : Config)
+    (id : ExternId) (x y : Name) (argTyp : Typ) (retSpec : ExternReturn)
+    (eff : List Effect) (capturedEnv : VarEnv),
+    terminatesTo e2 { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } c₂' v₂ →
+    terminatesTo e1 c₂' c₁
+      (Value.closure x (Expr.externFn id y argTyp retSpec eff) capturedEnv) →
+    terminatesTo (Expr.externFn id y argTyp retSpec eff)
+      { c₁ with varEnv := VarEnv.update capturedEnv x v₂, pureMode := false }
+      evalCfg o →
+    cf = { c₁ with memory := evalCfg.memory, nextAddr := evalCfg.nextAddr,
+                   pureMode := c₁.pureMode } →
+    ctxᵢ.pc = true →
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
+      masked CtxCons ValCons ctxᵢ res μ ρ θ cf o
+      hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+
+/-- Default discharge of `ExternCallBoundarySingleFnContract` under the empty
+    extern registry convention currently used by the FR proof: extern dispatch
+    cannot succeed, so the operational premise is vacuously false. -/
+private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
+    {masked : Tag → Prop}
+    {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
+    {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
+    {ctxᵢ : TypeContext} {res : TypeResult}
+    {e1 e2 : Expr} :
+    ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 := by
+  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+        c₂' v₂ c₁ evalCfg id x y argTyp retSpec eff capturedEnv
+        ht_e2 ht_e1 ht_body _hcf _hpc
+  exfalso
+  -- Trace registry preservation from the default initial config (which has
+  -- `registry = emptyExternRegistry` by `Config.mk` default) through `e2` and
+  -- `e1` to `c₁`, then conclude that `beval` on `Expr.externFn` must fail.
+  have hreg2' : c₂'.registry = emptyExternRegistry :=
+    terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg2'
+  obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht_body
+  cases fuel_b with
+  | zero => simp [LeanPoison.beval] at hbeval_b
+  | succ fuel_b' =>
+      simp [LeanPoison.beval, hreg_c₁, emptyExternRegistry] at hbeval_b
+
 private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (masked : Tag → Prop)
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -2241,6 +2312,11 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     AppJoinValConsFromMember ValCons)
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
+  -- Probe 2 spike: contract-shaped hypothesis for the `closure_extern` arm.
+  -- See `doc/probe2-plan.md`.  Discharged at the caller via the empty-registry
+  -- vacuity argument bundled in `ExternCallBoundarySingleFnContract.of_emptyExternRegistry`.
+  (extCallSpec :
+    ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
       predSat tm (Nat.succ (Nat.succ fuel')) masked CtxCons ValCons)
@@ -2338,17 +2414,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       simpa [hetyp1] using hv₁_typed
     cases hv₁_arrow with
     | closure_extern _ _ _ =>
-        -- Vacuity discharge: `closure_extern` forces `body = Expr.externFn id y …`,
-        -- but under empty registry `terminatesTo` on `Expr.externFn` cannot succeed
-        -- (the registry lookup returns `none`).
-        exfalso
-        have hreg_c₁ : c₁.registry = emptyExternRegistry :=
-          (terminatesTo_preserves_registry ht_e1).trans hreg2'
-        obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht_body
-        cases fuel_b with
-        | zero => simp [LeanPoison.beval] at hbeval_b
-        | succ fuel_b' =>
-            simp [LeanPoison.beval, hreg_c₁, emptyExternRegistry] at hbeval_b
+        -- Probe 2 spike: invoke the contract-shaped hypothesis with the local
+        -- extern call payload from this proof site.  The contract returns
+        -- exactly the single-run post the lemma needs to deliver.
+        exact extCallSpec μ ρ θ cf o
+          hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg
+          c₂' v₂ c₁ evalCfg _ x _ _ _ _ env
+          ht_e2 ht_e1 ht_body heq_cfg hpc
     | closure _ _ _ =>
         obtain ⟨σcap, hσcap_mem, hσcap_typing, hcwr_body_for⟩ :=
           ctxBodyStart
@@ -3481,6 +3553,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm
           ctxClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
+          ExternCallBoundarySingleFnContract.of_emptyExternRegistry
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest hetyp1 hmap heq_results h_join htc
   | inr h_parrow =>
