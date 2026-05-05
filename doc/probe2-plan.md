@@ -4,7 +4,7 @@
 
 Probe 1 baseline is clean. The six `StepFRApp.lean` `closure_extern` / `peClosure_extern` arms that Probe 1 introduced were already discharged by local-hypothesis vacuity (see "Probe 1 cleanup history" below). `StepFRApp.lean` now has zero `sorry`, the build is green, and `make test` passes 95/95.
 
-**The current Probe 2 goal is no longer "discharge the six sorries"** — that is done. The goal is to **validate the boundary-contract payload shape** so that when registries actually populate (Probes 4–5), the existing arrow vacuity discharges can be cleanly replaced with real contract invocations *without* discovering a payload-fit problem mid-refactor. The first single-run arrow slice validated the operational payload; the follow-up slice validated the static `FnTClosure.extern … ∈ tcls` membership payload; the third slice validated that the two-run side-0 arrow branch can supply the same strengthened payload to an FR-shaped contract.
+**The current Probe 2 goal is no longer "discharge the six sorries"** — that is done. The goal is to **validate the boundary-contract payload shape** so that when registries actually populate (Probes 4–5), the existing arrow vacuity discharges can be cleanly replaced with real contract invocations *without* discovering a payload-fit problem mid-refactor. The first single-run arrow slice validated the operational payload; the follow-up slice validated the static `FnTClosure.extern … ∈ tcls` membership payload; the two-run slices validated that both arrow branches can supply the same strengthened payload to FR-shaped contracts.
 
 The arrow vacuity discharges (lines ~2342, ~3636, ~3641 in current `StepFRApp.lean`) are **specific to the current empty-registry theorem** and must be replaced in a future populated-registry theorem. The parrow vacuity arguments stay sound regardless (they rely on `Expr.toPExpr?` returning `none` for `externPfn`, a property of the language definition), so only the three arrow sites carry future replacement work under populated registries.
 
@@ -12,11 +12,11 @@ The arrow vacuity discharges (lines ~2342, ~3636, ~3641 in current `StepFRApp.le
 
 1. **Keep the current clean baseline.** No new `sorry`, no new `axiom`, no top-level theorem changes.
 2. **Do not introduce `TrustedRegistry`** in this step.
-3. **Add a two-run side-0 contract-shaped hypothesis** for `stepFR_app`'s arrow branch, named `ExternCallBoundaryFRFnSide0Contract`.
+3. **Add two-run contract-shaped hypotheses** for both `stepFR_app` arrow branches, named `ExternCallBoundaryFRFnSide0Contract` and `ExternCallBoundaryFRFnSide1Contract`.
 4. **Return the already-applied `StepFR` post** for the surrounding `Expr.app`. This is factored locally as `StepFRAppliedPost`; the slice does not introduce the global `StepFRPost` planned for later.
 5. **Keep the strengthened extern payload:** `tcls`, `tenv₀`, runtime `env₀`, and `FnTClosure.extern id₀ x₀ retSpec₀ eff₀ tenv₀ ∈ tcls`.
-6. **Use only side-0 operational evidence** (`e2`, `e1`, extern body, output-config equation) plus the ambient two-run inputs already in scope.
-7. **Discharge the contract with the current empty-registry contradiction** and stop after the side-0 branch builds.
+6. **Use only per-side operational evidence** (`e2`, `e1`, extern body, output-config equation) plus the ambient two-run inputs already in scope.
+7. **Discharge each contract with the current empty-registry contradiction** and stop after both branch shapes build.
 
 ## Spike Target
 
@@ -107,14 +107,14 @@ The caller (`stepFRSingleRunFinalCleanPcTrue_app_maskedReg` in `StepFRApp.lean`)
 
 Neither redesign required widening the contract or adding global premises.
 
-### Two-run side-0 spike outcome
+### Two-run side-0/side-1 spike outcome
 
-**Status:** ✅ Complete. `stepFR_app`'s side-0 `closure_extern` arm now invokes `ExternCallBoundaryFRFnSide0Contract`. The contract takes the ambient two-run `StepFR` inputs plus the side-0 extern dispatch payload and returns `StepFRAppliedPost` for the surrounding application. The branch supplies `tcls`, `tenv₀`, runtime `env₀`, `htcl₀`, and the side-0 operational chain directly from local hypotheses. The default discharge `ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry` ignores the static payload and closes by the same `terminatesTo_preserves_registry` contradiction as the old inline proof.
+**Status:** ✅ Complete. `stepFR_app`'s side-0 `closure_extern` arm now invokes `ExternCallBoundaryFRFnSide0Contract`; side 1 now invokes `ExternCallBoundaryFRFnSide1Contract`. Each contract takes the ambient two-run `StepFR` inputs plus that side's extern dispatch payload and returns `StepFRAppliedPost` for the surrounding application. The branches supply `tcls`, per-side `tenv`, runtime `env`, `htcl`, and the per-side operational chain directly from local hypotheses. The default discharges ignore the static payload and close by the same `terminatesTo_preserves_registry` contradiction as the old inline proofs.
 
 Two small engineering notes:
 
 - The contract cannot use `StepFR ctxᵢ (Expr.app e1 e2) res predSat tm` as a function applied to the already-introduced premises; Lean treats that term as `Prop` without unfolding the definition at that application site. The spike uses a private local abbreviation `StepFRAppliedPost` that spells out the already-applied `StepFR` post.
-- The branch uses `change StepFRAppliedPost ...` before `exact extCallSpec₀ ...` so the contract result lines up with the existing existential goal without changing the public theorem statement.
+- Each branch uses `change StepFRAppliedPost ...` before `exact extCallSpec₀ ...` / `exact extCallSpec₁ ...` so the contract result lines up with the existing existential goal without changing the public theorem statement.
 
 ### What this tells us about the next step
 
@@ -122,18 +122,18 @@ Two small engineering notes:
 
 **Several risks remain unvalidated and should be treated as future work, not as mechanical follow-on:**
 
-- **Two-run payload fit.** Side 0 of `stepFR_app`'s arrow case now fits an FR-shaped contract with static membership. Side 1 remains unvalidated. A future non-vacuous registry contract may also need more cross-side evidence than this empty-registry slice exercises.
+- **Two-run payload fit.** Both sides of `stepFR_app`'s arrow case now fit FR-shaped contracts with static membership. A future non-vacuous registry contract may still need more cross-side evidence than this empty-registry slice exercises.
 - **Registry agreement from static membership.** The single-run site now supplies `FnTClosure.extern id x retSpec eff tenv ∈ tcls`, but no `TrustedRegistryAgreesWithProgram` relation exists yet to turn that static membership into a registry lookup and boundary-spec witness.
 - **`TrustedRegistry` lookup mechanism.** Replacing `ExternCallBoundarySingleFnContract.of_emptyExternRegistry` with a per-id registry lookup that delegates to `ExternBoundarySpec.callSingle` is unvalidated. The lookup needs to thread the extern id from the consumption site to the registry key; any mismatch in how `id` is exposed (through the closure-list, through the closure body, through `runtimeInstantiatesCtx`) will surface here.
 - **Top-level theorem threading.** Adding `TrustedRegistry` and `TrustedRegistryAgreesWithProgram` to `FaultRobustnessSpec` and propagating both to every consumer of the registry-relative theorem changes a public API surface. None of that has been validated.
 
 Generalization order (post-spike, when ready):
-1. Mirror the strengthened two-run contract for side 1 of `stepFR_app`'s arrow case. If it fits, consider unifying the side-0 and side-1 contracts or leaving them separate until the registry layer is introduced.
+1. Decide whether to unify `ExternCallBoundaryFRFnSide0Contract` and `ExternCallBoundaryFRFnSide1Contract` now, or leave them separate until the registry layer clarifies the final API.
 2. **Skip parrow sites.** Their `Expr.toPExpr?` vacuity stays sound under populated registries, so they don't need contracts.
 3. Build the `TrustedRegistry` layer: replace `ExternCallBoundarySingleFnContract.of_emptyExternRegistry` with a registry-keyed lookup that delegates to a per-id `ExternBoundarySpec`.
 4. Thread `TrustedRegistry` through `FaultRobustnessSpec`. Top-level theorem becomes registry-relative.
 
-The completed slices validated the single-run arrow site's operational/static payload and the two-run side-0 payload. They do not validate side 1, non-vacuous cross-run boundary evidence, or registry plumbing.
+The completed slices validated the single-run arrow site's operational/static payload and both two-run arrow-side payloads. They do not validate non-vacuous cross-run boundary evidence or registry plumbing.
 
 ---
 
