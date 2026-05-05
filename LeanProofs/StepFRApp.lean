@@ -6,6 +6,7 @@
   and joinTypeResults compatibility lemmas.
 -/
 import LeanProofs.StepFR
+import LeanProofs.ExternBoundary
 import LeanProofs.JoinMemberTransport
 
 open List
@@ -54,7 +55,7 @@ theorem boundary_tag_meaning_post_of_typecheck
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  
+
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -2298,42 +2299,6 @@ private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
   | succ fuel_b' =>
       simp [LeanPoison.beval, hreg_c₁, emptyExternRegistry] at hbeval_b
 
-/-- The already-applied runtime post of `StepFR`, factored locally for the
-    two-run extern-call spike. -/
-private abbrev StepFRAppliedPost
-    (ctx : TypeContext) (e : Expr) (res : TypeResult) (predSat : PredSat) (tm : TagMeaning)
-    (θ₀ θ₁ : RealizationMap)
-    (cf₀ cf₁ : Config) (o₀ o₁ : Value) : Prop :=
-  ∃ (tm' : TagMeaning),
-    IsCanonicalExtension tm ctx e res tm' ∧
-    PredSatLaws predSat tm' ∧
-    QTypRespectsTagMeaning tm' res.qualType ∧
-    ∃ (θ₀' θ₁' : RealizationMap),
-      wfExtendsMap θ₀ θ₀' ∧
-      wfExtendsMap θ₁ θ₁' ∧
-      valueHasETyp θ₀' o₀ res.qualType.etyp ∧
-      valueHasETyp θ₁' o₁ res.qualType.etyp ∧
-      wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
-      wfTypeContext (ctxAfter ctx res) ∧
-      TagBoundedCtx (ctxAfter ctx res) ∧
-      wfConfig cf₀ ∧
-      wfConfig cf₁ ∧
-      runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
-      runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
-      regimeConsistentWithCtx (ctxAfter ctx res) ∧
-      consistentWithRegime predSat (ctxAfter ctx res).regime
-        (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
-      consistentWithRegime predSat (ctxAfter ctx res).regime
-        (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
-      agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
-        cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
-      valueConsistentWithRegime predSat (ctxAfter ctx res).regime
-        res.qualType cf₀.memory θ₀' o₀ ∧
-      valueConsistentWithRegime predSat (ctxAfter ctx res).regime
-        res.qualType cf₁.memory θ₁' o₁ ∧
-      resultAgreesIfClean predSat (ctxAfter ctx res).regime
-        cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
-
 /-- Spike-stage shape of the two-run `ExternCallBoundaryFR.fn` contract for the
     side-0 extern-closure arm in `stepFR_app`.
 
@@ -2382,7 +2347,7 @@ private def ExternCallBoundaryFRFnSide0Contract
     (cf₀ =
       { memory := evalCfg₀.memory, varEnv := c₁₀.varEnv, nextAddr := evalCfg₀.nextAddr,
         pureMode := c₁₀.pureMode, registry := c₁₀.registry }) →
-    StepFRAppliedPost ctxᵢ (Expr.app e1 e2) res predSat tm
+    StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm
       θ₀ θ₁ cf₀ cf₁ o₀ o₁
 
 /-- Empty-registry discharge for the side-0 two-run extern-call contract. -/
@@ -2473,7 +2438,7 @@ private def ExternCallBoundaryFRFnSide1Contract
     (cf₁ =
       { memory := evalCfg₁.memory, varEnv := c₁₁.varEnv, nextAddr := evalCfg₁.nextAddr,
         pureMode := c₁₁.pureMode, registry := c₁₁.registry }) →
-    StepFRAppliedPost ctxᵢ (Expr.app e1 e2) res predSat tm
+    StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm
       θ₀ θ₁ cf₀ cf₁ o₀ o₁
 
 /-- Empty-registry discharge for the side-1 two-run extern-call contract. -/
@@ -2516,6 +2481,26 @@ private theorem ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry
     ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls := by
   intro _id₁ _x₁ _retSpec₁ _eff₁ _tenv₁ _htcl
   exact ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
+
+/-- Local registry-agreement-shaped adapter for the two arrow sides.  This is
+    still intentionally local to the empty-registry proof, but it gives the
+    consuming branch the same shape a future `TrustedRegistryAgreesWithProgram`
+    lookup should provide: both side providers indexed by the static arrow
+    closure list. -/
+private def TrustedRegistryAgreesWithProgramLocal
+    (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+    (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure) : Prop :=
+  ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls ∧
+  ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
+
+/-- Empty-registry local agreement: every static extern member maps to the
+    corresponding vacuous side contract. -/
+private theorem TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
+    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
+    TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls :=
+  ⟨ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry,
+   ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry⟩
 
 private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (masked : Tag → Prop)
@@ -3852,12 +3837,15 @@ lemma stepFR_app
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+    have hLocalRegistryAgreement :
+        TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls :=
+      TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
     have extProvider₀ :
         ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls :=
-      ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry
+      hLocalRegistryAgreement.1
     have extProvider₁ :
         ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls :=
-      ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry
+      hLocalRegistryAgreement.2
     -- Local helper capturing the shared IH_e2 → IH_e1 ritual. Used by the
     -- "impossible" mixed-constructor branches below to derive valueHasETyp of
     -- each run's output value at `result1.qualType.etyp`, which is then
@@ -3937,7 +3925,7 @@ lemma stepFR_app
           -- future FR extern-call contract payload, including static
           -- membership in the arrow closure list.
           have extCallSpec₀ := extProvider₀ htcl₀
-          change StepFRAppliedPost ctxᵢ (Expr.app e1 e2) res predSat tm
+          change StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm
             θ₀ θ₁ cf₀ cf₁ o₀ o₁
           exact
             extCallSpec₀ hpredlaws hExtTyping hwfTm hTmBounded
@@ -3953,7 +3941,7 @@ lemma stepFR_app
           -- shape while keeping the slices separate until both sides are
           -- validated.
           have extCallSpec₁ := extProvider₁ htcl₁
-          change StepFRAppliedPost ctxᵢ (Expr.app e1 e2) res predSat tm
+          change StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm
             θ₀ θ₁ cf₀ cf₁ o₀ o₁
           exact
             extCallSpec₁ hpredlaws hExtTyping hwfTm hTmBounded

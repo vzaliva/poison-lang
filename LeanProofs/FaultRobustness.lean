@@ -681,6 +681,38 @@ private def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec
       wfExtendsMap θ₂ θ₂' ∧
       observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
 
+/-- Registry-relative fault-robustness property.
+
+    This is the same top-level semantic property as `FaultRobustnessSpec`, but
+    the two initial configurations carry an explicit runtime extern registry
+    instead of relying on `Config.mk`'s default empty registry.  The proof side
+    trusted registry projects to this runtime registry in `LeanProofs.ExternBoundary`. -/
+def FaultRobustnessSpecWithRegistry
+    (registry : ExternRegistry)
+    (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+    (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
+  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap)
+    (a₁ a₂ : Address) (pm : Bool),
+    ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
+    wfRegime ctx.regime s →
+    wfRealizationMap θ₁ → wfRealizationMap θ₂ →
+    wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } →
+    wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry } →
+    inputsConformSpec s μ₁ ρ₁ θ₁ → inputsConformSpec s μ₂ ρ₂ θ₂ →
+    runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ → runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
+    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ θ₁ →
+    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ θ₂ →
+    consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →
+    consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
+    agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ →
+    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry } cf₂ o₂ →
+    ∃ (θ₁' θ₂' : RealizationMap),
+      wfExtendsMap θ₁ θ₁' ∧
+      wfExtendsMap θ₂ θ₂' ∧
+      observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
+
 -- Type system enforces Fault-Robustness.
 def TypeSystemEnforcesFaultRobustness_spec
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
@@ -701,3 +733,24 @@ def TypeSystemEnforcesFaultRobustness_spec
           typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
           FaultRobustnessSpec e s obs ctx predSat tm)
+
+def TypeSystemEnforcesFaultRobustness_spec_with_registry
+  (registry : ExternRegistry)
+  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
+  wfInputSpec s →
+  wfObsSpec obs →
+  ∀ (ctx : TypeContext),
+      ctxMatchesInputSpec s ctx →
+      wfTypeContext ctx →
+      ctx.pc = false →
+      ctx.tagEnv = {} →
+      TagBoundedCtx ctx →
+      ∀ (predSat : PredSat) (tm : TagMeaning),
+        wfTagMeaningCtx tm ctx →
+        TagMeaningBounded tm ctx.nextTag →
+        PredSatLaws predSat tm →
+        ExternTypingAssumptions →
+        ((∃ (fuel : Nat) (res : TypeResult),
+          typecheck ctx e fuel = .ok res ∧
+          ObsConstraints obs res) →
+          FaultRobustnessSpecWithRegistry registry e s obs ctx predSat tm)

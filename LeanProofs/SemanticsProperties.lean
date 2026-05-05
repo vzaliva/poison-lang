@@ -482,6 +482,76 @@ inductive BevalAppSuccess (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool)
       (hcfg : config_final = config₂) :
       BevalAppSuccess e1 e2 fuel' verbose config₀ config₁ config₂ config_final v₂ v
 
+/-- `terminatesTo`-level view of the four successful application dispatch
+    paths.  Unlike `terminatesTo_app_inv'`, this is not restricted to the
+    empty-registry convention; successful extern dispatch is exposed as a real
+    branch. -/
+inductive TerminatesToAppSuccess (e1 e2 : Expr) (c₀ cf : Config) (v : Value) : Prop where
+  | userFn {c₂' : Config} {v₂ : Value} {c₁ : Config}
+      {x : Name} {body : Expr} {env : VarEnv} {evalConfig : Config}
+      (ht_e2 : terminatesTo e2 c₀ c₂' v₂)
+      (ht_e1 : terminatesTo e1 c₂' c₁ (Value.closure x body env))
+      (hNotExternAst : ¬ Expr.IsExternFnAst body)
+      (hpureMode : c₁.pureMode = false)
+      (ht_body :
+        terminatesTo body
+          { memory := c₁.memory, varEnv := env.update x v₂, nextAddr := c₁.nextAddr,
+            pureMode := false, registry := c₁.registry } evalConfig v)
+      (hcfg : cf = { memory := evalConfig.memory, varEnv := c₁.varEnv, nextAddr := evalConfig.nextAddr, pureMode := c₁.pureMode, registry := c₁.registry })
+      (hpure_e2 : c₂'.pureMode = c₀.pureMode)
+      (hpure_final : cf.pureMode = c₀.pureMode) :
+      TerminatesToAppSuccess e1 e2 c₀ cf v
+  | externFn {c₂' : Config} {v₂ : Value} {c₁ : Config}
+      {x y : Name} {id : ExternId} {argTyp : Typ} {retSpec : ExternReturn}
+      {eff : List Effect} {env : VarEnv}
+      {impl : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address)}
+      {vRaw : Value} {mem' : Memory} {addr' : Address}
+      (ht_e2 : terminatesTo e2 c₀ c₂' v₂)
+      (ht_e1 :
+        terminatesTo e1 c₂' c₁
+          (Value.closure x (Expr.externFn id y argTyp retSpec eff) env))
+      (hpureMode : c₁.pureMode = false)
+      (hGet : c₁.registry.get? id = some (ExternImpl.fn impl))
+      (hArg : valueMatchesTyp v₂ argTyp = true)
+      (hImpl : impl (VarEnv.update env x v₂) v₂ c₁.memory c₁.nextAddr =
+        Except.ok (vRaw, mem', addr'))
+      (hValRet : validateExternReturn id retSpec vRaw = Except.ok v)
+      (hcfg : cf = { memory := mem', varEnv := c₁.varEnv, nextAddr := addr', pureMode := c₁.pureMode, registry := c₁.registry })
+      (hpure_e2 : c₂'.pureMode = c₀.pureMode)
+      (hpure_final : cf.pureMode = c₀.pureMode) :
+      TerminatesToAppSuccess e1 e2 c₀ cf v
+  | userPfn {c₂' : Config} {v₂ : Value} {c₁ : Config}
+      {x : Name} {body : Expr} {env : VarEnv} {evalConfig : Config}
+      (ht_e2 : terminatesTo e2 c₀ c₂' v₂)
+      (ht_e1 : terminatesTo e1 c₂' c₁ (Value.peClosure x body env))
+      (hNotExternAst : ¬ Expr.IsExternPfnAst body)
+      (htoPExpr : Expr.toPExpr? body ≠ none)
+      (ht_body :
+        terminatesTo body
+          { memory := c₁.memory, varEnv := env.update x v₂, nextAddr := c₁.nextAddr,
+            pureMode := true, registry := c₁.registry } evalConfig v)
+      (hcfg : cf = c₁)
+      (hpure_e2 : c₂'.pureMode = c₀.pureMode)
+      (hpure_final : cf.pureMode = c₀.pureMode) :
+      TerminatesToAppSuccess e1 e2 c₀ cf v
+  | externPfn {c₂' : Config} {v₂ : Value} {c₁ : Config}
+      {x y : Name} {id : ExternId} {argTyp : Typ} {retSpec : ExternReturn}
+      {env : VarEnv}
+      {impl : VarEnv → Value → Memory → Except ExternError Value}
+      {vRaw : Value}
+      (ht_e2 : terminatesTo e2 c₀ c₂' v₂)
+      (ht_e1 :
+        terminatesTo e1 c₂' c₁
+          (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env))
+      (hGet : c₁.registry.get? id = some (ExternImpl.pfn impl))
+      (hArg : valueMatchesTyp v₂ argTyp = true)
+      (hImpl : impl (VarEnv.update env x v₂) v₂ c₁.memory = Except.ok vRaw)
+      (hValRet : validateExternReturn id retSpec vRaw = Except.ok v)
+      (hcfg : cf = c₁)
+      (hpure_e2 : c₂'.pureMode = c₀.pureMode)
+      (hpure_final : cf.pureMode = c₀.pureMode) :
+      TerminatesToAppSuccess e1 e2 c₀ cf v
+
 private lemma bevalFunctionBody_success_same_pureMode
     (fuel : Nat) (verbose : Bool) (currentConfig : Config) (closureEnv : VarEnv)
     (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool)
@@ -1544,6 +1614,89 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
 -- ================================================================
 -- Composite terminatesTo inversions
 -- ================================================================
+
+/-- Full inversion lemma for successful application evaluation.  This exposes
+    extern dispatch branches and therefore remains valid for populated
+    registries. -/
+lemma terminatesTo_app_inv_full (e₁ e₂ : Expr) (c₀ cf : Config) (v : Value) :
+    terminatesTo (Expr.app e₁ e₂) c₀ cf v →
+    TerminatesToAppSuccess e₁ e₂ c₀ cf v := by
+  intro ⟨fuel, verbose, hbeval⟩
+  rcases bevalApp_structure e₁ e₂ fuel verbose c₀ cf v hbeval with
+    ⟨cfg2, cfg1, v2, hcase⟩
+  have hpure_cfg2 : cfg2.pureMode = c₀.pureMode := by
+    have he2 : LeanPoison.beval (fuel - 1) c₀ e₂ verbose = .success cfg2 v2 := by
+      cases hcase <;> assumption
+    exact terminatesTo_preserves_pureMode e₂ c₀ cfg2 v2 ⟨fuel - 1, verbose, he2⟩
+  cases hcase with
+  | @userFn x body env he2 he1 hNot hpureFalse hBody hpfinal =>
+      have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
+        terminatesTo_preserves_pureMode e₁ cfg2 cfg1
+          (Value.closure x body env) ⟨fuel - 1, verbose, he1⟩
+      obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
+        bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body false
+          cf v hBody
+      exact
+        TerminatesToAppSuccess.userFn
+          (ht_e2 := ⟨fuel - 1, verbose, he2⟩)
+          (ht_e1 := ⟨fuel - 1, verbose, he1⟩)
+          (hNotExternAst := hNot)
+          (hpureMode := hpureFalse)
+          (ht_body := hbody_terminates)
+          (hcfg := by simpa using hcfg_final)
+          (hpure_e2 := hpure_cfg2)
+          (hpure_final := by rw [hpfinal, hpure_cfg1, hpure_cfg2])
+  | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr'
+      hImpl hValRet hcfg =>
+      have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
+        terminatesTo_preserves_pureMode e₁ cfg2 cfg1
+          (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
+          ⟨fuel - 1, verbose, he1⟩
+      exact
+        TerminatesToAppSuccess.externFn
+          (ht_e2 := ⟨fuel - 1, verbose, he2⟩)
+          (ht_e1 := ⟨fuel - 1, verbose, he1⟩)
+          (hpureMode := hp)
+          (hGet := hGet)
+          (hArg := hArg)
+          (hImpl := hImpl)
+          (hValRet := hValRet)
+          (hcfg := hcfg)
+          (hpure_e2 := hpure_cfg2)
+          (hpure_final := by rw [hcfg, hpure_cfg1, hpure_cfg2])
+  | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
+      have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
+        terminatesTo_preserves_pureMode e₁ cfg2 cfg1
+          (Value.peClosure x body env) ⟨fuel - 1, verbose, he1⟩
+      obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
+        bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body true
+          cf v hBody
+      exact
+        TerminatesToAppSuccess.userPfn
+          (ht_e2 := ⟨fuel - 1, verbose, he2⟩)
+          (ht_e1 := ⟨fuel - 1, verbose, he1⟩)
+          (hNotExternAst := hNot)
+          (htoPExpr := htp)
+          (ht_body := hbody_terminates)
+          (hcfg := by simpa using hcfg_final)
+          (hpure_e2 := hpure_cfg2)
+          (hpure_final := by rw [hpfinal, hpure_cfg1, hpure_cfg2])
+  | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
+      have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
+        terminatesTo_preserves_pureMode e₁ cfg2 cfg1
+          (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env)
+          ⟨fuel - 1, verbose, he1⟩
+      exact
+        TerminatesToAppSuccess.externPfn
+          (ht_e2 := ⟨fuel - 1, verbose, he2⟩)
+          (ht_e1 := ⟨fuel - 1, verbose, he1⟩)
+          (hGet := hGet)
+          (hArg := hArg)
+          (hImpl := hImpl)
+          (hValRet := hValRet)
+          (hcfg := hcfg)
+          (hpure_e2 := hpure_cfg2)
+          (hpure_final := by rw [hcfg, hpure_cfg1, hpure_cfg2])
 
 /-- Inversion lemma for terminatesTo on app (function application).
     The body terminates to some intermediate evalConfig (not c₂), because bevalFunctionBody

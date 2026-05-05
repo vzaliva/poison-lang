@@ -2148,3 +2148,23 @@ theorem TypeSystemEnforcesFaultRobustness
   apply TypeSystemEnforcesFaultRobustness_impl
   · intro e' ctxᵢ predSat tm
     simpa using TypeSystemEnforcesFaultRobustness_step e' ctxᵢ predSat tm
+
+/-- Registry-relative compatibility theorem for the current empty-registry
+    proof.  The genuinely populated-registry theorem will instantiate the same
+    spec with `TrustedRegistry.toRuntimeRegistry tr` once app/extern boundary
+    witnesses are threaded through `StepFR`. -/
+theorem TypeSystemEnforcesFaultRobustness_emptyRegistry
+  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+  TypeSystemEnforcesFaultRobustness_spec_with_registry emptyExternRegistry e s obs := by
+  intro his hos ctx hctx hwf hpc hte htagBoundedInit predSat tm hwfTm hTmBounded
+    hps hExtTyping htcObs
+  have hbase :=
+    TypeSystemEnforcesFaultRobustness e s obs his hos ctx hctx hwf hpc hte htagBoundedInit
+      predSat tm hwfTm hTmBounded hps hExtTyping htcObs
+  intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm cf₁ cf₂ o₁ o₂ hWfRegime hθ₁ hθ₂
+    hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂
+    hagree htrusted ht₁ ht₂
+  exact
+    hbase μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm cf₁ cf₂ o₁ o₂ hWfRegime hθ₁ hθ₂
+      hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂
+      hagree htrusted ht₁ ht₂

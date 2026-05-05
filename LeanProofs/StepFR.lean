@@ -44,6 +44,45 @@ lemma resultAgreesIfClean_of_poison_noPred
   | clean hpoison => simp [hp] at hpoison
   | guard k htag _ _ => simp [qtypGuardTag, hpred] at htag
 
+/-- The already-applied runtime post of `StepFR`.
+
+    This factors the conclusion of the two-run step theorem so extern boundary
+    contracts can return the same post without unfolding all of `StepFR` at
+    their consumption sites. -/
+def StepFRPost
+    (ctx : TypeContext) (e : Expr) (res : TypeResult) (predSat : PredSat) (tm : TagMeaning)
+    (θ₀ θ₁ : RealizationMap)
+    (cf₀ cf₁ : Config) (o₀ o₁ : Value) : Prop :=
+  ∃ (tm' : TagMeaning),
+    IsCanonicalExtension tm ctx e res tm' ∧
+    PredSatLaws predSat tm' ∧
+    QTypRespectsTagMeaning tm' res.qualType ∧
+    ∃ (θ₀' θ₁' : RealizationMap),
+      wfExtendsMap θ₀ θ₀' ∧
+      wfExtendsMap θ₁ θ₁' ∧
+      valueHasETyp θ₀' o₀ res.qualType.etyp ∧
+      valueHasETyp θ₁' o₁ res.qualType.etyp ∧
+      wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
+      wfTypeContext (ctxAfter ctx res) ∧
+      TagBoundedCtx (ctxAfter ctx res) ∧
+      wfConfig cf₀ ∧
+      wfConfig cf₁ ∧
+      runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
+      runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
+      regimeConsistentWithCtx (ctxAfter ctx res) ∧
+      consistentWithRegime predSat (ctxAfter ctx res).regime
+        (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
+      consistentWithRegime predSat (ctxAfter ctx res).regime
+        (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
+      agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+        cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
+      valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+        res.qualType cf₀.memory θ₀' o₀ ∧
+      valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+        res.qualType cf₁.memory θ₁' o₁ ∧
+      resultAgreesIfClean predSat (ctxAfter ctx res).regime
+        cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
+
 
 -- Bridge lemma: connect spec-indexed consistency to context-indexed consistency
 lemma consistentRegimeSpec_implies_consistentWithRegime
@@ -249,28 +288,7 @@ def StepFR
         wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →  -- initial config₁ well-formed
         terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
         terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
-        ∃ (tm' : TagMeaning),
-        IsCanonicalExtension tm ctx e res tm' ∧
-        PredSatLaws predSat tm' ∧
-        QTypRespectsTagMeaning tm' res.qualType ∧
-        ∃ (θ₀' θ₁' : RealizationMap),
-          wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
-          valueHasETyp θ₀' o₀ res.qualType.etyp ∧
-          valueHasETyp θ₁' o₁ res.qualType.etyp ∧
-          wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
-          wfTypeContext (ctxAfter ctx res) ∧
-          TagBoundedCtx (ctxAfter ctx res) ∧
-          wfConfig cf₀ ∧  -- final config₀ well-formed
-          wfConfig cf₁ ∧  -- final config₁ well-formed
-          runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧  -- preservation
-          runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧  -- preservation
-          regimeConsistentWithCtx (ctxAfter ctx res) ∧  -- regime consistency preserved (output regime)
-          consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
-          consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
-          agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
-          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf₀.memory θ₀' o₀ ∧
-          valueConsistentWithRegime predSat (ctxAfter ctx res).regime res.qualType cf₁.memory θ₁' o₁ ∧
-          resultAgreesIfClean predSat (ctxAfter ctx res).regime cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
+        StepFRPost ctx e res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
 
 -- Step theorem spec derived from typing (context-driven).
 -- No input/output specs here; they are handled by the top-level FR statement
