@@ -2298,6 +2298,115 @@ private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
   | succ fuel_b' =>
       simp [LeanPoison.beval, hreg_c₁, emptyExternRegistry] at hbeval_b
 
+/-- The already-applied runtime post of `StepFR`, factored locally for the
+    two-run extern-call spike. -/
+private abbrev StepFRAppliedPost
+    (ctx : TypeContext) (e : Expr) (res : TypeResult) (predSat : PredSat) (tm : TagMeaning)
+    (θ₀ θ₁ : RealizationMap)
+    (cf₀ cf₁ : Config) (o₀ o₁ : Value) : Prop :=
+  ∃ (tm' : TagMeaning),
+    IsCanonicalExtension tm ctx e res tm' ∧
+    PredSatLaws predSat tm' ∧
+    QTypRespectsTagMeaning tm' res.qualType ∧
+    ∃ (θ₀' θ₁' : RealizationMap),
+      wfExtendsMap θ₀ θ₀' ∧
+      wfExtendsMap θ₁ θ₁' ∧
+      valueHasETyp θ₀' o₀ res.qualType.etyp ∧
+      valueHasETyp θ₁' o₁ res.qualType.etyp ∧
+      wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
+      wfTypeContext (ctxAfter ctx res) ∧
+      TagBoundedCtx (ctxAfter ctx res) ∧
+      wfConfig cf₀ ∧
+      wfConfig cf₁ ∧
+      runtimeInstantiatesCtx (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
+      runtimeInstantiatesCtx (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
+      regimeConsistentWithCtx (ctxAfter ctx res) ∧
+      consistentWithRegime predSat (ctxAfter ctx res).regime
+        (ctxAfter ctx res) cf₀.memory cf₀.varEnv θ₀' ∧
+      consistentWithRegime predSat (ctxAfter ctx res).regime
+        (ctxAfter ctx res) cf₁.memory cf₁.varEnv θ₁' ∧
+      agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+        cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' ∧
+      valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+        res.qualType cf₀.memory θ₀' o₀ ∧
+      valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+        res.qualType cf₁.memory θ₁' o₁ ∧
+      resultAgreesIfClean predSat (ctxAfter ctx res).regime
+        cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
+
+/-- Spike-stage shape of the two-run `ExternCallBoundaryFR.fn` contract for the
+    side-0 extern-closure arm in `stepFR_app`.
+
+    This deliberately validates only one consumption point.  The contract takes
+    the ambient two-run `StepFR` inputs plus the side-0 extern dispatch payload
+    and returns exactly the already-applied `StepFR` post for the surrounding
+    application. -/
+private def ExternCallBoundaryFRFnSide0Contract
+    (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+    (e1 e2 : Expr) (res : TypeResult) : Prop :=
+  ∀ (_hpredlaws : PredSatLaws predSat tm)
+    (_hExtTyping : ExternTypingAssumptions)
+    (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
+    (_hTmBounded : TagMeaningBounded tm ctxᵢ.nextTag)
+    (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
+    (cf₀ cf₁ : Config) (o₀ o₁ : Value)
+    (_hθ₀ : wfRealizationMap θ₀)
+    (_hθ₁ : wfRealizationMap θ₁)
+    (_hwf : wfTypeContext ctxᵢ)
+    (_htagBounded : TagBoundedCtx ctxᵢ)
+    (_hric₀ : runtimeInstantiatesCtx ctxᵢ μ₀ ρ₀ θ₀)
+    (_hric₁ : runtimeInstantiatesCtx ctxᵢ μ₁ ρ₁ θ₁)
+    (_htagR : regimeConsistentWithCtx ctxᵢ)
+    (_hcwr₀ : consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ₀ ρ₀ θ₀)
+    (_hcwr₁ : consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ₁ ρ₁ θ₁)
+    (_hagree : agreeOnClean predSat ctxᵢ.regime ctxᵢ μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁)
+    (a₀ a₁ : Address) (pm : Bool)
+    (_hwfcfg₀ : wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm })
+    (_hwfcfg₁ : wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm })
+    (_ht₀ : terminatesTo (Expr.app e1 e2)
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀)
+    (_ht₁ : terminatesTo (Expr.app e1 e2)
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁)
+    (c₂'₀ : Config) (v₂₀ : Value) (c₁₀ : Config) (evalCfg₀ : Config)
+    (id₀ : ExternId) (x₀ y₀ : Name) (argTyp₀ : Typ) (retSpec₀ : ExternReturn)
+    (eff₀ : List Effect) (tcls : List FnTClosure) (tenv₀ : CapturedVarEnv)
+    (env₀ : VarEnv),
+    FnTClosure.extern id₀ x₀ retSpec₀ eff₀ tenv₀ ∈ tcls →
+    terminatesTo e2
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } c₂'₀ v₂₀ →
+    terminatesTo e1 c₂'₀ c₁₀
+      (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) env₀) →
+    terminatesTo (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀)
+      { c₁₀ with varEnv := VarEnv.update env₀ x₀ v₂₀, pureMode := false }
+      evalCfg₀ o₀ →
+    (cf₀ =
+      { memory := evalCfg₀.memory, varEnv := c₁₀.varEnv, nextAddr := evalCfg₀.nextAddr,
+        pureMode := c₁₀.pureMode, registry := c₁₀.registry }) →
+    StepFRAppliedPost ctxᵢ (Expr.app e1 e2) res predSat tm
+      θ₀ θ₁ cf₀ cf₁ o₀ o₁
+
+/-- Empty-registry discharge for the side-0 two-run extern-call contract. -/
+private theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
+    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
+    {e1 e2 : Expr} {res : TypeResult} :
+    ExternCallBoundaryFRFnSide0Contract ctxᵢ predSat tm e1 e2 res := by
+  intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
+        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
+        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
+        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
+        _ht₀ _ht₁ c₂'₀ v₂₀ c₁₀ evalCfg₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
+        _tcls _tenv₀ _env₀ _htcl₀ ht₀_e2 ht₀_e1 ht₀_body _heq_cfg₀
+  exfalso
+  have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht₀_e2
+  have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
+    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
+  obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht₀_body
+  cases fuel_b with
+  | zero => simp [LeanPoison.beval] at hbeval_b
+  | succ fuel_b' =>
+      simp [LeanPoison.beval, hreg_c₁₀, emptyExternRegistry] at hbeval_b
+
 private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (masked : Tag → Prop)
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -3633,6 +3742,9 @@ lemma stepFR_app
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+    have extCallSpec₀ :
+        ExternCallBoundaryFRFnSide0Contract ctxᵢ predSat tm e1 e2 res :=
+      ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
     -- Local helper capturing the shared IH_e2 → IH_e1 ritual. Used by the
     -- "impossible" mixed-constructor branches below to derive valueHasETyp of
     -- each run's output value at `result1.qualType.etyp`, which is then
@@ -3707,20 +3819,19 @@ lemma stepFR_app
         have hv₁1_arrow : valueHasETyp θ₁1 (Value.closure x₁ body₁ env₁) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
         -- Invert closure typing for both runs
         cases hv₀1_arrow with
-        | closure_extern _ _ _ =>
-          -- Same empty-registry vacuity argument as the single-run arrow case,
-          -- applied to side 0.  body₀ = Expr.externFn id y …; under empty
-          -- registry beval can't succeed.
-          exfalso
-          have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
-            simpa using terminatesTo_preserves_registry ht₀_e2
-          have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
-            (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-          obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht₀_body
-          cases fuel_b with
-          | zero => simp [LeanPoison.beval] at hbeval_b
-          | succ fuel_b' =>
-              simp [LeanPoison.beval, hreg_c₁₀, emptyExternRegistry] at hbeval_b
+        | closure_extern htcl₀ _henv₀ _hcover₀ =>
+          -- Probe 2 two-run slice: validate that side 0 can supply the
+          -- future FR extern-call contract payload, including static
+          -- membership in the arrow closure list.
+          change StepFRAppliedPost ctxᵢ (Expr.app e1 e2) res predSat tm
+            θ₀ θ₁ cf₀ cf₁ o₀ o₁
+          exact
+            extCallSpec₀ hpredlaws hExtTyping hwfTm hTmBounded
+              μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
+              hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
+              a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+              c₂'₀ v₂₀ c₁₀ evalCfg₀ _ x₀ _ _ _ _ tcls _ env₀
+              htcl₀ ht₀_e2 ht₀_e1 ht₀_body heq_cfg₀
         | closure htcl₀ henv₀_typing hcover₀ =>
         cases hv₁1_arrow with
         | closure_extern _ _ _ =>
