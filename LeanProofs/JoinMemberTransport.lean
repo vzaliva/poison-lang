@@ -18,89 +18,14 @@ lemma agreeValueUnder_clean_monotoneRegime
         agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
           agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
   intro h_mono hclean hagree
-  have hrec :
-      (qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁) :=
-    agreeValueUnder.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
-      (motive_1 := fun qt v₀ v₁ _ =>
-        qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁)
-      (motive_2 := fun σcap ρcap₀ ρcap₁ _ =>
-        agreeCapturedEnv predSat R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
-      (clean_eq_nonref_nonarrow := by
-        intro qt v₀ v₁ hpoison hnotfun hnotref heq _hclean
-        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
-      (clean_internal_arrow := by
-        intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap _hclean
-        exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch ihcap
-          (memberVarsRegimeEvidence_monotone h_mono hmemberVars₀)
-          (memberCvcrEvidence_monotone h_mono hmemberCvcr₀)
-          (memberVarsRegimeEvidence_monotone h_mono hmemberVars₁)
-          (memberCvcrEvidence_monotone h_mono hmemberCvcr₁)
-          hv₀ hv₁)
-      (dirty_internal_arrow := by
-        intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 _hclean
-        exact agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2)
-      (clean_internal_parrow := by
-        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap _hclean
-        exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch ihcap
-          (memberVarsRegimeEvidence_monotone h_mono hmemberVars₀)
-          (memberCvcrEvidence_monotone h_mono hmemberCvcr₀)
-          (memberVarsRegimeEvidence_monotone h_mono hmemberVars₁)
-          (memberCvcrEvidence_monotone h_mono hmemberCvcr₁)
-          hv₀ hv₁)
-      (dirty_internal_parrow := by
-        intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 _hclean
-        exact agreeValueUnder.dirty_internal_parrow hdirty_internal hisParrow htyp1 htyp2)
-      (clean_ref := by
-        intro ls l a₀ a₁ qt v₀ v₁ hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁ _hclean
-        exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁)
-      (withPred_true_eq := by
-        intro k qt v₀ v₁ htag _hreg hnotfun hnotref heq hclean
-        cases hclean with
-        | clean hpoison =>
-            exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq
-        | guard k' htag' hk'R' _hnotfun' =>
-            have hk : k' = k := by
-              have : some k' = some k := by
-                calc
-                  some k' = qtypGuardTag qt := by symm; exact htag'
-                  _ = some k := htag
-              exact Option.some.inj this
-            have hreg : R'.lookup? k = some true := by
-              simpa [hk] using hk'R'
-            exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref heq)
-      (withPred_true_ref := by
-        intro k ls l a₀ a₁ qt v₀ v₁ htag _hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁ hclean
-        cases hclean with
-        | clean hpoison =>
-            exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁
-        | guard k' htag' hk'R' _hnotfun' =>
-            have hk : k' = k := by
-              have : some k' = some k := by
-                calc
-                  some k' = qtypGuardTag qt := by symm; exact htag'
-                  _ = some k := htag
-              exact Option.some.inj this
-            have hreg : R'.lookup? k = some true := by
-              simpa [hk] using hk'R'
-            exact agreeValueUnder.withPred_true_ref k htag hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁)
-      (nil := by
-        intro ρcap₀ ρcap₁
-        exact agreeCapturedEnv.nil)
-      (cons_clean := by
-        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 htyp1 htyp2 hagree htail ihagree ihtail
-        by_cases hcleanR' : qtypCleanUnder R' qt
-        · exact agreeCapturedEnv.cons_clean hcleanR' hlookup1 hlookup2 htyp1 htyp2 (ihagree hcleanR') ihtail
-        · exact agreeCapturedEnv.cons_dirty hcleanR' hlookup1 hlookup2 htyp1 htyp2 ihtail)
-      (cons_dirty := by
-        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ hdirty hlookup1 hlookup2 htyp1 htyp2 htail ihtail
-        have hdirty' : ¬ qtypCleanUnder R' qt := by
-          intro hcleanR'
-          exact hdirty (cleanUnder_of_monotone (R := R) (R' := R') h_mono hcleanR')
-        exact agreeCapturedEnv.cons_dirty hdirty' hlookup1 hlookup2 htyp1 htyp2 ihtail)
-      hagree
-  exact hrec hclean
+  exact
+    agreeValueUnder_clean_transport_by_cleanBack
+      (fun qt hclean' => cleanUnder_of_monotone (R := R) (R' := R') h_mono hclean')
+      (fun h => memberVarsRegimeEvidence_monotone h_mono h)
+      (fun h => memberCvcrEvidence_monotone h_mono h)
+      (fun h => memberVarsRegimeEvidence_monotone h_mono h)
+      (fun h => memberCvcrEvidence_monotone h_mono h)
+      hclean hagree
 
 private lemma qtypCleanUnder_lookup_true_back
     {R R' : Regime}
@@ -188,75 +113,85 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
     agreeCapturedEnv.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
       (motive_1 := motive₁) (motive_2 := motive₂)
       (clean_eq_nonref_nonarrow := by
-        intro qt v₀ v₁ hpoison hnotfun hnotref heq _hclean
-        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
+        intro qt v₀ v₁ hpoison hnotfun hnotref heq hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq))
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap _hclean
-        exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch ihcap
-          (hmemberVars₀_transport hmemberVars₀)
-          (hmemberCvcr₀_transport hmemberCvcr₀)
-          (hmemberVars₁_transport hmemberVars₁)
-          (hmemberCvcr₁_transport hmemberCvcr₁)
-          hv₀ hv₁)
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ _ihcap hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch hcap
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁))
+      (clean_internal_arrow_extern := by
+        intro id x y argTyp retSpec effects p tcls qt tcl σcap ρcap₀ ρcap₁ v₀ v₁
+          hclean_internal hetyp htcl hmatch hcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ _ihcap hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.clean_internal_arrow_extern hclean_internal hetyp htcl hmatch hcap
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁))
       (dirty_internal_arrow := by
-        intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 _hclean
-        exact agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2)
+        intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2))
       (clean_internal_parrow := by
         intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap _hclean
-        exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch ihcap
-          (hmemberVars₀_transport hmemberVars₀)
-          (hmemberCvcr₀_transport hmemberCvcr₀)
-          (hmemberVars₁_transport hmemberVars₁)
-          (hmemberCvcr₁_transport hmemberCvcr₁)
-          hv₀ hv₁)
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ _ihcap hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch hcap
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁))
+      (clean_internal_parrow_extern := by
+        intro id x y argTyp retSpec p tcls qt tcl σcap ρcap₀ ρcap₁ v₀ v₁
+          hclean_internal hetyp htcl hmatch hcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ _ihcap hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.clean_internal_parrow_extern hclean_internal hetyp htcl hmatch hcap
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁))
       (dirty_internal_parrow := by
-        intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 _hclean
-        exact agreeValueUnder.dirty_internal_parrow hdirty_internal hisParrow htyp1 htyp2)
+        intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.dirty_internal_parrow hdirty_internal hisParrow htyp1 htyp2))
       (clean_ref := by
-        intro ls l a₀ a₁ qt v₀ v₁ hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁ _hclean
-        exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁)
+        intro ls l a₀ a₁ qt v₀ v₁ hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁ hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁))
       (withPred_true_eq := by
-        intro k qt v₀ v₁ htag _hreg hnotfun hnotref heq hclean
-        cases hclean with
-        | clean hpoison =>
-            exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq
-        | guard k' htag' hk'R' _hnotfun' =>
-            have hk : k' = k := by
-              have : some k' = some k := by
-                calc
-                  some k' = qtypGuardTag qt := by symm; exact htag'
-                  _ = some k := htag
-              exact Option.some.inj this
-            have hreg : R'.lookup? k = some true := by
-              simpa [hk] using hk'R'
-            exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref heq)
+        intro k qt v₀ v₁ htag hreg hnotfun hnotref heq hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref heq))
       (withPred_true_ref := by
-        intro k ls l a₀ a₁ qt v₀ v₁ htag _hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁ hclean
-        cases hclean with
-        | clean hpoison =>
-            exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁
-        | guard k' htag' hk'R' _hnotfun' =>
-            have hk : k' = k := by
-              have : some k' = some k := by
-                calc
-                  some k' = qtypGuardTag qt := by symm; exact htag'
-                  _ = some k := htag
-              exact Option.some.inj this
-            have hreg : R'.lookup? k = some true := by
-              simpa [hk] using hk'R'
-            exact agreeValueUnder.withPred_true_ref k htag hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁)
+        intro k ls l a₀ a₁ qt v₀ v₁ htag hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁ hclean
+        exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
+          hmemberVars₀_transport hmemberCvcr₀_transport
+          hmemberVars₁_transport hmemberCvcr₁_transport hclean
+          (agreeValueUnder.withPred_true_ref k htag hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁))
       (nil := by
         intro ρcap₀ ρcap₁
         exact agreeCapturedEnv.nil)
       (cons_clean := by
-        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 htyp1 htyp2 hagree htail ihagree ihtail
+        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 htyp1 htyp2 hagree _htail ihagree ihtail
         by_cases hcleanR' : qtypCleanUnder R' qt
         · exact agreeCapturedEnv.cons_clean hcleanR' hlookup1 hlookup2 htyp1 htyp2 (ihagree hcleanR') ihtail
         · exact agreeCapturedEnv.cons_dirty hcleanR' hlookup1 hlookup2 htyp1 htyp2 ihtail)
       (cons_dirty := by
-        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ hdirty hlookup1 hlookup2 htyp1 htyp2 htail ihtail
+        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ hdirty hlookup1 hlookup2 htyp1 htyp2 _htail ihtail
         have hdirty' : ¬ qtypCleanUnder R' qt := by
           intro hcleanR'
           exact hdirty (h_clean_back qt hcleanR')
@@ -2312,7 +2247,160 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               _ = true := hisFun_src
           rw [hisFun_res] at hnotfun_res
           cases hnotfun_res
-  | @clean_internal_parrow st1 st2 p tcls _qt tcl x body pbody σcap ρcap₀ ρcap₁ _v₀ _v₁
+    | @clean_internal_arrow_extern id x y argTyp retSpec effects p tcls _qt tcl σcap ρcap₀ ρcap₁ _v₀ _v₁
+        hclean_internal_src hetyp_src htcl hmatch hcap
+        hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src hv₁ hv₂ =>
+        cases hclean_res with
+        | clean _hpoison_res =>
+            have hlookup_back :
+                ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
+                  (ctxAfter ctx src).regime.lookup? k = some b := by
+              intro k b hk
+              exact
+                joinTypeResults_lookup_member_regime_compat
+                  (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+                  _h_join _hmem_src k b hk
+            have hlookup_true_back :
+                ∀ k, (ctxAfter ctx res).regime.lookup? k = some true →
+                  (ctxAfter ctx src).regime.lookup? k = some true := by
+              intro k hk
+              exact hlookup_back k true hk
+            have hcap_res :=
+              agreeCapturedEnv_transport_by_lookupTrueBack
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ₀ := μ₀) (μ₁ := μ₁) (θ₀ := θ₀) (θ₁ := θ₁)
+                hlookup_true_back
+                (fun {σcap} {ρcap} h =>
+                  memberVarsRegimeEvidence_transport_lookup_back
+                    (predSat := predSat)
+                    (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                    (μ := μ₀) hlookup_back h)
+                (fun {σcap} {ρcap} h =>
+                  memberCvcrEvidence_transport_lookup_back
+                    (predSat := predSat)
+                    (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                    (μ := μ₀) hlookup_back h)
+                (fun {σcap} {ρcap} h =>
+                  memberVarsRegimeEvidence_transport_lookup_back
+                    (predSat := predSat)
+                    (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                    (μ := μ₁) hlookup_back h)
+                (fun {σcap} {ρcap} h =>
+                  memberCvcrEvidence_transport_lookup_back
+                    (predSat := predSat)
+                    (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                    (μ := μ₁) hlookup_back h)
+                hcap
+            have hmemberVars₀_res :=
+              memberVarsRegimeEvidence_transport_lookup_back
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ := μ₀) hlookup_back hmemberVars₀_src
+            have hmemberCvcr₀_res :=
+              memberCvcrEvidence_transport_lookup_back
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ := μ₀) hlookup_back hmemberCvcr₀_src
+            have hmemberVars₁_res :=
+              memberVarsRegimeEvidence_transport_lookup_back
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ := μ₁) hlookup_back hmemberVars₁_src
+            have hmemberCvcr₁_res :=
+              memberCvcrEvidence_transport_lookup_back
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ := μ₁) hlookup_back hmemberCvcr₁_src
+            rcases
+                joinTypeResults_qualType_arrow_member_from_member
+                  (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+                  _h_join _hmem_src hetyp_src htcl
+              with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
+            by_cases hclean_internal_res : internalPoisonClean res.qualType
+            · exact agreeValueUnder.clean_internal_arrow_extern hclean_internal_res hetyp_res htcl_res hmatch hcap_res
+                hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res hv₁ hv₂
+            · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
+                have htyped_closure :
+                    valueHasETyp θ₀
+                      (Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap₀)
+                      (ETyp.arrow argTyp (parseReturnType retSpec) p tcls) := by
+                  have htcl_match : FnTClosure.extern id x retSpec effects σcap ∈ tcls := by
+                    simpa [hmatch] using htcl
+                  refine valueHasETyp.closure_extern (htcl := htcl_match) (henv := ?_) (hcover := ?_)
+                  · intro y' qt_y v_y hlookup_σ hlookup_ρ
+                    rcases agreeCapturedEnv_ofCaptured_lookup_typed_left
+                        (hcap := hcap) y' qt_y (ofCaptured_lookup_of_list_lookup σcap y' qt_y hlookup_σ) with
+                      ⟨v', hlookup_ρ', htyp'⟩
+                    have hv_eq : v' = v_y := by
+                      have : some v' = some v_y := by
+                        calc
+                          some v' = ρcap₀.lookup y' := by simpa using hlookup_ρ'.symm
+                          _ = some v_y := by simpa using hlookup_ρ
+                      exact Option.some.inj this
+                    subst hv_eq
+                    exact htyp'
+                  · intro y' qt_y hlookup_σ
+                    rcases agreeCapturedEnv_ofCaptured_lookup_typed_left
+                        (hcap := hcap) y' qt_y (ofCaptured_lookup_of_list_lookup σcap y' qt_y hlookup_σ) with
+                      ⟨v, hlookup_ρ, _htyp⟩
+                    exact ⟨v, hlookup_ρ⟩
+                simpa [hetyp_src, hv₁] using htyped_closure
+              have htyp2_src : valueHasETyp θ₁ o₁ src.qualType.etyp := by
+                have htyped_closure :
+                    valueHasETyp θ₁
+                      (Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap₁)
+                      (ETyp.arrow argTyp (parseReturnType retSpec) p tcls) := by
+                  have htcl_match : FnTClosure.extern id x retSpec effects σcap ∈ tcls := by
+                    simpa [hmatch] using htcl
+                  refine valueHasETyp.closure_extern (htcl := htcl_match) (henv := ?_) (hcover := ?_)
+                  · intro y' qt_y v_y hlookup_σ hlookup_ρ
+                    rcases agreeCapturedEnv_ofCaptured_lookup_typed_right
+                        (hcap := hcap) y' qt_y (ofCaptured_lookup_of_list_lookup σcap y' qt_y hlookup_σ) with
+                      ⟨v', hlookup_ρ', htyp'⟩
+                    have hv_eq : v' = v_y := by
+                      have : some v' = some v_y := by
+                        calc
+                          some v' = ρcap₁.lookup y' := by simpa using hlookup_ρ'.symm
+                          _ = some v_y := by simpa using hlookup_ρ
+                      exact Option.some.inj this
+                    subst hv_eq
+                    exact htyp'
+                  · intro y' qt_y hlookup_σ
+                    rcases agreeCapturedEnv_ofCaptured_lookup_typed_right
+                        (hcap := hcap) y' qt_y (ofCaptured_lookup_of_list_lookup σcap y' qt_y hlookup_σ) with
+                      ⟨v, hlookup_ρ, _htyp⟩
+                    exact ⟨v, hlookup_ρ⟩
+                simpa [hetyp_src, hv₂] using htyped_closure
+              have htyp1_res :
+                  valueHasETyp θ₀ o₀ res.qualType.etyp :=
+                joinTypeResults_transport_valueHasETyp_from_member
+                  (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+                  (θ := θ₀) (v := o₀) _h_join _hmem_src htyp1_src
+              have htyp2_res :
+                  valueHasETyp θ₁ o₁ res.qualType.etyp :=
+                joinTypeResults_transport_valueHasETyp_from_member
+                  (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+                  (θ := θ₁) (v := o₁) _h_join _hmem_src htyp2_src
+              have hisArrow_src : src.qualType.etyp.isArrow = true := by
+                simp [hetyp_src, ETyp.isArrow]
+              have hisArrow_res : res.qualType.etyp.isArrow = true := by
+                have hEq := etyp_isArrow_eq_of_beqSignature_true hsig
+                calc
+                  res.qualType.etyp.isArrow = src.qualType.etyp.isArrow := hEq
+                  _ = true := hisArrow_src
+              exact agreeValueUnder.dirty_internal_arrow hclean_internal_res hisArrow_res htyp1_res htyp2_res
+        | guard _k _htag _hreg hnotfun_res =>
+            exfalso
+            have hisFun_src : src.qualType.etyp.isFunctionType = true := by
+              simp [hetyp_src, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            have hisFun_res : res.qualType.etyp.isFunctionType = true := by
+              calc
+                res.qualType.etyp.isFunctionType = src.qualType.etyp.isFunctionType := hfunEq
+                _ = true := hisFun_src
+            rw [hisFun_res] at hnotfun_res
+            cases hnotfun_res
+    | @clean_internal_parrow st1 st2 p tcls _qt tcl x body pbody σcap ρcap₀ ρcap₁ _v₀ _v₁
       hclean_internal_src hetyp_src htcl hmatch hcap
       hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src hv₁ hv₂ =>
       cases hclean_res with
@@ -2463,7 +2551,160 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               _ = true := hisFun_src
           rw [hisFun_res] at hnotfun_res
           cases hnotfun_res
-  | dirty_internal_arrow hdirty_src hisArrow_src htyp1_src htyp2_src =>
+    | @clean_internal_parrow_extern id x y argTyp retSpec p tcls _qt tcl σcap ρcap₀ ρcap₁ _v₀ _v₁
+        hclean_internal_src hetyp_src htcl hmatch hcap
+        hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src hv₁ hv₂ =>
+        cases hclean_res with
+        | clean _hpoison_res =>
+            have hlookup_back :
+                ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
+                  (ctxAfter ctx src).regime.lookup? k = some b := by
+              intro k b hk
+              exact
+                joinTypeResults_lookup_member_regime_compat
+                  (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+                  _h_join _hmem_src k b hk
+            have hlookup_true_back :
+                ∀ k, (ctxAfter ctx res).regime.lookup? k = some true →
+                  (ctxAfter ctx src).regime.lookup? k = some true := by
+              intro k hk
+              exact hlookup_back k true hk
+            have hcap_res :=
+              agreeCapturedEnv_transport_by_lookupTrueBack
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ₀ := μ₀) (μ₁ := μ₁) (θ₀ := θ₀) (θ₁ := θ₁)
+                hlookup_true_back
+                (fun {σcap} {ρcap} h =>
+                  memberVarsRegimeEvidence_transport_lookup_back
+                    (predSat := predSat)
+                    (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                    (μ := μ₀) hlookup_back h)
+                (fun {σcap} {ρcap} h =>
+                  memberCvcrEvidence_transport_lookup_back
+                    (predSat := predSat)
+                    (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                    (μ := μ₀) hlookup_back h)
+                (fun {σcap} {ρcap} h =>
+                  memberVarsRegimeEvidence_transport_lookup_back
+                    (predSat := predSat)
+                    (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                    (μ := μ₁) hlookup_back h)
+                (fun {σcap} {ρcap} h =>
+                  memberCvcrEvidence_transport_lookup_back
+                    (predSat := predSat)
+                    (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                    (μ := μ₁) hlookup_back h)
+                hcap
+            have hmemberVars₀_res :=
+              memberVarsRegimeEvidence_transport_lookup_back
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ := μ₀) hlookup_back hmemberVars₀_src
+            have hmemberCvcr₀_res :=
+              memberCvcrEvidence_transport_lookup_back
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ := μ₀) hlookup_back hmemberCvcr₀_src
+            have hmemberVars₁_res :=
+              memberVarsRegimeEvidence_transport_lookup_back
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ := μ₁) hlookup_back hmemberVars₁_src
+            have hmemberCvcr₁_res :=
+              memberCvcrEvidence_transport_lookup_back
+                (predSat := predSat)
+                (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
+                (μ := μ₁) hlookup_back hmemberCvcr₁_src
+            rcases
+                joinTypeResults_qualType_parrow_member_from_member
+                  (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+                  _h_join _hmem_src hetyp_src htcl
+              with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
+            by_cases hclean_internal_res : internalPoisonClean res.qualType
+            · exact agreeValueUnder.clean_internal_parrow_extern hclean_internal_res hetyp_res htcl_res hmatch hcap_res
+                hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res hv₁ hv₂
+            · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
+                have htyped_closure :
+                    valueHasETyp θ₀
+                      (Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap₀)
+                      (ETyp.parrow argTyp (parseReturnType retSpec) p tcls) := by
+                  have htcl_match : PFnTClosure.extern id x retSpec σcap ∈ tcls := by
+                    simpa [hmatch] using htcl
+                  refine valueHasETyp.peClosure_extern (htcl := htcl_match) (henv := ?_) (hcover := ?_)
+                  · intro y' qt_y v_y hlookup_σ hlookup_ρ
+                    rcases agreeCapturedEnv_ofCaptured_lookup_typed_left
+                        (hcap := hcap) y' qt_y (ofCaptured_lookup_of_list_lookup σcap y' qt_y hlookup_σ) with
+                      ⟨v', hlookup_ρ', htyp'⟩
+                    have hv_eq : v' = v_y := by
+                      have : some v' = some v_y := by
+                        calc
+                          some v' = ρcap₀.lookup y' := by simpa using hlookup_ρ'.symm
+                          _ = some v_y := by simpa using hlookup_ρ
+                      exact Option.some.inj this
+                    subst hv_eq
+                    exact htyp'
+                  · intro y' qt_y hlookup_σ
+                    rcases agreeCapturedEnv_ofCaptured_lookup_typed_left
+                        (hcap := hcap) y' qt_y (ofCaptured_lookup_of_list_lookup σcap y' qt_y hlookup_σ) with
+                      ⟨v, hlookup_ρ, _htyp⟩
+                    exact ⟨v, hlookup_ρ⟩
+                simpa [hetyp_src, hv₁] using htyped_closure
+              have htyp2_src : valueHasETyp θ₁ o₁ src.qualType.etyp := by
+                have htyped_closure :
+                    valueHasETyp θ₁
+                      (Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap₁)
+                      (ETyp.parrow argTyp (parseReturnType retSpec) p tcls) := by
+                  have htcl_match : PFnTClosure.extern id x retSpec σcap ∈ tcls := by
+                    simpa [hmatch] using htcl
+                  refine valueHasETyp.peClosure_extern (htcl := htcl_match) (henv := ?_) (hcover := ?_)
+                  · intro y' qt_y v_y hlookup_σ hlookup_ρ
+                    rcases agreeCapturedEnv_ofCaptured_lookup_typed_right
+                        (hcap := hcap) y' qt_y (ofCaptured_lookup_of_list_lookup σcap y' qt_y hlookup_σ) with
+                      ⟨v', hlookup_ρ', htyp'⟩
+                    have hv_eq : v' = v_y := by
+                      have : some v' = some v_y := by
+                        calc
+                          some v' = ρcap₁.lookup y' := by simpa using hlookup_ρ'.symm
+                          _ = some v_y := by simpa using hlookup_ρ
+                      exact Option.some.inj this
+                    subst hv_eq
+                    exact htyp'
+                  · intro y' qt_y hlookup_σ
+                    rcases agreeCapturedEnv_ofCaptured_lookup_typed_right
+                        (hcap := hcap) y' qt_y (ofCaptured_lookup_of_list_lookup σcap y' qt_y hlookup_σ) with
+                      ⟨v, hlookup_ρ, _htyp⟩
+                    exact ⟨v, hlookup_ρ⟩
+                simpa [hetyp_src, hv₂] using htyped_closure
+              have htyp1_res :
+                  valueHasETyp θ₀ o₀ res.qualType.etyp :=
+                joinTypeResults_transport_valueHasETyp_from_member
+                  (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+                  (θ := θ₀) (v := o₀) _h_join _hmem_src htyp1_src
+              have htyp2_res :
+                  valueHasETyp θ₁ o₁ res.qualType.etyp :=
+                joinTypeResults_transport_valueHasETyp_from_member
+                  (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+                  (θ := θ₁) (v := o₁) _h_join _hmem_src htyp2_src
+              have hisParrow_src : src.qualType.etyp.isParrow = true := by
+                simp [hetyp_src, ETyp.isParrow]
+              have hisParrow_res : res.qualType.etyp.isParrow = true := by
+                have hEq := etyp_isParrow_eq_of_beqSignature_true hsig
+                calc
+                  res.qualType.etyp.isParrow = src.qualType.etyp.isParrow := hEq
+                  _ = true := hisParrow_src
+              exact agreeValueUnder.dirty_internal_parrow hclean_internal_res hisParrow_res htyp1_res htyp2_res
+        | guard _k _htag _hreg hnotfun_res =>
+            exfalso
+            have hisFun_src : src.qualType.etyp.isFunctionType = true := by
+              simp [hetyp_src, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+            have hisFun_res : res.qualType.etyp.isFunctionType = true := by
+              calc
+                res.qualType.etyp.isFunctionType = src.qualType.etyp.isFunctionType := hfunEq
+                _ = true := hisFun_src
+            rw [hisFun_res] at hnotfun_res
+            cases hnotfun_res
+    | dirty_internal_arrow hdirty_src hisArrow_src htyp1_src htyp2_src =>
       cases hclean_res with
       | clean _hpoison_res =>
           have htyp1_res :
@@ -2594,7 +2835,17 @@ private lemma closureCapturedVarsRegimeMasked_weaken_fnTClosures'
       have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
       subst heq_tcls
       exact .closure xp body ρcap σcap st1 st2 p' tcls' hval rfl (hmem _ hmem_src) hP hrec
+  | closure_extern id xp y argTyp retSpec effects ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
+      have heq_arg : argTyp = st1 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.1).symm
+      have heq_ret : parseReturnType retSpec = st2 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.1).symm
+      have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
+      subst heq_tcls
+      exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p' tcls'
+        hval (by simp [heq_arg, heq_ret]) (hmem _ hmem_src) hP hrec
   | peClosure _ _ _ _ _ _ _ _ _ _ hetyp_eq_parr _ _ =>
+      exfalso
+      simp at hetyp_eq_parr
+  | peClosure_extern _id _xp _y _argTyp _retSpec _ρcap _σcap _p _tcls _hval hetyp_eq_parr _hmem _hP _hrec =>
       exfalso
       simp at hetyp_eq_parr
 
@@ -2614,10 +2865,20 @@ private lemma closureCapturedVarsRegimeMasked_weaken_pFnTClosures'
   | closure _ _ _ _ _ _ _ _ _ hetyp_eq_arr _ _ =>
       exfalso
       simp at hetyp_eq_arr
+  | closure_extern _id _xp _y _argTyp _retSpec _effects _ρcap _σcap _p _tcls _hval hetyp_eq_arr _hmem _hP _hrec =>
+      exfalso
+      simp at hetyp_eq_arr
   | peClosure xp body pbody ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hpure hmem_src hP hrec =>
       have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
       subst heq_tcls
       exact .peClosure xp body pbody ρcap σcap st1 st2 p' tcls' hval rfl hpure (hmem _ hmem_src) hP hrec
+  | peClosure_extern id xp y argTyp retSpec ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
+      have heq_arg : argTyp = st1 := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.1).symm
+      have heq_ret : parseReturnType retSpec = st2 := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.1).symm
+      have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
+      subst heq_tcls
+      exact .peClosure_extern id xp y argTyp retSpec ρcap σcap p' tcls'
+        hval (by simp [heq_arg, heq_ret]) (hmem _ hmem_src) hP hrec
 
 theorem closureCapturedVarsRegimeMasked_joinETyps_step
   (masked : Tag → Prop) (predSat : PredSat) (R : Regime)
@@ -2639,7 +2900,9 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step
           cases hcap with
           | nonClosure hv hpe => exact .nonClosure hv hpe
           | closure _ _ _ _ _ _ _ _ _ hetyp_arr _ _ => exfalso; exact ETyp.noConfusion hetyp_arr
+          | closure_extern _ _ _ _ _ _ _ _ _ _ _ hetyp_arr _ _ _ => exfalso; exact ETyp.noConfusion hetyp_arr
           | peClosure _ _ _ _ _ _ _ _ _ _ hetyp_parr _ _ => exfalso; exact ETyp.noConfusion hetyp_parr
+          | peClosure_extern _ _ _ _ _ _ _ _ _ _ hetyp_parr _ _ _ => exfalso; exact ETyp.noConfusion hetyp_parr
       | _ => simp [beqETypSignature] at hcompat
   | arrow st1 st2 p tcls =>
       have hisArrow : resEtyp.isArrow := by
@@ -2721,6 +2984,48 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
       | parrow st1l st2l pl tclsl =>
           exfalso
           simp [beqETypSignature] at hcompat
+  | closure_extern id x y argTyp retSpec effects ρcap σcap pr tclr hval hetyp_r htcl hP hrec =>
+      have hetyp_r' : resEtyp = ETyp.arrow argTyp (parseReturnType retSpec) pr tclr := by
+        simpa using hetyp_r
+      subst resEtyp
+      cases etyp1 with
+      | int => exfalso; simp [beqETypSignature] at hcompat
+      | bool => exfalso; simp [beqETypSignature] at hcompat
+      | unit => exfalso; simp [beqETypSignature] at hcompat
+      | string => exfalso; simp [beqETypSignature] at hcompat
+      | ref ls => exfalso; simp [beqETypSignature] at hcompat
+      | arrow st1l st2l pl tclsl =>
+          simp [beqETypSignature] at hcompat
+          obtain ⟨rfl, rfl⟩ := hcompat
+          have hcap_src :
+              closureCapturedVarsRegimeMasked masked predSat R
+                ⟨ETyp.arrow st1l (parseReturnType retSpec) pr tclr,
+                  resPoison, resPred⟩ μ θ v := by
+            simpa using (.closure_extern id x y st1l retSpec effects ρcap σcap pr tclr
+              hval rfl htcl hP hrec :
+              closureCapturedVarsRegimeMasked masked predSat R
+                ⟨ETyp.arrow st1l (parseReturnType retSpec) pr tclr,
+                  resPoison, resPred⟩ μ θ v)
+          have hcap_join :
+              closureCapturedVarsRegimeMasked masked predSat R
+                ⟨ETyp.arrow st1l (parseReturnType retSpec) (joinPoison pl pr)
+                  (mergeFnTClosures tclsl tclr), resPoison, resPred⟩ μ θ v :=
+            closureCapturedVarsRegimeMasked_weaken_fnTClosures'
+              (masked := masked) (predSat := predSat) (R := R) (μ := μ) (θ := θ) (v := v)
+              (st1 := st1l) (st2 := parseReturnType retSpec) (p := pr)
+              (p' := joinPoison pl pr) (tcls := tclr)
+              (tcls' := mergeFnTClosures tclsl tclr)
+              (poison := resPoison) (pred := resPred)
+              (fun tcl hmem => mem_mergeFnTClosures_right tclsl tclr tcl hmem)
+              hcap_src
+          exact closureCapturedVarsRegimeMasked_transport_etyp (qt := _)
+            (qt' := ⟨joinETyps (ETyp.arrow st1l (parseReturnType retSpec) pl tclsl)
+                (ETyp.arrow st1l (parseReturnType retSpec) pr tclr) p1 resPoison,
+                joinPoison p1 resPoison, joinPredicates pr1 resPred⟩)
+            (by simp [joinETyps]) hcap_join
+      | parrow st1l st2l pl tclsl =>
+          exfalso
+          simp [beqETypSignature] at hcompat
   | peClosure x body pbody ρcap σcap st1r st2r pr tclr hval hetyp_r hpure htcl hP hrec =>
       have hetyp_r' : resEtyp = ETyp.parrow st1r st2r pr tclr := by
         simpa using hetyp_r
@@ -2758,6 +3063,48 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
           exact closureCapturedVarsRegimeMasked_transport_etyp (qt := _)
             (qt' := ⟨joinETyps (ETyp.parrow st1l st2l pl tclsl) (ETyp.parrow st1l st2l pr tclr)
                 p1 resPoison,
+                joinPoison p1 resPoison, joinPredicates pr1 resPred⟩)
+            (by simp [joinETyps]) hcap_join
+  | peClosure_extern id x y argTyp retSpec ρcap σcap pr tclr hval hetyp_r htcl hP hrec =>
+      have hetyp_r' : resEtyp = ETyp.parrow argTyp (parseReturnType retSpec) pr tclr := by
+        simpa using hetyp_r
+      subst resEtyp
+      cases etyp1 with
+      | int => exfalso; simp [beqETypSignature] at hcompat
+      | bool => exfalso; simp [beqETypSignature] at hcompat
+      | unit => exfalso; simp [beqETypSignature] at hcompat
+      | string => exfalso; simp [beqETypSignature] at hcompat
+      | ref ls => exfalso; simp [beqETypSignature] at hcompat
+      | arrow st1l st2l pl tclsl =>
+          exfalso
+          simp [beqETypSignature] at hcompat
+      | parrow st1l st2l pl tclsl =>
+          simp [beqETypSignature] at hcompat
+          obtain ⟨rfl, rfl⟩ := hcompat
+          have hcap_src :
+              closureCapturedVarsRegimeMasked masked predSat R
+                ⟨ETyp.parrow st1l (parseReturnType retSpec) pr tclr,
+                  resPoison, resPred⟩ μ θ v := by
+            simpa using (.peClosure_extern id x y st1l retSpec ρcap σcap pr tclr
+              hval rfl htcl hP hrec :
+              closureCapturedVarsRegimeMasked masked predSat R
+                ⟨ETyp.parrow st1l (parseReturnType retSpec) pr tclr,
+                  resPoison, resPred⟩ μ θ v)
+          have hcap_join :
+              closureCapturedVarsRegimeMasked masked predSat R
+                ⟨ETyp.parrow st1l (parseReturnType retSpec) (joinPoison pl pr)
+                  (mergePFnTClosures tclsl tclr), resPoison, resPred⟩ μ θ v :=
+            closureCapturedVarsRegimeMasked_weaken_pFnTClosures'
+              (masked := masked) (predSat := predSat) (R := R) (μ := μ) (θ := θ) (v := v)
+              (st1 := st1l) (st2 := parseReturnType retSpec) (p := pr)
+              (p' := joinPoison pl pr) (tcls := tclr)
+              (tcls' := mergePFnTClosures tclsl tclr)
+              (poison := resPoison) (pred := resPred)
+              (fun tcl hmem => mem_mergePFnTClosures_right tclsl tclr tcl hmem)
+              hcap_src
+          exact closureCapturedVarsRegimeMasked_transport_etyp (qt := _)
+            (qt' := ⟨joinETyps (ETyp.parrow st1l (parseReturnType retSpec) pl tclsl)
+                (ETyp.parrow st1l (parseReturnType retSpec) pr tclr) p1 resPoison,
                 joinPoison p1 resPoison, joinPredicates pr1 resPred⟩)
             (by simp [joinETyps]) hcap_join
 
@@ -3934,6 +4281,3 @@ lemma joinTypeResults_lookup_member_clean_compat
       have hnotfun_src : qt_src.etyp.isFunctionType = false := by
         simpa [hetyp_eq.symm] using hnotfun
       exact qtypCleanUnder.guard k htag_src hreg_src hnotfun_src
-
-
-

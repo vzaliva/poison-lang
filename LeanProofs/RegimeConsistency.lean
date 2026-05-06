@@ -1127,6 +1127,20 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
         ρcap.lookup x = some v_x →
         deepValueQTypProperty P qt_x v_x) →
       deepValueQTypProperty P qt v
+  | closure_extern {qt : QTyp} {v : Value}
+      (id : ExternId) (x_param y : Name) (argTyp : Typ)
+      (retSpec : ExternReturn) (effects : List Effect)
+      (ρcap : VarEnv) (σcap : CapturedVarEnv) (p : Poison)
+      (tcls : List FnTClosure) :
+      v = Value.closure x_param (Expr.externFn id y argTyp retSpec effects) ρcap →
+      qt.etyp = ETyp.arrow argTyp (parseReturnType retSpec) p tcls →
+      FnTClosure.extern id x_param retSpec effects σcap ∈ tcls →
+      P σcap ρcap →
+      (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
+        σcap.lookup x = some qt_x →
+        ρcap.lookup x = some v_x →
+        deepValueQTypProperty P qt_x v_x) →
+      deepValueQTypProperty P qt v
   | peClosure {qt : QTyp} {v : Value}
       (x_param : Name) (body : Expr) (pbody : PExpr) (ρcap : VarEnv)
       (σcap : CapturedVarEnv) (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure) :
@@ -1134,6 +1148,20 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
       qt.etyp = ETyp.parrow st1 st2 p tcls →
       Expr.toPExpr? body = some pbody →
       PFnTClosure.regular x_param pbody σcap ∈ tcls →
+      P σcap ρcap →
+      (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
+        σcap.lookup x = some qt_x →
+        ρcap.lookup x = some v_x →
+        deepValueQTypProperty P qt_x v_x) →
+      deepValueQTypProperty P qt v
+  | peClosure_extern {qt : QTyp} {v : Value}
+      (id : ExternId) (x_param y : Name) (argTyp : Typ)
+      (retSpec : ExternReturn)
+      (ρcap : VarEnv) (σcap : CapturedVarEnv) (p : Poison)
+      (tcls : List PFnTClosure) :
+      v = Value.peClosure x_param (Expr.externPfn id y argTyp retSpec) ρcap →
+      qt.etyp = ETyp.parrow argTyp (parseReturnType retSpec) p tcls →
+      PFnTClosure.extern id x_param retSpec σcap ∈ tcls →
       P σcap ρcap →
       (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
         σcap.lookup x = some qt_x →
@@ -1153,9 +1181,19 @@ lemma deepValueQTypProperty_mono
   | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hP _hdeep ih =>
       exact .closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem
         (hPP σcap ρcap hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr)
+  | closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls
+      hval hetyp hmem hP _hdeep ih =>
+      exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls
+        hval hetyp hmem (hPP σcap ρcap hP)
+        (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr)
   | peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp hpure hmem hP _hdeep ih =>
       exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp hpure hmem
         (hPP σcap ρcap hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr)
+  | peClosure_extern id xp y argTyp retSpec ρcap σcap p tcls hval hetyp hmem hP
+      _hdeep ih =>
+      exact .peClosure_extern id xp y argTyp retSpec ρcap σcap p tcls
+        hval hetyp hmem (hPP σcap ρcap hP)
+        (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr)
 
 -- Property checked at each closure nesting level: all captured variables
 -- whose type has an active guard tag satisfy varsRegime.

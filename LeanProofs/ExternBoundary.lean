@@ -653,6 +653,45 @@ def TrustedRegistryEntryMatchesPfn
   entry.decl.argName = some x ∧
   entry.decl.retSpec = some retSpec
 
+theorem TrustedRegistryAgreesWithProgram.resolveFnDeclaration
+    {e : Expr} {tr : TrustedRegistry} {id : ExternId} {x : Name}
+    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
+    {impl : ExternImpl}
+    (hagrees : TrustedRegistryAgreesWithProgram e tr)
+    (hprog :
+      ExternDeclarationInProgram e id
+        { id := id, kind := .fn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects })
+    (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
+    ∃ entry,
+      TrustedRegistry.lookup? tr id = some entry ∧
+      entry.impl = impl ∧
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects := by
+  rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
+  have hdecl := hagrees hprog hlookup
+  refine ⟨entry, hlookup, himpl, ?_⟩
+  simp [TrustedRegistryEntryMatchesFn, hdecl]
+
+theorem TrustedRegistryAgreesWithProgram.resolvePfnDeclaration
+    {e : Expr} {tr : TrustedRegistry} {id : ExternId} {x : Name}
+    {argTyp : Typ} {retSpec : ExternReturn} {impl : ExternImpl}
+    (hagrees : TrustedRegistryAgreesWithProgram e tr)
+    (hprog :
+      ExternDeclarationInProgram e id
+        { id := id, kind := .pfn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := [],
+          preds := collectExternPreds retSpec [] })
+    (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
+    ∃ entry,
+      TrustedRegistry.lookup? tr id = some entry ∧
+      entry.impl = impl ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec := by
+  rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
+  have hdecl := hagrees hprog hlookup
+  refine ⟨entry, hlookup, himpl, ?_⟩
+  simp [TrustedRegistryEntryMatchesPfn, hdecl]
+
 namespace TrustedRegistryEntryMatchesFn
 
 theorem id_eq
@@ -811,6 +850,97 @@ theorem ExternCallBoundaryRun.pfn_of_match
     ?_, hImpl, ?_⟩
   · simpa [TrustedRegistryEntryMatchesPfn.typ_eq hmatch] using hArg
   · simpa [TrustedRegistryEntryMatchesPfn.id_eq hmatch] using hValRet
+
+theorem TrustedRegistryAgreesWithProgram.callBoundaryRunFn
+    {e : Expr} {tr : TrustedRegistry}
+    (hagrees : TrustedRegistryAgreesWithProgram e tr)
+    {id : ExternId} {x : Name} {argTyp : Typ} {retSpec : ExternReturn}
+    {effects : List Effect}
+    (hprog :
+      ExternDeclarationInProgram e id
+        { id := id, kind := .fn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects })
+    {implFn : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address)}
+    {callEntry : ExternCallEntry} {res : TypeResult}
+    {cf : Config} {v vRaw : Value} {mem' : Memory} {addr' : Address}
+    (hargName : callEntry.argName = x)
+    (hregistry : callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr)
+    (hpure : callEntry.callConfig.pureMode = false)
+    (hunified :
+      callEntry.unifiedEnv =
+        VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue)
+    (hGet : callEntry.callConfig.registry.get? id = some (ExternImpl.fn implFn))
+    (hArg : valueMatchesTyp callEntry.argValue argTyp = true)
+    (hImpl :
+      implFn callEntry.unifiedEnv callEntry.argValue
+        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
+        Except.ok (vRaw, mem', addr'))
+    (hValRet : validateExternReturn id retSpec vRaw = Except.ok v)
+    (hcfg : cf = { callEntry.callConfig with memory := mem', nextAddr := addr' }) :
+    ∃ entry,
+      TrustedRegistry.lookup? tr id = some entry ∧
+      ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
+  have hGetRuntime :
+      (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.fn implFn) := by
+    simpa [hregistry] using hGet
+  rcases TrustedRegistryAgreesWithProgram.resolveFnDeclaration hagrees hprog hGetRuntime with
+    ⟨entry, hlookup, himpl, hmatch⟩
+  have hmatch' :
+      TrustedRegistryEntryMatchesFn entry id callEntry.argName argTyp retSpec effects := by
+    simpa [hargName] using hmatch
+  have hlookupCall : callEntry.callConfig.registry.get? entry.decl.id = some entry.impl := by
+    rw [hregistry]
+    simpa [TrustedRegistryEntryMatchesFn.id_eq hmatch] using
+      (TrustedRegistry.lookup_toRuntimeRegistry hlookup)
+  exact
+    ⟨entry, hlookup,
+      ExternCallBoundaryRun.fn_of_match hmatch' hpure hunified hlookupCall himpl
+        hArg hImpl hValRet hcfg⟩
+
+theorem TrustedRegistryAgreesWithProgram.callBoundaryRunPfn
+    {e : Expr} {tr : TrustedRegistry}
+    (hagrees : TrustedRegistryAgreesWithProgram e tr)
+    {id : ExternId} {x : Name} {argTyp : Typ} {retSpec : ExternReturn}
+    (hprog :
+      ExternDeclarationInProgram e id
+        { id := id, kind := .pfn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := [],
+          preds := collectExternPreds retSpec [] })
+    {implFn : VarEnv → Value → Memory → Except ExternError Value}
+    {callEntry : ExternCallEntry} {res : TypeResult}
+    {cf : Config} {v vRaw : Value}
+    (hargName : callEntry.argName = x)
+    (hregistry : callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr)
+    (hunified :
+      callEntry.unifiedEnv =
+        VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue)
+    (hGet : callEntry.callConfig.registry.get? id = some (ExternImpl.pfn implFn))
+    (hArg : valueMatchesTyp callEntry.argValue argTyp = true)
+    (hImpl :
+      implFn callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
+        Except.ok vRaw)
+    (hValRet : validateExternReturn id retSpec vRaw = Except.ok v)
+    (hcfg : cf = callEntry.callConfig) :
+    ∃ entry,
+      TrustedRegistry.lookup? tr id = some entry ∧
+      ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
+  have hGetRuntime :
+      (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.pfn implFn) := by
+    simpa [hregistry] using hGet
+  rcases TrustedRegistryAgreesWithProgram.resolvePfnDeclaration hagrees hprog hGetRuntime with
+    ⟨entry, hlookup, himpl, hmatch⟩
+  have hmatch' :
+      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec := by
+    simpa [hargName] using hmatch
+  have hlookupCall : callEntry.callConfig.registry.get? entry.decl.id = some entry.impl := by
+    rw [hregistry]
+    simpa [TrustedRegistryEntryMatchesPfn.id_eq hmatch] using
+      (TrustedRegistry.lookup_toRuntimeRegistry hlookup)
+  exact
+    ⟨entry, hlookup,
+      ExternCallBoundaryRun.pfn_of_match hmatch' hunified hlookupCall himpl
+        hArg hImpl hValRet hcfg⟩
 
 /-- Static impure closure-list members can be resolved to trusted entries.
     This is the bridge needed between `valueHasETyp.closure_extern` membership

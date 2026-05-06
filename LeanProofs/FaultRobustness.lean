@@ -473,6 +473,23 @@ mutual
         (hv₁ : v₁ = Value.closure x body ρcap₁)
         (hv₂ : v₂ = Value.closure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | clean_internal_arrow_extern
+        {id : ExternId} {x y : Name} {argTyp : Typ} {retSpec : ExternReturn}
+        {effects : List Effect} {p : Poison} {tcls : List FnTClosure}
+        {qt : QTyp} {tcl : FnTClosure} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {v₁ v₂ : Value}
+        (hclean_internal : internalPoisonClean qt)
+        (hetyp : qt.etyp = ETyp.arrow argTyp (parseReturnType retSpec) p tcls)
+        (htcl : tcl ∈ tcls)
+        (hmatch : tcl = FnTClosure.extern id x retSpec effects σcap)
+        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
+        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
+        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (hv₁ : v₁ = Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap₁)
+        (hv₂ : v₂ = Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | dirty_internal_arrow
         {qt : QTyp} {v₁ v₂ : Value}
         (hdirty_internal : ¬ internalPoisonClean qt)
@@ -494,6 +511,23 @@ mutual
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.peClosure x body ρcap₁)
         (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
+        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+    | clean_internal_parrow_extern
+        {id : ExternId} {x y : Name} {argTyp : Typ} {retSpec : ExternReturn}
+        {p : Poison} {tcls : List PFnTClosure}
+        {qt : QTyp} {tcl : PFnTClosure} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {v₁ v₂ : Value}
+        (hclean_internal : internalPoisonClean qt)
+        (hetyp : qt.etyp = ETyp.parrow argTyp (parseReturnType retSpec) p tcls)
+        (htcl : tcl ∈ tcls)
+        (hmatch : tcl = PFnTClosure.extern id x retSpec σcap)
+        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
+        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
+        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (hv₁ : v₁ = Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap₁)
+        (hv₂ : v₂ = Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | dirty_internal_parrow
         {qt : QTyp} {v₁ v₂ : Value}

@@ -279,89 +279,14 @@ private lemma agreeValueUnder_clean_monotoneRegime_public
     agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
     agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
   intro hmono hclean hagree
-  have hrec :
-      (qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁) :=
-    agreeValueUnder.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
-      (motive_1 := fun qt v₀ v₁ _ =>
-        qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁)
-      (motive_2 := fun σcap ρcap₀ ρcap₁ _ =>
-        agreeCapturedEnv predSat R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
-      (clean_eq_nonref_nonarrow := by
-        intro qt v₀ v₁ hpoison hnotfun hnotref heq _hclean
-        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
-      (clean_internal_arrow := by
-        intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap _hclean
-        exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch ihcap
-          (memberVarsRegimeEvidence_monotone hmono hmemberVars₀)
-          (memberCvcrEvidence_monotone hmono hmemberCvcr₀)
-          (memberVarsRegimeEvidence_monotone hmono hmemberVars₁)
-          (memberCvcrEvidence_monotone hmono hmemberCvcr₁)
-          hv₀ hv₁)
-      (dirty_internal_arrow := by
-        intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 _hclean
-        exact agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2)
-      (clean_internal_parrow := by
-        intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap _hclean
-        exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch ihcap
-          (memberVarsRegimeEvidence_monotone hmono hmemberVars₀)
-          (memberCvcrEvidence_monotone hmono hmemberCvcr₀)
-          (memberVarsRegimeEvidence_monotone hmono hmemberVars₁)
-          (memberCvcrEvidence_monotone hmono hmemberCvcr₁)
-          hv₀ hv₁)
-      (dirty_internal_parrow := by
-        intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 _hclean
-        exact agreeValueUnder.dirty_internal_parrow hdirty_internal hisParrow htyp1 htyp2)
-      (clean_ref := by
-        intro ls l a₀ a₁ qt v₀ v₁ hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁ _hclean
-        exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁)
-      (withPred_true_eq := by
-        intro k qt v₀ v₁ htag _hreg hnotfun hnotref heq hclean
-        cases hclean with
-        | clean hpoison =>
-            exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq
-        | guard k' htag' hk'R' _hnotfun' =>
-            have hk : k' = k := by
-              have : some k' = some k := by
-                calc
-                  some k' = qtypGuardTag qt := by symm; exact htag'
-                  _ = some k := htag
-              exact Option.some.inj this
-            have hreg : R'.lookup? k = some true := by
-              simpa [hk] using hk'R'
-            exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref heq)
-      (withPred_true_ref := by
-        intro k ls l a₀ a₁ qt v₀ v₁ htag _hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁ hclean
-        cases hclean with
-        | clean hpoison =>
-            exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁
-        | guard k' htag' hk'R' _hnotfun' =>
-            have hk : k' = k := by
-              have : some k' = some k := by
-                calc
-                  some k' = qtypGuardTag qt := by symm; exact htag'
-                  _ = some k := htag
-              exact Option.some.inj this
-            have hreg : R'.lookup? k = some true := by
-              simpa [hk] using hk'R'
-            exact agreeValueUnder.withPred_true_ref k htag hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁)
-      (nil := by
-        intro ρcap₀ ρcap₁
-        exact agreeCapturedEnv.nil)
-      (cons_clean := by
-        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 htyp1 htyp2 hagree htail ihagree ihtail
-        by_cases hcleanR' : qtypCleanUnder R' qt
-        · exact agreeCapturedEnv.cons_clean hcleanR' hlookup1 hlookup2 htyp1 htyp2 (ihagree hcleanR') ihtail
-        · exact agreeCapturedEnv.cons_dirty hcleanR' hlookup1 hlookup2 htyp1 htyp2 ihtail)
-      (cons_dirty := by
-        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ hdirty hlookup1 hlookup2 htyp1 htyp2 htail ihtail
-        have hdirty' : ¬ qtypCleanUnder R' qt := by
-          intro hcleanR'
-          exact hdirty (qtypCleanUnder_of_monotone hmono hcleanR')
-        exact agreeCapturedEnv.cons_dirty hdirty' hlookup1 hlookup2 htyp1 htyp2 ihtail)
-      hagree
-  exact hrec hclean
+  exact
+    agreeValueUnder_clean_transport_by_cleanBack
+      (fun qt hclean' => qtypCleanUnder_of_monotone hmono hclean')
+      (fun h => memberVarsRegimeEvidence_monotone hmono h)
+      (fun h => memberCvcrEvidence_monotone hmono h)
+      (fun h => memberVarsRegimeEvidence_monotone hmono h)
+      (fun h => memberCvcrEvidence_monotone hmono h)
+      hclean hagree
 
 private lemma agreeValueUnder_transport_insert_clean_monotone
     {predSat : PredSat} {R R' : Regime}
@@ -429,10 +354,18 @@ private lemma resultAgreesIfClean_ref_shared_witness
       exfalso
       rw [hRef] at hetyp
       cases hetyp
+  | clean_internal_arrow_extern _ hetyp _ _ _ _ _ =>
+      exfalso
+      rw [hRef] at hetyp
+      cases hetyp
   | dirty_internal_arrow _ hisArrow _ _ =>
       exfalso
       simp [hRef, ETyp.isArrow] at hisArrow
   | clean_internal_parrow _ hetyp _ _ _ _ _ =>
+      exfalso
+      rw [hRef] at hetyp
+      cases hetyp
+  | clean_internal_parrow_extern _ hetyp _ _ _ _ _ =>
       exfalso
       rw [hRef] at hetyp
       cases hetyp
@@ -470,10 +403,14 @@ private lemma agreeValueUnder_num_num_eq
       rfl
   | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
       cases hv₀
+  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
+      cases hv₀
   | dirty_internal_arrow _ hisArrow htyp₀ _ =>
       have hnum : qt.etyp = ETyp.int := valueHasETyp_num_etyp htyp₀
       simp [hnum, ETyp.isArrow] at hisArrow
   | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+      cases hv₀
+  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
       cases hv₀
   | dirty_internal_parrow _ hisParrow htyp₀ _ =>
       have hnum : qt.etyp = ETyp.int := valueHasETyp_num_etyp htyp₀
@@ -2211,7 +2148,7 @@ lemma stepFR_assign
   have htagBounded' : TagBoundedCtx ctx' := by
     simpa [ctx', ctxAfter] using _htagBounded1
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
-    simpa [ctx', ctxAfter] using IsCanonicalExtension.bounded hcanon1
+    simpa [ctx', ctxAfter] using BoundaryTagMeaningPost.bounded hcanon1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' htagBounded' res2 htc2'
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
@@ -3699,11 +3636,15 @@ lemma stepFR_assign
                                       simpa [Value.num.injEq] using hEq
                                   | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
                                       cases hv₀
+                                  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                                      cases hv₀
                                   | dirty_internal_arrow _ hisArrow htyp₀ _ =>
                                       have htyp₀_int : qtOld.etyp = ETyp.int :=
                                         valueHasETyp_num_etyp htyp₀
                                       simp [htyp₀_int, ETyp.isArrow] at hisArrow
                                   | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                                      cases hv₀
+                                  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
                                       cases hv₀
                                   | dirty_internal_parrow _ hisParrow htyp₀ _ =>
                                       have htyp₀_int : qtOld.etyp = ETyp.int :=
@@ -4276,10 +4217,13 @@ lemma stepFR_assign
                 hagree_val_final
   rcases hpost_transport with
     ⟨hTm_final, hwf_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_final⟩
-  have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
-  have hcanon_assign : IsCanonicalExtension tm ctxᵢ (Expr.assign e1 e2) res tm2 := by
-    exact ⟨hcanon_trans.1, by simpa [hNextTag] using hcanon_trans.2.1, hTm_final, hresTm⟩
-  refine ⟨tm2, hcanon_assign, hpredlaws2, hresTm, ?_⟩
+  have hboundary_assign : BoundaryTagMeaningPost ctxᵢ res predSat tm tm2 := by
+    exact ⟨TagMeaningExtends.trans
+        (BoundaryTagMeaningPost.extends_tm hcanon1)
+        (BoundaryTagMeaningPost.extends_tm hcanon2),
+      by simpa [hNextTag] using BoundaryTagMeaningPost.bounded hcanon2,
+      hTm_final, hresTm, hpredlaws2⟩
+  refine ⟨tm2, hboundary_assign, hpredlaws2, hresTm, ?_⟩
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, hTm_final, hwf_final, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_final, ?_, ?_, ?_⟩
   · subst ho₀
     simpa [hEtyp] using valueHasETyp.unit (θ := θ₀2)

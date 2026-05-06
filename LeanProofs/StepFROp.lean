@@ -126,7 +126,7 @@ lemma stepFR_op
   have htagBounded1' : TagBoundedCtx ctx' := by
     simpa [ctx', ctxAfter] using _htagBounded1
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
-    simpa [ctx', ctxAfter] using IsCanonicalExtension.bounded hcanon1
+    simpa [ctx', ctxAfter] using BoundaryTagMeaningPost.bounded hcanon1
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' htagBounded1' res2 htc2'
   -- Prepare for IH2: need wf maps and agreement for ctx'
@@ -229,11 +229,15 @@ lemma stepFR_op
       simp [qtypGuardDesc?, h_ret_pred]
     intro qt' k d hinq hqd
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm2 res.qualType hnotfun_res hguard) hinq hqd
-  have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
-  have hcanon_op : IsCanonicalExtension tm ctxᵢ (Expr.op e1 op e2) res tm2 := by
-    exact ⟨hcanon_trans.1, by simpa [h_ntag] using hcanon_trans.2.1,
-      by simpa [hctxAfter] using hcanon_trans.2.2.1, hresTm⟩
-  refine ⟨tm2, hcanon_op, hpredlaws2, hresTm, ?_⟩
+  have hboundary_op : BoundaryTagMeaningPost ctxᵢ res predSat tm tm2 := by
+    exact ⟨TagMeaningExtends.trans
+        (BoundaryTagMeaningPost.extends_tm hcanon1)
+        (BoundaryTagMeaningPost.extends_tm hcanon2),
+      by simpa [h_ntag] using BoundaryTagMeaningPost.bounded hcanon2,
+      by simpa [hctxAfter] using BoundaryTagMeaningPost.wfCtx hcanon2,
+      hresTm,
+      hpredlaws2⟩
+  refine ⟨tm2, hboundary_op, hpredlaws2, hresTm, ?_⟩
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · -- valueHasETyp θ₀2 o₀ res.qualType.etyp
     rw [h_ret_etyp]
@@ -388,12 +392,13 @@ lemma stepFR_unaryop
       simp [qtypGuardDesc?, h_ret_pred]
     intro qt' k d hinq hqd
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm_e res.qualType hnotfun_res hguard) hinq hqd
-  have hcanon_unary : IsCanonicalExtension tm ctxᵢ (Expr.unaryop op e) res tm_e := by
-    exact ⟨IsCanonicalExtension.extends_tm hcanon_e,
-      by simpa [h_ntag] using IsCanonicalExtension.bounded hcanon_e,
-      by simpa [hctxAfter] using IsCanonicalExtension.wfCtx hcanon_e,
-      hresTm⟩
-  refine ⟨tm_e, hcanon_unary, hpredlaws_e, hresTm, ?_⟩
+  have hboundary_unary : BoundaryTagMeaningPost ctxᵢ res predSat tm tm_e := by
+    exact ⟨BoundaryTagMeaningPost.extends_tm hcanon_e,
+      by simpa [h_ntag] using BoundaryTagMeaningPost.bounded hcanon_e,
+      by simpa [hctxAfter] using BoundaryTagMeaningPost.wfCtx hcanon_e,
+      hresTm,
+      hpredlaws_e⟩
+  refine ⟨tm_e, hboundary_unary, hpredlaws_e, hresTm, ?_⟩
   refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · -- valueHasETyp θ₀' o₀ res.qualType.etyp
     rw [h_ret_etyp]

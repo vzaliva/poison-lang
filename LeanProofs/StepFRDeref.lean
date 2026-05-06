@@ -486,12 +486,13 @@ lemma stepFR_deref
     simpa [hctxAfter, hmem₁, hvar₁] using hcwr₁'
   have hresTm : QTypRespectsTagMeaning tm_e res.qualType :=
     typecheckDeref_qtypRespects tm_e ctxᵢ e fuel' res res1 _hTm' htc1_expr htc'
-  have hcanon_deref : IsCanonicalExtension tm ctxᵢ (Expr.deref e) res tm_e := by
-    exact ⟨IsCanonicalExtension.extends_tm hcanon_e,
-      by simpa [h_ntag] using IsCanonicalExtension.bounded hcanon_e,
-      by simpa [hctxAfter] using IsCanonicalExtension.wfCtx hcanon_e,
-      hresTm⟩
-  refine ⟨tm_e, hcanon_deref, hpredlaws_e, hresTm, ?_⟩
+  have hboundary_deref : BoundaryTagMeaningPost ctxᵢ res predSat tm tm_e := by
+    exact ⟨BoundaryTagMeaningPost.extends_tm hcanon_e,
+      by simpa [h_ntag] using BoundaryTagMeaningPost.bounded hcanon_e,
+      by simpa [hctxAfter] using BoundaryTagMeaningPost.wfCtx hcanon_e,
+      hresTm,
+      hpredlaws_e⟩
+  refine ⟨tm_e, hboundary_deref, hpredlaws_e, hresTm, ?_⟩
   refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · subst hv₀
     have hres_etyp_int : res.qualType.etyp = ETyp.int :=
@@ -616,12 +617,22 @@ lemma stepFR_deref
                   have h := hetyp
                   rw [hres1_etyp0] at h
                   cases h
+              | clean_internal_arrow_extern _ hetyp _ _ _ _ _ _ _ _ _ =>
+                  exfalso
+                  have h := hetyp
+                  rw [hres1_etyp0] at h
+                  cases h
               | dirty_internal_arrow _ hisArrow _ _ =>
                   exfalso
                   have : res1.qualType.etyp.isArrow = false := by
                     simp [hres1_etyp0, ETyp.isArrow]
                   simp [this] at hisArrow
               | clean_internal_parrow _ hetyp _ _ _ _ _ _ _ =>
+                  exfalso
+                  have h := hetyp
+                  rw [hres1_etyp0] at h
+                  cases h
+              | clean_internal_parrow_extern _ hetyp _ _ _ _ _ _ _ _ _ =>
                   exfalso
                   have h := hetyp
                   rw [hres1_etyp0] at h
@@ -909,12 +920,22 @@ lemma stepFR_deref
                   have h := hetyp
                   rw [hres1_etyp0] at h
                   cases h
+              | clean_internal_arrow_extern _ hetyp _ _ _ _ _ _ _ _ _ =>
+                  exfalso
+                  have h := hetyp
+                  rw [hres1_etyp0] at h
+                  cases h
               | dirty_internal_arrow _ hisArrow _ _ =>
                   exfalso
                   have : res1.qualType.etyp.isArrow = false := by
                     simp [hres1_etyp0, ETyp.isArrow]
                   simp [this] at hisArrow
               | clean_internal_parrow _ hetyp _ _ _ _ _ _ _ =>
+                  exfalso
+                  have h := hetyp
+                  rw [hres1_etyp0] at h
+                  cases h
+              | clean_internal_parrow_extern _ hetyp _ _ _ _ _ _ _ _ _ =>
                   exfalso
                   have h := hetyp
                   rw [hres1_etyp0] at h
@@ -1174,6 +1195,10 @@ lemma stepFR_deref
         exfalso
         have h := hres1_etyp0
         simp [hetyp] at h
+    | clean_internal_arrow_extern _ hetyp _ _ _ _ _ _ _ _ _ =>
+        exfalso
+        have h := hres1_etyp0
+        simp [hetyp] at h
     | dirty_internal_arrow _ hisArrow _ _ =>
         exfalso
         -- res1.etyp is ref, so cannot be arrow
@@ -1182,6 +1207,10 @@ lemma stepFR_deref
         rw [hisArrow] at this
         cases this
     | clean_internal_parrow _ hetyp _ _ _ _ _ _ _ =>
+        exfalso
+        have h := hres1_etyp0
+        simp [hetyp] at h
+    | clean_internal_parrow_extern _ hetyp _ _ _ _ _ _ _ _ _ =>
         exfalso
         have h := hres1_etyp0
         simp [hetyp] at h
@@ -1554,6 +1583,8 @@ lemma stepFR_deref
               cases hv1
           | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv1 _ =>
               cases hv1
+          | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv1 _ =>
+              cases hv1
           | dirty_internal_arrow _ hisArrow htyp1 _ =>
               -- Value.num can only have type int, so isArrow must be false.
               have hqte_int : qt.etyp = ETyp.int :=
@@ -1563,6 +1594,8 @@ lemma stepFR_deref
               rw [hisArrow] at this
               cases this
           | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv1 _ =>
+              cases hv1
+          | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv1 _ =>
               cases hv1
           | dirty_internal_parrow _ hisParrow htyp1 _ =>
               -- Value.num can only have type int, so isParrow must be false.

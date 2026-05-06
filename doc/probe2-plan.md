@@ -57,25 +57,45 @@ Implemented and compiling:
   property.
 - `TypeSystemEnforcesFaultRobustness_emptyRegistry` proves the existing theorem
   is the empty-registry instance of the registry-relative spec.
+- `StepFRPost` now stores `BoundaryTagMeaningPost` rather than an
+  expression-indexed `IsCanonicalExtension`.  The expression parameter remains
+  phantom for caller stability, and ordinary source proofs build posts through
+  compatibility constructors/projections.
+- `StepFRApp.lean` has cursor/member extraction helpers for extern closure-list
+  entries in threaded `applyFnTClosureAtCursor` and
+  `applyPFnTClosureAtCursor` maps.  These expose the member result needed by a
+  future app-side transport helper.
+- The extern closure invariant extension is implemented and compiling:
+  `deepValueQTypProperty`, `closureCapturedVarsRegime`, `agreeValueUnder`, the
+  transport/projection lemmas, and the known inversion sites now include
+  extern-arrow / extern-parrow cases.
+- `StepFRApp.lean` has extern captured-env extractors and a named
+  `AppTwoRunOutPack` / `AppTwoRunOutChoice` post core for the app-side
+  body-to-join transport refactor.
+- `ExternBoundary.lean` has program-membership based trusted lookup helpers
+  (`TrustedRegistryAgreesWithProgram.resolve*Declaration` and
+  `.callBoundaryRun*`) in addition to the closure-list extern-member helpers.
 
 Still true:
 
 - The populated-registry theorem is not proven yet.
 - `StepFRApp` still consumes empty-registry local providers in the extern arrow
   cases.
-- `StepFRApp` now uses full app inversion at the remaining direct
-  `terminatesTo_app_inv'` sites, but the successful `externFn` / `externPfn`
-  runtime branches are still discharged only in the empty-registry wrapper.
+- The main two-run app proof still uses
+  `terminatesTo_app_inv_full_empty_user_only` at the arrow/parrow runtime
+  splits, so successful `externFn` / `externPfn` runtime branches are still
+  discharged inside the empty-registry wrapper rather than consumed directly.
 - Top-level `externVal`, `externFn`, and `externPfn` proof branches still rely
   on empty-registry contradiction.
 - `TypeSystemEnforcesFaultRobustness_step` currently proves the default
   empty-registry instance of the registry-parametric step spec; it has not yet
   been generalized to arbitrary `registry`.
 
-Last verification after the app-inversion checkpoint:
+Latest verification after the `StepFRPost` / `StepFRApp` helper updates:
 
 - `lake build LeanProofs` succeeds.
-- `make test` passes.
+- `make test` passes on rerun.  The first run had transient tree-sitter cache
+  load failures while `poison.so` was being rebuilt.
 - `git diff --check` is clean.
 - No new actual `sorry` or `axiom` was introduced.  Existing `sorry` warnings in
   `LeanProofs/SemanticsProperties.lean` remain pre-existing.
@@ -107,69 +127,70 @@ fault-robustness.
 
 ## Current Blocker
 
-The next blocker is a postcondition-shape mismatch in the app extern-call
-boundary.
+The `StepFRPost` tag-meaning mismatch and the captured-env invariant gap are
+resolved.  The active blocker is now the app proof structure itself:
+`StepFRApp.lean` must expose the existing body-to-app transport as reusable
+helpers before successful runtime extern branches can consume
+`ExternBoundarySpec.callFR` / `callSingle`.
 
-`ExternBoundarySpec.callFR` and `callSingle` are body-boundary contracts.  For a
-successful extern call, they produce post facts in the body context carried by
-`ExternCallEntry`:
-
-```lean
-StepFRPost entry.bodyCtx postExpr res predSat tm ...
-ExternBoundarySinglePost entry.bodyCtx res predSat tm ...
-```
-
-The current `StepFRApp.lean` local providers, however, are consumed at the point
-where the app proof already expects the final joined application post:
+`ExternBoundarySpec.callFR` is intentionally body-local.  For a successful
+extern call, the app proof should build an `ExternCallEntry`, prove the body
+entry inputs agree, consume:
 
 ```lean
-StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm ...
-StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost ... ctxᵢ res ...
+entry.spec.callFR ... :
+  StepFRPost entry.bodyCtx postExpr memberResult predSat tm ...
 ```
 
-Instantiating `callFR` with the outer app result gives a post in the wrong
-context (`entry.bodyCtx` instead of `ctxᵢ`).  Instantiating it with the member
-body result gives the right boundary meaning, but then the app proof must still
-transport value typing, runtime instantiation, regime consistency,
-`agreeOnClean`, value consistency, and clean-result agreement through:
+and then transport that member post through provenance normalization,
+`joinTypeResults`, and app-config restoration.
 
-1. the extern member result (`applyFnTClosure` / `applyPFnTClosure`);
-2. `normalizeAppResultByProvenance`;
-3. `joinTypeResults`; and
-4. the app runtime restoration from the synthetic body-final config to the final
-   app config.
+A new app-specific wrinkle is now mapped: runtime `externFn` dispatch is not
+forced to originate from a `FnTClosure.extern` member.  It can also arise from a
+regular closure whose body AST is `Expr.externFn ...`, because runtime app
+dispatch matches on the closure body.  Therefore the populated app proof needs
+two trusted lookup paths:
 
-The current local provider interfaces do not carry that static app-transport
-payload, and `ExternBoundarySpec.callFR` / `callSingle` intentionally do not
-know it.  Replacing the providers by direct calls to `entry.spec.callFR` would
-therefore require a concrete extern boundary to prove an outer app
-`StepFRPost`, which would force arbitrary `IsCanonicalExtension` evidence for a
-post expression outside the extern boundary.
+- `FnTClosure.extern` / `PFnTClosure.extern` membership uses
+  `TrustedRegistryAgreesWithFnTClosures` /
+  `TrustedRegistryAgreesWithPFnTClosures`.
+- Regular closure members with an extern body AST use
+  `TrustedRegistryAgreesWithProgram` evidence for the corresponding
+  `ExternDeclarationInProgram` node, via the new program-membership lookup
+  helpers.
 
-The tag-meaning part of this blocker is smaller than it first appears:
-`IsCanonicalExtension`'s expression parameter is already phantom for
-`StepFRPost` consumers.  The projections used from
-`IsCanonicalExtension tm ctx e res tm'`, together with `PredSatLaws predSat tm'`
-and `QTypRespectsTagMeaning tm' res.qualType`, are exactly the facts bundled by
-`BoundaryTagMeaningPost ctx res predSat tm tm'`.  Refactoring `StepFRPost` to use
-`BoundaryTagMeaningPost` is therefore bookkeeping, not a loss of information.
-
-The real work is in `StepFRApp.lean`.  The current user-function proof does not
-expose a body-level post as a clean intermediate: body identity, member/cursor
-recovery from the threaded closure application, body IH consumption, and
-body-to-app transport are interleaved.  The proof must be reorganized so those
-concerns are separated before extern-call boundary evidence can be substituted.
+Changing `ExternBoundarySpec.callFR` to return an outer app post is still the
+wrong direction: it would push app-specific `apply*Closure`/join/restoration
+reasoning into every concrete extern boundary.
 
 ## Suggested Fixing Direction
 
 The remaining fix should factor the app proof's existing body-to-app transport
 instead of strengthening the extern boundary into an outer-app post provider.
 
-1. Refactor `StepFRPost` to use `BoundaryTagMeaningPost` as its tag-meaning
-   component.  Keep the `e : Expr` parameter for caller-signature stability, but
-   make it phantom in the definition.  Add compatibility constructors/projections
-   so ordinary source proofs can still build posts from `IsCanonicalExtension`
-   with minimal churn.
+1. Extend closure captured-regime and clean-agreement invariants for extern
+   closure members.  This step is implemented and compiling.
+
+   - 1a. Add extern-member constructors to `deepValueQTypProperty` and clean
+     extern closure agreement constructors to `agreeValueUnder`.
+   - 1b. Repair transport, monotonicity, and projection lemmas, including
+     `deepValueQTypProperty_mono`, `closureCapturedVarsRegime` transports, and
+     regular-member extraction helpers.
+   - 1c. Sweep inversion sites that currently assume only regular closure
+     cases.  The expected surface is non-trivial, including `StepFRVar.lean`,
+     `StepFRAssign.lean`, `StepFRVlet.lean`, `StepFRFnPfn.lean`, and
+     `FaultRobustnessProofs.lean`.
+   - 1d. Add producer-side construction for populated-registry
+     `Expr.externFn` / `Expr.externPfn` declaration steps.  These cases must
+     construct the new `closureCapturedVarsRegime` and clean extern agreement
+     facts from typing-side captured-env facts and runtime registry lookup,
+     without circular dependence on `ExternBoundarySpec`.
+
+   This preserves the current regular-member extraction used by the
+   user-closure app proof and adds extern-member extraction for future
+   `BodyEntryInputsAgree` construction.  The remaining producer use is in the
+   populated direct extern declaration branches, when those branches stop being
+   empty-registry vacuity.
 
 2. Reorganize the app proof to expose body-to-app transport as explicit helpers.
    This is the high-risk step.  It is not a one-shot extraction: first separate
@@ -198,6 +219,8 @@ instead of strengthening the extern boundary into an outer-app post provider.
    machinery, construct `ExternCallBoundaryRun.fn` / `.pfn` using the trusted
    lookup helpers, consume `entry.spec.callSingle` / `entry.spec.callFR`, and
    pass the body-boundary post into the corresponding app transport helper.
+   Handle both static extern closure-list members and regular closure members
+   whose body AST is an extern declaration.
 
 4. Replace the local empty-registry providers with lookup-based providers using
    `TrustedRegistryAgreesWithFnTClosures`,
@@ -206,20 +229,61 @@ instead of strengthening the extern boundary into an outer-app post provider.
 
 ## Remaining Plan
 
-1. **Refactor `StepFRPost` to boundary tag meaning.**
+1. **Extend extern closure regime/agreement invariants.** Completed.
 
-   Change `LeanProofs/StepFR.lean` so `StepFRPost` stores
-   `BoundaryTagMeaningPost ctx res predSat tm tm'` instead of direct
-   `IsCanonicalExtension tm ctx e res tm'` plus separate tag-meaning facts.
-   Keep the `e : Expr` parameter phantom for API stability.
+   This was the highest-risk remaining step.  The shared closure
+   captured-variable and clean-agreement relations so extern closure-list
+   members carry the same captured-env regime, typing, and agreement payload
+   that regular members already carry.
 
-   Done when ordinary source proofs can still construct `StepFRPost` from
-   `IsCanonicalExtension`, all previous projection sites compile against the
-   boundary post, and no theorem statement is weakened.
+   1a. Add extern constructors.
+
+   - Add extern-arrow and extern-parrow cases to the deep property used by
+     `closureCapturedVarsRegime`.
+   - Add corresponding clean extern closure agreement constructors to
+     `agreeValueUnder`.
+   - Preserve theorem strength: this is an extension of the value invariant,
+     not a new precondition on fault-robustness.
+
+   1b. Repair shared transport and projection lemmas.
+
+   - Update `deepValueQTypProperty_mono`, `closureCapturedVarsRegime`
+     transport lemmas, `valueConsistentWithRegime` transports, and agreement
+     transport helpers for the new constructors.
+   - Keep the current regular-member extractors unchanged in behavior.
+   - Add extern-member extractors that expose captured-env typing, captured-env
+     regime evidence, and captured-env agreement for `BodyEntryInputsAgree`.
+
+   1c. Sweep consumer inversion sites.
+
+   - Update every case split that currently has only regular `closure` /
+     `peClosure` branches.  Expected files include `StepFRVar.lean`,
+     `StepFRAssign.lean`, `StepFRVlet.lean`, `StepFRFnPfn.lean`, and
+     `FaultRobustnessProofs.lean`.
+   - Empty-registry-only paths may keep vacuity arguments where the operational
+     premise is still impossible, but the new constructors must be handled
+     syntactically so the populated-registry theorem has a route.
+
+   1d. Add producer-side construction.
+
+   - In the direct `Expr.externFn` / `Expr.externPfn` declaration branches,
+     construct the new closure captured-regime and clean extern agreement facts
+     when a populated registry returns an extern closure value.
+   - The construction should use typing-side captured-env facts, runtime
+     instantiation, registry lookup, and trusted-entry agreement.  It must not
+     assume `ExternBoundarySpec.callFR`; declaration producers are upstream of
+     app call boundaries.
+
+   Current status: 1a-1c are implemented and compiling, including the
+   extern-member extraction needed for later `BodyEntryInputsAgree`
+   construction.  The producer-side use in 1d remains part of the populated
+   direct extern declaration proof, because those branches are still
+   empty-registry vacuity in the current theorem.
 
 2. **Re-architect app body-to-app transport.**
 
-   This is the highest-risk remaining step.  In `LeanProofs/StepFRApp.lean`,
+   This is still a high-risk step after the invariant extension.  In
+   `LeanProofs/StepFRApp.lean`,
    separate the current user-closure proof into body identity/member/cursor
    recovery, body post production/consumption, and transport from a body post to
    the joined app post.
@@ -246,6 +310,14 @@ instead of strengthening the extern boundary into an outer-app post provider.
    construct `ExternCallBoundaryRun.fn` / `.pfn` from trusted lookup and runtime
    facts, consume `entry.spec.callSingle` / `entry.spec.callFR`, and feed the
    body-boundary post into the transport helpers from step 2.
+
+   Runtime `externFn` dispatch has two static shapes.  If the closure-list
+   member is `FnTClosure.extern`, resolve it through
+   `TrustedRegistryAgreesWithFnTClosures`.  If the member is regular but its
+   body is `Expr.externFn`, resolve the trusted entry through
+   `TrustedRegistryAgreesWithProgram` for the corresponding declaration node.
+   The pure `externPfn` path is expected to use the extern-member route because
+   regular pure closures require `Expr.toPExpr? body = some ...`.
 
    Done when app runtime `externFn` / `externPfn` dispatch is no longer proved
    impossible from `emptyExternRegistry`.
@@ -298,9 +370,6 @@ instead of strengthening the extern boundary into an outer-app post provider.
 
 ## Hard Stops
 
-- Stop if the `StepFRPost` refactor to `BoundaryTagMeaningPost` reveals an
-  information gap not recoverable from the old `IsCanonicalExtension`
-  projections plus `PredSatLaws`.
 - Stop if a body-to-app transport helper needs facts that are not already
   present in the regular user-closure app proof or in `ExternBoundarySpec`.
 - Stop if `ExternCallEntry.bodyCtx` cannot be connected to the app body context
@@ -308,5 +377,12 @@ instead of strengthening the extern boundary into an outer-app post provider.
 - Stop if the bridge from closure-list membership to trusted registry lookup
   cannot be stated without weakening `TrustedRegistryAgreesWithProgram` into a
   vague global assumption.
+- Stop if a regular `FnTClosure.regular x (Expr.externFn ...) ...` runtime
+  dispatch cannot be tied either to program-membership trusted agreement or to
+  a precise typed-closure provenance premise.
 - Stop if a required `ExternBoundarySpec` field lacks enough payload to
   reconstruct the body post needed by the app transport helper.
+- Stop if the `Expr.externFn` / `Expr.externPfn` declaration step proofs cannot
+  construct `closureCapturedVarsRegime` and clean extern closure agreement from
+  typing-side facts and trusted-registry lookup alone, without circular
+  dependence on `ExternBoundarySpec`.

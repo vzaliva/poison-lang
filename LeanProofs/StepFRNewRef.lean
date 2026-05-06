@@ -1436,11 +1436,11 @@ lemma stepFR_newRef
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm1 res.qualType hnotfun_res hguard) hinq hqd
   have hwfTm_final : wfTagMeaningCtx tm1 (ctxAfter ctxᵢ res) :=
     wfTagMeaningCtx_ctxAfter tm1 ctxᵢ res hEnvTm_res
-  have hcanon_newRef : IsCanonicalExtension tm ctxᵢ (Expr.newRef e) res tm1 := by
-    exact ⟨IsCanonicalExtension.extends_tm hcanon1,
-      by simpa [h_ntag] using IsCanonicalExtension.bounded hcanon1,
-      hwfTm_final, hresTm⟩
-  refine ⟨tm1, hcanon_newRef, hpredlaws1, hresTm, ?_⟩
+  have hboundary_newRef : BoundaryTagMeaningPost ctxᵢ res predSat tm tm1 := by
+    exact ⟨BoundaryTagMeaningPost.extends_tm hcanon1,
+      by simpa [h_ntag] using BoundaryTagMeaningPost.bounded hcanon1,
+      hwfTm_final, hresTm, hpredlaws1⟩
+  refine ⟨tm1, hboundary_newRef, hpredlaws1, hresTm, ?_⟩
   refine ⟨θ₀', θ₁', ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'

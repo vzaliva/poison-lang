@@ -42,7 +42,7 @@ lemma stepFR_literal
   have hcanon : IsCanonicalExtension tm ctx e res tm := by
     refine IsCanonicalExtension.refl hbounded_res ?_ hresTm
     simpa [hctxAfter] using hwfTm
-  refine ⟨tm, hcanon, hpredlaws, hresTm, ?_⟩
+  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
   -- StepFR existential has structure:
   -- ∃ θ₀' θ₁', wfExtendsMap θ₀ θ₀' ∧ wfExtendsMap θ₁ θ₁' ∧
   --   valueHasETyp θ₀' o₀ res.qualType.etyp ∧ valueHasETyp θ₁' o₁ res.qualType.etyp ∧

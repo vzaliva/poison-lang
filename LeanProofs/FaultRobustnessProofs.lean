@@ -2010,12 +2010,16 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
               rfl
           | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv1 _ =>
               cases hv1
+          | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv1 _ =>
+              cases hv1
           | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
               -- A Value.num can only have type ETyp.int, but isArrow = true implies function type
               have het : qt.etyp = ETyp.int := by
                 generalize hqte : qt.etyp = qte at htyp1; cases htyp1; rfl
               exact absurd (het ▸ hisArrow) (by decide)
           | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv1 _ =>
+              cases hv1
+          | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv1 _ =>
               cases hv1
           | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
               -- A Value.num can only have type ETyp.int, but isParrow = true implies parrow type
@@ -2092,6 +2096,8 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
                 exact (hnotref ⟨ls, hret_et⟩).elim
             | clean_internal_arrow _ hetyp _ _ _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
+            | clean_internal_arrow_extern _ hetyp _ _ _ _ _ _ _ _ _ =>
+                cases (Eq.trans (Eq.symm hetyp) hret_et)
             | dirty_internal_arrow _ hisArrow =>
                 -- qt.etyp is an arrow but hret_et says it's et (from observable spec).
                 -- This would contradict if observable types are not function types.
@@ -2101,6 +2107,8 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
                   simp [ETyp.isArrow] at hisArrow_ref
                 exact False.elim this
             | clean_internal_parrow _ hetyp _ _ _ _ _ _ _ =>
+                cases (Eq.trans (Eq.symm hetyp) hret_et)
+            | clean_internal_parrow_extern _ hetyp _ _ _ _ _ _ _ _ _ =>
                 cases (Eq.trans (Eq.symm hetyp) hret_et)
             | dirty_internal_parrow _ hisParrow =>
                 -- qt.etyp is a parrow but hret_et says it's et (from observable spec).

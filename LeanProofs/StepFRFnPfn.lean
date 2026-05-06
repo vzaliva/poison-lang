@@ -308,7 +308,7 @@ lemma stepFR_fn
     refine IsCanonicalExtension.refl ?_ ?_ hresTm
     · simpa [hres, res_expected] using hTmBounded
     · simpa [hctxAfter] using hwfTm
-  refine ⟨tm, hcanon, hpredlaws, hresTm, ?_⟩
+  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
@@ -569,7 +569,7 @@ lemma stepFR_pfn
         refine IsCanonicalExtension.refl ?_ ?_ hresTm
         · simpa [hres, res_expected] using hTmBounded
         · simpa [hctxAfter] using hwfTm
-      refine ⟨tm, hcanon, hpredlaws, hresTm, ?_⟩
+      refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
       refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩

@@ -337,7 +337,7 @@ lemma stepFR_vlet
     exact typecheckExpr_TagBoundedCtx_varEnv_update ctxᵢ e1 fuel' res1 htc1' htagBounded vname
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
     rw [hctx']
-    exact IsCanonicalExtension.bounded hcanon1
+    exact BoundaryTagMeaningPost.bounded hcanon1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' htagBounded' res2 htc2'
   -- Prepare for IH2
@@ -1025,95 +1025,19 @@ lemma stepFR_vlet
       -- We prove this by induction on agreement; the recursor provides the needed IH for captured environments.
       have agreeValueUnder_clean_monotoneRegime
           {R R' : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
-          Regime.monotoneStep R R' →
-            qtypCleanUnder R' qt →
-              agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
-                agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
-        intro h_mono hclean hagree
-        -- Strengthen the induction hypothesis so the captured-env case is available in arrow/parrow branches.
-        have hrec :
-            (qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁) :=
-          agreeValueUnder.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
-            (motive_1 := fun qt v₀ v₁ _ =>
-              qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁)
-            (motive_2 := fun σcap ρcap₀ ρcap₁ _ =>
-              agreeCapturedEnv predSat R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
-            (clean_eq_nonref_nonarrow := by
-              intro qt v₀ v₁ hpoison hnotfun hnotref heq _hclean
-              exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
-            (clean_internal_arrow := by
-              intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-                hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap _hclean
-              exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch ihcap
-                (memberVarsRegimeEvidence_monotone h_mono hmemberVars₀)
-                (memberCvcrEvidence_monotone h_mono hmemberCvcr₀)
-                (memberVarsRegimeEvidence_monotone h_mono hmemberVars₁)
-                (memberCvcrEvidence_monotone h_mono hmemberCvcr₁)
-                hv₀ hv₁)
-            (dirty_internal_arrow := by
-              intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 _hclean
-              exact agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2)
-            (clean_internal_parrow := by
-              intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-                hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap _hclean
-              exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch ihcap
-                (memberVarsRegimeEvidence_monotone h_mono hmemberVars₀)
-                (memberCvcrEvidence_monotone h_mono hmemberCvcr₀)
-                (memberVarsRegimeEvidence_monotone h_mono hmemberVars₁)
-                (memberCvcrEvidence_monotone h_mono hmemberCvcr₁)
-                hv₀ hv₁)
-            (dirty_internal_parrow := by
-              intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 _hclean
-              exact agreeValueUnder.dirty_internal_parrow hdirty_internal hisParrow htyp1 htyp2)
-            (clean_ref := by
-              intro ls l a₀ a₁ qt v₀ v₁ hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁ _hclean
-              exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁)
-            (withPred_true_eq := by
-              intro k qt v₀ v₁ htag _hreg hnotfun hnotref heq hclean
-              cases hclean with
-              | clean hpoison =>
-                  exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq
-              | guard k' htag' hk'R' _hnotfun' =>
-                  have hk : k' = k := by
-                    have : some k' = some k := by
-                      calc
-                        some k' = qtypGuardTag qt := by symm; exact htag'
-                        _ = some k := htag
-                    exact Option.some.inj this
-                  have hreg : R'.lookup? k = some true := by
-                    simpa [hk] using hk'R'
-                  exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref heq)
-            (withPred_true_ref := by
-              intro k ls l a₀ a₁ qt v₀ v₁ htag _hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁ hclean
-              cases hclean with
-              | clean hpoison =>
-                  exact agreeValueUnder.clean_ref hpoison hetyp hlookup1 hin hv₀ hlookup2 hv₁
-              | guard k' htag' hk'R' _hnotfun' =>
-                  have hk : k' = k := by
-                    have : some k' = some k := by
-                      calc
-                        some k' = qtypGuardTag qt := by symm; exact htag'
-                        _ = some k := htag
-                    exact Option.some.inj this
-                  have hreg : R'.lookup? k = some true := by
-                    simpa [hk] using hk'R'
-                  exact agreeValueUnder.withPred_true_ref k htag hreg hetyp hlookup1 hin hv₀ hlookup2 hv₁)
-            (nil := by
-              intro ρcap₀ ρcap₁
-              exact agreeCapturedEnv.nil)
-            (cons_clean := by
-              intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 htyp1 htyp2 hagree htail ihagree ihtail
-              by_cases hcleanR' : qtypCleanUnder R' qt
-              · exact agreeCapturedEnv.cons_clean hcleanR' hlookup1 hlookup2 htyp1 htyp2 (ihagree hcleanR') ihtail
-              · exact agreeCapturedEnv.cons_dirty hcleanR' hlookup1 hlookup2 htyp1 htyp2 ihtail)
-            (cons_dirty := by
-              intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ hdirty hlookup1 hlookup2 htyp1 htyp2 htail ihtail
-              have hdirty' : ¬ qtypCleanUnder R' qt := by
-                intro hcleanR'
-                exact hdirty (cleanUnder_of_monotone (R := R) (R' := R') h_mono hcleanR')
-              exact agreeCapturedEnv.cons_dirty hdirty' hlookup1 hlookup2 htyp1 htyp2 ihtail)
-            hagree
-        exact hrec hclean
+            Regime.monotoneStep R R' →
+              qtypCleanUnder R' qt →
+                agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
+                  agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
+          intro h_mono hclean hagree
+          exact
+            agreeValueUnder_clean_transport_by_cleanBack
+              (fun qt hclean' => cleanUnder_of_monotone (R := R) (R' := R') h_mono hclean')
+              (fun h => memberVarsRegimeEvidence_monotone h_mono h)
+              (fun h => memberCvcrEvidence_monotone h_mono h)
+              (fun h => memberVarsRegimeEvidence_monotone h_mono h)
+              (fun h => memberCvcrEvidence_monotone h_mono h)
+              hclean hagree
       -- Establish the regime monotone step from after-e1 to after-e2 (typechecking can only drop regime entries).
       have h_mono_e2 : Regime.monotoneStep (ctxAfter ctxᵢ res1).regime (ctxAfter ctx' res2).regime := by
         have h := regime_monotone ctx' e2 fuel' res2 htc2'
@@ -1493,7 +1417,10 @@ lemma stepFR_vlet
     exact fun {qt'} {k} {d} hinq hqd =>
       (QTypRespectsTagMeaning_transport_etyp_pred
         (tm := tm2) (qt := res2.qualType) (qt' := res.qualType) hresTm2 hetyp hpredEq) hinq hqd
-  have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
+  have hext_tm_tm2 : tm ⊑ tm2 :=
+    TagMeaningExtends.trans
+      (BoundaryTagMeaningPost.extends_tm hcanon1)
+      (BoundaryTagMeaningPost.extends_tm hcanon2)
   have hTm_final : wfTagMeaningCtx tm2 (ctxAfter ctxᵢ res) := by
     unfold wfTagMeaningCtx at _hTm2 ⊢
     simp only [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
@@ -1501,11 +1428,12 @@ lemma stepFR_vlet
       simpa [hctx'] using _hTm2
     refine EnvRespectsTagMeaning_of_update tm2 vname ctxᵢ.varEnv res1.qualType res2.memEnv' _hTm2' ?_
     intro qt hlookup
-    exact QTypRespectsTagMeaning_mono hcanon_trans.1
+    exact QTypRespectsTagMeaning_mono hext_tm_tm2
       (wfTagMeaningCtx_var_lookup_qtyp tm ctxᵢ vname qt hwfTm hlookup)
-  have hcanon_vlet : IsCanonicalExtension tm ctxᵢ (Expr.vlet vname e1 e2) res tm2 := by
-    exact ⟨hcanon_trans.1, by rw [h_ntag]; exact hcanon_trans.2.1, hTm_final, hresTm⟩
-  refine ⟨tm2, hcanon_vlet, hpredlaws2, hresTm, ?_⟩
+  have hboundary_vlet : BoundaryTagMeaningPost ctxᵢ res predSat tm tm2 := by
+    exact ⟨hext_tm_tm2, by rw [h_ntag]; exact BoundaryTagMeaningPost.bounded hcanon2,
+      hTm_final, hresTm, hpredlaws2⟩
+  refine ⟨tm2, hboundary_vlet, hpredlaws2, hresTm, ?_⟩
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final,
     hwfcf₁_final, hric₀'', hric₁'', hreg'', hcwr₀_final, hcwr₁_final,
     hagree_clean, ?_, ?_, ?_⟩

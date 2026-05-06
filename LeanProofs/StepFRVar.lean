@@ -795,7 +795,7 @@ lemma stepFR_var
     refine IsCanonicalExtension.refl ?_ ?_ hresTm
     · simpa [hnextTag] using hTmBounded
     · simpa [ctxAfter, hmem] using hwfTm
-  refine ⟨tm, hcanon, hpredlaws, hresTm, ?_⟩
+  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
@@ -968,6 +968,10 @@ lemma stepFR_var
                             simp only [hres, hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
                               Bool.true_or] at hnotfun_res
                             cases hnotfun_res
+                        | clean_internal_arrow_extern hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
+                            simp only [hres, hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                              Bool.true_or] at hnotfun_res
+                            cases hnotfun_res
                         | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
                             -- dirty_internal_arrow requires isArrow = true, contradicting hnotfun_res
                             simp only [hres, ETyp.isFunctionType] at hnotfun_res
@@ -975,6 +979,10 @@ lemma stepFR_var
                             cases hnotfun_res
                         | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                             -- Parrow types are function types, contradicting hnotfun_res
+                            simp only [hres, hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                              Bool.or_true] at hnotfun_res
+                            cases hnotfun_res
+                        | clean_internal_parrow_extern hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                             simp only [hres, hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
                               Bool.or_true] at hnotfun_res
                             cases hnotfun_res
@@ -1075,6 +1083,11 @@ lemma stepFR_var
                               simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
                                 Bool.true_or] at hnotfun_qt
                               cases hnotfun_qt
+                          | clean_internal_arrow_extern hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
+                              exfalso
+                              simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                                Bool.true_or] at hnotfun_qt
+                              cases hnotfun_qt
                           | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
                               -- Dirty arrow: qt.etyp is arrow but hnotfun_qt says it's not a function type
                               exfalso
@@ -1083,6 +1096,11 @@ lemma stepFR_var
                               cases hnotfun_qt
                           | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                               -- Parrow types are function types, contradicts hnotfun_qt
+                              exfalso
+                              simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                                Bool.or_true] at hnotfun_qt
+                              cases hnotfun_qt
+                          | clean_internal_parrow_extern hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                               exfalso
                               simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
                                 Bool.or_true] at hnotfun_qt
@@ -1228,6 +1246,11 @@ lemma stepFR_var
                             simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
                               Bool.true_or] at hnotfun_qt
                             cases hnotfun_qt
+                        | clean_internal_arrow_extern hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
+                            exfalso
+                            simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                              Bool.true_or] at hnotfun_qt
+                            cases hnotfun_qt
                         | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
                             exfalso
                             simp only [ETyp.isFunctionType] at hnotfun_qt
@@ -1235,6 +1258,11 @@ lemma stepFR_var
                             cases hnotfun_qt
                         | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                             -- Parrow types are function types, contradicts hnotfun_qt
+                            exfalso
+                            simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                              Bool.or_true] at hnotfun_qt
+                            cases hnotfun_qt
+                        | clean_internal_parrow_extern hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                             exfalso
                             simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
                               Bool.or_true] at hnotfun_qt
@@ -1338,6 +1366,11 @@ lemma stepFR_var
                               simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
                                 Bool.true_or] at hnotfun_qt
                               cases hnotfun_qt
+                          | clean_internal_arrow_extern hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
+                              exfalso
+                              simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                                Bool.true_or] at hnotfun_qt
+                              cases hnotfun_qt
                           | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
                               exfalso
                               simp only [ETyp.isFunctionType] at hnotfun_qt
@@ -1345,6 +1378,11 @@ lemma stepFR_var
                               cases hnotfun_qt
                           | clean_internal_parrow hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                               -- Parrow types are function types, contradicts hnotfun_qt
+                              exfalso
+                              simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
+                                Bool.or_true] at hnotfun_qt
+                              cases hnotfun_qt
+                          | clean_internal_parrow_extern hclean hetyp htcl hmatch hcap hv₁ hv₂ =>
                               exfalso
                               simp only [hetyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow,
                                 Bool.or_true] at hnotfun_qt

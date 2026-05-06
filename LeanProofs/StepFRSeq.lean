@@ -242,7 +242,7 @@ lemma stepFR_seq
   have htagBounded1' : TagBoundedCtx ctx' := by
     simpa [hctx', ctxAfter] using _htagBounded1
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
-    simpa [hctx', ctxAfter] using IsCanonicalExtension.bounded hcanon1
+    simpa [hctx', ctxAfter] using BoundaryTagMeaningPost.bounded hcanon1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e2 ctx' hwfTm' htagBounded1' res htc2'
   -- Prepare for IH2
@@ -322,11 +322,15 @@ lemma stepFR_seq
     simpa [hctxAfter] using hcwr₀2
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁2 := by
     simpa [hctxAfter] using hcwr₁2
-  have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
-  have hcanon_seq : IsCanonicalExtension tm ctxᵢ (Expr.seq e1 e2) res tm2 := by
-    exact ⟨hcanon_trans.1, hcanon_trans.2.1,
-      by simpa [hctxAfter] using hcanon_trans.2.2.1, hcanon_trans.2.2.2⟩
-  refine ⟨tm2, hcanon_seq, hpredlaws2, hresTm2, ?_⟩
+  have hboundary_seq : BoundaryTagMeaningPost ctxᵢ res predSat tm tm2 := by
+    exact ⟨TagMeaningExtends.trans
+        (BoundaryTagMeaningPost.extends_tm hcanon1)
+        (BoundaryTagMeaningPost.extends_tm hcanon2),
+      BoundaryTagMeaningPost.bounded hcanon2,
+      by simpa [hctxAfter] using BoundaryTagMeaningPost.wfCtx hcanon2,
+      hresTm2,
+      hpredlaws2⟩
+  refine ⟨tm2, hboundary_seq, hpredlaws2, hresTm2, ?_⟩
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, ?_, hwfcf₀2, hwfcf₁2, hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
   · exact _hvtyp₀2
   · exact _hvtyp₁2

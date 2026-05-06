@@ -2705,10 +2705,10 @@ private lemma stepFR_ite_true
   have hTm_final : wfTagMeaningCtx tm2 (ctxAfter ctxᵢ res) := by
     simp only [wfTagMeaningCtx] at _hTm2 ⊢
     rwa [hctxAfter_varEnv, hctxAfter_memEnv]
-  have hcanon_ite : IsCanonicalExtension tm ctxᵢ (Expr.ite e1 e2 e3) res tm2 := by
+  have hboundary_ite : BoundaryTagMeaningPost ctxᵢ res predSat tm tm2 := by
     exact ⟨hcanon2.1, by rw [_hnextTag]; exact hcanon2.2.1.mono (Nat.le_max_left _ _),
-      hTm_final, hresTm⟩
-  refine ⟨tm2, hcanon_ite, hpredlaws2, hresTm, ?_⟩
+      hTm_final, hresTm, hpredlaws2⟩
+  refine ⟨tm2, hboundary_ite, hpredlaws2, hresTm, ?_⟩
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, ?_, hwfcf₀2, hwfcf₁2,
     hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_final,
     ?_, ?_, ?_⟩
@@ -3196,10 +3196,10 @@ private lemma stepFR_ite_false
   have hTm_final : wfTagMeaningCtx tm3 (ctxAfter ctxᵢ res) := by
     simp only [wfTagMeaningCtx] at _hTm3 ⊢
     rwa [hctxAfter_varEnv, hctxAfter_memEnv]
-  have hcanon_ite : IsCanonicalExtension tm ctxᵢ (Expr.ite e1 e2 e3) res tm3 := by
+  have hboundary_ite : BoundaryTagMeaningPost ctxᵢ res predSat tm tm3 := by
     exact ⟨hcanon3.1, by rw [_hnextTag]; exact hcanon3.2.1.mono (Nat.le_max_right _ _),
-      hTm_final, hresTm⟩
-  refine ⟨tm3, hcanon_ite, hpredlaws3, hresTm, ?_⟩
+      hTm_final, hresTm, hpredlaws3⟩
+  refine ⟨tm3, hboundary_ite, hpredlaws3, hresTm, ?_⟩
   refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, ?_, ?_, ?_, hwfcf₀3, hwfcf₁3,
     hric₀_final, hric₁_final, htag_final, hcwr₀_final, hcwr₁_final, hagree_final,
     ?_, ?_, ?_⟩
@@ -3534,7 +3534,7 @@ private lemma stepFR_ite_standard
   have htagBounded_ctx'' : TagBoundedCtx ctx'' := by
     simpa [ctx'', ctx', pc', ctxAfter, TagBoundedCtx, tagEnvBoundedInCtx, predTagsBoundedInCtx, closureEnvBoundedInCtx] using htagBounded1
   have hTmBounded_ctx'' : TagMeaningBounded tm1 ctx''.nextTag := by
-    simpa [ctx'', ctx', pc'] using IsCanonicalExtension.bounded hcanon1
+    simpa [ctx'', ctx', pc'] using BoundaryTagMeaningPost.bounded hcanon1
   have hric₀1_ctx'' : runtimeInstantiatesCtx ctx'' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
     simpa [ctx'', ctx', pc', ctxAfter, runtimeInstantiatesCtx] using hric₀1
   have hric₁1_ctx'' : runtimeInstantiatesCtx ctx'' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
@@ -3993,7 +3993,8 @@ private lemma stepFR_ite_standard
                 hclean_resJoin_reg hresJoin_etyp.symm hpoison_imp hagree_join
             simpa [ctxAfter, ctx'', ctx', pc', resJoin, hregime'] using hagree_res
           exact
-            ⟨tmOut, hcanonOut, hpredlawsOut, hresTm, θ₀2, θ₁2, hθext₀, hθext₁, hvtyp₀_final, hvtyp₁_final,
+            ⟨tmOut, BoundaryTagMeaningPost.of_isCanonical_predSat hcanonOut hpredlawsOut,
+              hpredlawsOut, hresTm, θ₀2, θ₁2, hθext₀, hθext₁, hvtyp₀_final, hvtyp₁_final,
               hwfTm_final, hwf_final, htagBounded_final, hwfcf₀2, hwfcf₁2,
               hric₀_final, hric₁_final, htag_final,
               hcwr₀_final, hcwr₁_final, hagree_final,
@@ -4697,7 +4698,8 @@ private lemma stepFR_ite_standard
                 | inr hp1 =>
                     simp [joinPoison, hp1]
           exact
-            ⟨tmOut, hcanonOut, hpredlawsOut, hresTm, θ₀2, θ₁3, hθext₀, hθext₁, hvtyp₀_final, hvtyp₁_final,
+            ⟨tmOut, BoundaryTagMeaningPost.of_isCanonical_predSat hcanonOut hpredlawsOut,
+              hpredlawsOut, hresTm, θ₀2, θ₁3, hθext₀, hθext₁, hvtyp₀_final, hvtyp₁_final,
               hwfTm_final, hwf_final, htagBounded_final, hwfcf₀_final, hwfcf₁_final,
               hric₀_final, hric₁_final, htag_final,
               hcwr₀_final, hcwr₁_final, hagree_final,
@@ -5401,7 +5403,8 @@ private lemma stepFR_ite_standard
                 | inr hp1 =>
                     simp [joinPoison, hp1]
           exact
-            ⟨tmOut, hcanonOut, hpredlawsOut, hresTm, θ₀3, θ₁2, hθext₀, hθext₁, hvtyp₀_final, hvtyp₁_final,
+            ⟨tmOut, BoundaryTagMeaningPost.of_isCanonical_predSat hcanonOut hpredlawsOut,
+              hpredlawsOut, hresTm, θ₀3, θ₁2, hθext₀, hθext₁, hvtyp₀_final, hvtyp₁_final,
               hwfTm_final, hwf_final, htagBounded_final, hwfcf₀_final, hwfcf₁_final,
               hric₀_final, hric₁_final, htag_final,
               hcwr₀_final, hcwr₁_final, hagree_final,
@@ -5850,7 +5853,8 @@ private lemma stepFR_ite_standard
                 hclean_resJoin_reg hresJoin_etyp.symm hpoison_imp hagree_join
             exact hreg_final ▸ hagree_res
           exact
-            ⟨tmOut, hcanonOut, hpredlawsOut, hresTm, θ₀3, θ₁3, hθext₀, hθext₁, hvtyp₀_final, hvtyp₁_final,
+            ⟨tmOut, BoundaryTagMeaningPost.of_isCanonical_predSat hcanonOut hpredlawsOut,
+              hpredlawsOut, hresTm, θ₀3, θ₁3, hθext₀, hθext₁, hvtyp₀_final, hvtyp₁_final,
               hwfTm_final, hwf_final, htagBounded_final, hwfcf₀3, hwfcf₁3,
               hric₀_final, hric₁_final, htag_final,
               hcwr₀_final, hcwr₁_final, hagree_final,
