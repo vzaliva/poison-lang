@@ -2495,6 +2495,97 @@ private lemma externFnStaticSource_of_valueConsistentWithRegime
       ⟨σcap, ExternCallBoundaryFnStaticSource.externMember hmem,
         hregime, htyping, hrec⟩
 
+private theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
+    {tr : TrustedRegistry} {argTyp : Typ} {tcls : List FnTClosure}
+    (hagreesExtern : TrustedRegistryAgreesWithFnTClosures tr argTyp tcls)
+    (hregularExternBody :
+      ∀ {id x y retSpec effects capturedEnv},
+        FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) capturedEnv ∈ tcls →
+        ∃ entry,
+          TrustedRegistry.lookup? tr id = some entry ∧
+          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects)
+    {id : ExternId} {x y : Name} {retSpec : ExternReturn}
+    {effects : List Effect} {capturedEnv : CapturedVarEnv}
+    (hstatic :
+      ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec effects capturedEnv)
+    {implFn : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address)}
+    {callEntry : ExternCallEntry} {res : TypeResult}
+    {cf : Config} {v vRaw : Value} {mem' : Memory} {addr' : Address}
+    (hargName : callEntry.argName = x)
+    (hregistry : callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr)
+    (hpure : callEntry.callConfig.pureMode = false)
+    (hunified :
+      callEntry.unifiedEnv =
+        VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue)
+    (hGet : callEntry.callConfig.registry.get? id = some (ExternImpl.fn implFn))
+    (hArg : valueMatchesTyp callEntry.argValue argTyp = true)
+    (hImpl :
+      implFn callEntry.unifiedEnv callEntry.argValue
+        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
+        Except.ok (vRaw, mem', addr'))
+    (hValRet : validateExternReturn id retSpec vRaw = Except.ok v)
+    (hcfg : cf = { callEntry.callConfig with memory := mem', nextAddr := addr' }) :
+    ∃ entry,
+      TrustedRegistry.lookup? tr id = some entry ∧
+      ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
+  cases hstatic with
+  | externMember hmem =>
+      exact
+        TrustedRegistryAgreesWithFnTClosures.callBoundaryRun
+          hagreesExtern hmem hargName hregistry hpure hunified hGet hArg hImpl hValRet hcfg
+  | regularExternBody hmem =>
+      rcases hregularExternBody hmem with ⟨entry, hlookup, hmatch⟩
+      have hmatch' :
+          TrustedRegistryEntryMatchesFn entry id callEntry.argName argTyp retSpec effects := by
+        simpa [hargName] using hmatch
+      have hlookupRuntime :
+          (TrustedRegistry.toRuntimeRegistry tr).get? id = some entry.impl :=
+        TrustedRegistry.lookup_toRuntimeRegistry hlookup
+      have hlookupCall : callEntry.callConfig.registry.get? entry.decl.id = some entry.impl := by
+        rw [hregistry]
+        simpa [TrustedRegistryEntryMatchesFn.id_eq hmatch] using hlookupRuntime
+      have hGetDecl :
+          callEntry.callConfig.registry.get? entry.decl.id =
+            some (ExternImpl.fn implFn) := by
+        simpa [TrustedRegistryEntryMatchesFn.id_eq hmatch] using hGet
+      have himpl : entry.impl = ExternImpl.fn implFn :=
+        Option.some.inj (hlookupCall.symm.trans hGetDecl)
+      exact
+        ⟨entry, hlookup,
+          ExternCallBoundaryRun.fn_of_match hmatch' hpure hunified hlookupCall himpl
+            hArg hImpl hValRet hcfg⟩
+
+private theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun
+    {tr : TrustedRegistry} {argTyp : Typ} {tcls : List PFnTClosure}
+    (hagreesExtern : TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls)
+    {id : ExternId} {x y : Name} {retSpec : ExternReturn}
+    {capturedEnv : CapturedVarEnv}
+    (hstatic :
+      ExternCallBoundaryPfnStaticSource tcls id x y argTyp retSpec capturedEnv)
+    {implFn : VarEnv → Value → Memory → Except ExternError Value}
+    {callEntry : ExternCallEntry} {res : TypeResult}
+    {cf : Config} {v vRaw : Value}
+    (hargName : callEntry.argName = x)
+    (hregistry : callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr)
+    (hunified :
+      callEntry.unifiedEnv =
+        VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue)
+    (hGet : callEntry.callConfig.registry.get? id = some (ExternImpl.pfn implFn))
+    (hArg : valueMatchesTyp callEntry.argValue argTyp = true)
+    (hImpl :
+      implFn callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
+        Except.ok vRaw)
+    (hValRet : validateExternReturn id retSpec vRaw = Except.ok v)
+    (hcfg : cf = callEntry.callConfig) :
+    ∃ entry,
+      TrustedRegistry.lookup? tr id = some entry ∧
+      ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
+  cases hstatic with
+  | externMember hmem =>
+      exact
+        TrustedRegistryAgreesWithPFnTClosures.callBoundaryRun
+          hagreesExtern hmem hargName hregistry hunified hGet hArg hImpl hValRet hcfg
+
 /-- Spike-stage shape of `ExternCallBoundarySingle.fn` (see `doc/probe2-plan.md`).
     For a future populated registry this would be the boundary contract that
     turns extern dispatch evidence into the surrounding `Expr.app` post.  For
