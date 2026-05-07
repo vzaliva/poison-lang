@@ -2512,6 +2512,427 @@ private def AppTwoRunOutChoice
     wfExtendsMap θ₁ θ₁_out ∧
     AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θ₀_out θ₁_out
 
+private lemma appTwoRunOutChoice_of_pack
+    {predSat : PredSat} {ctx : TypeContext} {res : TypeResult}
+    {θ₀ θ₁ θ₀_out θ₁_out : RealizationMap}
+    {cf₀ cf₁ : Config} {o₀ o₁ : Value}
+    (hθ₀ : wfExtendsMap θ₀ θ₀_out)
+    (hθ₁ : wfExtendsMap θ₁ θ₁_out)
+    (hpack : AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θ₀_out θ₁_out) :
+    AppTwoRunOutChoice predSat ctx res θ₀ θ₁ cf₀ cf₁ o₀ o₁ :=
+  ⟨θ₀_out, θ₁_out, hθ₀, hθ₁, hpack⟩
+
+private lemma regime_lookup_back_of_monotone
+    {src dst : Regime}
+    (hmono : Regime.monotoneStep src dst) :
+    ∀ k b, dst.lookup? k = some b → src.lookup? k = some b := by
+  intro k b hk_dst
+  have hdef_dst : dst.lookup? k ≠ none := by
+    intro hnone
+    rw [hk_dst] at hnone
+    contradiction
+  have hdef_src : src.lookup? k ≠ none :=
+    hmono.2 k hdef_dst
+  cases hk_src : src.lookup? k with
+  | none =>
+      exact False.elim (hdef_src hk_src)
+  | some b_src =>
+      have hcases := hmono.1 k b_src hk_src
+      cases hcases with
+      | inl hk_dst' =>
+          have hb_eq : b_src = b := by
+            have : some b_src = some b := hk_dst'.symm.trans hk_dst
+            exact Option.some.inj this
+          simp [hb_eq]
+      | inr hnone_dst =>
+          rw [hnone_dst] at hk_dst
+          cases hk_dst
+
+private lemma locsRegime_transport_lookup
+    {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
+    {entry : Loc × QTyp}
+    (hlookup : ∀ k b, R.lookup? k = some b → R'.lookup? k = some b)
+    (h : locsRegime predSat R μ θ entry) :
+    locsRegime predSat R' μ θ entry := by
+  cases h with
+  | noPred_ok hpred =>
+      exact locsRegime.noPred_ok entry hpred
+  | guardOnly_ok k hgo =>
+      exact locsRegime.guardOnly_ok entry k hgo
+  | withPred_ok k arg_name pred_body var_env a n b hclos hregime hreal hmem hconsist =>
+      exact locsRegime.withPred_ok entry k arg_name pred_body var_env a n b hclos
+        (hlookup k b hregime) hreal hmem hconsist
+
+private lemma appMember_runtimeInstantiatesCtx_from_body
+    {ctx preCtx bodyFinalCtx : TypeContext}
+    {first src res : TypeResult} {rest : List TypeResult}
+    {cf evalCfg preCfg : Config} {θpre θbody : RealizationMap}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hbody_ric : runtimeInstantiatesCtx bodyFinalCtx evalCfg.memory evalCfg.varEnv θbody)
+    (hpre_ric : runtimeInstantiatesCtx preCtx preCfg.memory preCfg.varEnv θpre)
+    (hcontains_body_to_src : ∀ l, bodyFinalCtx.memEnv.contains l → src.memEnv'.contains l)
+    (hlookup_to_pre :
+      ∀ x qt, (ctxAfter ctx res).varEnv.lookup x = some qt → preCtx.varEnv.lookup x = some qt)
+    (hmem_eq : cf.memory = evalCfg.memory)
+    (hvar_eq : cf.varEnv = preCfg.varEnv)
+    (hθext : wfExtendsMap θpre θbody) :
+    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θbody := by
+  have hsrc_mem_to_res :
+      ∀ l, src.memEnv'.contains l → res.memEnv'.contains l :=
+    joinTypeResults_mem_contains_of_member
+      (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+      h_join hsrc_mem
+  constructor
+  · intro l a hθ
+    rcases hbody_ric.1 l a hθ with ⟨hcontains_body, hmem_contains⟩
+    exact ⟨hsrc_mem_to_res l (hcontains_body_to_src l hcontains_body),
+      by simpa [hmem_eq] using hmem_contains⟩
+  · intro x qt hlookup
+    rcases hpre_ric.2 (hlookup_to_pre x qt hlookup) with ⟨v, hlookup_v, hv_typ⟩
+    exact ⟨v, by simpa [hvar_eq] using hlookup_v,
+      valueHasETyp_extends hθext.1 hv_typ⟩
+
+private lemma appMember_consistentWithRegime_from_body
+    {predSat : PredSat} {ctx preCtx bodyFinalCtx : TypeContext}
+    {first src res : TypeResult} {rest : List TypeResult}
+    {cf evalCfg preCfg : Config} {θpre θbody : RealizationMap}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hbody_cwr :
+      consistentWithRegime predSat bodyFinalCtx.regime bodyFinalCtx
+        evalCfg.memory evalCfg.varEnv θbody)
+    (hpre_cwr :
+      consistentWithRegime predSat preCtx.regime preCtx preCfg.memory preCfg.varEnv θpre)
+    (hmem_lookup_src_to_body :
+      ∀ l qt, (ctxAfter ctx src).memEnv.lookup l = some qt →
+        bodyFinalCtx.memEnv.lookup l = some qt)
+    (hregime_lookup_src_to_body :
+      ∀ k b, (ctxAfter ctx src).regime.lookup? k = some b →
+        bodyFinalCtx.regime.lookup? k = some b)
+    (hregime_lookup_body_to_src :
+      ∀ k b, bodyFinalCtx.regime.lookup? k = some b →
+        (ctxAfter ctx src).regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        preCtx.varEnv.lookup x = some qt)
+    (hlookup_back_pre_to_src :
+      ∀ k b, (ctxAfter ctx src).regime.lookup? k = some b → preCtx.regime.lookup? k = some b)
+    (hpred_compat :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg.memory v' ↔
+          qtypPredHolds predSat qt' cf.memory v')
+    (hmem_eq : cf.memory = evalCfg.memory)
+    (hvar_eq : cf.varEnv = preCfg.varEnv)
+    (hθext : wfExtendsMap θpre θbody) :
+    consistentWithRegime predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+      cf.memory cf.varEnv θbody := by
+  have hcwr_src :
+      consistentWithRegime predSat (ctxAfter ctx src).regime (ctxAfter ctx src)
+        cf.memory cf.varEnv θbody := by
+    refine ⟨?_, ?_, ?_⟩
+    · intro l qt k hlookup hguard hRdef
+      cases hk_src : (ctxAfter ctx src).regime.lookup? k with
+      | none =>
+          exact False.elim (hRdef hk_src)
+      | some b =>
+          have hRdef_body : bodyFinalCtx.regime.lookup? k ≠ none := by
+            intro hnone
+            have hk_body := hregime_lookup_src_to_body k b hk_src
+            rw [hnone] at hk_body
+            cases hk_body
+          have hloc_body :=
+            hbody_cwr.1 l qt k (hmem_lookup_src_to_body l qt hlookup) hguard
+              hRdef_body
+          have hloc_body_cf :
+              locsRegime predSat bodyFinalCtx.regime cf.memory θbody (l, qt) := by
+            simpa [hmem_eq] using hloc_body
+          exact locsRegime_transport_lookup hregime_lookup_body_to_src hloc_body_cf
+    · intro x qt k hlookup hguard hRdef
+      cases hk_src : (ctxAfter ctx src).regime.lookup? k with
+      | none =>
+          exact False.elim (hRdef hk_src)
+      | some b =>
+          have hRdef_pre : preCtx.regime.lookup? k ≠ none := by
+            intro hnone
+            have hk_back := hlookup_back_pre_to_src k b hk_src
+            rw [hk_back] at hnone
+            contradiction
+          have hvar_pre :=
+            hpre_cwr.2.1 x qt k (hvar_lookup_src_to_pre x qt hlookup) hguard hRdef_pre
+          have hvar_pre_mem :=
+            varsRegime_transport_predHolds hpred_compat hvar_pre
+          have hvar_src :
+              varsRegime predSat (ctxAfter ctx src).regime cf.memory preCfg.varEnv
+                (x, qt) :=
+            varsRegime_transport_active_lookup_back
+              (predSat := predSat)
+              (R := preCtx.regime)
+              (R' := (ctxAfter ctx src).regime)
+              (μ := cf.memory) (ρ := preCfg.varEnv) (entry := (x, qt))
+              hlookup_back_pre_to_src hguard hk_src hvar_pre_mem
+          simpa [hvar_eq] using hvar_src
+    · intro x qt v hlookup hlookup_v
+      have hlookup_pre : preCfg.varEnv.lookup x = some v := by
+        rw [← hvar_eq]
+        exact hlookup_v
+      have hcvcr :=
+        hpre_cwr.2.2 x qt v (hvar_lookup_src_to_pre x qt hlookup) hlookup_pre
+      exact closureCapturedVarsRegime_transport_μ_θ hpred_compat hθext.1
+        (closureCapturedVarsRegime_transport_lookup_back hlookup_back_pre_to_src hcvcr)
+  exact
+    joinTypeResults_transport_consistentWithRegime_from_member
+      (predSat := predSat)
+      (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+      (μ := cf.memory) (ρ := cf.varEnv) (θ := θbody)
+      h_join hsrc_mem hcwr_src
+
+private lemma appMember_valueConsistentWithRegime_from_body
+    {predSat : PredSat} {ctx bodyCtx : TypeContext}
+    {first src result3 res : TypeResult} {rest : List TypeResult}
+    {cf evalCfg : Config} {θ : RealizationMap} {o : Value} {p p1 : Poison}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hsrc_eq :
+      src =
+        { result3 with
+          qualType :=
+            normalizeAppResultByProvenance (joinPoison p1 p)
+              { result3.qualType with
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+    (hmem_eq : cf.memory = evalCfg.memory)
+    (hbody_val :
+      valueConsistentWithRegime predSat (ctxAfter bodyCtx result3).regime
+        result3.qualType evalCfg.memory θ o) :
+    valueConsistentWithRegime predSat (ctxAfter ctx res).regime
+      res.qualType cf.memory θ o := by
+  have hval_src :
+      valueConsistentWithRegime predSat (ctxAfter ctx src).regime
+        src.qualType cf.memory θ o := by
+    have hval_norm :
+        valueConsistentWithRegime predSat (ctxAfter bodyCtx result3).regime
+          (normalizeAppResultByProvenance (joinPoison p1 p)
+            { result3.qualType with
+              poison := joinPoison p1 (joinPoison p result3.qualType.poison) })
+          evalCfg.memory θ o :=
+      valueConsistentWithRegime_transport_normalizeAppResultByProvenance
+        (predSat := predSat) (R := (ctxAfter bodyCtx result3).regime)
+        (p := p) (p1 := p1) (qt := result3.qualType)
+        (μ := evalCfg.memory) (θ := θ) (v := o) hbody_val
+    simpa [ctxAfter, hsrc_eq, hmem_eq] using hval_norm
+  exact
+    joinTypeResults_transport_valueConsistentWithRegime_from_member
+      (predSat := predSat)
+      (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+      (μ := cf.memory) (θ := θ) (v := o)
+      h_join hsrc_mem hval_src
+
+private lemma appMember_resultAgreesIfClean_from_body
+    {predSat : PredSat} {ctx bodyCtx : TypeContext}
+    {first src result3 res : TypeResult} {rest : List TypeResult}
+    {cf₀ cf₁ evalCfg₀ evalCfg₁ : Config}
+    {θ₀ θ₁ : RealizationMap} {o₀ o₁ : Value} {p p1 : Poison}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hsrc_eq :
+      src =
+        { result3 with
+          qualType :=
+            normalizeAppResultByProvenance (joinPoison p1 p)
+              { result3.qualType with
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+    (hmem₀_eq : cf₀.memory = evalCfg₀.memory)
+    (hmem₁_eq : cf₁.memory = evalCfg₁.memory)
+    (hbody_agree :
+      resultAgreesIfClean predSat (ctxAfter bodyCtx result3).regime
+        evalCfg₀.memory evalCfg₁.memory θ₀ θ₁ result3.qualType o₀ o₁) :
+    resultAgreesIfClean predSat (ctxAfter ctx res).regime
+      cf₀.memory cf₁.memory θ₀ θ₁ res.qualType o₀ o₁ := by
+  have hres_agree_src :
+      resultAgreesIfClean predSat (ctxAfter ctx src).regime
+        cf₀.memory cf₁.memory θ₀ θ₁ src.qualType o₀ o₁ := by
+    have hres_agree_norm :
+        resultAgreesIfClean predSat (ctxAfter bodyCtx result3).regime
+          evalCfg₀.memory evalCfg₁.memory θ₀ θ₁
+          (normalizeAppResultByProvenance (joinPoison p1 p)
+            { result3.qualType with
+              poison := joinPoison p1 (joinPoison p result3.qualType.poison) })
+          o₀ o₁ :=
+      resultAgreesIfClean_transport_normalizeAppResultByProvenance
+        (predSat := predSat) (R := (ctxAfter bodyCtx result3).regime)
+        (p := p) (p1 := p1) (qt := result3.qualType)
+        (μ₀ := evalCfg₀.memory) (μ₁ := evalCfg₁.memory)
+        (θ₀ := θ₀) (θ₁ := θ₁) (o₀ := o₀) (o₁ := o₁)
+        hbody_agree
+    simpa [ctxAfter, hsrc_eq, hmem₀_eq, hmem₁_eq] using hres_agree_norm
+  exact
+    joinTypeResults_transport_resultAgreesIfClean_from_member
+      (predSat := predSat)
+      (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+      (μ₀ := cf₀.memory) (μ₁ := cf₁.memory) (θ₀ := θ₀) (θ₁ := θ₁)
+      (o₀ := o₀) (o₁ := o₁)
+      h_join hsrc_mem hres_agree_src
+
+private lemma appTwoRunOutPack_from_body_post
+    {predSat : PredSat} {ctx preCtx bodyCtx : TypeContext}
+    {first src result3 res : TypeResult} {rest : List TypeResult}
+    {cf₀ cf₁ evalCfg₀ evalCfg₁ preCfg₀ preCfg₁ : Config}
+    {θpre₀ θpre₁ θbody₀ θbody₁ : RealizationMap}
+    {o₀ o₁ : Value} {p p1 : Poison}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hsrc_eq :
+      src =
+        { result3 with
+          qualType :=
+            normalizeAppResultByProvenance (joinPoison p1 p)
+              { result3.qualType with
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+    (hlookup_back_pre_to_src :
+      ∀ k b, (ctxAfter ctx src).regime.lookup? k = some b → preCtx.regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        preCtx.varEnv.lookup x = some qt)
+    (hpred_compat₀ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₀.memory v' ↔
+          qtypPredHolds predSat qt' cf₀.memory v')
+    (hpred_compat₁ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₁.memory v' ↔
+          qtypPredHolds predSat qt' cf₁.memory v')
+    (hmem₀_eq : cf₀.memory = evalCfg₀.memory)
+    (hmem₁_eq : cf₁.memory = evalCfg₁.memory)
+    (hvar₀_eq : cf₀.varEnv = preCfg₀.varEnv)
+    (hvar₁_eq : cf₁.varEnv = preCfg₁.varEnv)
+    (hθext₀ : wfExtendsMap θpre₀ θbody₀)
+    (hθext₁ : wfExtendsMap θpre₁ θbody₁)
+    (hv_body₀ : valueHasETyp θbody₀ o₀ result3.qualType.etyp)
+    (hv_body₁ : valueHasETyp θbody₁ o₁ result3.qualType.etyp)
+    (hric_body₀ : runtimeInstantiatesCtx (ctxAfter bodyCtx result3)
+      evalCfg₀.memory evalCfg₀.varEnv θbody₀)
+    (hric_body₁ : runtimeInstantiatesCtx (ctxAfter bodyCtx result3)
+      evalCfg₁.memory evalCfg₁.varEnv θbody₁)
+    (hric_pre₀ : runtimeInstantiatesCtx preCtx preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hric_pre₁ : runtimeInstantiatesCtx preCtx preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hcwr_body₀ : consistentWithRegime predSat (ctxAfter bodyCtx result3).regime
+      (ctxAfter bodyCtx result3) evalCfg₀.memory evalCfg₀.varEnv θbody₀)
+    (hcwr_body₁ : consistentWithRegime predSat (ctxAfter bodyCtx result3).regime
+      (ctxAfter bodyCtx result3) evalCfg₁.memory evalCfg₁.varEnv θbody₁)
+    (hcwr_pre₀ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hcwr_pre₁ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hagree :
+      agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+        cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁)
+    (hval_body₀ : valueConsistentWithRegime predSat (ctxAfter bodyCtx result3).regime
+      result3.qualType evalCfg₀.memory θbody₀ o₀)
+    (hval_body₁ : valueConsistentWithRegime predSat (ctxAfter bodyCtx result3).regime
+      result3.qualType evalCfg₁.memory θbody₁ o₁)
+    (hres_agree_body :
+      resultAgreesIfClean predSat (ctxAfter bodyCtx result3).regime
+        evalCfg₀.memory evalCfg₁.memory θbody₀ θbody₁ result3.qualType o₀ o₁) :
+    AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θbody₀ θbody₁ := by
+  have hsrc_etyp : src.qualType.etyp = result3.qualType.etyp := by
+    rw [hsrc_eq]
+    unfold normalizeAppResultByProvenance
+    split_ifs <;> rfl
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, hagree, ?_, ?_, ?_⟩
+  · have hv_src₀ : valueHasETyp θbody₀ o₀ src.qualType.etyp := by
+      rw [hsrc_etyp]
+      exact hv_body₀
+    exact
+      joinTypeResults_transport_valueHasETyp_from_member
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (θ := θbody₀) (v := o₀)
+        h_join hsrc_mem hv_src₀
+  · have hv_src₁ : valueHasETyp θbody₁ o₁ src.qualType.etyp := by
+      rw [hsrc_etyp]
+      exact hv_body₁
+    exact
+      joinTypeResults_transport_valueHasETyp_from_member
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (θ := θbody₁) (v := o₁)
+        h_join hsrc_mem hv_src₁
+  · exact
+      appMember_runtimeInstantiatesCtx_from_body
+        (ctx := ctx) (preCtx := preCtx) (bodyFinalCtx := ctxAfter bodyCtx result3)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := preCfg₀)
+        (θpre := θpre₀) (θbody := θbody₀)
+        h_join hsrc_mem hric_body₀ hric_pre₀
+        (fun l hcontains_body => by
+          simpa [ctxAfter, hsrc_eq] using hcontains_body)
+        hvar_lookup_src_to_pre hmem₀_eq hvar₀_eq hθext₀
+  · exact
+      appMember_runtimeInstantiatesCtx_from_body
+        (ctx := ctx) (preCtx := preCtx) (bodyFinalCtx := ctxAfter bodyCtx result3)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := preCfg₁)
+        (θpre := θpre₁) (θbody := θbody₁)
+        h_join hsrc_mem hric_body₁ hric_pre₁
+        (fun l hcontains_body => by
+          simpa [ctxAfter, hsrc_eq] using hcontains_body)
+        hvar_lookup_src_to_pre hmem₁_eq hvar₁_eq hθext₁
+  · exact
+      appMember_consistentWithRegime_from_body
+        (predSat := predSat)
+        (ctx := ctx) (preCtx := preCtx) (bodyFinalCtx := ctxAfter bodyCtx result3)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := preCfg₀)
+        (θpre := θpre₀) (θbody := θbody₀)
+        h_join hsrc_mem hcwr_body₀ hcwr_pre₀
+        (fun l qt hlookup => by
+          simpa [ctxAfter, hsrc_eq] using hlookup)
+        (fun k b hk_src => by
+          simpa [ctxAfter, hsrc_eq] using hk_src)
+        (fun k b hk_body => by
+          simpa [ctxAfter, hsrc_eq] using hk_body)
+        hvar_lookup_src_to_pre hlookup_back_pre_to_src hpred_compat₀
+        hmem₀_eq hvar₀_eq hθext₀
+  · exact
+      appMember_consistentWithRegime_from_body
+        (predSat := predSat)
+        (ctx := ctx) (preCtx := preCtx) (bodyFinalCtx := ctxAfter bodyCtx result3)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := preCfg₁)
+        (θpre := θpre₁) (θbody := θbody₁)
+        h_join hsrc_mem hcwr_body₁ hcwr_pre₁
+        (fun l qt hlookup => by
+          simpa [ctxAfter, hsrc_eq] using hlookup)
+        (fun k b hk_src => by
+          simpa [ctxAfter, hsrc_eq] using hk_src)
+        (fun k b hk_body => by
+          simpa [ctxAfter, hsrc_eq] using hk_body)
+        hvar_lookup_src_to_pre hlookup_back_pre_to_src hpred_compat₁
+        hmem₁_eq hvar₁_eq hθext₁
+  · exact
+      appMember_valueConsistentWithRegime_from_body
+        (predSat := predSat)
+        (ctx := ctx) (bodyCtx := bodyCtx)
+        (first := first) (src := src) (result3 := result3) (rest := rest) (res := res)
+        (cf := cf₀) (evalCfg := evalCfg₀) (θ := θbody₀) (o := o₀)
+        (p := p) (p1 := p1)
+        h_join hsrc_mem hsrc_eq hmem₀_eq hval_body₀
+  · exact
+      appMember_valueConsistentWithRegime_from_body
+        (predSat := predSat)
+        (ctx := ctx) (bodyCtx := bodyCtx)
+        (first := first) (src := src) (result3 := result3) (rest := rest) (res := res)
+        (cf := cf₁) (evalCfg := evalCfg₁) (θ := θbody₁) (o := o₁)
+        (p := p) (p1 := p1)
+        h_join hsrc_mem hsrc_eq hmem₁_eq hval_body₁
+  · exact
+      appMember_resultAgreesIfClean_from_body
+        (predSat := predSat)
+        (ctx := ctx) (bodyCtx := bodyCtx)
+        (first := first) (src := src) (result3 := result3) (rest := rest) (res := res)
+        (cf₀ := cf₀) (cf₁ := cf₁) (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
+        (θ₀ := θbody₀) (θ₁ := θbody₁) (o₀ := o₀) (o₁ := o₁)
+        (p := p) (p1 := p1)
+        h_join hsrc_mem hsrc_eq hmem₀_eq hmem₁_eq hres_agree_body
+
 private lemma applyFnTClosure_extern_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -3153,42 +3574,24 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         have hlookup_back_res1_to_A :
             ∀ k b,
               (ctxAfter ctxᵢ firstA).regime.lookup? k = some b →
-              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-          intro k b hk_src
-          have hRdef_src : (ctxAfter ctxᵢ firstA).regime.lookup? k ≠ none := by
-            intro hnone; rw [hk_src] at hnone; contradiction
-          have hRdef_res1 :
-              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-            hres1_to_firstA_mono.2 k hRdef_src
-          cases hk_res1 :
-              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
-          | none => exact False.elim (hRdef_res1 hk_res1)
-          | some b1 =>
-              rcases hres1_to_firstA_mono.1 k b1 hk_res1 with hk_src' | hnone_src
-              · have : some b1 = some b := hk_src'.symm.trans hk_src
-                simpa using Option.some.inj this
-              · rw [hnone_src] at hk_src
-                cases hk_src
+              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+          regime_lookup_back_of_monotone hres1_to_firstA_mono
         have hric_final :
             runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ_body := by
-          have hmem_to_res :
-              ∀ l, firstA.memEnv'.contains l → res.memEnv'.contains l :=
-            joinTypeResults_mem_contains_of_member
-              (ctx := ctxᵢ) (first := first) (src := firstA) (rest := rest)
-              (res := res) h_join hfirstA_mem'
-          constructor
-          · intro l a hθ
-            have hloc := hric_body_final.1 l a hθ
-            rcases hloc with ⟨hcontains_body, hmem_contains⟩
-            have hcontains_src : firstA.memEnv'.contains l := by
-              simpa [ctxAfter, hfirstA_eq] using hcontains_body
-            exact ⟨hmem_to_res l hcontains_src, by simpa [hmem_eq] using hmem_contains⟩
-          · intro y qt hlookup
-            have hlookup_ctx :
-                (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup y = some qt := by
-              simpa [ctxAfter] using hlookup
-            rcases hric1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-            exact ⟨v, by simpa [hvar_eq] using hlookup_v, valueHasETyp_extends hθext_body.1 hv_typ⟩
+          exact
+            appMember_runtimeInstantiatesCtx_from_body
+              (ctx := ctxᵢ)
+              (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+              (bodyFinalCtx := ctxAfter bodyCtx result3)
+              (first := first) (src := firstA) (rest := rest) (res := res)
+              (cf := cf) (evalCfg := evalCfg) (preCfg := c₁)
+              (θpre := θ1) (θbody := θ_body)
+              h_join hfirstA_mem' hric_body_final hric1
+              (fun l hcontains_body => by
+                simpa [ctxAfter, hfirstA_eq] using hcontains_body)
+              (fun y qt hlookup => by
+                simpa [ctxAfter] using hlookup)
+              hmem_eq hvar_eq hθext_body
         have hcwr_src :
             CtxCons (ctxAfter ctxᵢ firstA) cf.memory cf.varEnv θ_body := by
           have hpred_compat :
@@ -3828,22 +4231,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         have hlookup_back_res1_to_A :
             ∀ k b,
               (ctxAfter ctxᵢ firstA).regime.lookup? k = some b →
-              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-          intro k b hk_src
-          have hRdef_src : (ctxAfter ctxᵢ firstA).regime.lookup? k ≠ none := by
-            intro hnone; rw [hk_src] at hnone; contradiction
-          have hRdef_res1 :
-              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-            hres1_to_firstA_mono.2 k hRdef_src
-          cases hk_res1 :
-              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
-          | none => exact False.elim (hRdef_res1 hk_res1)
-          | some b1 =>
-              rcases hres1_to_firstA_mono.1 k b1 hk_res1 with hk_src' | hnone_src
-              · have : some b1 = some b := hk_src'.symm.trans hk_src
-                simpa using Option.some.inj this
-              · rw [hnone_src] at hk_src
-                cases hk_src
+              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+          regime_lookup_back_of_monotone hres1_to_firstA_mono
         have hmem_eq : cf.memory = evalCfg.memory := by
           obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht_body'
           exact (beval_pure_memory_eq body fuel_b _ evalCfg o verbose_b
@@ -3851,28 +4240,24 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             htoPExpr rfl hbeval_b).symm
         have hric_final :
             runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ_body := by
-          have hmem_to_res :
-              ∀ l, firstA.memEnv'.contains l → res.memEnv'.contains l :=
-            joinTypeResults_mem_contains_of_member
-              (ctx := ctxᵢ) (first := first) (src := firstA) (rest := rest)
-              (res := res) h_join hfirstA_mem'
-          constructor
-          · intro l a hθ
-            have hloc := hric_body_final.1 l a hθ
-            rcases hloc with ⟨hcontains_body, hmem_contains⟩
-            have hcontains_src : firstA.memEnv'.contains l := by
-              simpa [ctxAfter, hfirstA_eq] using hcontains_body
-            exact ⟨hmem_to_res l hcontains_src, by simpa [hmem_eq] using hmem_contains⟩
-          · intro y qt hlookup
-            have hlookup_ctx :
-                (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup y = some qt := by
-              simpa [ctxAfter] using hlookup
-            have hric1_cf :
-                runtimeInstantiatesCtx (ctxAfter (ctxAfter ctxᵢ result2) result1)
-                  cf.memory cf.varEnv θ1 := by
-              simpa [hcf] using hric1
-            rcases hric1_cf.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-            exact ⟨v, hlookup_v, valueHasETyp_extends hθext_body.1 hv_typ⟩
+          have hric1_cf :
+              runtimeInstantiatesCtx (ctxAfter (ctxAfter ctxᵢ result2) result1)
+                cf.memory cf.varEnv θ1 := by
+            simpa [hcf] using hric1
+          exact
+            appMember_runtimeInstantiatesCtx_from_body
+              (ctx := ctxᵢ)
+              (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+              (bodyFinalCtx := ctxAfter bodyCtx result3)
+              (first := first) (src := firstA) (rest := rest) (res := res)
+              (cf := cf) (evalCfg := evalCfg) (preCfg := cf)
+              (θpre := θ1) (θbody := θ_body)
+              h_join hfirstA_mem' hric_body_final hric1_cf
+              (fun l hcontains_body => by
+                simpa [ctxAfter, hfirstA_eq] using hcontains_body)
+              (fun y qt hlookup => by
+                simpa [ctxAfter] using hlookup)
+              hmem_eq rfl hθext_body
         have hcwr_src :
             CtxCons (ctxAfter ctxᵢ firstA) cf.memory cf.varEnv θ_body := by
           have hpred_compat :
@@ -4930,39 +5315,13 @@ lemma stepFR_app
             have hlookup_back_res1_to_A₀ :
                 ∀ k b,
                   (ctxAfter ctxᵢ firstA₀).regime.lookup? k = some b →
-                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-              intro k b hk_src
-              have hRdef_src : (ctxAfter ctxᵢ firstA₀).regime.lookup? k ≠ none := by
-                intro hnone; rw [hk_src] at hnone; contradiction
-              have hRdef_res1 :
-                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-                hres1_to_firstA₀_mono.2 k hRdef_src
-              cases hk_res1 :
-                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
-              | none => exact False.elim (hRdef_res1 hk_res1)
-              | some b1 =>
-                  rcases hres1_to_firstA₀_mono.1 k b1 hk_res1 with hk_src' | hnone_src
-                  · have : some b1 = some b := hk_src'.symm.trans hk_src
-                    simp [Option.some.inj this]
-                  · rw [hnone_src] at hk_src; cases hk_src
+                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+              regime_lookup_back_of_monotone hres1_to_firstA₀_mono
             have hlookup_back_res1_to_A₁ :
                 ∀ k b,
                   (ctxAfter ctxᵢ firstA₁).regime.lookup? k = some b →
-                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-              intro k b hk_src
-              have hRdef_src : (ctxAfter ctxᵢ firstA₁).regime.lookup? k ≠ none := by
-                intro hnone; rw [hk_src] at hnone; contradiction
-              have hRdef_res1 :
-                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-                hres1_to_firstA₁_mono.2 k hRdef_src
-              cases hk_res1 :
-                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
-              | none => exact False.elim (hRdef_res1 hk_res1)
-              | some b1 =>
-                  rcases hres1_to_firstA₁_mono.1 k b1 hk_res1 with hk_src' | hnone_src
-                  · have : some b1 = some b := hk_src'.symm.trans hk_src
-                    simp [Option.some.inj this]
-                  · rw [hnone_src] at hk_src; cases hk_src
+                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+              regime_lookup_back_of_monotone hres1_to_firstA₁_mono
             -- Memory/varEnv equalities
             have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by simp [heq_cfg₀]
             have hmem₁_eq : cf₁.memory = evalCfg₁.memory := by simp [heq_cfg₁]
@@ -4996,152 +5355,78 @@ lemma stepFR_app
                 h_join hfirstA₁_mem' (hfirstA₁_etyp ▸ hv₁_body_typed),
               -- runtimeInstantiatesCtx run 0
               by
-                have hmem_to_res₀ :
-                    ∀ l, firstA₀.memEnv'.contains l → res.memEnv'.contains l :=
-                  joinTypeResults_mem_contains_of_member
-                    (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest)
-                    (res := res) h_join hfirstA₀_mem'
-                constructor
-                · intro l a hθ
-                  have hloc := hric_bodyA₀_final.1 l a hθ
-                  rcases hloc with ⟨hcontains_body, hmem_contains⟩
-                  have hcontains_src : firstA₀.memEnv'.contains l := by
-                    simpa [ctxAfter, hfirstA₀_eq] using hcontains_body
-                  exact ⟨hmem_to_res₀ l hcontains_src, by simpa [hmem₀_eq] using hmem_contains⟩
-                · intro x qt hlookup
-                  have hlookup_ctx :
-                      (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                    simpa [ctxAfter] using hlookup
-                  rcases hric₀1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-                  exact ⟨v, by simpa [hvar₀_eq] using hlookup_v,
-                    valueHasETyp_extends hθext₀_body.1 hv_typ⟩,
+                exact
+                  appMember_runtimeInstantiatesCtx_from_body
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyFinalCtx := ctxAfter bodyCtxA₀ result3A₀)
+                    (first := first) (src := firstA₀) (rest := rest) (res := res)
+                    (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := c₁₀)
+                    (θpre := θ₀1) (θbody := θ₀_body)
+                    h_join hfirstA₀_mem' hric_bodyA₀_final hric₀1
+                    (fun l hcontains_body => by
+                      simpa [ctxAfter, hfirstA₀_eq] using hcontains_body)
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hmem₀_eq hvar₀_eq hθext₀_body,
               -- runtimeInstantiatesCtx run 1
               by
-                have hmem_to_res₁ :
-                    ∀ l, firstA₁.memEnv'.contains l → res.memEnv'.contains l :=
-                  joinTypeResults_mem_contains_of_member
-                    (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest)
-                    (res := res) h_join hfirstA₁_mem'
-                constructor
-                · intro l a hθ
-                  have hloc := hric_bodyA₁_final.1 l a hθ
-                  rcases hloc with ⟨hcontains_body, hmem_contains⟩
-                  have hcontains_src : firstA₁.memEnv'.contains l := by
-                    simpa [ctxAfter, hfirstA₁_eq] using hcontains_body
-                  exact ⟨hmem_to_res₁ l hcontains_src, by simpa [hmem₁_eq] using hmem_contains⟩
-                · intro x qt hlookup
-                  have hlookup_ctx :
-                      (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                    simpa [ctxAfter] using hlookup
-                  rcases hric₁1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-                  exact ⟨v, by simpa [hvar₁_eq] using hlookup_v,
-                    valueHasETyp_extends hθext₁_body.1 hv_typ⟩,
+                exact
+                  appMember_runtimeInstantiatesCtx_from_body
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyFinalCtx := ctxAfter bodyCtxA₁ result3A₁)
+                    (first := first) (src := firstA₁) (rest := rest) (res := res)
+                    (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := c₁₁)
+                    (θpre := θ₁1) (θbody := θ₁_body)
+                    h_join hfirstA₁_mem' hric_bodyA₁_final hric₁1
+                    (fun l hcontains_body => by
+                      simpa [ctxAfter, hfirstA₁_eq] using hcontains_body)
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hmem₁_eq hvar₁_eq hθext₁_body,
               -- consistentWithRegime run 0
               by
-                have hcwr_src₀ :
-                    consistentWithRegime predSat (ctxAfter ctxᵢ firstA₀).regime
-                      (ctxAfter ctxᵢ firstA₀) cf₀.memory cf₀.varEnv θ₀_body := by
-                  refine ⟨?_, ?_, ?_⟩
-                  · intro l qt k hlookup hguard hRdef
-                    have hlookup_body :
-                        (ctxAfter bodyCtxA₀ result3A₀).memEnv.lookup l = some qt := by
-                      simpa [ctxAfter, hfirstA₀_eq] using hlookup
-                    have hguard_body : qtypGuardTag qt = some k := by
-                      simpa [ctxAfter, hfirstA₀_eq] using hguard
-                    have hRdef_body :
-                        (ctxAfter bodyCtxA₀ result3A₀).regime.lookup? k ≠ none := by
-                      simpa [ctxAfter, hfirstA₀_eq] using hRdef
-                    simpa [ctxAfter, hfirstA₀_eq, hmem₀_eq] using
-                      hcwr_bodyA₀_final.1 l qt k hlookup_body hguard_body hRdef_body
-                  · intro x qt k hlookup hguard hRdef
-                    cases hk_src : (ctxAfter ctxᵢ firstA₀).regime.lookup? k with
-                    | none => exact False.elim (hRdef hk_src)
-                    | some b =>
-                        have hRdef_res1 :
-                            (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none := by
-                          intro hnone
-                          have hk_back := hlookup_back_res1_to_A₀ k b hk_src
-                          rw [hk_back] at hnone; contradiction
-                        have hlookup_res1_ctx :
-                            (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x =
-                              some qt := by
-                          simpa [ctxAfter] using hlookup
-                        have hvar_res1 :=
-                          hcwr₀1.2.1 x qt k hlookup_res1_ctx hguard hRdef_res1
-                        have hvar_res1_mem :=
-                          varsRegime_transport_predHolds hpred_compat₀ hvar_res1
-                        simpa [hvar₀_eq] using
-                          varsRegime_transport_active_lookup_back
-                            (predSat := predSat)
-                            (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                            (R' := (ctxAfter ctxᵢ firstA₀).regime)
-                            (μ := cf₀.memory) (ρ := c₁₀.varEnv) (entry := (x, qt))
-                            hlookup_back_res1_to_A₀ hguard hk_src hvar_res1_mem
-                  · intro x qt v hlookup hlookup_v
-                    have hcvcr := hcwr₀1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
-                      (by rw [hvar₀_eq] at hlookup_v; exact hlookup_v)
-                    exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₀ hθext₀_body.1
-                      (closureCapturedVarsRegime_transport_lookup_back
-                        hlookup_back_res1_to_A₀ hcvcr)
                 exact
-                  joinTypeResults_transport_consistentWithRegime_from_member
+                  appMember_consistentWithRegime_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest) (res := res)
-                    (μ := cf₀.memory) (ρ := cf₀.varEnv) (θ := θ₀_body)
-                    h_join hfirstA₀_mem' hcwr_src₀,
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyFinalCtx := ctxAfter bodyCtxA₀ result3A₀)
+                    (first := first) (src := firstA₀) (rest := rest) (res := res)
+                    (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := c₁₀)
+                    (θpre := θ₀1) (θbody := θ₀_body)
+                    h_join hfirstA₀_mem' hcwr_bodyA₀_final hcwr₀1
+                    (fun l qt hlookup => by
+                      simpa [ctxAfter, hfirstA₀_eq] using hlookup)
+                    (fun k b hk_src => by
+                      simpa [ctxAfter, hfirstA₀_eq] using hk_src)
+                    (fun k b hk_body => by
+                      simpa [ctxAfter, hfirstA₀_eq] using hk_body)
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hlookup_back_res1_to_A₀ hpred_compat₀ hmem₀_eq hvar₀_eq hθext₀_body,
               -- consistentWithRegime run 1
               by
-                have hcwr_src₁ :
-                    consistentWithRegime predSat (ctxAfter ctxᵢ firstA₁).regime
-                      (ctxAfter ctxᵢ firstA₁) cf₁.memory cf₁.varEnv θ₁_body := by
-                  refine ⟨?_, ?_, ?_⟩
-                  · intro l qt k hlookup hguard hRdef
-                    have hlookup_body :
-                        (ctxAfter bodyCtxA₁ result3A₁).memEnv.lookup l = some qt := by
-                      simpa [ctxAfter, hfirstA₁_eq] using hlookup
-                    have hguard_body : qtypGuardTag qt = some k := by
-                      simpa [ctxAfter, hfirstA₁_eq] using hguard
-                    have hRdef_body :
-                        (ctxAfter bodyCtxA₁ result3A₁).regime.lookup? k ≠ none := by
-                      simpa [ctxAfter, hfirstA₁_eq] using hRdef
-                    simpa [ctxAfter, hfirstA₁_eq, hmem₁_eq] using
-                      hcwr_bodyA₁_final.1 l qt k hlookup_body hguard_body hRdef_body
-                  · intro x qt k hlookup hguard hRdef
-                    cases hk_src : (ctxAfter ctxᵢ firstA₁).regime.lookup? k with
-                    | none => exact False.elim (hRdef hk_src)
-                    | some b =>
-                        have hRdef_res1 :
-                            (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none := by
-                          intro hnone
-                          have hk_back := hlookup_back_res1_to_A₁ k b hk_src
-                          rw [hk_back] at hnone; contradiction
-                        have hlookup_res1_ctx :
-                            (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x =
-                              some qt := by
-                          simpa [ctxAfter] using hlookup
-                        have hvar_res1 :=
-                          hcwr₁1.2.1 x qt k hlookup_res1_ctx hguard hRdef_res1
-                        have hvar_res1_mem :=
-                          varsRegime_transport_predHolds hpred_compat₁ hvar_res1
-                        simpa [hvar₁_eq] using
-                          varsRegime_transport_active_lookup_back
-                            (predSat := predSat)
-                            (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                            (R' := (ctxAfter ctxᵢ firstA₁).regime)
-                            (μ := cf₁.memory) (ρ := c₁₁.varEnv) (entry := (x, qt))
-                            hlookup_back_res1_to_A₁ hguard hk_src hvar_res1_mem
-                  · intro x qt v hlookup hlookup_v
-                    have hcvcr := hcwr₁1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
-                      (by rw [hvar₁_eq] at hlookup_v; exact hlookup_v)
-                    exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₁ hθext₁_body.1
-                      (closureCapturedVarsRegime_transport_lookup_back
-                        hlookup_back_res1_to_A₁ hcvcr)
                 exact
-                  joinTypeResults_transport_consistentWithRegime_from_member
+                  appMember_consistentWithRegime_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest) (res := res)
-                    (μ := cf₁.memory) (ρ := cf₁.varEnv) (θ := θ₁_body)
-                    h_join hfirstA₁_mem' hcwr_src₁,
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyFinalCtx := ctxAfter bodyCtxA₁ result3A₁)
+                    (first := first) (src := firstA₁) (rest := rest) (res := res)
+                    (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := c₁₁)
+                    (θpre := θ₁1) (θbody := θ₁_body)
+                    h_join hfirstA₁_mem' hcwr_bodyA₁_final hcwr₁1
+                    (fun l qt hlookup => by
+                      simpa [ctxAfter, hfirstA₁_eq] using hlookup)
+                    (fun k b hk_src => by
+                      simpa [ctxAfter, hfirstA₁_eq] using hk_src)
+                    (fun k b hk_body => by
+                      simpa [ctxAfter, hfirstA₁_eq] using hk_body)
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hlookup_back_res1_to_A₁ hpred_compat₁ hmem₁_eq hvar₁_eq hθext₁_body,
               -- agreeOnClean for ¬qtypCleanUnder (p1=true, different closure bodies)
               by
                 -- Regime monotonicity: result1.regime' → res.regime' (through the join)
@@ -5426,50 +5711,26 @@ lemma stepFR_app
                       (by rwa [hvar₀_eq]) (by rwa [hvar₁_eq]),
               -- valueConsistentWithRegime run 0
               by
-                have hfirstA₀_eq_regime : firstA₀.regime' = result3A₀.regime' := by
-                  simp [hfirstA₀_eq]
-                have hval_src₀ :
-                    valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstA₀).regime
-                      firstA₀.qualType cf₀.memory θ₀_body o₀ := by
-                  have hval_first :
-                      valueConsistentWithRegime predSat (ctxAfter bodyCtxA₀ result3A₀).regime
-                        (normalizeAppResultByProvenance (joinPoison p1 p)
-                          { result3A₀.qualType with
-                            poison := joinPoison p1 (joinPoison p result3A₀.qualType.poison) })
-                        evalCfg₀.memory θ₀_body o₀ :=
-                    valueConsistentWithRegime_transport_normalizeAppResultByProvenance
-                      (predSat := predSat) (R := (ctxAfter bodyCtxA₀ result3A₀).regime)
-                      (p := p) (p1 := p1) (qt := result3A₀.qualType)
-                      (μ := evalCfg₀.memory) (θ := θ₀_body) (v := o₀) hvalc_bodyA₀
-                  simpa [ctxAfter, hfirstA₀_eq, hmem₀_eq] using hval_first
                 exact
-                  joinTypeResults_transport_valueConsistentWithRegime_from_member
+                  appMember_valueConsistentWithRegime_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest) (res := res)
-                    (μ := cf₀.memory) (θ := θ₀_body) (v := o₀)
-                    h_join hfirstA₀_mem' hval_src₀,
+                    (ctx := ctxᵢ) (bodyCtx := bodyCtxA₀)
+                    (first := first) (src := firstA₀) (result3 := result3A₀)
+                    (rest := rest) (res := res)
+                    (cf := cf₀) (evalCfg := evalCfg₀) (θ := θ₀_body) (o := o₀)
+                    (p := p) (p1 := p1)
+                    h_join hfirstA₀_mem' hfirstA₀_eq hmem₀_eq hvalc_bodyA₀,
               -- valueConsistentWithRegime run 1
               by
-                have hval_src₁ :
-                    valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstA₁).regime
-                      firstA₁.qualType cf₁.memory θ₁_body o₁ := by
-                  have hval_first :
-                      valueConsistentWithRegime predSat (ctxAfter bodyCtxA₁ result3A₁).regime
-                        (normalizeAppResultByProvenance (joinPoison p1 p)
-                          { result3A₁.qualType with
-                            poison := joinPoison p1 (joinPoison p result3A₁.qualType.poison) })
-                        evalCfg₁.memory θ₁_body o₁ :=
-                    valueConsistentWithRegime_transport_normalizeAppResultByProvenance
-                      (predSat := predSat) (R := (ctxAfter bodyCtxA₁ result3A₁).regime)
-                      (p := p) (p1 := p1) (qt := result3A₁.qualType)
-                      (μ := evalCfg₁.memory) (θ := θ₁_body) (v := o₁) hvalc_bodyA₁
-                  simpa [ctxAfter, hfirstA₁_eq, hmem₁_eq] using hval_first
                 exact
-                  joinTypeResults_transport_valueConsistentWithRegime_from_member
+                  appMember_valueConsistentWithRegime_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest) (res := res)
-                    (μ := cf₁.memory) (θ := θ₁_body) (v := o₁)
-                    h_join hfirstA₁_mem' hval_src₁,
+                    (ctx := ctxᵢ) (bodyCtx := bodyCtxA₁)
+                    (first := first) (src := firstA₁) (result3 := result3A₁)
+                    (rest := rest) (res := res)
+                    (cf := cf₁) (evalCfg := evalCfg₁) (θ := θ₁_body) (o := o₁)
+                    (p := p) (p1 := p1)
+                    h_join hfirstA₁_mem' hfirstA₁_eq hmem₁_eq hvalc_bodyA₁,
               -- resultAgreesIfClean (vacuously true since poison=true ∧ pred=noPred)
               resultAgreesIfClean_of_poison_noPred hres_pack.1 hres_pack.2⟩
           by_cases hclean1_e1 :
@@ -6317,32 +6578,8 @@ lemma stepFR_app
                 have hlookup_back_res1_to_src :
                     ∀ k b,
                       (ctxAfter ctxᵢ firstShared).regime.lookup? k = some b →
-                      (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-                  intro k b hk_src
-                  have hRdef_src : (ctxAfter ctxᵢ firstShared).regime.lookup? k ≠ none := by
-                    intro hnone
-                    rw [hk_src] at hnone
-                    contradiction
-                  have hRdef_res1 :
-                      (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-                    hres1_to_src_mono.2 k hRdef_src
-                  cases hk_res1 : (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
-                  | none =>
-                      exact False.elim (hRdef_res1 hk_res1)
-                  | some b1 =>
-                      have hcases := hres1_to_src_mono.1 k b1 hk_res1
-                      cases hcases with
-                      | inl hk_src' =>
-                          have hb_eq : b1 = b := by
-                            have : some b1 = some b := by
-                              calc
-                                some b1 = (ctxAfter ctxᵢ firstShared).regime.lookup? k := hk_src'.symm
-                                _ = some b := hk_src
-                            exact Option.some.inj this
-                          simp [hb_eq]
-                      | inr hnone_src =>
-                          rw [hnone_src] at hk_src
-                          cases hk_src
+                      (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+                  regime_lookup_back_of_monotone hres1_to_src_mono
                 refine ⟨?_, ?_, ?_, ?_, ?_, ?_, hAgree_out_body, ?_, ?_, ?_⟩
                 · -- shared-member valueHasETyp -> joined valueHasETyp (run 0).
                   have hv_src₀ : valueHasETyp θ₀_body o₀ firstShared.qualType.etyp := by
@@ -6367,55 +6604,39 @@ lemma stepFR_app
                     simp [heq_cfg₀]
                   have hvar₀_eq : cf₀.varEnv = c₁₀.varEnv := by
                     simp [heq_cfg₀]
-                  have hsrc_mem_to_res :
-                      ∀ l, firstShared.memEnv'.contains l → res.memEnv'.contains l :=
-                    joinTypeResults_mem_contains_of_member
-                      (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      h_join hsrc_mem'
-                  constructor
-                  · intro l a hθ
-                    have hloc_src := _hric_body_final₀.1 l a hθ
-                    rcases hloc_src with ⟨hcontains_src_body, hmem_contains⟩
-                    have hcontains_src : firstShared.memEnv'.contains l := by
-                      simpa [ctxAfter, hfirstShared] using hcontains_src_body
-                    refine ⟨hsrc_mem_to_res l hcontains_src, ?_⟩
-                    simpa [hmem₀_eq] using hmem_contains
-                  · intro x qt hlookup
-                    have hlookup_ctx :
-                        (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                      simpa [ctxAfter] using hlookup
-                    rcases hric₀1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-                    refine ⟨v, ?_⟩
-                    constructor
-                    · simpa [hvar₀_eq] using hlookup_v
-                    · exact valueHasETyp_extends _hθext₀_body.1 hv_typ
+                  exact
+                    appMember_runtimeInstantiatesCtx_from_body
+                      (ctx := ctxᵢ)
+                      (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                      (bodyFinalCtx := ctxAfter bodyCtx result3Shared)
+                      (first := first) (src := firstShared) (rest := rest) (res := res)
+                      (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := c₁₀)
+                      (θpre := θ₀1) (θbody := θ₀_body)
+                      h_join hsrc_mem' _hric_body_final₀ hric₀1
+                      (fun l hcontains_src_body => by
+                        simpa [ctxAfter, hfirstShared] using hcontains_src_body)
+                      (fun x qt hlookup => by
+                        simpa [ctxAfter] using hlookup)
+                      hmem₀_eq hvar₀_eq _hθext₀_body
                 · -- shared-member runtimeInstantiatesCtx -> joined runtimeInstantiatesCtx (run 1).
                   have hmem₁_eq : cf₁.memory = evalCfg₁.memory := by
                     simp [heq_cfg₁]
                   have hvar₁_eq : cf₁.varEnv = c₁₁.varEnv := by
                     simp [heq_cfg₁]
-                  have hsrc_mem_to_res :
-                      ∀ l, firstShared.memEnv'.contains l → res.memEnv'.contains l :=
-                    joinTypeResults_mem_contains_of_member
-                      (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      h_join hsrc_mem'
-                  constructor
-                  · intro l a hθ
-                    have hloc_src := _hric_body_final₁.1 l a hθ
-                    rcases hloc_src with ⟨hcontains_src_body, hmem_contains⟩
-                    have hcontains_src : firstShared.memEnv'.contains l := by
-                      simpa [ctxAfter, hfirstShared] using hcontains_src_body
-                    refine ⟨hsrc_mem_to_res l hcontains_src, ?_⟩
-                    simpa [hmem₁_eq] using hmem_contains
-                  · intro x qt hlookup
-                    have hlookup_ctx :
-                        (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                      simpa [ctxAfter] using hlookup
-                    rcases hric₁1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-                    refine ⟨v, ?_⟩
-                    constructor
-                    · simpa [hvar₁_eq] using hlookup_v
-                    · exact valueHasETyp_extends _hθext₁_body.1 hv_typ
+                  exact
+                    appMember_runtimeInstantiatesCtx_from_body
+                      (ctx := ctxᵢ)
+                      (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                      (bodyFinalCtx := ctxAfter bodyCtx result3Shared)
+                      (first := first) (src := firstShared) (rest := rest) (res := res)
+                      (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := c₁₁)
+                      (θpre := θ₁1) (θbody := θ₁_body)
+                      h_join hsrc_mem' _hric_body_final₁ hric₁1
+                      (fun l hcontains_src_body => by
+                        simpa [ctxAfter, hfirstShared] using hcontains_src_body)
+                      (fun x qt hlookup => by
+                        simpa [ctxAfter] using hlookup)
+                      hmem₁_eq hvar₁_eq _hθext₁_body
                 · -- shared-member consistentWithRegime -> joined consistentWithRegime (run 0).
                   have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by
                     simp [heq_cfg₀]
@@ -6428,65 +6649,25 @@ lemma stepFR_app
                     qtypPredHolds_mem_compat_of_predSatLaws
                       (hpredlaws := hpredlaws) (θ := θ₀1)
                       (μ := c₁₀.memory) (μ' := cf₀.memory)
-                  have hcwr_src₀ :
-                      consistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                        (ctxAfter ctxᵢ firstShared) cf₀.memory cf₀.varEnv θ₀_body := by
-                    refine ⟨?_, ?_, ?_⟩
-                    · intro l qt k hlookup hguard hRdef
-                      have hlookup_body :
-                          (ctxAfter bodyCtx result3Shared).memEnv.lookup l = some qt := by
-                        simpa [ctxAfter, hfirstShared] using hlookup
-                      have hguard_body : qtypGuardTag qt = some k := by
-                        simpa [ctxAfter, hfirstShared] using hguard
-                      have hRdef_body :
-                          (ctxAfter bodyCtx result3Shared).regime.lookup? k ≠ none := by
-                        simpa [ctxAfter, hfirstShared] using hRdef
-                      have hloc_body :=
-                        _hcwr_body_final₀.1 l qt k hlookup_body hguard_body hRdef_body
-                      simpa [ctxAfter, hfirstShared, hmem₀_eq] using hloc_body
-                    · intro x qt k hlookup hguard hRdef
-                      cases hk_src : (ctxAfter ctxᵢ firstShared).regime.lookup? k with
-                      | none =>
-                          exact False.elim (hRdef hk_src)
-                      | some b =>
-                          have hRdef_res1 :
-                              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none := by
-                            intro hnone
-                            have hk_back := hlookup_back_res1_to_src k b hk_src
-                            rw [hk_back] at hnone
-                            contradiction
-                          have hlookup_res1_ctx :
-                              (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                            simpa [ctxAfter] using hlookup
-                          have hvar_res1 :
-                              varsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                                c₁₀.memory c₁₀.varEnv (x, qt) :=
-                            hcwr₀1.2.1 x qt k hlookup_res1_ctx hguard hRdef_res1
-                          have hvar_res1_mem :
-                              varsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                                cf₀.memory c₁₀.varEnv (x, qt) :=
-                            varsRegime_transport_predHolds hpred_compat₀ hvar_res1
-                          have hvar_src :
-                              varsRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                                cf₀.memory c₁₀.varEnv (x, qt) :=
-                            varsRegime_transport_active_lookup_back
-                              (predSat := predSat)
-                              (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                              (R' := (ctxAfter ctxᵢ firstShared).regime)
-                              (μ := cf₀.memory) (ρ := c₁₀.varEnv) (entry := (x, qt))
-                              hlookup_back_res1_to_src hguard hk_src hvar_res1_mem
-                          simpa [hvar₀_eq] using hvar_src
-                    · intro x qt v hlookup hlookup_v
-                      have hcvcr := hcwr₀1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
-                        (by rw [hvar₀_eq] at hlookup_v; exact hlookup_v)
-                      exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₀ _hθext₀_body.1
-                        (closureCapturedVarsRegime_transport_lookup_back hlookup_back_res1_to_src hcvcr)
                   exact
-                    joinTypeResults_transport_consistentWithRegime_from_member
+                    appMember_consistentWithRegime_from_body
                       (predSat := predSat)
-                      (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      (μ := cf₀.memory) (ρ := cf₀.varEnv) (θ := θ₀_body)
-                      h_join hsrc_mem' hcwr_src₀
+                      (ctx := ctxᵢ)
+                      (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                      (bodyFinalCtx := ctxAfter bodyCtx result3Shared)
+                      (first := first) (src := firstShared) (rest := rest) (res := res)
+                      (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := c₁₀)
+                      (θpre := θ₀1) (θbody := θ₀_body)
+                      h_join hsrc_mem' _hcwr_body_final₀ hcwr₀1
+                      (fun l qt hlookup => by
+                        simpa [ctxAfter, hfirstShared] using hlookup)
+                      (fun k b hk_src => by
+                        simpa [ctxAfter, hfirstShared] using hk_src)
+                      (fun k b hk_body => by
+                        simpa [ctxAfter, hfirstShared] using hk_body)
+                      (fun x qt hlookup => by
+                        simpa [ctxAfter] using hlookup)
+                      hlookup_back_res1_to_src hpred_compat₀ hmem₀_eq hvar₀_eq _hθext₀_body
                 · -- shared-member consistentWithRegime -> joined consistentWithRegime (run 1).
                   have hmem₁_eq : cf₁.memory = evalCfg₁.memory := by
                     simp [heq_cfg₁]
@@ -6499,144 +6680,133 @@ lemma stepFR_app
                     qtypPredHolds_mem_compat_of_predSatLaws
                       (hpredlaws := hpredlaws) (θ := θ₁1)
                       (μ := c₁₁.memory) (μ' := cf₁.memory)
-                  have hcwr_src₁ :
-                      consistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                        (ctxAfter ctxᵢ firstShared) cf₁.memory cf₁.varEnv θ₁_body := by
-                    refine ⟨?_, ?_, ?_⟩
-                    · intro l qt k hlookup hguard hRdef
-                      have hlookup_body :
-                          (ctxAfter bodyCtx result3Shared).memEnv.lookup l = some qt := by
-                        simpa [ctxAfter, hfirstShared] using hlookup
-                      have hguard_body : qtypGuardTag qt = some k := by
-                        simpa [ctxAfter, hfirstShared] using hguard
-                      have hRdef_body :
-                          (ctxAfter bodyCtx result3Shared).regime.lookup? k ≠ none := by
-                        simpa [ctxAfter, hfirstShared] using hRdef
-                      have hloc_body :=
-                        _hcwr_body_final₁.1 l qt k hlookup_body hguard_body hRdef_body
-                      simpa [ctxAfter, hfirstShared, hmem₁_eq] using hloc_body
-                    · intro x qt k hlookup hguard hRdef
-                      cases hk_src : (ctxAfter ctxᵢ firstShared).regime.lookup? k with
-                      | none =>
-                          exact False.elim (hRdef hk_src)
-                      | some b =>
-                          have hRdef_res1 :
-                              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none := by
-                            intro hnone
-                            have hk_back := hlookup_back_res1_to_src k b hk_src
-                            rw [hk_back] at hnone
-                            contradiction
-                          have hlookup_res1_ctx :
-                              (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                            simpa [ctxAfter] using hlookup
-                          have hvar_res1 :
-                              varsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                                c₁₁.memory c₁₁.varEnv (x, qt) :=
-                            hcwr₁1.2.1 x qt k hlookup_res1_ctx hguard hRdef_res1
-                          have hvar_res1_mem :
-                              varsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                                cf₁.memory c₁₁.varEnv (x, qt) :=
-                            varsRegime_transport_predHolds hpred_compat₁ hvar_res1
-                          have hvar_src :
-                              varsRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                                cf₁.memory c₁₁.varEnv (x, qt) :=
-                            varsRegime_transport_active_lookup_back
-                              (predSat := predSat)
-                              (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                              (R' := (ctxAfter ctxᵢ firstShared).regime)
-                              (μ := cf₁.memory) (ρ := c₁₁.varEnv) (entry := (x, qt))
-                              hlookup_back_res1_to_src hguard hk_src hvar_res1_mem
-                          simpa [hvar₁_eq] using hvar_src
-                    · intro x qt v hlookup hlookup_v
-                      have hcvcr := hcwr₁1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
-                        (by rw [hvar₁_eq] at hlookup_v; exact hlookup_v)
-                      exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₁ _hθext₁_body.1
-                        (closureCapturedVarsRegime_transport_lookup_back hlookup_back_res1_to_src hcvcr)
                   exact
-                    joinTypeResults_transport_consistentWithRegime_from_member
+                    appMember_consistentWithRegime_from_body
                       (predSat := predSat)
-                      (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      (μ := cf₁.memory) (ρ := cf₁.varEnv) (θ := θ₁_body)
-                      h_join hsrc_mem' hcwr_src₁
+                      (ctx := ctxᵢ)
+                      (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                      (bodyFinalCtx := ctxAfter bodyCtx result3Shared)
+                      (first := first) (src := firstShared) (rest := rest) (res := res)
+                      (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := c₁₁)
+                      (θpre := θ₁1) (θbody := θ₁_body)
+                      h_join hsrc_mem' _hcwr_body_final₁ hcwr₁1
+                      (fun l qt hlookup => by
+                        simpa [ctxAfter, hfirstShared] using hlookup)
+                      (fun k b hk_src => by
+                        simpa [ctxAfter, hfirstShared] using hk_src)
+                      (fun k b hk_body => by
+                        simpa [ctxAfter, hfirstShared] using hk_body)
+                      (fun x qt hlookup => by
+                        simpa [ctxAfter] using hlookup)
+                      hlookup_back_res1_to_src hpred_compat₁ hmem₁_eq hvar₁_eq _hθext₁_body
                 · -- shared-member valueConsistentWithRegime -> joined result qualType (run 0).
                   have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by
                     simp [heq_cfg₀]
-                  have hval_src₀ :
-                      valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                        firstShared.qualType cf₀.memory θ₀_body o₀ := by
-                    have hval_first :
-                        valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
-                          (normalizeAppResultByProvenance (joinPoison p1 p)
-                            { result3Shared.qualType with
-                              poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
-                          evalCfg₀.memory θ₀_body o₀ :=
-                      valueConsistentWithRegime_transport_normalizeAppResultByProvenance
-                        (predSat := predSat) (R := (ctxAfter bodyCtx result3Shared).regime)
-                        (p := p) (p1 := p1) (qt := result3Shared.qualType)
-                        (μ := evalCfg₀.memory) (θ := θ₀_body) (v := o₀) _hvalc_body₀
-                    simpa [ctxAfter, hfirstShared, hmem₀_eq] using hval_first
                   exact
-                    joinTypeResults_transport_valueConsistentWithRegime_from_member
+                    appMember_valueConsistentWithRegime_from_body
                       (predSat := predSat)
-                      (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      (μ := cf₀.memory) (θ := θ₀_body) (v := o₀)
-                      h_join hsrc_mem' hval_src₀
+                      (ctx := ctxᵢ) (bodyCtx := bodyCtx)
+                      (first := first) (src := firstShared) (result3 := result3Shared)
+                      (rest := rest) (res := res)
+                      (cf := cf₀) (evalCfg := evalCfg₀) (θ := θ₀_body) (o := o₀)
+                      (p := p) (p1 := p1)
+                      h_join hsrc_mem' hfirstShared hmem₀_eq _hvalc_body₀
                 · -- shared-member valueConsistentWithRegime -> joined result qualType (run 1).
                   have hmem₁_eq : cf₁.memory = evalCfg₁.memory := by
                     simp [heq_cfg₁]
-                  have hval_src₁ :
-                      valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                        firstShared.qualType cf₁.memory θ₁_body o₁ := by
-                    have hval_first :
-                        valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
-                          (normalizeAppResultByProvenance (joinPoison p1 p)
-                            { result3Shared.qualType with
-                              poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
-                          evalCfg₁.memory θ₁_body o₁ :=
-                      valueConsistentWithRegime_transport_normalizeAppResultByProvenance
-                        (predSat := predSat) (R := (ctxAfter bodyCtx result3Shared).regime)
-                        (p := p) (p1 := p1) (qt := result3Shared.qualType)
-                        (μ := evalCfg₁.memory) (θ := θ₁_body) (v := o₁) _hvalc_body₁
-                    simpa [ctxAfter, hfirstShared, hmem₁_eq] using hval_first
                   exact
-                    joinTypeResults_transport_valueConsistentWithRegime_from_member
+                    appMember_valueConsistentWithRegime_from_body
                       (predSat := predSat)
-                      (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      (μ := cf₁.memory) (θ := θ₁_body) (v := o₁)
-                      h_join hsrc_mem' hval_src₁
+                      (ctx := ctxᵢ) (bodyCtx := bodyCtx)
+                      (first := first) (src := firstShared) (result3 := result3Shared)
+                      (rest := rest) (res := res)
+                      (cf := cf₁) (evalCfg := evalCfg₁) (θ := θ₁_body) (o := o₁)
+                      (p := p) (p1 := p1)
+                      h_join hsrc_mem' hfirstShared hmem₁_eq _hvalc_body₁
                 · -- shared-member resultAgreesIfClean -> joined result qualType.
                   have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by
                     simp [heq_cfg₀]
                   have hmem₁_eq : cf₁.memory = evalCfg₁.memory := by
                     simp [heq_cfg₁]
-                  have hres_agree_src :
-                      resultAgreesIfClean predSat (ctxAfter ctxᵢ firstShared).regime
-                        cf₀.memory cf₁.memory θ₀_body θ₁_body firstShared.qualType o₀ o₁ := by
-                    have hres_agree_first :
-                        resultAgreesIfClean predSat (ctxAfter bodyCtx result3Shared).regime
-                          evalCfg₀.memory evalCfg₁.memory θ₀_body θ₁_body
-                          (normalizeAppResultByProvenance (joinPoison p1 p)
-                            { result3Shared.qualType with
-                              poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
-                          o₀ o₁ :=
-                      resultAgreesIfClean_transport_normalizeAppResultByProvenance
-                        (predSat := predSat) (R := (ctxAfter bodyCtx result3Shared).regime)
-                        (p := p) (p1 := p1) (qt := result3Shared.qualType)
-                        (μ₀ := evalCfg₀.memory) (μ₁ := evalCfg₁.memory)
-                        (θ₀ := θ₀_body) (θ₁ := θ₁_body) (o₀ := o₀) (o₁ := o₁)
-                        _hres_agree_body
-                    simpa [ctxAfter, hfirstShared, hmem₀_eq, hmem₁_eq] using hres_agree_first
                   exact
-                    joinTypeResults_transport_resultAgreesIfClean_from_member
+                    appMember_resultAgreesIfClean_from_body
                       (predSat := predSat)
-                      (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                      (μ₀ := cf₀.memory) (μ₁ := cf₁.memory) (θ₀ := θ₀_body) (θ₁ := θ₁_body)
-                      (o₀ := o₀) (o₁ := o₁)
-                      h_join hsrc_mem' hres_agree_src
-              exact ⟨θ₀_body, θ₁_body,
-                wfExtendsMap_trans hθext₀2 (wfExtendsMap_trans hθext₀1 _hθext₀_body),
-                wfExtendsMap_trans hθext₁2 (wfExtendsMap_trans hθext₁1 _hθext₁_body),
-                hOutPack_body⟩
+                      (ctx := ctxᵢ) (bodyCtx := bodyCtx)
+                      (first := first) (src := firstShared) (result3 := result3Shared)
+                      (rest := rest) (res := res)
+                      (cf₀ := cf₀) (cf₁ := cf₁) (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
+                      (θ₀ := θ₀_body) (θ₁ := θ₁_body) (o₀ := o₀) (o₁ := o₁)
+                      (p := p) (p1 := p1)
+                      h_join hsrc_mem' hfirstShared hmem₀_eq hmem₁_eq _hres_agree_body
+              have hOutPack_body_from_helper :
+                  AppTwoRunOutPack predSat ctxᵢ res cf₀ cf₁ o₀ o₁
+                    θ₀_body θ₁_body := by
+                have hsrc_mem' : firstShared ∈ first :: rest := by
+                  simpa [heq_results] using hfirstSharedMem
+                have hres1_to_src_mono :
+                    Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                      (ctxAfter ctxᵢ firstShared).regime := by
+                  have h_mono_body : Regime.monotoneStep bodyCtx.regime result3Shared.regime' :=
+                    regime_monotone bodyCtx body₀ fuelBody result3Shared htcBody'
+                  simpa [bodyCtx, ctxAfter, hfirstShared] using h_mono_body
+                have hlookup_back_res1_to_src :
+                    ∀ k b,
+                      (ctxAfter ctxᵢ firstShared).regime.lookup? k = some b →
+                      (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+                  regime_lookup_back_of_monotone hres1_to_src_mono
+                have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by
+                  simp [heq_cfg₀]
+                have hmem₁_eq : cf₁.memory = evalCfg₁.memory := by
+                  simp [heq_cfg₁]
+                have hvar₀_eq : cf₀.varEnv = c₁₀.varEnv := by
+                  simp [heq_cfg₀]
+                have hvar₁_eq : cf₁.varEnv = c₁₁.varEnv := by
+                  simp [heq_cfg₁]
+                have hpred_compat₀ :
+                    ∀ (qt' : QTyp) (v' : Value),
+                      qtypPredHolds predSat qt' c₁₀.memory v' ↔
+                        qtypPredHolds predSat qt' cf₀.memory v' :=
+                  qtypPredHolds_mem_compat_of_predSatLaws
+                    (hpredlaws := hpredlaws) (θ := θ₀1)
+                    (μ := c₁₀.memory) (μ' := cf₀.memory)
+                have hpred_compat₁ :
+                    ∀ (qt' : QTyp) (v' : Value),
+                      qtypPredHolds predSat qt' c₁₁.memory v' ↔
+                        qtypPredHolds predSat qt' cf₁.memory v' :=
+                  qtypPredHolds_mem_compat_of_predSatLaws
+                    (hpredlaws := hpredlaws) (θ := θ₁1)
+                    (μ := c₁₁.memory) (μ' := cf₁.memory)
+                exact
+                  appTwoRunOutPack_from_body_post
+                    (predSat := predSat)
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyCtx := bodyCtx)
+                    (first := first) (src := firstShared) (result3 := result3Shared)
+                    (rest := rest) (res := res)
+                    (cf₀ := cf₀) (cf₁ := cf₁)
+                    (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
+                    (preCfg₀ := c₁₀) (preCfg₁ := c₁₁)
+                    (θpre₀ := θ₀1) (θpre₁ := θ₁1)
+                    (θbody₀ := θ₀_body) (θbody₁ := θ₁_body)
+                    (o₀ := o₀) (o₁ := o₁) (p := p) (p1 := p1)
+                    h_join hsrc_mem' hfirstShared hlookup_back_res1_to_src
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
+                    _hθext₀_body _hθext₁_body _hv_body₀_typed _hv_body₁_typed
+                    _hric_body_final₀ _hric_body_final₁ hric₀1 hric₁1
+                    _hcwr_body_final₀ _hcwr_body_final₁ hcwr₀1 hcwr₁1
+                    hAgree_out_body _hvalc_body₀ _hvalc_body₁ _hres_agree_body
+              exact
+                appTwoRunOutChoice_of_pack
+                  (hθ₀ :=
+                    wfExtendsMap_trans hθext₀2
+                      (wfExtendsMap_trans hθext₀1 _hθext₀_body))
+                  (hθ₁ :=
+                    wfExtendsMap_trans hθext₁2
+                      (wfExtendsMap_trans hθext₁1 _hθext₁_body))
+                  hOutPack_body_from_helper
             · -- Fallback: no shared closure (¬ internalPoisonClean).
               have hptrue : p = true := by
                 have : ¬ p = false := by
@@ -7695,39 +7865,13 @@ lemma stepFR_app
           have hlookup_back_res1_to_A₀ :
               ∀ k b,
                 (ctxAfter ctxᵢ firstA₀).regime.lookup? k = some b →
-                (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-            intro k b hk_src
-            have hRdef_src : (ctxAfter ctxᵢ firstA₀).regime.lookup? k ≠ none := by
-              intro hnone; rw [hk_src] at hnone; contradiction
-            have hRdef_res1 :
-                (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-              hres1_to_firstA₀_mono.2 k hRdef_src
-            cases hk_res1 :
-                (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
-            | none => exact False.elim (hRdef_res1 hk_res1)
-            | some b1 =>
-                rcases hres1_to_firstA₀_mono.1 k b1 hk_res1 with hk_src' | hnone_src
-                · have : some b1 = some b := hk_src'.symm.trans hk_src
-                  simp [Option.some.inj this]
-                · rw [hnone_src] at hk_src; cases hk_src
+                (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+            regime_lookup_back_of_monotone hres1_to_firstA₀_mono
           have hlookup_back_res1_to_A₁ :
               ∀ k b,
                 (ctxAfter ctxᵢ firstA₁).regime.lookup? k = some b →
-                (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-            intro k b hk_src
-            have hRdef_src : (ctxAfter ctxᵢ firstA₁).regime.lookup? k ≠ none := by
-              intro hnone; rw [hk_src] at hnone; contradiction
-            have hRdef_res1 :
-                (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-              hres1_to_firstA₁_mono.2 k hRdef_src
-            cases hk_res1 :
-                (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
-            | none => exact False.elim (hRdef_res1 hk_res1)
-            | some b1 =>
-                rcases hres1_to_firstA₁_mono.1 k b1 hk_res1 with hk_src' | hnone_src
-                · have : some b1 = some b := hk_src'.symm.trans hk_src
-                  simp [Option.some.inj this]
-                · rw [hnone_src] at hk_src; cases hk_src
+                (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+            regime_lookup_back_of_monotone hres1_to_firstA₁_mono
           -- Memory/varEnv equalities (pure closure: cf = c₁ after subst, body memory preserved in pure mode)
           -- In pure mode, the body cannot allocate or modify memory, so evalCfg.memory = bodyInit.memory = cf.memory
           have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by
@@ -7789,155 +7933,81 @@ lemma stepFR_app
             hwfcf₁₁,
             -- runtimeInstantiatesCtx run 0
             by
-              have hmem_to_res₀ :
-                  ∀ l, firstA₀.memEnv'.contains l → res.memEnv'.contains l :=
-                joinTypeResults_mem_contains_of_member
-                  (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest)
-                  (res := res) h_join hfirstA₀_mem'
-              constructor
-              · intro l a hθ
-                have hloc := hric_bodyA₀_final.1 l a hθ
-                rcases hloc with ⟨hcontains_body, hmem_contains⟩
-                have hcontains_src : firstA₀.memEnv'.contains l := by
-                  simpa [ctxAfter, hfirstA₀_eq] using hcontains_body
-                exact ⟨hmem_to_res₀ l hcontains_src, by simpa [hmem₀_eq] using hmem_contains⟩
-              · intro x qt hlookup
-                have hlookup_ctx :
-                    (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                  simpa [ctxAfter] using hlookup
-                rcases hric₀1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-                exact ⟨v, hlookup_v,
-                  valueHasETyp_extends hθext₀_body.1 hv_typ⟩,
+              exact
+                appMember_runtimeInstantiatesCtx_from_body
+                  (ctx := ctxᵢ)
+                  (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                  (bodyFinalCtx := ctxAfter bodyCtxA₀ result3A₀)
+                  (first := first) (src := firstA₀) (rest := rest) (res := res)
+                  (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := cf₀)
+                  (θpre := θ₀1) (θbody := θ₀_body)
+                  h_join hfirstA₀_mem' hric_bodyA₀_final hric₀1
+                  (fun l hcontains_body => by
+                    simpa [ctxAfter, hfirstA₀_eq] using hcontains_body)
+                  (fun x qt hlookup => by
+                    simpa [ctxAfter] using hlookup)
+                  hmem₀_eq rfl hθext₀_body,
             -- runtimeInstantiatesCtx run 1
             by
-              have hmem_to_res₁ :
-                  ∀ l, firstA₁.memEnv'.contains l → res.memEnv'.contains l :=
-                joinTypeResults_mem_contains_of_member
-                  (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest)
-                  (res := res) h_join hfirstA₁_mem'
-              constructor
-              · intro l a hθ
-                have hloc := hric_bodyA₁_final.1 l a hθ
-                rcases hloc with ⟨hcontains_body, hmem_contains⟩
-                have hcontains_src : firstA₁.memEnv'.contains l := by
-                  simpa [ctxAfter, hfirstA₁_eq] using hcontains_body
-                exact ⟨hmem_to_res₁ l hcontains_src, by simpa [hmem₁_eq] using hmem_contains⟩
-              · intro x qt hlookup
-                have hlookup_ctx :
-                    (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                  simpa [ctxAfter] using hlookup
-                rcases hric₁1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-                exact ⟨v, hlookup_v,
-                  valueHasETyp_extends hθext₁_body.1 hv_typ⟩,
+              exact
+                appMember_runtimeInstantiatesCtx_from_body
+                  (ctx := ctxᵢ)
+                  (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                  (bodyFinalCtx := ctxAfter bodyCtxA₁ result3A₁)
+                  (first := first) (src := firstA₁) (rest := rest) (res := res)
+                  (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := cf₁)
+                  (θpre := θ₁1) (θbody := θ₁_body)
+                  h_join hfirstA₁_mem' hric_bodyA₁_final hric₁1
+                  (fun l hcontains_body => by
+                    simpa [ctxAfter, hfirstA₁_eq] using hcontains_body)
+                  (fun x qt hlookup => by
+                    simpa [ctxAfter] using hlookup)
+                  hmem₁_eq rfl hθext₁_body,
             -- regimeConsistentWithCtx (ctxAfter ctxᵢ res)
             join_transport_regimeConsistentWithCtx ctxᵢ first rest res h_join
               h_tag_join h_first_regime,
             -- consistentWithRegime run 0
             by
-              have hcwr_src₀ :
-                  consistentWithRegime predSat (ctxAfter ctxᵢ firstA₀).regime
-                    (ctxAfter ctxᵢ firstA₀) cf₀.memory cf₀.varEnv θ₀_body := by
-                refine ⟨?_, ?_, ?_⟩
-                · intro l qt k hlookup hguard hRdef
-                  have hlookup_body :
-                      (ctxAfter bodyCtxA₀ result3A₀).memEnv.lookup l = some qt := by
-                    simpa [ctxAfter, hfirstA₀_eq] using hlookup
-                  have hguard_body : qtypGuardTag qt = some k := by
-                    simpa [ctxAfter, hfirstA₀_eq] using hguard
-                  have hRdef_body :
-                      (ctxAfter bodyCtxA₀ result3A₀).regime.lookup? k ≠ none := by
-                    simpa [ctxAfter, hfirstA₀_eq] using hRdef
-                  simpa [ctxAfter, hfirstA₀_eq, hmem₀_eq] using
-                    hcwr_bodyA₀_final.1 l qt k hlookup_body hguard_body hRdef_body
-                · intro x qt k hlookup hguard hRdef
-                  cases hk_src : (ctxAfter ctxᵢ firstA₀).regime.lookup? k with
-                  | none => exact False.elim (hRdef hk_src)
-                  | some b =>
-                      have hRdef_res1 :
-                          (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none := by
-                        intro hnone
-                        have hk_back := hlookup_back_res1_to_A₀ k b hk_src
-                        rw [hk_back] at hnone; contradiction
-                      have hlookup_res1_ctx :
-                          (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x =
-                            some qt := by
-                        simpa [ctxAfter] using hlookup
-                      have hvar_res1 :=
-                        hcwr₀1.2.1 x qt k hlookup_res1_ctx hguard hRdef_res1
-                      have hvar_res1_mem :=
-                        varsRegime_transport_predHolds hpred_compat₀ hvar_res1
-                      exact
-                        varsRegime_transport_active_lookup_back
-                          (predSat := predSat)
-                          (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                          (R' := (ctxAfter ctxᵢ firstA₀).regime)
-                          (μ := cf₀.memory) (ρ := cf₀.varEnv) (entry := (x, qt))
-                          hlookup_back_res1_to_A₀ hguard hk_src hvar_res1_mem
-                · intro x qt v hlookup hlookup_v
-                  have hcvcr := hcwr₀1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
-                    hlookup_v
-                  exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₀ hθext₀_body.1
-                    (closureCapturedVarsRegime_transport_lookup_back
-                      hlookup_back_res1_to_A₀ hcvcr)
               exact
-                joinTypeResults_transport_consistentWithRegime_from_member
+                appMember_consistentWithRegime_from_body
                   (predSat := predSat)
-                  (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest) (res := res)
-                  (μ := cf₀.memory) (ρ := cf₀.varEnv) (θ := θ₀_body)
-                  h_join hfirstA₀_mem' hcwr_src₀,
+                  (ctx := ctxᵢ)
+                  (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                  (bodyFinalCtx := ctxAfter bodyCtxA₀ result3A₀)
+                  (first := first) (src := firstA₀) (rest := rest) (res := res)
+                  (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := cf₀)
+                  (θpre := θ₀1) (θbody := θ₀_body)
+                  h_join hfirstA₀_mem' hcwr_bodyA₀_final hcwr₀1
+                  (fun l qt hlookup => by
+                    simpa [ctxAfter, hfirstA₀_eq] using hlookup)
+                  (fun k b hk_src => by
+                    simpa [ctxAfter, hfirstA₀_eq] using hk_src)
+                  (fun k b hk_body => by
+                    simpa [ctxAfter, hfirstA₀_eq] using hk_body)
+                  (fun x qt hlookup => by
+                    simpa [ctxAfter] using hlookup)
+                  hlookup_back_res1_to_A₀ hpred_compat₀ hmem₀_eq rfl hθext₀_body,
             -- consistentWithRegime run 1
             by
-              have hcwr_src₁ :
-                  consistentWithRegime predSat (ctxAfter ctxᵢ firstA₁).regime
-                    (ctxAfter ctxᵢ firstA₁) cf₁.memory cf₁.varEnv θ₁_body := by
-                refine ⟨?_, ?_, ?_⟩
-                · intro l qt k hlookup hguard hRdef
-                  have hlookup_body :
-                      (ctxAfter bodyCtxA₁ result3A₁).memEnv.lookup l = some qt := by
-                    simpa [ctxAfter, hfirstA₁_eq] using hlookup
-                  have hguard_body : qtypGuardTag qt = some k := by
-                    simpa [ctxAfter, hfirstA₁_eq] using hguard
-                  have hRdef_body :
-                      (ctxAfter bodyCtxA₁ result3A₁).regime.lookup? k ≠ none := by
-                    simpa [ctxAfter, hfirstA₁_eq] using hRdef
-                  simpa [ctxAfter, hfirstA₁_eq, hmem₁_eq] using
-                    hcwr_bodyA₁_final.1 l qt k hlookup_body hguard_body hRdef_body
-                · intro x qt k hlookup hguard hRdef
-                  cases hk_src : (ctxAfter ctxᵢ firstA₁).regime.lookup? k with
-                  | none => exact False.elim (hRdef hk_src)
-                  | some b =>
-                      have hRdef_res1 :
-                          (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none := by
-                        intro hnone
-                        have hk_back := hlookup_back_res1_to_A₁ k b hk_src
-                        rw [hk_back] at hnone; contradiction
-                      have hlookup_res1_ctx :
-                          (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x =
-                            some qt := by
-                        simpa [ctxAfter] using hlookup
-                      have hvar_res1 :=
-                        hcwr₁1.2.1 x qt k hlookup_res1_ctx hguard hRdef_res1
-                      have hvar_res1_mem :=
-                        varsRegime_transport_predHolds hpred_compat₁ hvar_res1
-                      exact
-                        varsRegime_transport_active_lookup_back
-                          (predSat := predSat)
-                          (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                          (R' := (ctxAfter ctxᵢ firstA₁).regime)
-                          (μ := cf₁.memory) (ρ := cf₁.varEnv) (entry := (x, qt))
-                          hlookup_back_res1_to_A₁ hguard hk_src hvar_res1_mem
-                · intro x qt v hlookup hlookup_v
-                  have hcvcr := hcwr₁1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
-                    hlookup_v
-                  exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₁ hθext₁_body.1
-                    (closureCapturedVarsRegime_transport_lookup_back
-                      hlookup_back_res1_to_A₁ hcvcr)
               exact
-                joinTypeResults_transport_consistentWithRegime_from_member
+                appMember_consistentWithRegime_from_body
                   (predSat := predSat)
-                  (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest) (res := res)
-                  (μ := cf₁.memory) (ρ := cf₁.varEnv) (θ := θ₁_body)
-                  h_join hfirstA₁_mem' hcwr_src₁,
+                  (ctx := ctxᵢ)
+                  (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                  (bodyFinalCtx := ctxAfter bodyCtxA₁ result3A₁)
+                  (first := first) (src := firstA₁) (rest := rest) (res := res)
+                  (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := cf₁)
+                  (θpre := θ₁1) (θbody := θ₁_body)
+                  h_join hfirstA₁_mem' hcwr_bodyA₁_final hcwr₁1
+                  (fun l qt hlookup => by
+                    simpa [ctxAfter, hfirstA₁_eq] using hlookup)
+                  (fun k b hk_src => by
+                    simpa [ctxAfter, hfirstA₁_eq] using hk_src)
+                  (fun k b hk_body => by
+                    simpa [ctxAfter, hfirstA₁_eq] using hk_body)
+                  (fun x qt hlookup => by
+                    simpa [ctxAfter] using hlookup)
+                  hlookup_back_res1_to_A₁ hpred_compat₁ hmem₁_eq rfl hθext₁_body,
             -- agreeOnClean for ¬qtypCleanUnder (p1=true, parrow, different closure bodies)
             by
               -- Regime monotonicity: result1.regime' → res.regime' (through the join)
@@ -8179,50 +8249,26 @@ lemma stepFR_app
                     hv₀_pre hv₁_pre,
             -- valueConsistentWithRegime run 0
             by
-              have hfirstA₀_eq_regime : firstA₀.regime' = result3A₀.regime' := by
-                simp [hfirstA₀_eq]
-              have hval_src₀ :
-                  valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstA₀).regime
-                    firstA₀.qualType cf₀.memory θ₀_body o₀ := by
-                have hval_first :
-                    valueConsistentWithRegime predSat (ctxAfter bodyCtxA₀ result3A₀).regime
-                      (normalizeAppResultByProvenance (joinPoison p1 p)
-                        { result3A₀.qualType with
-                          poison := joinPoison p1 (joinPoison p result3A₀.qualType.poison) })
-                      evalCfg₀.memory θ₀_body o₀ :=
-                  valueConsistentWithRegime_transport_normalizeAppResultByProvenance
-                    (predSat := predSat) (R := (ctxAfter bodyCtxA₀ result3A₀).regime)
-                    (p := p) (p1 := p1) (qt := result3A₀.qualType)
-                    (μ := evalCfg₀.memory) (θ := θ₀_body) (v := o₀) hvalc_bodyA₀
-                simpa [ctxAfter, hfirstA₀_eq, hmem₀_eq] using hval_first
               exact
-                joinTypeResults_transport_valueConsistentWithRegime_from_member
+                appMember_valueConsistentWithRegime_from_body
                   (predSat := predSat)
-                  (ctx := ctxᵢ) (first := first) (src := firstA₀) (rest := rest) (res := res)
-                  (μ := cf₀.memory) (θ := θ₀_body) (v := o₀)
-                  h_join hfirstA₀_mem' hval_src₀,
+                  (ctx := ctxᵢ) (bodyCtx := bodyCtxA₀)
+                  (first := first) (src := firstA₀) (result3 := result3A₀)
+                  (rest := rest) (res := res)
+                  (cf := cf₀) (evalCfg := evalCfg₀) (θ := θ₀_body) (o := o₀)
+                  (p := p) (p1 := p1)
+                  h_join hfirstA₀_mem' hfirstA₀_eq hmem₀_eq hvalc_bodyA₀,
             -- valueConsistentWithRegime run 1
             by
-              have hval_src₁ :
-                  valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstA₁).regime
-                    firstA₁.qualType cf₁.memory θ₁_body o₁ := by
-                have hval_first :
-                    valueConsistentWithRegime predSat (ctxAfter bodyCtxA₁ result3A₁).regime
-                      (normalizeAppResultByProvenance (joinPoison p1 p)
-                        { result3A₁.qualType with
-                          poison := joinPoison p1 (joinPoison p result3A₁.qualType.poison) })
-                      evalCfg₁.memory θ₁_body o₁ :=
-                  valueConsistentWithRegime_transport_normalizeAppResultByProvenance
-                    (predSat := predSat) (R := (ctxAfter bodyCtxA₁ result3A₁).regime)
-                    (p := p) (p1 := p1) (qt := result3A₁.qualType)
-                    (μ := evalCfg₁.memory) (θ := θ₁_body) (v := o₁) hvalc_bodyA₁
-                simpa [ctxAfter, hfirstA₁_eq, hmem₁_eq] using hval_first
               exact
-                joinTypeResults_transport_valueConsistentWithRegime_from_member
+                appMember_valueConsistentWithRegime_from_body
                   (predSat := predSat)
-                  (ctx := ctxᵢ) (first := first) (src := firstA₁) (rest := rest) (res := res)
-                  (μ := cf₁.memory) (θ := θ₁_body) (v := o₁)
-                  h_join hfirstA₁_mem' hval_src₁,
+                  (ctx := ctxᵢ) (bodyCtx := bodyCtxA₁)
+                  (first := first) (src := firstA₁) (result3 := result3A₁)
+                  (rest := rest) (res := res)
+                  (cf := cf₁) (evalCfg := evalCfg₁) (θ := θ₁_body) (o := o₁)
+                  (p := p) (p1 := p1)
+                  h_join hfirstA₁_mem' hfirstA₁_eq hmem₁_eq hvalc_bodyA₁,
             -- resultAgreesIfClean (vacuously true since poison=true and pred=noPred)
             resultAgreesIfClean_of_poison_noPred hres_pack.1 hres_pack.2⟩
         by_cases hclean1_e1 :
@@ -9099,32 +9145,8 @@ lemma stepFR_app
               have hlookup_back_res1_to_src :
                   ∀ k b,
                     (ctxAfter ctxᵢ firstShared).regime.lookup? k = some b →
-                    (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-                intro k b hk_src
-                have hRdef_src : (ctxAfter ctxᵢ firstShared).regime.lookup? k ≠ none := by
-                  intro hnone
-                  rw [hk_src] at hnone
-                  contradiction
-                have hRdef_res1 :
-                    (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none :=
-                  hres1_to_src_mono.2 k hRdef_src
-                cases hk_res1 : (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k with
-                | none =>
-                    exact False.elim (hRdef_res1 hk_res1)
-                | some b1 =>
-                    have hcases := hres1_to_src_mono.1 k b1 hk_res1
-                    cases hcases with
-                    | inl hk_src' =>
-                        have hb_eq : b1 = b := by
-                          have : some b1 = some b := by
-                            calc
-                              some b1 = (ctxAfter ctxᵢ firstShared).regime.lookup? k := hk_src'.symm
-                              _ = some b := hk_src
-                          exact Option.some.inj this
-                        simp [hb_eq]
-                    | inr hnone_src =>
-                        rw [hnone_src] at hk_src
-                        cases hk_src
+                    (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+                regime_lookup_back_of_monotone hres1_to_src_mono
               refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hAgree_out_body,
                 ?_, ?_, ?_, ?_⟩
               · -- shared-member valueHasETyp -> joined valueHasETyp (run 0).
@@ -9167,53 +9189,37 @@ lemma stepFR_app
               · -- shared-member runtimeInstantiatesCtx -> joined runtimeInstantiatesCtx (run 0).
                 have hmem₀_eq : cf₀.memory = evalCfg₀.memory := hmem₀_eq
                 have hvar₀_eq : cf₀.varEnv = cf₀.varEnv := rfl
-                have hsrc_mem_to_res :
-                    ∀ l, firstShared.memEnv'.contains l → res.memEnv'.contains l :=
-                  joinTypeResults_mem_contains_of_member
-                    (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                    h_join hsrc_mem'
-                constructor
-                · intro l a hθ
-                  have hloc_src := _hric_body_final₀.1 l a hθ
-                  rcases hloc_src with ⟨hcontains_src_body, hmem_contains⟩
-                  have hcontains_src : firstShared.memEnv'.contains l := by
-                    simpa [ctxAfter, hfirstShared] using hcontains_src_body
-                  refine ⟨hsrc_mem_to_res l hcontains_src, ?_⟩
-                  simpa [hmem₀_eq] using hmem_contains
-                · intro x qt hlookup
-                  have hlookup_ctx :
-                      (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                    simpa [ctxAfter] using hlookup
-                  rcases hric₀1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-                  refine ⟨v, ?_⟩
-                  constructor
-                  · simpa [hvar₀_eq] using hlookup_v
-                  · exact valueHasETyp_extends _hθext₀_body.1 hv_typ
+                exact
+                  appMember_runtimeInstantiatesCtx_from_body
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyFinalCtx := ctxAfter bodyCtx result3Shared)
+                    (first := first) (src := firstShared) (rest := rest) (res := res)
+                    (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := cf₀)
+                    (θpre := θ₀1) (θbody := θ₀_body)
+                    h_join hsrc_mem' _hric_body_final₀ hric₀1
+                    (fun l hcontains_src_body => by
+                      simpa [ctxAfter, hfirstShared] using hcontains_src_body)
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hmem₀_eq hvar₀_eq _hθext₀_body
               · -- shared-member runtimeInstantiatesCtx -> joined runtimeInstantiatesCtx (run 1).
                 have hmem₁_eq : cf₁.memory = evalCfg₁.memory := hmem₁_eq
                 have hvar₁_eq : cf₁.varEnv = cf₁.varEnv := rfl
-                have hsrc_mem_to_res :
-                    ∀ l, firstShared.memEnv'.contains l → res.memEnv'.contains l :=
-                  joinTypeResults_mem_contains_of_member
-                    (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                    h_join hsrc_mem'
-                constructor
-                · intro l a hθ
-                  have hloc_src := _hric_body_final₁.1 l a hθ
-                  rcases hloc_src with ⟨hcontains_src_body, hmem_contains⟩
-                  have hcontains_src : firstShared.memEnv'.contains l := by
-                    simpa [ctxAfter, hfirstShared] using hcontains_src_body
-                  refine ⟨hsrc_mem_to_res l hcontains_src, ?_⟩
-                  simpa [hmem₁_eq] using hmem_contains
-                · intro x qt hlookup
-                  have hlookup_ctx :
-                      (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                    simpa [ctxAfter] using hlookup
-                  rcases hric₁1.2 hlookup_ctx with ⟨v, hlookup_v, hv_typ⟩
-                  refine ⟨v, ?_⟩
-                  constructor
-                  · simpa [hvar₁_eq] using hlookup_v
-                  · exact valueHasETyp_extends _hθext₁_body.1 hv_typ
+                exact
+                  appMember_runtimeInstantiatesCtx_from_body
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyFinalCtx := ctxAfter bodyCtx result3Shared)
+                    (first := first) (src := firstShared) (rest := rest) (res := res)
+                    (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := cf₁)
+                    (θpre := θ₁1) (θbody := θ₁_body)
+                    h_join hsrc_mem' _hric_body_final₁ hric₁1
+                    (fun l hcontains_src_body => by
+                      simpa [ctxAfter, hfirstShared] using hcontains_src_body)
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hmem₁_eq hvar₁_eq _hθext₁_body
               · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res)
                 exact
                   join_transport_regimeConsistentWithCtx
@@ -9229,65 +9235,25 @@ lemma stepFR_app
                   qtypPredHolds_mem_compat_of_predSatLaws
                     (hpredlaws := hpredlaws) (θ := θ₀1)
                     (μ := cf₀.memory) (μ' := cf₀.memory)
-                have hcwr_src₀ :
-                    consistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                      (ctxAfter ctxᵢ firstShared) cf₀.memory cf₀.varEnv θ₀_body := by
-                  refine ⟨?_, ?_, ?_⟩
-                  · intro l qt k hlookup hguard hRdef
-                    have hlookup_body :
-                        (ctxAfter bodyCtx result3Shared).memEnv.lookup l = some qt := by
-                      simpa [ctxAfter, hfirstShared] using hlookup
-                    have hguard_body : qtypGuardTag qt = some k := by
-                      simpa [ctxAfter, hfirstShared] using hguard
-                    have hRdef_body :
-                        (ctxAfter bodyCtx result3Shared).regime.lookup? k ≠ none := by
-                      simpa [ctxAfter, hfirstShared] using hRdef
-                    have hloc_body :=
-                      _hcwr_body_final₀.1 l qt k hlookup_body hguard_body hRdef_body
-                    simpa [ctxAfter, hfirstShared, hmem₀_eq] using hloc_body
-                  · intro x qt k hlookup hguard hRdef
-                    cases hk_src : (ctxAfter ctxᵢ firstShared).regime.lookup? k with
-                    | none =>
-                        exact False.elim (hRdef hk_src)
-                    | some b =>
-                        have hRdef_res1 :
-                            (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none := by
-                          intro hnone
-                          have hk_back := hlookup_back_res1_to_src k b hk_src
-                          rw [hk_back] at hnone
-                          contradiction
-                        have hlookup_res1_ctx :
-                            (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                          simpa [ctxAfter] using hlookup
-                        have hvar_res1 :
-                            varsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                              cf₀.memory cf₀.varEnv (x, qt) :=
-                          hcwr₀1.2.1 x qt k hlookup_res1_ctx hguard hRdef_res1
-                        have hvar_res1_mem :
-                            varsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                              cf₀.memory cf₀.varEnv (x, qt) :=
-                          varsRegime_transport_predHolds hpred_compat₀ hvar_res1
-                        have hvar_src :
-                            varsRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                              cf₀.memory cf₀.varEnv (x, qt) :=
-                          varsRegime_transport_active_lookup_back
-                            (predSat := predSat)
-                            (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                            (R' := (ctxAfter ctxᵢ firstShared).regime)
-                            (μ := cf₀.memory) (ρ := cf₀.varEnv) (entry := (x, qt))
-                            hlookup_back_res1_to_src hguard hk_src hvar_res1_mem
-                        simpa [hvar₀_eq] using hvar_src
-                  · intro x qt v hlookup hlookup_v
-                    have hcvcr := hcwr₀1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
-                      (by rw [hvar₀_eq] at hlookup_v; exact hlookup_v)
-                    exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₀ _hθext₀_body.1
-                      (closureCapturedVarsRegime_transport_lookup_back hlookup_back_res1_to_src hcvcr)
                 exact
-                  joinTypeResults_transport_consistentWithRegime_from_member
+                  appMember_consistentWithRegime_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                    (μ := cf₀.memory) (ρ := cf₀.varEnv) (θ := θ₀_body)
-                    h_join hsrc_mem' hcwr_src₀
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyFinalCtx := ctxAfter bodyCtx result3Shared)
+                    (first := first) (src := firstShared) (rest := rest) (res := res)
+                    (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := cf₀)
+                    (θpre := θ₀1) (θbody := θ₀_body)
+                    h_join hsrc_mem' _hcwr_body_final₀ hcwr₀1
+                    (fun l qt hlookup => by
+                      simpa [ctxAfter, hfirstShared] using hlookup)
+                    (fun k b hk_src => by
+                      simpa [ctxAfter, hfirstShared] using hk_src)
+                    (fun k b hk_body => by
+                      simpa [ctxAfter, hfirstShared] using hk_body)
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hlookup_back_res1_to_src hpred_compat₀ hmem₀_eq hvar₀_eq _hθext₀_body
               · -- shared-member consistentWithRegime -> joined consistentWithRegime (run 1).
                 have hmem₁_eq : cf₁.memory = evalCfg₁.memory := hmem₁_eq
                 have hvar₁_eq : cf₁.varEnv = cf₁.varEnv := rfl
@@ -9298,158 +9264,133 @@ lemma stepFR_app
                   qtypPredHolds_mem_compat_of_predSatLaws
                     (hpredlaws := hpredlaws) (θ := θ₁1)
                     (μ := cf₁.memory) (μ' := cf₁.memory)
-                have hcwr_src₁ :
-                    consistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                      (ctxAfter ctxᵢ firstShared) cf₁.memory cf₁.varEnv θ₁_body := by
-                  refine ⟨?_, ?_, ?_⟩
-                  · intro l qt k hlookup hguard hRdef
-                    have hlookup_body :
-                        (ctxAfter bodyCtx result3Shared).memEnv.lookup l = some qt := by
-                      simpa [ctxAfter, hfirstShared] using hlookup
-                    have hguard_body : qtypGuardTag qt = some k := by
-                      simpa [ctxAfter, hfirstShared] using hguard
-                    have hRdef_body :
-                        (ctxAfter bodyCtx result3Shared).regime.lookup? k ≠ none := by
-                      simpa [ctxAfter, hfirstShared] using hRdef
-                    have hloc_body :=
-                      _hcwr_body_final₁.1 l qt k hlookup_body hguard_body hRdef_body
-                    simpa [ctxAfter, hfirstShared, hmem₁_eq] using hloc_body
-                  · intro x qt k hlookup hguard hRdef
-                    cases hk_src : (ctxAfter ctxᵢ firstShared).regime.lookup? k with
-                    | none =>
-                        exact False.elim (hRdef hk_src)
-                    | some b =>
-                        have hRdef_res1 :
-                            (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k ≠ none := by
-                          intro hnone
-                          have hk_back := hlookup_back_res1_to_src k b hk_src
-                          rw [hk_back] at hnone
-                          contradiction
-                        have hlookup_res1_ctx :
-                            (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
-                          simpa [ctxAfter] using hlookup
-                        have hvar_res1 :
-                            varsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                              cf₁.memory cf₁.varEnv (x, qt) :=
-                          hcwr₁1.2.1 x qt k hlookup_res1_ctx hguard hRdef_res1
-                        have hvar_res1_mem :
-                            varsRegime predSat (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                              cf₁.memory cf₁.varEnv (x, qt) :=
-                          varsRegime_transport_predHolds hpred_compat₁ hvar_res1
-                        have hvar_src :
-                            varsRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                              cf₁.memory cf₁.varEnv (x, qt) :=
-                          varsRegime_transport_active_lookup_back
-                            (predSat := predSat)
-                            (R := (ctxAfter (ctxAfter ctxᵢ result2) result1).regime)
-                            (R' := (ctxAfter ctxᵢ firstShared).regime)
-                            (μ := cf₁.memory) (ρ := cf₁.varEnv) (entry := (x, qt))
-                            hlookup_back_res1_to_src hguard hk_src hvar_res1_mem
-                        simpa [hvar₁_eq] using hvar_src
-                  · intro x qt v hlookup hlookup_v
-                    have hcvcr := hcwr₁1.2.2 x qt v (by simpa [ctxAfter] using hlookup)
-                      (by rw [hvar₁_eq] at hlookup_v; exact hlookup_v)
-                    exact closureCapturedVarsRegime_transport_μ_θ hpred_compat₁ _hθext₁_body.1
-                      (closureCapturedVarsRegime_transport_lookup_back hlookup_back_res1_to_src hcvcr)
                 exact
-                  joinTypeResults_transport_consistentWithRegime_from_member
+                  appMember_consistentWithRegime_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                    (μ := cf₁.memory) (ρ := cf₁.varEnv) (θ := θ₁_body)
-                    h_join hsrc_mem' hcwr_src₁
+                    (ctx := ctxᵢ)
+                    (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                    (bodyFinalCtx := ctxAfter bodyCtx result3Shared)
+                    (first := first) (src := firstShared) (rest := rest) (res := res)
+                    (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := cf₁)
+                    (θpre := θ₁1) (θbody := θ₁_body)
+                    h_join hsrc_mem' _hcwr_body_final₁ hcwr₁1
+                    (fun l qt hlookup => by
+                      simpa [ctxAfter, hfirstShared] using hlookup)
+                    (fun k b hk_src => by
+                      simpa [ctxAfter, hfirstShared] using hk_src)
+                    (fun k b hk_body => by
+                      simpa [ctxAfter, hfirstShared] using hk_body)
+                    (fun x qt hlookup => by
+                      simpa [ctxAfter] using hlookup)
+                    hlookup_back_res1_to_src hpred_compat₁ hmem₁_eq hvar₁_eq _hθext₁_body
               · -- shared-member valueConsistentWithRegime -> joined result qualType (run 0).
                 have hmem₀_eq : cf₀.memory = evalCfg₀.memory := hmem₀_eq
-                have hval_src₀ :
-                    valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                      firstShared.qualType cf₀.memory θ₀_body o₀ := by
-                  have hval_first :
-                      valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
-                        (normalizeAppResultByProvenance (joinPoison p1 p)
-                          { result3Shared.qualType with
-                            poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
-                        evalCfg₀.memory θ₀_body o₀ :=
-                    valueConsistentWithRegime_transport_normalizeAppResultByProvenance
-                      (predSat := predSat) (R := (ctxAfter bodyCtx result3Shared).regime)
-                      (p := p) (p1 := p1) (qt := result3Shared.qualType)
-                      (μ := evalCfg₀.memory) (θ := θ₀_body) (v := o₀) _hvalc_body₀
-                  simpa [ctxAfter, hfirstShared, hmem₀_eq] using hval_first
                 exact
-                  joinTypeResults_transport_valueConsistentWithRegime_from_member
+                  appMember_valueConsistentWithRegime_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                    (μ := cf₀.memory) (θ := θ₀_body) (v := o₀)
-                    h_join hsrc_mem' hval_src₀
+                    (ctx := ctxᵢ) (bodyCtx := bodyCtx)
+                    (first := first) (src := firstShared) (result3 := result3Shared)
+                    (rest := rest) (res := res)
+                    (cf := cf₀) (evalCfg := evalCfg₀) (θ := θ₀_body) (o := o₀)
+                    (p := p) (p1 := p1)
+                    h_join hsrc_mem' hfirstShared hmem₀_eq _hvalc_body₀
               · -- shared-member valueConsistentWithRegime -> joined result qualType (run 1).
                 have hmem₁_eq : cf₁.memory = evalCfg₁.memory := hmem₁_eq
-                have hval_src₁ :
-                    valueConsistentWithRegime predSat (ctxAfter ctxᵢ firstShared).regime
-                      firstShared.qualType cf₁.memory θ₁_body o₁ := by
-                  have hval_first :
-                      valueConsistentWithRegime predSat (ctxAfter bodyCtx result3Shared).regime
-                        (normalizeAppResultByProvenance (joinPoison p1 p)
-                          { result3Shared.qualType with
-                            poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
-                        evalCfg₁.memory θ₁_body o₁ :=
-                    valueConsistentWithRegime_transport_normalizeAppResultByProvenance
-                      (predSat := predSat) (R := (ctxAfter bodyCtx result3Shared).regime)
-                      (p := p) (p1 := p1) (qt := result3Shared.qualType)
-                      (μ := evalCfg₁.memory) (θ := θ₁_body) (v := o₁) _hvalc_body₁
-                  simpa [ctxAfter, hfirstShared, hmem₁_eq] using hval_first
                 exact
-                  joinTypeResults_transport_valueConsistentWithRegime_from_member
+                  appMember_valueConsistentWithRegime_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                    (μ := cf₁.memory) (θ := θ₁_body) (v := o₁)
-                    h_join hsrc_mem' hval_src₁
+                    (ctx := ctxᵢ) (bodyCtx := bodyCtx)
+                    (first := first) (src := firstShared) (result3 := result3Shared)
+                    (rest := rest) (res := res)
+                    (cf := cf₁) (evalCfg := evalCfg₁) (θ := θ₁_body) (o := o₁)
+                    (p := p) (p1 := p1)
+                    h_join hsrc_mem' hfirstShared hmem₁_eq _hvalc_body₁
               · -- shared-member resultAgreesIfClean -> joined result qualType.
                 have hmem₀_eq : cf₀.memory = evalCfg₀.memory := hmem₀_eq
                 have hmem₁_eq : cf₁.memory = evalCfg₁.memory := hmem₁_eq
-                have hres_agree_src :
-                    resultAgreesIfClean predSat (ctxAfter ctxᵢ firstShared).regime
-                      cf₀.memory cf₁.memory θ₀_body θ₁_body firstShared.qualType o₀ o₁ := by
-                  have hres_agree_first :
-                      resultAgreesIfClean predSat (ctxAfter bodyCtx result3Shared).regime
-                        evalCfg₀.memory evalCfg₁.memory θ₀_body θ₁_body
-                        (normalizeAppResultByProvenance (joinPoison p1 p)
-                          { result3Shared.qualType with
-                            poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) })
-                        o₀ o₁ :=
-                    resultAgreesIfClean_transport_normalizeAppResultByProvenance
-                      (predSat := predSat) (R := (ctxAfter bodyCtx result3Shared).regime)
-                      (p := p) (p1 := p1) (qt := result3Shared.qualType)
-                      (μ₀ := evalCfg₀.memory) (μ₁ := evalCfg₁.memory)
-                      (θ₀ := θ₀_body) (θ₁ := θ₁_body) (o₀ := o₀) (o₁ := o₁)
-                      _hres_agree_body
-                  simpa [ctxAfter, hfirstShared, hmem₀_eq, hmem₁_eq] using hres_agree_first
                 exact
-                  joinTypeResults_transport_resultAgreesIfClean_from_member
+                  appMember_resultAgreesIfClean_from_body
                     (predSat := predSat)
-                    (ctx := ctxᵢ) (first := first) (src := firstShared) (rest := rest) (res := res)
-                    (μ₀ := cf₀.memory) (μ₁ := cf₁.memory) (θ₀ := θ₀_body) (θ₁ := θ₁_body)
-                    (o₀ := o₀) (o₁ := o₁)
-                    h_join hsrc_mem' hres_agree_src
+                    (ctx := ctxᵢ) (bodyCtx := bodyCtx)
+                    (first := first) (src := firstShared) (result3 := result3Shared)
+                    (rest := rest) (res := res)
+                    (cf₀ := cf₀) (cf₁ := cf₁) (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
+                    (θ₀ := θ₀_body) (θ₁ := θ₁_body) (o₀ := o₀) (o₁ := o₁)
+                    (p := p) (p1 := p1)
+                    h_join hsrc_mem' hfirstShared hmem₀_eq hmem₁_eq _hres_agree_body
               · exact
                   typecheck_preserves_predSatLaws hExtTyping predSat tm ctxᵢ
                     (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
                     hwfTm hTmBounded hpredlaws htc
+            have hOutPack_body_core :
+                AppTwoRunOutPack predSat ctxᵢ res cf₀ cf₁ o₀ o₁
+                  θ₀_body θ₁_body := by
+              have hsrc_mem' : firstShared ∈ first :: rest := by
+                simpa [heq_results] using hfirstSharedMem
+              have hres1_to_src_mono :
+                  Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                    (ctxAfter ctxᵢ firstShared).regime := by
+                have h_mono_body : Regime.monotoneStep bodyCtx.regime result3Shared.regime' :=
+                  regime_monotone bodyCtx (PExpr.toExpr pbody) fuelBody result3Shared htcBody'
+                simpa [bodyCtx, ctxAfter, hfirstShared] using h_mono_body
+              have hlookup_back_res1_to_src :
+                  ∀ k b,
+                    (ctxAfter ctxᵢ firstShared).regime.lookup? k = some b →
+                    (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
+                regime_lookup_back_of_monotone hres1_to_src_mono
+              have hpred_compat₀ :
+                  ∀ (qt' : QTyp) (v' : Value),
+                    qtypPredHolds predSat qt' cf₀.memory v' ↔
+                      qtypPredHolds predSat qt' cf₀.memory v' :=
+                fun _ _ => Iff.rfl
+              have hpred_compat₁ :
+                  ∀ (qt' : QTyp) (v' : Value),
+                    qtypPredHolds predSat qt' cf₁.memory v' ↔
+                      qtypPredHolds predSat qt' cf₁.memory v' :=
+                fun _ _ => Iff.rfl
+              exact
+                appTwoRunOutPack_from_body_post
+                  (predSat := predSat)
+                  (ctx := ctxᵢ)
+                  (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
+                  (bodyCtx := bodyCtx)
+                  (first := first) (src := firstShared) (result3 := result3Shared)
+                  (rest := rest) (res := res)
+                  (cf₀ := cf₀) (cf₁ := cf₁)
+                  (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
+                  (preCfg₀ := cf₀) (preCfg₁ := cf₁)
+                  (θpre₀ := θ₀1) (θpre₁ := θ₁1)
+                  (θbody₀ := θ₀_body) (θbody₁ := θ₁_body)
+                  (o₀ := o₀) (o₁ := o₁) (p := p) (p1 := p1)
+                  h_join hsrc_mem' hfirstShared hlookup_back_res1_to_src
+                  (fun x qt hlookup => by
+                    simpa [ctxAfter] using hlookup)
+                  hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq rfl rfl
+                  _hθext₀_body _hθext₁_body _hv_body₀_typed _hv_body₁_typed
+                  _hric_body_final₀ _hric_body_final₁ hric₀1 hric₁1
+                  _hcwr_body_final₀ _hcwr_body_final₁ hcwr₀1 hcwr₁1
+                  hAgree_out_body _hvalc_body₀ _hvalc_body₁ _hres_agree_body
             rcases typecheck_preserves_predSatLaws hExtTyping predSat tm ctxᵢ
                 (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
                 hwfTm hTmBounded hpredlaws htc with
               ⟨tmOut, hcanonOut, hpredlawsOut⟩
             rcases hOutPack_body with
-              ⟨hv_body_out₀, hv_body_out₁, _hwfTmOld, hwfFinal, htagBoundedFinal,
-                hwfcfFinal₀, hwfcfFinal₁, hricFinal₀, hricFinal₁, htagFinal,
-                hcwrFinal₀, hcwrFinal₁, hagreeFinal, hvalcFinal₀, hvalcFinal₁,
-                hresAgreeFinal, _hcanonOld⟩
+              ⟨_hv_body_out₀, _hv_body_out₁, _hwfTmOld, hwfFinal, htagBoundedFinal,
+                hwfcfFinal₀, hwfcfFinal₁, _hricFinal₀, _hricFinal₁, htagFinal,
+                _hcwrFinal₀, _hcwrFinal₁, _hagreeFinal, _hvalcFinal₀, _hvalcFinal₁,
+                _hresAgreeFinal, _hcanonOld⟩
+            rcases hOutPack_body_core with
+              ⟨hvCore₀, hvCore₁, hricCore₀, hricCore₁, hcwrCore₀, hcwrCore₁,
+                hagreeCore, hvalCore₀, hvalCore₁, hresAgreeCore⟩
             exact ⟨tmOut, BoundaryTagMeaningPost.of_isCanonical_predSat hcanonOut hpredlawsOut,
               hpredlawsOut,
               IsCanonicalExtension.respectsResult hcanonOut, θ₀_body, θ₁_body,
               wfExtendsMap_trans hθext₀2 (wfExtendsMap_trans hθext₀1 _hθext₀_body),
               wfExtendsMap_trans hθext₁2 (wfExtendsMap_trans hθext₁1 _hθext₁_body),
-              hv_body_out₀, hv_body_out₁, IsCanonicalExtension.wfCtx hcanonOut,
-              hwfFinal, htagBoundedFinal, hwfcfFinal₀, hwfcfFinal₁, hricFinal₀,
-              hricFinal₁, htagFinal, hcwrFinal₀, hcwrFinal₁, hagreeFinal,
-              hvalcFinal₀, hvalcFinal₁, hresAgreeFinal⟩
+              hvCore₀, hvCore₁, IsCanonicalExtension.wfCtx hcanonOut,
+              hwfFinal, htagBoundedFinal, hwfcfFinal₀, hwfcfFinal₁, hricCore₀,
+              hricCore₁, htagFinal, hcwrCore₀, hcwrCore₁, hagreeCore,
+              hvalCore₀, hvalCore₁, hresAgreeCore⟩
           · -- dirty-internal fallback branch (¬ internalPoisonClean).
             have hptrue : p = true := by
               have : ¬ p = false := by
