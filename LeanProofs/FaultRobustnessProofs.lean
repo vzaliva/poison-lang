@@ -19,13 +19,12 @@ import LeanProofs.StepFRDeref
 import LeanProofs.StepFRNewRef
 import LeanProofs.StepFRSeq
 import LeanProofs.StepFRVlet
+import LeanProofs.ExternBoundary
 
 open List
 open List.Mem
 open Std
 open scoped MemoryTypeEnv
-
-
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked
   (masked : Tag → Prop)
@@ -1529,85 +1528,63 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         (fun m hm {tmᵢ} e' ctx' res' htc' =>
                           IH' m hm tmᵢ masked e' ctx' res' htc'))
                       htc
-          | externVal _id _t _p _pr =>
-              -- FFI: masked single-run FR for extern value dispatch.
-              -- Decomposition: same vacuous-premise argument as `externFn`
-              -- and `externPfn`.  Under the default empty registry convention,
-              -- `beval` for `externVal` emits a runtimeError (missing id)
-              -- rather than succeeding, so the `terminatesTo` hypothesis is
-              -- unsatisfiable and the goal is closed by case analysis on
-              -- fuel plus `simp` unfolding `beval` against
-              -- `emptyExternRegistry`.
-              --
-              -- When the evidence-registry refactor lands (doc/ffi-axioms.md),
-              -- this site will consume Contract A for the declared predicate's
-              -- fresh tags and Contract E for the `ref int` subcase.
+          | externVal id t p pr =>
+              -- Extern declaration success is normalized to boundary-run
+              -- evidence; the current empty-registry theorem discharges it
+              -- through the empty-registry boundary contract.
               intro hpredlaws hExtTyping hwfTm hTmBounded
               refine ⟨?_, ?_⟩
               · exact
                   StepFRSingleRunTagMeaningPost.of_typecheck_preserves
-                    hExtTyping predSat tm ctxᵢ (Expr.externVal _id _t _p _pr)
+                    hExtTyping predSat tm ctxᵢ (Expr.externVal id t p pr)
                     (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
-              intro _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
-                    _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
-              obtain ⟨fuel', _verbose', hbeval⟩ := ht
-              cases fuel' with
-              | zero => simp [LeanPoison.beval] at hbeval
-              | succ _fuel'' =>
-                  simp [LeanPoison.beval, emptyExternRegistry] at hbeval
-          | externFn _id _n _t _r _eff =>
-              -- FFI: masked single-run FR for impure extern fn declaration.
-              -- Decomposition:
-              --   Under the default `Config.registry = emptyExternRegistry`
-              --   used throughout the FR statement, `beval` for an
-              --   `externFn` declaration always yields `.runtimeError
-              --   (ExternError.format (.missing id))` because the registry
-              --   lookup fails.  So `terminatesTo` is vacuously false and the
-              --   entire conjunction is closed by case analysis on fuel plus
-              --   `simp` unfolding `beval`.  This site therefore produces
-              --   NO residual Contract-A sorries at present: the masked
-              --   single-run obligation for `externFn` is structurally
-              --   discharged under the empty-registry convention.
-              --
-              --   When the evidence-registry refactor lands (see
-              --   `doc/ffi-axioms.md`), this case will be replaced by a
-              --   registry-aware version that consumes Contract A for the
-              --   tag-mapping coherence of `(retSpec, effects)`.
+              intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm
+                    hwfcfg ht hpc
+              obtain ⟨_impl, hrun⟩ :=
+                ExternDeclBoundaryRun.of_terminatesTo_externVal
+                  (ctx := ctxᵢ) (res := res) ht
+              exact
+                ExternDeclBoundarySingleMaskedContract.of_emptyExternRegistry
+                  hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+                  hreg hmasked_none hctxCons a pm hwfcfg hrun hpc
+          | externFn id n t r eff =>
+              -- Extern declaration success is normalized to boundary-run
+              -- evidence; the current empty-registry theorem discharges it
+              -- through the empty-registry boundary contract.
               intro hpredlaws hExtTyping hwfTm hTmBounded
               refine ⟨?_, ?_⟩
               · exact
                   StepFRSingleRunTagMeaningPost.of_typecheck_preserves
-                    hExtTyping predSat tm ctxᵢ (Expr.externFn _id _n _t _r _eff)
+                    hExtTyping predSat tm ctxᵢ (Expr.externFn id n t r eff)
                     (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
-              intro _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
-                    _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
-              obtain ⟨fuel', _verbose', hbeval⟩ := ht
-              cases fuel' with
-              | zero => simp [LeanPoison.beval] at hbeval
-              | succ _fuel'' =>
-                  simp [LeanPoison.beval, emptyExternRegistry] at hbeval
-          | externPfn _id _n _t _r =>
-              -- FFI: masked single-run FR for pure extern pfn declaration.
-              -- Decomposition: same vacuous-premise argument as `externFn`.
-              -- Under the default empty registry convention used throughout
-              -- the FR statement, `beval` for `externPfn` always yields a
-              -- runtimeError (missing id), so `terminatesTo` is unsatisfiable
-              -- and the goal is closed.  No residual Contract-A sorries are
-              -- produced here; they will return when the evidence-registry
-              -- refactor (doc/ffi-axioms.md) threads a populated registry.
+              intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm
+                    hwfcfg ht hpc
+              obtain ⟨_impl, hrun⟩ :=
+                ExternDeclBoundaryRun.of_terminatesTo_externFn
+                  (ctx := ctxᵢ) (res := res) ht
+              exact
+                ExternDeclBoundarySingleMaskedContract.of_emptyExternRegistry
+                  hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+                  hreg hmasked_none hctxCons a pm hwfcfg hrun hpc
+          | externPfn id n t r =>
+              -- Extern declaration success is normalized to boundary-run
+              -- evidence; the current empty-registry theorem discharges it
+              -- through the empty-registry boundary contract.
               intro hpredlaws hExtTyping hwfTm hTmBounded
               refine ⟨?_, ?_⟩
               · exact
                   StepFRSingleRunTagMeaningPost.of_typecheck_preserves
-                    hExtTyping predSat tm ctxᵢ (Expr.externPfn _id _n _t _r)
+                    hExtTyping predSat tm ctxᵢ (Expr.externPfn id n t r)
                     (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
-              intro _μ _ρ _θ _cf _o _hθwf _hwf _hric _hreg
-                    _hmasked_none _hcwr _a _pm _hwfcfg ht _hpc
-              obtain ⟨fuel', _verbose', hbeval⟩ := ht
-              cases fuel' with
-              | zero => simp [LeanPoison.beval] at hbeval
-              | succ _fuel'' =>
-                  simp [LeanPoison.beval, emptyExternRegistry] at hbeval
+              intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm
+                    hwfcfg ht hpc
+              obtain ⟨_impl, hrun⟩ :=
+                ExternDeclBoundaryRun.of_terminatesTo_externPfn
+                  (ctx := ctxᵢ) (res := res) ht
+              exact
+                ExternDeclBoundarySingleMaskedContract.of_emptyExternRegistry
+                  hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+                  hreg hmasked_none hctxCons a pm hwfcfg hrun hpc
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
@@ -1882,56 +1859,57 @@ theorem TypeSystemEnforcesFaultRobustness_step
                     (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
                     (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc))
                     hsingleIH htc
-        | externVal _id _t _p _pr =>
-            -- FFI: two-run step FR for extern value dispatch.
-            -- Decomposition: same vacuous-premise argument as the masked
-            -- single-run site.  Under the default empty registry, `beval` for
-            -- `externVal` emits a runtimeError, so each of `ht₀` and `ht₁`
-            -- is unsatisfiable.  Inverting either one via `cases fuel'` plus
-            -- `simp [beval, emptyExternRegistry]` closes the goal.  No
-            -- residual Contract-A/E sorries here; those return with the
-            -- evidence-registry refactor (doc/ffi-axioms.md), which will
-            -- thread a populated registry into this statement.
-            intro _hpredlaws _hExtTyping _hwfTm _hTmBounded _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-                  _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
-                  _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
-            obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
-            cases fuel' with
-            | zero => simp [LeanPoison.beval] at hbeval
-            | succ _fuel'' =>
-                simp [LeanPoison.beval, emptyExternRegistry] at hbeval
-        | externFn _id _n _t _r _eff =>
-            -- FFI: two-run step FR for impure extern fn declaration.
-            -- Decomposition: same vacuous-premise argument.  Under the
-            -- default empty registry, `beval` for `externFn` emits a
-            -- runtimeError (missing id), so the `terminatesTo` hypothesis
-            -- for run 0 is unsatisfiable and the goal is closed.  Contract A
-            -- (tag-mapping soundness) and the `FnTClosure.extern`
-            -- `valueHasETyp` gap will return when a populated registry is
-            -- threaded into this statement (doc/ffi-axioms.md).
-            intro _hpredlaws _hExtTyping _hwfTm _hTmBounded _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-                  _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
-                  _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
-            obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
-            cases fuel' with
-            | zero => simp [LeanPoison.beval] at hbeval
-            | succ _fuel'' =>
-                simp [LeanPoison.beval, emptyExternRegistry] at hbeval
-        | externPfn _id _n _t _r =>
-            -- FFI: two-run step FR for pure extern pfn declaration.
-            -- Decomposition: same vacuous-premise argument as `externFn`.
-            -- Pure externs do not mutate memory, but they still dispatch
-            -- through the registry, which is empty under the default
-            -- convention; `ht₀` is therefore unsatisfiable.  Contract A
-            -- will return with the evidence-registry refactor.
-            intro _hpredlaws _hExtTyping _hwfTm _hTmBounded _μ₀ _μ₁ _ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-                  _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
-                  _hagree _a₀ _a₁ _pm _hwfcfg₀ _hwfcfg₁ ht₀ _ht₁
-            obtain ⟨fuel', _verbose', hbeval⟩ := ht₀
-            cases fuel' with
-            | zero => simp [LeanPoison.beval] at hbeval
-            | succ _fuel'' =>
-                simp [LeanPoison.beval, emptyExternRegistry] at hbeval
+        | externVal id t p pr =>
+            -- Extern declaration success is normalized to boundary-run
+            -- evidence before the current empty-registry theorem discharges it.
+            intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+                  o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁
+                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+            obtain ⟨_impl₀, hrun₀⟩ :=
+              ExternDeclBoundaryRun.of_terminatesTo_externVal
+                (ctx := ctxᵢ) (res := res) ht₀
+            obtain ⟨_impl₁, hrun₁⟩ :=
+              ExternDeclBoundaryRun.of_terminatesTo_externVal
+                (ctx := ctxᵢ) (res := res) ht₁
+            exact
+              ExternDeclBoundaryFRContract.of_emptyExternRegistry
+                hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
+                cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+        | externFn id n t r eff =>
+            -- Extern declaration success is normalized to boundary-run
+            -- evidence before the current empty-registry theorem discharges it.
+            intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+                  o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁
+                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+            obtain ⟨_impl₀, hrun₀⟩ :=
+              ExternDeclBoundaryRun.of_terminatesTo_externFn
+                (ctx := ctxᵢ) (res := res) ht₀
+            obtain ⟨_impl₁, hrun₁⟩ :=
+              ExternDeclBoundaryRun.of_terminatesTo_externFn
+                (ctx := ctxᵢ) (res := res) ht₁
+            exact
+              ExternDeclBoundaryFRContract.of_emptyExternRegistry
+                hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
+                cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+        | externPfn id n t r =>
+            -- Extern declaration success is normalized to boundary-run
+            -- evidence before the current empty-registry theorem discharges it.
+            intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+                  o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁
+                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+            obtain ⟨_impl₀, hrun₀⟩ :=
+              ExternDeclBoundaryRun.of_terminatesTo_externPfn
+                (ctx := ctxᵢ) (res := res) ht₀
+            obtain ⟨_impl₁, hrun₁⟩ :=
+              ExternDeclBoundaryRun.of_terminatesTo_externPfn
+                (ctx := ctxᵢ) (res := res) ht₁
+            exact
+              ExternDeclBoundaryFRContract.of_emptyExternRegistry
+                hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
+                cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
 
 -- Bridge from step theorem to full specification
 theorem TypeSystemEnforcesFaultRobustness_impl :

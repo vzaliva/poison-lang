@@ -153,6 +153,138 @@ theorem pfn_of_runtime
       output_config := hcfg
       value_shape := ⟨x, retSpec, harg, hret, hval⟩ }
 
+theorem lookup
+    {d : ExternDeclaration} {impl : ExternImpl}
+    {ctx : TypeContext} {res : TypeResult}
+    {cᵢ cₒ : Config} {v : Value}
+    (h : ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v) :
+    cᵢ.registry.get? d.id = some impl := by
+  cases h with
+  | val hfacts => exact hfacts.lookup
+  | fn hfacts => exact hfacts.lookup
+  | pfn hfacts => exact hfacts.lookup
+
+theorem of_terminatesTo_externVal
+    {id : ExternId} {typ : Typ} {poison : Bool} {pred : SyntaxPredicate}
+    {ctx : TypeContext} {res : TypeResult}
+    {cᵢ cₒ : Config} {v : Value}
+    (ht : terminatesTo (Expr.externVal id typ poison pred) cᵢ cₒ v) :
+    ∃ impl,
+      ExternDeclBoundaryRun
+        { id := id, kind := .val, typ := typ, argName := none, retSpec := none,
+          effects := [], preds := [pred] }
+        impl ctx res cᵢ cₒ v := by
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at hbeval
+  | succ fuel' =>
+      simp [LeanPoison.beval] at hbeval
+      rw [← Std.HashMap.get?_eq_getElem?] at hbeval
+      cases hlookup : cᵢ.registry.get? id with
+      | none =>
+          rw [hlookup] at hbeval
+          simp at hbeval
+      | some impl =>
+          cases impl with
+          | val vImpl =>
+              by_cases hmatch : valueMatchesTyp vImpl typ = true
+              · rw [hlookup] at hbeval
+                simp [hmatch] at hbeval
+                rcases hbeval with ⟨hcfg, hv⟩
+                exact
+                  ⟨ExternImpl.val vImpl,
+                    ExternDeclBoundaryRun.val_of_runtime rfl hlookup
+                      (by simp [hv]) hcfg.symm⟩
+              · rw [hlookup] at hbeval
+                simp [hmatch] at hbeval
+          | pfn implPfn =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+          | fn implFn =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+
+theorem of_terminatesTo_externFn
+    {id : ExternId} {x : Name} {argTyp : Typ}
+    {retSpec : ExternReturn} {effects : List Effect}
+    {ctx : TypeContext} {res : TypeResult}
+    {cᵢ cₒ : Config} {v : Value}
+    (ht : terminatesTo (Expr.externFn id x argTyp retSpec effects) cᵢ cₒ v) :
+    ∃ impl,
+      ExternDeclBoundaryRun
+        { id := id, kind := .fn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects }
+        impl ctx res cᵢ cₒ v := by
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at hbeval
+  | succ fuel' =>
+      simp [LeanPoison.beval] at hbeval
+      rw [← Std.HashMap.get?_eq_getElem?] at hbeval
+      cases hlookup : cᵢ.registry.get? id with
+      | none =>
+          rw [hlookup] at hbeval
+          simp at hbeval
+      | some impl =>
+          cases impl with
+          | val vImpl =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+          | pfn implPfn =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+          | fn implFn =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+              rcases hbeval with ⟨hcfg, hv⟩
+              exact
+                ⟨ExternImpl.fn implFn,
+                  ExternDeclBoundaryRun.fn_of_runtime rfl hlookup rfl rfl
+                    ⟨implFn, rfl⟩ hcfg.symm (by simpa using hv.symm)⟩
+
+theorem of_terminatesTo_externPfn
+    {id : ExternId} {x : Name} {argTyp : Typ}
+    {retSpec : ExternReturn}
+    {ctx : TypeContext} {res : TypeResult}
+    {cᵢ cₒ : Config} {v : Value}
+    (ht : terminatesTo (Expr.externPfn id x argTyp retSpec) cᵢ cₒ v) :
+    ∃ impl,
+      ExternDeclBoundaryRun
+        { id := id, kind := .pfn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := [],
+          preds := collectExternPreds retSpec [] }
+        impl ctx res cᵢ cₒ v := by
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at hbeval
+  | succ fuel' =>
+      simp [LeanPoison.beval] at hbeval
+      rw [← Std.HashMap.get?_eq_getElem?] at hbeval
+      cases hlookup : cᵢ.registry.get? id with
+      | none =>
+          rw [hlookup] at hbeval
+          simp at hbeval
+      | some impl =>
+          cases impl with
+          | val vImpl =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+          | pfn implPfn =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+              rcases hbeval with ⟨hcfg, hv⟩
+              exact
+                ⟨ExternImpl.pfn implPfn,
+                  ExternDeclBoundaryRun.pfn_of_runtime rfl hlookup rfl rfl
+                    ⟨implPfn, rfl⟩ hcfg.symm (by simpa using hv.symm)⟩
+          | fn implFn =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+
 end ExternDeclBoundaryRun
 
 /-- The body-entry state for an extern call. -/
@@ -454,6 +586,115 @@ structure ExternBoundarySpec
   declSingle : ExternDeclBoundarySingle d impl
   callSingle : ExternCallBoundarySingle d impl
   wf : ExternBoundaryPreservesWF d impl
+
+/-- Registry-parametric masked single-run declaration-boundary adapter used by
+    the step proof. -/
+def ExternDeclBoundarySingleMaskedContract
+    (masked : Tag → Prop) (ctx : TypeContext) (res : TypeResult)
+    (predSat : PredSat) (tm : TagMeaning) (registry : ExternRegistry)
+    (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
+  PredSatLaws predSat tm →
+  ExternTypingAssumptions →
+  wfTagMeaningCtx tm ctx →
+  TagMeaningBounded tm ctx.nextTag →
+  ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+    (cf : Config) (o : Value),
+    (hθwf : wfRealizationMap θ) →
+    (hwf : wfTypeContext ctx) →
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ) →
+    (hreg : regimeConsistentWithCtxMasked masked ctx) →
+    (hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none) →
+    (hctxCons : consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ) →
+    ∀ (a : Address) (pm : Bool),
+      (hwfcfg :
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+                   registry := registry}) →
+      ExternDeclBoundaryRun d impl ctx res
+        { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+          registry := registry } cf o →
+      ctx.pc = true →
+      StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
+        masked
+        (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+        (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+        ctx res (registry := registry) μ ρ θ cf o
+        hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+
+theorem ExternDeclBoundarySingleMaskedContract.of_emptyExternRegistry
+    {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+    {predSat : PredSat} {tm : TagMeaning}
+    {d : ExternDeclaration} {impl : ExternImpl} :
+    ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm
+      emptyExternRegistry d impl := by
+  intro _hpredlaws _hExtTyping _hwfTm _hTmBounded μ ρ θ cf o _hθwf _hwf _hric
+    _hreg _hmasked_none _hctxCons a pm _hwfcfg hrun _hpc
+  exfalso
+  have hlookup := ExternDeclBoundaryRun.lookup hrun
+  simp [emptyExternRegistry] at hlookup
+
+/-- Registry-parametric two-run declaration-boundary adapter used by the step
+    proof. -/
+def ExternDeclBoundaryFRContract
+    (ctx : TypeContext) (postExpr : Expr) (res : TypeResult)
+    (predSat : PredSat) (tm : TagMeaning) (registry : ExternRegistry)
+    (d : ExternDeclaration) (impl₀ impl₁ : ExternImpl) : Prop :=
+  PredSatLaws predSat tm →
+  ExternTypingAssumptions →
+  wfTagMeaningCtx tm ctx →
+  TagMeaningBounded tm ctx.nextTag →
+  ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
+    (cf₀ cf₁ : Config) (o₀ o₁ : Value),
+    wfRealizationMap θ₀ →
+    wfRealizationMap θ₁ →
+    wfTypeContext ctx →
+    TagBoundedCtx ctx →
+    runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀ →
+    runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →
+    regimeConsistentWithCtx ctx →
+    consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀ →
+    consistentWithRegime predSat ctx.regime ctx μ₁ ρ₁ θ₁ →
+    agreeOnClean predSat ctx.regime ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
+    ∀ (a₀ a₁ : Address) (pm : Bool),
+      wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
+                 registry := registry } →
+      wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
+                 registry := registry } →
+      ExternDeclBoundaryRun d impl₀ ctx res
+        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
+          registry := registry } cf₀ o₀ →
+      ExternDeclBoundaryRun d impl₁ ctx res
+        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
+          registry := registry } cf₁ o₁ →
+      StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
+
+theorem ExternDeclBoundaryFRContract.of_spec
+    {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
+    {predSat : PredSat} {tm : TagMeaning}
+    {d : ExternDeclaration} {impl : ExternImpl}
+    (hspec : ExternBoundarySpec d impl) :
+    ExternDeclBoundaryFRContract ctx postExpr res predSat tm emptyExternRegistry
+      d impl impl := by
+  intro hpredlaws _hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+    o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
+    a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+  exact
+    hspec.declFR postExpr ctx res predSat tm hpredlaws hwfTm hTmBounded
+      μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded
+      hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm
+      hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+
+theorem ExternDeclBoundaryFRContract.of_emptyExternRegistry
+    {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
+    {predSat : PredSat} {tm : TagMeaning}
+    {d : ExternDeclaration} {impl₀ impl₁ : ExternImpl} :
+    ExternDeclBoundaryFRContract ctx postExpr res predSat tm emptyExternRegistry
+      d impl₀ impl₁ := by
+  intro _hpredlaws _hExtTyping _hwfTm _hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+    o₀ o₁ _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _hreg _hcwr₀ _hcwr₁
+    _hagree a₀ a₁ pm _hwfcfg₀ _hwfcfg₁ hrun₀ _hrun₁
+  exfalso
+  have hlookup := ExternDeclBoundaryRun.lookup hrun₀
+  simp [emptyExternRegistry] at hlookup
 
 structure TrustedExternEntry where
   decl : ExternDeclaration
