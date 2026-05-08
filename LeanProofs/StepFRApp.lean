@@ -3267,6 +3267,91 @@ private lemma appTwoRunOutChoice_from_body_stepFRPost
         hval_body₀ hval_body₁ hres_agree_body
   exact appTwoRunOutChoice_of_pack hθext₀ hθext₁ hpack
 
+private lemma appTwoRunOutChoice_from_call_boundaryFR
+    {d : ExternDeclaration} {impl : ExternImpl}
+    {predSat : PredSat} {tmBody : TagMeaning} {ctx preCtx : TypeContext}
+    {postExpr : Expr}
+    {first src result3 res : TypeResult} {rest : List TypeResult}
+    {cf₀ cf₁ evalCfg₀ evalCfg₁ preCfg₀ preCfg₁ : Config}
+    {θpre₀ θpre₁ : RealizationMap}
+    {o₀ o₁ : Value} {p p1 : Poison}
+    {entry₀ entry₁ : ExternCallEntry}
+    (hcallFR : ExternCallBoundaryFR d impl)
+    (hctx₁ : entry₁.bodyCtx = entry₀.bodyCtx)
+    (hpredlaws : PredSatLaws predSat tmBody)
+    (hTmBody : wfTagMeaningCtx tmBody entry₀.bodyCtx)
+    (hTmBoundedBody : TagMeaningBounded tmBody entry₀.bodyCtx.nextTag)
+    (hinputs : BodyEntryInputsAgree predSat entry₀.bodyCtx entry₀ entry₁ θpre₀ θpre₁)
+    (hrun₀ : ExternCallBoundaryRun d impl entry₀ result3 evalCfg₀ o₀)
+    (hrun₁ : ExternCallBoundaryRun d impl entry₁ result3 evalCfg₁ o₁)
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hsrc_eq :
+      src =
+        { result3 with
+          qualType :=
+            normalizeAppResultByProvenance (joinPoison p1 p)
+              { result3.qualType with
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+    (hlookup_back_pre_to_src :
+      ∀ k b, (ctxAfter ctx src).regime.lookup? k = some b → preCtx.regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        preCtx.varEnv.lookup x = some qt)
+    (hpred_compat₀ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₀.memory v' ↔
+          qtypPredHolds predSat qt' cf₀.memory v')
+    (hpred_compat₁ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₁.memory v' ↔
+          qtypPredHolds predSat qt' cf₁.memory v')
+    (hmem₀_eq : cf₀.memory = evalCfg₀.memory)
+    (hmem₁_eq : cf₁.memory = evalCfg₁.memory)
+    (hvar₀_eq : cf₀.varEnv = preCfg₀.varEnv)
+    (hvar₁_eq : cf₁.varEnv = preCfg₁.varEnv)
+    (hric_pre₀ : runtimeInstantiatesCtx preCtx preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hric_pre₁ : runtimeInstantiatesCtx preCtx preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hcwr_pre₀ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hcwr_pre₁ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hagree_out :
+      ∀ θbody₀ θbody₁,
+        runtimeInstantiatesCtx (ctxAfter entry₀.bodyCtx result3)
+          evalCfg₀.memory evalCfg₀.varEnv θbody₀ →
+        runtimeInstantiatesCtx (ctxAfter entry₀.bodyCtx result3)
+          evalCfg₁.memory evalCfg₁.varEnv θbody₁ →
+        agreeOnClean predSat (ctxAfter entry₀.bodyCtx result3).regime
+          (ctxAfter entry₀.bodyCtx result3)
+          evalCfg₀.memory evalCfg₀.varEnv θbody₀
+          evalCfg₁.memory evalCfg₁.varEnv θbody₁ →
+        agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+          cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁) :
+    AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
+  have hbody_post :
+      StepFRPost entry₀.bodyCtx postExpr result3 predSat tmBody
+        θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁ := by
+    exact
+      hcallFR postExpr result3 predSat tmBody entry₀ entry₁ hctx₁
+        hpredlaws hTmBody hTmBoundedBody θpre₀ θpre₁ hinputs
+        evalCfg₀ evalCfg₁ o₀ o₁ hrun₀ hrun₁
+  exact
+    appTwoRunOutChoice_from_body_stepFRPost
+      (predSat := predSat) (tmBody := tmBody)
+      (ctx := ctx) (preCtx := preCtx) (bodyCtx := entry₀.bodyCtx)
+      (postExpr := postExpr)
+      (first := first) (src := src) (result3 := result3)
+      (rest := rest) (res := res)
+      (cf₀ := cf₀) (cf₁ := cf₁)
+      (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
+      (preCfg₀ := preCfg₀) (preCfg₁ := preCfg₁)
+      (θpre₀ := θpre₀) (θpre₁ := θpre₁)
+      (o₀ := o₀) (o₁ := o₁) (p := p) (p1 := p1)
+      h_join hsrc_mem hsrc_eq hlookup_back_pre_to_src hvar_lookup_src_to_pre
+      hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
+      hric_pre₀ hric_pre₁ hcwr_pre₀ hcwr_pre₁ hagree_out hbody_post
+
 private lemma applyFnTClosure_extern_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)

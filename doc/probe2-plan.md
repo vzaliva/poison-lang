@@ -94,10 +94,16 @@ Implemented and compiling:
   must pass `Expr.toPExpr?`.
 - `StepFRApp.lean` also has the packaged two-run transport helper
   `appTwoRunOutChoice_from_body_stepFRPost`.  It is the intended adapter from a
-  body-local `StepFRPost` to an app-level `AppTwoRunOutChoice`, but it is still
-  dormant: its lower-level pieces are used by regular branches, while the
-  packaged helper has not yet been validated against a boundary-produced
+  body-local `StepFRPost` to an app-level `AppTwoRunOutChoice`.  Its
+  lower-level pieces are used by regular branches, and the packaged
+  body-post-to-app shape has now been validated against a boundary-produced
   `StepFRPost`.
+- `StepFRApp.lean` has a compiled boundary-consumption wrapper,
+  `appTwoRunOutChoice_from_call_boundaryFR`, that consumes an
+  `ExternCallBoundaryFR`, obtains the body-local `StepFRPost`, and feeds it
+  through `appTwoRunOutChoice_from_body_stepFRPost`.  This validates that the
+  existential realization maps returned by the boundary post compose with the
+  app transport continuation.
 
 Still true:
 
@@ -115,8 +121,7 @@ Still true:
   empty-registry instance of the registry-parametric step spec; it has not yet
   been generalized to arbitrary `registry`.
 
-Latest verification after the declaration-boundary cleanup and app lookup-side
-helper update:
+Latest verification after the app body-post transport validation:
 
 - `lake build LeanProofs` succeeds.
 - `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.
@@ -188,13 +193,11 @@ would either reintroduce app transport into every boundary spec instance or
 duplicate a large piece of the regular user-closure proof inside each extern
 branch.
 
-There is one transport-specific risk to check before changing the provider
-interface.  `appTwoRunOutChoice_from_body_stepFRPost` already has the right
-high-level shape, but it has no callers.  Its `hagree_out` continuation is
-quantified over arbitrary body realization maps, while
-`ExternBoundarySpec.callFR` will produce those maps existentially inside a
-`StepFRPost`.  The first next step must confirm that this packaged adapter
-composes with a body post in the form the boundary spec returns.
+The first transport-specific risk has been checked:
+`appTwoRunOutChoice_from_call_boundaryFR` composes the body-local post produced
+by an `ExternCallBoundaryFR` with the packaged app transport helper.  The next
+blocker is still provider shape: the extern-call provider contracts must be
+changed so they produce body-local boundary posts rather than final app posts.
 
 The remaining app-specific wrinkle is also still relevant: runtime `externFn`
 dispatch is not forced to originate from a `FnTClosure.extern` member.  It can
@@ -217,9 +220,9 @@ reasoning into every concrete extern boundary.
 
 ## Suggested Fixing Direction
 
-The high-risk next fix is to validate the body-post-to-app transport, then
-reshape the app provider interface around that transport.  The design choice is
-explicit: extern boundary providers should be body-local.  They should build
+The high-risk next fix is to reshape the app provider interface around the
+validated body-post-to-app transport.  The design choice is explicit: extern
+boundary providers should be body-local.  They should build
 `ExternCallBoundaryRun`, consume `entry.spec.callSingle` or
 `entry.spec.callFR`, and return the body-local boundary post.  App transport
 must remain in shared `StepFRApp` helpers outside the provider contract.  Do not
@@ -227,15 +230,7 @@ keep a provider shape that returns the final outer app post by receiving a large
 transport payload; that re-packages app-specific proof work into every boundary
 instance.
 
-1. First, validate `appTwoRunOutChoice_from_body_stepFRPost` as the packaged
-   two-run adapter from a body-local `StepFRPost` to the existing app
-   post-choice shape.  The validation should be done on a regular user-closure
-   branch or a small wrapper around the regular branch facts, before any
-   populated-registry extern branch depends on it.  The key point is to check
-   that the existential realization maps unpacked from `StepFRPost` compose
-   with the universally quantified `hagree_out` continuation.
-
-2. Replace the current outer-post provider contracts with body-local boundary
+1. Replace the current outer-post provider contracts with body-local boundary
    providers plus calls to shared app transport helpers.  The new provider /
    caller shape should be instantiated at a point that has the data currently
    missing from the provider shape:
@@ -251,18 +246,18 @@ instance.
    - the pre-body runtime/type/regime/agreement facts needed for
      `BodyEntryInputsAgree` or its masked single-run analogue.
 
-3. Validate the new shape on regular user-closure branches before using it for
+2. Validate the new shape on regular user-closure branches before using it for
    extern branches.  This prevents the extern proof from debugging transport
    and boundary lookup at the same time.
 
-4. After the regular branch is wired through the helper, use
+3. After the regular branch is wired through the helper, use
    `ExternCallBoundaryFnStaticSource.callBoundaryRun` and
    `ExternCallBoundaryPfnStaticSource.callBoundaryRun` to build
    `ExternCallBoundaryRun` evidence in the successful extern runtime branches.
    Then consume `entry.spec.callSingle` or `entry.spec.callFR` and pass the
    resulting body-local post into the app transport helper.
 
-5. For impure regular-extern-body dispatch, add a precise resolver premise or
+4. For impure regular-extern-body dispatch, add a precise resolver premise or
    derivation that connects
    `FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) σcap ∈ tcls`
    to a trusted entry.  Closure-list extern agreement alone is insufficient for
@@ -277,21 +272,7 @@ theorem with explicit trusted-registry assumptions.
 
 ## Remaining Plan
 
-1. **Validate the packaged body-post app transport adapter.**
-
-   Pressure-test `appTwoRunOutChoice_from_body_stepFRPost` before reshaping the
-   extern provider contracts.  Use a regular user-closure path or a small
-   wrapper around the regular branch facts to consume an explicit
-   `StepFRPost bodyCtx ...` and produce the expected app-level
-   `AppTwoRunOutChoice`.
-
-   Files: `LeanProofs/StepFRApp.lean`.
-
-   Done when the packaged helper has at least one real caller or an equivalent
-   compiled wrapper showing that the `StepFRPost` existential witnesses compose
-   with the `hagree_out` continuation.
-
-2. **Reshape `StepFRApp` extern-call provider contracts.**
+1. **Reshape `StepFRApp` extern-call provider contracts.**
 
    Replace `ExternCallBoundarySingleFnContract`,
    `ExternCallBoundarySinglePfnContract`, and the four two-run side contracts so
@@ -307,7 +288,7 @@ theorem with explicit trusted-registry assumptions.
    `bodyCtx`, cursor, `result3`, or join-transport inputs.  At this stage the
    implementation may still be wired only to regular user-closure branches.
 
-3. **Validate app transport helpers on regular branches.**
+2. **Validate app transport helpers on regular branches.**
 
    Rewire the existing regular user-closure app branches to use the new
    body-post-to-app transport shape.  Keep this step free of trusted-registry
@@ -325,7 +306,7 @@ theorem with explicit trusted-registry assumptions.
    Done when the regular branches compile through the new helper interface and
    `lake build LeanProofs` succeeds.
 
-4. **Consume extern call boundaries in `StepFRApp`.**
+3. **Consume extern call boundaries in `StepFRApp`.**
 
    In successful `externFn` / `externPfn` branches, build `ExternCallEntry`,
    prove the body entry inputs agree, construct `ExternCallBoundaryRun.fn` /
@@ -344,7 +325,7 @@ theorem with explicit trusted-registry assumptions.
    Done when app runtime `externFn` / `externPfn` dispatch is no longer proved
    impossible from `emptyExternRegistry`.
 
-5. **Replace declaration adapters with populated-registry consumers.**
+4. **Replace declaration adapters with populated-registry consumers.**
 
    The top-level extern expression branches already normalize successful
    declaration runs to `ExternDeclBoundaryRun`.  After the app proof is
@@ -358,7 +339,7 @@ theorem with explicit trusted-registry assumptions.
    Done when the declaration branches consume trusted boundary evidence instead
    of `.of_emptyExternRegistry` adapters.
 
-6. **Generalize the step theorem and bridge trusted agreement.**
+5. **Generalize the step theorem and bridge trusted agreement.**
 
    Generalize `TypeSystemEnforcesFaultRobustness_step` to arbitrary
    `registry`, instantiate it with `TrustedRegistry.toRuntimeRegistry tr`, and
@@ -374,7 +355,7 @@ theorem with explicit trusted-registry assumptions.
    possible, without weakening `TrustedRegistryAgreesWithProgram` into a vague
    global premise.
 
-7. **Preserve compatibility and verify.**
+6. **Preserve compatibility and verify.**
 
    Preserve `TypeSystemEnforcesFaultRobustness_emptyRegistry` as the
    compatibility corollary.  Run `lake build LeanProofs`, `make test`,
@@ -393,9 +374,6 @@ theorem with explicit trusted-registry assumptions.
 
 ## Hard Stops
 
-- Stop if `appTwoRunOutChoice_from_body_stepFRPost` cannot consume the
-  `StepFRPost` shape returned by `ExternBoundarySpec.callFR` without additional
-  facts that are absent from the regular user-closure proof.
 - Stop if a body-to-app transport helper needs facts that are not already
   present in the regular user-closure app proof or in `ExternBoundarySpec`.
 - Stop if `ExternCallEntry.bodyCtx` cannot be connected to the app body context
