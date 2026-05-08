@@ -2813,13 +2813,16 @@ private lemma stepFR_app_arrow_sync_from_clean
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₀ σcap env₀ ∧
       MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₀ θ₀ σcap env₀ ∧
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₁ σcap env₁ ∧
-      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁)
+      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁ ∧
+      capturedVarsTypingProperty θ₀ σcap env₀ ∧
+      capturedVarsTypingProperty θ₁ σcap env₁)
   ∨ (¬ internalPoisonClean res1.qualType) := by
   -- Unfold resultAgreesIfClean and apply hclean to get agreeValueUnder
   have h := hagree hclean
   -- Case-split on the agreeValueUnder evidence
   cases h with
-  | clean_internal_arrow hci hetyp' htcl hmatch hcap hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₁ hv₂ =>
+  | clean_internal_arrow hci hetyp' htcl hmatch hcap hmemberVars₀ hmemberCvcr₀
+      hmemberVars₁ hmemberCvcr₁ _htyping₀ _htyping₁ hv₁ hv₂ =>
     -- hetyp'  : res1.qualType.etyp = ETyp.arrow st1✝ st2✝ p✝ tcls✝  (fresh case vars)
     -- hetyp   : res1.qualType.etyp = ETyp.arrow st1  st2  p  tcls
     -- Combine to equate the two arrow types, then extract tcls✝ = tcls
@@ -2834,8 +2837,9 @@ private lemma stepFR_app_arrow_sync_from_clean
     subst hmatch
     -- htcl : FnTClosure.regular x₀ body₀ σcap✝ ∈ tcls
     left
-    exact ⟨_, htcl, rfl, rfl, hcap, hmemberVars₀, hmemberCvcr₀, hmemberVars₁, hmemberCvcr₁⟩
-  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv₁ _ =>
+    exact ⟨_, htcl, rfl, rfl, hcap, hmemberVars₀, hmemberCvcr₀, hmemberVars₁,
+      hmemberCvcr₁, _htyping₀, _htyping₁⟩
+  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₁ _ =>
     rw [Value.closure.injEq] at hv₁
     obtain ⟨_hx, hbody, _henv⟩ := hv₁
     exact False.elim (hnotExtern₀ _ _ _ _ _ hbody)
@@ -2845,12 +2849,12 @@ private lemma stepFR_app_arrow_sync_from_clean
   | clean_eq_nonref_nonarrow _ hnotfun _ _ =>
     -- Impossible: arrow is a function type, contradicts hnotfun
     exfalso; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow, hetyp] at hnotfun
-  | clean_internal_parrow _ hetyp' _ _ _ _ _ _ _ =>
+  | clean_internal_parrow _ hetyp' _ _ _ _ _ _ _ _ _ _ _ =>
     -- Impossible: parrow ≠ arrow
     exfalso
     have : ETyp.parrow _ _ _ _ = ETyp.arrow st1 st2 p tcls := hetyp'.symm.trans hetyp
     simp at this
-  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv₁ _ =>
+  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₁ _ =>
     cases hv₁
   | dirty_internal_parrow _ hisParrow _ _ =>
     -- Impossible: arrow type is not isParrow; hisParrow reduces to false = true
@@ -2893,15 +2897,18 @@ private lemma stepFR_app_parrow_sync_from_clean
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₀ σcap env₀ ∧
       MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₀ θ₀ σcap env₀ ∧
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₁ σcap env₁ ∧
-      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁)
+      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁ ∧
+      capturedVarsTypingProperty θ₀ σcap env₀ ∧
+      capturedVarsTypingProperty θ₁ σcap env₁)
   ∨ (¬ internalPoisonClean res1.qualType) := by
   -- Unfold resultAgreesIfClean and apply hclean to get agreeValueUnder
   have h := hagree hclean
   -- Case-split on the agreeValueUnder evidence
   cases h with
-  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv₁ _ =>
+  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₁ _ =>
     cases hv₁
-  | clean_internal_parrow hci hetyp' htcl hmatch hcap hmv₁ hmc₁ hmv₂ hmc₂ hv₁ hv₂ =>
+  | clean_internal_parrow hci hetyp' htcl hmatch hcap hmv₁ hmc₁ hmv₂ hmc₂
+      _htyping₀ _htyping₁ hv₁ hv₂ =>
     -- hetyp'  : res1.qualType.etyp = ETyp.parrow st1✝ st2✝ p✝ tcls✝  (fresh case vars)
     -- hetyp   : res1.qualType.etyp = ETyp.parrow st1  st2  p  tcls
     -- Combine to equate the two parrow types, then extract tcls✝ = tcls
@@ -2916,8 +2923,9 @@ private lemma stepFR_app_parrow_sync_from_clean
     obtain ⟨htoPExpr, rfl⟩ := hmatch   -- tcl✝ := PFnTClosure.regular x₀ pbody✝ σcap✝
     -- htcl : PFnTClosure.regular x₀ pbody✝ σcap✝ ∈ tcls
     left
-    exact ⟨x₀, _, _, htoPExpr, htcl, rfl, rfl, rfl, hcap, hmv₁, hmc₁, hmv₂, hmc₂⟩
-  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv₁ _ =>
+    exact ⟨x₀, _, _, htoPExpr, htcl, rfl, rfl, rfl, hcap, hmv₁, hmc₁, hmv₂,
+      hmc₂, _htyping₀, _htyping₁⟩
+  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₁ _ =>
     rw [Value.peClosure.injEq] at hv₁
     obtain ⟨_hx, hbody, _henv⟩ := hv₁
     subst hbody
@@ -2929,7 +2937,7 @@ private lemma stepFR_app_parrow_sync_from_clean
     -- Impossible: parrow is a function type, contradicts hnotfun
     -- After simp, hnotfun reduces to true = false
     exfalso; simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow, hetyp] at hnotfun
-  | clean_internal_arrow _ hetyp' _ _ _ _ _ _ _ =>
+  | clean_internal_arrow _ hetyp' _ _ _ _ _ _ _ _ _ _ _ =>
     -- Impossible: arrow ≠ parrow
     exfalso
     have : ETyp.arrow _ _ _ _ = ETyp.parrow st1 st2 p tcls := hetyp'.symm.trans hetyp
@@ -2970,7 +2978,9 @@ private lemma stepFR_app_arrow_sync_from_clean_with_extern
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₀ σcap env₀ ∧
       MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₀ θ₀ σcap env₀ ∧
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₁ σcap env₁ ∧
-      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁)
+      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁ ∧
+      capturedVarsTypingProperty θ₀ σcap env₀ ∧
+      capturedVarsTypingProperty θ₁ σcap env₁)
     ∨
     (∃ id x y argTyp retSpec effects σcap,
       FnTClosure.extern id x retSpec effects σcap ∈ tcls ∧
@@ -2982,11 +2992,14 @@ private lemma stepFR_app_arrow_sync_from_clean_with_extern
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₀ σcap env₀ ∧
       MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₀ θ₀ σcap env₀ ∧
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₁ σcap env₁ ∧
-      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁))
+      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁ ∧
+      capturedVarsTypingProperty θ₀ σcap env₀ ∧
+      capturedVarsTypingProperty θ₁ σcap env₁))
   ∨ (¬ internalPoisonClean res1.qualType) := by
   have h := hagree hclean
   cases h with
-  | clean_internal_arrow _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁ hv₀ hv₁ =>
+  | clean_internal_arrow _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁
+      htyping₀ htyping₁ hv₀ hv₁ =>
     have hetyp_combined := hetyp'.symm.trans hetyp
     simp only [ETyp.arrow.injEq] at hetyp_combined
     obtain ⟨rfl, rfl, rfl, rfl⟩ := hetyp_combined
@@ -2995,8 +3008,9 @@ private lemma stepFR_app_arrow_sync_from_clean_with_extern
     subst hmatch
     left
     left
-    exact ⟨_, htcl, rfl, rfl, hcap, hmv₀, hmc₀, hmv₁, hmc₁⟩
-  | clean_internal_arrow_extern _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁ hv₀ hv₁ =>
+    exact ⟨_, htcl, rfl, rfl, hcap, hmv₀, hmc₀, hmv₁, hmc₁, htyping₀, htyping₁⟩
+  | clean_internal_arrow_extern _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁
+      htyping₀ htyping₁ hv₀ hv₁ =>
     have hetyp_combined := hetyp'.symm.trans hetyp
     simp only [ETyp.arrow.injEq] at hetyp_combined
     obtain ⟨rfl, rfl, rfl, rfl⟩ := hetyp_combined
@@ -3006,18 +3020,18 @@ private lemma stepFR_app_arrow_sync_from_clean_with_extern
     left
     right
     exact ⟨_, _, _, _, _, _, _, htcl, rfl, rfl, rfl, rfl,
-      hcap, hmv₀, hmc₀, hmv₁, hmc₁⟩
+      hcap, hmv₀, hmc₀, hmv₁, hmc₁, htyping₀, htyping₁⟩
   | dirty_internal_arrow hdirty _ _ _ =>
     right
     exact hdirty
   | clean_eq_nonref_nonarrow _ hnotfun _ _ =>
     exfalso
     simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow, hetyp] at hnotfun
-  | clean_internal_parrow _ hetyp' _ _ _ _ _ _ _ =>
+  | clean_internal_parrow _ hetyp' _ _ _ _ _ _ _ _ _ _ _ =>
     exfalso
     have : ETyp.parrow _ _ _ _ = ETyp.arrow st1 st2 p tcls := hetyp'.symm.trans hetyp
     simp at this
-  | clean_internal_parrow_extern _ hetyp' _ _ _ _ _ _ _ _ _ =>
+  | clean_internal_parrow_extern _ hetyp' _ _ _ _ _ _ _ _ _ _ _ =>
     exfalso
     have : ETyp.parrow _ _ _ _ = ETyp.arrow st1 st2 p tcls := hetyp'.symm.trans hetyp
     simp at this
@@ -3057,7 +3071,9 @@ private lemma stepFR_app_parrow_sync_from_clean_with_extern
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₀ σcap env₀ ∧
       MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₀ θ₀ σcap env₀ ∧
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₁ σcap env₁ ∧
-      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁)
+      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁ ∧
+      capturedVarsTypingProperty θ₀ σcap env₀ ∧
+      capturedVarsTypingProperty θ₁ σcap env₁)
     ∨
     (∃ id x y argTyp retSpec σcap,
       PFnTClosure.extern id x retSpec σcap ∈ tcls ∧
@@ -3069,11 +3085,14 @@ private lemma stepFR_app_parrow_sync_from_clean_with_extern
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₀ σcap env₀ ∧
       MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₀ θ₀ σcap env₀ ∧
       MemberVarsRegimeEvidence predSat (ctxAfter ctx res1).regime μ₁ σcap env₁ ∧
-      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁))
+      MemberCvcrEvidence predSat (ctxAfter ctx res1).regime μ₁ θ₁ σcap env₁ ∧
+      capturedVarsTypingProperty θ₀ σcap env₀ ∧
+      capturedVarsTypingProperty θ₁ σcap env₁))
   ∨ (¬ internalPoisonClean res1.qualType) := by
   have h := hagree hclean
   cases h with
-  | clean_internal_parrow _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁ hv₀ hv₁ =>
+  | clean_internal_parrow _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁
+      htyping₀ htyping₁ hv₀ hv₁ =>
     have hetyp_combined := hetyp'.symm.trans hetyp
     simp only [ETyp.parrow.injEq] at hetyp_combined
     obtain ⟨rfl, rfl, rfl, rfl⟩ := hetyp_combined
@@ -3082,8 +3101,10 @@ private lemma stepFR_app_parrow_sync_from_clean_with_extern
     obtain ⟨htoP, rfl⟩ := hmatch
     left
     left
-    exact ⟨_, _, _, htoP, htcl, rfl, rfl, rfl, hcap, hmv₀, hmc₀, hmv₁, hmc₁⟩
-  | clean_internal_parrow_extern _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁ hv₀ hv₁ =>
+    exact ⟨_, _, _, htoP, htcl, rfl, rfl, rfl, hcap, hmv₀, hmc₀, hmv₁, hmc₁,
+      htyping₀, htyping₁⟩
+  | clean_internal_parrow_extern _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁
+      htyping₀ htyping₁ hv₀ hv₁ =>
     have hetyp_combined := hetyp'.symm.trans hetyp
     simp only [ETyp.parrow.injEq] at hetyp_combined
     obtain ⟨rfl, rfl, rfl, rfl⟩ := hetyp_combined
@@ -3093,18 +3114,18 @@ private lemma stepFR_app_parrow_sync_from_clean_with_extern
     left
     right
     exact ⟨_, _, _, _, _, _, htcl, rfl, rfl, rfl, rfl,
-      hcap, hmv₀, hmc₀, hmv₁, hmc₁⟩
+      hcap, hmv₀, hmc₀, hmv₁, hmc₁, htyping₀, htyping₁⟩
   | dirty_internal_parrow hdirty _ _ _ =>
     right
     exact hdirty
   | clean_eq_nonref_nonarrow _ hnotfun _ _ =>
     exfalso
     simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow, hetyp] at hnotfun
-  | clean_internal_arrow _ hetyp' _ _ _ _ _ _ _ =>
+  | clean_internal_arrow _ hetyp' _ _ _ _ _ _ _ _ _ _ _ =>
     exfalso
     have : ETyp.arrow _ _ _ _ = ETyp.parrow st1 st2 p tcls := hetyp'.symm.trans hetyp
     simp at this
-  | clean_internal_arrow_extern _ hetyp' _ _ _ _ _ _ _ _ _ =>
+  | clean_internal_arrow_extern _ hetyp' _ _ _ _ _ _ _ _ _ _ _ =>
     exfalso
     have : ETyp.arrow _ _ _ _ = ETyp.parrow st1 st2 p tcls := hetyp'.symm.trans hetyp
     simp at this
@@ -8898,10 +8919,14 @@ lemma stepFR_app
                   hetyp1 hclean1_e1 hres_agree1 with hsync | hdirty
               · rcases hsync with hregular | hextern
                 · left
-                  exact hregular
+                  rcases hregular with
+                    ⟨σcap, hmem, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁,
+                      _htyping₀, _htyping₁⟩
+                  exact ⟨σcap, hmem, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁⟩
                 · rcases hextern with
                     ⟨id, _x, y, argTyp, retSpec, effects, _σcap, _hmem,
-                      _hx₀, _hx₁, hbody₀, _hbody₁, _hcap⟩
+                      _hx₀, _hx₁, hbody₀, _hbody₁, _hcap, _hmv₀, _hmc₀,
+                      _hmv₁, _hmc₁, _htyping₀, _htyping₁⟩
                   exact False.elim (hnotExtern₀ id y argTyp retSpec effects hbody₀)
               · right
                 exact hdirty
@@ -9830,15 +9855,15 @@ lemma stepFR_app
                                 exact Value.num.inj hEq
                               | withPred_true_eq _ _ _ _ _ hEq =>
                                 exact Value.num.inj hEq
-                              | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                              | clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
                                 cases hv₀
-                              | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                              | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
                                 cases hv₀
                               | dirty_internal_arrow _ hisA htyp₀ _ =>
                                 simp [valueHasETyp_num_etyp htyp₀, ETyp.isArrow] at hisA
-                              | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                              | clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
                                 cases hv₀
-                              | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                              | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
                                 cases hv₀
                               | dirty_internal_parrow _ hisP htyp₀ _ =>
                                 simp [valueHasETyp_num_etyp htyp₀, ETyp.isParrow] at hisP
@@ -11367,10 +11392,15 @@ lemma stepFR_app
                   hetyp1 hclean1_e1 hres_agree1 with hsync | hdirty
               · rcases hsync with hregular | hextern
                 · left
-                  exact hregular
+                  rcases hregular with
+                    ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody, hcap,
+                      hmv₀, hmc₀, hmv₁, hmc₁, _htyping₀, _htyping₁⟩
+                  exact ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody, hcap,
+                    hmv₀, hmc₀, hmv₁, hmc₁⟩
                 · rcases hextern with
                     ⟨_id, _x, _y, _argTyp, _retSpec, _σcap, _hmem,
-                      _hx₀, _hx₁, hbody₀, _hbody₁, _hcap⟩
+                      _hx₀, _hx₁, hbody₀, _hbody₁, _hcap, _hmv₀, _hmc₀,
+                      _hmv₁, _hmc₁, _htyping₀, _htyping₁⟩
                   exact False.elim (htoP₀ (by rw [hbody₀]; simp [Expr.toPExpr?]))
               · right
                 exact hdirty
@@ -12411,15 +12441,15 @@ lemma stepFR_app
                               exact Value.num.inj hEq
                             | withPred_true_eq _ _ _ _ _ hEq =>
                               exact Value.num.inj hEq
-                            | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                            | clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
                               cases hv₀
-                            | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                            | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
                               cases hv₀
                             | dirty_internal_arrow _ hisA htyp₀ _ =>
                               simp [valueHasETyp_num_etyp htyp₀, ETyp.isArrow] at hisA
-                            | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                            | clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
                               cases hv₀
-                            | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                            | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
                               cases hv₀
                             | dirty_internal_parrow _ hisP htyp₀ _ =>
                               simp [valueHasETyp_num_etyp htyp₀, ETyp.isParrow] at hisP

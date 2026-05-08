@@ -470,6 +470,8 @@ mutual
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
+        (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.closure x body ρcap₁)
         (hv₂ : v₂ = Value.closure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
@@ -487,6 +489,8 @@ mutual
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
+        (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap₁)
         (hv₂ : v₂ = Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
@@ -509,6 +513,8 @@ mutual
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
+        (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.peClosure x body ρcap₁)
         (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
@@ -526,6 +532,8 @@ mutual
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
+        (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap₁)
         (hv₂ : v₂ = Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂

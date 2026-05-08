@@ -1581,10 +1581,10 @@ lemma stepFR_deref
               cases hv1
           | @withPred_true_ref k ls l0 a1 a2 qt' v1 v2 _htag _hreg _hetyp _hlookup1 _hin hv1 _hlookup2 _hv2 =>
               cases hv1
-          | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv1 _ =>
-              cases hv1
-          | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv1 _ =>
-              cases hv1
+          | clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ hv1 _ =>
+            cases hv1
+          | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv1 _ =>
+            cases hv1
           | dirty_internal_arrow _ hisArrow htyp1 _ =>
               -- Value.num can only have type int, so isArrow must be false.
               have hqte_int : qt.etyp = ETyp.int :=
@@ -1593,10 +1593,10 @@ lemma stepFR_deref
                 simp [hqte_int, ETyp.isArrow]
               rw [hisArrow] at this
               cases this
-          | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv1 _ =>
-              cases hv1
-          | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv1 _ =>
-              cases hv1
+          | clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ hv1 _ =>
+            cases hv1
+          | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv1 _ =>
+            cases hv1
           | dirty_internal_parrow _ hisParrow htyp1 _ =>
               -- Value.num can only have type int, so isParrow must be false.
               have hqte_int : qt.etyp = ETyp.int :=

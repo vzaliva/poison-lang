@@ -120,21 +120,23 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
           (agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq))
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ _ihcap hclean
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ _ihcap
+          hclean
         exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
           hmemberVars₀_transport hmemberCvcr₀_transport
           hmemberVars₁_transport hmemberCvcr₁_transport hclean
           (agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch hcap
-            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁))
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁))
       (clean_internal_arrow_extern := by
         intro id x y argTyp retSpec effects p tcls qt tcl σcap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ _ihcap hclean
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ _ihcap
+          hclean
         exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
           hmemberVars₀_transport hmemberCvcr₀_transport
           hmemberVars₁_transport hmemberCvcr₁_transport hclean
           (agreeValueUnder.clean_internal_arrow_extern hclean_internal hetyp htcl hmatch hcap
-            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁))
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁))
       (dirty_internal_arrow := by
         intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 hclean
         exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
@@ -143,21 +145,23 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
           (agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2))
       (clean_internal_parrow := by
         intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ _ihcap hclean
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ _ihcap
+          hclean
         exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
           hmemberVars₀_transport hmemberCvcr₀_transport
           hmemberVars₁_transport hmemberCvcr₁_transport hclean
           (agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch hcap
-            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁))
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁))
       (clean_internal_parrow_extern := by
         intro id x y argTyp retSpec p tcls qt tcl σcap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ _ihcap hclean
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ _ihcap
+          hclean
         exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
           hmemberVars₀_transport hmemberCvcr₀_transport
           hmemberVars₁_transport hmemberCvcr₁_transport hclean
           (agreeValueUnder.clean_internal_parrow_extern hclean_internal hetyp htcl hmatch hcap
-            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁))
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁))
       (dirty_internal_parrow := by
         intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 hclean
         exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
@@ -2100,7 +2104,8 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
           exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun_res hnotref_res hEq
   | @clean_internal_arrow st1 st2 p tcls _qt tcl x body σcap ρcap₀ ρcap₁ _v₀ _v₁
       hclean_internal_src hetyp_src htcl hmatch hcap
-      hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src hv₁ hv₂ =>
+      hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src
+      htyping₀_src htyping₁_src hv₁ hv₂ =>
       cases hclean_res with
       | clean _hpoison_res =>
           have hlookup_back :
@@ -2170,7 +2175,8 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
             with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
           by_cases hclean_internal_res : internalPoisonClean res.qualType
           · exact agreeValueUnder.clean_internal_arrow hclean_internal_res hetyp_res htcl_res hmatch hcap_res
-              hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res hv₁ hv₂
+              hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
+              htyping₀_src htyping₁_src hv₁ hv₂
           · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
               have htyped_closure :
                   valueHasETyp θ₀ (Value.closure x body ρcap₀) (ETyp.arrow st1 st2 p tcls) := by
@@ -2249,7 +2255,8 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
           cases hnotfun_res
     | @clean_internal_arrow_extern id x y argTyp retSpec effects p tcls _qt tcl σcap ρcap₀ ρcap₁ _v₀ _v₁
         hclean_internal_src hetyp_src htcl hmatch hcap
-        hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src hv₁ hv₂ =>
+        hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src
+        htyping₀_src htyping₁_src hv₁ hv₂ =>
         cases hclean_res with
         | clean _hpoison_res =>
             have hlookup_back :
@@ -2319,7 +2326,8 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
             by_cases hclean_internal_res : internalPoisonClean res.qualType
             · exact agreeValueUnder.clean_internal_arrow_extern hclean_internal_res hetyp_res htcl_res hmatch hcap_res
-                hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res hv₁ hv₂
+                hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
+                htyping₀_src htyping₁_src hv₁ hv₂
             · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
                 have htyped_closure :
                     valueHasETyp θ₀
@@ -2402,7 +2410,8 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
             cases hnotfun_res
     | @clean_internal_parrow st1 st2 p tcls _qt tcl x body pbody σcap ρcap₀ ρcap₁ _v₀ _v₁
       hclean_internal_src hetyp_src htcl hmatch hcap
-      hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src hv₁ hv₂ =>
+      hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src
+      htyping₀_src htyping₁_src hv₁ hv₂ =>
       cases hclean_res with
       | clean _hpoison_res =>
           have hlookup_back :
@@ -2472,7 +2481,8 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
             with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
           by_cases hclean_internal_res : internalPoisonClean res.qualType
           · exact agreeValueUnder.clean_internal_parrow hclean_internal_res hetyp_res htcl_res hmatch hcap_res
-              hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res hv₁ hv₂
+              hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
+              htyping₀_src htyping₁_src hv₁ hv₂
           · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
               have hpure : Expr.toPExpr? body = some pbody := hmatch.1
               have htyped_closure :
@@ -2553,7 +2563,8 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
           cases hnotfun_res
     | @clean_internal_parrow_extern id x y argTyp retSpec p tcls _qt tcl σcap ρcap₀ ρcap₁ _v₀ _v₁
         hclean_internal_src hetyp_src htcl hmatch hcap
-        hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src hv₁ hv₂ =>
+        hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src
+        htyping₀_src htyping₁_src hv₁ hv₂ =>
         cases hclean_res with
         | clean _hpoison_res =>
             have hlookup_back :
@@ -2623,7 +2634,8 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
             by_cases hclean_internal_res : internalPoisonClean res.qualType
             · exact agreeValueUnder.clean_internal_parrow_extern hclean_internal_res hetyp_res htcl_res hmatch hcap_res
-                hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res hv₁ hv₂
+                hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
+                htyping₀_src htyping₁_src hv₁ hv₂
             · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
                 have htyped_closure :
                     valueHasETyp θ₀

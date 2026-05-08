@@ -490,12 +490,19 @@ lemma stepFR_fn
             (memberCvcrEvidence_of_toCaptured
               (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
+        have htyping₀ :
+            capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ :=
+          capturedVarsTypingProperty_of_toCaptured ctxᵢ μ₀ ρ₀ θ₀ hric₀
+        have htyping₁ :
+            capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ :=
+          capturedVarsTypingProperty_of_toCaptured ctxᵢ μ₁ ρ₁ θ₁ hric₁
         exact
           agreeValueUnder.clean_internal_arrow
             (tcl := FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv))
             (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
             hclean_internal hetyp (by simp) rfl hcap
             hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
+            htyping₀ htyping₁
             (by simp [ho₀]) (by simp [ho₁])
     | guard k htag _hregime _ =>
         have : False := by
@@ -758,6 +765,12 @@ lemma stepFR_pfn
                 (memberCvcrEvidence_of_toCaptured
                   (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
+            have htyping₀ :
+                capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ :=
+              capturedVarsTypingProperty_of_toCaptured ctxᵢ μ₀ ρ₀ θ₀ hric₀
+            have htyping₁ :
+                capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ :=
+              capturedVarsTypingProperty_of_toCaptured ctxᵢ μ₁ ρ₁ θ₁ hric₁
             exact
               agreeValueUnder.clean_internal_parrow
                 (pbody := pbody)
@@ -765,6 +778,7 @@ lemma stepFR_pfn
                 (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
                 hclean_internal hetyp htcl hmatch hcap
                 hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
+                htyping₀ htyping₁
                 (by simp [ho₀]) (by simp [ho₁])
         | guard k htag _hregime _ =>
             have : False := by

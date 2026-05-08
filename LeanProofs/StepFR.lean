@@ -610,6 +610,22 @@ lemma memberCvcrEvidence_of_toCaptured
     (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookup_list)
     hlookup_ρ
 
+lemma capturedVarsTypingProperty_of_toCaptured
+  (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
+  capturedVarsTypingProperty θ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
+  refine ⟨VarTypeEnv_toCaptured_nodup_fst ctx.varEnv, ?_, ?_⟩
+  · intro y qt hlookup_σ
+    have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookup_σ
+    let ⟨v, hv, _⟩ := hric.2 hlookup_ctx
+    exact ⟨v, hv⟩
+  · intro y qt v hlookup_σ hlookup_ρ
+    have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookup_σ
+    let ⟨v', hv', htyp⟩ := hric.2 hlookup_ctx
+    rw [hlookup_ρ] at hv'
+    cases hv'
+    exact htyp
+
 private lemma agreeCapturedEnv_same
   (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap)
   (σcap : CapturedVarEnv) (ρcap : VarEnv)
@@ -739,8 +755,9 @@ private lemma agreeValueUnder_same_aux
         intro y qt_y v_y hlookup_σ hlookup_ρ
         exact .intro (hSub y qt_y v_y
           (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hlookup_ρ)
+      have htyping : capturedVarsTypingProperty θ σcap ρcap := ⟨hnd, hcover, hhenv⟩
       exact agreeValueUnder.clean_internal_arrow h_clean_int hetyp_eq hmem rfl
-        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr rfl rfl
+        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr htyping htyping rfl rfl
   | @closure_extern qt' _v' id xp y argTyp retSpec effects ρcap σcap p tcls
       hval hetyp_eq hmem hP hSub ih =>
     subst hval
@@ -762,8 +779,9 @@ private lemma agreeValueUnder_same_aux
         intro y' qt_y v_y hlookup_σ hlookup_ρ
         exact .intro (hSub y' qt_y v_y
           (list_lookup_of_ofCaptured_lookup σcap y' qt_y hlookup_σ) hlookup_ρ)
+      have htyping : capturedVarsTypingProperty θ σcap ρcap := ⟨hnd, hcover, hhenv⟩
       exact agreeValueUnder.clean_internal_arrow_extern h_clean_int hetyp_eq hmem rfl
-        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr rfl rfl
+        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr htyping htyping rfl rfl
   | @peClosure qt' _v' xp body pbody ρcap σcap st1 st2 p tcls hval hetyp_eq hpure_deep hmem hP hSub ih =>
     subst hval
     intro _hclean htyp
@@ -783,8 +801,9 @@ private lemma agreeValueUnder_same_aux
         intro y qt_y v_y hlookup_σ hlookup_ρ
         exact .intro (hSub y qt_y v_y
           (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hlookup_ρ)
+      have htyping : capturedVarsTypingProperty θ σcap ρcap := ⟨hnd, hcover, hhenv⟩
       exact agreeValueUnder.clean_internal_parrow h_clean_int hetyp_eq hmem ⟨hpure_deep, rfl⟩
-        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr rfl rfl
+        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr htyping htyping rfl rfl
   | @peClosure_extern qt' _v' id xp y argTyp retSpec ρcap σcap p tcls
       hval hetyp_eq hmem hP hSub ih =>
     subst hval
@@ -806,8 +825,9 @@ private lemma agreeValueUnder_same_aux
         intro y' qt_y v_y hlookup_σ hlookup_ρ
         exact .intro (hSub y' qt_y v_y
           (list_lookup_of_ofCaptured_lookup σcap y' qt_y hlookup_σ) hlookup_ρ)
+      have htyping : capturedVarsTypingProperty θ σcap ρcap := ⟨hnd, hcover, hhenv⟩
       exact agreeValueUnder.clean_internal_parrow_extern h_clean_int hetyp_eq hmem rfl
-        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr rfl rfl
+        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr htyping htyping rfl rfl
 
 -- Reflexive agreement when both sides are the same config.
 -- Uses closureCapturedVarsRegime evidence (which carries both regime and typing info for a single σcap)
@@ -2956,7 +2976,7 @@ lemma agreeValueUnder_transport_clean
             exact ⟨ls, by simpa [hetyp] using h⟩
           exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun' hnotref' hEq
       | clean_internal_arrow hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           -- Need to show internal poison is clean for qt
           -- qt.poison = false (from hpoison), qt.etyp = qt2.etyp (from hetyp)
@@ -2967,16 +2987,16 @@ lemma agreeValueUnder_transport_clean
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_arrow hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
       | clean_internal_arrow_extern hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_arrow_extern hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
       | dirty_internal_arrow hdirty_int hisArrow htyp1_qt2 htyp2_qt2 =>
           -- qt2 has dirty internal, but qt.poison = false (hpoison)
           -- We need to construct agreement for qt
@@ -2996,23 +3016,23 @@ lemma agreeValueUnder_transport_clean
             rw [hetyp]; exact htyp2_qt2
           exact agreeValueUnder.dirty_internal_arrow hdirty_int_qt hisArrow_qt htyp1_qt htyp2_qt
       | clean_internal_parrow hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_parrow hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
       | clean_internal_parrow_extern hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_parrow_extern hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
       | dirty_internal_parrow hdirty_int hisParrow htyp1_qt2 htyp2_qt2 =>
           have hisParrow_qt : qt.etyp.isParrow = true := by
             rw [hetyp]; exact hisParrow
@@ -3049,23 +3069,23 @@ lemma agreeValueUnder_transport_clean
             exact ⟨ls, by simpa [hetyp] using h⟩
           exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun' hnotref' hEq
       | clean_internal_arrow hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_arrow hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
       | clean_internal_arrow_extern hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_arrow_extern hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
       | dirty_internal_arrow hdirty_int hisArrow htyp1_qt2 htyp2_qt2 =>
           have hisArrow_qt : qt.etyp.isArrow = true := by
             rw [hetyp]; exact hisArrow
@@ -3080,23 +3100,23 @@ lemma agreeValueUnder_transport_clean
             rw [hetyp]; exact htyp2_qt2
           exact agreeValueUnder.dirty_internal_arrow hdirty_int_qt hisArrow_qt htyp1_qt htyp2_qt
       | clean_internal_parrow hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_parrow hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
       | clean_internal_parrow_extern hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_parrow_extern hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
       | dirty_internal_parrow hdirty_int hisParrow htyp1_qt2 htyp2_qt2 =>
           have hisParrow_qt : qt.etyp.isParrow = true := by
             rw [hetyp]; exact hisParrow
@@ -4020,6 +4040,15 @@ lemma valueHasETyp_extends
       intro y qt v hlookupT hlookupV
       exact ih y qt v hlookupT hlookupV hExt
 
+lemma capturedVarsTypingProperty_extends
+    {θ θ' : RealizationMap} {σcap : CapturedVarEnv} {ρcap : VarEnv}
+    (hθ : θ.extendsMap θ')
+    (h : capturedVarsTypingProperty θ σcap ρcap) :
+    capturedVarsTypingProperty θ' σcap ρcap := by
+  refine ⟨h.1, h.2.1, ?_⟩
+  intro y qt v hσ hρ
+  exact valueHasETyp_extends hθ (h.2.2 y qt v hσ hρ)
+
 lemma agreeValueUnder_clean_extends
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
   {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
@@ -4062,18 +4091,21 @@ lemma agreeValueUnder_clean_extends
         exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref hagree)
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ ihCap _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
+          _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
           (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
           (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
+          (capturedVarsTypingProperty_extends hθ₀ htyping₁)
+          (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂)
       (clean_internal_arrow_extern := by
         intro id x y argTyp retSpec effects p tcls qt tcl σcap ρcap₁ ρcap₂ v₁ v₂
           hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ ihCap
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
           _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_arrow_extern hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
@@ -4081,6 +4113,8 @@ lemma agreeValueUnder_clean_extends
           (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
           (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
+          (capturedVarsTypingProperty_extends hθ₀ htyping₁)
+          (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂)
       (dirty_internal_arrow := by
         intro qt v₁ v₂ hdirty hisArrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
@@ -4088,18 +4122,21 @@ lemma agreeValueUnder_clean_extends
           (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
       (clean_internal_parrow := by
         intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ ihCap _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
+          _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
           (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
           (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
+          (capturedVarsTypingProperty_extends hθ₀ htyping₁)
+          (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂)
       (clean_internal_parrow_extern := by
         intro id x y argTyp retSpec p tcls qt tcl σcap ρcap₁ ρcap₂ v₁ v₂
           hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ hv₁ hv₂ ihCap
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
           _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_parrow_extern hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
@@ -4107,6 +4144,8 @@ lemma agreeValueUnder_clean_extends
           (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
           (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
           (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
+          (capturedVarsTypingProperty_extends hθ₀ htyping₁)
+          (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂)
       (dirty_internal_parrow := by
         intro qt v₁ v₂ hdirty hisParrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
@@ -5011,48 +5050,52 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
         exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ ihcap
           _hclean
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch ihcap
           (hmemberVars₀_transport hmemberVars₀)
           (hmemberCvcr₀_transport hmemberCvcr₀)
           (hmemberVars₁_transport hmemberVars₁)
           (hmemberCvcr₁_transport hmemberCvcr₁)
+          htyping₀ htyping₁
           hv₀ hv₁)
       (clean_internal_arrow_extern := by
         intro id x y argTyp retSpec effects p tcls qt tcl σcap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ ihcap
           _hclean
         exact agreeValueUnder.clean_internal_arrow_extern hclean_internal hetyp htcl hmatch ihcap
           (hmemberVars₀_transport hmemberVars₀)
           (hmemberCvcr₀_transport hmemberCvcr₀)
           (hmemberVars₁_transport hmemberVars₁)
           (hmemberCvcr₁_transport hmemberCvcr₁)
+          htyping₀ htyping₁
           hv₀ hv₁)
       (dirty_internal_arrow := by
         intro qt v₀ v₁ hdirty_internal hisArrow htyp1 htyp2 _hclean
         exact agreeValueUnder.dirty_internal_arrow hdirty_internal hisArrow htyp1 htyp2)
       (clean_internal_parrow := by
         intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ ihcap
           _hclean
         exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch ihcap
           (hmemberVars₀_transport hmemberVars₀)
           (hmemberCvcr₀_transport hmemberCvcr₀)
           (hmemberVars₁_transport hmemberVars₁)
           (hmemberCvcr₁_transport hmemberCvcr₁)
+          htyping₀ htyping₁
           hv₀ hv₁)
       (clean_internal_parrow_extern := by
         intro id x y argTyp retSpec p tcls qt tcl σcap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ hv₀ hv₁ ihcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ ihcap
           _hclean
         exact agreeValueUnder.clean_internal_parrow_extern hclean_internal hetyp htcl hmatch ihcap
           (hmemberVars₀_transport hmemberVars₀)
           (hmemberCvcr₀_transport hmemberCvcr₀)
           (hmemberVars₁_transport hmemberVars₁)
           (hmemberCvcr₁_transport hmemberCvcr₁)
+          htyping₀ htyping₁
           hv₀ hv₁)
       (dirty_internal_parrow := by
         intro qt v₀ v₁ hdirty_internal hisParrow htyp1 htyp2 _hclean

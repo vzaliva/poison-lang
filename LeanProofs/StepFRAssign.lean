@@ -401,16 +401,16 @@ private lemma agreeValueUnder_num_num_eq
   | withPred_true_eq _ _ _ _ _ hEq =>
       cases hEq
       rfl
-  | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+  | clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
       cases hv₀
-  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
+  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
       cases hv₀
   | dirty_internal_arrow _ hisArrow htyp₀ _ =>
       have hnum : qt.etyp = ETyp.int := valueHasETyp_num_etyp htyp₀
       simp [hnum, ETyp.isArrow] at hisArrow
-  | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
+  | clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
       cases hv₀
-  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
+  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
       cases hv₀
   | dirty_internal_parrow _ hisParrow htyp₀ _ =>
       have hnum : qt.etyp = ETyp.int := valueHasETyp_num_etyp htyp₀
@@ -3634,18 +3634,18 @@ lemma stepFR_assign
                                       simpa [Value.num.injEq] using hEq
                                   | withPred_true_eq _ _ _ _ _ hEq =>
                                       simpa [Value.num.injEq] using hEq
-                                  | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
-                                      cases hv₀
-                                  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
-                                      cases hv₀
+                                  | clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                                    cases hv₀
+                                  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                                    cases hv₀
                                   | dirty_internal_arrow _ hisArrow htyp₀ _ =>
                                       have htyp₀_int : qtOld.etyp = ETyp.int :=
                                         valueHasETyp_num_etyp htyp₀
                                       simp [htyp₀_int, ETyp.isArrow] at hisArrow
-                                  | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv₀ _ =>
-                                      cases hv₀
-                                  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv₀ _ =>
-                                      cases hv₀
+                                  | clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                                    cases hv₀
+                                  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ =>
+                                    cases hv₀
                                   | dirty_internal_parrow _ hisParrow htyp₀ _ =>
                                       have htyp₀_int : qtOld.etyp = ETyp.int :=
                                         valueHasETyp_num_etyp htyp₀

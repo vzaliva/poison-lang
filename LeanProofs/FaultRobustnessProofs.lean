@@ -2058,18 +2058,18 @@ theorem TypeSystemEnforcesFaultRobustness_impl :
           | clean_eq_nonref_nonarrow _ _ _ hval =>
               cases hval
               rfl
-          | clean_internal_arrow _ _ _ _ _ _ _ _ _ hv1 _ =>
+          | clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ hv1 _ =>
               cases hv1
-          | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ hv1 _ =>
+          | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv1 _ =>
               cases hv1
           | dirty_internal_arrow hdirty hisArrow htyp1 htyp2 =>
               -- A Value.num can only have type ETyp.int, but isArrow = true implies function type
               have het : qt.etyp = ETyp.int := by
                 generalize hqte : qt.etyp = qte at htyp1; cases htyp1; rfl
               exact absurd (het ▸ hisArrow) (by decide)
-          | clean_internal_parrow _ _ _ _ _ _ _ _ _ hv1 _ =>
+          | clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ hv1 _ =>
               cases hv1
-          | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ hv1 _ =>
+          | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv1 _ =>
               cases hv1
           | dirty_internal_parrow hdirty hisParrow htyp1 htyp2 =>
               -- A Value.num can only have type ETyp.int, but isParrow = true implies parrow type
