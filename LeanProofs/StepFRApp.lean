@@ -2643,7 +2643,7 @@ private def ExternCallBoundarySingleFnContract
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ctxᵢ.pc = true →
     ExternBoundarySinglePost bodyCtx result3 predSatBody tmBody
-      θBody callEntry.callConfig.memory cf o
+      θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o
 
 /-- Empty-registry discharge for the body-local impure extern single-run
     contract.  Successful extern dispatch is impossible from the default
@@ -2721,7 +2721,7 @@ private def ExternCallBoundarySinglePfnContract
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ctxᵢ.pc = true →
     ExternBoundarySinglePost bodyCtx result3 predSatBody tmBody
-      θBody callEntry.callConfig.memory cf o
+      θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o
 
 private theorem ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
     {masked : Tag → Prop}
@@ -3309,8 +3309,10 @@ private lemma appTwoRunOutChoice_from_call_boundaryFR
     (hTmBody : wfTagMeaningCtx tmBody entry₀.bodyCtx)
     (hTmBoundedBody : TagMeaningBounded tmBody entry₀.bodyCtx.nextTag)
     (hinputs : BodyEntryInputsAgree predSat entry₀.bodyCtx entry₀ entry₁ θpre₀ θpre₁)
-    (hrun₀ : ExternCallBoundaryRun d impl entry₀ result3 evalCfg₀ o₀)
-    (hrun₁ : ExternCallBoundaryRun d impl entry₁ result3 evalCfg₁ o₁)
+    (hrun₀ : ExternCallBoundaryRun d impl entry₀ result3 cf₀ o₀)
+    (hrun₁ : ExternCallBoundaryRun d impl entry₁ result3 cf₁ o₁)
+    (hevalCfg₀ : evalCfg₀ = entry₀.bodyOutputConfig cf₀)
+    (hevalCfg₁ : evalCfg₁ = entry₁.bodyOutputConfig cf₁)
     (h_join : joinTypeResults ctx first rest = .ok res)
     (hsrc_mem : src ∈ first :: rest)
     (hsrc_eq :
@@ -3361,10 +3363,10 @@ private lemma appTwoRunOutChoice_from_call_boundaryFR
   have hbody_post :
       StepFRPost entry₀.bodyCtx postExpr result3 predSat tmBody
         θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁ := by
-    exact
+    simpa [hevalCfg₀, hevalCfg₁] using
       hcallFR postExpr result3 predSat tmBody entry₀ entry₁ hctx₁
         hpredlaws hTmBody hTmBoundedBody θpre₀ θpre₁ hinputs
-        evalCfg₀ evalCfg₁ o₀ o₁ hrun₀ hrun₁
+        cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
   exact
     appTwoRunOutChoice_from_body_stepFRPost
       (predSat := predSat) (tmBody := tmBody)
@@ -8441,13 +8443,34 @@ lemma stepFR_app
             _hpm_e2₁ _hpm_final₁ =>
             obtain ⟨_, θ₁1, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
             rcases fnStaticSource_from_typed hv₁_typed with ⟨tenv₁, hstatic₁⟩
+            let callEntry₁ : ExternCallEntry :=
+              ExternCallEntry.ofRuntime ctxᵢ c₁₁ env₁ x₁ v₂₁
+            have hrun₁ :
+                ∃ entry : TrustedExternEntry,
+                  ExternCallBoundaryRun entry.decl entry.impl callEntry₁ res cf₁ o₁ := by
+              exact
+                ((TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
+                    (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
+                    (e1 := e1) (e2 := e2) (res := res) (tcls := tcls)).2
+                    hstatic₁)
+                  hpredlaws hExtTyping hwfTm hTmBounded
+                  μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
+                  hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR
+                  hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+                  ctxᵢ res callEntry₁ c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁
+                  retSpec₁ eff₁ tenv₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁
+                  hstatic₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁
+                  hValRet₁ (by simpa using hcfg₁) rfl rfl rfl rfl rfl
+                  (by simp [callEntry₁, ExternCallEntry.ofRuntime])
+            rcases hrun₁ with ⟨entry₁, hrun₁⟩
+            have hlookup₁ := ExternCallBoundaryRun.lookup hrun₁
             exact False.elim (by
               have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
                 simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
               have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
                 (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-              rw [hreg_c₁₁] at hGet₁
-              simp [emptyExternRegistry] at hGet₁)
+              simp [callEntry₁, ExternCallEntry.ofRuntime, hreg_c₁₁,
+                emptyExternRegistry] at hlookup₁)
         | @userPfn c₂'₁ v₂₁ c₁₁ x₁ body₁ env₁ evalCfg₁ ht₁_e2 ht₁_e1 _hNot₁ htoP₁
             ht₁_body heq_cfg₁ hpm_e2₁ hpm_final₁ =>
             have hshape₁ : AppUserOnlyShape e1 e2 cinit₁ cf₁ o₁ := by

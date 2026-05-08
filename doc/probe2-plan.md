@@ -109,6 +109,13 @@ Implemented and compiling:
   `ExternBoundarySinglePost` for a body/member result, and the four two-run side
   contracts return body-local `ExternCallBoundaryRun` evidence indexed by an
   `ExternCallEntry` and member `result3`.
+- `ExternCallEntry` now separates runtime dispatch from body-local proof
+  shape.  `entry.callConfig` remains the actual runtime dispatch config, while
+  `entry.bodyConfig` is the synthetic closure-body input config with
+  `varEnv := entry.unifiedEnv`, and `entry.bodyOutputConfig cf` is the
+  synthetic body-output config over a runtime extern result.  `BodyEntryInputsAgree`,
+  `ExternCallBoundaryFR`, and `ExternCallBoundarySingle` now use these body
+  configs for body-local posts.
 
 Still true:
 
@@ -176,6 +183,14 @@ already build `ExternCallBoundaryRun` evidence from trusted registry agreement.
 The regular user-closure branches still need to be rewired so their existing
 body-post reasoning flows through the packaged app transport helpers.
 
+A second app-boundary mismatch was found and fixed: a single `callConfig` could
+not serve both as the runtime extern dispatch config and as the body-local proof
+input config.  Runtime extern dispatch must preserve the caller environment in
+the actual app output, while the boundary post must be over the closure
+environment extended with the argument.  The boundary layer now exposes
+`bodyConfig` / `bodyOutputConfig` so app transport can restore the caller
+configuration after consuming a body-local post.
+
 The target populated path is:
 
 1. Build an `ExternCallEntry` at the successful runtime extern branch.
@@ -195,6 +210,17 @@ The first transport-specific risk has been checked:
 by an `ExternCallBoundaryFR` with the packaged app transport helper.  The next
 step is to validate and use that transport shape in the regular user-closure
 branches, before the extern proof depends on it.
+
+The next concrete app blocker is branch integration, not lookup: successful
+extern branches must either fall back through the existing dirty-internal
+app-result path, or, when both runs dispatch the same trusted extern boundary,
+construct body entries, consume `callFR`, set the body eval configs to
+`entry.bodyOutputConfig cf`, and then transport to the actual app configs.
+Single-run extern branches need the analogous body-output transport.  If the
+existing normalized-member helper cannot consume an extern member result
+directly, add either a direct-member transport variant or an extern-apply
+inversion lemma that exposes the pre-normalized body result expected by the
+current helper.
 
 The remaining app-specific wrinkle is also still relevant: runtime `externFn`
 dispatch is not forced to originate from a `FnTClosure.extern` member.  It can
@@ -269,11 +295,18 @@ theorem with explicit trusted-registry assumptions.
 2. **Consume extern call boundaries in `StepFRApp`.**
 
    In successful `externFn` / `externPfn` branches, build `ExternCallEntry`,
-   prove the body entry inputs agree, construct `ExternCallBoundaryRun.fn` /
+   prove the body entry inputs agree over `entry.bodyConfig`, construct
+   `ExternCallBoundaryRun.fn` /
    `.pfn` using `ExternCallBoundaryFnStaticSource.callBoundaryRun` /
    `ExternCallBoundaryPfnStaticSource.callBoundaryRun`, consume
    `entry.spec.callSingle` / `entry.spec.callFR`, and feed the body-boundary
-   post into the transport helper from steps 1-2.
+   post over `entry.bodyOutputConfig cf` into the transport helper from steps
+   1-2.
+
+   Mixed user/extern closure branches should not use boundary evidence unless
+   both sides are successful extern dispatches for the same body member.  Reuse
+   the existing clean-sync reasoning to reduce clean mixed branches to
+   contradiction and the dirty-internal fallback to the poisoned app result.
 
    For `FnTClosure.extern` / `PFnTClosure.extern` members, resolve trusted
    entries through `TrustedRegistryAgreesWithFnTClosures` /

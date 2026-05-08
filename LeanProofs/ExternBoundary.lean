@@ -316,6 +316,17 @@ def ofRuntime
       VarEnv.update capturedEnv argName argValue :=
   rfl
 
+/-- Synthetic body-input config for a call boundary.
+
+Runtime extern dispatch happens from `callConfig`, but the body-local proof
+boundary is typed under the closure environment extended with the argument. -/
+def bodyConfig (entry : ExternCallEntry) : Config :=
+  { entry.callConfig with varEnv := entry.unifiedEnv }
+
+/-- Synthetic body-output config corresponding to a runtime extern result. -/
+def bodyOutputConfig (entry : ExternCallEntry) (cf : Config) : Config :=
+  { cf with varEnv := entry.unifiedEnv }
+
 end ExternCallEntry
 
 /-- Runtime facts for a successful impure extern dispatch. -/
@@ -395,22 +406,22 @@ structure BodyEntryInputsAgree
   wfCtx : wfTypeContext ctx
   tagBounded : TagBoundedCtx ctx
   runtime₀ :
-    runtimeInstantiatesCtx ctx entry₀.callConfig.memory entry₀.callConfig.varEnv θ₀
+    runtimeInstantiatesCtx ctx entry₀.bodyConfig.memory entry₀.bodyConfig.varEnv θ₀
   runtime₁ :
-    runtimeInstantiatesCtx ctx entry₁.callConfig.memory entry₁.callConfig.varEnv θ₁
+    runtimeInstantiatesCtx ctx entry₁.bodyConfig.memory entry₁.bodyConfig.varEnv θ₁
   regime : regimeConsistentWithCtx ctx
   consistent₀ :
     consistentWithRegime predSat ctx.regime ctx
-      entry₀.callConfig.memory entry₀.callConfig.varEnv θ₀
+      entry₀.bodyConfig.memory entry₀.bodyConfig.varEnv θ₀
   consistent₁ :
     consistentWithRegime predSat ctx.regime ctx
-      entry₁.callConfig.memory entry₁.callConfig.varEnv θ₁
+      entry₁.bodyConfig.memory entry₁.bodyConfig.varEnv θ₁
   agree :
     agreeOnClean predSat ctx.regime ctx
-      entry₀.callConfig.memory entry₀.callConfig.varEnv θ₀
-      entry₁.callConfig.memory entry₁.callConfig.varEnv θ₁
-  wfConfig₀ : wfConfig entry₀.callConfig
-  wfConfig₁ : wfConfig entry₁.callConfig
+      entry₀.bodyConfig.memory entry₀.bodyConfig.varEnv θ₀
+      entry₁.bodyConfig.memory entry₁.bodyConfig.varEnv θ₁
+  wfConfig₀ : wfConfig entry₀.bodyConfig
+  wfConfig₁ : wfConfig entry₁.bodyConfig
 
 /-- Paired extern-declaration boundary runs produce the same post as `StepFR`.
 
@@ -461,7 +472,8 @@ def ExternCallBoundaryFR
       ∀ (cf₀ cf₁ : Config) (o₀ o₁ : Value),
         ExternCallBoundaryRun d impl entry₀ res cf₀ o₀ →
         ExternCallBoundaryRun d impl entry₁ res cf₁ o₁ →
-        StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
+        StepFRPost ctx postExpr res predSat tm θ₀ θ₁
+          (entry₀.bodyOutputConfig cf₀) (entry₁.bodyOutputConfig cf₁) o₀ o₁
 
 def ExternBoundarySinglePost
     (ctx : TypeContext) (res : TypeResult)
@@ -564,14 +576,15 @@ def ExternCallBoundarySingle
     ∀ (θ : RealizationMap) (cf : Config) (o : Value),
       wfRealizationMap θ →
       wfTypeContext ctx →
-      runtimeInstantiatesCtx ctx entry.callConfig.memory entry.callConfig.varEnv θ →
+      runtimeInstantiatesCtx ctx entry.bodyConfig.memory entry.bodyConfig.varEnv θ →
       regimeConsistentWithCtx ctx →
       consistentWithRegime predSat ctx.regime ctx
-        entry.callConfig.memory entry.callConfig.varEnv θ →
-      wfConfig entry.callConfig →
+        entry.bodyConfig.memory entry.bodyConfig.varEnv θ →
+      wfConfig entry.bodyConfig →
       ExternCallBoundaryRun d impl entry res cf o →
       ctx.pc = true →
-      ExternBoundarySinglePost ctx res predSat tm θ entry.callConfig.memory cf o
+      ExternBoundarySinglePost ctx res predSat tm θ entry.bodyConfig.memory
+        (entry.bodyOutputConfig cf) o
 
 /-- Forgetful view of either declaration or call boundary runs for operational
     well-formedness consumers. -/
