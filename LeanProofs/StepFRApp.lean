@@ -4277,6 +4277,55 @@ private theorem TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
   ⟨ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry,
    ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry⟩
 
+private theorem TrustedRegistryAgreesWithProgramLocal.of_trustedRegistry
+    {tr : TrustedRegistry}
+    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
+    (hagreesExtern :
+      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls)
+    (hregularExternBody :
+      ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
+        {retSpec : ExternReturn} {effects : List Effect}
+        {capturedEnv : CapturedVarEnv},
+        FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) capturedEnv ∈ tcls →
+        ∃ entry,
+          TrustedRegistry.lookup? tr id = some entry ∧
+          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+    TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+      (registry := TrustedRegistry.toRuntimeRegistry tr) :=
+  ⟨ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
+      hagreesExtern hregularExternBody,
+   ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
+      hagreesExtern hregularExternBody⟩
+
+/-- Local trusted-registry adapter for the two pure extern parrow sides. -/
+private def TrustedRegistryAgreesWithPfnProgramLocal
+    (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+    (e1 e2 : Expr) (res : TypeResult) (tcls : List PFnTClosure)
+    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
+  ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls
+    (registry := registry) ∧
+  ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
+    (registry := registry)
+
+private theorem TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
+    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure} :
+    TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls :=
+  ⟨ExternCallBoundaryFRPfnSide0Provider.of_emptyExternRegistry,
+   ExternCallBoundaryFRPfnSide1Provider.of_emptyExternRegistry⟩
+
+private theorem TrustedRegistryAgreesWithPfnProgramLocal.of_trustedRegistry
+    {tr : TrustedRegistry}
+    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
+    (hagreesExtern :
+      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls) :
+    TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+      (registry := TrustedRegistry.toRuntimeRegistry tr) :=
+  ⟨ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry hagreesExtern,
+   ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry hagreesExtern⟩
+
 private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (masked : Tag → Prop)
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -8275,13 +8324,34 @@ lemma stepFR_app
             _hpm_e2₁ _hpm_final₁ =>
             obtain ⟨_, θ₁1, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
             rcases fnStaticSource_from_typed hv₁_typed with ⟨tenv₁, hstatic₁⟩
+            let callEntry₁ : ExternCallEntry :=
+              ExternCallEntry.ofRuntime ctxᵢ c₁₁ env₁ x₁ v₂₁
+            have hrun₁ :
+                ∃ entry : TrustedExternEntry,
+                  ExternCallBoundaryRun entry.decl entry.impl callEntry₁ res cf₁ o₁ := by
+              exact
+                ((TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
+                    (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
+                    (e1 := e1) (e2 := e2) (res := res) (tcls := tcls)).2
+                    hstatic₁)
+                  hpredlaws hExtTyping hwfTm hTmBounded
+                  μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
+                  hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR
+                  hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+                  ctxᵢ res callEntry₁ c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁
+                  retSpec₁ eff₁ tenv₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁
+                  hstatic₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁
+                  hValRet₁ (by simpa using hcfg₁) rfl rfl rfl rfl rfl
+                  (by simp [callEntry₁, ExternCallEntry.ofRuntime])
+            rcases hrun₁ with ⟨entry₁, hrun₁⟩
+            have hlookup₁ := ExternCallBoundaryRun.lookup hrun₁
             exact False.elim (by
               have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
                 simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
               have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
                 (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-              rw [hreg_c₁₁] at hGet₁
-              simp [emptyExternRegistry] at hGet₁)
+              simp [callEntry₁, ExternCallEntry.ofRuntime, hreg_c₁₁,
+                emptyExternRegistry] at hlookup₁)
         | @userPfn c₂'₁ v₂₁ c₁₁ x₁ body₁ env₁ evalCfg₁ ht₁_e2 ht₁_e1 _hNot₁ htoP₁
             ht₁_body heq_cfg₁ hpm_e2₁ hpm_final₁ =>
             have hshape₁ : AppUserOnlyShape e1 e2 cinit₁ cf₁ o₁ := by
@@ -8306,13 +8376,34 @@ lemma stepFR_app
           intro c₂'₁ c₁₁ v₂₁ o₁' ht₁_e2 ht₁_e1
           obtain ⟨θ₀1, _, hv₀_typed, _⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
           rcases fnStaticSource_from_typed hv₀_typed with ⟨tenv₀, hstatic₀⟩
+          let callEntry₀ : ExternCallEntry :=
+            ExternCallEntry.ofRuntime ctxᵢ c₁₀ env₀ x₀ v₂₀
+          have hrun₀ :
+              ∃ entry : TrustedExternEntry,
+                ExternCallBoundaryRun entry.decl entry.impl callEntry₀ res cf₀ o₀ := by
+            exact
+              ((TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
+                  (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
+                  (e1 := e1) (e2 := e2) (res := res) (tcls := tcls)).1
+                  hstatic₀)
+                hpredlaws hExtTyping hwfTm hTmBounded
+                μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
+                hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+                ctxᵢ res callEntry₀ c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀
+                retSpec₀ eff₀ tenv₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀
+                hstatic₀ ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀
+                hValRet₀ (by simpa using hcfg₀) rfl rfl rfl rfl rfl
+                (by simp [callEntry₀, ExternCallEntry.ofRuntime])
+          rcases hrun₀ with ⟨entry₀, hrun₀⟩
+          have hlookup₀ := ExternCallBoundaryRun.lookup hrun₀
           exact False.elim (by
             have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
               simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
             have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
               (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-            rw [hreg_c₁₀] at hGet₀
-            simp [emptyExternRegistry] at hGet₀)
+            simp [callEntry₀, ExternCallEntry.ofRuntime, hreg_c₁₀,
+              emptyExternRegistry] at hlookup₀)
         cases hfull₁ with
         | @userFn c₂'₁ v₂₁ c₁₁ _x₁ _body₁ _env₁ _evalCfg₁ ht₁_e2 ht₁_e1
             _hNot₁ _hpm1₁ _ht₁_body _heq_cfg₁ _hpm_e2₁ _hpm_final₁ =>
@@ -10955,13 +11046,34 @@ lemma stepFR_app
             ht₁_e2 ht₁_e1 hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁ _hpm_e2₁ _hpm_final₁ =>
             obtain ⟨_, θ₁1, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
             rcases pfnStaticSource_from_typed hv₁_typed with ⟨tenv₁, hstatic₁⟩
+            let callEntry₁ : ExternCallEntry :=
+              ExternCallEntry.ofRuntime ctxᵢ c₁₁ env₁ x₁ v₂₁
+            have hrun₁ :
+                ∃ entry : TrustedExternEntry,
+                  ExternCallBoundaryRun entry.decl entry.impl callEntry₁ res cf₁ o₁ := by
+              exact
+                ((TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
+                    (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
+                    (e1 := e1) (e2 := e2) (res := res) (tcls := tcls)).2
+                    hstatic₁)
+                  hpredlaws hExtTyping hwfTm hTmBounded
+                  μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
+                  hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR
+                  hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+                  ctxᵢ res callEntry₁ c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁
+                  retSpec₁ tenv₁ env₁ impl₁ vRaw₁ hstatic₁ ht₁_e2 ht₁_e1
+                  hGet₁ hArg₁ hImpl₁ hValRet₁ (by simpa using hcfg₁)
+                  rfl rfl rfl rfl rfl
+                  (by simp [callEntry₁, ExternCallEntry.ofRuntime])
+            rcases hrun₁ with ⟨entry₁, hrun₁⟩
+            have hlookup₁ := ExternCallBoundaryRun.lookup hrun₁
             exact False.elim (by
               have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
                 simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
               have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
                 (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-              rw [hreg_c₁₁] at hGet₁
-              simp [emptyExternRegistry] at hGet₁)
+              simp [callEntry₁, ExternCallEntry.ofRuntime, hreg_c₁₁,
+                emptyExternRegistry] at hlookup₁)
     | @externPfn c₂'₀ v₂₀ c₁₀ x₀ y₀ id₀ argTyp₀ retSpec₀ env₀ impl₀ vRaw₀
         ht₀_e2 ht₀_e1 hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀ _hpm_e2₀ _hpm_final₀ =>
         have finish_with_side1 :
@@ -10973,13 +11085,34 @@ lemma stepFR_app
           intro c₂'₁ c₁₁ v₂₁ o₁' ht₁_e2 ht₁_e1
           obtain ⟨θ₀1, _, hv₀_typed, _⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
           rcases pfnStaticSource_from_typed hv₀_typed with ⟨tenv₀, hstatic₀⟩
+          let callEntry₀ : ExternCallEntry :=
+            ExternCallEntry.ofRuntime ctxᵢ c₁₀ env₀ x₀ v₂₀
+          have hrun₀ :
+              ∃ entry : TrustedExternEntry,
+                ExternCallBoundaryRun entry.decl entry.impl callEntry₀ res cf₀ o₀ := by
+            exact
+              ((TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
+                  (ctxᵢ := ctxᵢ) (predSat := predSat) (tm := tm)
+                  (e1 := e1) (e2 := e2) (res := res) (tcls := tcls)).1
+                  hstatic₀)
+                hpredlaws hExtTyping hwfTm hTmBounded
+                μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
+                hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+                ctxᵢ res callEntry₀ c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀
+                retSpec₀ tenv₀ env₀ impl₀ vRaw₀ hstatic₀ ht₀_e2 ht₀_e1
+                hGet₀ hArg₀ hImpl₀ hValRet₀ (by simpa using hcfg₀)
+                rfl rfl rfl rfl rfl
+                (by simp [callEntry₀, ExternCallEntry.ofRuntime])
+          rcases hrun₀ with ⟨entry₀, hrun₀⟩
+          have hlookup₀ := ExternCallBoundaryRun.lookup hrun₀
           exact False.elim (by
             have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
               simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
             have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
               (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-            rw [hreg_c₁₀] at hGet₀
-            simp [emptyExternRegistry] at hGet₀)
+            simp [callEntry₀, ExternCallEntry.ofRuntime, hreg_c₁₀,
+              emptyExternRegistry] at hlookup₀)
         cases hfull₁ with
         | @userFn c₂'₁ v₂₁ c₁₁ _x₁ _body₁ _env₁ _evalCfg₁ ht₁_e2 ht₁_e1
             _hNot₁ _hpm1₁ _ht₁_body _heq_cfg₁ _hpm_e2₁ _hpm_final₁ =>

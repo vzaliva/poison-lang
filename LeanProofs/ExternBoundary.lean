@@ -371,6 +371,20 @@ inductive ExternCallBoundaryRun
       ExternCallPfnFacts d impl entry res cₒ v →
       ExternCallBoundaryRun d impl entry res cₒ v
 
+namespace ExternCallBoundaryRun
+
+theorem lookup
+    {d : ExternDeclaration} {impl : ExternImpl}
+    {entry : ExternCallEntry} {res : TypeResult}
+    {cₒ : Config} {v : Value}
+    (h : ExternCallBoundaryRun d impl entry res cₒ v) :
+    entry.callConfig.registry.get? d.id = some impl := by
+  cases h with
+  | fn hfacts => exact hfacts.lookup
+  | pfn hfacts => exact hfacts.lookup
+
+end ExternCallBoundaryRun
+
 /-- Agreement and well-formedness facts at two call-body entries. -/
 structure BodyEntryInputsAgree
     (predSat : PredSat) (ctx : TypeContext)
