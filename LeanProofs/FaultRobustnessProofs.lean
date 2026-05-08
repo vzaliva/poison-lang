@@ -1559,7 +1559,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               | succ fuel' =>
                   exact
                     stepFRSingleRunFinalCleanPcTrue_app_maskedReg
-                      masked ctxᵢ predSat tm e1 e2 fuel' res
+                      masked ctxᵢ predSat tm (registry := emptyExternRegistry)
+                      e1 e2 fuel' res
                       (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
                         predSat tm (Nat.succ (Nat.succ fuel'))
                         masked
@@ -1569,6 +1570,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
                         (fun m hm {tmᵢ} e' ctx' res' htc' =>
                           IH' m hm tmᵢ masked e' ctx' res' htc'))
+                      (fun {tcls} =>
+                        ExternCallBoundarySingleFnContract.of_emptyExternRegistry
+                          (tcls := tcls))
+                      (fun {tcls} =>
+                        ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
+                          (tcls := tcls))
                       htc
           | externVal id t p pr =>
               -- Extern declaration success is normalized to boundary-run

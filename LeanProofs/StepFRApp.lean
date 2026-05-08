@@ -279,7 +279,7 @@ private lemma join_transport_regimeConsistentWithCtx
 Runtime application dispatches by inspecting the closure body, so a successful
 `externFn` call may come either from a static `FnTClosure.extern` member or from a
 regular closure member whose body is the extern declaration expression. -/
-private inductive ExternCallBoundaryFnStaticSource
+inductive ExternCallBoundaryFnStaticSource
     (tcls : List FnTClosure)
     (id : ExternId) (x y : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (eff : List Effect)
@@ -296,7 +296,7 @@ private inductive ExternCallBoundaryFnStaticSource
 Unlike impure extern dispatch, the pure closure invariant cannot use a regular
 `Expr.externPfn` body: regular pure closures require `Expr.toPExpr? body = some ...`,
 while extern declarations are not pure expressions. -/
-private inductive ExternCallBoundaryPfnStaticSource
+inductive ExternCallBoundaryPfnStaticSource
     (tcls : List PFnTClosure)
     (id : ExternId) (x y : Name) (argTyp : Typ)
     (retSpec : ExternReturn)
@@ -3307,7 +3307,7 @@ private lemma externFnStaticSource_of_valueConsistentWithRegime
       ⟨σcap, ExternCallBoundaryFnStaticSource.externMember hmem,
         hregime, htyping, hrec⟩
 
-private theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
+theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
     {tr : TrustedRegistry} {argTyp : Typ} {tcls : List FnTClosure}
     (hagreesExtern : TrustedRegistryAgreesWithFnTClosures tr argTyp tcls)
     (hregularExternBody :
@@ -3367,7 +3367,7 @@ private theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
           ExternCallBoundaryRun.fn_of_match hmatch' hpure hunified hlookupCall himpl
             hArg hImpl hValRet hcfg⟩
 
-private theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun
+theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun
     {tr : TrustedRegistry} {argTyp : Typ} {tcls : List PFnTClosure}
     (hagreesExtern : TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls)
     {id : ExternId} {x y : Name} {retSpec : ExternReturn}
@@ -3404,7 +3404,7 @@ private theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun
     selected body/member result instead of the final surrounding `Expr.app`
     post.  App-specific transport from this body post to the outer app post is
     owned by the shared app helpers. -/
-private def ExternCallBoundarySingleFnContract
+def ExternCallBoundarySingleFnContract
     (masked : Tag → Prop)
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
     (_ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -3474,7 +3474,7 @@ private def ExternCallBoundarySingleFnContract
 /-- Empty-registry discharge for the body-local impure extern single-run
     contract.  Successful extern dispatch is impossible from the default
     initial registry. -/
-private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
+theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
     {masked : Tag → Prop}
     {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
     {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
@@ -3500,7 +3500,7 @@ private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
   rw [hreg_c₁] at hGet
   simp [emptyExternRegistry] at hGet
 
-private theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
+theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
     {tr : TrustedRegistry}
     {masked : Tag → Prop}
     {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
@@ -3589,7 +3589,7 @@ private theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
       hθBodyWf hwfCall hricCall htagRCall hcwrCall hwfcfgBody hrun' hpcCall
 
 /-- Body-local single-run contract for successful pure extern app dispatch. -/
-private def ExternCallBoundarySinglePfnContract
+def ExternCallBoundarySinglePfnContract
     (masked : Tag → Prop)
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
     (_ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -3653,7 +3653,7 @@ private def ExternCallBoundarySinglePfnContract
     ExternBoundarySinglePost bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o
 
-private theorem ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
+theorem ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
     {masked : Tag → Prop}
     {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
     {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
@@ -3675,7 +3675,7 @@ private theorem ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
   rw [hreg_c₁] at hGet
   simp [emptyExternRegistry] at hGet
 
-private theorem ExternCallBoundarySinglePfnContract.of_trustedRegistry
+theorem ExternCallBoundarySinglePfnContract.of_trustedRegistry
     {tr : TrustedRegistry}
     {masked : Tag → Prop}
     {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
@@ -5772,6 +5772,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry)
   (ctxBodyStart :
     AppClosureBodyStart CtxCons ValCons predSat tm)
   (_ctxExternBodyStart :
@@ -5801,7 +5802,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel')) masked CtxCons ValCons)
+      predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry)
+      masked CtxCons ValCons)
   (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
   (htc2' : typecheck ctxᵢ e2 fuel' = .ok result2)
   (htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1)
@@ -5811,7 +5813,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   -- See `doc/probe2-plan.md`.  Discharged at the caller via the empty-registry
   -- vacuity argument bundled in `ExternCallBoundarySingleFnContract.of_emptyExternRegistry`.
   (_extCallSpec :
-    ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls)
+    ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls
+      (registry := registry))
   (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
   (hmap :
     applyClosuresThreaded
@@ -5823,7 +5826,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (h_join : joinTypeResults ctxᵢ first rest = .ok res)
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-    masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm := by
+    masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm
+      (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
@@ -5831,7 +5835,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
   intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
-  let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
+  let cinit : Config :=
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
     e2 ctxᵢ hwfTm hTmBounded result2 htc2'
   have hIH_e2_inst := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
@@ -5868,11 +5873,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       simpa [ctxAfter] using IsCanonicalExtension.bounded hcanon2
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
-    have hreg2' : c₂'.registry = emptyExternRegistry := by
+    have hreg2' : c₂'.registry = registry := by
       simpa [cinit] using terminatesTo_preserves_registry ht_e2
     have heq_cfg2' :
-        c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      rw [← hpm2]; exact config_eq_of_registry_default c₂' hreg2'
+        c₂' =
+          { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr,
+            pureMode := pm, registry := registry } := by
+      rw [← hpm2]
+      exact config_eq_of_registry c₂' registry hreg2'
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
@@ -6030,7 +6038,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
               { memory := c₁.memory
                 varEnv := env.update x v₂
                 nextAddr := c₁.nextAddr
-                pureMode := false } := by
+                pureMode := false
+                registry := registry } := by
           have hwfcfg2 : wfConfig c₂' :=
             (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
           have hwfcfg1 : wfConfig c₁ :=
@@ -6059,9 +6068,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           singleIH fuelBody hfuel_lt body bodyCtx hTmBody hTmBoundedBody result3 htcBody'
         have hpc_body : bodyCtx.pc = true := by
           simp [bodyCtx, hpc, joinPoison]
-        -- Thread extern registry: c₂' inherits default from cinit, c₁ from c₂'.
-        have hreg_c₁ : c₁.registry = emptyExternRegistry := by
-          have h2 : c₂'.registry = emptyExternRegistry := by
+        -- Thread extern registry: c₂' inherits it from cinit, c₁ from c₂'.
+        have hreg_c₁ : c₁.registry = registry := by
+          have h2 : c₂'.registry = registry := by
             simpa [cinit] using terminatesTo_preserves_registry ht_e2
           exact (terminatesTo_preserves_registry ht_e1).trans h2
         rw [hreg_c₁] at ht_body
@@ -6366,12 +6375,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       simpa [ctxAfter] using IsCanonicalExtension.bounded hcanon2
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
-    have hreg2' : c₂'.registry = emptyExternRegistry := by
+    have hreg2' : c₂'.registry = registry := by
       simpa [cinit] using terminatesTo_preserves_registry ht_e2
     have heq_cfg2' :
-        c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
+        c₂' =
+          { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr,
+            pureMode := pm, registry := registry } := by
       rw [← hpm2]
-      exact config_eq_of_registry_default c₂' hreg2'
+      exact config_eq_of_registry c₂' registry hreg2'
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
@@ -6838,10 +6849,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
-        c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        c₂' =
+          { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr,
+            pureMode := pm, registry := registry } := by
+      have hreg2' : c₂'.registry = registry := by
         simpa [cinit] using terminatesTo_preserves_registry ht_e2
-      rw [← hpm2]; exact config_eq_of_registry_default c₂' hreg2'
+      rw [← hpm2]
+      exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -6887,11 +6901,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
-        c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        c₂' =
+          { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr,
+            pureMode := pm, registry := registry } := by
+      have hreg2' : c₂'.registry = registry := by
         simpa [cinit] using terminatesTo_preserves_registry ht_e2
       rw [← hpm2]
-      exact config_eq_of_registry_default c₂' hreg2'
+      exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -6913,6 +6929,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry)
   (ctxBodyStart :
     AppPClosureBodyStart CtxCons ValCons predSat tm)
   (_ctxExternBodyStart :
@@ -6942,14 +6959,16 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel')) masked CtxCons ValCons)
+      predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry)
+      masked CtxCons ValCons)
   (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
   (htc2' : typecheck ctxᵢ e2 fuel' = .ok result2)
   (htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1)
   (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure) (results : List TypeResult)
   (first : TypeResult) (rest : List TypeResult)
   (_extPfnSpec :
-    ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls)
+    ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls
+      (registry := registry))
   (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
   (hmap :
     applyClosuresThreaded
@@ -6961,7 +6980,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (h_join : joinTypeResults ctxᵢ first rest = .ok res)
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-    masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm := by
+    masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm
+      (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
@@ -6969,7 +6989,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
   intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
-  let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
+  let cinit : Config :=
+    { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
     e2 ctxᵢ hwfTm hTmBounded result2 htc2'
   have hIH_e2_inst := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
@@ -7007,10 +7028,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
-        c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        c₂' =
+          { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr,
+            pureMode := pm, registry := registry } := by
+      have hreg2' : c₂'.registry = registry := by
         simpa [cinit] using terminatesTo_preserves_registry ht_e2
-      rw [← hpm2]; exact config_eq_of_registry_default c₂' hreg2'
+      rw [← hpm2]
+      exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -7056,11 +7080,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
-        c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        c₂' =
+          { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr,
+            pureMode := pm, registry := registry } := by
+      have hreg2' : c₂'.registry = registry := by
         simpa [cinit] using terminatesTo_preserves_registry ht_e2
       rw [← hpm2]
-      exact config_eq_of_registry_default c₂' hreg2'
+      exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -7107,10 +7133,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
-        c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        c₂' =
+          { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr,
+            pureMode := pm, registry := registry } := by
+      have hreg2' : c₂'.registry = registry := by
         simpa [cinit] using terminatesTo_preserves_registry ht_e2
-      rw [← hpm2]; exact config_eq_of_registry_default c₂' hreg2'
+      rw [← hpm2]
+      exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -7303,15 +7332,16 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           · intro a ha
             exact hwfcfg1.1 a ha
           · simpa [VarEnv.update] using wfVarEnv.cons x v₂ env hv₂_wf henv_wf
-        -- Thread extern registry: c₁ inherits default registry.
-        have hreg_c₁_p : c₁.registry = emptyExternRegistry := by
-          have h2 : c₂'.registry = emptyExternRegistry := by
+        -- Thread extern registry: c₁ inherits it from cinit.
+        have hreg_c₁_p : c₁.registry = registry := by
+          have h2 : c₂'.registry = registry := by
             simpa [cinit] using terminatesTo_preserves_registry ht_e2
           exact (terminatesTo_preserves_registry ht_e1).trans h2
         rw [hreg_c₁_p] at ht_body
         have ht_body' : terminatesTo body
             { memory := cf.memory, varEnv := env.update x v₂,
-              nextAddr := cf.nextAddr, pureMode := true } evalCfg o := by
+              nextAddr := cf.nextAddr, pureMode := true,
+              registry := registry } evalCfg o := by
           simpa [hcf] using ht_body
         have hfuel_lt : fuelBody < Nat.succ (Nat.succ fuel') := by
           have : fuelBody < fuel' := by rw [hfuelA]; exact Nat.lt_succ_self _
@@ -7643,11 +7673,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hpm2 : c₂'.pureMode = pm := by
       simpa [cinit] using hpm_e2
     have heq_cfg2' :
-        c₂' = { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr, pureMode := pm } := by
-      have hreg2' : c₂'.registry = emptyExternRegistry := by
+        c₂' =
+          { memory := c₂'.memory, varEnv := c₂'.varEnv, nextAddr := c₂'.nextAddr,
+            pureMode := pm, registry := registry } := by
+      have hreg2' : c₂'.registry = registry := by
         simpa [cinit] using terminatesTo_preserves_registry ht_e2
       rw [← hpm2]
-      exact config_eq_of_registry_default c₂' hreg2'
+      exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -8053,6 +8085,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry)
   (ctxClosureBodyStart :
     AppClosureBodyStart CtxCons ValCons predSat tm)
   (ctxPClosureBodyStart :
@@ -8085,10 +8118,20 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel')) masked CtxCons ValCons)
+      predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry)
+      masked CtxCons ValCons)
+  (extFnSpec :
+    ∀ {tcls : List FnTClosure},
+      ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls
+        (registry := registry))
+  (extPfnSpec :
+    ∀ {tcls : List PFnTClosure},
+      ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls
+        (registry := registry))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-    masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm := by
+    masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm
+      (registry := registry) := by
   have htcApp : typecheckApp ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     rw [← typecheckExpr_app_succ ctxᵢ e1 e2 (Nat.succ fuel')]
     simpa [typecheck] using htc
@@ -8105,52 +8148,65 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
         _hnempty, _hsub, hmap, heq_results, h_join⟩ := h_arrow
       exact
         stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
-          masked CtxCons ValCons ctxᵢ predSat tm
+          masked CtxCons ValCons ctxᵢ predSat tm registry
           ctxClosureBodyStart ctxExternClosureBodyStart
           ctxMember ctxJoinMember valBodyResult valJoinMember
           ctxConsOfRegular valConsOfRegular ctxConsToRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest
-          (ExternCallBoundarySingleFnContract.of_emptyExternRegistry (tcls := tcls))
+          (extFnSpec (tcls := tcls))
           hetyp1 hmap heq_results h_join htc
   | inr h_parrow =>
       obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1,
         _hnempty, _hsub, hmap, heq_results, h_join⟩ := h_parrow
       exact
         stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
-          masked CtxCons ValCons ctxᵢ predSat tm
+          masked CtxCons ValCons ctxᵢ predSat tm registry
           ctxPClosureBodyStart ctxExternPClosureBodyStart
           ctxMember ctxJoinMember valBodyResult valJoinMember
           ctxConsOfRegular valConsOfRegular ctxConsToRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest
-          (ExternCallBoundarySinglePfnContract.of_emptyExternRegistry (tcls := tcls))
+          (extPfnSpec (tcls := tcls))
           hetyp1 hmap heq_results h_join htc
 
 lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel'))
+      predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry)
       masked
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
+  (extFnSpec :
+    ∀ {tcls : List FnTClosure},
+      ExternCallBoundarySingleFnContract masked
+        (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+        (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+        ctxᵢ res e1 e2 tcls (registry := registry))
+  (extPfnSpec :
+    ∀ {tcls : List PFnTClosure},
+      ExternCallBoundarySinglePfnContract masked
+        (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+        (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+        ctxᵢ res e1 e2 tcls (registry := registry))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.app e1 e2) res predSat tm := by
+    ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
   exact
     stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
       masked
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      ctxᵢ predSat tm
+      ctxᵢ predSat tm registry
       (stepFRApp_closureBodyStart_masked masked predSat tm)
       (stepFRApp_pClosureBodyStart_masked masked predSat tm)
       (stepFRApp_externClosureBodyStart_masked masked predSat tm)
@@ -8168,7 +8224,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
           (masked := masked) (predSat := predSat) (R := ctx.regime)
           hnone hctx)
       e1 e2 fuel' res
-      singleIH htc
+      singleIH extFnSpec extPfnSpec htc
 
 -- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 lemma stepFR_app
