@@ -137,13 +137,13 @@ Still true:
   empty-registry instance of the registry-parametric step spec; it has not yet
   been generalized to arbitrary `registry`.
 
-Latest verification after the app provider-contract reshape:
+Latest verification after threading the masked true-tag absence invariant:
 
 - `lake build LeanProofs` succeeds.
 - `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.
 - `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeded
-  at the declaration-boundary checkpoint.
-- `make test` passed at the declaration-boundary checkpoint.
+  after the masked-spine invariant was threaded through the orchestration proof.
+- `make test` passed after the masked-spine invariant change.
 - `git diff --check` is clean.
 - No new actual `sorry` or `axiom` was introduced.  Existing `sorry` warnings in
   `LeanProofs/SemanticsProperties.lean` remain pre-existing.
@@ -175,13 +175,58 @@ the existing empty-registry compatibility theorem.  The new populated-registry
 theorem will add explicit trusted-registry assumptions rather than weakening
 fault-robustness.
 
-## Current Blocker
+## Current Status
 
-The active blocker has moved from contract shape to app transport integration.
-The local extern-call contracts are now body-local, and the lookup side can
-already build `ExternCallBoundaryRun` evidence from trusted registry agreement.
-The regular user-closure branches still need to be rewired so their existing
-body-post reasoning flows through the packaged app transport helpers.
+The previous blocker in the single-run masked app spine is resolved.  A direct
+attempt to
+make `stepFRSingleRunFinalCleanPcTrue_app_*_parametric_maskedReg` arbitrary in
+`registry` had exposed a mismatch between the masked induction theorem and the
+current extern boundary API:
+
+- `StepFRSingleRunFinalCleanPcTrueMaskedRegParam` is deliberately generic over
+  `CtxCons` / `ValCons` and assumes only
+  `regimeConsistentWithCtxMasked masked ctx`.
+- `ExternBoundarySpec.callSingle` requires ordinary
+  `regimeConsistentWithCtx bodyCtx` and ordinary
+  `consistentWithRegime ... bodyCtx ...`.
+- The existing unmasking lemmas recover ordinary value/context consistency
+  from masked consistency plus
+  `∀ k, masked k → R.lookup? k = none`, but they do not recover ordinary
+  tag-env consistency.  That loss is real: a masked tag-env entry may be
+  accepted precisely because it is masked while its regime lookup is `none`.
+
+The fix is now implemented as `MaskedTagsAbsentFromTrueTagEnv`.  The masked
+single-run proof carries the invariant, and
+`regimeConsistentWithCtxMasked_unmask` combines it with masked tag-env
+consistency to recover ordinary `regimeConsistentWithCtx`.  The invariant is
+preserved through `ctxAfter`, branch tag insertion, assignment invalidation,
+join, and app body contexts.
+
+The option-2 structural check has been performed.  The current non-masked
+single-run theorem is not an independent case split: it is a wrapper around
+`TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked` with
+`masked := fun _ => False`, followed by unmasking the final post.  The app case
+is owned by the masked induction:
+
+```lean
+TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
+  -> TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked
+  -> stepFRSingleRunFinalCleanPcTrue_app_maskedReg
+  -> stepFRSingleRunFinalCleanPcTrue_app_*_parametric_maskedReg
+```
+
+Moreover, app expressions are reachable from genuinely masked recursive calls.
+For example, the masked `ite` proof calls its recursive IH under branch contexts
+such as `ctxTrue`; if that branch expression is an app, the app proof is reached
+inside the masked spine rather than at the outer false-mask wrapper.  Therefore
+successful extern-call boundary consumption cannot simply be hooked at the
+outer non-masked theorem without a much larger direct ordinary single-run
+induction.  Option 2 fails as a cheap local bridge.
+
+This was distinct from lookup.  The local extern-call contracts are already
+body-local, and the lookup side can build `ExternCallBoundaryRun` evidence from
+trusted registry agreement.  The masked single-run proof can now provide the
+ordinary tag-env consistency premise needed to call the boundary spec.
 
 A second app-boundary mismatch was found and fixed: a single `callConfig` could
 not serve both as the runtime extern dispatch config and as the body-local proof
@@ -208,19 +253,20 @@ entry.spec.callFR ... :
 The first transport-specific risk has been checked:
 `appTwoRunOutChoice_from_call_boundaryFR` composes the body-local post produced
 by an `ExternCallBoundaryFR` with the packaged app transport helper.  The next
-step is to validate and use that transport shape in the regular user-closure
-branches, before the extern proof depends on it.
+step is to finish using the provider-backed contracts in the remaining app
+extern branches and then replace the empty-registry provider at the app wrapper
+with trusted-registry providers for the populated theorem.
 
-The next concrete app blocker is branch integration, not lookup: successful
-extern branches must either fall back through the existing dirty-internal
-app-result path, or, when both runs dispatch the same trusted extern boundary,
-construct body entries, consume `callFR`, set the body eval configs to
-`entry.bodyOutputConfig cf`, and then transport to the actual app configs.
-Single-run extern branches need the analogous body-output transport.  If the
-existing normalized-member helper cannot consume an extern member result
-directly, add either a direct-member transport variant or an extern-apply
-inversion lemma that exposes the pre-normalized body result expected by the
-current helper.
+The next concrete app blocker is
+branch integration: successful extern branches must either fall back through
+the existing dirty-internal app-result path, or, when both runs dispatch the
+same trusted extern boundary, construct body entries, consume `callFR`, set the
+body eval configs to `entry.bodyOutputConfig cf`, and then transport to the
+actual app configs.  Single-run extern branches need the analogous body-output
+transport.  If the existing normalized-member helper cannot consume an extern
+member result directly, add either a direct-member transport variant or an
+extern-apply inversion lemma that exposes the pre-normalized body result
+expected by the current helper.
 
 The remaining app-specific wrinkle is also still relevant: runtime `externFn`
 dispatch is not forced to originate from a `FnTClosure.extern` member.  It can
@@ -241,12 +287,28 @@ Changing `ExternBoundarySpec.callFR` to return an outer app post is still the
 wrong direction: it would push app-specific `apply*Closure`/join/restoration
 reasoning into every concrete extern boundary.
 
-## Suggested Fixing Direction
+## Implemented Fix And Next Direction
 
-The high-risk next fix is to validate the app transport shape on regular
-user-closure branches before using it for populated extern branches.  This keeps
-transport debugging separate from trusted-registry lookup and body-entry
-agreement construction.
+Option 1 has landed: the proof spine now threads the smallest invariant needed
+to recover ordinary tag-env consistency from masked tag-env consistency at
+boundary call sites.
+
+The predicate is:
+
+```lean
+MaskedTagsAbsentFromTrueTagEnv masked ctx :=
+  ∀ k deps, masked k → ctx.tagEnv.get? k = some ⟨true, deps⟩ → False
+```
+
+Together with `regimeConsistentWithCtxMasked masked ctx`, this proves ordinary
+`regimeConsistentWithCtx ctx`: each true tag-env entry is either masked or has
+`R.lookup? k = some true`; the invariant eliminates the masked case.  The
+initial false mask satisfies the invariant, `typecheck` preservation threads it
+through `ctxAfter`, `tagEnv.insert ... false` preserves it immediately, and
+`tagEnv.insert ... true` is discharged by contradicting `hmasked_none`.
+
+The remaining work is no longer a masked-spine API problem.  It is the app
+extern provider and top-level registry wiring:
 
 1. Validate the new shape on regular user-closure branches before using it for
    extern branches.  This prevents the extern proof from debugging transport
@@ -274,7 +336,30 @@ theorem with explicit trusted-registry assumptions.
 
 ## Remaining Plan
 
-1. **Validate app transport helpers on regular branches.**
+1. **Thread the masked true-tag absence invariant.** **Done.**
+
+   `MaskedTagsAbsentFromTrueTagEnv` is added and the bridge is proved:
+
+   ```lean
+   regimeConsistentWithCtxMasked masked ctx →
+   MaskedTagsAbsentFromTrueTagEnv masked ctx →
+   regimeConsistentWithCtx ctx
+   ```
+
+   The invariant is threaded through
+   `StepFRSingleRunFinalCleanPcTrueMaskedRegParam`,
+   `StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH`, the per-operator masked
+   single-run lemmas, and the high-risk `ite`, assignment, and app body-context
+   paths.  `LeanProofs/StepFRApp.lean`,
+   `LeanProofs/FaultRobustnessProofs.lean`, and `lake build LeanProofs`
+   compile.
+
+2. **Larger ordinary-induction split.** **Not needed.**
+
+   Option 1 succeeded, so the larger ordinary single-run induction split is not
+   part of the active plan.
+
+3. **Validate app transport helpers on regular branches.**
 
    Rewire the existing regular user-closure app branches to use the new
    body-post-to-app transport shape.  Keep this step free of trusted-registry
@@ -292,7 +377,7 @@ theorem with explicit trusted-registry assumptions.
    Done when the regular branches compile through the new helper interface and
    `lake build LeanProofs` succeeds.
 
-2. **Consume extern call boundaries in `StepFRApp`.**
+4. **Consume extern call boundaries in `StepFRApp`.**
 
    In successful `externFn` / `externPfn` branches, build `ExternCallEntry`,
    prove the body entry inputs agree over `entry.bodyConfig`, construct
@@ -318,7 +403,7 @@ theorem with explicit trusted-registry assumptions.
    Done when app runtime `externFn` / `externPfn` dispatch is no longer proved
    impossible from `emptyExternRegistry`.
 
-3. **Replace declaration adapters with populated-registry consumers.**
+5. **Replace declaration adapters with populated-registry consumers.**
 
    The top-level extern expression branches already normalize successful
    declaration runs to `ExternDeclBoundaryRun`.  After the app proof is
@@ -332,7 +417,7 @@ theorem with explicit trusted-registry assumptions.
    Done when the declaration branches consume trusted boundary evidence instead
    of `.of_emptyExternRegistry` adapters.
 
-4. **Generalize the step theorem and bridge trusted agreement.**
+6. **Generalize the step theorem and bridge trusted agreement.**
 
    Generalize `TypeSystemEnforcesFaultRobustness_step` to arbitrary
    `registry`, instantiate it with `TrustedRegistry.toRuntimeRegistry tr`, and
@@ -348,7 +433,7 @@ theorem with explicit trusted-registry assumptions.
    possible, without weakening `TrustedRegistryAgreesWithProgram` into a vague
    global premise.
 
-5. **Preserve compatibility and verify.**
+7. **Preserve compatibility and verify.**
 
    Preserve `TypeSystemEnforcesFaultRobustness_emptyRegistry` as the
    compatibility corollary.  Run `lake build LeanProofs`, `make test`,
@@ -383,6 +468,10 @@ theorem with explicit trusted-registry assumptions.
   invariant.
 - Stop if a required `ExternBoundarySpec` field lacks enough payload to
   reconstruct the body post needed by the app transport helper.
+- Stop if the masked single-run theorem cannot supply ordinary
+  `regimeConsistentWithCtx` to `ExternBoundarySpec.callSingle` and the only
+  alternative is to silently assume ordinary tag-env consistency for masked
+  tags.
 - Stop if the `Expr.externFn` / `Expr.externPfn` declaration step proofs cannot
   construct `closureCapturedVarsRegime` and clean extern closure agreement from
   typing-side facts and trusted-registry lookup alone, without circular

@@ -113,7 +113,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
         hpredlaws hwfTm hTmBounded hctxAfter
         (QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType
           hnotfun (by simp [qtypGuardDesc?, hpredNo]))
-  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hcwr a pm hwfcfg ht _hpc
+  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   subst hcf
@@ -134,4 +134,5 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
       (μ := μ) (ρ := ρ) (θ := θ)
       (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry })
       (o := o) (a := a) (pm := pm)
-      hctxAfter rfl (ho ▸ hvtyp θ) hcwr hvalc hwfTm hwf hric hreg hmasked_none hwfcfg
+      hctxAfter rfl (ho ▸ hvtyp θ) hcwr hvalc hwfTm hwf hric hreg hmasked_none
+      hmasked_absent hwfcfg

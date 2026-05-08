@@ -302,7 +302,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.newRef e) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_newRef_inv' e
@@ -310,7 +310,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
   rcases hstruct with ⟨cfg', n, ht_e, ho, hmem, _hnext, hvar, _hpm⟩
   rcases
     (hIH hpredlaws hExtTyping hwfTm hTmBounded).2 μ ρ θ cfg' (Value.num n)
-      hθwf hwf hric hregCtx hmasked_none hcwr a pm hwfcfg ht_e hpc
+      hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e hpc
     with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=

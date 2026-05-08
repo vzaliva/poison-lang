@@ -525,6 +525,7 @@ theorem to_maskedRegParamPost
     (hric : runtimeInstantiatesCtx ctx μ ρ θ)
     (hreg : regimeConsistentWithCtxMasked masked ctx)
     (hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
+    (hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx)
     (hctxCons :
       consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (a : Address) (pm : Bool)
@@ -536,7 +537,7 @@ theorem to_maskedRegParamPost
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       ctx res (registry := registry) μ ρ θ cf o
-      hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg := by
+      hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg := by
   rcases h with ⟨_tm', _htag, θ', hθext, hvtyp, hric', hcwr', hvalc', hpres, hfresh⟩
   exact
     ⟨θ', hθext, hvtyp, hric', consistentWithRegime_to_masked hcwr',
@@ -631,6 +632,7 @@ def ExternDeclBoundarySingleMaskedContract
     (hric : runtimeInstantiatesCtx ctx μ ρ θ) →
     (hreg : regimeConsistentWithCtxMasked masked ctx) →
     (hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none) →
+    (hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx) →
     (hctxCons : consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ) →
     ∀ (a : Address) (pm : Bool),
       (hwfcfg :
@@ -645,7 +647,7 @@ def ExternDeclBoundarySingleMaskedContract
         (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
         (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
         ctx res (registry := registry) μ ρ θ cf o
-        hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+        hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg
 
 theorem ExternDeclBoundarySingleMaskedContract.of_emptyExternRegistry
     {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
@@ -654,7 +656,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_emptyExternRegistry
     ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm
       emptyExternRegistry d impl := by
   intro _hpredlaws _hExtTyping _hwfTm _hTmBounded μ ρ θ cf o _hθwf _hwf _hric
-    _hreg _hmasked_none _hctxCons a pm _hwfcfg hrun _hpc
+    _hreg _hmasked_none _hmasked_absent _hctxCons a pm _hwfcfg hrun _hpc
   exfalso
   have hlookup := ExternDeclBoundaryRun.lookup hrun
   simp [emptyExternRegistry] at hlookup

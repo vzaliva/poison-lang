@@ -976,6 +976,7 @@ lemma singleRunFinalCleanWitness_of_same_state_maskedReg_param
   (hric : runtimeInstantiatesCtx ctx μ ρ θ)
   (_hreg : regimeConsistentWithCtxMasked masked ctx)
   (_hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
+  (_hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx)
   (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}) :
   ∃ (θ' : RealizationMap),
     wfExtendsMap θ θ' ∧
@@ -1033,6 +1034,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
   (_hric : runtimeInstantiatesCtx ctx μ ρ θ)
   (_hreg : regimeConsistentWithCtxMasked masked ctx)
   (_hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
+  (_hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx)
   (_hctxCons : CtxCons ctx μ ρ θ)
   (_a : Address) (pm : Bool)
   (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := _a, pureMode := pm, registry := registry}) :
@@ -1114,6 +1116,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
       (hric : runtimeInstantiatesCtx ctx μ ρ θ) →
       (hreg : regimeConsistentWithCtxMasked masked ctx) →
       (hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none) →
+      (hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx) →
       (hctxCons : CtxCons ctx μ ρ θ) →
       ∀ (a : Address) (pm : Bool),
         (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}) →
@@ -1121,7 +1124,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
         ctx.pc = true →
         StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
           masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
-          hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+          hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg
 
 -- TypeSystemEnforcesFaultRobustness_impl_proof
 
@@ -7604,6 +7607,122 @@ private lemma joinTypeResults_regimeConsistentWithCtxMasked
   regimeConsistentWithCtxMasked masked (ctxAfter ctx res) := by
   exact joinTypeResults_tagEnvConsistentWithRegimeMasked' masked ctx first rest res h_join h_first h_rest
 
+private lemma MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+    {masked : Tag → Prop} {ctx₁ ctx₂ : TypeContext}
+    (htag : ctx₂.tagEnv = ctx₁.tagEnv)
+    (h : MaskedTagsAbsentFromTrueTagEnv masked ctx₁) :
+    MaskedTagsAbsentFromTrueTagEnv masked ctx₂ := by
+  intro k deps hmasked hget
+  exact h k deps hmasked (by simpa [htag] using hget)
+
+private lemma joinTypeResults_MaskedTagsAbsentFromTrueTagEnv'
+  (masked : Tag → Prop)
+  (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (h_join : joinTypeResults ctx first rest = .ok res)
+  (h_first : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx first))
+  (h_rest : ∀ r ∈ rest, MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r)) :
+  MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx res) := by
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  have h_fold_tag :
+      ∀ (rs' : List TypeResult)
+        (acc acc' : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
+        List.foldlM joinStep acc rs' = .ok acc' →
+        (∀ k deps, masked k → acc.2.2.2.2.1.get? k = some ⟨true, deps⟩ → False) →
+        (∀ r ∈ rs', MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r)) →
+        ∀ k deps, masked k → acc'.2.2.2.2.1.get? k = some ⟨true, deps⟩ → False := by
+    intro rs' acc acc' hfold hacc hrs
+    induction rs' generalizing acc with
+    | nil =>
+        simp [List.foldlM_nil, pure, Except.pure] at hfold
+        cases hfold
+        exact hacc
+    | cons x xs ih =>
+        cases hqx : x.qualType with
+        | mk resEtyp resPoison resPred =>
+            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
+            let acc1 :
+                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
+              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+                joinMemEnvsStrong acc.2.1 x.memEnv',
+                joinPoison acc.2.2.1 resPoison,
+                joinPredicates acc.2.2.2.1 resPred,
+                joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
+                joinRegimes acc.2.2.2.2.2.1 x.regime',
+                max acc.2.2.2.2.2.2.1 x.nextLoc',
+                max acc.2.2.2.2.2.2.2 x.nextTag')
+            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
+              simpa [acc1] using hfold
+            have hx :
+                MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx x) :=
+              hrs x (by simp)
+            have hx_tag :
+                ∀ k deps, masked k → x.tagEnv'.get? k = some ⟨true, deps⟩ → False := by
+              simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hx
+            have hacc1 :
+                ∀ k deps, masked k → acc1.2.2.2.2.1.get? k = some ⟨true, deps⟩ → False := by
+              simpa [acc1] using
+                (MaskedTagsAbsentFromTrueTagEnvs_join hacc hx_tag)
+            have hrs_tail :
+                ∀ r ∈ xs, MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r) := by
+              intro r hr
+              exact hrs r (by simp [hr])
+            exact ih (acc := acc1) hfold_tail hacc1 hrs_tail
+  cases hqt : first.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw, TypecheckM] at h_join
+      cases hcheck :
+          (List.foldlM
+            (fun x result =>
+              match result.qualType with
+              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+                if beqETypSignature etyp resEtyp = false then
+                  Except.error
+                    (toString "Closure alternatives produced incompatible result types: " ++
+                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
+                else Except.ok ())
+            () rest : Except String Unit) with
+      | error err =>
+          erw [hcheck] at h_join
+          simp at h_join
+      | ok _ =>
+          erw [hcheck] at h_join
+          simp at h_join
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                  first.nextLoc', first.nextTag') rest with
+          | error err =>
+              erw [hfold] at h_join
+              simp at h_join
+          | ok a =>
+              erw [hfold] at h_join
+              simp at h_join
+              subst res
+              have h_first_tag :
+                  ∀ k deps, masked k → first.tagEnv'.get? k = some ⟨true, deps⟩ → False := by
+                simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using h_first
+              have hres :=
+                h_fold_tag rest
+                  (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime',
+                    first.nextLoc', first.nextTag')
+                  a hfold h_first_tag h_rest
+              simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hres
+
 private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
     ∀ (fuel : Nat) (masked : Tag → Prop) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     regimeConsistentWithCtxMasked masked ctx →
@@ -8108,6 +8227,594 @@ lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked
     (htc : typecheck ctx e fuel = .ok res) :
     regimeConsistentWithCtxMasked masked (ctxAfter ctx res) :=
   typecheckExpr_preserves_regimeConsistentWithCtxMasked_main fuel masked ctx e res hreg htc
+
+private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
+    ∀ (fuel : Nat) (masked : Tag → Prop) (ctx : TypeContext) (e : Expr) (res : TypeResult),
+    MaskedTagsAbsentFromTrueTagEnv masked ctx →
+    (∀ k, masked k → ctx.regime.lookup? k = none) →
+    typecheck ctx e fuel = .ok res →
+    MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx res) := by
+  intro fuel
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel IH =>
+    intro masked ctx e res habsent hmasked_none htc
+    have IH' :
+        ∀ m < fuel, ∀ (masked' : Tag → Prop) (ctx' : TypeContext) (e' : Expr)
+          (res' : TypeResult),
+          MaskedTagsAbsentFromTrueTagEnv masked' ctx' →
+          (∀ k, masked' k → ctx'.regime.lookup? k = none) →
+          typecheck ctx' e' m = .ok res' →
+          MaskedTagsAbsentFromTrueTagEnv masked' (ctxAfter ctx' res') := by
+      intro m hm masked' ctx' e' res' habsent' hmasked_none' htc'
+      exact IH m hm masked' ctx' e' res' habsent' hmasked_none' htc'
+    unfold typecheck at htc
+    cases fuel with
+    | zero =>
+        unfold typecheckExpr at htc
+        simp at htc
+    | succ fuel' =>
+        unfold typecheckExpr at htc
+        cases e with
+        | num _n =>
+            unfold typecheckInt at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | bool _b =>
+            unfold typecheckBool at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | unit =>
+            unfold typecheckUnit at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | str _s =>
+            unfold typecheckString at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | var x =>
+            simp at htc
+            unfold typecheckVar at htc
+            simp only [bind, Except.bind] at htc
+            cases hlookup : ctx.varEnv.lookup x with
+            | none => simp [hlookup] at htc
+            | some qt =>
+              simp [hlookup] at htc
+              cases qt with
+              | mk etyp poison pred =>
+                simp at htc
+                cases pred with
+                | noPred =>
+                    simp [pure, Except.pure] at htc
+                    cases htc
+                    simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+                | guardOnly k =>
+                    simp at htc
+                    by_cases hfn : etyp.isFunctionType
+                    · simp [hfn] at htc
+                    · simp [hfn] at htc
+                      revert htc
+                      generalize htv : ctx.tagEnv[k]? = tv
+                      cases tv with
+                      | none =>
+                          intro htc
+                          simp at htc
+                          cases htc
+                          simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+                      | some tv =>
+                          cases tv with
+                          | mk val deps =>
+                              cases val <;> intro htc <;> simp at htc <;> cases htc <;>
+                                simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+                | guardClosure k tcls ptcls body_t =>
+                    simp at htc
+                    by_cases hfn : etyp.isFunctionType
+                    · simp [hfn] at htc
+                    · simp [hfn] at htc
+                      revert htc
+                      generalize htv : ctx.tagEnv[k]? = tv
+                      cases tv with
+                      | none =>
+                          intro htc
+                          simp at htc
+                          cases htc
+                          simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+                      | some tv =>
+                          cases tv with
+                          | mk val deps =>
+                              cases val <;> intro htc <;> simp at htc <;> cases htc <;>
+                                simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | fn _ _ _ _ =>
+            unfold typecheckFn at htc
+            simp [pure, Except.pure] at htc
+            cases htc
+            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | pfn x st1 body st2 =>
+            unfold typecheckPfn at htc
+            simp [bind, Except.bind] at htc
+            cases h_topexpr : body.toPExpr with
+            | error _ => simp [h_topexpr] at htc
+            | ok _ =>
+                simp [h_topexpr, pure, Except.pure] at htc
+                subst htc
+                simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | externVal _ _ _ =>
+            simp only [typecheckExternVal] at htc
+            simp [Bind.bind, Except.bind, pure, Except.pure] at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            cases htc
+            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | externFn id arg argTyp retSpec effects =>
+            rw [typecheckExternFn_ok_res_eq ctx id arg argTyp retSpec effects res htc]
+            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | externPfn id arg argTyp retSpec =>
+            rw [typecheckExternPfn_ok_res_eq ctx id arg argTyp retSpec res htc]
+            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | unaryop op e1 =>
+            have hstruct := typecheckUnaryOp_structure ctx op e1 fuel' res htc
+            rcases hstruct with ⟨result1, _, htc1, _, _, htag, _, _hnextTag, _hreg', _, _, _⟩
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1
+              habsent hmasked_none htc1'
+            apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+              (ctx₁ := ctxAfter ctx result1) (ctx₂ := ctxAfter ctx res)
+            · simp [ctxAfter, htag]
+            · exact hIH
+        | deref e1 =>
+            have hstruct := typecheckDeref_structure ctx e1 fuel' res htc
+            rcases hstruct with ⟨result1, htc1, _, htag, _, _hnextTag, _hreg'⟩
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1
+              habsent hmasked_none htc1'
+            apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+              (ctx₁ := ctxAfter ctx result1) (ctx₂ := ctxAfter ctx res)
+            · simp [ctxAfter, htag]
+            · exact hIH
+        | newRef e1 =>
+            have hstruct := typecheckNewRef_structure ctx e1 fuel' res htc
+            rcases hstruct with ⟨result1, _, htc1, _, _, _, _, _, _, htag, _, _hnextTag, _hreg'⟩
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH := IH' (fuel' - 1) (by omega) masked ctx e1 result1
+              habsent hmasked_none htc1'
+            apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+              (ctx₁ := ctxAfter ctx result1) (ctx₂ := ctxAfter ctx res)
+            · simp [ctxAfter, htag]
+            · exact hIH
+        | op e1 op e2 =>
+            have hstruct := typecheckOp_structure ctx e1 e2 op fuel' res htc
+            rcases hstruct with ⟨result1, result2, _, htc1, htc2, _, _, htag, _, _hnextTag, _hregime', _, _, _⟩
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1
+              habsent hmasked_none htc1'
+            have hmasked_none_mid :
+                ∀ k, masked k → (updateCtxFromResult ctx result1).regime.lookup? k = none := by
+              intro k hk
+              have hmono : Regime.monotoneStep ctx.regime result1.regime' :=
+                regime_monotone ctx e1 (fuel' - 1) result1 htc1'
+              simpa [updateCtxFromResult] using
+                masked_lookup_none_of_monotoneStep hmasked_none hmono k hk
+            have habsent_mid :
+                MaskedTagsAbsentFromTrueTagEnv masked (updateCtxFromResult ctx result1) := by
+              simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter, updateCtxFromResult] using hIH1
+            have htc2' : typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
+              simpa using htc2
+            have hIH2 := IH' (fuel' - 1) (by omega) masked
+              (updateCtxFromResult ctx result1) e2 result2
+              habsent_mid hmasked_none_mid htc2'
+            apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+              (ctx₁ := ctxAfter (updateCtxFromResult ctx result1) result2)
+              (ctx₂ := ctxAfter ctx res)
+            · simp [ctxAfter, updateCtxFromResult, htag]
+            · exact hIH2
+        | seq e1 e2 =>
+            have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
+            rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1
+              habsent hmasked_none htc1'
+            have hmasked_none_mid : ∀ k, masked k → ctx'.regime.lookup? k = none := by
+              intro k hk
+              have hmono : Regime.monotoneStep ctx.regime result1.regime' :=
+                regime_monotone ctx e1 (fuel' - 1) result1 htc1'
+              rw [hctx']
+              simpa [updateCtxFromResult] using
+                masked_lookup_none_of_monotoneStep hmasked_none hmono k hk
+            have habsent_mid : MaskedTagsAbsentFromTrueTagEnv masked ctx' := by
+              rw [hctx']
+              simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter, updateCtxFromResult] using hIH1
+            have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok res := by simpa using htc2
+            exact IH' (fuel' - 1) (by omega) masked ctx' e2 res
+              habsent_mid hmasked_none_mid htc2'
+        | vlet x e1 e2 =>
+            have hstruct := typecheckVlet_structure ctx x e1 e2 fuel' res htc
+            rcases hstruct with ⟨result1, result2, ctx', htc1, hctx', htc2, _, _, htag, _, _hnextTag, _hregime', _, _⟩
+            have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using htc1
+            have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1
+              habsent hmasked_none htc1'
+            have hmasked_none_mid : ∀ k, masked k → ctx'.regime.lookup? k = none := by
+              intro k hk
+              have hmono : Regime.monotoneStep ctx.regime result1.regime' :=
+                regime_monotone ctx e1 (fuel' - 1) result1 htc1'
+              rw [hctx']
+              simpa [updateCtxFromResult] using
+                masked_lookup_none_of_monotoneStep hmasked_none hmono k hk
+            have habsent_mid : MaskedTagsAbsentFromTrueTagEnv masked ctx' := by
+              rw [hctx']
+              simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter, updateCtxFromResult] using hIH1
+            have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok result2 := by simpa using htc2
+            have hIH2 := IH' (fuel' - 1) (by omega) masked ctx' e2 result2
+              habsent_mid hmasked_none_mid htc2'
+            apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+              (ctx₁ := ctxAfter ctx' result2) (ctx₂ := ctxAfter ctx res)
+            · simp [ctxAfter, htag]
+            · exact hIH2
+        | assign e1 e2 =>
+            unfold typecheckAssign at htc
+            cases fuel' with
+            | zero => simp at htc
+            | succ fuel'' =>
+                simp only [bind, Except.bind] at htc
+                cases h_tc1 : typecheckExpr ctx e1 fuel'' with
+                | error _ => simp [h_tc1] at htc
+                | ok result1 =>
+                    simp only [h_tc1] at htc
+                    have htc1' : typecheck ctx e1 fuel'' = .ok result1 := by simpa using h_tc1
+                    have hIH1 := IH' fuel'' (by omega) masked ctx e1 result1
+                      habsent hmasked_none htc1'
+                    cases h_qt1 : result1.qualType with
+                    | mk etyp1 p1 pred1 =>
+                        rw [h_qt1] at htc
+                        simp at htc
+                        cases etyp1 <;> simp at htc
+                        case ref ls =>
+                            let memEnv2 := result1.memEnv'
+                            let tagEnv2 := result1.tagEnv'
+                            let nextLoc2 := result1.nextLoc'
+                            let nextTag2 := result1.nextTag'
+                            let regime2 := result1.regime'
+                            let ctx2 : TypeContext :=
+                              { pc := ctx.pc, regime := regime2, memEnv := memEnv2, varEnv := ctx.varEnv,
+                                tagEnv := tagEnv2, nextLoc := nextLoc2, nextTag := nextTag2, pureCtx := ctx.pureCtx }
+                            have habsent2 : MaskedTagsAbsentFromTrueTagEnv masked ctx2 := by
+                              simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter, ctx2, tagEnv2] using hIH1
+                            have hmasked_none2 : ∀ k, masked k → ctx2.regime.lookup? k = none := by
+                              intro k hk
+                              have hmono : Regime.monotoneStep ctx.regime result1.regime' :=
+                                regime_monotone ctx e1 fuel'' result1 htc1'
+                              simpa [ctx2, regime2] using
+                                masked_lookup_none_of_monotoneStep hmasked_none hmono k hk
+                            cases h_tc2 : typecheckExpr ctx2 e2 fuel'' with
+                            | error err =>
+                                have h_tc2_explicit :
+                                    typecheckExpr
+                                      { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
+                                        varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
+                                      e2 fuel'' = .error err := by
+                                  simpa [ctx2, memEnv2, tagEnv2, nextLoc2, nextTag2, regime2] using h_tc2
+                                rw [h_tc2_explicit] at htc
+                                simp at htc
+                            | ok result2 =>
+                                have htc2' : typecheck ctx2 e2 fuel'' = .ok result2 := by simpa using h_tc2
+                                have hIH2 := IH' fuel'' (by omega) masked ctx2 e2 result2
+                                  habsent2 hmasked_none2 htc2'
+                                have h_tc2_explicit :
+                                    typecheckExpr
+                                      { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
+                                        varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx }
+                                      e2 fuel'' = .ok result2 := by
+                                  simpa [ctx2, memEnv2, tagEnv2, nextLoc2, nextTag2, regime2] using h_tc2
+                                rw [h_tc2_explicit] at htc
+                                simp at htc
+                                cases h_qt2 : result2.qualType with
+                                | mk etyp2 p2 pred2 =>
+                                    rw [h_qt2] at htc
+                                    simp at htc
+                                    by_cases h_etyp2_int : etyp2 = ETyp.int
+                                    · subst h_etyp2_int
+                                      simp at htc
+                                      cases htc
+                                      exact
+                                        MaskedTagsAbsentFromTrueTagEnv_invalidateTagDeps
+                                          (masked := masked)
+                                          (ctx := ctxAfter ctx2 result2) (ls := ls) hIH2
+                                    · simp [h_etyp2_int] at htc
+        | ite e1 e2 e3 =>
+            have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
+            rcases hstruct with h1 | h2 | hstd
+            · rcases h1 with ⟨k, deps, _, hRk, _, _, _, res2, _, htc2, _, _hmem, htag, _, _, _hregEq, _, _⟩
+              have hnotMasked : masked k → False := by
+                intro hk
+                have hnone := hmasked_none k hk
+                rw [hRk] at hnone
+                contradiction
+              have habsent_true :
+                  MaskedTagsAbsentFromTrueTagEnv masked
+                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } :=
+                MaskedTagsAbsentFromTrueTagEnv_insert_true
+                  (masked := masked) (ctx := ctx) habsent hnotMasked
+              have hmasked_none_true :
+                  ∀ t, masked t →
+                    ({ ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } : TypeContext).regime.lookup? t = none := by
+                simpa using hmasked_none
+              have htc2' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 (fuel' - 1) = .ok res2 := by
+                simpa using htc2
+              have hIH2 := IH' (fuel' - 1) (by omega) masked
+                { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 res2
+                habsent_true hmasked_none_true htc2'
+              apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+                (ctx₁ := ctxAfter { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } res2)
+                (ctx₂ := ctxAfter ctx res)
+              · simp [ctxAfter, htag]
+              · exact hIH2
+            · rcases h2 with ⟨k, deps, _, _, _, _, _, res2, res3, _, htc3, _hmem, htag, _, _, _hregEq, _, _⟩
+              have habsent_false :
+                  MaskedTagsAbsentFromTrueTagEnv masked
+                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } :=
+                MaskedTagsAbsentFromTrueTagEnv_insert_false
+                  (masked := masked) (ctx := ctx) habsent
+              let ctxF := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
+                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+              have habsent_F : MaskedTagsAbsentFromTrueTagEnv masked ctxF := by
+                simpa [ctxF, MaskedTagsAbsentFromTrueTagEnv] using habsent_false
+              have hmasked_none_F : ∀ t, masked t → ctxF.regime.lookup? t = none := by
+                simpa [ctxF] using hmasked_none
+              have htc3' : typecheck ctxF e3 (fuel' - 1) = .ok res3 := by simpa [ctxF] using htc3
+              have hIH3 := IH' (fuel' - 1) (by omega) masked ctxF e3 res3
+                habsent_F hmasked_none_F htc3'
+              apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+                (ctx₁ := ctxAfter ctxF res3) (ctx₂ := ctxAfter ctx res)
+              · simp [ctxAfter, ctxF, htag]
+              · exact hIH3
+            · obtain ⟨_hstdCase, res1, htc1, _, res2, htc2, res3, htc3,
+                _hmem, htag, _, _hnextTag, _hregEq, _, _, _⟩ := hstd
+              have htc1' : typecheck ctx e1 (fuel' - 1) = .ok res1 := by simpa using htc1
+              have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 res1
+                habsent hmasked_none htc1'
+              set ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
+                                     nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+              have habsent1 : MaskedTagsAbsentFromTrueTagEnv masked ctx' := by
+                simpa [ctx', MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hIH1
+              have hmasked_none1 : ∀ k, masked k → ctx'.regime.lookup? k = none := by
+                intro k hk
+                have hmono : Regime.monotoneStep ctx.regime res1.regime' :=
+                  regime_monotone ctx e1 (fuel' - 1) res1 htc1'
+                simpa [ctx'] using masked_lookup_none_of_monotoneStep hmasked_none hmono k hk
+              set ctx'' := { ctx' with pc := joinPoison ctx.pc res1.qualType.poison }
+              have habsent1' : MaskedTagsAbsentFromTrueTagEnv masked ctx'' := by
+                simpa [ctx'', MaskedTagsAbsentFromTrueTagEnv] using habsent1
+              have hmasked_none1' : ∀ k, masked k → ctx''.regime.lookup? k = none := by
+                simpa [ctx''] using hmasked_none1
+              have htc2' : typecheck ctx'' e2 (fuel' - 1) = .ok res2 := by simpa using htc2
+              have hIH2 := IH' (fuel' - 1) (by omega) masked ctx'' e2 res2
+                habsent1' hmasked_none1' htc2'
+              set ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+              have habsent3_in : MaskedTagsAbsentFromTrueTagEnv masked ctxForE3 := by
+                simpa [ctxForE3, MaskedTagsAbsentFromTrueTagEnv] using habsent1'
+              have hmasked_none3 : ∀ k, masked k → ctxForE3.regime.lookup? k = none := by
+                simpa [ctxForE3] using hmasked_none1'
+              have htc3' : typecheck ctxForE3 e3 (fuel' - 1) = .ok res3 := by simpa using htc3
+              have hIH3 := IH' (fuel' - 1) (by omega) masked ctxForE3 e3 res3
+                habsent3_in hmasked_none3 htc3'
+              have hIH2_tag :
+                  ∀ k deps, masked k → res2.tagEnv'.get? k = some ⟨true, deps⟩ → False := by
+                simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hIH2
+              have hIH3_tag :
+                  ∀ k deps, masked k → res3.tagEnv'.get? k = some ⟨true, deps⟩ → False := by
+                simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hIH3
+              have hjoin_abs :=
+                MaskedTagsAbsentFromTrueTagEnvs_join hIH2_tag hIH3_tag
+              simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter, htag] using hjoin_abs
+        | app e1 e2 =>
+            simp at htc
+            cases fuel' with
+            | zero => simp [typecheckApp] at htc
+            | succ fuel'' =>
+                rcases typecheckApp_arrow_structure_full ctx e1 e2 fuel'' res htc with
+                  ⟨result2, result1, etyp2, p2, pred2, _hqt2, htc2, htc1, hcases⟩
+                have hIH2 := IH' fuel'' (by omega) masked ctx e2 result2
+                  habsent hmasked_none htc2
+                have hmasked_none2 :
+                    ∀ k, masked k → (ctxAfter ctx result2).regime.lookup? k = none := by
+                  intro k hk
+                  exact masked_lookup_none_of_monotoneStep hmasked_none
+                    (regime_monotone ctx e2 fuel'' result2 htc2) k hk
+                have habsent_fun :
+                    MaskedTagsAbsentFromTrueTagEnv masked
+                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
+                        result2.nextLoc', result2.nextTag', ctx.pureCtx⟩ : TypeContext) := by
+                  simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hIH2
+                have hmasked_none_fun :
+                    ∀ k, masked k →
+                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
+                        result2.nextLoc', result2.nextTag', ctx.pureCtx⟩ : TypeContext).regime.lookup? k = none := by
+                  intro k hk
+                  simpa using hmasked_none2 k hk
+                have hIH1 := IH' fuel'' (by omega) masked _ e1 result1
+                  habsent_fun hmasked_none_fun htc1
+                have hIH1_tag :
+                    ∀ k deps, masked k → result1.tagEnv'.get? k = some ⟨true, deps⟩ → False := by
+                  simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hIH1
+                have hmasked_none1 :
+                    ∀ k, masked k → result1.regime'.lookup? k = none := by
+                  intro k hk
+                  exact masked_lookup_none_of_monotoneStep hmasked_none_fun
+                    (regime_monotone
+                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
+                        result2.nextLoc', result2.nextTag', ctx.pureCtx⟩ : TypeContext)
+                      e1 fuel'' result1 htc1) k hk
+                have h_fn_closure_absent :
+                    ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
+                      (results : List TypeResult),
+                      applyClosuresThreaded
+                        (fun tcl cursor =>
+                          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
+                        tcls (result1.nextTag', result1.nextLoc') = .ok results →
+                      ∀ r, r ∈ results → MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r) := by
+                  intro st1 st2 p p1 tcls results hthread r hr
+                  rcases applyClosuresThreaded_ok_mem_output_exists_input
+                      (applyOne := fun tcl cursor =>
+                        applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
+                      (hthread := hthread) (hmem := hr) with
+                    ⟨tcl, _htcl_mem, cursor, happly⟩
+                  cases tcl with
+                  | regular x body env =>
+                      cases fuel'' with
+                      | zero => simp [applyFnTClosureAtCursor] at happly
+                      | succ k =>
+                          simp only [applyFnTClosureAtCursor, bind, Except.bind] at happly
+                          split at happly
+                          · exact absurd happly (Except.error_ne_ok _ _)
+                          · next result3 htcBody =>
+                              cases hqt3 : result3.qualType with
+                              | mk etyp3 p3 pred3 =>
+                                simp only [hqt3] at happly
+                                split at happly
+                                · simp at happly
+                                · next _hsub =>
+                                    simp only [pure, Except.pure] at happly
+                                    cases happly
+                                    let bodyCtx : TypeContext := { ctx with
+                                      pc := joinPoison p (joinPoison p1 ctx.pc),
+                                      memEnv := result1.memEnv',
+                                      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                        ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
+                                      tagEnv := result1.tagEnv', nextTag := cursor.1,
+                                      nextLoc := cursor.2, regime := result1.regime' }
+                                    have habsent_body :
+                                        MaskedTagsAbsentFromTrueTagEnv masked bodyCtx := by
+                                      simpa [bodyCtx, MaskedTagsAbsentFromTrueTagEnv] using hIH1_tag
+                                    have hmasked_none_body :
+                                        ∀ k, masked k → bodyCtx.regime.lookup? k = none := by
+                                      intro k hk
+                                      simpa [bodyCtx] using hmasked_none1 k hk
+                                    have htcBody' : typecheck bodyCtx body k = .ok result3 := by
+                                      simpa [bodyCtx] using htcBody
+                                    have hIH_body := IH' k (by omega) masked bodyCtx body result3
+                                      habsent_body hmasked_none_body htcBody'
+                                    simpa [bodyCtx, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hIH_body
+                  | extern id x retSpec effects capturedEnv =>
+                      let rCursor : TypeResult :=
+                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                      have happly_old :
+                          applyFnTClosure (.extern id x retSpec effects capturedEnv) st1 st2 p p1
+                            etyp2 p2 pred2 ctx rCursor fuel'' = .ok r := by
+                        unfold applyFnTClosure
+                        unfold applyFnTClosureAtCursor at happly
+                        simpa [rCursor] using happly
+                      have htag := applyFnTClosure_extern_tagEnv_eq
+                        ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
+                        id x retSpec effects capturedEnv happly_old
+                      apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+                        (ctx₁ := { ctx with tagEnv := result1.tagEnv' })
+                        (ctx₂ := ctxAfter ctx r)
+                      · simp [ctxAfter, htag, rCursor]
+                      · simpa [MaskedTagsAbsentFromTrueTagEnv] using hIH1_tag
+                have h_pfn_closure_absent :
+                    ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
+                      (results : List TypeResult),
+                      applyClosuresThreaded
+                        (fun tcl cursor =>
+                          applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
+                        tcls (result1.nextTag', result1.nextLoc') = .ok results →
+                      ∀ r, r ∈ results → MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r) := by
+                  intro st1 st2 p p1 tcls results hthread r hr
+                  rcases applyClosuresThreaded_ok_mem_output_exists_input
+                      (applyOne := fun tcl cursor =>
+                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
+                      (hthread := hthread) (hmem := hr) with
+                    ⟨tcl, _htcl_mem, cursor, happly⟩
+                  cases tcl with
+                  | regular x body env =>
+                      cases fuel'' with
+                      | zero => simp [applyPFnTClosureAtCursor] at happly
+                      | succ k =>
+                          simp only [applyPFnTClosureAtCursor, bind, Except.bind] at happly
+                          split at happly
+                          · exact absurd happly (Except.error_ne_ok _ _)
+                          · next result3 htcBody =>
+                            cases hqt3 : result3.qualType with
+                            | mk etyp3 p3 pred3 =>
+                                simp only [hqt3] at happly
+                                split at happly
+                                · simp at happly
+                                · next _hsub =>
+                                    simp only [pure, Except.pure] at happly
+                                    cases happly
+                                    let bodyCtx := { ctx with
+                                      pc := joinPoison p (joinPoison ctx.pc p1),
+                                      memEnv := result1.memEnv',
+                                      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
+                                        ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
+                                      tagEnv := result1.tagEnv', nextTag := cursor.1,
+                                      pureCtx := true,
+                                      nextLoc := cursor.2, regime := result1.regime' }
+                                    have habsent_body :
+                                        MaskedTagsAbsentFromTrueTagEnv masked bodyCtx := by
+                                      simpa [bodyCtx, MaskedTagsAbsentFromTrueTagEnv] using hIH1_tag
+                                    have hmasked_none_body :
+                                        ∀ k, masked k → bodyCtx.regime.lookup? k = none := by
+                                      intro k hk
+                                      simpa [bodyCtx] using hmasked_none1 k hk
+                                    have htcBody' : typecheck bodyCtx (PExpr.toExpr body) k = .ok result3 := by
+                                      simpa [bodyCtx] using htcBody
+                                    have hIH_body := IH' k (by omega) masked bodyCtx
+                                      (PExpr.toExpr body) result3
+                                      habsent_body hmasked_none_body htcBody'
+                                    simpa [bodyCtx, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hIH_body
+                  | extern id x retSpec capturedEnv =>
+                      let rCursor : TypeResult :=
+                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                      have happly_old :
+                          applyPFnTClosure (.extern id x retSpec capturedEnv) st1 st2 p p1
+                            etyp2 p2 pred2 ctx rCursor fuel'' = .ok r := by
+                        unfold applyPFnTClosure
+                        unfold applyPFnTClosureAtCursor at happly
+                        simpa [rCursor] using happly
+                      have htag := applyPFnTClosure_extern_tagEnv_eq
+                        ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
+                        id x retSpec capturedEnv happly_old
+                      apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
+                        (ctx₁ := { ctx with tagEnv := result1.tagEnv' })
+                        (ctx₂ := ctxAfter ctx r)
+                      · simp [ctxAfter, htag, rCursor]
+                      · simpa [MaskedTagsAbsentFromTrueTagEnv] using hIH1_tag
+                rcases hcases with
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join⟩ |
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join⟩
+                · subst hresults
+                  have h_all :
+                      ∀ r, r ∈ (first :: rest) →
+                        MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r) :=
+                    h_fn_closure_absent st1 st2 p p1 tcls (first :: rest) hmap
+                  exact joinTypeResults_MaskedTagsAbsentFromTrueTagEnv' masked ctx first rest res
+                    h_join (h_all first (List.mem_cons_self ..))
+                    (fun r hr => h_all r (List.mem_cons_of_mem _ hr))
+                · subst hresults
+                  have h_all :
+                      ∀ r, r ∈ (first :: rest) →
+                        MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r) :=
+                    h_pfn_closure_absent st1 st2 p p1 tcls (first :: rest) hmap
+                  exact joinTypeResults_MaskedTagsAbsentFromTrueTagEnv' masked ctx first rest res
+                    h_join (h_all first (List.mem_cons_self ..))
+                    (fun r hr => h_all r (List.mem_cons_of_mem _ hr))
+
+lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+    (masked : Tag → Prop)
+    (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
+    (habsent : MaskedTagsAbsentFromTrueTagEnv masked ctx)
+    (hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
+    (htc : typecheck ctx e fuel = .ok res) :
+    MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx res) :=
+  typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main
+    fuel masked ctx e res habsent hmasked_none htc
 
 /-- Mix lemma: combine inVar evidence from one (σ, Γ₁) pair with inMem evidence from
     another (σ₂, Γ) pair. Works because `QTypInEnvs.inVar` only uses σ and

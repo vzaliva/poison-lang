@@ -3767,6 +3767,7 @@ private lemma appSingleRunMaskedPost_from_body_fields
     {hric_start : runtimeInstantiatesCtx ctx μ ρ θ}
     {hreg : regimeConsistentWithCtxMasked masked ctx}
     {hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none}
+    {hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx}
     {hctx_start : CtxCons ctx μ ρ θ}
     {a : Address} {pm : Bool}
     {hwfcfg : wfConfig
@@ -3811,7 +3812,7 @@ private lemma appSingleRunMaskedPost_from_body_fields
     (hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θbody) :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
       masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
-      hθwf hwf hric_start hreg hmasked_none hctx_start a pm hwfcfg := by
+      hθwf hwf hric_start hreg hmasked_none hmasked_absent hctx_start a pm hwfcfg := by
   refine ⟨θbody, wfExtendsMap_trans hθ_start_pre hθ_pre_body, ?_, ?_, ?_, ?_,
     hpres_final, hfresh_final⟩
   · have hsrc_etyp : src.qualType.etyp = result3.qualType.etyp := by
@@ -3871,6 +3872,7 @@ private lemma appSingleRunMaskedPost_from_direct_body_fields
     {hric_start : runtimeInstantiatesCtx ctx μ ρ θ}
     {hreg : regimeConsistentWithCtxMasked masked ctx}
     {hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none}
+    {hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx}
     {hctx_start : CtxCons ctx μ ρ θ}
     {a : Address} {pm : Bool}
     {hwfcfg : wfConfig
@@ -3908,7 +3910,7 @@ private lemma appSingleRunMaskedPost_from_direct_body_fields
     (hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θbody) :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
       masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
-      hθwf hwf hric_start hreg hmasked_none hctx_start a pm hwfcfg := by
+      hθwf hwf hric_start hreg hmasked_none hmasked_absent hctx_start a pm hwfcfg := by
   refine ⟨θbody, wfExtendsMap_trans hθ_start_pre hθ_pre_body, ?_, ?_, ?_, ?_,
     hpres_final, hfresh_final⟩
   · exact
@@ -3968,6 +3970,7 @@ private lemma appSingleRunMaskedPost_from_direct_boundary
     {hric_start : runtimeInstantiatesCtx ctx μ ρ θ}
     {hreg : regimeConsistentWithCtxMasked masked ctx}
     {hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none}
+    {hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx}
     {hctx_start : CtxCons ctx μ ρ θ}
     {a : Address} {pm : Bool}
     {hwfcfg : wfConfig
@@ -4008,7 +4011,7 @@ private lemma appSingleRunMaskedPost_from_direct_boundary
       ExternBoundarySinglePost bodyCtx src predSat tmBody θpre evalCfg.memory evalCfg o) :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
       masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
-      hθwf hwf hric_start hreg hmasked_none hctx_start a pm hwfcfg := by
+      hθwf hwf hric_start hreg hmasked_none hmasked_absent hctx_start a pm hwfcfg := by
   rcases hboundary with
     ⟨_tm', _htag, θbody, hθ_pre_body, hv_body, hric_body, hcwr_body,
       hval_body, hpres_body, hfresh_body⟩
@@ -4925,7 +4928,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
   let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
     e2 ctxᵢ hwfTm hTmBounded result2 htc2'
@@ -4937,7 +4940,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       ht_body heq_cfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
@@ -4954,6 +4957,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
+    have hmasked_absent2 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctxᵢ result2) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked ctxᵢ e2 fuel' result2 hmasked_absent hmasked_none htc2'
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
@@ -4971,7 +4977,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     rcases
       hIH_e1_inst.2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
         ((wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
@@ -4992,6 +4998,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := (ctxAfter ctxᵢ result2).regime) (R' := result1.regime')
           hmasked_none2 hmono1 k hk
+    have hmasked_absent1 :
+        MaskedTagsAbsentFromTrueTagEnv masked
+          (ctxAfter (ctxAfter ctxᵢ result2) result1) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked (ctxAfter ctxᵢ result2) e1 fuel' result1
+        hmasked_absent2 hmasked_none2 htc1'
     have hv₁_arrow : valueHasETyp θ1 (Value.closure x body env) (ETyp.arrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_arrow with
@@ -5109,6 +5121,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         have hmasked_none_body : ∀ k, masked k → bodyCtx.regime.lookup? k = none := by
           intro k hk
           simpa [bodyCtx, ctxAfter] using hmasked_none1 k hk
+        have hmasked_absent_body : MaskedTagsAbsentFromTrueTagEnv masked bodyCtx := by
+          simpa [bodyCtx, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hmasked_absent1
         have hwfcfg_body_init :
             wfConfig
               { memory := c₁.memory
@@ -5152,7 +5166,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         rcases
           (hSingle_body hpredlaws1 hExtTyping hTmBody hTmBoundedBody).2
             c₁.memory (env.update x v₂) θ1 evalCfg o
-            hθ1wf hwfBody hric_body htagR_body hmasked_none_body hcwr_body
+            hθ1wf hwfBody hric_body htagR_body hmasked_none_body
+            hmasked_absent_body hcwr_body
             c₁.nextAddr false hwfcfg_body_init ht_body hpc_body
           with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body⟩
         have hθext : wfExtendsMap θ θ_body :=
@@ -5423,7 +5438,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _hfresh2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
@@ -5440,6 +5455,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
+    have hmasked_absent2 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctxᵢ result2) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked ctxᵢ e2 fuel' result2 hmasked_absent hmasked_none htc2'
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
@@ -5459,7 +5477,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       hIH_e1_inst.2
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
         ((wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _hfresh1⟩
     have hv₁_arrow :
@@ -5476,7 +5494,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       _ht_body _hcf hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
@@ -5493,6 +5511,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
+    have hmasked_absent2 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctxᵢ result2) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked ctxᵢ e2 fuel' result2 hmasked_absent hmasked_none htc2'
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
@@ -5511,7 +5532,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     rcases valueHasETyp_peClosure_etyp_parrow_inv hv₁_typed with
@@ -5522,7 +5543,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       ht_e2 ht_e1 _hGet _hArg _hImpl _hValRet _hcfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
@@ -5539,6 +5560,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
+    have hmasked_absent2 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctxᵢ result2) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked ctxᵢ e2 fuel' result2 hmasked_absent hmasked_none htc2'
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
@@ -5559,7 +5583,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     rcases valueHasETyp_peClosure_etyp_parrow_inv hv₁_typed with
@@ -5620,7 +5644,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
   let cinit : Config := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
     e2 ctxᵢ hwfTm hTmBounded result2 htc2'
@@ -5632,7 +5656,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       _ht_body _heq_cfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
@@ -5649,6 +5673,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
+    have hmasked_absent2 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctxᵢ result2) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked ctxᵢ e2 fuel' result2 hmasked_absent hmasked_none htc2'
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
@@ -5667,7 +5694,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     rcases valueHasETyp_closure_etyp_arrow_inv hv₁_typed with
@@ -5678,7 +5705,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       ht_e2 ht_e1 _hpure _hGet _hArg _hImpl _hValRet _hcfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _hfresh2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
@@ -5695,6 +5722,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
+    have hmasked_absent2 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctxᵢ result2) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked ctxᵢ e2 fuel' result2 hmasked_absent hmasked_none htc2'
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
@@ -5715,7 +5745,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     rcases valueHasETyp_closure_etyp_arrow_inv hv₁_typed with
@@ -5726,7 +5756,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       ht_body hcf hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
@@ -5743,6 +5773,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
+    have hmasked_absent2 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctxᵢ result2) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked ctxᵢ e2 fuel' result2 hmasked_absent hmasked_none htc2'
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
@@ -5762,7 +5795,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     rcases
       hIH_e1_inst.2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
@@ -5783,6 +5816,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := (ctxAfter ctxᵢ result2).regime) (R' := result1.regime')
           hmasked_none2 hmono1 k hk
+    have hmasked_absent1 :
+        MaskedTagsAbsentFromTrueTagEnv masked
+          (ctxAfter (ctxAfter ctxᵢ result2) result1) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked (ctxAfter ctxᵢ result2) e1 fuel' result1
+        hmasked_absent2 hmasked_none2 htc1'
     have hv₁_parrow : valueHasETyp θ1 (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
     cases hv₁_parrow with
@@ -5914,6 +5953,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         have hmasked_none_body : ∀ k, masked k → bodyCtx.regime.lookup? k = none := by
           intro k hk
           simpa [bodyCtx, ctxAfter] using hmasked_none1 k hk
+        have hmasked_absent_body : MaskedTagsAbsentFromTrueTagEnv masked bodyCtx := by
+          simpa [bodyCtx, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hmasked_absent1
         have hwfcfg1 : wfConfig cf := by
           simpa [hcf] using (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).1
         have hwfcfg_body_init :
@@ -5962,7 +6003,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         rcases
           (hSingle_body hpredlaws1 hExtTyping hTmBody hTmBoundedBody).2
             cf.memory (env.update x v₂) θ1 evalCfg o
-            hθ1wf hwfBody hric_body htagR_body hmasked_none_body hcwr_body
+            hθ1wf hwfBody hric_body htagR_body hmasked_none_body
+            hmasked_absent_body hcwr_body
             cf.nextAddr true hwfcfg_body_init ht_body' hpc_body
           with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body⟩
         have hθext : wfExtendsMap θ θ_body :=
@@ -6250,7 +6292,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       ht_e2 ht_e1 hGet hArg hImpl hValRet hcfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg ht_e2 hpc
+        hθwf hwf hric htagR hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e2 hpc
       with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _hfresh2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
@@ -6267,6 +6309,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         masked_lookup_none_of_monotoneStep
           (R := ctxᵢ.regime) (R' := result2.regime')
           hmasked_none hmono2 k hk
+    have hmasked_absent2 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctxᵢ result2) :=
+      typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+        masked ctxᵢ e2 fuel' result2 hmasked_absent hmasked_none htc2'
     have hpc2 : (ctxAfter ctxᵢ result2).pc = true := by
       simp [ctxAfter, hpc]
     have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
@@ -6287,7 +6332,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env)
-        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hcwr2 c₂'.nextAddr pm
+        hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
         hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     have hv₁_parrow :

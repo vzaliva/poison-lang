@@ -1324,6 +1324,31 @@ def regimeConsistentWithCtxMasked
     (masked : Tag → Prop) (ctx : TypeContext) : Prop :=
   tagEnvConsistentWithRegimeMasked masked ctx.tagEnv ctx.regime
 
+def MaskedTagsAbsentFromTrueTagEnv (masked : Tag → Prop) (ctx : TypeContext) : Prop :=
+  ∀ k deps, masked k → ctx.tagEnv.get? k = some ⟨true, deps⟩ → False
+
+lemma tagEnvConsistentWithRegimeMasked_unmask
+    {masked : Tag → Prop} {tagEnv : TagEnv} {R : Regime}
+    (hreg : tagEnvConsistentWithRegimeMasked masked tagEnv R)
+    (habsent : ∀ k deps, masked k → tagEnv.get? k = some ⟨true, deps⟩ → False) :
+    tagEnvConsistentWithRegime tagEnv R := by
+  intro k deps hget
+  cases hreg k deps hget with
+  | inl hmasked => exact False.elim (habsent k deps hmasked hget)
+  | inr hlookup => exact hlookup
+
+lemma regimeConsistentWithCtxMasked_unmask
+    {masked : Tag → Prop} {ctx : TypeContext}
+    (hreg : regimeConsistentWithCtxMasked masked ctx)
+    (habsent : MaskedTagsAbsentFromTrueTagEnv masked ctx) :
+    regimeConsistentWithCtx ctx := by
+  exact tagEnvConsistentWithRegimeMasked_unmask hreg habsent
+
+lemma MaskedTagsAbsentFromTrueTagEnv_false (ctx : TypeContext) :
+    MaskedTagsAbsentFromTrueTagEnv (fun _ => False) ctx := by
+  intro k deps hmasked _hget
+  exact hmasked.elim
+
 lemma tagEnvConsistentWithRegime_to_masked
     (tagEnv : TagEnv) (R : Regime) (masked : Tag → Prop)
     (h : tagEnvConsistentWithRegime tagEnv R) :
@@ -1352,6 +1377,25 @@ lemma tagEnvConsistentWithRegimeMasked_insert_true
       exact hget
     exact h k' deps' hget'
 
+lemma MaskedTagsAbsentFromTrueTagEnv_insert_true
+    {ctx : TypeContext} {k : Tag} {deps : Deps}
+    (habsent : MaskedTagsAbsentFromTrueTagEnv masked ctx)
+    (hnotMasked : masked k → False) :
+    MaskedTagsAbsentFromTrueTagEnv masked
+      { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := by
+  intro k' deps' hmasked hget
+  by_cases hkk' : k' = k
+  · subst hkk'
+    exact hnotMasked hmasked
+  · have hcmp : compare k k' ≠ Ordering.eq := by
+      intro hce
+      have : k = k' := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : ctx.tagEnv.get? k' = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    exact habsent k' deps' hmasked hget'
+
 lemma tagEnvConsistentWithRegimeMasked_insert_false
     (k : Tag) (deps : Deps)
     (h : tagEnvConsistentWithRegimeMasked masked tagEnv R) :
@@ -1368,6 +1412,24 @@ lemma tagEnvConsistentWithRegimeMasked_insert_false
       simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
       exact hget
     exact h k' deps' hget'
+
+lemma MaskedTagsAbsentFromTrueTagEnv_insert_false
+    {ctx : TypeContext} {k : Tag} {deps : Deps}
+    (habsent : MaskedTagsAbsentFromTrueTagEnv masked ctx) :
+    MaskedTagsAbsentFromTrueTagEnv masked
+      { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } := by
+  intro k' deps' hmasked hget
+  by_cases hkk' : k' = k
+  · subst hkk'
+    simp [Std.ExtTreeMap.get?_eq_getElem?] at hget
+  · have hcmp : compare k k' ≠ Ordering.eq := by
+      intro hce
+      have : k = k' := (Nat.compare_eq_eq).1 hce
+      exact hkk' this.symm
+    have hget' : ctx.tagEnv.get? k' = some ⟨true, deps'⟩ := by
+      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
+      exact hget
+    exact habsent k' deps' hmasked hget'
 
 lemma invalidateRegimeDeps_preserves_true_masked
     (ls : LocSet)
@@ -1403,6 +1465,23 @@ lemma invalidateRegimeDeps_preserves_true_masked
         simp [Std.ExtTreeMap.get?_eq_getElem?, hcontains, hkR]
       simp [Regime.lookup?]
       exact ⟨hkR, hcontains⟩
+
+lemma MaskedTagsAbsentFromTrueTagEnv_invalidateTagDeps
+    {ctx : TypeContext} {ls : LocSet}
+    (habsent : MaskedTagsAbsentFromTrueTagEnv masked ctx) :
+    MaskedTagsAbsentFromTrueTagEnv masked
+      { ctx with tagEnv := invalidateTagDeps ctx.tagEnv ls } := by
+  intro k deps hmasked hget
+  have hkeep : ctx.tagEnv.get? k = some ⟨true, deps⟩ := by
+    unfold invalidateTagDeps at hget
+    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter'] at hget
+    cases h0 : ctx.tagEnv.get? k
+    · rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
+      simp at hget
+    · rw [← Std.ExtTreeMap.get?_eq_getElem?, h0] at hget
+      simp at hget
+      rw [hget.1]
+  exact habsent k deps hmasked hkeep
 
 end TagEnvConsistentWithRegimeMasked
 
@@ -1611,6 +1690,17 @@ lemma tagEnvConsistentWithRegimeMasked_join
           exact Or.inl hmasked
       | inr hlookup₂ =>
           exact Or.inr (joinRegimes_lookup_true_of_both_true R₁ R₂ k hlookup₁ hlookup₂)
+
+lemma MaskedTagsAbsentFromTrueTagEnvs_join
+    {masked : Tag → Prop} {tagEnv₁ tagEnv₂ : TagEnv}
+    (h₁ : ∀ k deps, masked k → tagEnv₁.get? k = some ⟨true, deps⟩ → False)
+    (_h₂ : ∀ k deps, masked k → tagEnv₂.get? k = some ⟨true, deps⟩ → False) :
+    ∀ k deps, masked k →
+      (joinTagEnvs tagEnv₁ tagEnv₂).get? k = some ⟨true, deps⟩ → False := by
+  intro k deps hmasked hget
+  rcases joinTagEnvs_lookup_true_elim tagEnv₁ tagEnv₂ k deps hget with
+    ⟨deps₁, _deps₂, hget₁, _hget₂⟩
+  exact h₁ k deps₁ hmasked hget₁
 
 lemma masked_lookup_none_of_monotoneStep
     {masked : Tag → Prop} {R R' : Regime}

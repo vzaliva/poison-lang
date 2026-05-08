@@ -87,7 +87,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctx
         (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hctxCons a pm hwfcfg ht hpc
   have hstruct := terminatesTo_seq_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
@@ -104,7 +104,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved e1 _ cfg1 v1 ht_e1 hwfcfg).1
   rcases
     hIH1Inst.2 μ ρ θ cfg1 v1
-      hθwf hwf hric hregCtx hmasked_none hctxCons a pm hwfcfg ht_e1 hpc
+      hθwf hwf hric hregCtx hmasked_none hmasked_absent hctxCons a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm1 ctx' := by
@@ -129,6 +129,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   have hmasked_none1' : ∀ k, masked k → ctx'.regime.lookup? k = none := by
     intro k hk
     simpa [hctx', updateCtxFromResult, ctxAfter] using hmasked_none1 k hk
+  have hmasked_absent1 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx res1) :=
+    typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
+      masked ctx e1 fuel' res1 hmasked_absent hmasked_none htc1'
+  have hmasked_absent1' : MaskedTagsAbsentFromTrueTagEnv masked ctx' := by
+    simpa [hctx', updateCtxFromResult, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using
+      hmasked_absent1
   have hctxCons1' :
       consistentWithRegimeMasked masked predSat ctx'.regime ctx' cfg1.memory cfg1.varEnv θ1 := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using hctxCons1
@@ -147,7 +153,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     rw [← hcfg1_eq]; exact ht_e2
   rcases
     (hIH2 hpredlaws1 hExtTyping hwfTm' hTmBounded').2 cfg1.memory cfg1.varEnv θ1 cf o
-      hθ1wf hwf1' hric1' hreg1' hmasked_none1' hctxCons1'
+      hθ1wf hwf1' hric1' hreg1' hmasked_none1' hmasked_absent1' hctxCons1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1' ht_e2' hpc1
     with ⟨θ2, hθext2, hv2, hric2, hctxCons2, hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
