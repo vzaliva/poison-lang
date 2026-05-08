@@ -274,6 +274,110 @@ private lemma join_transport_regimeConsistentWithCtx
   simp only [regimeConsistentWithCtx, ctxAfter]
   exact h_tag_join
 
+/-- Static provenance for a runtime impure extern dispatch from an arrow closure list.
+
+Runtime application dispatches by inspecting the closure body, so a successful
+`externFn` call may come either from a static `FnTClosure.extern` member or from a
+regular closure member whose body is the extern declaration expression. -/
+private inductive ExternCallBoundaryFnStaticSource
+    (tcls : List FnTClosure)
+    (id : ExternId) (x y : Name) (argTyp : Typ)
+    (retSpec : ExternReturn) (eff : List Effect)
+    (tenv : CapturedVarEnv) : Prop where
+  | externMember :
+      FnTClosure.extern id x retSpec eff tenv ∈ tcls →
+      ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec eff tenv
+  | regularExternBody :
+      FnTClosure.regular x (Expr.externFn id y argTyp retSpec eff) tenv ∈ tcls →
+      ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec eff tenv
+
+/-- Static provenance for runtime pure extern dispatch from a parrow closure list.
+
+Unlike impure extern dispatch, the pure closure invariant cannot use a regular
+`Expr.externPfn` body: regular pure closures require `Expr.toPExpr? body = some ...`,
+while extern declarations are not pure expressions. -/
+private inductive ExternCallBoundaryPfnStaticSource
+    (tcls : List PFnTClosure)
+    (id : ExternId) (x y : Name) (argTyp : Typ)
+    (retSpec : ExternReturn)
+    (tenv : CapturedVarEnv) : Prop where
+  | externMember :
+      PFnTClosure.extern id x retSpec tenv ∈ tcls →
+      ExternCallBoundaryPfnStaticSource tcls id x y argTyp retSpec tenv
+
+private def AppExternClosureBodyStart
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  ∀ (ctx : TypeContext) (result2 result1 : TypeResult)
+      (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
+      (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
+      (x y : Name) (id : ExternId) (argTyp : Typ)
+      (retSpec : ExternReturn) (effects : List Effect)
+      (ρpre ρcap : VarEnv)
+    (μ_arg μ : Memory) (θ_arg θ : RealizationMap) (vArg : Value),
+    PredSatLaws predSat tm →
+    result2.qualType = ⟨etyp2, p2, pred2⟩ →
+    result1.qualType.etyp = ETyp.arrow st1 st2 p tcls →
+    Regime.monotoneStep (ctxAfter ctx result2).regime result1.regime' →
+    wfExtendsMap θ_arg θ →
+    CtxCons (ctxAfter (ctxAfter ctx result2) result1) μ ρpre θ →
+      ValCons (ctxAfter ctx result2).regime result2.qualType μ_arg θ_arg vArg →
+      ValCons (ctxAfter (ctxAfter ctx result2) result1).regime result1.qualType μ θ
+        (Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap) →
+      ∃ σcap,
+      ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec effects σcap ∧
+      capturedVarsTypingProperty θ σcap ρcap ∧
+        ∀ cursor : Tag × Loc,
+        let bodyCtx : TypeContext :=
+          { ctx with
+            pc := joinPoison p (joinPoison p1 ctx.pc)
+            memEnv := result1.memEnv'
+            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+            tagEnv := result1.tagEnv'
+            nextTag := cursor.1
+            nextLoc := cursor.2
+            regime := result1.regime' }
+      CtxCons bodyCtx μ (ρcap.update x vArg) θ
+
+private def AppExternPClosureBodyStart
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  ∀ (ctx : TypeContext) (result2 result1 : TypeResult)
+      (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
+      (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
+      (x y : Name) (id : ExternId) (argTyp : Typ)
+      (retSpec : ExternReturn)
+      (ρpre ρcap : VarEnv)
+    (μ_arg μ : Memory) (θ_arg θ : RealizationMap) (vArg : Value),
+    PredSatLaws predSat tm →
+    result2.qualType = ⟨etyp2, p2, pred2⟩ →
+    result1.qualType.etyp = ETyp.parrow st1 st2 p tcls →
+    Regime.monotoneStep (ctxAfter ctx result2).regime result1.regime' →
+    wfExtendsMap θ_arg θ →
+    CtxCons (ctxAfter (ctxAfter ctx result2) result1) μ ρpre θ →
+      ValCons (ctxAfter ctx result2).regime result2.qualType μ_arg θ_arg vArg →
+      ValCons (ctxAfter (ctxAfter ctx result2) result1).regime result1.qualType μ θ
+        (Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap) →
+      ∃ σcap,
+      ExternCallBoundaryPfnStaticSource tcls id x y argTyp retSpec σcap ∧
+      capturedVarsTypingProperty θ σcap ρcap ∧
+        ∀ cursor : Tag × Loc,
+        let bodyCtx : TypeContext :=
+          { ctx with
+            pc := joinPoison p (joinPoison ctx.pc p1)
+            memEnv := result1.memEnv'
+            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+            tagEnv := result1.tagEnv'
+            pureCtx := true
+            nextTag := cursor.1
+            nextLoc := cursor.2
+            regime := result1.regime' }
+      CtxCons bodyCtx μ (ρcap.update x vArg) θ
+
 private lemma runtimeInstantiatesCtx_of_closure_env
   (ctx : TypeContext) (res2 res1 : TypeResult) (μ : Memory) (env₀ ρ : VarEnv) (θ : RealizationMap)
   (h_mem_eq : res2.memEnv' = res1.memEnv')
@@ -611,6 +715,193 @@ private lemma consistentWithRegimeMasked_app_arrow_body_start
     | peClosure_extern _ _ _ _ _ _ _ _ _ hveq _ _ _ _ =>
         exact absurd hveq (by simp)
 
+private lemma consistentWithRegimeMasked_app_arrow_extern_body_start
+  (masked : Tag → Prop)
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (result2 result1 : TypeResult)
+  (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
+  (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
+  (x y : Name) (id : ExternId) (argTyp : Typ)
+  (retSpec : ExternReturn) (effects : List Effect)
+  (ρpre ρcap : VarEnv)
+  (μ_arg μ : Memory) (θ_arg θ : RealizationMap) (vArg : Value)
+  (hpredlaws : PredSatLaws predSat tm)
+  (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
+  (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+  (hmono1 : Regime.monotoneStep (ctxAfter ctx result2).regime result1.regime')
+  (hθext : wfExtendsMap θ_arg θ)
+  (hcwr :
+    consistentWithRegimeMasked masked predSat (ctxAfter (ctxAfter ctx result2) result1).regime
+      (ctxAfter (ctxAfter ctx result2) result1) μ ρpre θ)
+    (hval_arg :
+      valueConsistentWithRegimeMasked masked predSat (ctxAfter ctx result2).regime
+        result2.qualType μ_arg θ_arg vArg)
+    (hval_fun :
+      valueConsistentWithRegimeMasked masked predSat
+        (ctxAfter (ctxAfter ctx result2) result1).regime result1.qualType μ θ
+        (Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap)) :
+  ∃ σcap,
+    ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec effects σcap ∧
+    capturedVarsTypingProperty θ σcap ρcap ∧
+    ∀ cursor : Tag × Loc,
+      let bodyCtx : TypeContext :=
+        { ctx with
+          pc := joinPoison p (joinPoison p1 ctx.pc)
+          memEnv := result1.memEnv'
+          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+            ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+          tagEnv := result1.tagEnv'
+          nextTag := cursor.1
+          nextLoc := cursor.2
+          regime := result1.regime' }
+      consistentWithRegimeMasked masked predSat bodyCtx.regime bodyCtx μ
+        (ρcap.update x vArg) θ := by
+  cases valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_fun with
+  | nonClosure hnotclo _ =>
+      exact absurd rfl (hnotclo x (Expr.externFn id y argTyp retSpec effects) ρcap)
+  | closure xp bp rp σ s1 s2 pp tcl hval hteq hmem hP hrec =>
+      rw [Value.closure.injEq] at hval
+      obtain ⟨rfl, hbody, rfl⟩ := hval
+      cases hbody
+      have htcl_eq : ETyp.arrow s1 s2 pp tcl = ETyp.arrow st1 st2 p tcls :=
+        hteq.symm.trans hetyp1
+      rw [ETyp.arrow.injEq] at htcl_eq
+      obtain ⟨rfl, rfl, rfl, rfl⟩ := htcl_eq
+      have hvars_arg :
+          ∀ k,
+            qtypGuardTag ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ = some k →
+            result1.regime'.lookup? k ≠ none →
+            masked k ∨ varsRegime predSat result1.regime' μ
+              (ρcap.update x vArg) (x, ⟨etyp2, joinPoison ctx.pc p2, pred2⟩) := by
+        intro k hguard hRdef
+        have hval_arg_e2 :
+            valueConsistentWithRegimeMasked masked predSat (ctxAfter ctx result2).regime
+              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ μ_arg θ_arg vArg :=
+          valueConsistentWithRegimeMasked_transport_pred
+            (masked := masked) (predSat := predSat) (R := (ctxAfter ctx result2).regime)
+            (qt := result2.qualType)
+            (qt' := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+            (μ := μ_arg) (θ := θ_arg) (v := vArg)
+            (by simp [hqt2]) (hetyp := by simp [hqt2]) hval_arg
+        have hval_arg_e1 :=
+          valueConsistentWithRegimeMasked_monotone hmono1 hval_arg_e2
+        have hvars_or :=
+          varsRegime_of_valueConsistentWithRegimeMasked_active
+            (masked := masked) (predSat := predSat) (R := result1.regime')
+            (μ := μ_arg) (θ := θ_arg) (ρ := ρcap.update x vArg)
+            (x := x) (qt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+            (v := vArg) (k := k)
+            (by simp [VarEnv.update, VarEnv.lookup])
+            hguard hRdef hval_arg_e1
+        cases hvars_or with
+        | inl hmasked =>
+            exact Or.inl hmasked
+        | inr hvars =>
+            exact Or.inr <|
+              varsRegime_transport_predHolds
+                (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ μ_arg μ)
+                hvars
+      have harg_cvcr :
+          closureCapturedVarsRegimeMasked masked predSat result1.regime'
+            ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ μ θ vArg :=
+        closureCapturedVarsRegimeMasked_transport_μ_θ
+          (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ μ_arg μ)
+          hθext.1
+          (closureCapturedVarsRegimeMasked_monotone hmono1
+            (closureCapturedVarsRegimeMasked_transport_etyp (by simp [hqt2])
+              (valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_arg)))
+      have hσcap_rec :
+          ∀ z qt v,
+            σ.lookup z = some qt →
+            ρcap.lookup z = some v →
+            closureCapturedVarsRegimeMasked masked predSat result1.regime' qt μ θ v := by
+        intro z qt v hz hv
+        exact hrec z qt v hz hv
+      refine ⟨σ, ExternCallBoundaryFnStaticSource.regularExternBody hmem, hP.2, ?_⟩
+      intro cursor
+      simpa using
+        consistentWithRegimeMasked_app_closure_body_start
+          (masked := masked) (predSat := predSat)
+          (ctx := ctx) (result2 := result2) (result1 := result1)
+          (σcap := σ) (x := x)
+          (argQt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+          (μ := μ) (θ := θ) (ρpre := ρpre) (ρcap := ρcap)
+          (vArg := vArg) (cursor := cursor) hcwr hP.1 hσcap_rec hvars_arg harg_cvcr
+  | peClosure _ _ _ _ _ _ _ _ _ hveq _ _ _ _ _ =>
+      exact absurd hveq (by simp)
+  | closure_extern id' xp y' argTyp' retSpec' effects' rp σ pp tcl hval hteq hmem hP hrec =>
+      rw [Value.closure.injEq] at hval
+      obtain ⟨rfl, hbody, rfl⟩ := hval
+      cases hbody
+      have htcl_eq :
+          ETyp.arrow argTyp (parseReturnType retSpec) pp tcl =
+            ETyp.arrow st1 st2 p tcls :=
+        hteq.symm.trans hetyp1
+      rw [ETyp.arrow.injEq] at htcl_eq
+      obtain ⟨_harg, _hret, rfl, rfl⟩ := htcl_eq
+      have hvars_arg :
+          ∀ k,
+            qtypGuardTag ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ = some k →
+            result1.regime'.lookup? k ≠ none →
+            masked k ∨ varsRegime predSat result1.regime' μ
+              (ρcap.update x vArg) (x, ⟨etyp2, joinPoison ctx.pc p2, pred2⟩) := by
+        intro k hguard hRdef
+        have hval_arg_e2 :
+            valueConsistentWithRegimeMasked masked predSat (ctxAfter ctx result2).regime
+              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ μ_arg θ_arg vArg :=
+          valueConsistentWithRegimeMasked_transport_pred
+            (masked := masked) (predSat := predSat) (R := (ctxAfter ctx result2).regime)
+            (qt := result2.qualType)
+            (qt' := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+            (μ := μ_arg) (θ := θ_arg) (v := vArg)
+            (by simp [hqt2]) (hetyp := by simp [hqt2]) hval_arg
+        have hval_arg_e1 :=
+          valueConsistentWithRegimeMasked_monotone hmono1 hval_arg_e2
+        have hvars_or :=
+          varsRegime_of_valueConsistentWithRegimeMasked_active
+            (masked := masked) (predSat := predSat) (R := result1.regime')
+            (μ := μ_arg) (θ := θ_arg) (ρ := ρcap.update x vArg)
+            (x := x) (qt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+            (v := vArg) (k := k)
+            (by simp [VarEnv.update, VarEnv.lookup])
+            hguard hRdef hval_arg_e1
+        cases hvars_or with
+        | inl hmasked =>
+            exact Or.inl hmasked
+        | inr hvars =>
+            exact Or.inr <|
+              varsRegime_transport_predHolds
+                (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ μ_arg μ)
+                hvars
+      have harg_cvcr :
+          closureCapturedVarsRegimeMasked masked predSat result1.regime'
+            ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ μ θ vArg :=
+        closureCapturedVarsRegimeMasked_transport_μ_θ
+          (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ μ_arg μ)
+          hθext.1
+          (closureCapturedVarsRegimeMasked_monotone hmono1
+            (closureCapturedVarsRegimeMasked_transport_etyp (by simp [hqt2])
+              (valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_arg)))
+      have hσcap_rec :
+          ∀ z qt v,
+            σ.lookup z = some qt →
+            ρcap.lookup z = some v →
+            closureCapturedVarsRegimeMasked masked predSat result1.regime' qt μ θ v := by
+        intro z qt v hz hv
+        exact hrec z qt v hz hv
+      refine ⟨σ, ExternCallBoundaryFnStaticSource.externMember hmem, hP.2, ?_⟩
+      intro cursor
+      simpa using
+        consistentWithRegimeMasked_app_closure_body_start
+          (masked := masked) (predSat := predSat)
+          (ctx := ctx) (result2 := result2) (result1 := result1)
+          (σcap := σ) (x := x)
+          (argQt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+          (μ := μ) (θ := θ) (ρpre := ρpre) (ρcap := ρcap)
+          (vArg := vArg) (cursor := cursor) hcwr hP.1 hσcap_rec hvars_arg harg_cvcr
+  | peClosure_extern _ _ _ _ _ _ _ _ _ hveq _ _ _ _ =>
+      exact absurd hveq (by simp)
+
 private lemma consistentWithRegimeMasked_app_parrow_body_start
   (masked : Tag → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -733,6 +1024,130 @@ private lemma consistentWithRegimeMasked_app_parrow_body_start
         obtain ⟨_hxp, hbody, _hrp⟩ := hval
         subst hbody
         exact absurd (by simp [Expr.toPExpr?]) htoPExpr_body
+
+private lemma consistentWithRegimeMasked_app_parrow_extern_body_start
+  (masked : Tag → Prop)
+  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (result2 result1 : TypeResult)
+  (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
+  (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
+  (x y : Name) (id : ExternId) (argTyp : Typ) (retSpec : ExternReturn)
+  (ρpre ρcap : VarEnv)
+  (μ_arg μ : Memory) (θ_arg θ : RealizationMap) (vArg : Value)
+  (hpredlaws : PredSatLaws predSat tm)
+  (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
+  (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+  (hmono1 : Regime.monotoneStep (ctxAfter ctx result2).regime result1.regime')
+  (hθext : wfExtendsMap θ_arg θ)
+  (hcwr :
+    consistentWithRegimeMasked masked predSat (ctxAfter (ctxAfter ctx result2) result1).regime
+      (ctxAfter (ctxAfter ctx result2) result1) μ ρpre θ)
+    (hval_arg :
+      valueConsistentWithRegimeMasked masked predSat (ctxAfter ctx result2).regime
+        result2.qualType μ_arg θ_arg vArg)
+    (hval_fun :
+      valueConsistentWithRegimeMasked masked predSat
+        (ctxAfter (ctxAfter ctx result2) result1).regime result1.qualType μ θ
+        (Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap)) :
+  ∃ σcap,
+    ExternCallBoundaryPfnStaticSource tcls id x y argTyp retSpec σcap ∧
+    capturedVarsTypingProperty θ σcap ρcap ∧
+    ∀ cursor : Tag × Loc,
+      let bodyCtx : TypeContext :=
+        { ctx with
+          pc := joinPoison p (joinPoison ctx.pc p1)
+          memEnv := result1.memEnv'
+          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+            ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+          tagEnv := result1.tagEnv'
+          pureCtx := true
+          nextTag := cursor.1
+          nextLoc := cursor.2
+          regime := result1.regime' }
+      consistentWithRegimeMasked masked predSat bodyCtx.regime bodyCtx μ
+        (ρcap.update x vArg) θ := by
+  cases valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_fun with
+  | nonClosure _ hnotpe =>
+      exact absurd rfl (hnotpe x (Expr.externPfn id y argTyp retSpec) ρcap)
+  | closure _ _ _ _ _ _ _ _ hveq _ _ _ _ =>
+      exact Value.noConfusion hveq
+  | closure_extern _ _ _ _ _ _ _ _ _ _ hveq _ _ _ =>
+      exact Value.noConfusion hveq
+  | peClosure xp bp pbody rp σ s1 s2 pp tcl hval _hteq hpure _hmem _hP _hrec =>
+      rw [Value.peClosure.injEq] at hval
+      obtain ⟨_hx, hbody, _hrp⟩ := hval
+      cases hbody
+      simp [Expr.toPExpr?] at hpure
+  | peClosure_extern id' xp y' argTyp' retSpec' rp σ pp tcl hval hteq hmem hP hrec =>
+      rw [Value.peClosure.injEq] at hval
+      obtain ⟨rfl, hbody, rfl⟩ := hval
+      cases hbody
+      have htcl_eq :
+          ETyp.parrow argTyp (parseReturnType retSpec) pp tcl =
+            ETyp.parrow st1 st2 p tcls :=
+        hteq.symm.trans hetyp1
+      rw [ETyp.parrow.injEq] at htcl_eq
+      obtain ⟨_harg, _hret, rfl, rfl⟩ := htcl_eq
+      have hvars_arg :
+          ∀ k,
+            qtypGuardTag ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ = some k →
+            result1.regime'.lookup? k ≠ none →
+            masked k ∨ varsRegime predSat result1.regime' μ
+              (ρcap.update x vArg) (x, ⟨etyp2, joinPoison ctx.pc p2, pred2⟩) := by
+        intro k hguard hRdef
+        have hval_arg_e2 :
+            valueConsistentWithRegimeMasked masked predSat (ctxAfter ctx result2).regime
+              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ μ_arg θ_arg vArg :=
+          valueConsistentWithRegimeMasked_transport_pred
+            (masked := masked) (predSat := predSat) (R := (ctxAfter ctx result2).regime)
+            (qt := result2.qualType)
+            (qt' := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+            (μ := μ_arg) (θ := θ_arg) (v := vArg)
+            (by simp [hqt2]) (hetyp := by simp [hqt2]) hval_arg
+        have hval_arg_e1 :=
+          valueConsistentWithRegimeMasked_monotone hmono1 hval_arg_e2
+        have hvars_or :=
+          varsRegime_of_valueConsistentWithRegimeMasked_active
+            (masked := masked) (predSat := predSat) (R := result1.regime')
+            (μ := μ_arg) (θ := θ_arg) (ρ := ρcap.update x vArg)
+            (x := x) (qt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+            (v := vArg) (k := k)
+            (by simp [VarEnv.update, VarEnv.lookup])
+            hguard hRdef hval_arg_e1
+        cases hvars_or with
+        | inl hmasked =>
+            exact Or.inl hmasked
+        | inr hvars =>
+            exact Or.inr <|
+              varsRegime_transport_predHolds
+                (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ μ_arg μ)
+                hvars
+      have harg_cvcr :
+          closureCapturedVarsRegimeMasked masked predSat result1.regime'
+            ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ μ θ vArg :=
+        closureCapturedVarsRegimeMasked_transport_μ_θ
+          (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ μ_arg μ)
+          hθext.1
+          (closureCapturedVarsRegimeMasked_monotone hmono1
+            (closureCapturedVarsRegimeMasked_transport_etyp (by simp [hqt2])
+              (valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_arg)))
+      have hσcap_rec :
+          ∀ z qt v,
+            σ.lookup z = some qt →
+            ρcap.lookup z = some v →
+            closureCapturedVarsRegimeMasked masked predSat result1.regime' qt μ θ v := by
+        intro z qt v hz hv
+        exact hrec z qt v hz hv
+      refine ⟨σ, ExternCallBoundaryPfnStaticSource.externMember hmem, hP.2, ?_⟩
+      intro cursor
+      simpa using
+        consistentWithRegimeMasked_app_closure_body_start
+          (masked := masked) (predSat := predSat)
+          (ctx := ctx) (result2 := result2) (result1 := result1)
+          (σcap := σ) (x := x)
+          (argQt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
+          (μ := μ) (θ := θ) (ρpre := ρpre) (ρcap := ρcap)
+          (vArg := vArg) (cursor := cursor) hcwr hP.1 hσcap_rec hvars_arg harg_cvcr
 
 -- Inversion for regular closures: from
 -- `applyFnTClosure (FnTClosure.regular x body tenv) ... fuel = .ok first`,
@@ -2515,6 +2930,18 @@ private def StepFRAppPClosureBodyStart
   (predSat : PredSat) (tm : TagMeaning) : Prop :=
   AppPClosureBodyStart CtxCons ValCons predSat tm
 
+private def StepFRAppExternClosureBodyStart
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  AppExternClosureBodyStart CtxCons ValCons predSat tm
+
+private def StepFRAppExternPClosureBodyStart
+  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  AppExternPClosureBodyStart CtxCons ValCons predSat tm
+
 private def StepFRAppMemberCtxCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (predSat : PredSat) : Prop :=
@@ -2549,6 +2976,25 @@ private theorem stepFRApp_closureBodyStart_masked
   intro cursor
   simpa [consistentWithRegimeMasked] using hbodyCtx cursor
 
+private theorem stepFRApp_externClosureBodyStart_masked
+  (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
+  StepFRAppExternClosureBodyStart
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    predSat tm := by
+  intro ctx result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls x y id argTyp retSpec effects
+    ρpre ρcap μ_arg μ θ_arg θ vArg hpredlaws hqt2 hetyp1 hmono hθext hctxCons
+    hvalArg hvalClosure
+  rcases
+    consistentWithRegimeMasked_app_arrow_extern_body_start
+      masked ctx predSat tm result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls
+      x y id argTyp retSpec effects ρpre ρcap μ_arg μ θ_arg θ vArg
+      hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure with
+    ⟨σcap, hsource, htyping, hbodyCtx⟩
+  refine ⟨σcap, hsource, htyping, ?_⟩
+  intro cursor
+  simpa [consistentWithRegimeMasked] using hbodyCtx cursor
+
 private theorem stepFRApp_pClosureBodyStart_masked
   (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
   StepFRAppPClosureBodyStart
@@ -2563,6 +3009,25 @@ private theorem stepFRApp_pClosureBodyStart_masked
       hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure htoPExpr_body
     with ⟨σcap, pbody, htoPExpr, hmem, htyping, hbodyCtx⟩
   refine ⟨σcap, pbody, htoPExpr, hmem, htyping, ?_⟩
+  intro cursor
+  simpa [consistentWithRegimeMasked] using hbodyCtx cursor
+
+private theorem stepFRApp_externPClosureBodyStart_masked
+  (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
+  StepFRAppExternPClosureBodyStart
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    predSat tm := by
+  intro ctx result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls x y id argTyp retSpec
+    ρpre ρcap μ_arg μ θ_arg θ vArg hpredlaws hqt2 hetyp1 hmono hθext hctxCons
+    hvalArg hvalClosure
+  rcases
+    consistentWithRegimeMasked_app_parrow_extern_body_start
+      masked ctx predSat tm result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls
+      x y id argTyp retSpec ρpre ρcap μ_arg μ θ_arg θ vArg
+      hpredlaws hqt2 hetyp1 hmono hθext hctxCons hvalArg hvalClosure with
+    ⟨σcap, hsource, htyping, hbodyCtx⟩
+  refine ⟨σcap, hsource, htyping, ?_⟩
   intro cursor
   simpa [consistentWithRegimeMasked] using hbodyCtx cursor
 
@@ -2608,37 +3073,6 @@ private theorem stepFRApp_joinValConsFromMember_masked
       (masked := masked) (predSat := predSat) (ctx := ctx) (first := first) (src := src)
       (rest := rest) (res := res) (μ := μ) (θ := θ) (v := v)
       h_join h_src hval
-
-/-- Static provenance for a runtime impure extern dispatch from an arrow closure list.
-
-Runtime application dispatches by inspecting the closure body, so a successful
-`externFn` call may come either from a static `FnTClosure.extern` member or from a
-regular closure member whose body is the extern declaration expression. -/
-private inductive ExternCallBoundaryFnStaticSource
-    (tcls : List FnTClosure)
-    (id : ExternId) (x y : Name) (argTyp : Typ)
-    (retSpec : ExternReturn) (eff : List Effect)
-    (tenv : CapturedVarEnv) : Prop where
-  | externMember :
-      FnTClosure.extern id x retSpec eff tenv ∈ tcls →
-      ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec eff tenv
-  | regularExternBody :
-      FnTClosure.regular x (Expr.externFn id y argTyp retSpec eff) tenv ∈ tcls →
-      ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec eff tenv
-
-/-- Static provenance for runtime pure extern dispatch from a parrow closure list.
-
-Unlike impure extern dispatch, the pure closure invariant cannot use a regular
-`Expr.externPfn` body: regular pure closures require `Expr.toPExpr? body = some ...`,
-while extern declarations are not pure expressions. -/
-private inductive ExternCallBoundaryPfnStaticSource
-    (tcls : List PFnTClosure)
-    (id : ExternId) (x y : Name) (argTyp : Typ)
-    (retSpec : ExternReturn)
-    (tenv : CapturedVarEnv) : Prop where
-  | externMember :
-      PFnTClosure.extern id x retSpec tenv ∈ tcls →
-      ExternCallBoundaryPfnStaticSource tcls id x y argTyp retSpec tenv
 
 private lemma externFnStaticSource_of_valueConsistentWithRegime
     {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap}
@@ -4046,7 +4480,7 @@ private lemma applyFnTClosure_extern_of_threaded_mem
           ctx bodyState cursor fuel)
       tcls (bodyState.nextTag', bodyState.nextLoc') = .ok results)
   (hmem : FnTClosure.extern id x retSpec effects tenv ∈ tcls) :
-  ∃ cursor first,
+  ∃ (cursor : Tag × Loc) (first : TypeResult),
     bodyState.nextTag' ≤ cursor.1 ∧
     bodyState.nextLoc' ≤ cursor.2 ∧
     first ∈ results ∧
@@ -4087,7 +4521,7 @@ private lemma applyPFnTClosure_extern_of_threaded_mem
           ctx bodyState cursor fuel)
       tcls (bodyState.nextTag', bodyState.nextLoc') = .ok results)
   (hmem : PFnTClosure.extern id x retSpec tenv ∈ tcls) :
-  ∃ cursor first,
+  ∃ (cursor : Tag × Loc) (first : TypeResult),
     bodyState.nextTag' ≤ cursor.1 ∧
     bodyState.nextLoc' ≤ cursor.2 ∧
     first ∈ results ∧
@@ -4113,6 +4547,68 @@ private lemma applyPFnTClosure_extern_of_threaded_mem
       (hbaseTag := Nat.le_refl _) (hbaseLoc := Nat.le_refl _) hthread hmem with
     ⟨first, hfirst_mem, cursor, hcursorTag, hcursorLoc, happly⟩
   exact ⟨cursor, first, hcursorTag, hcursorLoc, hfirst_mem, happly⟩
+
+private lemma applyFnTClosure_staticSource_of_threaded_mem
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (bodyState : TypeResult) (fuel : Nat)
+  (tcls : List FnTClosure) (results : List TypeResult)
+  (id : ExternId) (x y : Name) (argTyp : Typ)
+  (retSpec : ExternReturn) (effects : List Effect) (tenv : CapturedVarEnv)
+  (hthread :
+    applyClosuresThreaded
+      (fun tcl' cursor =>
+        applyFnTClosureAtCursor tcl' st1 st2 p p1 argEtyp argPoison argPred
+          ctx bodyState cursor fuel)
+      tcls (bodyState.nextTag', bodyState.nextLoc') = .ok results)
+  (hsource :
+    ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec effects tenv) :
+  ∃ (cursor : Tag × Loc) (first : TypeResult),
+    bodyState.nextTag' ≤ cursor.1 ∧
+    bodyState.nextLoc' ≤ cursor.2 ∧
+    first ∈ results := by
+  cases hsource with
+  | externMember hmem =>
+      rcases applyFnTClosure_extern_of_threaded_mem
+          ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel
+          tcls results id x retSpec effects tenv hthread hmem with
+        ⟨cursor, first, htag, hloc, hfirst, _happly⟩
+      exact ⟨cursor, first, htag, hloc, hfirst⟩
+  | regularExternBody hmem =>
+      rcases applyFnTClosure_regular_inv_of_threaded_mem
+          ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel
+          tcls results x (Expr.externFn id y argTyp retSpec effects) tenv
+          hthread hmem with
+        ⟨cursor, _fuelBody, first, _result3, htag, hloc, hfirst, _happly,
+          _hfuel, _htcBody, _hsub, _hfirstEq⟩
+      exact ⟨cursor, first, htag, hloc, hfirst⟩
+
+private lemma applyPFnTClosure_staticSource_of_threaded_mem
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (bodyState : TypeResult) (fuel : Nat)
+  (tcls : List PFnTClosure) (results : List TypeResult)
+  (id : ExternId) (x y : Name) (argTyp : Typ)
+  (retSpec : ExternReturn) (tenv : CapturedVarEnv)
+  (hthread :
+    applyClosuresThreaded
+      (fun tcl' cursor =>
+        applyPFnTClosureAtCursor tcl' st1 st2 p p1 argEtyp argPoison argPred
+          ctx bodyState cursor fuel)
+      tcls (bodyState.nextTag', bodyState.nextLoc') = .ok results)
+  (hsource :
+    ExternCallBoundaryPfnStaticSource tcls id x y argTyp retSpec tenv) :
+  ∃ (cursor : Tag × Loc) (first : TypeResult),
+    bodyState.nextTag' ≤ cursor.1 ∧
+    bodyState.nextLoc' ≤ cursor.2 ∧
+    first ∈ results := by
+  cases hsource with
+  | externMember hmem =>
+      rcases applyPFnTClosure_extern_of_threaded_mem
+          ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel
+          tcls results id x retSpec tenv hthread hmem with
+        ⟨cursor, first, htag, hloc, hfirst, _happly⟩
+      exact ⟨cursor, first, htag, hloc, hfirst⟩
 
 private def AppUserOnlyShape
     (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) : Prop :=
@@ -4879,6 +5375,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (ctxBodyStart :
     AppClosureBodyStart CtxCons ValCons predSat tm)
+  (_ctxExternBodyStart :
+    AppExternClosureBodyStart CtxCons ValCons predSat tm)
   (ctxMember :
     AppMemberCtxCons CtxCons predSat)
   (ctxJoinMember :
@@ -4895,6 +5393,11 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     ∀ {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value},
       valueConsistentWithRegime predSat R qt μ θ v →
       ValCons R qt μ θ v)
+  (_ctxConsToRegular :
+    ∀ {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap},
+      (∀ k, masked k → ctx.regime.lookup? k = none) →
+      CtxCons ctx μ ρ θ →
+      consistentWithRegime predSat ctx.regime ctx μ ρ θ)
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   -- Probe 2 spike: contract-shaped hypothesis for the `closure_extern` arm.
@@ -5598,6 +6101,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (ctxBodyStart :
     AppPClosureBodyStart CtxCons ValCons predSat tm)
+  (_ctxExternBodyStart :
+    AppExternPClosureBodyStart CtxCons ValCons predSat tm)
   (ctxMember :
     AppMemberCtxCons CtxCons predSat)
   (ctxJoinMember :
@@ -5614,6 +6119,11 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     ∀ {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value},
       valueConsistentWithRegime predSat R qt μ θ v →
       ValCons R qt μ θ v)
+  (_ctxConsToRegular :
+    ∀ {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap},
+      (∀ k, masked k → ctx.regime.lookup? k = none) →
+      CtxCons ctx μ ρ θ →
+      consistentWithRegime predSat ctx.regime ctx μ ρ θ)
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   (_extPfnSpec :
@@ -6357,6 +6867,10 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
     AppClosureBodyStart CtxCons ValCons predSat tm)
   (ctxPClosureBodyStart :
     AppPClosureBodyStart CtxCons ValCons predSat tm)
+  (ctxExternClosureBodyStart :
+    AppExternClosureBodyStart CtxCons ValCons predSat tm)
+  (ctxExternPClosureBodyStart :
+    AppExternPClosureBodyStart CtxCons ValCons predSat tm)
   (ctxMember :
     AppMemberCtxCons CtxCons predSat)
   (ctxJoinMember :
@@ -6373,6 +6887,11 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
     ∀ {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value},
       valueConsistentWithRegime predSat R qt μ θ v →
       ValCons R qt μ θ v)
+  (ctxConsToRegular :
+    ∀ {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap},
+      (∀ k, masked k → ctx.regime.lookup? k = none) →
+      CtxCons ctx μ ρ θ →
+      consistentWithRegime predSat ctx.regime ctx μ ρ θ)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
@@ -6397,8 +6916,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
       exact
         stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm
-          ctxClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
-          ctxConsOfRegular valConsOfRegular
+          ctxClosureBodyStart ctxExternClosureBodyStart
+          ctxMember ctxJoinMember valBodyResult valJoinMember
+          ctxConsOfRegular valConsOfRegular ctxConsToRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
           (ExternCallBoundarySingleFnContract.of_emptyExternRegistry (tcls := tcls))
           singleIH hqt2 htc2' htc1'
@@ -6409,8 +6929,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
       exact
         stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm
-          ctxPClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
-          ctxConsOfRegular valConsOfRegular
+          ctxPClosureBodyStart ctxExternPClosureBodyStart
+          ctxMember ctxJoinMember valBodyResult valJoinMember
+          ctxConsOfRegular valConsOfRegular ctxConsToRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
           (ExternCallBoundarySinglePfnContract.of_emptyExternRegistry (tcls := tcls))
           singleIH hqt2 htc2' htc1'
@@ -6440,6 +6961,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
       ctxᵢ predSat tm
       (stepFRApp_closureBodyStart_masked masked predSat tm)
       (stepFRApp_pClosureBodyStart_masked masked predSat tm)
+      (stepFRApp_externClosureBodyStart_masked masked predSat tm)
+      (stepFRApp_externPClosureBodyStart_masked masked predSat tm)
       (stepFRApp_memberCtxCons_masked masked predSat)
       (stepFRApp_joinCtxConsFromMember_masked masked predSat)
       (stepFRApp_bodyResultValCons_masked masked predSat)
@@ -6448,6 +6971,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
         consistentWithRegime_to_masked (masked := masked) h)
       (fun {R} {qt} {μ} {θ} {v} h =>
         valueConsistentWithRegime_to_masked (masked := masked) h)
+      (fun {ctx} {_μ} {_ρ} {_θ} hnone hctx =>
+        consistentWithRegimeMasked_unmask
+          (masked := masked) (predSat := predSat) (R := ctx.regime)
+          hnone hctx)
       e1 e2 fuel' res
       singleIH htc
 
