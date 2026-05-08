@@ -305,6 +305,26 @@ private inductive ExternCallBoundaryPfnStaticSource
       PFnTClosure.extern id x retSpec tenv ∈ tcls →
       ExternCallBoundaryPfnStaticSource tcls id x y argTyp retSpec tenv
 
+private lemma list_lookup_some_mem_local
+    {α β : Type} [BEq α] [LawfulBEq α]
+    (x : α) (y : β) (l : List (α × β)) :
+    List.lookup x l = some y → (x, y) ∈ l := by
+  intro hlookup
+  induction l with
+  | nil =>
+      simp [List.lookup] at hlookup
+  | cons hd tl ih =>
+      cases hd with
+      | mk x' y' =>
+          by_cases hEq : x == x'
+          · simp [List.lookup, hEq] at hlookup
+            have hx : x = x' := LawfulBEq.eq_of_beq hEq
+            subst hx
+            subst hlookup
+            simp
+          · simp [List.lookup, hEq] at hlookup
+            exact List.mem_cons_of_mem _ (ih hlookup)
+
 private def AppExternClosureBodyStart
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
@@ -377,6 +397,101 @@ private def AppExternPClosureBodyStart
             nextLoc := cursor.2
             regime := result1.regime' }
       CtxCons bodyCtx μ (ρcap.update x vArg) θ
+
+private lemma QTypRespectsTagMeaning_of_arrow_static_source_captured_lookup
+  (tm : TagMeaning)
+  (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
+  (id : ExternId) (x y z : Name) (argTyp : Typ)
+  (retSpec : ExternReturn) (effects : List Effect)
+  (σcap : CapturedVarEnv) (qtCap : QTyp)
+  (hresTm : QTypRespectsTagMeaning tm qtRes)
+  (hetyp : qtRes.etyp = ETyp.arrow st1 st2 p tcls)
+  (hsource : ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec effects σcap)
+  (hlookup : σcap.lookup z = some qtCap) :
+  QTypRespectsTagMeaning tm qtCap := by
+  intro qt k d hinq hqd
+  have hcapMem : (z, qtCap) ∈ σcap :=
+    list_lookup_some_mem_local z qtCap σcap (by simpa [CapturedVarEnv.lookup_eq] using hlookup)
+  cases hsource with
+  | externMember hmem =>
+      have hroot : QTypInQTyp qtCap qtRes :=
+        QTypInQTyp.in_arrow qtCap qtRes st1 st2 p tcls
+          (FnTClosure.extern id x retSpec effects σcap) z
+          hetyp hmem (by simpa [fnCapturedEnv] using hcapMem)
+      exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
+  | regularExternBody hmem =>
+      have hroot : QTypInQTyp qtCap qtRes :=
+        QTypInQTyp.in_arrow qtCap qtRes st1 st2 p tcls
+          (FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) σcap) z
+          hetyp hmem (by simpa [fnCapturedEnv] using hcapMem)
+      exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
+
+private lemma wfTagMeaningCtx_ofCaptured_from_arrow_static_source
+  (tm : TagMeaning) (ctxMem : TypeContext)
+  (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
+  (id : ExternId) (x y : Name) (argTyp : Typ)
+  (retSpec : ExternReturn) (effects : List Effect)
+  (σcap : CapturedVarEnv)
+  (hctxTm : wfTagMeaningCtx tm ctxMem)
+  (hresTm : QTypRespectsTagMeaning tm qtRes)
+  (hetyp : qtRes.etyp = ETyp.arrow st1 st2 p tcls)
+  (hsource : ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec effects σcap) :
+  wfTagMeaningCtx tm { ctxMem with varEnv := VarTypeEnv.ofCaptured σcap } := by
+  unfold wfTagMeaningCtx at hctxTm ⊢
+  refine EnvRespectsTagMeaning.intro ?_
+  intro k d hgd
+  rcases hgd with ⟨qt, k, d, hinq, hm⟩
+  cases hinq with
+  | inVar _ _ z _qt qtRoot hlookup hinqRoot =>
+      have hlookupCap : σcap.lookup z = some qtRoot :=
+        list_lookup_of_ofCaptured_lookup σcap z qtRoot (by simpa using hlookup)
+      have hrootTm : QTypRespectsTagMeaning tm qtRoot :=
+        QTypRespectsTagMeaning_of_arrow_static_source_captured_lookup
+          tm qtRes st1 st2 p tcls id x y z argTyp retSpec effects σcap qtRoot
+          hresTm hetyp hsource hlookupCap
+      exact hrootTm hinqRoot hm
+  | inMem _ _ l _qt qtRoot hlookup hinqRoot =>
+      exact hctxTm.1 (GuardDescInEnvsDeep.intro qt k d
+        (QTypInEnvs.inMem ctxMem.varEnv ctxMem.memEnv l qt qtRoot hlookup hinqRoot) hm)
+
+private lemma wfTagMeaningCtx_arrow_static_body
+  (tm : TagMeaning) (ctx : TypeContext) (result1 : TypeResult)
+  (qtRes : QTyp) (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
+  (id : ExternId) (x y : Name) (argTyp : Typ)
+  (retSpec : ExternReturn) (effects : List Effect)
+  (σcap : CapturedVarEnv) (argQt : QTyp)
+  (hctxTm : wfTagMeaningCtx tm (ctxAfter ctx result1))
+  (hresTm : QTypRespectsTagMeaning tm qtRes)
+  (hetyp : qtRes.etyp = ETyp.arrow st1 st2 p tcls)
+  (hsource : ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec effects σcap)
+  (hargTm : QTypRespectsTagMeaning tm argQt) :
+  wfTagMeaningCtx tm
+    { ctx with
+      memEnv := result1.memEnv'
+      tagEnv := result1.tagEnv'
+      nextLoc := result1.nextLoc'
+      nextTag := result1.nextTag'
+      regime := result1.regime'
+      varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt } := by
+  let ctxCap : TypeContext :=
+    { ctx with
+      memEnv := result1.memEnv'
+      tagEnv := result1.tagEnv'
+      nextLoc := result1.nextLoc'
+      nextTag := result1.nextTag'
+      regime := result1.regime'
+      varEnv := VarTypeEnv.ofCaptured σcap }
+  have hctxCapTm : wfTagMeaningCtx tm ctxCap := by
+    have hcapTm :
+        wfTagMeaningCtx tm { (ctxAfter ctx result1) with varEnv := VarTypeEnv.ofCaptured σcap } :=
+      wfTagMeaningCtx_ofCaptured_from_arrow_static_source
+        tm (ctxAfter ctx result1) qtRes st1 st2 p tcls id x y argTyp retSpec effects
+        σcap hctxTm hresTm hetyp hsource
+    simpa [ctxCap, ctxAfter] using hcapTm
+  have hbodyTm :
+      wfTagMeaningCtx tm { ctxCap with varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt } :=
+    wfTagMeaningCtx_varEnv_ext tm ctxCap x argQt hctxCapTm hargTm
+  simpa [ctxCap] using hbodyTm
 
 private lemma runtimeInstantiatesCtx_of_closure_env
   (ctx : TypeContext) (res2 res1 : TypeResult) (μ : Memory) (env₀ ρ : VarEnv) (θ : RealizationMap)
@@ -4435,14 +4550,14 @@ private lemma appSingleRunMaskedPost_from_direct_boundary
       ∀ {θbody : RealizationMap},
         wfExtendsMap θpre θbody →
         PreservesInheritedFinalCleanLocsOneRun bodyCtx src
-          evalCfg.memory evalCfg.memory θpre θbody →
+          preCfg.memory evalCfg.memory θpre θbody →
         PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θbody)
     (hfresh_final_of_boundary :
       ∀ {θbody : RealizationMap},
         FreshCleanLocsUnrealizedOneRun bodyCtx src θbody →
         FreshCleanLocsUnrealizedOneRun ctx res θbody)
     (hboundary :
-      ExternBoundarySinglePost bodyCtx src predSat tmBody θpre evalCfg.memory evalCfg o) :
+      ExternBoundarySinglePost bodyCtx src predSat tmBody θpre preCfg.memory evalCfg o) :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
       masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
       hθwf hwf hric_start hreg hmasked_none hmasked_absent hctx_start a pm hwfcfg := by
@@ -4547,6 +4662,109 @@ private lemma applyPFnTClosure_extern_of_threaded_mem
       (hbaseTag := Nat.le_refl _) (hbaseLoc := Nat.le_refl _) hthread hmem with
     ⟨first, hfirst_mem, cursor, hcursorTag, hcursorLoc, happly⟩
   exact ⟨cursor, first, hcursorTag, hcursorLoc, hfirst_mem, happly⟩
+
+private lemma updateMemEnv_contains_of_contains_local
+    (env : MemoryTypeEnv) (l l' : Loc) (qt : QTyp)
+    (h : env.contains l' = true) :
+    (updateMemEnv env l qt).contains l' = true := by
+  by_cases hEq : l' = l
+  · subst hEq
+    simp [updateMemEnv, Std.ExtTreeMap.contains_insert]
+  · have hCmp : compare l l' ≠ Ordering.eq := by
+      intro hce
+      have : l = l' := (Nat.compare_eq_eq).1 hce
+      exact hEq this.symm
+    simp [updateMemEnv, Std.ExtTreeMap.contains_insert, h]
+
+private lemma list_fold_updateMemEnv_contains_of_contains_local
+    (xs : List Loc) (env : MemoryTypeEnv) (l' : Loc) (qt : QTyp)
+    (h : env.contains l' = true) :
+    (xs.foldl (fun acc l => updateMemEnv acc l qt) env).contains l' = true := by
+  induction xs generalizing env with
+  | nil => simpa using h
+  | cons x xs ih =>
+      have h1 : (updateMemEnv env x qt).contains l' = true :=
+        updateMemEnv_contains_of_contains_local env x l' qt h
+      exact ih (env := updateMemEnv env x qt) h1
+
+private lemma applyFnTClosureAtCursor_extern_mem_contains_preserved
+  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (result2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+  (id : ExternId) (x : Name) (retSpec : ExternReturn)
+  (effects : List Effect) (capturedEnv : CapturedVarEnv)
+  (r : TypeResult)
+  (happly :
+    applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects capturedEnv)
+      st1 st2 p p1 argEtyp argPoison argPred ctx result2 cursor fuel = .ok r) :
+  ∀ l, result2.memEnv'.contains l → r.memEnv'.contains l := by
+  cases fuel with
+  | zero =>
+      unfold applyFnTClosureAtCursor at happly
+      simp at happly
+  | succ fuel =>
+      intro l hl
+      unfold applyFnTClosureAtCursor at happly
+      simp only [applyExternEffect, bind, Except.bind, pure, Except.pure] at happly
+      split at happly
+      · simp at happly
+      · rename_i tagInfo _
+        rw [List.forIn_eq_foldlM] at happly
+        simp only [Functor.map, Except.map] at happly
+        split at happly
+        · simp at happly
+        · rename_i foldResult hfoldOuter
+          split at hfoldOuter
+          · simp at hfoldOuter
+          · rename_i foldStep hfoldStep
+            simp only [Except.ok.injEq] at hfoldOuter
+            have hContains : foldResult.contains l = true := by
+              rw [← hfoldOuter]
+              apply List.foldlM_Except_preserves_property effects (ForInStep.yield result2.memEnv') _
+                (fun s => (ForInStep.value s).contains l = true) hl ?_ foldStep hfoldStep
+              intro acc effect hP
+              cases acc with
+              | done b =>
+                  intro acc' hg
+                  simp only [pure, Except.pure, Except.ok.injEq] at hg
+                  exact hg ▸ hP
+              | yield b =>
+                  intro acc' hg
+                  simp only [] at hg
+                  split at hg
+                  · simp at hg
+                  · rename_i v happlyEffect
+                    simp only [Except.ok.injEq] at hg
+                    subst hg
+                    simp only [ForInStep.value]
+                    split at happlyEffect
+                    · rename_i qt _hlookup
+                      split at happlyEffect
+                      · rename_i ls _hls
+                        split at happlyEffect
+                        · exact absurd happlyEffect (by simp)
+                        · rename_i v' _hresolve
+                          simp only [Except.ok.injEq] at happlyEffect
+                          subst happlyEffect
+                          unfold LocSet.fold
+                          rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+                          exact list_fold_updateMemEnv_contains_of_contains_local _ b l _ hP
+                      · exact absurd happlyEffect (by simp)
+                    · exact absurd happlyEffect (by simp)
+            split at happly
+            · split at happly
+              · simp at happly
+              · split at happly
+                · simp at happly
+                · simp only [Except.ok.injEq] at happly
+                  cases happly
+                  exact hContains
+            · simp only [Except.ok.injEq] at happly
+              cases happly
+              exact hContains
+            · simp only [Except.ok.injEq] at happly
+              cases happly
+              exact hContains
 
 private lemma applyFnTClosure_staticSource_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
