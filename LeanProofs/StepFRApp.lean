@@ -19,16 +19,18 @@ open scoped MemoryTypeEnv
 -- useful for rewriting `ht : terminatesTo _ _ c'` when downstream calls require
 -- the config in explicit-record form.
 private lemma cfg_pureMode_eq_of_terminatesTo
-    {e : Expr} {c₀ c' : Config} {v : Value} {pm : Bool}
+    {e : Expr} {c₀ c' : Config} {v : Value} {pm : Bool} {registry : ExternRegistry}
     (ht : terminatesTo e c₀ c' v) (hinit : c₀.pureMode = pm)
-    (hreg : c₀.registry = emptyExternRegistry) :
+    (hreg : c₀.registry = registry) :
     c'.pureMode = pm ∧
-    c' = { memory := c'.memory, varEnv := c'.varEnv, nextAddr := c'.nextAddr, pureMode := pm } := by
+    c' =
+      { memory := c'.memory, varEnv := c'.varEnv, nextAddr := c'.nextAddr,
+        pureMode := pm, registry := registry } := by
   have h : c'.pureMode = pm := (terminatesTo_preserves_pureMode e c₀ c' v ht).trans hinit
   refine ⟨h, ?_⟩
-  have hreg' : c'.registry = emptyExternRegistry :=
+  have hreg' : c'.registry = registry :=
     (terminatesTo_preserves_registry ht).trans hreg
-  have := config_eq_of_registry_default c' hreg'
+  have := config_eq_of_registry c' registry hreg'
   rw [this]
   rw [h]
 
@@ -4300,6 +4302,231 @@ private lemma appTwoRunOutChoice_from_body_stepFRPost
         hval_body₀ hval_body₁ hres_agree_body
   exact appTwoRunOutChoice_of_pack hθext₀ hθext₁ hpack
 
+private lemma appTwoRunOutPack_from_direct_body_post
+    {predSat : PredSat} {ctx preCtx bodyCtx : TypeContext}
+    {first src res : TypeResult} {rest : List TypeResult}
+    {cf₀ cf₁ evalCfg₀ evalCfg₁ preCfg₀ preCfg₁ : Config}
+    {θpre₀ θpre₁ θbody₀ θbody₁ : RealizationMap}
+    {o₀ o₁ : Value}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hlookup_back_pre_to_src :
+      ∀ k b, (ctxAfter ctx src).regime.lookup? k = some b → preCtx.regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        preCtx.varEnv.lookup x = some qt)
+    (hpred_compat₀ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₀.memory v' ↔
+          qtypPredHolds predSat qt' cf₀.memory v')
+    (hpred_compat₁ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₁.memory v' ↔
+          qtypPredHolds predSat qt' cf₁.memory v')
+    (hmem₀_eq : cf₀.memory = evalCfg₀.memory)
+    (hmem₁_eq : cf₁.memory = evalCfg₁.memory)
+    (hvar₀_eq : cf₀.varEnv = preCfg₀.varEnv)
+    (hvar₁_eq : cf₁.varEnv = preCfg₁.varEnv)
+    (hθext₀ : wfExtendsMap θpre₀ θbody₀)
+    (hθext₁ : wfExtendsMap θpre₁ θbody₁)
+    (hv_body₀ : valueHasETyp θbody₀ o₀ src.qualType.etyp)
+    (hv_body₁ : valueHasETyp θbody₁ o₁ src.qualType.etyp)
+    (hric_body₀ : runtimeInstantiatesCtx (ctxAfter bodyCtx src)
+      evalCfg₀.memory evalCfg₀.varEnv θbody₀)
+    (hric_body₁ : runtimeInstantiatesCtx (ctxAfter bodyCtx src)
+      evalCfg₁.memory evalCfg₁.varEnv θbody₁)
+    (hric_pre₀ : runtimeInstantiatesCtx preCtx preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hric_pre₁ : runtimeInstantiatesCtx preCtx preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hcwr_body₀ : consistentWithRegime predSat (ctxAfter bodyCtx src).regime
+      (ctxAfter bodyCtx src) evalCfg₀.memory evalCfg₀.varEnv θbody₀)
+    (hcwr_body₁ : consistentWithRegime predSat (ctxAfter bodyCtx src).regime
+      (ctxAfter bodyCtx src) evalCfg₁.memory evalCfg₁.varEnv θbody₁)
+    (hcwr_pre₀ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hcwr_pre₁ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hagree :
+      agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+        cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁)
+    (hval_body₀ : valueConsistentWithRegime predSat (ctxAfter bodyCtx src).regime
+      src.qualType evalCfg₀.memory θbody₀ o₀)
+    (hval_body₁ : valueConsistentWithRegime predSat (ctxAfter bodyCtx src).regime
+      src.qualType evalCfg₁.memory θbody₁ o₁)
+    (hres_agree_body :
+      resultAgreesIfClean predSat (ctxAfter bodyCtx src).regime
+        evalCfg₀.memory evalCfg₁.memory θbody₀ θbody₁ src.qualType o₀ o₁) :
+    AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θbody₀ θbody₁ := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, hagree, ?_, ?_, ?_⟩
+  · exact
+      joinTypeResults_transport_valueHasETyp_from_member
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (θ := θbody₀) (v := o₀)
+        h_join hsrc_mem hv_body₀
+  · exact
+      joinTypeResults_transport_valueHasETyp_from_member
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (θ := θbody₁) (v := o₁)
+        h_join hsrc_mem hv_body₁
+  · exact
+      appMember_runtimeInstantiatesCtx_from_body
+        (ctx := ctx) (preCtx := preCtx) (bodyFinalCtx := ctxAfter bodyCtx src)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := preCfg₀)
+        (θpre := θpre₀) (θbody := θbody₀)
+        h_join hsrc_mem hric_body₀ hric_pre₀
+        (fun l hcontains_body => by
+          simpa [ctxAfter] using hcontains_body)
+        hvar_lookup_src_to_pre hmem₀_eq hvar₀_eq hθext₀
+  · exact
+      appMember_runtimeInstantiatesCtx_from_body
+        (ctx := ctx) (preCtx := preCtx) (bodyFinalCtx := ctxAfter bodyCtx src)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := preCfg₁)
+        (θpre := θpre₁) (θbody := θbody₁)
+        h_join hsrc_mem hric_body₁ hric_pre₁
+        (fun l hcontains_body => by
+          simpa [ctxAfter] using hcontains_body)
+        hvar_lookup_src_to_pre hmem₁_eq hvar₁_eq hθext₁
+  · exact
+      appMember_consistentWithRegime_from_body
+        (predSat := predSat)
+        (ctx := ctx) (preCtx := preCtx) (bodyFinalCtx := ctxAfter bodyCtx src)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf₀) (evalCfg := evalCfg₀) (preCfg := preCfg₀)
+        (θpre := θpre₀) (θbody := θbody₀)
+        h_join hsrc_mem hcwr_body₀ hcwr_pre₀
+        (fun l qt hlookup => by
+          simpa [ctxAfter] using hlookup)
+        (fun k b hk_src => by
+          simpa [ctxAfter] using hk_src)
+        (fun k b hk_body => by
+          simpa [ctxAfter] using hk_body)
+        hvar_lookup_src_to_pre hlookup_back_pre_to_src hpred_compat₀
+        hmem₀_eq hvar₀_eq hθext₀
+  · exact
+      appMember_consistentWithRegime_from_body
+        (predSat := predSat)
+        (ctx := ctx) (preCtx := preCtx) (bodyFinalCtx := ctxAfter bodyCtx src)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf₁) (evalCfg := evalCfg₁) (preCfg := preCfg₁)
+        (θpre := θpre₁) (θbody := θbody₁)
+        h_join hsrc_mem hcwr_body₁ hcwr_pre₁
+        (fun l qt hlookup => by
+          simpa [ctxAfter] using hlookup)
+        (fun k b hk_src => by
+          simpa [ctxAfter] using hk_src)
+        (fun k b hk_body => by
+          simpa [ctxAfter] using hk_body)
+        hvar_lookup_src_to_pre hlookup_back_pre_to_src hpred_compat₁
+        hmem₁_eq hvar₁_eq hθext₁
+  · have hval_src :
+        valueConsistentWithRegime predSat (ctxAfter ctx src).regime
+          src.qualType cf₀.memory θbody₀ o₀ := by
+      simpa [ctxAfter, hmem₀_eq] using hval_body₀
+    exact
+      joinTypeResults_transport_valueConsistentWithRegime_from_member
+        (predSat := predSat)
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (μ := cf₀.memory) (θ := θbody₀) (v := o₀)
+        h_join hsrc_mem hval_src
+  · have hval_src :
+        valueConsistentWithRegime predSat (ctxAfter ctx src).regime
+          src.qualType cf₁.memory θbody₁ o₁ := by
+      simpa [ctxAfter, hmem₁_eq] using hval_body₁
+    exact
+      joinTypeResults_transport_valueConsistentWithRegime_from_member
+        (predSat := predSat)
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (μ := cf₁.memory) (θ := θbody₁) (v := o₁)
+        h_join hsrc_mem hval_src
+  · have hres_agree_src :
+        resultAgreesIfClean predSat (ctxAfter ctx src).regime
+          cf₀.memory cf₁.memory θbody₀ θbody₁ src.qualType o₀ o₁ := by
+      simpa [ctxAfter, hmem₀_eq, hmem₁_eq] using hres_agree_body
+    exact
+      joinTypeResults_transport_resultAgreesIfClean_from_member
+        (predSat := predSat)
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (μ₀ := cf₀.memory) (μ₁ := cf₁.memory) (θ₀ := θbody₀) (θ₁ := θbody₁)
+        (o₀ := o₀) (o₁ := o₁)
+        h_join hsrc_mem hres_agree_src
+
+private lemma appTwoRunOutChoice_from_direct_body_stepFRPost
+    {predSat : PredSat} {tmBody : TagMeaning} {ctx preCtx bodyCtx : TypeContext}
+    {postExpr : Expr}
+    {first src res : TypeResult} {rest : List TypeResult}
+    {cf₀ cf₁ evalCfg₀ evalCfg₁ preCfg₀ preCfg₁ : Config}
+    {θpre₀ θpre₁ : RealizationMap}
+    {o₀ o₁ : Value}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hlookup_back_pre_to_src :
+      ∀ k b, (ctxAfter ctx src).regime.lookup? k = some b → preCtx.regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        preCtx.varEnv.lookup x = some qt)
+    (hpred_compat₀ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₀.memory v' ↔
+          qtypPredHolds predSat qt' cf₀.memory v')
+    (hpred_compat₁ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₁.memory v' ↔
+          qtypPredHolds predSat qt' cf₁.memory v')
+    (hmem₀_eq : cf₀.memory = evalCfg₀.memory)
+    (hmem₁_eq : cf₁.memory = evalCfg₁.memory)
+    (hvar₀_eq : cf₀.varEnv = preCfg₀.varEnv)
+    (hvar₁_eq : cf₁.varEnv = preCfg₁.varEnv)
+    (hric_pre₀ : runtimeInstantiatesCtx preCtx preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hric_pre₁ : runtimeInstantiatesCtx preCtx preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hcwr_pre₀ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hcwr_pre₁ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hagree_out :
+      ∀ θbody₀ θbody₁,
+        wfExtendsMap θpre₀ θbody₀ →
+        wfExtendsMap θpre₁ θbody₁ →
+        runtimeInstantiatesCtx (ctxAfter bodyCtx src)
+          evalCfg₀.memory evalCfg₀.varEnv θbody₀ →
+        runtimeInstantiatesCtx (ctxAfter bodyCtx src)
+          evalCfg₁.memory evalCfg₁.varEnv θbody₁ →
+        agreeOnClean predSat (ctxAfter bodyCtx src).regime (ctxAfter bodyCtx src)
+          evalCfg₀.memory evalCfg₀.varEnv θbody₀
+          evalCfg₁.memory evalCfg₁.varEnv θbody₁ →
+        agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+          cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁)
+    (hbody_post :
+      StepFRPost bodyCtx postExpr src predSat tmBody
+        θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁) :
+    AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
+  rcases hbody_post with
+    ⟨_tmOut, _hboundary, _hpredlawsOut, _hresTmOut,
+      θbody₀, θbody₁, hθext₀, hθext₁, hv₀, hv₁, _hwfTmOut, _hwfOut,
+      _htagOut, _hwfcfg₀, _hwfcfg₁, hric_body₀, hric_body₁, _htagR,
+      hcwr_body₀, hcwr_body₁, _hagree_body, hval_body₀, hval_body₁,
+      hres_agree_body⟩
+  have hpack :
+      AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θbody₀ θbody₁ := by
+    exact
+      appTwoRunOutPack_from_direct_body_post
+        (predSat := predSat)
+        (ctx := ctx) (preCtx := preCtx) (bodyCtx := bodyCtx)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf₀ := cf₀) (cf₁ := cf₁)
+        (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
+        (preCfg₀ := preCfg₀) (preCfg₁ := preCfg₁)
+        (θpre₀ := θpre₀) (θpre₁ := θpre₁)
+        (θbody₀ := θbody₀) (θbody₁ := θbody₁)
+        (o₀ := o₀) (o₁ := o₁)
+        h_join hsrc_mem hlookup_back_pre_to_src hvar_lookup_src_to_pre
+        hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
+        hθext₀ hθext₁ hv₀ hv₁ hric_body₀ hric_body₁ hric_pre₀ hric_pre₁
+        hcwr_body₀ hcwr_body₁ hcwr_pre₀ hcwr_pre₁
+        (hagree_out θbody₀ θbody₁ hθext₀ hθext₁ hric_body₀ hric_body₁ _hagree_body)
+        hval_body₀ hval_body₁ hres_agree_body
+  exact appTwoRunOutChoice_of_pack hθext₀ hθext₁ hpack
+
 private lemma appTwoRunOutChoice_from_call_boundaryFR
     {d : ExternDeclaration} {impl : ExternImpl}
     {predSat : PredSat} {tmBody : TagMeaning} {ctx preCtx : TypeContext}
@@ -4386,6 +4613,87 @@ private lemma appTwoRunOutChoice_from_call_boundaryFR
       (θpre₀ := θpre₀) (θpre₁ := θpre₁)
       (o₀ := o₀) (o₁ := o₁) (p := p) (p1 := p1)
       h_join hsrc_mem hsrc_eq hlookup_back_pre_to_src hvar_lookup_src_to_pre
+      hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
+      hric_pre₀ hric_pre₁ hcwr_pre₀ hcwr_pre₁ hagree_out hbody_post
+
+private lemma appTwoRunOutChoice_from_direct_call_boundaryFR
+    {d : ExternDeclaration} {impl : ExternImpl}
+    {predSat : PredSat} {tmBody : TagMeaning} {ctx preCtx : TypeContext}
+    {postExpr : Expr}
+    {first src res : TypeResult} {rest : List TypeResult}
+    {cf₀ cf₁ evalCfg₀ evalCfg₁ preCfg₀ preCfg₁ : Config}
+    {θpre₀ θpre₁ : RealizationMap}
+    {o₀ o₁ : Value}
+    {entry₀ entry₁ : ExternCallEntry}
+    (hcallFR : ExternCallBoundaryFR d impl)
+    (hctx₁ : entry₁.bodyCtx = entry₀.bodyCtx)
+    (hpredlaws : PredSatLaws predSat tmBody)
+    (hTmBody : wfTagMeaningCtx tmBody entry₀.bodyCtx)
+    (hTmBoundedBody : TagMeaningBounded tmBody entry₀.bodyCtx.nextTag)
+    (hinputs : BodyEntryInputsAgree predSat entry₀.bodyCtx entry₀ entry₁ θpre₀ θpre₁)
+    (hrun₀ : ExternCallBoundaryRun d impl entry₀ src cf₀ o₀)
+    (hrun₁ : ExternCallBoundaryRun d impl entry₁ src cf₁ o₁)
+    (hevalCfg₀ : evalCfg₀ = entry₀.bodyOutputConfig cf₀)
+    (hevalCfg₁ : evalCfg₁ = entry₁.bodyOutputConfig cf₁)
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hlookup_back_pre_to_src :
+      ∀ k b, (ctxAfter ctx src).regime.lookup? k = some b → preCtx.regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        preCtx.varEnv.lookup x = some qt)
+    (hpred_compat₀ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₀.memory v' ↔
+          qtypPredHolds predSat qt' cf₀.memory v')
+    (hpred_compat₁ :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg₁.memory v' ↔
+          qtypPredHolds predSat qt' cf₁.memory v')
+    (hmem₀_eq : cf₀.memory = evalCfg₀.memory)
+    (hmem₁_eq : cf₁.memory = evalCfg₁.memory)
+    (hvar₀_eq : cf₀.varEnv = preCfg₀.varEnv)
+    (hvar₁_eq : cf₁.varEnv = preCfg₁.varEnv)
+    (hric_pre₀ : runtimeInstantiatesCtx preCtx preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hric_pre₁ : runtimeInstantiatesCtx preCtx preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hcwr_pre₀ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₀.memory preCfg₀.varEnv θpre₀)
+    (hcwr_pre₁ : consistentWithRegime predSat preCtx.regime preCtx
+      preCfg₁.memory preCfg₁.varEnv θpre₁)
+    (hagree_out :
+      ∀ θbody₀ θbody₁,
+        wfExtendsMap θpre₀ θbody₀ →
+        wfExtendsMap θpre₁ θbody₁ →
+        runtimeInstantiatesCtx (ctxAfter entry₀.bodyCtx src)
+          evalCfg₀.memory evalCfg₀.varEnv θbody₀ →
+        runtimeInstantiatesCtx (ctxAfter entry₀.bodyCtx src)
+          evalCfg₁.memory evalCfg₁.varEnv θbody₁ →
+        agreeOnClean predSat (ctxAfter entry₀.bodyCtx src).regime
+          (ctxAfter entry₀.bodyCtx src)
+          evalCfg₀.memory evalCfg₀.varEnv θbody₀
+          evalCfg₁.memory evalCfg₁.varEnv θbody₁ →
+        agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
+          cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁) :
+    AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
+  have hbody_post :
+      StepFRPost entry₀.bodyCtx postExpr src predSat tmBody
+        θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁ := by
+    simpa [hevalCfg₀, hevalCfg₁] using
+      hcallFR postExpr src predSat tmBody entry₀ entry₁ hctx₁
+        hpredlaws hTmBody hTmBoundedBody θpre₀ θpre₁ hinputs
+        cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+  exact
+    appTwoRunOutChoice_from_direct_body_stepFRPost
+      (predSat := predSat) (tmBody := tmBody)
+      (ctx := ctx) (preCtx := preCtx) (bodyCtx := entry₀.bodyCtx)
+      (postExpr := postExpr)
+      (first := first) (src := src) (rest := rest) (res := res)
+      (cf₀ := cf₀) (cf₁ := cf₁)
+      (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
+      (preCfg₀ := preCfg₀) (preCfg₁ := preCfg₁)
+      (θpre₀ := θpre₀) (θpre₁ := θpre₁)
+      (o₀ := o₀) (o₁ := o₁)
+      h_join hsrc_mem hlookup_back_pre_to_src hvar_lookup_src_to_pre
       hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
       hric_pre₀ hric_pre₁ hcwr_pre₀ hcwr_pre₁ hagree_out hbody_post
 
@@ -8289,11 +8597,15 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
 -- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry)
+  (hregistry_empty : registry = emptyExternRegistry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')))
-  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')))
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (singleIH :
+    StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel'))
+      (registry := registry))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.app e1 e2) res predSat tm := by
+  StepFR ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
   -- Phase 1: Typecheck decomposition (typecheck = typecheckExpr; app case reduces to typecheckApp)
   have htcApp : typecheckApp ctxᵢ e1 e2 (Nat.succ fuel') = .ok res := by
     rw [← typecheckExpr_app_succ ctxᵢ e1 e2 (Nat.succ fuel')]
@@ -8316,8 +8628,10 @@ lemma stepFR_app
     -- Phase 2: IH for e2 (e1 IH defined after we have hTm2 from e2)
     have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm htagBounded result2 htc2'
     -- Phase 3: Runtime evaluation inversion
-    let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
-    let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+    let cinit₀ : Config :=
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
+    let cinit₁ : Config :=
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }
     -- Local helper capturing the shared IH_e2 → IH_e1 ritual. Used by the
     -- "impossible" mixed-constructor branches below to derive valueHasETyp of
     -- each run's output value at `result1.qualType.etyp`, which is then
@@ -8772,7 +9086,8 @@ lemma stepFR_app
                     { memory := c₁₀.memory
                       varEnv := env₀.update x₀ v₂₀
                       nextAddr := c₁₀.nextAddr
-                      pureMode := false } := by
+                      pureMode := false
+                      registry := registry } := by
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
                   (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
@@ -8794,9 +9109,9 @@ lemma stepFR_app
               have hpc_bodyA₀_run : bodyCtxA₀.pc = true := by
                 simp [bodyCtxA₀, joinPoison] at h_p1p ⊢
                 cases p1 <;> cases p <;> simp at h_p1p ⊢
-              -- Thread extern registry: c₁₀ inherits default registry.
-              have hreg_c₁₀_A : c₁₀.registry = emptyExternRegistry := by
-                have h2 : c₂'₀.registry = emptyExternRegistry := by
+              -- Thread extern registry: c₁₀ inherits the app registry.
+              have hreg_c₁₀_A : c₁₀.registry = registry := by
+                have h2 : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 exact (terminatesTo_preserves_registry ht₀_e1).trans h2
               rw [hreg_c₁₀_A] at ht₀_body
@@ -8976,7 +9291,8 @@ lemma stepFR_app
                     { memory := c₁₁.memory
                       varEnv := env₁.update x₁ v₂₁
                       nextAddr := c₁₁.nextAddr
-                      pureMode := false } := by
+                      pureMode := false
+                      registry := registry } := by
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
                   (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
@@ -8998,9 +9314,9 @@ lemma stepFR_app
               have hpc_bodyA₁_run : bodyCtxA₁.pc = true := by
                 simp [bodyCtxA₁, joinPoison] at h_p1p ⊢
                 cases p1 <;> cases p <;> simp at h_p1p ⊢
-              -- Thread extern registry: c₁₁ inherits default registry.
-              have hreg_c₁₁_A : c₁₁.registry = emptyExternRegistry := by
-                have h2 : c₂'₁.registry = emptyExternRegistry := by
+              -- Thread extern registry: c₁₁ inherits the app registry.
+              have hreg_c₁₁_A : c₁₁.registry = registry := by
+                have h2 : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 exact (terminatesTo_preserves_registry ht₁_e1).trans h2
               rw [hreg_c₁₁_A] at ht₁_body
@@ -9993,7 +10309,8 @@ lemma stepFR_app
                       { memory := c₁₀.memory
                         varEnv := env₀.update x₀ v₂₀
                         nextAddr := c₁₀.nextAddr
-                        pureMode := false } := by
+                        pureMode := false
+                        registry := registry } := by
                   have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
                     (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
                   have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
@@ -10014,7 +10331,8 @@ lemma stepFR_app
                       { memory := c₁₁.memory
                         varEnv := env₁.update x₁ v₂₁
                         nextAddr := c₁₁.nextAddr
-                        pureMode := false } := by
+                        pureMode := false
+                        registry := registry } := by
                   have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
                     (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
                   have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
@@ -10034,13 +10352,13 @@ lemma stepFR_app
                   exact (wfConfig_preserved body₀ _ evalCfg₀ o₀ ht₀_body hwfcfg_body_init₀).1
                 have hwfcfg_body_final₁ : wfConfig evalCfg₁ := by
                   exact (wfConfig_preserved body₁ _ evalCfg₁ o₁ ht₁_body hwfcfg_body_init₁).1
-                -- Thread extern registry: c₁₀/c₁₁ inherit default registry.
-                have hreg_c₁₀_B : c₁₀.registry = emptyExternRegistry := by
-                  have h2 : c₂'₀.registry = emptyExternRegistry := by
+                -- Thread extern registry: c₁₀/c₁₁ inherit the app registry.
+                have hreg_c₁₀_B : c₁₀.registry = registry := by
+                  have h2 : c₂'₀.registry = registry := by
                     simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                   exact (terminatesTo_preserves_registry ht₀_e1).trans h2
-                have hreg_c₁₁_B : c₁₁.registry = emptyExternRegistry := by
-                  have h2 : c₂'₁.registry = emptyExternRegistry := by
+                have hreg_c₁₁_B : c₁₁.registry = registry := by
+                  have h2 : c₂'₁.registry = registry := by
                     simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                   exact (terminatesTo_preserves_registry ht₁_e1).trans h2
                 rw [hreg_c₁₀_B] at ht₀_body
@@ -10050,14 +10368,16 @@ lemma stepFR_app
                       { memory := c₁₀.memory
                         varEnv := env₀.update x₀ v₂₀
                         nextAddr := c₁₀.nextAddr
-                        pureMode := false } evalCfg₀ o₀ := by
+                        pureMode := false
+                        registry := registry } evalCfg₀ o₀ := by
                   simpa using ht₀_body
                 have ht₁_body' :
                     terminatesTo body₀
                       { memory := c₁₁.memory
                         varEnv := env₁.update x₁ v₂₁
                         nextAddr := c₁₁.nextAddr
-                        pureMode := false } evalCfg₁ o₁ := by
+                        pureMode := false
+                        registry := registry } evalCfg₁ o₁ := by
                   simpa [hbody] using ht₁_body
                 have hstep_body := hIH_body hpredlaws1 hExtTyping hTmBody hTmBoundedBody
                   c₁₀.memory c₁₁.memory (env₀.update x₀ v₂₀) (env₁.update x₁ v₂₁) θ₀1 θ₁1
@@ -10770,7 +11090,9 @@ lemma stepFR_app
             _hpm_e2₁ _hpm_final₁ =>
             exact False.elim (by
               have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
-                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                have hreg : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                simpa [hregistry_empty] using hreg
               have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
                 (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
               rw [hreg_c₁₁] at hGet₁
@@ -10799,7 +11121,9 @@ lemma stepFR_app
           intro c₂'₁ c₁₁ v₂₁ o₁' ht₁_e2 ht₁_e1
           exact False.elim (by
             have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
-              simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+              have hreg : c₂'₀.registry = registry := by
+                simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+              simpa [hregistry_empty] using hreg
             have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
               (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
             rw [hreg_c₁₀] at hGet₀
@@ -10897,8 +11221,10 @@ lemma stepFR_app
     -- Phase 2: IH for e2
     have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm htagBounded result2 htc2'
     -- Phase 3: Runtime evaluation inversion
-    let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
-    let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
+    let cinit₀ : Config :=
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
+    let cinit₁ : Config :=
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }
     -- Local helper capturing the shared IH_e2 → IH_e1 ritual (parrow branch).
     -- Used by "impossible" closure/peClosure mismatch branches below.
     have mkValueHasETyp_pair :
@@ -11494,7 +11820,8 @@ lemma stepFR_app
                   { memory := cf₀.memory
                     varEnv := env₀.update x₀ v₂₀
                     nextAddr := cf₀.nextAddr
-                    pureMode := true } := by
+                    pureMode := true
+                    registry := registry } := by
               have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
                 (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
               have hnext₂_to₁ : c₂'₀.nextAddr ≤ cf₀.nextAddr :=
@@ -11509,15 +11836,16 @@ lemma stepFR_app
               · intro a ha; exact hwfcf₁₀.1 a ha
               · simpa [VarEnv.update] using wfVarEnv.cons x₀ v₂₀ env₀ hv₂₀_wf henv₀_wf
             -- Thread extern registry: after `subst heq_cfg₀`, cf₀ replaces c₁₀.
-            have hreg_cf₀_pp : cf₀.registry = emptyExternRegistry := by
-              have h2 : c₂'₀.registry = emptyExternRegistry := by
+            have hreg_cf₀_pp : cf₀.registry = registry := by
+              have h2 : c₂'₀.registry = registry := by
                 simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
               exact (terminatesTo_preserves_registry ht₀_e1).trans h2
             rw [hreg_cf₀_pp] at ht₀_body
             -- The body terminatesTo uses body₀, but init config has pureMode := true
             have ht₀_body' : terminatesTo body₀
                 { memory := cf₀.memory, varEnv := env₀.update x₀ v₂₀,
-                  nextAddr := cf₀.nextAddr, pureMode := true } evalCfg₀ o₀ := ht₀_body
+                  nextAddr := cf₀.nextAddr, pureMode := true,
+                  registry := registry } evalCfg₀ o₀ := ht₀_body
             have hSingle_bodyA₀ :=
               singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀ hTmBodyA₀
                 (by simpa [bodyCtxA₀] using
@@ -11704,7 +12032,8 @@ lemma stepFR_app
                   { memory := cf₁.memory
                     varEnv := env₁.update x₁ v₂₁
                     nextAddr := cf₁.nextAddr
-                    pureMode := true } := by
+                    pureMode := true
+                    registry := registry } := by
               have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
                 (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
               have hnext₂_to₁ : c₂'₁.nextAddr ≤ cf₁.nextAddr :=
@@ -11719,14 +12048,15 @@ lemma stepFR_app
               · intro a ha; exact hwfcf₁₁.1 a ha
               · simpa [VarEnv.update] using wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf
             -- Thread extern registry: after `subst heq_cfg₁`, cf₁ replaces c₁₁.
-            have hreg_cf₁_pp : cf₁.registry = emptyExternRegistry := by
-              have h2 : c₂'₁.registry = emptyExternRegistry := by
+            have hreg_cf₁_pp : cf₁.registry = registry := by
+              have h2 : c₂'₁.registry = registry := by
                 simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
               exact (terminatesTo_preserves_registry ht₁_e1).trans h2
             rw [hreg_cf₁_pp] at ht₁_body
             have ht₁_body' : terminatesTo body₁
                 { memory := cf₁.memory, varEnv := env₁.update x₁ v₂₁,
-                  nextAddr := cf₁.nextAddr, pureMode := true } evalCfg₁ o₁ := ht₁_body
+                  nextAddr := cf₁.nextAddr, pureMode := true,
+                  registry := registry } evalCfg₁ o₁ := ht₁_body
             have hSingle_bodyA₁ :=
               singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁ hTmBodyA₁
                 (by simpa [bodyCtxA₁] using
@@ -12706,7 +13036,8 @@ lemma stepFR_app
                     { memory := cf₀.memory
                       varEnv := env₀.update x₀ v₂₀
                       nextAddr := cf₀.nextAddr
-                      pureMode := true } := by
+                      pureMode := true
+                      registry := registry } := by
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
                   (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ cf₀.nextAddr :=
@@ -12727,7 +13058,8 @@ lemma stepFR_app
                     { memory := cf₁.memory
                       varEnv := env₁.update x₁ v₂₁
                       nextAddr := cf₁.nextAddr
-                      pureMode := true } := by
+                      pureMode := true
+                      registry := registry } := by
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
                   (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ cf₁.nextAddr :=
@@ -12744,12 +13076,12 @@ lemma stepFR_app
                   exact hwfcf₁₁.1 a ha
                 · simpa [VarEnv.update] using (wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf)
               -- Thread extern registry: after subst heq_cfg, cf₀/cf₁ replace c₁₀/c₁₁.
-              have hreg_cf₀_pp2 : cf₀.registry = emptyExternRegistry := by
-                have h2 : c₂'₀.registry = emptyExternRegistry := by
+              have hreg_cf₀_pp2 : cf₀.registry = registry := by
+                have h2 : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 exact (terminatesTo_preserves_registry ht₀_e1).trans h2
-              have hreg_cf₁_pp2 : cf₁.registry = emptyExternRegistry := by
-                have h2 : c₂'₁.registry = emptyExternRegistry := by
+              have hreg_cf₁_pp2 : cf₁.registry = registry := by
+                have h2 : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 exact (terminatesTo_preserves_registry ht₁_e1).trans h2
               rw [hreg_cf₀_pp2] at ht₀_body
@@ -12760,7 +13092,8 @@ lemma stepFR_app
                     { memory := cf₀.memory
                       varEnv := env₀.update x₀ v₂₀
                       nextAddr := cf₀.nextAddr
-                      pureMode := true } evalCfg₀ o₀ := by
+                      pureMode := true
+                      registry := registry } evalCfg₀ o₀ := by
                 have hbody_eq : PExpr.toExpr pbody = body₀ :=
                   PExpr_toExpr_of_toPExpr?_some body₀ pbody htoPExpr
                 rw [hbody_eq]
@@ -12770,7 +13103,8 @@ lemma stepFR_app
                     { memory := cf₁.memory
                       varEnv := env₁.update x₁ v₂₁
                       nextAddr := cf₁.nextAddr
-                      pureMode := true } evalCfg₁ o₁ := by
+                      pureMode := true
+                      registry := registry } evalCfg₁ o₁ := by
                 have hbody_eq : PExpr.toExpr pbody = body₀ :=
                   PExpr_toExpr_of_toPExpr?_some body₀ pbody htoPExpr
                 rw [hbody_eq, hbody]
@@ -13434,7 +13768,9 @@ lemma stepFR_app
             _hpm_e2₁ _hpm_final₁ =>
             exact False.elim (by
               have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
-                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                have hreg : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                simpa [hregistry_empty] using hreg
               have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
                 (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
               rw [hreg_c₁₁] at hGet₁
@@ -13450,7 +13786,9 @@ lemma stepFR_app
           intro c₂'₁ c₁₁ v₂₁ o₁' ht₁_e2 ht₁_e1
           exact False.elim (by
             have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
-              simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+              have hreg : c₂'₀.registry = registry := by
+                simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+              simpa [hregistry_empty] using hreg
             have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
               (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
             rw [hreg_c₁₀] at hGet₀

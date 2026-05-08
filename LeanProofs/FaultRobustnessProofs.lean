@@ -1902,14 +1902,19 @@ theorem TypeSystemEnforcesFaultRobustness_step
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckApp] at htc
             | succ fuel' =>
-                have hsingleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) := by
+                have hsingleIH :
+                    StepFRSingleRunFinalCleanPcTrue_IH predSat tm
+                      (Nat.succ (Nat.succ fuel'))
+                      (registry := emptyExternRegistry) := by
                   intro m _hm tmᵢ e ctx' hwfTm' _hTmBounded' res' htc'
                   exact
                     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
                       e ctx' predSat tmᵢ m res' htc'
                 exact
-                  stepFR_app ctxᵢ predSat tm e1 e2 fuel' res
-                    (StepFR_IH_of_induction predSat tm (Nat.succ (Nat.succ fuel'))
+                  stepFR_app ctxᵢ predSat tm (registry := emptyExternRegistry)
+                    rfl e1 e2 fuel' res
+                    (StepFR_IH_of_induction (registry := emptyExternRegistry)
+                      predSat tm (Nat.succ (Nat.succ fuel'))
                     (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc))
                     hsingleIH htc
         | externVal id t p pr =>
