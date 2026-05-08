@@ -3234,6 +3234,8 @@ private lemma appTwoRunOutChoice_from_body_stepFRPost
       preCfg₁.memory preCfg₁.varEnv θpre₁)
     (hagree_out :
       ∀ θbody₀ θbody₁,
+        wfExtendsMap θpre₀ θbody₀ →
+        wfExtendsMap θpre₁ θbody₁ →
         runtimeInstantiatesCtx (ctxAfter bodyCtx result3)
           evalCfg₀.memory evalCfg₀.varEnv θbody₀ →
         runtimeInstantiatesCtx (ctxAfter bodyCtx result3)
@@ -3271,7 +3273,7 @@ private lemma appTwoRunOutChoice_from_body_stepFRPost
         hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
         hθext₀ hθext₁ hv₀ hv₁ hric_body₀ hric_body₁ hric_pre₀ hric_pre₁
         hcwr_body₀ hcwr_body₁ hcwr_pre₀ hcwr_pre₁
-        (hagree_out θbody₀ θbody₁ hric_body₀ hric_body₁ _hagree_body)
+        (hagree_out θbody₀ θbody₁ hθext₀ hθext₁ hric_body₀ hric_body₁ _hagree_body)
         hval_body₀ hval_body₁ hres_agree_body
   exact appTwoRunOutChoice_of_pack hθext₀ hθext₁ hpack
 
@@ -3326,6 +3328,8 @@ private lemma appTwoRunOutChoice_from_call_boundaryFR
       preCfg₁.memory preCfg₁.varEnv θpre₁)
     (hagree_out :
       ∀ θbody₀ θbody₁,
+        wfExtendsMap θpre₀ θbody₀ →
+        wfExtendsMap θpre₁ θbody₁ →
         runtimeInstantiatesCtx (ctxAfter entry₀.bodyCtx result3)
           evalCfg₀.memory evalCfg₀.varEnv θbody₀ →
         runtimeInstantiatesCtx (ctxAfter entry₀.bodyCtx result3)
@@ -3359,6 +3363,111 @@ private lemma appTwoRunOutChoice_from_call_boundaryFR
       h_join hsrc_mem hsrc_eq hlookup_back_pre_to_src hvar_lookup_src_to_pre
       hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
       hric_pre₀ hric_pre₁ hcwr_pre₀ hcwr_pre₁ hagree_out hbody_post
+
+private lemma appSingleRunMaskedPost_from_body_fields
+    {masked : Tag → Prop}
+    {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
+    {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
+    (ctxMember : AppMemberCtxCons CtxCons predSat)
+    (ctxJoinMember : AppJoinCtxConsFromMember CtxCons)
+    (valBodyResult : AppBodyResultValCons ValCons)
+    (valJoinMember : AppJoinValConsFromMember ValCons)
+    {ctx bodyCtx : TypeContext}
+    {result2 result1 first src result3 res : TypeResult} {rest : List TypeResult}
+    {μ : Memory} {ρ : VarEnv} {θ θpre θbody : RealizationMap}
+    {cf evalCfg preCfg : Config} {o : Value} {p p1 : Poison}
+    {registry : ExternRegistry}
+    {hθwf : wfRealizationMap θ}
+    {hwf : wfTypeContext ctx}
+    {hric_start : runtimeInstantiatesCtx ctx μ ρ θ}
+    {hreg : regimeConsistentWithCtxMasked masked ctx}
+    {hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none}
+    {hctx_start : CtxCons ctx μ ρ θ}
+    {a : Address} {pm : Bool}
+    {hwfcfg : wfConfig
+      ({ memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } : Config)}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hsrc_eq :
+      src =
+        { result3 with
+          qualType :=
+            normalizeAppResultByProvenance (joinPoison p1 p)
+              { result3.qualType with
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+    (hlookup_back_pre_to_src :
+      ∀ k b,
+        (ctxAfter ctx src).regime.lookup? k = some b →
+        (ctxAfter (ctxAfter ctx result2) result1).regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        (ctxAfter (ctxAfter ctx result2) result1).varEnv.lookup x = some qt)
+    (hpred_compat :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg.memory v' ↔
+          qtypPredHolds predSat qt' cf.memory v')
+    (hmem_eq : cf.memory = evalCfg.memory)
+    (hvar_eq : cf.varEnv = preCfg.varEnv)
+    (hθ_start_pre : wfExtendsMap θ θpre)
+    (hθ_pre_body : wfExtendsMap θpre θbody)
+    (hv_body : valueHasETyp θbody o result3.qualType.etyp)
+    (hric_body :
+      runtimeInstantiatesCtx (ctxAfter bodyCtx result3) evalCfg.memory evalCfg.varEnv θbody)
+    (hric_pre :
+      runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx result2) result1)
+        preCfg.memory preCfg.varEnv θpre)
+    (hctx_body : CtxCons (ctxAfter bodyCtx result3) evalCfg.memory evalCfg.varEnv θbody)
+    (hctx_pre :
+      CtxCons (ctxAfter (ctxAfter ctx result2) result1)
+        preCfg.memory preCfg.varEnv θpre)
+    (hval_body : ValCons (ctxAfter bodyCtx result3).regime result3.qualType
+      evalCfg.memory θbody o)
+    (hpres_final : PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θbody)
+    (hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θbody) :
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
+      masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
+      hθwf hwf hric_start hreg hmasked_none hctx_start a pm hwfcfg := by
+  refine ⟨θbody, wfExtendsMap_trans hθ_start_pre hθ_pre_body, ?_, ?_, ?_, ?_,
+    hpres_final, hfresh_final⟩
+  · have hsrc_etyp : src.qualType.etyp = result3.qualType.etyp := by
+      rw [hsrc_eq]
+      unfold normalizeAppResultByProvenance
+      split_ifs <;> rfl
+    have hv_src : valueHasETyp θbody o src.qualType.etyp := by
+      rw [hsrc_etyp]
+      exact hv_body
+    exact
+      joinTypeResults_transport_valueHasETyp_from_member
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (θ := θbody) (v := o)
+        h_join hsrc_mem hv_src
+  · exact
+      appMember_runtimeInstantiatesCtx_from_body
+        (ctx := ctx) (preCtx := ctxAfter (ctxAfter ctx result2) result1)
+        (bodyFinalCtx := ctxAfter bodyCtx result3)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf) (evalCfg := evalCfg) (preCfg := preCfg)
+        (θpre := θpre) (θbody := θbody)
+        h_join hsrc_mem hric_body hric_pre
+        (fun l hcontains_body => by
+          simpa [ctxAfter, hsrc_eq] using hcontains_body)
+        hvar_lookup_src_to_pre hmem_eq hvar_eq hθ_pre_body
+  · have hctx_src : CtxCons (ctxAfter ctx src) cf.memory cf.varEnv θbody :=
+      ctxMember ctx bodyCtx result2 result1 src result3
+        (normalizeAppResultByProvenance (joinPoison p1 p)
+          { result3.qualType with
+            poison := joinPoison p1 (joinPoison p result3.qualType.poison) })
+        preCfg evalCfg cf θpre θbody
+        hpred_compat hsrc_eq hmem_eq hvar_eq
+        hlookup_back_pre_to_src hθ_pre_body hctx_pre hctx_body
+    exact ctxJoinMember ctx first src rest res cf.memory cf.varEnv θbody
+      h_join hsrc_mem hctx_src
+  · have hval_src :
+        ValCons (ctxAfter ctx src).regime src.qualType cf.memory θbody o :=
+      valBodyResult ctx bodyCtx src result3 p p1 cf.memory evalCfg.memory θbody o
+        hsrc_eq hmem_eq hval_body
+    exact valJoinMember ctx first src rest res cf.memory θbody o
+      h_join hsrc_mem hval_src
 
 private lemma applyFnTClosure_extern_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -4379,12 +4488,29 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
               theta_not_contains_if_not_in_memEnv
                 (ctxAfter bodyCtx result3) evalCfg.memory evalCfg.varEnv θ_body l
                 hric_body_final (by simpa [ctxAfter] using hc3)
-        refine ⟨θ_body, hθext, ?_, hric_final, hcwr_final, hvalc_final, hpres_final, hfresh_final⟩
+        have hpred_compat_final :
+            ∀ (qt' : QTyp) (v' : Value),
+              qtypPredHolds predSat qt' c₁.memory v' ↔ qtypPredHolds predSat qt' cf.memory v' :=
+          qtypPredHolds_mem_compat_of_predSatLaws
+            (hpredlaws := hpredlaws) (θ := θ1) (μ := c₁.memory) (μ' := cf.memory)
         exact
-          joinTypeResults_transport_valueHasETyp_from_member
-            (ctx := ctxᵢ) (first := first) (src := firstA) (rest := rest) (res := res)
-            (θ := θ_body) (v := o)
-            h_join hfirstA_mem' (hfirstA_etyp ▸ hv_body_typed)
+          appSingleRunMaskedPost_from_body_fields
+            (predSat := predSat)
+            ctxMember ctxJoinMember valBodyResult valJoinMember
+            (ctx := ctxᵢ) (bodyCtx := bodyCtx)
+            (result2 := result2) (result1 := result1)
+            (first := first) (src := firstA) (result3 := result3)
+            (rest := rest) (res := res)
+            (μ := μ) (ρ := ρ) (θ := θ) (θpre := θ1) (θbody := θ_body)
+            (cf := cf) (evalCfg := evalCfg) (preCfg := c₁)
+            (o := o) (p := p) (p1 := p1)
+            h_join hfirstA_mem' hfirstA_eq hlookup_back_res1_to_A
+            (fun y qt hlookup => by
+              simpa [ctxAfter] using hlookup)
+            hpred_compat_final hmem_eq hvar_eq
+            (wfExtendsMap_trans hθext2 hθext1) hθext_body hv_body_typed
+            hric_body_final hric1 hcwr_body_final hcwr1 hvalc_body
+            hpres_final hfresh_final
   | @externFn c₂' v₂ c₁ x y id argTyp retSpec eff env impl vRaw mem' addr'
       ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcfg hpm_e2 _ =>
     rcases
@@ -5178,12 +5304,32 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
               theta_not_contains_if_not_in_memEnv
                 (ctxAfter bodyCtx result3) evalCfg.memory evalCfg.varEnv θ_body l
                 hric_body_final (by simpa [ctxAfter] using hc3)
-        refine ⟨θ_body, hθext, ?_, hric_final, hcwr_final, hvalc_final, hpres_final, hfresh_final⟩
+        have hric1_cf :
+            runtimeInstantiatesCtx (ctxAfter (ctxAfter ctxᵢ result2) result1)
+              cf.memory cf.varEnv θ1 := by
+          simpa [hcf] using hric1
+        have hcwr1_cf :
+            CtxCons (ctxAfter (ctxAfter ctxᵢ result2) result1)
+              cf.memory cf.varEnv θ1 := by
+          simpa [hcf] using hcwr1
         exact
-          joinTypeResults_transport_valueHasETyp_from_member
-            (ctx := ctxᵢ) (first := first) (src := firstA) (rest := rest) (res := res)
-            (θ := θ_body) (v := o)
-            h_join hfirstA_mem' (hfirstA_etyp ▸ hv_body_typed)
+          appSingleRunMaskedPost_from_body_fields
+            (predSat := predSat)
+            ctxMember ctxJoinMember valBodyResult valJoinMember
+            (ctx := ctxᵢ) (bodyCtx := bodyCtx)
+            (result2 := result2) (result1 := result1)
+            (first := first) (src := firstA) (result3 := result3)
+            (rest := rest) (res := res)
+            (μ := μ) (ρ := ρ) (θ := θ) (θpre := θ1) (θbody := θ_body)
+            (cf := cf) (evalCfg := evalCfg) (preCfg := cf)
+            (o := o) (p := p) (p1 := p1)
+            h_join hfirstA_mem' hfirstA_eq hlookup_back_res1_to_A
+            (fun y qt hlookup => by
+              simpa [ctxAfter] using hlookup)
+            (fun _ _ => Iff.rfl) hmem_eq rfl
+            (wfExtendsMap_trans hθext2 hθext1) hθext_body hv_body_typed
+            hric_body_final hric1_cf hcwr_body_final hcwr1_cf hvalc_body
+            hpres_final hfresh_final
   | @externPfn c₂' v₂ c₁ x y id argTyp retSpec env impl vRaw
       ht_e2 ht_e1 hGet hArg hImpl hValRet hcfg hpm_e2 _ =>
     rcases
@@ -7127,8 +7273,21 @@ lemma stepFR_app
                     _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
                     _hvalc_body₀, _hvalc_body₁, _hres_agree_body⟩
                 have hAgree_out_body :
-                    agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
-                      cf₀.memory cf₀.varEnv θ₀_body cf₁.memory cf₁.varEnv θ₁_body := by
+                    ∀ θ₀_body θ₁_body,
+                      wfExtendsMap θ₀1 θ₀_body →
+                      wfExtendsMap θ₁1 θ₁_body →
+                      runtimeInstantiatesCtx (ctxAfter bodyCtx result3Shared)
+                        evalCfg₀.memory evalCfg₀.varEnv θ₀_body →
+                      runtimeInstantiatesCtx (ctxAfter bodyCtx result3Shared)
+                        evalCfg₁.memory evalCfg₁.varEnv θ₁_body →
+                      agreeOnClean predSat (ctxAfter bodyCtx result3Shared).regime
+                        (ctxAfter bodyCtx result3Shared)
+                        evalCfg₀.memory evalCfg₀.varEnv θ₀_body
+                        evalCfg₁.memory evalCfg₁.varEnv θ₁_body →
+                      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+                        cf₀.memory cf₀.varEnv θ₀_body cf₁.memory cf₁.varEnv θ₁_body := by
+                  intro θ₀_body θ₁_body _hθext₀_body _hθext₁_body
+                    _hric_body_final₀ _hric_body_final₁ hagree_body_after
                   have hsrc_mem : firstShared ∈ first :: rest := by
                     simpa [heq_results] using hfirstSharedMem
                   have hagree_src :
@@ -7355,7 +7514,9 @@ lemma stepFR_app
                         (ctxAfter ctxᵢ firstShared).regime.lookup? k = some b →
                         (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
                     regime_lookup_back_of_monotone hres1_to_src_mono
-                  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, hAgree_out_body, ?_, ?_, ?_⟩
+                  refine ⟨?_, ?_, ?_, ?_, ?_, ?_,
+                    hAgree_out_body θ₀_body θ₁_body _hθext₀_body _hθext₁_body
+                      _hric_body_final₀ _hric_body_final₁ hagree_body_after, ?_, ?_, ?_⟩
                   · -- shared-member valueHasETyp -> joined valueHasETyp (run 0).
                     have hv_src₀ : valueHasETyp θ₀_body o₀ firstShared.qualType.etyp := by
                       rw [hfirstShared_etyp]
@@ -7513,9 +7674,18 @@ lemma stepFR_app
                         (θ₀ := θ₀_body) (θ₁ := θ₁_body) (o₀ := o₀) (o₁ := o₁)
                         (p := p) (p1 := p1)
                         h_join hsrc_mem' hfirstShared hmem₀_eq hmem₁_eq _hres_agree_body
-                have hOutPack_body_from_helper :
-                    AppTwoRunOutPack predSat ctxᵢ res cf₀ cf₁ o₀ o₁
-                      θ₀_body θ₁_body := by
+                have hbody_post_for_transport :
+                    StepFRPost bodyCtx body₀ result3Shared predSat tm1
+                      θ₀1 θ₁1 evalCfg₀ evalCfg₁ o₀ o₁ := by
+                  exact ⟨_tm_body, _hcanon_body, _hpredlaws_body, _hresTm_body,
+                    θ₀_body, θ₁_body, _hθext₀_body, _hθext₁_body,
+                    _hv_body₀_typed, _hv_body₁_typed, _hTm_body, _hwf_body_after,
+                    _htagBounded_body_after, _hwfcfg_body_final₀, _hwfcfg_body_final₁,
+                    _hric_body_final₀, _hric_body_final₁, _htagR_body_final,
+                    _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
+                    _hvalc_body₀, _hvalc_body₁, _hres_agree_body⟩
+                have hOutChoice_body_from_helper :
+                    AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ := by
                   have hsrc_mem' : firstShared ∈ first :: rest := by
                     simpa [heq_results] using hfirstSharedMem
                   have hres1_to_src_mono :
@@ -7552,36 +7722,33 @@ lemma stepFR_app
                       (hpredlaws := hpredlaws) (θ := θ₁1)
                       (μ := c₁₁.memory) (μ' := cf₁.memory)
                   exact
-                    appTwoRunOutPack_from_body_post
-                      (predSat := predSat)
+                    appTwoRunOutChoice_from_body_stepFRPost
+                      (predSat := predSat) (tmBody := tm1)
                       (ctx := ctxᵢ)
                       (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
                       (bodyCtx := bodyCtx)
+                      (postExpr := body₀)
                       (first := first) (src := firstShared) (result3 := result3Shared)
                       (rest := rest) (res := res)
                       (cf₀ := cf₀) (cf₁ := cf₁)
                       (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
                       (preCfg₀ := c₁₀) (preCfg₁ := c₁₁)
                       (θpre₀ := θ₀1) (θpre₁ := θ₁1)
-                      (θbody₀ := θ₀_body) (θbody₁ := θ₁_body)
                       (o₀ := o₀) (o₁ := o₁) (p := p) (p1 := p1)
                       h_join hsrc_mem' hfirstShared hlookup_back_res1_to_src
                       (fun x qt hlookup => by
                         simpa [ctxAfter] using hlookup)
                       hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
-                      _hθext₀_body _hθext₁_body _hv_body₀_typed _hv_body₁_typed
-                      _hric_body_final₀ _hric_body_final₁ hric₀1 hric₁1
-                      _hcwr_body_final₀ _hcwr_body_final₁ hcwr₀1 hcwr₁1
-                      hAgree_out_body _hvalc_body₀ _hvalc_body₁ _hres_agree_body
+                      hric₀1 hric₁1 hcwr₀1 hcwr₁1 hAgree_out_body hbody_post_for_transport
+                rcases hOutChoice_body_from_helper with
+                  ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁, hOutPack_body_out⟩
                 exact
-                  appTwoRunOutChoice_of_pack
-                    (hθ₀ :=
-                      wfExtendsMap_trans hθext₀2
-                        (wfExtendsMap_trans hθext₀1 _hθext₀_body))
-                    (hθ₁ :=
-                      wfExtendsMap_trans hθext₁2
-                        (wfExtendsMap_trans hθext₁1 _hθext₁_body))
-                    hOutPack_body_from_helper
+                  ⟨θ₀_out, θ₁_out,
+                    wfExtendsMap_trans hθext₀2
+                      (wfExtendsMap_trans hθext₀1 hθext_body_out₀),
+                    wfExtendsMap_trans hθext₁2
+                      (wfExtendsMap_trans hθext₁1 hθext_body_out₁),
+                    hOutPack_body_out⟩
               · -- Fallback: no shared closure (¬ internalPoisonClean).
                 have hptrue : p = true := by
                   have : ¬ p = false := by
@@ -9851,8 +10018,21 @@ lemma stepFR_app
                   (toExpr_toPExpr? pbody) rfl hbeval_b₁).symm
               -- Phase 9: Transport agreeOnClean from shared body result to joined res
               have hAgree_out_body :
-                  agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
-                    cf₀.memory cf₀.varEnv θ₀_body cf₁.memory cf₁.varEnv θ₁_body := by
+                  ∀ θ₀_body θ₁_body,
+                    wfExtendsMap θ₀1 θ₀_body →
+                    wfExtendsMap θ₁1 θ₁_body →
+                    runtimeInstantiatesCtx (ctxAfter bodyCtx result3Shared)
+                      evalCfg₀.memory evalCfg₀.varEnv θ₀_body →
+                    runtimeInstantiatesCtx (ctxAfter bodyCtx result3Shared)
+                      evalCfg₁.memory evalCfg₁.varEnv θ₁_body →
+                    agreeOnClean predSat (ctxAfter bodyCtx result3Shared).regime
+                      (ctxAfter bodyCtx result3Shared)
+                      evalCfg₀.memory evalCfg₀.varEnv θ₀_body
+                      evalCfg₁.memory evalCfg₁.varEnv θ₁_body →
+                    agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+                      cf₀.memory cf₀.varEnv θ₀_body cf₁.memory cf₁.varEnv θ₁_body := by
+                intro θ₀_body θ₁_body _hθext₀_body _hθext₁_body
+                  _hric_body_final₀ _hric_body_final₁ hagree_body_after
                 have hsrc_mem : firstShared ∈ first :: rest := by
                   simpa [heq_results] using hfirstSharedMem
                 have hagree_src :
@@ -10098,8 +10278,9 @@ lemma stepFR_app
                       (ctxAfter ctxᵢ firstShared).regime.lookup? k = some b →
                       (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
                   regime_lookup_back_of_monotone hres1_to_src_mono
-                refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hAgree_out_body,
-                  ?_, ?_, ?_, ?_⟩
+                refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+                  hAgree_out_body θ₀_body θ₁_body _hθext₀_body _hθext₁_body
+                    _hric_body_final₀ _hric_body_final₁ hagree_body_after, ?_, ?_, ?_, ?_⟩
                 · -- shared-member valueHasETyp -> joined valueHasETyp (run 0).
                   have hv_src₀ : valueHasETyp θ₀_body o₀ firstShared.qualType.etyp := by
                     rw [hfirstShared_etyp]
@@ -10273,9 +10454,27 @@ lemma stepFR_app
                     typecheck_preserves_predSatLaws hExtTyping predSat tm ctxᵢ
                       (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
                       hwfTm hTmBounded hpredlaws htc
-              have hOutPack_body_core :
-                  AppTwoRunOutPack predSat ctxᵢ res cf₀ cf₁ o₀ o₁
-                    θ₀_body θ₁_body := by
+              rcases typecheck_preserves_predSatLaws hExtTyping predSat tm ctxᵢ
+                  (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
+                  hwfTm hTmBounded hpredlaws htc with
+                ⟨tmOut, hcanonOut, hpredlawsOut⟩
+              rcases hOutPack_body with
+                ⟨_hv_body_out₀, _hv_body_out₁, _hwfTmOld, hwfFinal, htagBoundedFinal,
+                  hwfcfFinal₀, hwfcfFinal₁, _hricFinal₀, _hricFinal₁, htagFinal,
+                  _hcwrFinal₀, _hcwrFinal₁, _hagreeFinal, _hvalcFinal₀, _hvalcFinal₁,
+                  _hresAgreeFinal, _hcanonOld⟩
+              have hbody_post_for_transport :
+                  StepFRPost bodyCtx (PExpr.toExpr pbody) result3Shared predSat tm1
+                    θ₀1 θ₁1 evalCfg₀ evalCfg₁ o₀ o₁ := by
+                exact ⟨_tm_body, _hcanon_body, _hpredlaws_body, _hresTm_body,
+                  θ₀_body, θ₁_body, _hθext₀_body, _hθext₁_body,
+                  _hv_body₀_typed, _hv_body₁_typed, _hTm_body, _hwf_body_after,
+                  _htagBounded_body_after, _hwfcfg_body_final₀, _hwfcfg_body_final₁,
+                  _hric_body_final₀, _hric_body_final₁, _htagR_body_final,
+                  _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
+                  _hvalc_body₀, _hvalc_body₁, _hres_agree_body⟩
+              have hOutChoice_body_from_helper :
+                  AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ := by
                 have hsrc_mem' : firstShared ∈ first :: rest := by
                   simpa [heq_results] using hfirstSharedMem
                 have hres1_to_src_mono :
@@ -10300,44 +10499,34 @@ lemma stepFR_app
                         qtypPredHolds predSat qt' cf₁.memory v' :=
                   fun _ _ => Iff.rfl
                 exact
-                  appTwoRunOutPack_from_body_post
-                    (predSat := predSat)
+                  appTwoRunOutChoice_from_body_stepFRPost
+                    (predSat := predSat) (tmBody := tm1)
                     (ctx := ctxᵢ)
                     (preCtx := ctxAfter (ctxAfter ctxᵢ result2) result1)
                     (bodyCtx := bodyCtx)
+                    (postExpr := PExpr.toExpr pbody)
                     (first := first) (src := firstShared) (result3 := result3Shared)
                     (rest := rest) (res := res)
                     (cf₀ := cf₀) (cf₁ := cf₁)
                     (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
                     (preCfg₀ := cf₀) (preCfg₁ := cf₁)
                     (θpre₀ := θ₀1) (θpre₁ := θ₁1)
-                    (θbody₀ := θ₀_body) (θbody₁ := θ₁_body)
                     (o₀ := o₀) (o₁ := o₁) (p := p) (p1 := p1)
                     h_join hsrc_mem' hfirstShared hlookup_back_res1_to_src
                     (fun x qt hlookup => by
                       simpa [ctxAfter] using hlookup)
                     hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq rfl rfl
-                    _hθext₀_body _hθext₁_body _hv_body₀_typed _hv_body₁_typed
-                    _hric_body_final₀ _hric_body_final₁ hric₀1 hric₁1
-                    _hcwr_body_final₀ _hcwr_body_final₁ hcwr₀1 hcwr₁1
-                    hAgree_out_body _hvalc_body₀ _hvalc_body₁ _hres_agree_body
-              rcases typecheck_preserves_predSatLaws hExtTyping predSat tm ctxᵢ
-                  (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
-                  hwfTm hTmBounded hpredlaws htc with
-                ⟨tmOut, hcanonOut, hpredlawsOut⟩
-              rcases hOutPack_body with
-                ⟨_hv_body_out₀, _hv_body_out₁, _hwfTmOld, hwfFinal, htagBoundedFinal,
-                  hwfcfFinal₀, hwfcfFinal₁, _hricFinal₀, _hricFinal₁, htagFinal,
-                  _hcwrFinal₀, _hcwrFinal₁, _hagreeFinal, _hvalcFinal₀, _hvalcFinal₁,
-                  _hresAgreeFinal, _hcanonOld⟩
-              rcases hOutPack_body_core with
+                    hric₀1 hric₁1 hcwr₀1 hcwr₁1 hAgree_out_body hbody_post_for_transport
+              rcases hOutChoice_body_from_helper with
+                ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁, hOutPack_body_out⟩
+              rcases hOutPack_body_out with
                 ⟨hvCore₀, hvCore₁, hricCore₀, hricCore₁, hcwrCore₀, hcwrCore₁,
                   hagreeCore, hvalCore₀, hvalCore₁, hresAgreeCore⟩
               exact ⟨tmOut, BoundaryTagMeaningPost.of_isCanonical_predSat hcanonOut hpredlawsOut,
                 hpredlawsOut,
-                IsCanonicalExtension.respectsResult hcanonOut, θ₀_body, θ₁_body,
-                wfExtendsMap_trans hθext₀2 (wfExtendsMap_trans hθext₀1 _hθext₀_body),
-                wfExtendsMap_trans hθext₁2 (wfExtendsMap_trans hθext₁1 _hθext₁_body),
+                IsCanonicalExtension.respectsResult hcanonOut, θ₀_out, θ₁_out,
+                wfExtendsMap_trans hθext₀2 (wfExtendsMap_trans hθext₀1 hθext_body_out₀),
+                wfExtendsMap_trans hθext₁2 (wfExtendsMap_trans hθext₁1 hθext_body_out₁),
                 hvCore₀, hvCore₁, IsCanonicalExtension.wfCtx hcanonOut,
                 hwfFinal, htagBoundedFinal, hwfcfFinal₀, hwfcfFinal₁, hricCore₀,
                 hricCore₁, htagFinal, hcwrCore₀, hcwrCore₁, hagreeCore,
