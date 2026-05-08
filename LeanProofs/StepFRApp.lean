@@ -5352,6 +5352,9 @@ def ExternCallEntryKey : Type :=
 def ExternCallNoEntryKey : ExternCallEntryKey :=
   fun _ _ => True
 
+def ExternCallImpossibleEntryKey : ExternCallEntryKey :=
+  fun _ _ => False
+
 def ExternCallTrustedEntryKey (tr : TrustedRegistry) : ExternCallEntryKey :=
   fun id entry => TrustedRegistry.lookup? tr id = some entry
 
@@ -8598,12 +8601,28 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
 lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  -- Stepping-stone hypothesis: this is removed when all extern app branches consume providers.
   (hregistry_empty : registry = emptyExternRegistry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (singleIH :
     StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel'))
       (registry := registry))
+  (entryKey : ExternCallEntryKey := ExternCallImpossibleEntryKey)
+  (_hentryKey_unique :
+    ∀ {id : ExternId} {entry₀ entry₁ : TrustedExternEntry},
+      entryKey id entry₀ → entryKey id entry₁ → entry₀ = entry₁)
+  (_hcallFR_of_entryKey :
+    ∀ {id : ExternId} {entry : TrustedExternEntry},
+      entryKey id entry → ExternCallBoundaryFR entry.decl entry.impl)
+  (_hfnLocal :
+    ∀ {tcls : List FnTClosure},
+      TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+        (entryKey := entryKey) (registry := registry))
+  (_hpfnLocal :
+    ∀ {tcls : List PFnTClosure},
+      TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+        (entryKey := entryKey) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
   -- Phase 1: Typecheck decomposition (typecheck = typecheckExpr; app case reduces to typecheckApp)
@@ -8675,6 +8694,124 @@ lemma stepFR_app
       rcases valueHasETyp_peClosure_etyp_parrow_inv hv_typed with ⟨_, _, _, _, hparr⟩
       rw [hetyp1] at hparr
       cases hparr
+    have finish_from_out_choice :
+        wfTypeContext (ctxAfter (ctxAfter ctxᵢ result2) result1) →
+        regimeConsistentWithCtx (ctxAfter (ctxAfter ctxᵢ result2) result1) →
+        AppTwoRunOutChoice predSat ctxᵢ res θ₀ θ₁ cf₀ cf₁ o₀ o₁ →
+        StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁ := by
+      intro hwf1 htagR1 hOutMapChoice
+      rcases hOutMapChoice with ⟨θ₀_out, θ₁_out, hθext_out₀, hθext_out₁, hOutPack⟩
+      rcases hOutPack with
+        ⟨hv_out₀, hv_out₁, hric_out₀, hric_out₁,
+          hcwr_out₀, hcwr_out₁, hAgree_out, hvalc_out₀, hvalc_out₁, hres_agree_out⟩
+      have hwf_result1 : wfTypeResult result1 := by
+        simp only [ctxAfter, wfTypeContext, wfTypeResult] at hwf1 ⊢
+        exact hwf1.1
+      have hresults_wf :
+          ∀ r, r ∈ results → wfTypeResult r :=
+        threaded_applyFnTClosure_forall_wfTypeResult
+          (fuel_top := fuel' + 1)
+          (IH := fun m _ e ctx' res' hwf htc =>
+            typecheckExpr_preserves_wfTypeResult ctx' e m res' hwf htc)
+          (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+          (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+          (result1 := result1) (fuel := fuel')
+          (h_call_lt := Nat.lt_succ_self fuel')
+          hwf_result1
+          (tcls := tcls) (results := results)
+          (by
+              have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
+                (ctxAfter ctxᵢ result2) e1 fuel' result1
+                (wfTypeContext_of_wfTypeResult ctxᵢ result2
+                  (typecheckExpr_preserves_wfTypeResult ctxᵢ e2 fuel' result2 hwf htc2')
+                  hwf (typecheck_nextLoc_mono ctxᵢ e2 fuel' result2 htc2'))
+                htc1'
+              rw [hetyp1] at hClosRL
+              intro tcl htcl
+              exact hClosRL tcl htcl)
+          (by
+              have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2
+                hwf htc2'
+              simp [hqt2] at h
+              exact etypRefLocsBounded_mono h
+                (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
+          (by
+              have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2
+                fuel' result2 hwf htc2'
+              simp [hqt2] at h
+              exact etypClosuresCapturedRefLocsBounded_mono h
+                (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
+          hmap
+      have hresults_regime :
+          ∀ r, r ∈ results → regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
+        have htagR1_ctx : regimeConsistentWithCtx (ctxAfter ctxᵢ result1) := by
+          simpa [ctxAfter] using htagR1
+        exact
+          threaded_applyFnTClosure_forall_regimeConsistentWithCtx
+            (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
+            (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
+            (result1 := result1) (fuel := fuel')
+            (tcls := tcls) (results := results)
+            htagR1_ctx hmap
+      have hfirst_in_results : first ∈ results := by
+        simp [heq_results]
+      have h_first_wf : wfTypeResult first := hresults_wf first hfirst_in_results
+      have h_first_regime : regimeConsistentWithCtx (ctxAfter ctxᵢ first) :=
+        hresults_regime first hfirst_in_results
+      have h_rest_wf : ∀ r ∈ rest, wfTypeResult r := by
+        intro r hr
+        have hmem_results : r ∈ results := by
+          have : r ∈ first :: rest := by simp [hr]
+          simpa [heq_results] using this
+        exact hresults_wf r hmem_results
+      have h_rest_regime :
+          ∀ r ∈ rest, regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
+        intro r hr
+        have hmem_results : r ∈ results := by
+          have : r ∈ first :: rest := by simp [hr]
+          simpa [heq_results] using this
+        exact hresults_regime r hmem_results
+      have h_mem_join :
+          ∀ l, res.memEnv'.contains l →
+            first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l :=
+        joinTypeResults_mem_contains_head_or_rest
+          (ctx := ctxᵢ) (first := first) (rest := rest) (res := res) h_join
+      have h_tag_join :
+          tagEnvConsistentWithRegime (ctxAfter ctxᵢ res).tagEnv
+            (ctxAfter ctxᵢ res).regime :=
+        joinTypeResults_tagEnvConsistentWithRegime
+          (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+          h_join h_first_regime h_rest_regime
+      rcases typecheck_preserves_predSatLaws hExtTyping predSat tm ctxᵢ
+          (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
+          hwfTm hTmBounded hpredlaws htc with
+        ⟨tmOut, hcanonOut, hpredlawsOut⟩
+      refine ⟨tmOut, BoundaryTagMeaningPost.of_isCanonical_predSat hcanonOut hpredlawsOut,
+        hpredlawsOut, ?_, θ₀_out, θ₁_out,
+        hθext_out₀, hθext_out₁, hv_out₀, hv_out₁, ?_, ?_, ?_, ?_, ?_, hric_out₀,
+        hric_out₁, ?_, hcwr_out₀, hcwr_out₁, hAgree_out, hvalc_out₀, hvalc_out₁,
+        hres_agree_out⟩
+      · exact IsCanonicalExtension.respectsResult hcanonOut
+      · exact IsCanonicalExtension.wfCtx hcanonOut
+      · exact
+          join_transport_wfTypeContext
+            (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+            h_join h_mem_join
+            (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf hwf
+              (Nat.le_trans
+                (Nat.le_trans (typecheck_nextLoc_mono ctxᵢ e2 fuel' result2 htc2')
+                  (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
+                (threaded_applyFnTClosure_member_nextLoc_mono st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 fuel' tcls results hmap first hfirst_in_results)))
+            h_rest_wf
+      · exact typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2)
+          (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
+      · exact
+          join_transport_regimeConsistentWithCtx
+            (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
+            h_join h_tag_join h_first_regime
     have finish_user_only :
         AppUserOnlyShape e1 e2 cinit₀ cf₀ o₀ →
         AppUserOnlyShape e1 e2 cinit₁ cf₁ o₁ →
@@ -10891,156 +11028,7 @@ lemma stepFR_app
                 rw [← hp1]
                 simp [hpoison1_true, joinPoison]
               exact hOutMapChoice_p1p_true h_p1p
-          rcases hOutMapChoice with ⟨θ₀_out, θ₁_out, hθext_out₀, hθext_out₁, hOutPack⟩
-          rcases hOutPack with
-            ⟨hv_out₀, hv_out₁, hric_out₀, hric_out₁,
-              hcwr_out₀, hcwr_out₁, hAgree_out, hvalc_out₀, hvalc_out₁, hres_agree_out⟩
-          have hwf_result1 : wfTypeResult result1 := by
-            simp only [ctxAfter, wfTypeContext, wfTypeResult] at hwf1 ⊢
-            exact hwf1.1
-          have hresTm2_arg : QTypRespectsTagMeaning tm1 ⟨etyp2, p2, pred2⟩ := by
-            have hresTm2_arg0 : QTypRespectsTagMeaning tm2 ⟨etyp2, p2, pred2⟩ := by
-              simpa [hqt2] using (hresTm2 : QTypRespectsTagMeaning tm2 result2.qualType)
-            intro qt' k d hinq hqd
-            exact (BoundaryTagMeaningPost.extends_tm hcanon1).lookup (hresTm2_arg0 hinq hqd)
-          have hargTm : QTypRespectsTagMeaning tm1 ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ :=
-            QTypRespectsTagMeaning_transport_etyp_pred
-              (tm := tm1) (qt := ⟨etyp2, p2, pred2⟩)
-              (qt' := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
-              hresTm2_arg rfl rfl
-          have hresults_wf :
-              ∀ r, r ∈ results → wfTypeResult r :=
-            threaded_applyFnTClosure_forall_wfTypeResult
-              (fuel_top := fuel' + 1)
-              (IH := fun m _ e ctx' res' hwf htc =>
-                typecheckExpr_preserves_wfTypeResult ctx' e m res' hwf htc)
-              (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-              (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
-              (result1 := result1) (fuel := fuel')
-              (h_call_lt := Nat.lt_succ_self fuel')
-              hwf_result1
-              (tcls := tcls) (results := results)
-              (by -- CapturedEnvRefLocsFullBounded for each closure
-                  have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
-                    (ctxAfter ctxᵢ result2) e1 fuel' result1
-                    (wfTypeContext_of_wfTypeResult ctxᵢ result2
-                      (typecheckExpr_preserves_wfTypeResult ctxᵢ e2 fuel' result2 hwf htc2')
-                      hwf (typecheck_nextLoc_mono ctxᵢ e2 fuel' result2 htc2'))
-                    htc1'
-                  rw [hetyp1] at hClosRL; intro tcl htcl; exact hClosRL tcl htcl)
-              (by -- etypRefLocsBounded for arg at result1.nextLoc'
-                  have h := typecheckExpr_preserves_etypRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
-                  simp [hqt2] at h
-                  exact etypRefLocsBounded_mono h
-                    (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
-              (by -- etypClosuresCapturedRefLocsBounded for arg at result1.nextLoc'
-                  have h := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e2 fuel' result2 hwf htc2'
-                  simp [hqt2] at h
-                  exact etypClosuresCapturedRefLocsBounded_mono h
-                    (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
-              hmap
-          have hresults_regime :
-              ∀ r, r ∈ results →
-                regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
-            have htagR1_ctx :
-                regimeConsistentWithCtx (ctxAfter ctxᵢ result1) := by
-              simpa [ctxAfter] using htagR1
-            exact
-              threaded_applyFnTClosure_forall_regimeConsistentWithCtx
-                (ctx := ctxᵢ) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
-                (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
-                (result1 := result1) (fuel := fuel')
-                (tcls := tcls) (results := results)
-                htagR1_ctx hmap
-          have hfirst_in_results : first ∈ results := by
-            simp [heq_results]
-          have h_first_wf : wfTypeResult first := hresults_wf first hfirst_in_results
-          have h_first_regime :
-              regimeConsistentWithCtx (ctxAfter ctxᵢ first) :=
-            hresults_regime first hfirst_in_results
-          have h_rest_wf : ∀ r ∈ rest, wfTypeResult r := by
-            intro r hr
-            have hmem_results : r ∈ results := by
-              have : r ∈ first :: rest := by simp [hr]
-              simpa [heq_results] using this
-            exact hresults_wf r hmem_results
-          have h_rest_regime :
-              ∀ r ∈ rest,
-                regimeConsistentWithCtx (ctxAfter ctxᵢ r) := by
-            intro r hr
-            have hmem_results : r ∈ results := by
-              have : r ∈ first :: rest := by simp [hr]
-              simpa [heq_results] using this
-            exact hresults_regime r hmem_results
-          have h_mem_join :
-              ∀ l, res.memEnv'.contains l → first.memEnv'.contains l ∨ ∃ r ∈ rest, r.memEnv'.contains l :=
-            joinTypeResults_mem_contains_head_or_rest
-              (ctx := ctxᵢ) (first := first) (rest := rest) (res := res) h_join
-          have h_tag_join :
-              tagEnvConsistentWithRegime (ctxAfter ctxᵢ res).tagEnv (ctxAfter ctxᵢ res).regime :=
-            joinTypeResults_tagEnvConsistentWithRegime
-              (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
-              h_join h_first_regime h_rest_regime
-          rcases typecheck_preserves_predSatLaws hExtTyping predSat tm ctxᵢ
-              (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
-              hwfTm hTmBounded hpredlaws htc with
-            ⟨tmOut, hcanonOut, hpredlawsOut⟩
-          refine ⟨tmOut, BoundaryTagMeaningPost.of_isCanonical_predSat hcanonOut hpredlawsOut,
-            hpredlawsOut, ?_, θ₀_out, θ₁_out,
-            ?_,
-            ?_,
-            ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-          · -- QTypRespectsTagMeaning tm res.qualType
-            exact IsCanonicalExtension.respectsResult hcanonOut
-          · -- wfExtendsMap θ₀ θ₀'
-            exact hθext_out₀
-          · -- wfExtendsMap θ₁ θ₁'
-            exact hθext_out₁
-          · -- valueHasETyp θ₀1 o₀ res.qualType.etyp
-            exact hv_out₀
-          · -- valueHasETyp θ₁1 o₁ res.qualType.etyp
-            exact hv_out₁
-          · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res)
-            exact IsCanonicalExtension.wfCtx hcanonOut
-          · -- wfTypeContext (ctxAfter ctxᵢ res)
-            exact
-              join_transport_wfTypeContext
-                (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
-                h_join h_mem_join
-                (wfTypeContext_of_wfTypeResult ctxᵢ first h_first_wf hwf
-                  (Nat.le_trans
-                    (Nat.le_trans (typecheck_nextLoc_mono ctxᵢ e2 fuel' result2 htc2')
-                      (typecheck_nextLoc_mono (ctxAfter ctxᵢ result2) e1 fuel' result1 htc1'))
-                    (threaded_applyFnTClosure_member_nextLoc_mono st1 st2 p p1 etyp2 p2 pred2
-                      ctxᵢ result1 fuel' tcls results hmap first hfirst_in_results)))
-                h_rest_wf
-          · -- TagBoundedCtx (ctxAfter ctxᵢ res)
-            exact typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded
-          · -- wfConfig cf₀
-            exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
-          · -- wfConfig cf₁
-            exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
-          · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀1
-            exact hric_out₀
-          · -- runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁1
-            exact hric_out₁
-          · -- regimeConsistentWithCtx (ctxAfter ctxᵢ res)
-            exact
-              join_transport_regimeConsistentWithCtx
-                (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
-                h_join h_tag_join h_first_regime
-          · -- consistentWithRegime ... cf₀
-            exact hcwr_out₀
-          · -- consistentWithRegime ... cf₁
-            exact hcwr_out₁
-          · -- agreeOnClean ...
-            exact hAgree_out
-          · -- valueConsistentWithRegime ... cf₀.memory o₀
-            exact hvalc_out₀
-          · -- valueConsistentWithRegime ... cf₁.memory o₁
-            exact hvalc_out₁
-          · -- resultAgreesIfClean ...
-            exact hres_agree_out
+          exact finish_from_out_choice hwf1 htagR1 hOutMapChoice
         · -- Run 1: peClosure (mixed case, impossible under arrow typing)
           obtain ⟨c₂'₀, _, c₁₀, _, _, _, _, ht₀_e2, ht₀_e1, _, _, _, _, _, _⟩ := h_clo₀
           obtain ⟨c₂'₁, _, c₁₁, x₁, body₁, env₁, _, ht₁_e2, ht₁_e1, _, _, _, _, _⟩ := h_peclo₁

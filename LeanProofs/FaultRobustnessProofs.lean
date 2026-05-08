@@ -1916,7 +1916,21 @@ theorem TypeSystemEnforcesFaultRobustness_step
                     (StepFR_IH_of_induction (registry := emptyExternRegistry)
                       predSat tm (Nat.succ (Nat.succ fuel'))
                     (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc))
-                    hsingleIH htc
+                    hsingleIH
+                    (entryKey := ExternCallImpossibleEntryKey)
+                    (_hentryKey_unique := by
+                      intro _id _entry₀ _entry₁ hkey₀ _hkey₁
+                      cases hkey₀)
+                    (_hcallFR_of_entryKey := by
+                      intro _id _entry hkey
+                      cases hkey)
+                    (_hfnLocal := fun {tcls} =>
+                      TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
+                        (tcls := tcls) (entryKey := ExternCallImpossibleEntryKey))
+                    (_hpfnLocal := fun {tcls} =>
+                      TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
+                        (tcls := tcls) (entryKey := ExternCallImpossibleEntryKey))
+                    htc
         | externVal id t p pr =>
             -- Extern declaration success is normalized to boundary-run
             -- evidence before the current empty-registry theorem discharges it.
