@@ -2586,36 +2586,31 @@ private theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun
         TrustedRegistryAgreesWithPFnTClosures.callBoundaryRun
           hagreesExtern hmem hargName hregistry hunified hGet hArg hImpl hValRet hcfg
 
-/-- Spike-stage shape of `ExternCallBoundarySingle.fn` (see `doc/probe2-plan.md`).
-    For a future populated registry this would be the boundary contract that
-    turns extern dispatch evidence into the surrounding `Expr.app` post.  For
-    the current empty-registry FR convention the operational premise is
-    unsatisfiable, so the contract is vacuously dischargeable at the caller.
+/-- Body-local single-run contract for successful impure extern app dispatch.
 
-    Local payload (the parts that must come from the proof site):
-    - the chain of operational evidence (`terminatesTo` on `e2`, `e1`),
-    - the inline extern runtime facts exposed by full app inversion,
-    - the static extern declaration data extracted from the typed closure
-      (`id`, `argTyp`, `retSpec`, `eff`, `tenv`, source evidence in `tcls`),
-    - the runtime closure environment used to evaluate the extern body,
-    - the witness that the closure body is `Expr.externFn id y …`,
-    - the output-config equation linking `cf` to the body's evaluation. -/
+    The contract deliberately returns an `ExternBoundarySinglePost` for the
+    selected body/member result instead of the final surrounding `Expr.app`
+    post.  App-specific transport from this body post to the outer app post is
+    owned by the shared app helpers. -/
 private def ExternCallBoundarySingleFnContract
     (masked : Tag → Prop)
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-    (ctxᵢ : TypeContext) (res : TypeResult)
+    (_ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+    (ctxᵢ : TypeContext) (_res : TypeResult)
     (e1 e2 : Expr) : Prop :=
   ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
     (cf : Config) (o : Value)
-    (hθwf : wfRealizationMap θ)
-    (hwf : wfTypeContext ctxᵢ)
-    (hric : runtimeInstantiatesCtx ctxᵢ μ ρ θ)
-    (hreg : regimeConsistentWithCtxMasked masked ctxᵢ)
-    (hmasked_none : ∀ k, masked k → ctxᵢ.regime.lookup? k = none)
-    (hctxCons : CtxCons ctxᵢ μ ρ θ)
+    (_hθwf : wfRealizationMap θ)
+    (_hwf : wfTypeContext ctxᵢ)
+    (_hric : runtimeInstantiatesCtx ctxᵢ μ ρ θ)
+    (_hreg : regimeConsistentWithCtxMasked masked ctxᵢ)
+    (_hmasked_none : ∀ k, masked k → ctxᵢ.regime.lookup? k = none)
+    (_hctxCons : CtxCons ctxᵢ μ ρ θ)
     (a : Address) (pm : Bool)
-    (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+    (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+    (bodyCtx : TypeContext) (result3 : TypeResult)
+    (predSatBody : PredSat) (tmBody : TagMeaning)
+    (θBody : RealizationMap) (callEntry : ExternCallEntry)
     (c₂' : Config) (v₂ : Value) (c₁ : Config)
     (id : ExternId) (x y : Name) (argTyp : Typ) (retSpec : ExternReturn)
     (eff : List Effect) (tcls : List FnTClosure) (tenv : CapturedVarEnv)
@@ -2633,14 +2628,18 @@ private def ExternCallBoundarySingleFnContract
       Except.ok (vRaw, mem', addr') →
     validateExternReturn id retSpec vRaw = Except.ok o →
     cf = { c₁ with memory := mem', nextAddr := addr', pureMode := c₁.pureMode } →
+    callEntry.bodyCtx = bodyCtx →
+    callEntry.callConfig = c₁ →
+    callEntry.argName = x →
+    callEntry.argValue = v₂ →
+    callEntry.capturedEnv = env →
     ctxᵢ.pc = true →
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
-      masked CtxCons ValCons ctxᵢ res μ ρ θ cf o
-      hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+    ExternBoundarySinglePost bodyCtx result3 predSatBody tmBody
+      θBody callEntry.callConfig.memory cf o
 
-/-- Default discharge of `ExternCallBoundarySingleFnContract` under the empty
-    extern registry convention currently used by the FR proof: extern dispatch
-    cannot succeed, so the operational premise is vacuously false. -/
+/-- Empty-registry discharge for the body-local impure extern single-run
+    contract.  Successful extern dispatch is impossible from the default
+    initial registry. -/
 private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
     {masked : Tag → Prop}
     {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
@@ -2649,9 +2648,10 @@ private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
     {e1 e2 : Expr} :
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 := by
   intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+        bodyCtx result3 predSatBody tmBody θBody callEntry
         c₂' v₂ c₁ id x y argTyp retSpec eff _tcls _tenv _env
         _impl _vRaw _mem' _addr' _hstatic ht_e2 ht_e1 _hpure hGet _hArg _hImpl
-        _hValRet _hcf _hpc
+        _hValRet _hcf _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hpc
   exfalso
   -- Trace registry preservation from the default initial config (which has
   -- `registry = emptyExternRegistry` by `Config.mk` default) through `e2` and
@@ -2663,24 +2663,26 @@ private theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
   rw [hreg_c₁] at hGet
   simp [emptyExternRegistry] at hGet
 
-/-- Spike-stage shape of `ExternCallBoundarySingle.pfn`, mirroring
-    `ExternCallBoundarySingleFnContract` for pure extern app dispatch. -/
+/-- Body-local single-run contract for successful pure extern app dispatch. -/
 private def ExternCallBoundarySinglePfnContract
     (masked : Tag → Prop)
     (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-    (ctxᵢ : TypeContext) (res : TypeResult)
+    (_ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+    (ctxᵢ : TypeContext) (_res : TypeResult)
     (e1 e2 : Expr) : Prop :=
   ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
     (cf : Config) (o : Value)
-    (hθwf : wfRealizationMap θ)
-    (hwf : wfTypeContext ctxᵢ)
-    (hric : runtimeInstantiatesCtx ctxᵢ μ ρ θ)
-    (hreg : regimeConsistentWithCtxMasked masked ctxᵢ)
-    (hmasked_none : ∀ k, masked k → ctxᵢ.regime.lookup? k = none)
-    (hctxCons : CtxCons ctxᵢ μ ρ θ)
+    (_hθwf : wfRealizationMap θ)
+    (_hwf : wfTypeContext ctxᵢ)
+    (_hric : runtimeInstantiatesCtx ctxᵢ μ ρ θ)
+    (_hreg : regimeConsistentWithCtxMasked masked ctxᵢ)
+    (_hmasked_none : ∀ k, masked k → ctxᵢ.regime.lookup? k = none)
+    (_hctxCons : CtxCons ctxᵢ μ ρ θ)
     (a : Address) (pm : Bool)
-    (hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+    (_hwfcfg : wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm })
+    (bodyCtx : TypeContext) (result3 : TypeResult)
+    (predSatBody : PredSat) (tmBody : TagMeaning)
+    (θBody : RealizationMap) (callEntry : ExternCallEntry)
     (c₂' : Config) (v₂ : Value) (c₁ : Config)
     (id : ExternId) (x y : Name) (argTyp : Typ) (retSpec : ExternReturn)
     (tcls : List PFnTClosure) (tenv : CapturedVarEnv) (env : VarEnv)
@@ -2695,10 +2697,14 @@ private def ExternCallBoundarySinglePfnContract
     impl (VarEnv.update env x v₂) v₂ c₁.memory = Except.ok vRaw →
     validateExternReturn id retSpec vRaw = Except.ok o →
     cf = c₁ →
+    callEntry.bodyCtx = bodyCtx →
+    callEntry.callConfig = c₁ →
+    callEntry.argName = x →
+    callEntry.argValue = v₂ →
+    callEntry.capturedEnv = env →
     ctxᵢ.pc = true →
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
-      masked CtxCons ValCons ctxᵢ res μ ρ θ cf o
-      hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+    ExternBoundarySinglePost bodyCtx result3 predSatBody tmBody
+      θBody callEntry.callConfig.memory cf o
 
 private theorem ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
     {masked : Tag → Prop}
@@ -2708,8 +2714,10 @@ private theorem ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
     {e1 e2 : Expr} :
     ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctxᵢ res e1 e2 := by
   intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
+        bodyCtx result3 predSatBody tmBody θBody callEntry
         c₂' v₂ c₁ id x y argTyp retSpec _tcls _tenv _env _impl _vRaw
-        _hstatic ht_e2 ht_e1 hGet _hArg _hImpl _hValRet _hcf _hpc
+        _hstatic ht_e2 ht_e1 hGet _hArg _hImpl _hValRet _hcf
+        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hpc
   exfalso
   have hreg2' : c₂'.registry = emptyExternRegistry :=
     terminatesTo_preserves_registry ht_e2
@@ -3458,16 +3466,10 @@ private def AppUserOnlyShape
       c₂'.pureMode = c₀.pureMode ∧
       c₂.pureMode = c₀.pureMode)
 
-/-- Spike-stage shape of the two-run `ExternCallBoundaryFR.fn` contract for the
-    side-0 extern-closure arm in `stepFR_app`.
-
-    This deliberately validates only one consumption point.  The contract takes
-    the ambient two-run `StepFR` inputs plus the side-0 extern dispatch payload
-    and returns exactly the already-applied `StepFR` post for the surrounding
-    application. -/
+/-- Body-local boundary-run contract for the side-0 impure extern arm. -/
 private def ExternCallBoundaryFRFnSide0Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-    (e1 e2 : Expr) (res : TypeResult) : Prop :=
+    (e1 e2 : Expr) (_res : TypeResult) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
     (_hExtTyping : ExternTypingAssumptions)
     (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
@@ -3491,6 +3493,7 @@ private def ExternCallBoundaryFRFnSide0Contract
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀)
     (_ht₁ : terminatesTo (Expr.app e1 e2)
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁)
+    (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
     (c₂'₀ : Config) (v₂₀ : Value) (c₁₀ : Config)
     (id₀ : ExternId) (x₀ y₀ : Name) (argTyp₀ : Typ) (retSpec₀ : ExternReturn)
     (eff₀ : List Effect) (tcls : List FnTClosure) (tenv₀ : CapturedVarEnv)
@@ -3511,8 +3514,13 @@ private def ExternCallBoundaryFRFnSide0Contract
     (cf₀ =
       { memory := mem'₀, varEnv := c₁₀.varEnv, nextAddr := addr'₀,
         pureMode := c₁₀.pureMode, registry := c₁₀.registry }) →
-    StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm
-      θ₀ θ₁ cf₀ cf₁ o₀ o₁
+    callEntry.bodyCtx = bodyCtx →
+    callEntry.callConfig = c₁₀ →
+    callEntry.argName = x₀ →
+    callEntry.argValue = v₂₀ →
+    callEntry.capturedEnv = env₀ →
+    ∃ entry : TrustedExternEntry,
+      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₀ o₀
 
 /-- Empty-registry discharge for the side-0 two-run extern-call contract. -/
 private theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
@@ -3523,9 +3531,11 @@ private theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
         μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
         _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
         _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
+        _ht₀ _ht₁ _bodyCtx _result3 _callEntry
+        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
         _tcls _tenv₀ _env₀ _impl₀ _vRaw₀ _mem'₀ _addr'₀ _hstatic₀
         ht₀_e2 ht₀_e1 _hpure₀ hGet₀ _hArg₀ _hImpl₀ _hValRet₀ _heq_cfg₀
+        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured
   exfalso
   have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
     simpa using terminatesTo_preserves_registry ht₀_e2
@@ -3557,12 +3567,10 @@ private theorem ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry
   intro _id₀ _x₀ _y₀ _argTyp₀ _retSpec₀ _eff₀ _tenv₀ _hstatic
   exact ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
 
-/-- Spike-stage shape of the two-run `ExternCallBoundaryFR.fn` contract for the
-    side-1 extern-closure arm in `stepFR_app`.  This mirrors the side-0 payload
-    test while keeping the two slices separate until both are validated. -/
+/-- Body-local boundary-run contract for the side-1 impure extern arm. -/
 private def ExternCallBoundaryFRFnSide1Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-    (e1 e2 : Expr) (res : TypeResult) : Prop :=
+    (e1 e2 : Expr) (_res : TypeResult) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
     (_hExtTyping : ExternTypingAssumptions)
     (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
@@ -3586,6 +3594,7 @@ private def ExternCallBoundaryFRFnSide1Contract
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀)
     (_ht₁ : terminatesTo (Expr.app e1 e2)
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁)
+    (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
     (c₂'₁ : Config) (v₂₁ : Value) (c₁₁ : Config)
     (id₁ : ExternId) (x₁ y₁ : Name) (argTyp₁ : Typ) (retSpec₁ : ExternReturn)
     (eff₁ : List Effect) (tcls : List FnTClosure) (tenv₁ : CapturedVarEnv)
@@ -3606,8 +3615,13 @@ private def ExternCallBoundaryFRFnSide1Contract
     (cf₁ =
       { memory := mem'₁, varEnv := c₁₁.varEnv, nextAddr := addr'₁,
         pureMode := c₁₁.pureMode, registry := c₁₁.registry }) →
-    StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm
-      θ₀ θ₁ cf₀ cf₁ o₀ o₁
+    callEntry.bodyCtx = bodyCtx →
+    callEntry.callConfig = c₁₁ →
+    callEntry.argName = x₁ →
+    callEntry.argValue = v₂₁ →
+    callEntry.capturedEnv = env₁ →
+    ∃ entry : TrustedExternEntry,
+      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₁ o₁
 
 /-- Empty-registry discharge for the side-1 two-run extern-call contract. -/
 private theorem ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
@@ -3618,9 +3632,11 @@ private theorem ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
         _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
         _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
         _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
+        _ht₀ _ht₁ _bodyCtx _result3 _callEntry
+        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
         _tcls _tenv₁ _env₁ _impl₁ _vRaw₁ _mem'₁ _addr'₁ _hstatic₁
         ht₁_e2 ht₁_e1 _hpure₁ hGet₁ _hArg₁ _hImpl₁ _hValRet₁ _heq_cfg₁
+        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured
   exfalso
   have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
     simpa using terminatesTo_preserves_registry ht₁_e2
@@ -3649,10 +3665,10 @@ private theorem ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry
   intro _id₁ _x₁ _y₁ _argTyp₁ _retSpec₁ _eff₁ _tenv₁ _hstatic
   exact ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
 
-/-- Two-run `ExternCallBoundaryFR.pfn` contract for the side-0 pure extern arm. -/
+/-- Body-local boundary-run contract for the side-0 pure extern arm. -/
 private def ExternCallBoundaryFRPfnSide0Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-    (e1 e2 : Expr) (res : TypeResult) : Prop :=
+    (e1 e2 : Expr) (_res : TypeResult) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
     (_hExtTyping : ExternTypingAssumptions)
     (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
@@ -3676,6 +3692,7 @@ private def ExternCallBoundaryFRPfnSide0Contract
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀)
     (_ht₁ : terminatesTo (Expr.app e1 e2)
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁)
+    (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
     (c₂'₀ : Config) (v₂₀ : Value) (c₁₀ : Config)
     (id₀ : ExternId) (x₀ y₀ : Name) (argTyp₀ : Typ) (retSpec₀ : ExternReturn)
     (tcls : List PFnTClosure) (tenv₀ : CapturedVarEnv) (env₀ : VarEnv)
@@ -3691,8 +3708,13 @@ private def ExternCallBoundaryFRPfnSide0Contract
     impl₀ (VarEnv.update env₀ x₀ v₂₀) v₂₀ c₁₀.memory = Except.ok vRaw₀ →
     validateExternReturn id₀ retSpec₀ vRaw₀ = Except.ok o₀ →
     cf₀ = c₁₀ →
-    StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm
-      θ₀ θ₁ cf₀ cf₁ o₀ o₁
+    callEntry.bodyCtx = bodyCtx →
+    callEntry.callConfig = c₁₀ →
+    callEntry.argName = x₀ →
+    callEntry.argValue = v₂₀ →
+    callEntry.capturedEnv = env₀ →
+    ∃ entry : TrustedExternEntry,
+      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₀ o₀
 
 private theorem ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
@@ -3702,9 +3724,11 @@ private theorem ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
         μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
         _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
         _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
+        _ht₀ _ht₁ _bodyCtx _result3 _callEntry
+        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
         _tcls _tenv₀ _env₀ _impl₀ _vRaw₀ _hstatic₀ ht₀_e2 ht₀_e1
         hGet₀ _hArg₀ _hImpl₀ _hValRet₀ _heq_cfg₀
+        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured
   exfalso
   have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
     simpa using terminatesTo_preserves_registry ht₀_e2
@@ -3728,10 +3752,10 @@ private theorem ExternCallBoundaryFRPfnSide0Provider.of_emptyExternRegistry
   intro _id₀ _x₀ _y₀ _argTyp₀ _retSpec₀ _tenv₀ _hstatic
   exact ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
 
-/-- Two-run `ExternCallBoundaryFR.pfn` contract for the side-1 pure extern arm. -/
+/-- Body-local boundary-run contract for the side-1 pure extern arm. -/
 private def ExternCallBoundaryFRPfnSide1Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-    (e1 e2 : Expr) (res : TypeResult) : Prop :=
+    (e1 e2 : Expr) (_res : TypeResult) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
     (_hExtTyping : ExternTypingAssumptions)
     (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
@@ -3755,6 +3779,7 @@ private def ExternCallBoundaryFRPfnSide1Contract
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀)
     (_ht₁ : terminatesTo (Expr.app e1 e2)
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁)
+    (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
     (c₂'₁ : Config) (v₂₁ : Value) (c₁₁ : Config)
     (id₁ : ExternId) (x₁ y₁ : Name) (argTyp₁ : Typ) (retSpec₁ : ExternReturn)
     (tcls : List PFnTClosure) (tenv₁ : CapturedVarEnv) (env₁ : VarEnv)
@@ -3770,8 +3795,13 @@ private def ExternCallBoundaryFRPfnSide1Contract
     impl₁ (VarEnv.update env₁ x₁ v₂₁) v₂₁ c₁₁.memory = Except.ok vRaw₁ →
     validateExternReturn id₁ retSpec₁ vRaw₁ = Except.ok o₁ →
     cf₁ = c₁₁ →
-    StepFRPost ctxᵢ (Expr.app e1 e2) res predSat tm
-      θ₀ θ₁ cf₀ cf₁ o₀ o₁
+    callEntry.bodyCtx = bodyCtx →
+    callEntry.callConfig = c₁₁ →
+    callEntry.argName = x₁ →
+    callEntry.argValue = v₂₁ →
+    callEntry.capturedEnv = env₁ →
+    ∃ entry : TrustedExternEntry,
+      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₁ o₁
 
 private theorem ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
@@ -3781,9 +3811,11 @@ private theorem ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
         _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
         _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
         _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁
+        _ht₀ _ht₁ _bodyCtx _result3 _callEntry
+        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁
         _tcls _tenv₁ _env₁ _impl₁ _vRaw₁ _hstatic₁ ht₁_e2 ht₁_e1
         hGet₁ _hArg₁ _hImpl₁ _hValRet₁ _heq_cfg₁
+        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured
   exfalso
   have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
     simpa using terminatesTo_preserves_registry ht₁_e2
@@ -3807,11 +3839,12 @@ private theorem ExternCallBoundaryFRPfnSide1Provider.of_emptyExternRegistry
   intro _id₁ _x₁ _y₁ _argTyp₁ _retSpec₁ _tenv₁ _hstatic
   exact ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
 
-/-- Local registry-agreement-shaped adapter for the two arrow sides.  This is
-    still intentionally local to the empty-registry proof, but it gives the
-    consuming branch the same shape a future `TrustedRegistryAgreesWithProgram`
-    lookup should provide: both side providers indexed by the static arrow
-    closure list. -/
+/-- Local registry-agreement-shaped adapter for the two impure arrow sides.
+
+    This is intentionally local to the empty-registry proof.  It keeps the same
+    indexed-provider shape that a future trusted-registry lookup should provide,
+    but the providers now produce body-local boundary-run evidence rather than
+    the final app post. -/
 private def TrustedRegistryAgreesWithProgramLocal
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure) : Prop :=
@@ -3819,7 +3852,7 @@ private def TrustedRegistryAgreesWithProgramLocal
   ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
 
 /-- Empty-registry local agreement: every static extern member maps to the
-    corresponding vacuous side contract. -/
+    corresponding vacuous body-local side contract. -/
 private theorem TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
@@ -4400,22 +4433,11 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
           (ETyp.arrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
-    have hstatic :
-        ∃ tenv,
-          ExternCallBoundaryFnStaticSource tcls id x y argTyp retSpec eff tenv := by
-      cases hv₁_arrow with
-      | closure_extern htcl _henv _hcover =>
-          exact ⟨_, ExternCallBoundaryFnStaticSource.externMember htcl⟩
-      | closure htcl _henv _hcover =>
-          exact ⟨_, ExternCallBoundaryFnStaticSource.regularExternBody htcl⟩
-    rcases hstatic with ⟨tenv, hstatic⟩
-    exact
-      _extCallSpec μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg
-        c₂' v₂ c₁ id x y argTyp retSpec eff tcls tenv env impl vRaw mem' addr'
-        hstatic ht_e2 ht_e1 hpure hGet hArg hImpl hValRet
-        (by
-          simpa using hcfg)
-        hpc
+    exfalso
+    have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+      (terminatesTo_preserves_registry ht_e1).trans hreg2'
+    rw [hreg_c₁] at hGet
+    simp [emptyExternRegistry] at hGet
   | @userPfn c₂' v₂ c₁ x body env _evalCfg ht_e2 ht_e1 _hNotExtern _htoPExpr
       _ht_body _hcf hpm_e2 _ =>
     rcases
@@ -5211,19 +5233,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env)
           (ETyp.parrow st1 st2 p tcls) := by
       simpa [hetyp1] using hv₁_typed
-    have hstatic :
-        ∃ tenv,
-          ExternCallBoundaryPfnStaticSource tcls id x y argTyp retSpec tenv := by
-      cases hv₁_parrow with
-      | peClosure_extern htcl _henv _hcover =>
-          exact ⟨_, ExternCallBoundaryPfnStaticSource.externMember htcl⟩
-      | peClosure hpure _htcl _henv _hcover =>
-          simp [Expr.toPExpr?] at hpure
-    rcases hstatic with ⟨tenv, hstatic⟩
-    exact
-      _extPfnSpec μ ρ θ cf o hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg
-        c₂' v₂ c₁ id x y argTyp retSpec tcls tenv env impl vRaw
-        hstatic ht_e2 ht_e1 hGet hArg hImpl hValRet hcfg hpc
+    exfalso
+    have hreg_c₂' : c₂'.registry = emptyExternRegistry := by
+      simpa [cinit] using terminatesTo_preserves_registry ht_e2
+    have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+      (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
+    rw [hreg_c₁] at hGet
+    simp [emptyExternRegistry] at hGet
 
 private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (masked : Tag → Prop)
@@ -5346,15 +5362,6 @@ lemma stepFR_app
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config := { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm }
     let cinit₁ : Config := { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm }
-    have hLocalRegistryAgreement :
-        TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls :=
-      TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
-    have extProvider₀ :
-        ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls :=
-      hLocalRegistryAgreement.1
-    have extProvider₁ :
-        ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls :=
-      hLocalRegistryAgreement.2
     -- Local helper capturing the shared IH_e2 → IH_e1 ritual. Used by the
     -- "impossible" mixed-constructor branches below to derive valueHasETyp of
     -- each run's output value at `result1.qualType.etyp`, which is then
@@ -7793,14 +7800,13 @@ lemma stepFR_app
             _hpm_e2₁ _hpm_final₁ =>
             obtain ⟨_, θ₁1, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
             rcases fnStaticSource_from_typed hv₁_typed with ⟨tenv₁, hstatic₁⟩
-            exact
-              (extProvider₁ hstatic₁) hpredlaws hExtTyping hwfTm hTmBounded
-                μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-                hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-                a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-                c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁ tcls tenv₁ env₁
-                impl₁ vRaw₁ mem'₁ addr'₁ hstatic₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁
-                hImpl₁ hValRet₁ (by simpa using hcfg₁)
+            exact False.elim (by
+              have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
+                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+              have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
+                (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+              rw [hreg_c₁₁] at hGet₁
+              simp [emptyExternRegistry] at hGet₁)
         | @userPfn c₂'₁ v₂₁ c₁₁ x₁ body₁ env₁ evalCfg₁ ht₁_e2 ht₁_e1 _hNot₁ htoP₁
             ht₁_body heq_cfg₁ hpm_e2₁ hpm_final₁ =>
             have hshape₁ : AppUserOnlyShape e1 e2 cinit₁ cf₁ o₁ := by
@@ -7825,14 +7831,13 @@ lemma stepFR_app
           intro c₂'₁ c₁₁ v₂₁ o₁' ht₁_e2 ht₁_e1
           obtain ⟨θ₀1, _, hv₀_typed, _⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
           rcases fnStaticSource_from_typed hv₀_typed with ⟨tenv₀, hstatic₀⟩
-          exact
-            (extProvider₀ hstatic₀) hpredlaws hExtTyping hwfTm hTmBounded
-              μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-              hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-              a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-              c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀ tcls tenv₀ env₀
-              impl₀ vRaw₀ mem'₀ addr'₀ hstatic₀ ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀
-              hImpl₀ hValRet₀ (by simpa using hcfg₀)
+          exact False.elim (by
+            have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
+              simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+            have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
+              (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
+            rw [hreg_c₁₀] at hGet₀
+            simp [emptyExternRegistry] at hGet₀)
         cases hfull₁ with
         | @userFn c₂'₁ v₂₁ c₁₁ _x₁ _body₁ _env₁ _evalCfg₁ ht₁_e2 ht₁_e1
             _hNot₁ _hpm1₁ _ht₁_body _heq_cfg₁ _hpm_e2₁ _hpm_final₁ =>
@@ -7870,14 +7875,13 @@ lemma stepFR_app
             _hpm_e2₁ _hpm_final₁ =>
             obtain ⟨_, θ₁1, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
             rcases fnStaticSource_from_typed hv₁_typed with ⟨tenv₁, hstatic₁⟩
-            exact
-              (extProvider₁ hstatic₁) hpredlaws hExtTyping hwfTm hTmBounded
-                μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-                hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-                a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-                c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁ tcls tenv₁ env₁
-                impl₁ vRaw₁ mem'₁ addr'₁ hstatic₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁
-                hImpl₁ hValRet₁ (by simpa using hcfg₁)
+            exact False.elim (by
+              have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
+                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+              have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
+                (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+              rw [hreg_c₁₁] at hGet₁
+              simp [emptyExternRegistry] at hGet₁)
         | @userPfn c₂'₁ v₂₁ c₁₁ x₁ body₁ env₁ evalCfg₁ ht₁_e2 ht₁_e1 _hNot₁ htoP₁
             ht₁_body heq_cfg₁ hpm_e2₁ hpm_final₁ =>
             have hshape₁ : AppUserOnlyShape e1 e2 cinit₁ cf₁ o₁ := by
@@ -7968,12 +7972,6 @@ lemma stepFR_app
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
         _, _, _, _, _, _, _, _, _, _, _⟩
       exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
-    have extPfnProvider₀ :
-        ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls :=
-      ExternCallBoundaryFRPfnSide0Provider.of_emptyExternRegistry
-    have extPfnProvider₁ :
-        ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls :=
-      ExternCallBoundaryFRPfnSide1Provider.of_emptyExternRegistry
     have pfnStaticSource_from_typed :
         ∀ {θ1 : RealizationMap} {id : ExternId} {x y : Name} {argTyp : Typ}
           {retSpec : ExternReturn} {env : VarEnv},
@@ -10460,13 +10458,13 @@ lemma stepFR_app
             ht₁_e2 ht₁_e1 hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁ _hpm_e2₁ _hpm_final₁ =>
             obtain ⟨_, θ₁1, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
             rcases pfnStaticSource_from_typed hv₁_typed with ⟨tenv₁, hstatic₁⟩
-            exact
-              (extPfnProvider₁ hstatic₁) hpredlaws hExtTyping hwfTm hTmBounded
-                μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-                hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-                a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-                c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ tcls tenv₁ env₁ impl₁
-                vRaw₁ hstatic₁ ht₁_e2 ht₁_e1 hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁
+            exact False.elim (by
+              have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
+                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+              have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
+                (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+              rw [hreg_c₁₁] at hGet₁
+              simp [emptyExternRegistry] at hGet₁)
     | @externPfn c₂'₀ v₂₀ c₁₀ x₀ y₀ id₀ argTyp₀ retSpec₀ env₀ impl₀ vRaw₀
         ht₀_e2 ht₀_e1 hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀ _hpm_e2₀ _hpm_final₀ =>
         have finish_with_side1 :
@@ -10478,13 +10476,13 @@ lemma stepFR_app
           intro c₂'₁ c₁₁ v₂₁ o₁' ht₁_e2 ht₁_e1
           obtain ⟨θ₀1, _, hv₀_typed, _⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
           rcases pfnStaticSource_from_typed hv₀_typed with ⟨tenv₀, hstatic₀⟩
-          exact
-            (extPfnProvider₀ hstatic₀) hpredlaws hExtTyping hwfTm hTmBounded
-              μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
-              hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-              a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-              c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ tcls tenv₀ env₀ impl₀
-              vRaw₀ hstatic₀ ht₀_e2 ht₀_e1 hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀
+          exact False.elim (by
+            have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
+              simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+            have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
+              (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
+            rw [hreg_c₁₀] at hGet₀
+            simp [emptyExternRegistry] at hGet₀)
         cases hfull₁ with
         | @userFn c₂'₁ v₂₁ c₁₁ _x₁ _body₁ _env₁ _evalCfg₁ ht₁_e2 ht₁_e1
             _hNot₁ _hpm1₁ _ht₁_body _heq_cfg₁ _hpm_e2₁ _hpm_final₁ =>

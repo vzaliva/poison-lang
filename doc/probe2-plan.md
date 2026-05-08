@@ -104,14 +104,23 @@ Implemented and compiling:
   through `appTwoRunOutChoice_from_body_stepFRPost`.  This validates that the
   existential realization maps returned by the boundary post compose with the
   app transport continuation.
+- The six local app extern-call contracts in `StepFRApp.lean` no longer promise
+  the final outer `Expr.app` post.  The two single-run contracts return
+  `ExternBoundarySinglePost` for a body/member result, and the four two-run side
+  contracts return body-local `ExternCallBoundaryRun` evidence indexed by an
+  `ExternCallEntry` and member `result3`.
 
 Still true:
 
 - The populated-registry theorem is not proven yet.
-- `StepFRApp` still consumes empty-registry local providers in the extern call
-  cases.  The successful `externFn` / `externPfn` runtime branches are visible,
-  but the provider contracts still discharge them through
-  `.of_emptyExternRegistry`.
+- `StepFRApp` still discharges successful `externFn` / `externPfn` runtime
+  branches under the current empty-registry theorem.  Those branches are now
+  closed directly by registry preservation and empty lookup contradiction,
+  rather than by an outer-post provider contract.
+- The populated app proof is not wired yet: successful extern branches still
+  need to build `ExternCallEntry`, produce body entry agreement, consume trusted
+  boundary evidence, and transport the resulting body post through the app
+  helpers.
 - The top-level `externVal`, `externFn`, and `externPfn` proof branches no
   longer inline the empty-registry contradiction, but the current theorem is
   still the empty-registry instance, so the declaration boundary adapters still
@@ -121,7 +130,7 @@ Still true:
   empty-registry instance of the registry-parametric step spec; it has not yet
   been generalized to arbitrary `registry`.
 
-Latest verification after the app body-post transport validation:
+Latest verification after the app provider-contract reshape:
 
 - `lake build LeanProofs` succeeds.
 - `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.
@@ -161,43 +170,31 @@ fault-robustness.
 
 ## Current Blocker
 
-The active blocker is the shape of the app extern-call provider contracts in
-`StepFRApp.lean`.
+The active blocker has moved from contract shape to app transport integration.
+The local extern-call contracts are now body-local, and the lookup side can
+already build `ExternCallBoundaryRun` evidence from trusted registry agreement.
+The regular user-closure branches still need to be rewired so their existing
+body-post reasoning flows through the packaged app transport helpers.
 
-The lookup side is no longer the missing piece: static extern source evidence can
-now be turned into `ExternCallBoundaryRun` evidence using trusted-registry
-agreement.  The problem is that the current local contracts
-`ExternCallBoundarySingleFnContract`, `ExternCallBoundarySinglePfnContract`, and
-the four two-run side contracts are still outer-app-post providers.  They take
-runtime extern dispatch facts and return the final surrounding `Expr.app`
-post directly.
+The target populated path is:
 
-That shape is incompatible with `ExternBoundarySpec.callFR` and `callSingle`.
-Those spec fields are intentionally body-local.  For a successful extern call,
-the app proof must build an `ExternCallEntry`, prove the body entry inputs
-agree, consume:
+1. Build an `ExternCallEntry` at the successful runtime extern branch.
+2. Prove the body entry inputs agree.
+3. Consume:
 
 ```lean
 entry.spec.callFR ... :
   StepFRPost entry.bodyCtx postExpr memberResult predSat tm ...
 ```
 
-and then transport that member post through provenance normalization,
+4. Transport that member post through provenance normalization,
 `joinTypeResults`, and app-config restoration.
-
-The current provider contracts do not carry enough app-side payload to do that.
-They lack the body context, cursor/member result, `result3`, static member
-result, and transport facts needed to turn a body-local post into the final
-app post.  Trying to implement real providers against the current contract
-would either reintroduce app transport into every boundary spec instance or
-duplicate a large piece of the regular user-closure proof inside each extern
-branch.
 
 The first transport-specific risk has been checked:
 `appTwoRunOutChoice_from_call_boundaryFR` composes the body-local post produced
 by an `ExternCallBoundaryFR` with the packaged app transport helper.  The next
-blocker is still provider shape: the extern-call provider contracts must be
-changed so they produce body-local boundary posts rather than final app posts.
+step is to validate and use that transport shape in the regular user-closure
+branches, before the extern proof depends on it.
 
 The remaining app-specific wrinkle is also still relevant: runtime `externFn`
 dispatch is not forced to originate from a `FnTClosure.extern` member.  It can
@@ -220,44 +217,23 @@ reasoning into every concrete extern boundary.
 
 ## Suggested Fixing Direction
 
-The high-risk next fix is to reshape the app provider interface around the
-validated body-post-to-app transport.  The design choice is explicit: extern
-boundary providers should be body-local.  They should build
-`ExternCallBoundaryRun`, consume `entry.spec.callSingle` or
-`entry.spec.callFR`, and return the body-local boundary post.  App transport
-must remain in shared `StepFRApp` helpers outside the provider contract.  Do not
-keep a provider shape that returns the final outer app post by receiving a large
-transport payload; that re-packages app-specific proof work into every boundary
-instance.
+The high-risk next fix is to validate the app transport shape on regular
+user-closure branches before using it for populated extern branches.  This keeps
+transport debugging separate from trusted-registry lookup and body-entry
+agreement construction.
 
-1. Replace the current outer-post provider contracts with body-local boundary
-   providers plus calls to shared app transport helpers.  The new provider /
-   caller shape should be instantiated at a point that has the data currently
-   missing from the provider shape:
-
-   - the app body context built from captured variables and the argument;
-   - the closure-list member result selected by `applyFnTClosureAtCursor` or
-     `applyPFnTClosureAtCursor`;
-   - the cursor/member proof tying the selected static closure to the joined
-     `first :: rest` result list;
-   - the `result3` returned by the member typechecking step;
-   - the equalities relating the runtime call config and final config to the
-     body post config;
-   - the pre-body runtime/type/regime/agreement facts needed for
-     `BodyEntryInputsAgree` or its masked single-run analogue.
-
-2. Validate the new shape on regular user-closure branches before using it for
+1. Validate the new shape on regular user-closure branches before using it for
    extern branches.  This prevents the extern proof from debugging transport
    and boundary lookup at the same time.
 
-3. After the regular branch is wired through the helper, use
+2. After the regular branch is wired through the helper, use
    `ExternCallBoundaryFnStaticSource.callBoundaryRun` and
    `ExternCallBoundaryPfnStaticSource.callBoundaryRun` to build
    `ExternCallBoundaryRun` evidence in the successful extern runtime branches.
    Then consume `entry.spec.callSingle` or `entry.spec.callFR` and pass the
    resulting body-local post into the app transport helper.
 
-4. For impure regular-extern-body dispatch, add a precise resolver premise or
+3. For impure regular-extern-body dispatch, add a precise resolver premise or
    derivation that connects
    `FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) σcap ∈ tcls`
    to a trusted entry.  Closure-list extern agreement alone is insufficient for
@@ -272,23 +248,7 @@ theorem with explicit trusted-registry assumptions.
 
 ## Remaining Plan
 
-1. **Reshape `StepFRApp` extern-call provider contracts.**
-
-   Replace `ExternCallBoundarySingleFnContract`,
-   `ExternCallBoundarySinglePfnContract`, and the four two-run side contracts so
-   they no longer promise the final outer app post directly.  Their replacement
-   should be body-local: build/receive `ExternCallBoundaryRun`, consume
-   `entry.spec.callSingle` or `entry.spec.callFR`, and hand the resulting
-   body-local `StepFRPost` to shared app transport outside the provider.
-
-   Files: `LeanProofs/StepFRApp.lean`.
-
-   Done when the new contract statements mention the body/member result and can
-   state a call to `entry.spec.callSingle` / `entry.spec.callFR` without missing
-   `bodyCtx`, cursor, `result3`, or join-transport inputs.  At this stage the
-   implementation may still be wired only to regular user-closure branches.
-
-2. **Validate app transport helpers on regular branches.**
+1. **Validate app transport helpers on regular branches.**
 
    Rewire the existing regular user-closure app branches to use the new
    body-post-to-app transport shape.  Keep this step free of trusted-registry
@@ -306,7 +266,7 @@ theorem with explicit trusted-registry assumptions.
    Done when the regular branches compile through the new helper interface and
    `lake build LeanProofs` succeeds.
 
-3. **Consume extern call boundaries in `StepFRApp`.**
+2. **Consume extern call boundaries in `StepFRApp`.**
 
    In successful `externFn` / `externPfn` branches, build `ExternCallEntry`,
    prove the body entry inputs agree, construct `ExternCallBoundaryRun.fn` /
@@ -325,7 +285,7 @@ theorem with explicit trusted-registry assumptions.
    Done when app runtime `externFn` / `externPfn` dispatch is no longer proved
    impossible from `emptyExternRegistry`.
 
-4. **Replace declaration adapters with populated-registry consumers.**
+3. **Replace declaration adapters with populated-registry consumers.**
 
    The top-level extern expression branches already normalize successful
    declaration runs to `ExternDeclBoundaryRun`.  After the app proof is
@@ -339,7 +299,7 @@ theorem with explicit trusted-registry assumptions.
    Done when the declaration branches consume trusted boundary evidence instead
    of `.of_emptyExternRegistry` adapters.
 
-5. **Generalize the step theorem and bridge trusted agreement.**
+4. **Generalize the step theorem and bridge trusted agreement.**
 
    Generalize `TypeSystemEnforcesFaultRobustness_step` to arbitrary
    `registry`, instantiate it with `TrustedRegistry.toRuntimeRegistry tr`, and
@@ -355,7 +315,7 @@ theorem with explicit trusted-registry assumptions.
    possible, without weakening `TrustedRegistryAgreesWithProgram` into a vague
    global premise.
 
-6. **Preserve compatibility and verify.**
+5. **Preserve compatibility and verify.**
 
    Preserve `TypeSystemEnforcesFaultRobustness_emptyRegistry` as the
    compatibility corollary.  Run `lake build LeanProofs`, `make test`,
