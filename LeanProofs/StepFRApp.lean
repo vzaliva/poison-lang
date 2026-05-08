@@ -3854,6 +3854,181 @@ private lemma appSingleRunMaskedPost_from_body_fields
     exact valJoinMember ctx first src rest res cf.memory θbody o
       h_join hsrc_mem hval_src
 
+private lemma appSingleRunMaskedPost_from_direct_body_fields
+    {masked : Tag → Prop}
+    {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
+    {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
+    (ctxMember : AppMemberCtxCons CtxCons predSat)
+    (ctxJoinMember : AppJoinCtxConsFromMember CtxCons)
+    (valJoinMember : AppJoinValConsFromMember ValCons)
+    {ctx bodyCtx : TypeContext}
+    {result2 result1 first src res : TypeResult} {rest : List TypeResult}
+    {μ : Memory} {ρ : VarEnv} {θ θpre θbody : RealizationMap}
+    {cf evalCfg preCfg : Config} {o : Value}
+    {registry : ExternRegistry}
+    {hθwf : wfRealizationMap θ}
+    {hwf : wfTypeContext ctx}
+    {hric_start : runtimeInstantiatesCtx ctx μ ρ θ}
+    {hreg : regimeConsistentWithCtxMasked masked ctx}
+    {hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none}
+    {hctx_start : CtxCons ctx μ ρ θ}
+    {a : Address} {pm : Bool}
+    {hwfcfg : wfConfig
+      ({ memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } : Config)}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hlookup_back_pre_to_src :
+      ∀ k b,
+        (ctxAfter ctx src).regime.lookup? k = some b →
+        (ctxAfter (ctxAfter ctx result2) result1).regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        (ctxAfter (ctxAfter ctx result2) result1).varEnv.lookup x = some qt)
+    (hpred_compat :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg.memory v' ↔
+          qtypPredHolds predSat qt' cf.memory v')
+    (hmem_eq : cf.memory = evalCfg.memory)
+    (hvar_eq : cf.varEnv = preCfg.varEnv)
+    (hθ_start_pre : wfExtendsMap θ θpre)
+    (hθ_pre_body : wfExtendsMap θpre θbody)
+    (hv_body : valueHasETyp θbody o src.qualType.etyp)
+    (hric_body :
+      runtimeInstantiatesCtx (ctxAfter bodyCtx src) evalCfg.memory evalCfg.varEnv θbody)
+    (hric_pre :
+      runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx result2) result1)
+        preCfg.memory preCfg.varEnv θpre)
+    (hctx_body : CtxCons (ctxAfter bodyCtx src) evalCfg.memory evalCfg.varEnv θbody)
+    (hctx_pre :
+      CtxCons (ctxAfter (ctxAfter ctx result2) result1)
+        preCfg.memory preCfg.varEnv θpre)
+    (hval_body : ValCons (ctxAfter bodyCtx src).regime src.qualType
+      evalCfg.memory θbody o)
+    (hpres_final : PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θbody)
+    (hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θbody) :
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
+      masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
+      hθwf hwf hric_start hreg hmasked_none hctx_start a pm hwfcfg := by
+  refine ⟨θbody, wfExtendsMap_trans hθ_start_pre hθ_pre_body, ?_, ?_, ?_, ?_,
+    hpres_final, hfresh_final⟩
+  · exact
+      joinTypeResults_transport_valueHasETyp_from_member
+        (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
+        (θ := θbody) (v := o)
+        h_join hsrc_mem hv_body
+  · exact
+      appMember_runtimeInstantiatesCtx_from_body
+        (ctx := ctx) (preCtx := ctxAfter (ctxAfter ctx result2) result1)
+        (bodyFinalCtx := ctxAfter bodyCtx src)
+        (first := first) (src := src) (rest := rest) (res := res)
+        (cf := cf) (evalCfg := evalCfg) (preCfg := preCfg)
+        (θpre := θpre) (θbody := θbody)
+        h_join hsrc_mem hric_body hric_pre
+        (fun l hcontains_body => by
+          simpa [ctxAfter] using hcontains_body)
+        hvar_lookup_src_to_pre hmem_eq hvar_eq hθ_pre_body
+  · have hsrc_eq : src = { src with qualType := src.qualType } := by
+      cases src
+      rfl
+    have hctx_src : CtxCons (ctxAfter ctx src) cf.memory cf.varEnv θbody :=
+      ctxMember ctx bodyCtx result2 result1 src src src.qualType
+        preCfg evalCfg cf θpre θbody
+        hpred_compat hsrc_eq hmem_eq hvar_eq
+        hlookup_back_pre_to_src hθ_pre_body hctx_pre hctx_body
+    exact ctxJoinMember ctx first src rest res cf.memory cf.varEnv θbody
+      h_join hsrc_mem hctx_src
+  · have hval_src :
+        ValCons (ctxAfter ctx src).regime src.qualType cf.memory θbody o := by
+      simpa [ctxAfter, hmem_eq] using hval_body
+    exact valJoinMember ctx first src rest res cf.memory θbody o
+      h_join hsrc_mem hval_src
+
+private lemma appSingleRunMaskedPost_from_direct_boundary
+    {masked : Tag → Prop}
+    {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
+    {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
+    (ctxMember : AppMemberCtxCons CtxCons predSat)
+    (ctxJoinMember : AppJoinCtxConsFromMember CtxCons)
+    (valJoinMember : AppJoinValConsFromMember ValCons)
+    (ctxConsOfRegular :
+      ∀ {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap},
+        consistentWithRegime predSat ctx.regime ctx μ ρ θ →
+        CtxCons ctx μ ρ θ)
+    (valConsOfRegular :
+      ∀ {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value},
+        valueConsistentWithRegime predSat R qt μ θ v →
+        ValCons R qt μ θ v)
+    {ctx bodyCtx : TypeContext}
+    {result2 result1 first src res : TypeResult} {rest : List TypeResult}
+    {μ : Memory} {ρ : VarEnv} {θ θpre : RealizationMap}
+    {cf evalCfg preCfg : Config} {o : Value} {tmBody : TagMeaning}
+    {registry : ExternRegistry}
+    {hθwf : wfRealizationMap θ}
+    {hwf : wfTypeContext ctx}
+    {hric_start : runtimeInstantiatesCtx ctx μ ρ θ}
+    {hreg : regimeConsistentWithCtxMasked masked ctx}
+    {hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none}
+    {hctx_start : CtxCons ctx μ ρ θ}
+    {a : Address} {pm : Bool}
+    {hwfcfg : wfConfig
+      ({ memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } : Config)}
+    (h_join : joinTypeResults ctx first rest = .ok res)
+    (hsrc_mem : src ∈ first :: rest)
+    (hlookup_back_pre_to_src :
+      ∀ k b,
+        (ctxAfter ctx src).regime.lookup? k = some b →
+        (ctxAfter (ctxAfter ctx result2) result1).regime.lookup? k = some b)
+    (hvar_lookup_src_to_pre :
+      ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
+        (ctxAfter (ctxAfter ctx result2) result1).varEnv.lookup x = some qt)
+    (hpred_compat :
+      ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' preCfg.memory v' ↔
+          qtypPredHolds predSat qt' cf.memory v')
+    (hmem_eq : cf.memory = evalCfg.memory)
+    (hvar_eq : cf.varEnv = preCfg.varEnv)
+    (hθ_start_pre : wfExtendsMap θ θpre)
+    (hric_pre :
+      runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx result2) result1)
+        preCfg.memory preCfg.varEnv θpre)
+    (hctx_pre :
+      CtxCons (ctxAfter (ctxAfter ctx result2) result1)
+        preCfg.memory preCfg.varEnv θpre)
+    (hpres_final_of_boundary :
+      ∀ {θbody : RealizationMap},
+        wfExtendsMap θpre θbody →
+        PreservesInheritedFinalCleanLocsOneRun bodyCtx src
+          evalCfg.memory evalCfg.memory θpre θbody →
+        PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θbody)
+    (hfresh_final_of_boundary :
+      ∀ {θbody : RealizationMap},
+        FreshCleanLocsUnrealizedOneRun bodyCtx src θbody →
+        FreshCleanLocsUnrealizedOneRun ctx res θbody)
+    (hboundary :
+      ExternBoundarySinglePost bodyCtx src predSat tmBody θpre evalCfg.memory evalCfg o) :
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
+      masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
+      hθwf hwf hric_start hreg hmasked_none hctx_start a pm hwfcfg := by
+  rcases hboundary with
+    ⟨_tm', _htag, θbody, hθ_pre_body, hv_body, hric_body, hcwr_body,
+      hval_body, hpres_body, hfresh_body⟩
+  exact
+    appSingleRunMaskedPost_from_direct_body_fields
+      (predSat := predSat)
+      ctxMember ctxJoinMember valJoinMember
+      (ctx := ctx) (bodyCtx := bodyCtx)
+      (result2 := result2) (result1 := result1)
+      (first := first) (src := src) (rest := rest) (res := res)
+      (μ := μ) (ρ := ρ) (θ := θ) (θpre := θpre) (θbody := θbody)
+      (cf := cf) (evalCfg := evalCfg) (preCfg := preCfg)
+      (o := o)
+      h_join hsrc_mem hlookup_back_pre_to_src hvar_lookup_src_to_pre
+      hpred_compat hmem_eq hvar_eq hθ_start_pre hθ_pre_body
+      hv_body hric_body hric_pre
+      (ctxConsOfRegular hcwr_body) hctx_pre (valConsOfRegular hval_body)
+      (hpres_final_of_boundary hθ_pre_body hpres_body)
+      (hfresh_final_of_boundary hfresh_body)
+
 private lemma applyFnTClosure_extern_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -4709,6 +4884,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     AppBodyResultValCons ValCons)
   (valJoinMember :
     AppJoinValConsFromMember ValCons)
+  (_ctxConsOfRegular :
+    ∀ {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap},
+      consistentWithRegime predSat ctx.regime ctx μ ρ θ →
+      CtxCons ctx μ ρ θ)
+  (_valConsOfRegular :
+    ∀ {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value},
+      valueConsistentWithRegime predSat R qt μ θ v →
+      ValCons R qt μ θ v)
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   -- Probe 2 spike: contract-shaped hypothesis for the `closure_extern` arm.
@@ -5399,6 +5582,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     AppBodyResultValCons ValCons)
   (valJoinMember :
     AppJoinValConsFromMember ValCons)
+  (_ctxConsOfRegular :
+    ∀ {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap},
+      consistentWithRegime predSat ctx.regime ctx μ ρ θ →
+      CtxCons ctx μ ρ θ)
+  (_valConsOfRegular :
+    ∀ {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value},
+      valueConsistentWithRegime predSat R qt μ θ v →
+      ValCons R qt μ θ v)
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   (_extPfnSpec :
@@ -6129,6 +6320,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
     AppBodyResultValCons ValCons)
   (valJoinMember :
     AppJoinValConsFromMember ValCons)
+  (ctxConsOfRegular :
+    ∀ {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap},
+      consistentWithRegime predSat ctx.regime ctx μ ρ θ →
+      CtxCons ctx μ ρ θ)
+  (valConsOfRegular :
+    ∀ {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value},
+      valueConsistentWithRegime predSat R qt μ θ v →
+      ValCons R qt μ θ v)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
@@ -6154,6 +6353,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
         stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm
           ctxClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
+          ctxConsOfRegular valConsOfRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
           (ExternCallBoundarySingleFnContract.of_emptyExternRegistry (tcls := tcls))
           singleIH hqt2 htc2' htc1'
@@ -6165,6 +6365,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
         stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm
           ctxPClosureBodyStart ctxMember ctxJoinMember valBodyResult valJoinMember
+          ctxConsOfRegular valConsOfRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
           (ExternCallBoundarySinglePfnContract.of_emptyExternRegistry (tcls := tcls))
           singleIH hqt2 htc2' htc1'
@@ -6198,6 +6399,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
       (stepFRApp_joinCtxConsFromMember_masked masked predSat)
       (stepFRApp_bodyResultValCons_masked masked predSat)
       (stepFRApp_joinValConsFromMember_masked masked predSat)
+      (fun {ctx} {μ} {ρ} {θ} h =>
+        consistentWithRegime_to_masked (masked := masked) h)
+      (fun {R} {qt} {μ} {θ} {v} h =>
+        valueConsistentWithRegime_to_masked (masked := masked) h)
       e1 e2 fuel' res
       singleIH htc
 
