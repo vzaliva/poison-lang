@@ -5033,10 +5033,32 @@ private def AppUserOnlyShape
       c₂'.pureMode = c₀.pureMode ∧
       c₂.pureMode = c₀.pureMode)
 
+/-- Keying evidence attached to a trusted extern entry returned by a local
+    two-run app-call provider.  The empty-registry instance uses
+    `ExternCallNoEntryKey`; populated trusted registries use
+    `ExternCallTrustedEntryKey tr`, which lets the two sides prove they found
+    the same trusted entry for the same extern id. -/
+def ExternCallEntryKey : Type :=
+  ExternId → TrustedExternEntry → Prop
+
+def ExternCallNoEntryKey : ExternCallEntryKey :=
+  fun _ _ => True
+
+def ExternCallTrustedEntryKey (tr : TrustedRegistry) : ExternCallEntryKey :=
+  fun id entry => TrustedRegistry.lookup? tr id = some entry
+
+theorem ExternCallTrustedEntryKey_eq_of_same_id
+    {tr : TrustedRegistry} {id : ExternId} {entry₀ entry₁ : TrustedExternEntry}
+    (h₀ : ExternCallTrustedEntryKey tr id entry₀)
+    (h₁ : ExternCallTrustedEntryKey tr id entry₁) :
+    entry₀ = entry₁ :=
+  Option.some.inj (h₀.symm.trans h₁)
+
 /-- Body-local boundary-run contract for the side-0 impure extern arm. -/
 def ExternCallBoundaryFRFnSide0Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (_res : TypeResult) (tcls : List FnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
     (_hExtTyping : ExternTypingAssumptions)
@@ -5099,13 +5121,16 @@ def ExternCallBoundaryFRFnSide0Contract
     callEntry.unifiedEnv =
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ∃ entry : TrustedExternEntry,
+      entryKey id₀ entry ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₀ o₀
 
 /-- Empty-registry discharge for the side-0 two-run extern-call contract. -/
 theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
-    ExternCallBoundaryFRFnSide0Contract ctxᵢ predSat tm e1 e2 res tcls := by
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRFnSide0Contract ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) := by
   intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
         μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
         _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
@@ -5131,22 +5156,25 @@ theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
 def ExternCallBoundaryFRFnSide0Provider
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ {id₀ : ExternId} {x₀ y₀ : Name} {argTyp₀ : Typ}
     {retSpec₀ : ExternReturn} {eff₀ : List Effect}
     {tenv₀ : CapturedVarEnv},
     ExternCallBoundaryFnStaticSource tcls id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀ tenv₀ →
     ExternCallBoundaryFRFnSide0Contract ctxᵢ predSat tm e1 e2 res tcls
-      (registry := registry)
+      (entryKey := entryKey) (registry := registry)
 
 /-- Empty-registry provider: any static extern member maps to the vacuous
     side-0 boundary contract. -/
 theorem ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
-    ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls := by
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) := by
   intro _id₀ _x₀ _y₀ _argTyp₀ _retSpec₀ _eff₀ _tenv₀ _hstatic
-  exact ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
+  exact ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry (entryKey := entryKey)
 
 theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -5163,6 +5191,7 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
           TrustedRegistry.lookup? tr id = some entry ∧
           TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
     ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro _id₀ _x₀ _y₀ _argTyp₀ _retSpec₀ _eff₀ _tenv₀ _hstaticProvider
         _hpredlaws _hExtTyping _hwfTm _hTmBounded
@@ -5211,12 +5240,13 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
       hstatic₀ hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet₀ hcfgCall with
     ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, hrun⟩
+  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
 
 /-- Body-local boundary-run contract for the side-1 impure extern arm. -/
 def ExternCallBoundaryFRFnSide1Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (_res : TypeResult) (tcls : List FnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
     (_hExtTyping : ExternTypingAssumptions)
@@ -5279,13 +5309,16 @@ def ExternCallBoundaryFRFnSide1Contract
     callEntry.unifiedEnv =
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ∃ entry : TrustedExternEntry,
+      entryKey id₁ entry ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₁ o₁
 
 /-- Empty-registry discharge for the side-1 two-run extern-call contract. -/
 theorem ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
-    ExternCallBoundaryFRFnSide1Contract ctxᵢ predSat tm e1 e2 res tcls := by
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRFnSide1Contract ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) := by
   intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
         _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
         _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
@@ -5308,22 +5341,25 @@ theorem ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
 def ExternCallBoundaryFRFnSide1Provider
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ {id₁ : ExternId} {x₁ y₁ : Name} {argTyp₁ : Typ}
     {retSpec₁ : ExternReturn} {eff₁ : List Effect}
     {tenv₁ : CapturedVarEnv},
     ExternCallBoundaryFnStaticSource tcls id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁ tenv₁ →
     ExternCallBoundaryFRFnSide1Contract ctxᵢ predSat tm e1 e2 res tcls
-      (registry := registry)
+      (entryKey := entryKey) (registry := registry)
 
 /-- Empty-registry provider: any static extern member maps to the vacuous
     side-1 boundary contract. -/
 theorem ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
-    ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls := by
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) := by
   intro _id₁ _x₁ _y₁ _argTyp₁ _retSpec₁ _eff₁ _tenv₁ _hstatic
-  exact ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
+  exact ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry (entryKey := entryKey)
 
 theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -5340,6 +5376,7 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
           TrustedRegistry.lookup? tr id = some entry ∧
           TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
     ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro _id₁ _x₁ _y₁ _argTyp₁ _retSpec₁ _eff₁ _tenv₁ _hstaticProvider
         _hpredlaws _hExtTyping _hwfTm _hTmBounded
@@ -5388,12 +5425,13 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
       hstatic₁ hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet₁ hcfgCall with
     ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, hrun⟩
+  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
 
 /-- Body-local boundary-run contract for the side-0 pure extern arm. -/
 def ExternCallBoundaryFRPfnSide0Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (_res : TypeResult) (tcls : List PFnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
     (_hExtTyping : ExternTypingAssumptions)
@@ -5451,12 +5489,15 @@ def ExternCallBoundaryFRPfnSide0Contract
     callEntry.unifiedEnv =
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ∃ entry : TrustedExternEntry,
+      entryKey id₀ entry ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₀ o₀
 
 theorem ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure} :
-    ExternCallBoundaryFRPfnSide0Contract ctxᵢ predSat tm e1 e2 res tcls := by
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRPfnSide0Contract ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) := by
   intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
         μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
         _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
@@ -5477,19 +5518,22 @@ theorem ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
 def ExternCallBoundaryFRPfnSide0Provider
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List PFnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ {id₀ : ExternId} {x₀ y₀ : Name} {argTyp₀ : Typ}
     {retSpec₀ : ExternReturn} {tenv₀ : CapturedVarEnv},
     ExternCallBoundaryPfnStaticSource tcls id₀ x₀ y₀ argTyp₀ retSpec₀ tenv₀ →
     ExternCallBoundaryFRPfnSide0Contract ctxᵢ predSat tm e1 e2 res tcls
-      (registry := registry)
+      (entryKey := entryKey) (registry := registry)
 
 theorem ExternCallBoundaryFRPfnSide0Provider.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure} :
-    ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls := by
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) := by
   intro _id₀ _x₀ _y₀ _argTyp₀ _retSpec₀ _tenv₀ _hstatic
-  exact ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
+  exact ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry (entryKey := entryKey)
 
 theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -5498,6 +5542,7 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry
     (hagreesExtern :
       ∀ {argTyp : Typ}, TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls) :
     ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro _id₀ _x₀ _y₀ _argTyp₀ _retSpec₀ _tenv₀ _hstaticProvider
         _hpredlaws _hExtTyping _hwfTm _hTmBounded
@@ -5540,12 +5585,13 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry
       hstatic₀ hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet₀ hcfgCall with
     ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, hrun⟩
+  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
 
 /-- Body-local boundary-run contract for the side-1 pure extern arm. -/
 def ExternCallBoundaryFRPfnSide1Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (_res : TypeResult) (tcls : List PFnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
     (_hExtTyping : ExternTypingAssumptions)
@@ -5603,12 +5649,15 @@ def ExternCallBoundaryFRPfnSide1Contract
     callEntry.unifiedEnv =
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ∃ entry : TrustedExternEntry,
+      entryKey id₁ entry ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₁ o₁
 
 theorem ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure} :
-    ExternCallBoundaryFRPfnSide1Contract ctxᵢ predSat tm e1 e2 res tcls := by
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRPfnSide1Contract ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) := by
   intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
         _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
         _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
@@ -5629,19 +5678,22 @@ theorem ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
 def ExternCallBoundaryFRPfnSide1Provider
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List PFnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ {id₁ : ExternId} {x₁ y₁ : Name} {argTyp₁ : Typ}
     {retSpec₁ : ExternReturn} {tenv₁ : CapturedVarEnv},
     ExternCallBoundaryPfnStaticSource tcls id₁ x₁ y₁ argTyp₁ retSpec₁ tenv₁ →
     ExternCallBoundaryFRPfnSide1Contract ctxᵢ predSat tm e1 e2 res tcls
-      (registry := registry)
+      (entryKey := entryKey) (registry := registry)
 
 theorem ExternCallBoundaryFRPfnSide1Provider.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure} :
-    ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls := by
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) := by
   intro _id₁ _x₁ _y₁ _argTyp₁ _retSpec₁ _tenv₁ _hstatic
-  exact ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
+  exact ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry (entryKey := entryKey)
 
 theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -5650,6 +5702,7 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry
     (hagreesExtern :
       ∀ {argTyp : Typ}, TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls) :
     ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro _id₁ _x₁ _y₁ _argTyp₁ _retSpec₁ _tenv₁ _hstaticProvider
         _hpredlaws _hExtTyping _hwfTm _hTmBounded
@@ -5692,31 +5745,33 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry
       hstatic₁ hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet₁ hcfgCall with
     ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, hrun⟩
+  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
 
 /-- Local registry-agreement-shaped adapter for the two impure arrow sides.
 
-    This is intentionally local to the empty-registry proof.  It keeps the same
-    indexed-provider shape that a future trusted-registry lookup should provide,
-    but the providers now produce body-local boundary-run evidence rather than
-    the final app post. -/
+    The keyed provider shape lets populated trusted-registry callers later show
+    that both sides used the same trusted entry, while empty-registry callers
+    discharge the contract vacuously. -/
 def TrustedRegistryAgreesWithProgramLocal
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls
-    (registry := registry) ∧
+    (entryKey := entryKey) (registry := registry) ∧
   ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
-    (registry := registry)
+    (entryKey := entryKey) (registry := registry)
 
 /-- Empty-registry local agreement: every static extern member maps to the
     corresponding vacuous body-local side contract. -/
 theorem TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure} :
-    TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls :=
-  ⟨ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry,
-   ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry⟩
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) :=
+  ⟨ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry (entryKey := entryKey),
+   ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry (entryKey := entryKey)⟩
 
 theorem TrustedRegistryAgreesWithProgramLocal.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -5733,6 +5788,7 @@ theorem TrustedRegistryAgreesWithProgramLocal.of_trustedRegistry
           TrustedRegistry.lookup? tr id = some entry ∧
           TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
     TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) :=
   ⟨ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
       hagreesExtern hregularExternBody,
@@ -5743,18 +5799,21 @@ theorem TrustedRegistryAgreesWithProgramLocal.of_trustedRegistry
 def TrustedRegistryAgreesWithPfnProgramLocal
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List PFnTClosure)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls
-    (registry := registry) ∧
+    (entryKey := entryKey) (registry := registry) ∧
   ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls
-    (registry := registry)
+    (entryKey := entryKey) (registry := registry)
 
 theorem TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure} :
-    TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls :=
-  ⟨ExternCallBoundaryFRPfnSide0Provider.of_emptyExternRegistry,
-   ExternCallBoundaryFRPfnSide1Provider.of_emptyExternRegistry⟩
+    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
+    {entryKey : ExternCallEntryKey} :
+    TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := entryKey) :=
+  ⟨ExternCallBoundaryFRPfnSide0Provider.of_emptyExternRegistry (entryKey := entryKey),
+   ExternCallBoundaryFRPfnSide1Provider.of_emptyExternRegistry (entryKey := entryKey)⟩
 
 theorem TrustedRegistryAgreesWithPfnProgramLocal.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -5763,6 +5822,7 @@ theorem TrustedRegistryAgreesWithPfnProgramLocal.of_trustedRegistry
     (hagreesExtern :
       ∀ {argTyp : Typ}, TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls) :
     TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+      (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) :=
   ⟨ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry hagreesExtern,
    ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry hagreesExtern⟩
