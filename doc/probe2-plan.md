@@ -116,18 +116,28 @@ Implemented and compiling:
   synthetic body-output config over a runtime extern result.  `BodyEntryInputsAgree`,
   `ExternCallBoundaryFR`, and `ExternCallBoundarySingle` now use these body
   configs for body-local posts.
+- `StepFRApp.lean` now has provider-backed clean/internal two-run paths for the
+  same-kind successful runtime extern branches:
+  `externFn`/`externFn` in the impure arrow case and
+  `externPfn`/`externPfn` in the pure-arrow case.  These branches build
+  `ExternCallEntry` values, prove `BodyEntryInputsAgree`, consume the local
+  trusted boundary-run providers, and transport the body-local boundary post
+  back to the final app post with the packaged app transport helper.
 
 Still true:
 
 - The populated-registry theorem is not proven yet.
-- `StepFRApp` still discharges successful `externFn` / `externPfn` runtime
-  branches under the current empty-registry theorem.  Those branches are now
-  closed directly by registry preservation and empty lookup contradiction,
-  rather than by an outer-post provider contract.
-- The populated app proof is not wired yet: successful extern branches still
-  need to build `ExternCallEntry`, produce body entry agreement, consume trusted
-  boundary evidence, and transport the resulting body post through the app
-  helpers.
+- `StepFRApp` still has empty-registry fallbacks in mixed user/extern runtime
+  branches and in dirty/non-internal extern result paths.  The same-kind
+  clean/internal extern runtime branches no longer use empty-registry
+  contradiction, but the `stepFR_app` signature still carries the temporary
+  `hregistry_empty` stepping-stone hypothesis until those remaining paths are
+  either proven by the dirty app-result transport or shown impossible from
+  clean agreement.
+- The populated app proof is only partially wired: the core same-kind two-run
+  extern call consumption works, but the remaining app branches still need to
+  be moved off the empty-registry fallback before `stepFR_app` can become truly
+  registry-parametric.
 - The top-level `externVal`, `externFn`, and `externPfn` proof branches no
   longer inline the empty-registry contradiction, but the current theorem is
   still the empty-registry instance, so the declaration boundary adapters still
@@ -137,7 +147,7 @@ Still true:
   empty-registry instance of the registry-parametric step spec; it has not yet
   been generalized to arbitrary `registry`.
 
-Latest verification after threading the masked true-tag absence invariant:
+Latest verification after the same-kind app extern provider paths:
 
 - `lake build LeanProofs` succeeds.
 - `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.
@@ -145,8 +155,9 @@ Latest verification after threading the masked true-tag absence invariant:
   after the masked-spine invariant was threaded through the orchestration proof.
 - `make test` passed after the masked-spine invariant change.
 - `git diff --check` is clean.
-- No new actual `sorry` or `axiom` was introduced.  Existing `sorry` warnings in
-  `LeanProofs/SemanticsProperties.lean` remain pre-existing.
+- `scripts/sorry-count.py --no-build` reports no `sorry` / `axiom` delta.
+  Existing `sorry` warnings in `LeanProofs/SemanticsProperties.lean` remain
+  pre-existing.
 
 ## Main Refactor
 
