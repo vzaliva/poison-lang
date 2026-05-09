@@ -123,21 +123,24 @@ Implemented and compiling:
   `ExternCallEntry` values, prove `BodyEntryInputsAgree`, consume the local
   trusted boundary-run providers, and transport the body-local boundary post
   back to the final app post with the packaged app transport helper.
+- `StepFRApp.lean` now also handles the clean/internal mixed user/extern
+  runtime branches without empty-registry contradiction.  The proof reuses
+  clean result agreement to synchronize the closure source, then contradicts
+  the user branch's `¬ Expr.IsExternFnAst` / `¬ Expr.IsExternPfnAst` evidence.
 
 Still true:
 
 - The populated-registry theorem is not proven yet.
-- `StepFRApp` still has empty-registry fallbacks in mixed user/extern runtime
-  branches and in dirty/non-internal extern result paths.  The same-kind
-  clean/internal extern runtime branches no longer use empty-registry
-  contradiction, but the `stepFR_app` signature still carries the temporary
-  `hregistry_empty` stepping-stone hypothesis until those remaining paths are
-  either proven by the dirty app-result transport or shown impossible from
-  clean agreement.
+- `StepFRApp` still has empty-registry fallbacks in dirty/non-internal and
+  non-clean extern result paths.  The same-kind clean/internal extern runtime
+  branches and the clean/internal mixed user/extern branches no longer use
+  empty-registry contradiction, but the `stepFR_app` signature still carries
+  the temporary `hregistry_empty` stepping-stone hypothesis until those
+  remaining fallback paths are proven by the dirty app-result transport.
 - The populated app proof is only partially wired: the core same-kind two-run
-  extern call consumption works, but the remaining app branches still need to
-  be moved off the empty-registry fallback before `stepFR_app` can become truly
-  registry-parametric.
+  extern call consumption works, but the remaining dirty/non-clean app fallback
+  branches still need to be moved off the empty-registry fallback before
+  `stepFR_app` can become truly registry-parametric.
 - The top-level `externVal`, `externFn`, and `externPfn` proof branches no
   longer inline the empty-registry contradiction, but the current theorem is
   still the empty-registry instance, so the declaration boundary adapters still
@@ -147,7 +150,8 @@ Still true:
   empty-registry instance of the registry-parametric step spec; it has not yet
   been generalized to arbitrary `registry`.
 
-Latest verification after the same-kind app extern provider paths:
+Latest verification after the same-kind app extern provider paths and the
+clean mixed-branch contradiction slice:
 
 - `lake build LeanProofs` succeeds.
 - `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.

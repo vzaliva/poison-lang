@@ -178,6 +178,14 @@ private lemma notExternFnAst_ne_externFn {body : Expr}
   rw [hbody]
   exact Expr.IsExternFnAst.mk
 
+private lemma notExternPfnAst_ne_externPfn {body : Expr}
+    (hnot : ¬ Expr.IsExternPfnAst body) :
+    ∀ id y argTyp retSpec, body ≠ Expr.externPfn id y argTyp retSpec := by
+  intro id y argTyp retSpec hbody
+  apply hnot
+  rw [hbody]
+  exact Expr.IsExternPfnAst.mk
+
 private def AppMemberCtxCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (predSat : PredSat) : Prop :=
@@ -9254,6 +9262,115 @@ lemma stepFR_app
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
         _, _, _, _, _, _, _, _, _, _, _⟩
       exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
+    have resultAgreesIfClean_pair :
+        ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ o₀ o₁ : Value},
+          terminatesTo e2 cinit₀ c₂'₀ v₂₀ →
+          terminatesTo e2 cinit₁ c₂'₁ v₂₁ →
+          terminatesTo e1 c₂'₀ c₁₀ o₀ →
+          terminatesTo e1 c₂'₁ c₁₁ o₁ →
+          ∃ θ₀1 θ₁1,
+            resultAgreesIfClean predSat
+              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+              c₁₀.memory c₁₁.memory θ₀1 θ₁1 result1.qualType o₀ o₁ := by
+      intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ o₀ o₁ ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+      have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
+        μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+        hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
+        a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+      rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, _hresTm2, hstep_e2⟩
+      rcases hstep_e2 with
+        ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _, _, hTm2, hwf2,
+          _htagBounded2, hwfcf₂₀, hwfcf₂₁, hric₀2, hric₁2, htagR2,
+          hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
+      have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
+        simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
+      have hIH_e1 :=
+        IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
+          e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+      have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+      have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+      obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
+      obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+      have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
+        c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+        c₁₀ c₁₁ o₀ o₁
+        hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2
+        hcwr₀2 hcwr₁2 hagree2 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+        (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+      rcases hstep_e1 with ⟨_, _, _, _, hstep_e1⟩
+      rcases hstep_e1 with
+        ⟨θ₀1, θ₁1, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hres_agree1⟩
+      exact ⟨θ₀1, θ₁1, hres_agree1⟩
+    have arrowUserExternMismatch_impossible :
+        ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ : Value}
+          {xUser xExt y : Name} {bodyUser : Expr} {id : ExternId}
+          {argTyp : Typ} {retSpec : ExternReturn} {eff : List Effect}
+          {envUser envExt : VarEnv},
+          ¬ Expr.IsExternFnAst bodyUser →
+          terminatesTo e2 cinit₀ c₂'₀ v₂₀ →
+          terminatesTo e2 cinit₁ c₂'₁ v₂₁ →
+          terminatesTo e1 c₂'₀ c₁₀ (Value.closure xUser bodyUser envUser) →
+          terminatesTo e1 c₂'₁ c₁₁
+            (Value.closure xExt (Expr.externFn id y argTyp retSpec eff) envExt) →
+          qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+            result1.qualType →
+          internalPoisonClean result1.qualType →
+          False := by
+      intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ xUser xExt y bodyUser id argTyp retSpec
+        eff envUser envExt hNot ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1 hclean hinternal
+      obtain ⟨θ₀1, θ₁1, hres_agree1⟩ :=
+        resultAgreesIfClean_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+      rcases
+        stepFR_app_arrow_sync_from_clean_with_extern
+          predSat (ctxAfter ctxᵢ result2) result1 st1 st2 p tcls
+          c₁₀.memory c₁₁.memory θ₀1 θ₁1
+          xUser xExt bodyUser (Expr.externFn id y argTyp retSpec eff)
+          envUser envExt hetyp1 hclean hres_agree1 with hsync | hdirty
+      · rcases hsync with hregular | hextern
+        · rcases hregular with
+            ⟨_, _, _, hbody, _, _, _, _, _, _, _⟩
+          exact (notExternFnAst_ne_externFn hNot id y argTyp retSpec eff) hbody
+        · rcases hextern with
+            ⟨id', _, y', argTyp', retSpec', eff', _, _, _, _, hbodyUser, _,
+              _, _, _, _, _, _, _⟩
+          exact
+            (notExternFnAst_ne_externFn hNot id' y' argTyp' retSpec' eff') hbodyUser
+      · exact hdirty hinternal
+    have arrowExternUserMismatch_impossible :
+        ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ : Value}
+          {xExt xUser y : Name} {bodyUser : Expr} {id : ExternId}
+          {argTyp : Typ} {retSpec : ExternReturn} {eff : List Effect}
+          {envExt envUser : VarEnv},
+          ¬ Expr.IsExternFnAst bodyUser →
+          terminatesTo e2 cinit₀ c₂'₀ v₂₀ →
+          terminatesTo e2 cinit₁ c₂'₁ v₂₁ →
+          terminatesTo e1 c₂'₀ c₁₀
+            (Value.closure xExt (Expr.externFn id y argTyp retSpec eff) envExt) →
+          terminatesTo e1 c₂'₁ c₁₁ (Value.closure xUser bodyUser envUser) →
+          qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+            result1.qualType →
+          internalPoisonClean result1.qualType →
+          False := by
+      intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ xExt xUser y bodyUser id argTyp retSpec
+        eff envExt envUser hNot ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1 hclean hinternal
+      obtain ⟨θ₀1, θ₁1, hres_agree1⟩ :=
+        resultAgreesIfClean_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+      rcases
+        stepFR_app_arrow_sync_from_clean_with_extern
+          predSat (ctxAfter ctxᵢ result2) result1 st1 st2 p tcls
+          c₁₀.memory c₁₁.memory θ₀1 θ₁1
+          xExt xUser (Expr.externFn id y argTyp retSpec eff) bodyUser
+          envExt envUser hetyp1 hclean hres_agree1 with hsync | hdirty
+      · rcases hsync with hregular | hextern
+        · rcases hregular with
+            ⟨_, _, _, hbody, _, _, _, _, _, _, _⟩
+          exact (notExternFnAst_ne_externFn hNot id y argTyp retSpec eff) hbody.symm
+        · rcases hextern with
+            ⟨id', _, y', argTyp', retSpec', eff', _, _, _, _, _, hbodyUser,
+              _, _, _, _, _, _, _⟩
+          exact
+            (notExternFnAst_ne_externFn hNot id' y' argTyp' retSpec' eff') hbodyUser
+      · exact hdirty hinternal
     have pfnImpossible_under_arrow :
         ∀ {θ1 : RealizationMap} {x : Name} {body : Expr} {env : VarEnv},
           valueHasETyp θ1 (Value.peClosure x body env) result1.qualType.etyp → False := by
@@ -11643,19 +11760,35 @@ lemma stepFR_app
               · simpa using ht₁_body
               · simpa using heq_cfg₁
             exact finish_user_only hshape₀ hshape₁
-        | @externFn c₂'₁ _v₂₁ c₁₁ _x₁ _y₁ _id₁ _argTyp₁ _retSpec₁ _eff₁ _env₁
+        | @externFn c₂'₁ _v₂₁ c₁₁ x₁ y₁ id₁ argTyp₁ retSpec₁ eff₁ env₁
             _impl₁ _vRaw₁ _mem'₁ _addr'₁ ht₁_e2 ht₁_e1 _hpure₁ hGet₁ _hArg₁
             _hImpl₁ _hValRet₁ _hcfg₁
             _hpm_e2₁ _hpm_final₁ =>
-            exact False.elim (by
-              have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
-                have hreg : c₂'₁.registry = registry := by
-                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
-                simpa [hregistry_empty] using hreg
-              have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
-                (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-              rw [hreg_c₁₁] at hGet₁
-              simp [emptyExternRegistry] at hGet₁)
+            by_cases hclean1_e1 :
+                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                  result1.qualType
+            · by_cases hinternal1 : internalPoisonClean result1.qualType
+              · exact False.elim
+                  (arrowUserExternMismatch_impossible hNot₀ ht₀_e2 ht₁_e2 ht₀_e1
+                    ht₁_e1 hclean1_e1 hinternal1)
+              · exact False.elim (by
+                  have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
+                    have hreg : c₂'₁.registry = registry := by
+                      simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                    simpa [hregistry_empty] using hreg
+                  have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
+                    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+                  rw [hreg_c₁₁] at hGet₁
+                  simp [emptyExternRegistry] at hGet₁)
+            · exact False.elim (by
+                have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
+                  have hreg : c₂'₁.registry = registry := by
+                    simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                  simpa [hregistry_empty] using hreg
+                have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
+                  (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+                rw [hreg_c₁₁] at hGet₁
+                simp [emptyExternRegistry] at hGet₁)
         | @userPfn c₂'₁ v₂₁ c₁₁ x₁ body₁ env₁ evalCfg₁ ht₁_e2 ht₁_e1 _hNot₁ htoP₁
             ht₁_body heq_cfg₁ hpm_e2₁ hpm_final₁ =>
             have hshape₁ : AppUserOnlyShape e1 e2 cinit₁ cf₁ o₁ := by
@@ -11688,9 +11821,17 @@ lemma stepFR_app
             rw [hreg_c₁₀] at hGet₀
             simp [emptyExternRegistry] at hGet₀)
         cases hfull₁ with
-        | @userFn c₂'₁ v₂₁ c₁₁ _x₁ _body₁ _env₁ _evalCfg₁ ht₁_e2 ht₁_e1
-            _hNot₁ _hpm1₁ _ht₁_body _heq_cfg₁ _hpm_e2₁ _hpm_final₁ =>
-            exact finish_with_side1 ht₁_e2 ht₁_e1
+        | @userFn c₂'₁ v₂₁ c₁₁ x₁ body₁ env₁ _evalCfg₁ ht₁_e2 ht₁_e1
+            hNot₁ _hpm1₁ _ht₁_body _heq_cfg₁ _hpm_e2₁ _hpm_final₁ =>
+            by_cases hclean1_e1 :
+                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                  result1.qualType
+            · by_cases hinternal1 : internalPoisonClean result1.qualType
+              · exact False.elim
+                  (arrowExternUserMismatch_impossible hNot₁ ht₀_e2 ht₁_e2 ht₀_e1
+                    ht₁_e1 hclean1_e1 hinternal1)
+              · exact finish_with_side1 ht₁_e2 ht₁_e1
+            · exact finish_with_side1 ht₁_e2 ht₁_e1
         | @externFn c₂'₁ v₂₁ c₁₁ x₁ y₁ id₁ argTyp₁ retSpec₁ eff₁ env₁
             impl₁ vRaw₁ mem'₁ addr'₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁
             hImpl₁ hValRet₁ hcfg₁ _hpm_e2₁ _hpm_final₁ =>
@@ -12439,7 +12580,7 @@ lemma stepFR_app
             _hpm_e2₁ _hpm_final₁ =>
             obtain ⟨_, _, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
             exact False.elim (pfnImpossible_under_arrow hv₁_typed)
-    | @userPfn c₂'₀ v₂₀ c₁₀ x₀ body₀ env₀ evalCfg₀ ht₀_e2 ht₀_e1 _hNot₀ htoP₀
+    | @userPfn c₂'₀ v₂₀ c₁₀ x₀ body₀ env₀ evalCfg₀ ht₀_e2 ht₀_e1 hNot₀ htoP₀
         ht₀_body heq_cfg₀ hpm_e2₀ hpm_final₀ =>
         have hshape₀ : AppUserOnlyShape e1 e2 cinit₀ cf₀ o₀ := by
           right
@@ -12553,6 +12694,113 @@ lemma stepFR_app
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
         _, _, _, _, _, _, _, _, _, _, _⟩
       exact ⟨θ₀1, θ₁1, hv₀1_typed, hv₁1_typed⟩
+    have resultAgreesIfClean_pair :
+        ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ o₀ o₁ : Value},
+          terminatesTo e2 cinit₀ c₂'₀ v₂₀ →
+          terminatesTo e2 cinit₁ c₂'₁ v₂₁ →
+          terminatesTo e1 c₂'₀ c₁₀ o₀ →
+          terminatesTo e1 c₂'₁ c₁₁ o₁ →
+          ∃ θ₀1 θ₁1,
+            resultAgreesIfClean predSat
+              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+              c₁₀.memory c₁₁.memory θ₀1 θ₁1 result1.qualType o₀ o₁ := by
+      intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ o₀ o₁ ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+      have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
+        μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
+        hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
+        a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+      rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, _hresTm2, hstep_e2⟩
+      rcases hstep_e2 with
+        ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _, _, hTm2, hwf2,
+          _htagBounded2, hwfcf₂₀, hwfcf₂₁, hric₀2, hric₁2, htagR2,
+          hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
+      have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
+        simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
+      have hIH_e1 :=
+        IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
+          e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+      have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
+      have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
+      obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
+      obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+      have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
+        c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
+        c₁₀ c₁₁ o₀ o₁
+        hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2
+        hcwr₀2 hcwr₁2 hagree2 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+        (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
+      rcases hstep_e1 with ⟨_, _, _, _, hstep_e1⟩
+      rcases hstep_e1 with
+        ⟨θ₀1, θ₁1, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hres_agree1⟩
+      exact ⟨θ₀1, θ₁1, hres_agree1⟩
+    have parrowUserExternMismatch_impossible :
+        ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ : Value}
+          {xUser xExt y : Name} {bodyUser : Expr} {id : ExternId}
+          {argTyp : Typ} {retSpec : ExternReturn} {envUser envExt : VarEnv},
+          ¬ Expr.IsExternPfnAst bodyUser →
+          terminatesTo e2 cinit₀ c₂'₀ v₂₀ →
+          terminatesTo e2 cinit₁ c₂'₁ v₂₁ →
+          terminatesTo e1 c₂'₀ c₁₀ (Value.peClosure xUser bodyUser envUser) →
+          terminatesTo e1 c₂'₁ c₁₁
+            (Value.peClosure xExt (Expr.externPfn id y argTyp retSpec) envExt) →
+          qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+            result1.qualType →
+          internalPoisonClean result1.qualType →
+          False := by
+      intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ xUser xExt y bodyUser id argTyp retSpec
+        envUser envExt hNot ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1 hclean hinternal
+      obtain ⟨θ₀1, θ₁1, hres_agree1⟩ :=
+        resultAgreesIfClean_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+      rcases
+        stepFR_app_parrow_sync_from_clean_with_extern
+          predSat (ctxAfter ctxᵢ result2) result1 st1 st2 p tcls
+          c₁₀.memory c₁₁.memory θ₀1 θ₁1
+          xUser xExt bodyUser (Expr.externPfn id y argTyp retSpec)
+          envUser envExt hetyp1 hclean hres_agree1 with hsync | hdirty
+      · rcases hsync with hregular | hextern
+        · rcases hregular with
+            ⟨_, _, _, _, _, _, _, hbody, _, _, _, _, _, _, _⟩
+          exact (notExternPfnAst_ne_externPfn hNot id y argTyp retSpec) hbody
+        · rcases hextern with
+            ⟨id', _, y', argTyp', retSpec', _, _, _, _, hbodyUser, _,
+              _, _, _, _, _, _, _⟩
+          exact
+            (notExternPfnAst_ne_externPfn hNot id' y' argTyp' retSpec') hbodyUser
+      · exact hdirty hinternal
+    have parrowExternUserMismatch_impossible :
+        ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ : Value}
+          {xExt xUser y : Name} {bodyUser : Expr} {id : ExternId}
+          {argTyp : Typ} {retSpec : ExternReturn} {envExt envUser : VarEnv},
+          ¬ Expr.IsExternPfnAst bodyUser →
+          terminatesTo e2 cinit₀ c₂'₀ v₂₀ →
+          terminatesTo e2 cinit₁ c₂'₁ v₂₁ →
+          terminatesTo e1 c₂'₀ c₁₀
+            (Value.peClosure xExt (Expr.externPfn id y argTyp retSpec) envExt) →
+          terminatesTo e1 c₂'₁ c₁₁ (Value.peClosure xUser bodyUser envUser) →
+          qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+            result1.qualType →
+          internalPoisonClean result1.qualType →
+          False := by
+      intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ xExt xUser y bodyUser id argTyp retSpec
+        envExt envUser hNot ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1 hclean hinternal
+      obtain ⟨θ₀1, θ₁1, hres_agree1⟩ :=
+        resultAgreesIfClean_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
+      rcases
+        stepFR_app_parrow_sync_from_clean_with_extern
+          predSat (ctxAfter ctxᵢ result2) result1 st1 st2 p tcls
+          c₁₀.memory c₁₁.memory θ₀1 θ₁1
+          xExt xUser (Expr.externPfn id y argTyp retSpec) bodyUser
+          envExt envUser hetyp1 hclean hres_agree1 with hsync | hdirty
+      · rcases hsync with hregular | hextern
+        · rcases hregular with
+            ⟨_, _, _, _, _, _, _, hbody, _, _, _, _, _, _, _⟩
+          exact (notExternPfnAst_ne_externPfn hNot id y argTyp retSpec) hbody.symm
+        · rcases hextern with
+            ⟨id', _, y', argTyp', retSpec', _, _, _, _, _, hbodyUser,
+              _, _, _, _, _, _, _⟩
+          exact
+            (notExternPfnAst_ne_externPfn hNot id' y' argTyp' retSpec') hbodyUser
+      · exact hdirty hinternal
     have closureImpossible_under_parrow :
         ∀ {θ1 : RealizationMap} {x : Name} {body : Expr} {env : VarEnv},
           valueHasETyp θ1 (Value.closure x body env) result1.qualType.etyp → False := by
@@ -15147,7 +15395,7 @@ lemma stepFR_app
             vRaw₁ ht₁_e2 ht₁_e1 hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁
             _hpm_e2₁ _hpm_final₁ =>
             exact finish_with_side1 ht₁_e2 ht₁_e1
-    | @userPfn c₂'₀ v₂₀ c₁₀ x₀ body₀ env₀ evalCfg₀ ht₀_e2 ht₀_e1 _hNot₀ htoP₀
+    | @userPfn c₂'₀ v₂₀ c₁₀ x₀ body₀ env₀ evalCfg₀ ht₀_e2 ht₀_e1 hNot₀ htoP₀
         ht₀_body heq_cfg₀ hpm_e2₀ hpm_final₀ =>
         have hshape₀ : AppUserOnlyShape e1 e2 cinit₀ cf₀ o₀ := by
           right
@@ -15172,18 +15420,34 @@ lemma stepFR_app
                 htoP₁, ?_, heq_cfg₁, hpm_e2₁, hpm_final₁⟩
               simpa using ht₁_body
             exact finish_user_only hshape₀ hshape₁
-        | @externPfn c₂'₁ _v₂₁ c₁₁ _x₁ _y₁ _id₁ _argTyp₁ _retSpec₁ _env₁
+        | @externPfn c₂'₁ _v₂₁ c₁₁ x₁ y₁ id₁ argTyp₁ retSpec₁ env₁
             _impl₁ _vRaw₁ ht₁_e2 ht₁_e1 hGet₁ _hArg₁ _hImpl₁ _hValRet₁ _hcfg₁
             _hpm_e2₁ _hpm_final₁ =>
-            exact False.elim (by
-              have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
-                have hreg : c₂'₁.registry = registry := by
-                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
-                simpa [hregistry_empty] using hreg
-              have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
-                (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-              rw [hreg_c₁₁] at hGet₁
-              simp [emptyExternRegistry] at hGet₁)
+            by_cases hclean1_e1 :
+                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                  result1.qualType
+            · by_cases hinternal1 : internalPoisonClean result1.qualType
+              · exact False.elim
+                  (parrowUserExternMismatch_impossible hNot₀ ht₀_e2 ht₁_e2 ht₀_e1
+                    ht₁_e1 hclean1_e1 hinternal1)
+              · exact False.elim (by
+                  have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
+                    have hreg : c₂'₁.registry = registry := by
+                      simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                    simpa [hregistry_empty] using hreg
+                  have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
+                    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+                  rw [hreg_c₁₁] at hGet₁
+                  simp [emptyExternRegistry] at hGet₁)
+            · exact False.elim (by
+                have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
+                  have hreg : c₂'₁.registry = registry := by
+                    simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                  simpa [hregistry_empty] using hreg
+                have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
+                  (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+                rw [hreg_c₁₁] at hGet₁
+                simp [emptyExternRegistry] at hGet₁)
     | @externPfn c₂'₀ v₂₀ c₁₀ x₀ y₀ id₀ argTyp₀ retSpec₀ env₀ impl₀ vRaw₀
         ht₀_e2 ht₀_e1 hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀ _hpm_e2₀ _hpm_final₀ =>
         have finish_with_side1 :
@@ -15212,9 +15476,17 @@ lemma stepFR_app
             _hImpl₁ _hValRet₁ _hcfg₁ _hpm_e2₁ _hpm_final₁ =>
             obtain ⟨_, _, _, hv₁_typed⟩ := mkValueHasETyp_pair ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
             exact False.elim (closureImpossible_under_parrow hv₁_typed)
-        | @userPfn c₂'₁ v₂₁ c₁₁ _x₁ _body₁ _env₁ _evalCfg₁ ht₁_e2 ht₁_e1
-            _hNot₁ _htoP₁ _ht₁_body _heq_cfg₁ _hpm_e2₁ _hpm_final₁ =>
-            exact finish_with_side1 ht₁_e2 ht₁_e1
+        | @userPfn c₂'₁ v₂₁ c₁₁ x₁ body₁ env₁ _evalCfg₁ ht₁_e2 ht₁_e1
+            hNot₁ _htoP₁ _ht₁_body _heq_cfg₁ _hpm_e2₁ _hpm_final₁ =>
+            by_cases hclean1_e1 :
+                qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                  result1.qualType
+            · by_cases hinternal1 : internalPoisonClean result1.qualType
+              · exact False.elim
+                  (parrowExternUserMismatch_impossible hNot₁ ht₀_e2 ht₁_e2 ht₀_e1
+                    ht₁_e1 hclean1_e1 hinternal1)
+              · exact finish_with_side1 ht₁_e2 ht₁_e1
+            · exact finish_with_side1 ht₁_e2 ht₁_e1
         | @externPfn c₂'₁ v₂₁ c₁₁ x₁ y₁ id₁ argTyp₁ retSpec₁ env₁ impl₁
             vRaw₁ ht₁_e2 ht₁_e1 hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁
             _hpm_e2₁ _hpm_final₁ =>
