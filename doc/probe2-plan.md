@@ -437,7 +437,7 @@ theorem with explicit trusted-registry assumptions.
 
    Preserve `TypeSystemEnforcesFaultRobustness_emptyRegistry` as the
    compatibility corollary.  Run `lake build LeanProofs`, `make test`,
-   `git diff --check`, and a `sorry` / `axiom` scan.
+   `git diff --check`, and a `sorry` / `axiom` scan using `scripts/sorry-count.py` script.
 
 ## Acceptance Criteria
 
