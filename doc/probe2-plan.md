@@ -127,6 +127,16 @@ Implemented and compiling:
   runtime branches without empty-registry contradiction.  The proof reuses
   clean result agreement to synchronize the closure source, then contradicts
   the user branch's `¬ Expr.IsExternFnAst` / `¬ Expr.IsExternPfnAst` evidence.
+- `StepFRApp.lean` now has small provider-side scaffolding for the remaining
+  dirty app-result paths:
+  - `externCallBoundaryRun_singlePost` is the single canonical adapter from a
+    successful `ExternCallBoundaryRun` plus `entry.spec.callSingle` to a
+    body-local `ExternBoundarySinglePost`;
+  - `externCallBoundaryRunProvider_singlePost` consumes the existential
+    provider result directly and exposes the same body-local single post;
+  - `externPfnStaticSource_of_valueConsistentWithRegime` mirrors the existing
+    impure `externFn` source extractor, so both fn and pfn dirty paths can get
+    local provider inputs from value-consistency evidence.
 
 Still true:
 
@@ -150,14 +160,15 @@ Still true:
   empty-registry instance of the registry-parametric step spec; it has not yet
   been generalized to arbitrary `registry`.
 
-Latest verification after the same-kind app extern provider paths and the
-clean mixed-branch contradiction slice:
+Latest verification after the same-kind app extern provider paths, clean
+mixed-branch contradiction slice, and provider-to-single-post scaffolding:
 
 - `lake build LeanProofs` succeeds.
 - `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.
+- `lake build LeanProofs.StepFRApp` succeeds after the latest scaffolding.
 - `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeded
   after the masked-spine invariant was threaded through the orchestration proof.
-- `make test` passed after the masked-spine invariant change.
+- `make test` passed after the latest scaffolding.
 - `git diff --check` is clean.
 - `scripts/sorry-count.py --no-build` reports no `sorry` / `axiom` delta.
   Existing `sorry` warnings in `LeanProofs/SemanticsProperties.lean` remain
@@ -407,6 +418,16 @@ theorem with explicit trusted-registry assumptions.
    both sides are successful extern dispatches for the same body member.  Reuse
    the existing clean-sync reasoning to reduce clean mixed branches to
    contradiction and the dirty-internal fallback to the poisoned app result.
+
+   Current branch debt is specifically the poisoned/dirty fallback shape.  The
+   next slice should use the existing per-side source extractors
+   (`externFnStaticSource_of_valueConsistentWithRegime` and
+   `externPfnStaticSource_of_valueConsistentWithRegime`), call the side
+   providers, turn those provider runs into body-local single posts with
+   `externCallBoundaryRunProvider_singlePost`, and then reuse the dirty
+   app-result transport pattern from the regular user-closure branches.  This
+   should eliminate the remaining `hregistry_empty` fallbacks rather than just
+   DRYing the duplicated empty-registry contradictions.
 
    For `FnTClosure.extern` / `PFnTClosure.extern` members, resolve trusted
    entries through `TrustedRegistryAgreesWithFnTClosures` /
