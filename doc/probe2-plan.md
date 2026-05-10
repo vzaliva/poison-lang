@@ -116,41 +116,30 @@ Implemented and compiling:
   synthetic body-output config over a runtime extern result.  `BodyEntryInputsAgree`,
   `ExternCallBoundaryFR`, and `ExternCallBoundarySingle` now use these body
   configs for body-local posts.
-- `StepFRApp.lean` now has provider-backed clean/internal two-run paths for the
-  same-kind successful runtime extern branches:
-  `externFn`/`externFn` in the impure arrow case and
-  `externPfn`/`externPfn` in the pure-arrow case.  These branches build
-  `ExternCallEntry` values, prove `BodyEntryInputsAgree`, consume the local
-  trusted boundary-run providers, and transport the body-local boundary post
-  back to the final app post with the packaged app transport helper.
-- `StepFRApp.lean` now also handles the clean/internal mixed user/extern
-  runtime branches without empty-registry contradiction.  The proof reuses
-  clean result agreement to synchronize the closure source, then contradicts
-  the user branch's `¬ Expr.IsExternFnAst` / `¬ Expr.IsExternPfnAst` evidence.
-- `StepFRApp.lean` now has small provider-side scaffolding for the remaining
-  dirty app-result paths:
+- `StepFRApp.lean` now has provider-backed two-run paths for all successful
+  runtime extern app-call branches.  The six branch finishers
+  `finish_user_extern_p1p_true`, `finish_extern_user_p1p_true`,
+  `finish_extern_extern_p1p_true`, `finish_user_pfn_extern_pfn_p1p_true`,
+  `finish_extern_pfn_user_pfn_p1p_true`, and
+  `finish_extern_pfn_extern_pfn_p1p_true` build or consume body-local extern
+  boundary posts and transport them back to the final app post.  The
+  dirty/non-internal and non-clean app fallback paths no longer discharge by
+  contradiction from `emptyExternRegistry`.
+- `StepFRApp.lean` keeps small provider-side adapters used by those paths:
   - `externCallBoundaryRun_singlePost` is the single canonical adapter from a
     successful `ExternCallBoundaryRun` plus `entry.spec.callSingle` to a
     body-local `ExternBoundarySinglePost`;
   - `externCallBoundaryRunProvider_singlePost` consumes the existential
     provider result directly and exposes the same body-local single post;
   - `externPfnStaticSource_of_valueConsistentWithRegime` mirrors the existing
-    impure `externFn` source extractor, so both fn and pfn dirty paths can get
-    local provider inputs from value-consistency evidence.
+    impure `externFn` source extractor, so both fn and pfn dirty paths get local
+    provider inputs from value-consistency evidence.
+- `stepFR_app` no longer carries the temporary `hregistry_empty` hypothesis.  It
+  is registry-parametric at the app-call proof boundary.
 
 Still true:
 
 - The populated-registry theorem is not proven yet.
-- `StepFRApp` still has empty-registry fallbacks in dirty/non-internal and
-  non-clean extern result paths.  The same-kind clean/internal extern runtime
-  branches and the clean/internal mixed user/extern branches no longer use
-  empty-registry contradiction, but the `stepFR_app` signature still carries
-  the temporary `hregistry_empty` stepping-stone hypothesis until those
-  remaining fallback paths are proven by the dirty app-result transport.
-- The populated app proof is only partially wired: the core same-kind two-run
-  extern call consumption works, but the remaining dirty/non-clean app fallback
-  branches still need to be moved off the empty-registry fallback before
-  `stepFR_app` can become truly registry-parametric.
 - The top-level `externVal`, `externFn`, and `externPfn` proof branches no
   longer inline the empty-registry contradiction, but the current theorem is
   still the empty-registry instance, so the declaration boundary adapters still
@@ -160,15 +149,11 @@ Still true:
   empty-registry instance of the registry-parametric step spec; it has not yet
   been generalized to arbitrary `registry`.
 
-Latest verification after the same-kind app extern provider paths, clean
-mixed-branch contradiction slice, and provider-to-single-post scaffolding:
+Latest verification after provider-backed app extern branch integration and
+removing `hregistry_empty` from `stepFR_app`:
 
 - `lake build LeanProofs` succeeds.
-- `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.
-- `lake build LeanProofs.StepFRApp` succeeds after the latest scaffolding.
-- `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeded
-  after the masked-spine invariant was threaded through the orchestration proof.
-- `make test` passed after the latest scaffolding.
+- `make test` passes 96/96.
 - `git diff --check` is clean.
 - `scripts/sorry-count.py --no-build` reports no `sorry` / `axiom` delta.
   Existing `sorry` warnings in `LeanProofs/SemanticsProperties.lean` remain
@@ -176,10 +161,12 @@ mixed-branch contradiction slice, and provider-to-single-post scaffolding:
 
 ## Main Refactor
 
-The remaining work is now an extern-boundary evidence refactor.  The
-registry-parametric theorem spine exists and compiles, but the populated
-registry cannot be completed until app extern-call evidence is consumed at the
-right proof boundary.
+The remaining work is now the declaration-adapter and top-level theorem bridge.
+The registry-parametric theorem spine exists and compiles, and app extern-call
+evidence is consumed at the app proof boundary.  The populated registry theorem
+cannot be completed until successful extern declarations consume trusted
+boundary evidence and the step theorem is generalized away from the
+empty-registry instance.
 
 With a populated registry, extern declaration expressions can terminate.  The
 current declaration branches in `FaultRobustnessProofs.lean` have already been
@@ -276,23 +263,13 @@ entry.spec.callFR ... :
 4. Transport that member post through provenance normalization,
 `joinTypeResults`, and app-config restoration.
 
-The first transport-specific risk has been checked:
-`appTwoRunOutChoice_from_call_boundaryFR` composes the body-local post produced
-by an `ExternCallBoundaryFR` with the packaged app transport helper.  The next
-step is to finish using the provider-backed contracts in the remaining app
-extern branches and then replace the empty-registry provider at the app wrapper
-with trusted-registry providers for the populated theorem.
-
-The next concrete app blocker is
-branch integration: successful extern branches must either fall back through
-the existing dirty-internal app-result path, or, when both runs dispatch the
-same trusted extern boundary, construct body entries, consume `callFR`, set the
-body eval configs to `entry.bodyOutputConfig cf`, and then transport to the
-actual app configs.  Single-run extern branches need the analogous body-output
-transport.  If the existing normalized-member helper cannot consume an extern
-member result directly, add either a direct-member transport variant or an
-extern-apply inversion lemma that exposes the pre-normalized body result
-expected by the current helper.
+The transport-specific risk has been checked and the app branches have been
+wired through it.  `appTwoRunOutChoice_from_call_boundaryFR` composes the
+body-local post produced by an `ExternCallBoundaryFR` with the packaged app
+transport helper, and the dirty app-result transport uses
+`appTwoRunOutChoice_from_independent_single_boundary_posts_dirty` to consume
+per-side body-local `ExternBoundarySinglePost` values.  The `stepFR_app`
+signature no longer needs an empty-registry equality witness.
 
 The remaining app-specific wrinkle is also still relevant: runtime `externFn`
 dispatch is not forced to originate from a `FnTClosure.extern` member.  It can
@@ -333,19 +310,16 @@ initial false mask satisfies the invariant, `typecheck` preservation threads it
 through `ctxAfter`, `tagEnv.insert ... false` preserves it immediately, and
 `tagEnv.insert ... true` is discharged by contradicting `hmasked_none`.
 
-The remaining work is no longer a masked-spine API problem.  It is the app
-extern provider and top-level registry wiring:
+The remaining work is no longer a masked-spine or app-extern transport problem.
+It is declaration-adapter replacement and top-level registry wiring:
 
-1. Validate the new shape on regular user-closure branches before using it for
-   extern branches.  This prevents the extern proof from debugging transport
-   and boundary lookup at the same time.
+1. Replace the declaration `.of_emptyExternRegistry` adapters with
+   trusted-registry lookup and `ExternBoundarySpec` declaration fields.
 
-2. After the regular branch is wired through the helper, use
-   `ExternCallBoundaryFnStaticSource.callBoundaryRun` and
-   `ExternCallBoundaryPfnStaticSource.callBoundaryRun` to build
-   `ExternCallBoundaryRun` evidence in the successful extern runtime branches.
-   Then consume `entry.spec.callSingle` or `entry.spec.callFR` and pass the
-   resulting body-local post into the app transport helper.
+2. Generalize `TypeSystemEnforcesFaultRobustness_step` to arbitrary
+   `registry`, instantiate it with `TrustedRegistry.toRuntimeRegistry tr`, and
+   add the public populated-registry theorem under explicit trusted-registry
+   agreement assumptions.
 
 3. For impure regular-extern-body dispatch, add a precise resolver premise or
    derivation that connects
@@ -385,125 +359,36 @@ theorem with explicit trusted-registry assumptions.
    Option 1 succeeded, so the larger ordinary single-run induction split is not
    part of the active plan.
 
-3. **Validate app transport helpers on regular branches.**
+3. **Validate app transport helpers on regular branches.** **Done.**
 
-   Rewire the existing regular user-closure app branches to use the new
-   body-post-to-app transport shape.  Keep this step free of trusted-registry
-   lookup so that failures isolate the transport interface.
+   The regular user-closure app branches compile through the body-post-to-app
+   transport shape, isolating the app transport interface before extern lookup
+   was added.
 
-   Expected helper families:
+4. **Consume extern call boundaries in `StepFRApp`.** **Done.**
 
-   - single-run masked-regime arrow;
-   - single-run masked-regime parrow;
-   - two-run arrow side 0;
-   - two-run arrow side 1;
-   - two-run parrow side 0;
-   - two-run parrow side 1.
+   Successful `externFn` / `externPfn` branches now build `ExternCallEntry`
+   values, use the local side providers to obtain body-local boundary evidence,
+   consume `callFR` / `callSingle` through the body-post adapters, and transport
+   the result through provenance normalization and `joinTypeResults` to the
+   final app post.  The dirty/non-internal and non-clean fallback branches use
+   the same provider-backed transport rather than empty-registry contradiction.
 
-   Done when the regular branches compile through the new helper interface and
-   `lake build LeanProofs` succeeds.
-
-4. **Consume extern call boundaries in `StepFRApp`.**
-
-   In successful `externFn` / `externPfn` branches, build `ExternCallEntry`,
-   prove the body entry inputs agree over `entry.bodyConfig`, construct
-   `ExternCallBoundaryRun.fn` /
-   `.pfn` using `ExternCallBoundaryFnStaticSource.callBoundaryRun` /
-   `ExternCallBoundaryPfnStaticSource.callBoundaryRun`, consume
-   `entry.spec.callSingle` / `entry.spec.callFR`, and feed the body-boundary
-   post over `entry.bodyOutputConfig cf` into the transport helper from steps
-   1-2.
-
-   Mixed user/extern closure branches should not use boundary evidence unless
-   both sides are successful extern dispatches for the same body member.  Reuse
-   the existing clean-sync reasoning to reduce clean mixed branches to
-   contradiction and the dirty-internal fallback to the poisoned app result.
-
-   Current branch debt is specifically the poisoned/dirty fallback shape.  The
-   next slice should use the existing per-side source extractors
-   (`externFnStaticSource_of_valueConsistentWithRegime` and
-   `externPfnStaticSource_of_valueConsistentWithRegime`), call the side
-   providers, turn those provider runs into body-local single posts with
-   `externCallBoundaryRunProvider_singlePost`, and then reuse the dirty
-   app-result transport pattern from the regular user-closure branches.  This
-   should eliminate the remaining `hregistry_empty` fallbacks rather than just
-   DRYing the duplicated empty-registry contradictions.
-
-   Current support status: `appTwoRunOutChoice_from_independent_single_posts_dirty`
-   is now proved in `StepFRApp.lean`.  It packages the regular dirty-output
-   transport pattern for the case where the final app result is already
-   poison/noPred and the two sides only provide independent single-run posts.
-   This is the reusable target for the remaining mixed user/extern and
-   extern/extern dirty branches: the branch code should construct per-side
-   source members, per-side body-local single posts, source clean-back facts,
-   and preservation/fresh facts, then call this helper instead of proving
-   contradiction from `hregistry_empty`.
-
-   A wrapper,
-   `appTwoRunOutChoice_from_independent_single_boundary_posts_dirty`, is also
-   proved.  It consumes the two `ExternBoundarySinglePost` values directly and
-   unpacks the realization-map, runtime-instantiation, consistency,
-   preservation, freshness, and value-consistency fields needed by the lower
-   helper.
-
-   **Resolved blocker:** the required source clean-back fact was available for
-   regular extern-body dispatch and for single-run app proofs under
-   `ctx.pc = true`, but not for direct `FnTClosure.extern` members in the
-   two-run dirty app branch.  The direct extern-member typechecker path used to
-   apply extern effects using the caller `ctx.pc`:
-
-   ```lean
-   applyExternEffect effect unifiedEnv tagMapping ctx.pc memEnv
-   ```
-
-   It did not use the app body pc
-   `joinPoison p (joinPoison p1 ctx.pc)`.  Therefore, when
-   `joinPoison p1 p = true` but `ctx.pc = false`, direct extern effects can
-   still write clean memory types.  The existing clean-back lemmas for extern
-   effects (`applyFnTClosure_extern_ok_memEnv_poison_origin` and
-   `applyFnTClosure_extern_ok_memEnv_guard_origin`) deliberately require
-   `ctx.pc = true`; without that premise, a clean final memory lookup can be an
-   effect write rather than a pre-app clean location.  The dirty two-run helper
-   then cannot recover the pre-state `agreeOnClean` fact needed to compare the
-   two final memories.
-
-   This is now fixed.  `applyFnTClosureAtCursor` and `applyFnTClosure` both
-   pass `joinPoison p (joinPoison p1 ctx.pc)` to the `applyExternEffect` loop
-   for direct `FnTClosure.extern` members.  `TypeSafety` and `StepFR` were
-   updated to reason about the new effect pc, with generalized origin lemmas:
-
-   ```lean
-   applyFnTClosure_extern_ok_memEnv_poison_origin_of_effect_pc_true
-   applyFnTClosure_extern_ok_memEnv_guard_origin_of_effect_pc_true
-   ```
-
-   `StepFRApp` now has
-   `applyFnTClosure_staticSource_clean_back_of_p1p_true`, which supplies the
-   dirty helper's source clean-back premise for both direct extern members and
-   regular extern-body members when `joinPoison p1 p = true`.
+   The app proof no longer needs `hregistry_empty`, and `StepFRApp.lean` no
+   longer proves runtime `externFn` / `externPfn` dispatch impossible from
+   `emptyExternRegistry`.
 
    Verification after this slice:
 
    - `lake build LeanProofs` succeeds.
-   - `make test` passes 95/95.
+   - `make test` passes 96/96.
    - `git diff --check` succeeds.
    - `scripts/sorry-count.py --no-build` reports no sorry/axiom delta.
 
-   The next action is branch integration: use this support lemma in the
-   remaining dirty `externFn` app branches by constructing per-side static
-   sources, per-side body-local single posts from the side providers, source
-   clean-back facts, and then calling
-   `appTwoRunOutChoice_from_independent_single_boundary_posts_dirty`.
-
-   For `FnTClosure.extern` / `PFnTClosure.extern` members, resolve trusted
-   entries through `TrustedRegistryAgreesWithFnTClosures` /
-   `TrustedRegistryAgreesWithPFnTClosures`.  For regular impure closure members
-   whose body is `Expr.externFn`, use a precise regular-extern-body resolver
-   derived from program membership or an explicit typed-closure provenance
-   invariant.
-
-   Done when app runtime `externFn` / `externPfn` dispatch is no longer proved
-   impossible from `emptyExternRegistry`.
+   Active focus now shifts to Steps 5-6.  Step 5 is the next high-risk item,
+   because declaration branches still need to replace empty-registry adapters
+   with trusted lookup plus `ExternBoundarySpec` declaration fields before the
+   step theorem can be genuinely populated-registry parametric.
 
 5. **Replace declaration adapters with populated-registry consumers.**
 
@@ -539,7 +424,8 @@ theorem with explicit trusted-registry assumptions.
 
    Preserve `TypeSystemEnforcesFaultRobustness_emptyRegistry` as the
    compatibility corollary.  Run `lake build LeanProofs`, `make test`,
-   `git diff --check`, and a `sorry` / `axiom` scan using `scripts/sorry-count.py` script.
+   `git diff --check`, and a `sorry` / `axiom` scan using
+   `scripts/sorry-count.py`.
 
 ## Acceptance Criteria
 

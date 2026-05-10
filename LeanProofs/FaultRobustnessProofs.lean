@@ -1912,7 +1912,7 @@ theorem TypeSystemEnforcesFaultRobustness_step
                       e ctx' predSat tmᵢ m res' htc'
                 exact
                   stepFR_app ctxᵢ predSat tm (registry := emptyExternRegistry)
-                    rfl e1 e2 fuel' res
+                    e1 e2 fuel' res
                     (StepFR_IH_of_induction (registry := emptyExternRegistry)
                       predSat tm (Nat.succ (Nat.succ fuel'))
                     (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc))
