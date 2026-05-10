@@ -6979,6 +6979,7 @@ private lemma applyFnTClosure_extern_predTagsBounded
       -- Effects loop (forIn)
       let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
         ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+      let effectPc := joinPoison p (joinPoison p1 ctx.pc)
       split at happly
       · simp at happly
       · rename_i loopResult hloop
@@ -7006,11 +7007,11 @@ private lemma applyFnTClosure_extern_predTagsBounded
                     eff.pred unifiedEnv tagMapping nextTag' resolvedPred_eff hmapping hresolve_eff
                   have hStoredBounded : qtypPredTagBounded
                       (⟨(effectSpecToQTyp eff.poison resolvedPred_eff).etyp,
-                        joinPoison ctx.pc (effectSpecToQTyp eff.poison resolvedPred_eff).poison,
-                        if ctx.pc = true then Predicate.noPred
+                        joinPoison effectPc (effectSpecToQTyp eff.poison resolvedPred_eff).poison,
+                        if effectPc = true then Predicate.noPred
                           else (effectSpecToQTyp eff.poison resolvedPred_eff).pred⟩ : QTyp)
                       nextTag' := by
-                    by_cases hpc : ctx.pc = true
+                    by_cases hpc : effectPc = true
                     · simp [hpc, qtypPredTagBounded, predTagBounded]
                     · simp [hpc, effectSpecToQTyp, qtypPredTagBounded]; exact hResBounded
                   exact locset_fold_updateMemEnv_predBounded _ r _ nextTag' hr hStoredBounded

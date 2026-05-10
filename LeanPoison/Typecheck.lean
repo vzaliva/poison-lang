@@ -1342,6 +1342,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
     | FnTClosure.extern _id x retSpec effects capturedEnv =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
+        let effectPc := joinPoison p (joinPoison p1 ctx.pc)
 
         let allPreds := collectExternPreds retSpec effects
         let (tagMapping, nextTag') ← collectAndAllocExternTags allPreds cursor.1
@@ -1349,7 +1350,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
         let mut memEnv := result2.memEnv'
         let mut nextLoc := cursor.2
         for effect in effects do
-          memEnv ← applyExternEffect effect unifiedEnv tagMapping ctx.pc memEnv
+          memEnv ← applyExternEffect effect unifiedEnv tagMapping effectPc memEnv
 
         match retSpec with
         | ExternReturn.simple typ poison pred =>
@@ -1413,6 +1414,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
     | FnTClosure.extern _id x retSpec effects capturedEnv =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
+        let effectPc := joinPoison p (joinPoison p1 ctx.pc)
 
         let allPreds := collectExternPreds retSpec effects
         let (tagMapping, nextTag') ← collectAndAllocExternTags allPreds result2.nextTag'
@@ -1420,7 +1422,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         let mut memEnv := result2.memEnv'
         let mut nextLoc := result2.nextLoc'
         for effect in effects do
-          memEnv ← applyExternEffect effect unifiedEnv tagMapping ctx.pc memEnv
+          memEnv ← applyExternEffect effect unifiedEnv tagMapping effectPc memEnv
 
         match retSpec with
         | ExternReturn.simple typ poison pred =>

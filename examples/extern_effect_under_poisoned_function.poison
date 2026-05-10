@@ -1,0 +1,21 @@
+-- Test: predicate erasure when an extern is applied through a function value
+-- whose outer poison p1 is set, even though the caller's pc is clean.
+--
+-- The effect-pc gate is `pc ⊔ p1 ⊔ p`.  Here `pc = clean` (we are at the
+-- top level after the if-merge) but `p1 = poisoned` because the if-merge
+-- over a poisoned condition lifts the merged value's outer poison.  The
+-- gate is therefore poisoned, so resolveEffectsPoisoned fires and the
+-- predicate at !errno is erased to noPred.
+--
+-- Expected MemoryTypeEnv at !errno: (true, {}) — outer poison true (from
+-- provenance), predicate erased.
+
+let errno   = extern val @21 : (ref int :> clean {}) in
+let set_err = extern fn @22 n : (int) -> ((unit :> clean {})) ,
+                effects: { !errno :> (int :> poisoned { 1, v => v >= 0 }) } in
+let dirty   = extern val @5 : (bool :> poisoned { 1, v => v }) in
+-- Both branches return `set_err`; the merge gives `chosen` a poisoned outer
+-- (p1 = poisoned) due to the poisoned `dirty` condition.  Caller pc remains
+-- clean here at the application site.
+let chosen  = if dirty then set_err else set_err in
+chosen 42

@@ -6365,7 +6365,8 @@ private lemma applyFnTClosure_extern_ok_memCellsRespect_of_respects
         rw [hmem_eq]
         -- Normalize hloop to the form expected by extern_loop_allCellsRespect
         have hloop' : forIn effects result2.memEnv' (fun effect r =>
-            match applyExternEffect effect unifiedEnv allocRes.1 ctx.pc r with
+            match applyExternEffect effect unifiedEnv allocRes.1
+                (joinPoison p (joinPoison p1 ctx.pc)) r with
             | Except.error err => Except.error err
             | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnvLoop := by
           convert hloop using 2
@@ -6374,7 +6375,8 @@ private lemma applyFnTClosure_extern_ok_memCellsRespect_of_respects
           split <;> simp_all
         -- Apply the loop invariant
         exact extern_loop_allCellsRespect tm effects unifiedEnv allocRes.1
-          (collectExternPreds retSpec effects) ctx.pc result2.memEnv' memEnvLoop
+          (collectExternPreds retSpec effects) (joinPoison p (joinPoison p1 ctx.pc))
+          result2.memEnv' memEnvLoop
           hcompat
           (fun effect hmem => effect_pred_mem_collectExternPreds retSpec effects effect hmem)
           hinit hloop'
@@ -6526,12 +6528,12 @@ private lemma forIn_effects_loop_preserves_clean_lookup
         exact applyExternEffect_preserves_clean_lookup h unifiedEnv tagMapping
           memEnv memEnv1 happly1 l qt_mid hlookup_mid hpoison_mid
 
-/-- Poison origin for impure externs: under `ctx.pc = true`, a clean cell in
-    the post-extern memEnv traces back pointwise to a clean cell in
+/-- Poison origin for impure externs: under a dirty extern-effect pc, a clean
+    cell in the post-extern memEnv traces back pointwise to a clean cell in
     `result2.memEnv'` (the pre-extern memEnv passed into `applyFnTClosure`).
     The remaining step from `result2.memEnv'` to `ctx.memEnv` is handled at
     the call site by the IH-based `hbackToCtx_poison` helper. -/
-lemma applyFnTClosure_extern_ok_memEnv_poison_origin
+lemma applyFnTClosure_extern_ok_memEnv_poison_origin_of_effect_pc_true
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (result2 : TypeResult) (fuel : Nat)
@@ -6539,7 +6541,7 @@ lemma applyFnTClosure_extern_ok_memEnv_poison_origin
     (r : TypeResult)
     (happly : applyFnTClosure (FnTClosure.extern id x retSpec effects capturedEnv) st1 st2 p p1
       argEtyp argPoison argPred ctx result2 fuel = .ok r)
-    (hpc : ctx.pc = true)
+    (heffectPc : joinPoison p (joinPoison p1 ctx.pc) = true)
     (l : Loc) (qt_out : QTyp)
     (hlookup : r.memEnv'.lookup l = some qt_out)
     (hpoison : qt_out.poison = false) :
@@ -6574,17 +6576,35 @@ lemma applyFnTClosure_extern_ok_memEnv_poison_origin
         rw [hmem_eq] at hlookup
         -- Normalize hloop to the simpler form consumed by the loop lemma
         have hloop' : forIn effects result2.memEnv' (fun effect r =>
-            match applyExternEffect effect unifiedEnv allocRes.1 ctx.pc r with
+            match applyExternEffect effect unifiedEnv allocRes.1
+                (joinPoison p (joinPoison p1 ctx.pc)) r with
             | Except.error err => Except.error err
             | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnvLoop := by
           convert hloop using 2
           funext effect r
           simp only [pure, Except.pure]
           split <;> simp_all
-        -- Rewrite pc = true in hloop'
-        rw [hpc] at hloop'
+        rw [heffectPc] at hloop'
         exact forIn_effects_loop_preserves_clean_lookup effects unifiedEnv allocRes.1
           result2.memEnv' memEnvLoop hloop' l qt_out hlookup hpoison
+
+/-- Compatibility wrapper for existing callers that know the caller pc is dirty. -/
+lemma applyFnTClosure_extern_ok_memEnv_poison_origin
+    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result2 : TypeResult) (fuel : Nat)
+    (id : ExternId) (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+    (r : TypeResult)
+    (happly : applyFnTClosure (FnTClosure.extern id x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r)
+    (hpc : ctx.pc = true)
+    (l : Loc) (qt_out : QTyp)
+    (hlookup : r.memEnv'.lookup l = some qt_out)
+    (hpoison : qt_out.poison = false) :
+    ∃ qt_mid, result2.memEnv'.lookup l = some qt_mid ∧ qt_mid.poison = false :=
+  applyFnTClosure_extern_ok_memEnv_poison_origin_of_effect_pc_true
+    ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel id x retSpec effects capturedEnv
+    r happly (by simp [hpc, joinPoison]) l qt_out hlookup hpoison
 
 /-- Guard-tag analogue of `forIn_effects_loop_preserves_clean_lookup`.  Returns
     a lookup equality (same `qt`) so downstream consumers can transport any
@@ -6626,13 +6646,13 @@ private lemma forIn_effects_loop_preserves_guard_lookup
         exact applyExternEffect_preserves_guard_lookup h unifiedEnv tagMapping
           memEnv memEnv1 happly1 l qt k hlookup_mid htag
 
-/-- Guard origin for impure externs: under `ctx.pc = true`, a guard-tagged
+/-- Guard origin for impure externs: under a dirty extern-effect pc, a guard-tagged
     cell in the post-extern memEnv traces back pointwise to a guard-tagged
     cell in `result2.memEnv'`.  The remaining step from `result2.memEnv'`
     to `ctx.memEnv` is handled at the call site (parallel to the poison
     origin lemma).  This replaces what was previously the
     `extTyping.guardProvenance` trust input. -/
-lemma applyFnTClosure_extern_ok_memEnv_guard_origin
+lemma applyFnTClosure_extern_ok_memEnv_guard_origin_of_effect_pc_true
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
     (result2 : TypeResult) (fuel : Nat)
@@ -6640,7 +6660,7 @@ lemma applyFnTClosure_extern_ok_memEnv_guard_origin
     (r : TypeResult)
     (happly : applyFnTClosure (FnTClosure.extern id x retSpec effects capturedEnv) st1 st2 p p1
       argEtyp argPoison argPred ctx result2 fuel = .ok r)
-    (hpc : ctx.pc = true)
+    (heffectPc : joinPoison p (joinPoison p1 ctx.pc) = true)
     (l : Loc) (qt_out : QTyp) (k : Tag)
     (hlookup : r.memEnv'.lookup l = some qt_out)
     (htag : qtypGuardTag qt_out = some k) :
@@ -6673,16 +6693,35 @@ lemma applyFnTClosure_extern_ok_memEnv_guard_origin
             subst happly; rfl
         rw [hmem_eq] at hlookup
         have hloop' : forIn effects result2.memEnv' (fun effect r =>
-            match applyExternEffect effect unifiedEnv allocRes.1 ctx.pc r with
+            match applyExternEffect effect unifiedEnv allocRes.1
+                (joinPoison p (joinPoison p1 ctx.pc)) r with
             | Except.error err => Except.error err
             | Except.ok v => Except.ok (ForInStep.yield v)) = Except.ok memEnvLoop := by
           convert hloop using 2
           funext effect r
           simp only [pure, Except.pure]
           split <;> simp_all
-        rw [hpc] at hloop'
+        rw [heffectPc] at hloop'
         exact forIn_effects_loop_preserves_guard_lookup effects unifiedEnv allocRes.1
           result2.memEnv' memEnvLoop hloop' l qt_out k hlookup htag
+
+/-- Compatibility wrapper for existing callers that know the caller pc is dirty. -/
+lemma applyFnTClosure_extern_ok_memEnv_guard_origin
+    (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (result2 : TypeResult) (fuel : Nat)
+    (id : ExternId) (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
+    (r : TypeResult)
+    (happly : applyFnTClosure (FnTClosure.extern id x retSpec effects capturedEnv) st1 st2 p p1
+      argEtyp argPoison argPred ctx result2 fuel = .ok r)
+    (hpc : ctx.pc = true)
+    (l : Loc) (qt_out : QTyp) (k : Tag)
+    (hlookup : r.memEnv'.lookup l = some qt_out)
+    (htag : qtypGuardTag qt_out = some k) :
+    result2.memEnv'.lookup l = some qt_out :=
+  applyFnTClosure_extern_ok_memEnv_guard_origin_of_effect_pc_true
+    ctx st1 st2 p p1 argEtyp argPoison argPred result2 fuel id x retSpec effects capturedEnv
+    r happly (by simp [hpc, joinPoison]) l qt_out k hlookup htag
 
 /-- Conjunct 2: the result QTyp of an impure extern application respects tag meaning.
     Requires `hcapTm` (captured env entries respect tm) and `hargTm` (arg QTyp respects tm)

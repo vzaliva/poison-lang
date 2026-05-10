@@ -429,6 +429,72 @@ theorem with explicit trusted-registry assumptions.
    should eliminate the remaining `hregistry_empty` fallbacks rather than just
    DRYing the duplicated empty-registry contradictions.
 
+   Current support status: `appTwoRunOutChoice_from_independent_single_posts_dirty`
+   is now proved in `StepFRApp.lean`.  It packages the regular dirty-output
+   transport pattern for the case where the final app result is already
+   poison/noPred and the two sides only provide independent single-run posts.
+   This is the reusable target for the remaining mixed user/extern and
+   extern/extern dirty branches: the branch code should construct per-side
+   source members, per-side body-local single posts, source clean-back facts,
+   and preservation/fresh facts, then call this helper instead of proving
+   contradiction from `hregistry_empty`.
+
+   A wrapper,
+   `appTwoRunOutChoice_from_independent_single_boundary_posts_dirty`, is also
+   proved.  It consumes the two `ExternBoundarySinglePost` values directly and
+   unpacks the realization-map, runtime-instantiation, consistency,
+   preservation, freshness, and value-consistency fields needed by the lower
+   helper.
+
+   **Resolved blocker:** the required source clean-back fact was available for
+   regular extern-body dispatch and for single-run app proofs under
+   `ctx.pc = true`, but not for direct `FnTClosure.extern` members in the
+   two-run dirty app branch.  The direct extern-member typechecker path used to
+   apply extern effects using the caller `ctx.pc`:
+
+   ```lean
+   applyExternEffect effect unifiedEnv tagMapping ctx.pc memEnv
+   ```
+
+   It did not use the app body pc
+   `joinPoison p (joinPoison p1 ctx.pc)`.  Therefore, when
+   `joinPoison p1 p = true` but `ctx.pc = false`, direct extern effects can
+   still write clean memory types.  The existing clean-back lemmas for extern
+   effects (`applyFnTClosure_extern_ok_memEnv_poison_origin` and
+   `applyFnTClosure_extern_ok_memEnv_guard_origin`) deliberately require
+   `ctx.pc = true`; without that premise, a clean final memory lookup can be an
+   effect write rather than a pre-app clean location.  The dirty two-run helper
+   then cannot recover the pre-state `agreeOnClean` fact needed to compare the
+   two final memories.
+
+   This is now fixed.  `applyFnTClosureAtCursor` and `applyFnTClosure` both
+   pass `joinPoison p (joinPoison p1 ctx.pc)` to the `applyExternEffect` loop
+   for direct `FnTClosure.extern` members.  `TypeSafety` and `StepFR` were
+   updated to reason about the new effect pc, with generalized origin lemmas:
+
+   ```lean
+   applyFnTClosure_extern_ok_memEnv_poison_origin_of_effect_pc_true
+   applyFnTClosure_extern_ok_memEnv_guard_origin_of_effect_pc_true
+   ```
+
+   `StepFRApp` now has
+   `applyFnTClosure_staticSource_clean_back_of_p1p_true`, which supplies the
+   dirty helper's source clean-back premise for both direct extern members and
+   regular extern-body members when `joinPoison p1 p = true`.
+
+   Verification after this slice:
+
+   - `lake build LeanProofs` succeeds.
+   - `make test` passes 95/95.
+   - `git diff --check` succeeds.
+   - `scripts/sorry-count.py --no-build` reports no sorry/axiom delta.
+
+   The next action is branch integration: use this support lemma in the
+   remaining dirty `externFn` app branches by constructing per-side static
+   sources, per-side body-local single posts from the side providers, source
+   clean-back facts, and then calling
+   `appTwoRunOutChoice_from_independent_single_boundary_posts_dirty`.
+
    For `FnTClosure.extern` / `PFnTClosure.extern` members, resolve trusted
    entries through `TrustedRegistryAgreesWithFnTClosures` /
    `TrustedRegistryAgreesWithPFnTClosures`.  For regular impure closure members
@@ -504,6 +570,11 @@ theorem with explicit trusted-registry assumptions.
   invariant.
 - Stop if a required `ExternBoundarySpec` field lacks enough payload to
   reconstruct the body post needed by the app transport helper.
+- Stop if direct `FnTClosure.extern` effect typing remains under caller
+  `ctx.pc` and the dirty app branch must nevertheless prove source clean-back
+  for clean effect-written memory locations.  In that shape the proof lacks the
+  pre-state agreement needed for final clean memory agreement; fix the
+  app-level extern effect pc first.
 - Stop if the masked single-run theorem cannot supply ordinary
   `regimeConsistentWithCtx` to `ExternBoundarySpec.callSingle` and the only
   alternative is to silently assume ordinary tag-env consistency for masked

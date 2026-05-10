@@ -314,20 +314,34 @@ independent tags.
 
 Extern \emph{effects} write to memory at the locations named by their target
 references, just as ordinary assignment does. Like assignment, extern effect
-writes are sensitive to the poison status of the program counter, and the
-spec encodes the dichotomy as paired rules: each impure-extern application
-rule (\texttt{app\_extern\_fn\_simple}, \texttt{app\_extern\_fn\_nested\_fn},
+writes are sensitive to provenance, and the spec encodes the dichotomy as
+paired rules: each impure-extern application rule
+(\texttt{app\_extern\_fn\_simple}, \texttt{app\_extern\_fn\_nested\_fn},
 \texttt{app\_extern\_fn\_nested\_pfn}) appears in a \texttt{\_clean} variant
-(side condition \texttt{pc = clean}, using the \texttt{resolveEffects}
-auxiliary that stores resolved predicates verbatim) and a \texttt{\_poisoned}
-variant (side condition \texttt{pc = poisoned}, using the
+(using the \texttt{resolveEffects} auxiliary that stores resolved predicates
+verbatim) and a \texttt{\_poisoned} variant (using the
 \texttt{resolveEffectsPoisoned} auxiliary that erases predicates to
-\texttt{no\_pred}). This mirrors the rule-level pattern used elsewhere in the
-spec for binary distinctions (e.g., \texttt{if\_known\_true} /
-\texttt{if\_known\_false}, \texttt{assign\_singleton} /
-\texttt{assign\_singleton\_poisoned\_ref}) and prevents an untrusted extern
-call under control-poisoned conditions from installing fresh guard tags that
-would spuriously make the written locations clean under a regime.
+\texttt{no\_pred}). The gate that selects between the two variants is the
+\emph{effect pc} \(\textit{pc} \sqcup p_1 \sqcup p\), which joins the
+caller's program counter \(\textit{pc}\), the function expression's outer
+poison \(p_1\), and the arrow-internal poison \(p\) of the function being
+applied. The clean variant fires only when all three are clean; if any of
+them is poisoned, the poisoned variant fires.
+
+This gate matches the application-result provenance gate (Section
+``Function application'' below): the result poison of an extern application
+already aggregates \(\textit{pc}\), \(p_1\), \(p\), and \(p_3\), so storing
+resolved effect predicates whenever any of \(\textit{pc}\), \(p_1\), or \(p\)
+is poisoned would be inconsistent with the surrounding provenance discipline.
+Erasing effect-installed predicates under the joint gate prevents an extern
+call whose program counter, function expression, or function-value identity
+is untrusted from installing fresh guard tags that would spuriously make the
+written locations clean under a regime, and mirrors assignment's predicate
+erasure under poisoned \(\textit{pc}\). The paired-rule shape mirrors the
+pattern used elsewhere in the spec for binary distinctions (e.g.,
+\texttt{if\_known\_true} / \texttt{if\_known\_false},
+\texttt{assign\_singleton} /
+\texttt{assign\_singleton\_poisoned\_ref}).
 
 \subsection{Pure Expressions}
 
@@ -836,7 +850,7 @@ Key aspects of function application:
     \item When \(p_1 \sqcup p\) is set, the application result is irrecoverably poisoned with no predicate: neither predicates nor tag/regime-based de-poisoning may be applied to such a result
 \end{itemize}
 
-Provenance normalization ensures that a value obtained by applying a function whose outer poison \(p_1\) or internal arrow poison \(p\) is set is irrecoverably tainted, regardless of what predicates the function body produces. This prevents backdoor de-poisoning of provenance-tainted results via predicate satisfaction.
+Provenance normalization ensures that a value obtained by applying a function whose outer poison \(p_1\) or internal arrow poison \(p\) is set is irrecoverably tainted, regardless of what predicates the function body produces. This prevents backdoor de-poisoning of provenance-tainted results via predicate satisfaction. The same provenance discipline applies to effect-installed predicates on memory cells written by impure-extern application: the effect-pc gate \(\textit{pc} \sqcup p_1 \sqcup p\) selects \texttt{resolveEffectsPoisoned} (predicate erased to \texttt{no\_pred}) whenever any of those three poisons is set, so an untrusted-provenance extern call cannot leave behind fresh guard tags that downstream code could use to de-poison the written locations.
 
 For general merged closure sets, the type system applies the same scheme to
 every closure alternative in the set, requires all result types to be
@@ -1246,10 +1260,10 @@ code. One typing-side assumption, packaged as a field of the
 extern summaries to the proof layer: preserving abstract predicate laws
 across an extern allocation batch. The structural facts about which fresh
 tag denotes which guard descriptor are derived from the allocation trace
-itself. A previous guard-provenance assumption was removed once the
-typechecker was tightened to erase predicates on extern effect writes under
-poisoned \texttt{pc} (mirroring assignment); the guard-origin trace is now
-structurally provable.
+itself. Extern effect writes erase predicates whenever the effect-pc gate
+\(\textit{pc} \sqcup p_1 \sqcup p\) is poisoned, mirroring assignment, so
+every guard tag carried by a post-call cell traces back to a pre-call
+guarded cell.
 The fault-robustness theorem is relative to a witness of
 \texttt{ExternTypingAssumptions}: a caller must supply (or postulate) one to
 instantiate the theorem, making this trust boundary explicit at the public
@@ -1310,17 +1324,15 @@ laws for the guard descriptors that its declared return and effect summaries
 can allocate.
 
 \paragraph{Guard provenance for impure memory effects (structural).}
-An impure extern summary may modify memory under a poisoned program counter,
-but the typechecker's \texttt{applyExternEffect} now erases the stored
-predicate to \texttt{noPred} when \texttt{pc} is poisoned, exactly mirroring
-assignment under poisoned \texttt{pc}. As a result, no extern
-effect can install a guard predicate under control-poisoned conditions, and
-any post-call cell that carries an active guard tag must trace back to a
-guarded cell that already existed before the call. This is now proved
-structurally in \texttt{StepFR.lean} as
-\texttt{applyFnTClosure\_extern\_ok\_memEnv\_guard\_origin}, replacing what
-was previously a generic typing-side trust input
-(\texttt{ExternTypingAssumptions.guardProvenance}).
+The typechecker's \texttt{applyExternEffect} erases the stored predicate to
+\texttt{noPred} whenever the effect-pc gate \(\textit{pc} \sqcup p_1 \sqcup p\)
+is poisoned, mirroring assignment under poisoned \texttt{pc}. No extern effect
+installs a guard predicate when the caller's \texttt{pc}, the function
+expression's outer poison \(p_1\), or the arrow-internal poison \(p\) is set,
+and any post-call cell that carries an active guard tag traces back to a
+guarded cell that already existed before the call. The structural lemma in
+\texttt{StepFR.lean} encoding this trace is
+\texttt{applyFnTClosure\_extern\_ok\_memEnv\_guard\_origin\_of\_effect\_pc\_true}.
 
 \subsubsection*{Structural Agreement for Function Values}
 
