@@ -1464,12 +1464,18 @@ structure TrustedRegistryAppClosureProvenance
       AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
       PFnTClosure.regular x body σcap ∈ tcls →
       ExternDeclLift root (PExpr.toExpr body)
-  fnClosures :
+  fnExternMember :
     ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
-      {tcls : List FnTClosure} {argTyp : Typ},
+      {tcls : List FnTClosure} {argTyp : Typ}
+      {id : ExternId} {x : Name} {retSpec : ExternReturn}
+      {effects : List Effect} {capturedEnv : CapturedVarEnv},
       ExternDeclLift root (Expr.app e1 e2) →
       AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
-      TrustedRegistryAgreesWithFnTClosures tr argTyp tcls
+      FnTClosure.extern id x retSpec effects capturedEnv ∈ tcls →
+      ExternDeclarationInProgram root id
+        { id := id, kind := .fn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects }
   fnRegularExternBody :
     ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
       {tcls : List FnTClosure} {argTyp : Typ}
@@ -1478,15 +1484,22 @@ structure TrustedRegistryAppClosureProvenance
       ExternDeclLift root (Expr.app e1 e2) →
       AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
       FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) capturedEnv ∈ tcls →
-      ∃ entry,
-        TrustedRegistry.lookup? tr id = some entry ∧
-        TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects
-  pfnClosures :
+      ExternDeclarationInProgram root id
+        { id := id, kind := .fn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects }
+  pfnExternMember :
     ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
-      {tcls : List PFnTClosure} {argTyp : Typ},
+      {tcls : List PFnTClosure} {argTyp : Typ}
+      {id : ExternId} {x : Name} {retSpec : ExternReturn}
+      {capturedEnv : CapturedVarEnv},
       ExternDeclLift root (Expr.app e1 e2) →
       AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
-      TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls
+      PFnTClosure.extern id x retSpec capturedEnv ∈ tcls →
+      ExternDeclarationInProgram root id
+        { id := id, kind := .pfn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := [],
+          preds := collectExternPreds retSpec [] }
 
 theorem TrustedRegistryAgreesWithFnTClosures.resolve
     {tr : TrustedRegistry} {argTyp : Typ} {tcls : List FnTClosure}

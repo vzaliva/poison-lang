@@ -428,47 +428,65 @@ private theorem ExternCallFRPfnLocalProvider_empty :
 
 private theorem ExternCallSingleFnProviderCanUse_of_appProvenance
     {tr : TrustedRegistry} {root : Expr}
+    (hagrees : TrustedRegistryAgreesWithProgram root tr)
     (happ : TrustedRegistryAppClosureProvenance root tr) :
     ExternCallSingleFnProviderCanUse
       (TrustedRegistry.toRuntimeRegistry tr) (fun e => ExternDeclLift root e) := by
   intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hlift htyped
   exact
-    ExternCallBoundarySingleFnContract.of_trustedRegistry
-      (fun {argTyp} => happ.fnClosures (argTyp := argTyp) hlift htyped)
-      (fun {argTyp} => happ.fnRegularExternBody (argTyp := argTyp) hlift htyped)
+    ExternCallBoundarySingleFnContract.of_trustedProgram hagrees
+      (fun {argTyp} {_id} {_x} {_y} {_retSpec} {_effects} {_capturedEnv} hsource => by
+        cases hsource with
+        | externMember hmem =>
+            exact happ.fnExternMember (argTyp := argTyp) hlift htyped hmem
+        | regularExternBody hmem =>
+            exact happ.fnRegularExternBody (argTyp := argTyp) hlift htyped hmem)
 
 private theorem ExternCallSinglePfnProviderCanUse_of_appProvenance
     {tr : TrustedRegistry} {root : Expr}
+    (hagrees : TrustedRegistryAgreesWithProgram root tr)
     (happ : TrustedRegistryAppClosureProvenance root tr) :
     ExternCallSinglePfnProviderCanUse
       (TrustedRegistry.toRuntimeRegistry tr) (fun e => ExternDeclLift root e) := by
   intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hlift htyped
   exact
-    ExternCallBoundarySinglePfnContract.of_trustedRegistry
-      (fun {argTyp} => happ.pfnClosures (argTyp := argTyp) hlift htyped)
+    ExternCallBoundarySinglePfnContract.of_trustedProgram hagrees
+      (fun {argTyp} {_id} {_x} {_y} {_retSpec} {_capturedEnv} hsource => by
+        cases hsource with
+        | externMember hmem =>
+            exact happ.pfnExternMember (argTyp := argTyp) hlift htyped hmem)
 
 private theorem ExternCallFRFnLocalProviderCanUse_of_appProvenance
     {tr : TrustedRegistry} {root : Expr}
+    (hagrees : TrustedRegistryAgreesWithProgram root tr)
     (happ : TrustedRegistryAppClosureProvenance root tr) :
     ExternCallFRFnLocalProviderCanUse
       (TrustedRegistry.toRuntimeRegistry tr) (ExternCallTrustedEntryKey tr)
       (fun e => ExternDeclLift root e) := by
   intro _ctx _predSat _tm _e1 _e2 _res _tcls hlift htyped
   exact
-    TrustedRegistryAgreesWithProgramLocal.of_trustedRegistry
-      (fun {argTyp} => happ.fnClosures (argTyp := argTyp) hlift htyped)
-      (fun {argTyp} => happ.fnRegularExternBody (argTyp := argTyp) hlift htyped)
+    TrustedRegistryAgreesWithProgramLocal.of_trustedProgram hagrees
+      (fun {argTyp} {_id} {_x} {_y} {_retSpec} {_effects} {_capturedEnv} hsource => by
+        cases hsource with
+        | externMember hmem =>
+            exact happ.fnExternMember (argTyp := argTyp) hlift htyped hmem
+        | regularExternBody hmem =>
+            exact happ.fnRegularExternBody (argTyp := argTyp) hlift htyped hmem)
 
 private theorem ExternCallFRPfnLocalProviderCanUse_of_appProvenance
     {tr : TrustedRegistry} {root : Expr}
+    (hagrees : TrustedRegistryAgreesWithProgram root tr)
     (happ : TrustedRegistryAppClosureProvenance root tr) :
     ExternCallFRPfnLocalProviderCanUse
       (TrustedRegistry.toRuntimeRegistry tr) (ExternCallTrustedEntryKey tr)
       (fun e => ExternDeclLift root e) := by
   intro _ctx _predSat _tm _e1 _e2 _res _tcls hlift htyped
   exact
-    TrustedRegistryAgreesWithPfnProgramLocal.of_trustedRegistry
-      (fun {argTyp} => happ.pfnClosures (argTyp := argTyp) hlift htyped)
+    TrustedRegistryAgreesWithPfnProgramLocal.of_trustedProgram hagrees
+      (fun {argTyp} {_id} {_x} {_y} {_retSpec} {_capturedEnv} hsource => by
+        cases hsource with
+        | externMember hmem =>
+            exact happ.pfnExternMember (argTyp := argTyp) hlift htyped hmem)
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse
   (registry : ExternRegistry)
@@ -3160,10 +3178,10 @@ theorem TypeSystemEnforcesFaultRobustness_with_trustedRegistry
         (by
           intro _id entry _hkey
           exact entry.spec.callFR)
-        (ExternCallSingleFnProviderCanUse_of_appProvenance happ)
-        (ExternCallSinglePfnProviderCanUse_of_appProvenance happ)
-        (ExternCallFRFnLocalProviderCanUse_of_appProvenance happ)
-        (ExternCallFRPfnLocalProviderCanUse_of_appProvenance happ)
+        (ExternCallSingleFnProviderCanUse_of_appProvenance hagrees happ)
+        (ExternCallSinglePfnProviderCanUse_of_appProvenance hagrees happ)
+        (ExternCallFRFnLocalProviderCanUse_of_appProvenance hagrees happ)
+        (ExternCallFRPfnLocalProviderCanUse_of_appProvenance hagrees happ)
         (ExternDeclSingleProviderFor_trustedRegistry hagrees)
         (ExternDeclFRProviderFor_trustedRegistry hagrees)
         (fun hlift htyped hmem => happ.fnBody hlift htyped hmem)

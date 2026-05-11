@@ -90,14 +90,12 @@ Implemented and compiling:
   app splits.  The old empty-user-only app inversion wrapper is no longer used.
 - `StepFRApp.lean` has trusted lookup-side constructors
   `ExternCallBoundaryFnStaticSource.callBoundaryRun` and
-  `ExternCallBoundaryPfnStaticSource.callBoundaryRun`.  These turn static
-  extern source evidence plus runtime facts into `ExternCallBoundaryRun`
-  evidence using closure-list agreement.  The impure `externFn`
-  regular-extern-body path is explicit as a separate resolver premise, because
-  closure-list extern agreement alone does not cover
-  `FnTClosure.regular x (Expr.externFn id y ...) ...`.  The pure `externPfn`
-  source has only the extern-member case, because a regular pure closure body
-  must pass `Expr.toPExpr?`.
+  `ExternCallBoundaryPfnStaticSource.callBoundaryRun`, plus
+  `callBoundaryRun_of_program` variants.  The older variants resolve static
+  extern source evidence with closure-list agreement.  The populated app proof
+  now uses the program-membership variants instead: successful runtime lookup
+  supplies the concrete trusted entry, and `TrustedRegistryAgreesWithProgram`
+  checks that entry against a root-program extern declaration.
 - `StepFRApp.lean` also has the packaged two-run transport helper
   `appTwoRunOutChoice_from_body_stepFRPost`.  It is the intended adapter from a
   body-local `StepFRPost` to an app-level `AppTwoRunOutChoice`.  Its
@@ -190,12 +188,15 @@ Implemented and compiling:
 - `ExternDeclLift` and `TrustedRegistryAppClosureProvenance` live in
   `ExternBoundary.lean`.  The provenance structure packages the remaining
   app-call obligations: regular closure bodies in app closure lists lift back to
-  the root program; impure fn closure lists agree with the trusted registry;
-  regular impure extern-body members resolve to trusted entries; and pure pfn
-  closure lists agree with the trusted registry.  These fields are now indexed
-  by `AppFnClosureListFromTypecheck` / `AppPfnClosureListFromTypecheck`, so the
-  trusted-registry obligations are tied to closure lists actually produced by
-  app typechecking rather than to arbitrary imagined `tcls` lists.
+  the root program, and static extern source members in typed app closure lists
+  have corresponding `ExternDeclarationInProgram root ...` evidence.  These
+  fields are indexed by `AppFnClosureListFromTypecheck` /
+  `AppPfnClosureListFromTypecheck`, so app-call provenance is tied to closure
+  lists actually produced by app typechecking rather than to arbitrary imagined
+  `tcls` lists.  The populated providers consume this program-membership
+  evidence together with successful runtime lookup; they no longer require
+  trusted-registry coverage for every extern id that could appear in the typed
+  closure list.
 
 Still true:
 
@@ -212,17 +213,19 @@ Still true:
   typed closure-list construction/transport instead of asking callers to supply
   it directly.
 - `TrustedRegistryAppClosureProvenance` is temporary scaffolding, not a final
-  public API.  The universal-over-`tcls` shape has been removed: app closure
-  agreement fields now require typed app closure-list provenance.  The next
-  slice is to internalize that provenance so the public theorem no longer
-  exposes a separate `happ` premise.
+  public API.  The universal-over-`tcls` shape and typed-list-wide registry
+  coverage requirement have been removed: app-call provider construction now
+  needs typed program-membership provenance plus the runtime lookup already
+  present in successful extern dispatch.  The next slice is to internalize that
+  provenance so the public theorem no longer exposes a separate `happ` premise.
 
-Latest incremental verification after re-indexing app provenance by typed app
-closure-list witnesses:
+Latest incremental verification after switching populated app-call providers to
+program-membership provenance plus runtime lookup:
 
 - `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeds.
-- `git diff --check` is clean.
-- `scripts/sorry-count.py --no-build` reports no `sorry` / `axiom` delta.
+- `StepFRApp.lean` no longer consumes `TrustedRegistryAppClosureProvenance`
+  through `fnClosures` / `pfnClosures`; populated app adapters call the
+  `of_trustedProgram` provider forms.
 
 Latest full verification from the preceding provider-threading slice:
 
@@ -240,9 +243,10 @@ The remaining work is now the root-provenance and top-level theorem bridge.
 The registry-parametric theorem spine exists and compiles, app extern-call
 evidence is consumed at the app proof boundary, and successful extern
 declarations are routed through provider slots in the generalized proof core.
-The populated top-level theorem cannot be completed until those provider slots
-are discharged from root-program trusted-registry agreement rather than from
-globally quantified provider hypotheses.
+The populated top-level theorem cannot be completed until the remaining
+app-call provenance is derived from typechecking and root-program agreement
+rather than exposed as the explicit staging hypothesis
+`TrustedRegistryAppClosureProvenance`.
 
 With a populated registry, extern declaration expressions can terminate.  The
 current declaration branches in `FaultRobustnessProofs.lean` normalize
@@ -517,24 +521,26 @@ compatibility corollary.
    - `TrustedRegistryAgreesWithProgram e tr`;
    - `TrustedRegistryAppClosureProvenance e tr`.
 
-   The latter packages the closure-list agreement and regular-body provenance
+   The latter packages the body-lift and extern-declaration program-membership
    facts needed to build the single-run and two-run app-call providers.  This
-   means the provider contract shape is now validated, but the provenance is
+   means the provider contract shape is now validated, and successful runtime
+   lookup is used at the app boundary, but the program-membership provenance is
    still an explicit staging assumption rather than a fact derived from
    typechecking.
 
    The precision warning from the previous slice has been addressed at the
-   contract boundary.  `TrustedRegistryAppClosureProvenance.fnClosures`,
-   `.pfnClosures`, and `.fnRegularExternBody` no longer quantify over arbitrary
-   `tcls` lists; each field now requires an
-   `AppFnClosureListFromTypecheck` / `AppPfnClosureListFromTypecheck` witness
-   showing that the closure list came from typechecking the concrete app.
+   contract boundary.  `TrustedRegistryAppClosureProvenance` no longer asks for
+   registry coverage of all extern ids in a closure list.  Its extern fields
+   require `AppFnClosureListFromTypecheck` / `AppPfnClosureListFromTypecheck`
+   witnesses and produce `ExternDeclarationInProgram root ...`; the provider
+   adapters combine that with the actual successful runtime lookup to recover
+   trusted boundary evidence for the executed extern.
 
    Current blocker: derive the now typechecking-indexed
    `TrustedRegistryAppClosureProvenance e tr` instead of assuming it.  The
    remaining proof must show that typed closure-list construction/transport
-   supplies the body-lift and trusted-lookup facts for every app closure list
-   reachable from the root expression, including the impure
+   supplies the body-lift and program-membership facts for every app closure
+   list reachable from the root expression, including the impure
    `FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) σcap ∈ tcls`
    case.
 
@@ -546,10 +552,11 @@ compatibility corollary.
       state both:
       - every regular closure body in the list has an `ExternDeclLift root body`
         witness;
-      - every extern closure member, and every regular extern-body member, can
-        be resolved against the trusted registry using root-program agreement
-        and typed provenance, without assuming global agreement for arbitrary
-        closure lists.
+      - every extern closure member, and every regular extern-body member, has
+        precise root-program declaration membership evidence; executed calls
+        are then resolved against the trusted registry using the successful
+        runtime lookup and `TrustedRegistryAgreesWithProgram`, without assuming
+        global agreement for arbitrary closure lists.
    2. Prove the provenance predicate is produced/preserved by typechecking for
       arrow/parrow closure lists and transported through the app
       `apply*Closure` / join machinery.
