@@ -10096,11 +10096,21 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
 
 -- Function application case: reduces to helper lemmas for closure/closure and peClosure branches
 set_option maxHeartbeats 800000 in
-lemma stepFR_app
+lemma stepFR_app_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (CanUse : Expr → Prop)
+  (hcan1 : CanUse e1) (hcan2 : CanUse e2)
+  (hcanFnBody :
+    ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
+      FnTClosure.regular x body σcap ∈ tcls → CanUse body)
+  (hcanPfnBody :
+    ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr} {σcap : List (Name × QTyp)},
+      PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
+  (IH :
+    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse (registry := registry))
   (singleIH :
     StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel'))
       (registry := registry))
@@ -10141,7 +10151,7 @@ lemma stepFR_app
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
     -- Phase 2: IH for e2 (e1 IH defined after we have hTm2 from e2)
-    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm htagBounded result2 htc2'
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hcan2 hwfTm htagBounded result2 htc2'
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config :=
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
@@ -10168,7 +10178,7 @@ lemma stepFR_app
         hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -10207,7 +10217,7 @@ lemma stepFR_app
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
       have hIH_e1 :=
         IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-          e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+          e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -10441,7 +10451,7 @@ lemma stepFR_app
           have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
             simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
           -- Phase B: Apply IH for e1
-          have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+          have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
           have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
           have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
           have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -11635,7 +11645,8 @@ lemma stepFR_app
                     BoundaryTagMeaningPost.bounded hcanon1
                   simpa [bodyCtx, ctxAfter] using hbase.mono hcursorSharedTag
                 have hIH_body :=
-                  IH fuelBody hfuel_lt body₀ bodyCtx hTmBody htagBoundedBody result3Shared htcBody'
+                  IH fuelBody hfuel_lt body₀ bodyCtx (hcanFnBody hmem) hTmBody
+                    htagBoundedBody result3Shared htcBody'
                 have hwfBodyCtx : wfTypeContext bodyCtx := by
                   simp only [bodyCtx, wfTypeContext]
                   have hClosRL := typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded
@@ -12705,7 +12716,7 @@ lemma stepFR_app
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
               have hIH_e1 :=
                 IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -13366,7 +13377,7 @@ lemma stepFR_app
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
               have hIH_e1 :=
                 IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -14011,7 +14022,7 @@ lemma stepFR_app
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
               have hIH_e1 :=
                 IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -14563,7 +14574,7 @@ lemma stepFR_app
                     simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
                   have hIH_e1 :=
                     IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                      e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+                      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
                   have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
                   have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
                   obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -15381,7 +15392,7 @@ lemma stepFR_app
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
     -- Phase 2: IH for e2
-    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hwfTm htagBounded result2 htc2'
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hcan2 hwfTm htagBounded result2 htc2'
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config :=
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
@@ -15406,7 +15417,7 @@ lemma stepFR_app
         hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -15445,7 +15456,7 @@ lemma stepFR_app
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
       have hIH_e1 :=
         IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-          e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+          e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -15693,7 +15704,7 @@ lemma stepFR_app
           have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
             simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
           -- Phase B: Apply IH for e1
-          have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+          have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
           have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
           have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
           have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -17003,7 +17014,8 @@ lemma stepFR_app
                       predTagsBoundedInMemEnv_mono
                         (by simpa [ctxAfter] using hb_predM1) hcursorSharedTag
               have hIH_body :=
-                IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx hTmBody htagBoundedBody result3Shared htcBody'
+                IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx (hcanPfnBody hmem)
+                  hTmBody htagBoundedBody result3Shared htcBody'
               have hTmBoundedBody : TagMeaningBounded tm1 bodyCtx.nextTag := by
                 have hbase : TagMeaningBounded tm1 result1.nextTag' :=
                   BoundaryTagMeaningPost.bounded hcanon1
@@ -18170,7 +18182,7 @@ lemma stepFR_app
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
               have hIH_e1 :=
                 IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -18782,7 +18794,7 @@ lemma stepFR_app
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
               have hIH_e1 :=
                 IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -19385,7 +19397,7 @@ lemma stepFR_app
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
               have hIH_e1 :=
                 IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -19951,7 +19963,7 @@ lemma stepFR_app
                     simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
                   have hIH_e1 :=
                     IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                      e1 (ctxAfter ctxᵢ result2) hTm2 _htagBounded2 result1 htc1'
+                      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
                   have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
                   have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
                   obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -20682,3 +20694,40 @@ lemma stepFR_app
                   rw [← hp1]
                   simp [hpoison1_true, joinPoison]
                 exact finish_extern_pfn_extern_pfn_p1p_true h_p1p
+
+set_option maxHeartbeats 800000 in
+lemma stepFR_app
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry)
+  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (singleIH :
+    StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel'))
+      (registry := registry))
+  (entryKey : ExternCallEntryKey := ExternCallImpossibleEntryKey)
+  (_hentryKey_unique :
+    ∀ {id : ExternId} {entry₀ entry₁ : TrustedExternEntry},
+      entryKey id entry₀ → entryKey id entry₁ → entry₀ = entry₁)
+  (_hcallFR_of_entryKey :
+    ∀ {id : ExternId} {entry : TrustedExternEntry},
+      entryKey id entry → ExternCallBoundaryFR entry.decl entry.impl)
+  (_hfnLocal :
+    ∀ {tcls : List FnTClosure},
+      TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+        (entryKey := entryKey) (registry := registry))
+  (_hpfnLocal :
+    ∀ {tcls : List PFnTClosure},
+      TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls
+        (entryKey := entryKey) (registry := registry))
+  (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
+  exact
+    stepFR_app_with_expr_proof
+      ctxᵢ predSat tm registry e1 e2 fuel' res
+      (fun _ => True) trivial trivial
+      (fun {_tcls} {_x} {_body} {_σcap} _ => trivial)
+      (fun {_tcls} {_x} {_pbody} {_σcap} _ => trivial)
+      (StepFR_IH_WithExpr_of_plain
+        (registry := registry)
+        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH)
+      singleIH entryKey _hentryKey_unique _hcallFR_of_entryKey _hfnLocal _hpfnLocal htc

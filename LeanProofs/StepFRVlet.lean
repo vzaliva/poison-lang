@@ -283,10 +283,14 @@ private lemma valueConsistentWithRegimeMasked_vlet_finish
       hpred (hetyp := hetyp) hval
 
 
-lemma stepFR_vlet
+lemma stepFR_vlet_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (tm : TagMeaning) (CanUse : Expr → Prop)
+  (hcan1 : CanUse e1) (hcan2 : CanUse e2)
+  (IH :
+    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse (registry := registry))
   (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.vlet vname e1 e2) res predSat tm (registry := registry) := by
   -- Parse typecheck result
@@ -303,7 +307,7 @@ lemma stepFR_vlet
     hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm
     hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hwfTm htagBounded res1 htc1'
+    e1 ctxᵢ hcan1 hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for vlet
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -339,7 +343,7 @@ lemma stepFR_vlet
     rw [hctx']
     exact BoundaryTagMeaningPost.bounded hcanon1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hwfTm' htagBounded' res2 htc2'
+    e2 ctx' hcan2 hwfTm' htagBounded' res2 htc2'
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
@@ -1518,16 +1522,33 @@ lemma stepFR_vlet
       exact hagree2_ctx'
     exact agreeValueUnder_transport_clean hclean h_ret_etyp hpoison_imp hagree2
 
+lemma stepFR_vlet
+  (ctxᵢ : TypeContext) (predSat : PredSat)
+  (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.vlet vname e1 e2) res predSat tm (registry := registry) := by
+  exact
+    stepFR_vlet_with_expr_proof
+      ctxᵢ predSat vname e1 e2 fuel' res tm
+      (fun _ => True) trivial trivial
+      (StepFR_IH_WithExpr_of_plain
+        (registry := registry)
+        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH)
+      htc
+
 -- World-free version of stepFRW_fn
 
 
-lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
+lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (CanUse : Expr → Prop)
+  (hcan1 : CanUse e1) (hcan2 : CanUse e2)
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel'))
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
+      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -1560,7 +1581,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   rcases hstruct with ⟨cfg1, v1, cfg3, ht_e1, ht_e2, hcf_eq, _hpm1, _hpm_final⟩
   let cfg2 : Config := { cfg1 with varEnv := cfg1.varEnv.update vname v1 }
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hwfTm hTmBounded res1 htc1'
+    e1 ctxᵢ hcan1 hwfTm hTmBounded res1 htc1'
   have hIH1Inst := hIH1 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH1Inst.1 with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hTm1⟩
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
@@ -1632,7 +1653,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
         wfVarEnv.cons vname v1 cfg1.varEnv hv1_wf hwfenv1
       simpa [cfg2, VarEnv.update] using hwfenv2
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hwfTm' hTmBounded' res2 htc2'
+    e2 ctx' hcan2 hwfTm' hTmBounded' res2 htc2'
   -- Thread extern registry: cfg1 inherits default registry from initial config.
   have hreg_cfg1 : cfg1.registry = registry := by
     simpa using terminatesTo_preserves_registry ht_e1
@@ -1762,3 +1783,35 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
   refine ⟨θ2, hθext, ?_, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
   rw [h_ret_etyp]
   exact hv2
+
+lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
+  (masked : Tag → Prop)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH :
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+      predSat tm (Nat.succ (Nat.succ fuel'))
+      masked
+      (fun ctx μ ρ θ =>
+        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (fun R qt μ θ v =>
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
+  (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+    masked
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    ctxᵢ (Expr.vlet vname e1 e2) res predSat tm (registry := registry) := by
+  exact
+    stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
+      masked ctxᵢ predSat tm vname e1 e2 fuel' res
+      (fun _ => True) trivial trivial
+      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
+        (registry := registry)
+        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
+        (fun ctx μ ρ θ =>
+          consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+        (fun R qt μ θ v =>
+          valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+        IH)
+      htc

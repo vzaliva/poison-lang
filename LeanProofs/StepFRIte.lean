@@ -2341,7 +2341,11 @@ theorem matchGuard_runtime_branch_alignment
 private lemma stepFR_ite_true
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (CanUse : Expr → Prop)
+  (hcan1 : CanUse e1) (hcan2 : CanUse e2)
+  (IH :
+    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
   (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
   (hregime_true : ctxᵢ.regime.lookup? k = some true)
@@ -2379,7 +2383,7 @@ private lemma stepFR_ite_true
   have htagBounded_pure : TagBoundedCtx { ctxᵢ with pureCtx := true } := by
     simpa [TagBoundedCtx, tagEnvBoundedInCtx, predTagsBoundedInCtx, closureEnvBoundedInCtx] using htagBounded
   have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 { ctxᵢ with pureCtx := true } hwfTm_pure htagBounded_pure res1 htc1'
+    e1 { ctxᵢ with pureCtx := true } hcan1 hwfTm_pure htagBounded_pure res1 htc1'
   have hwf_pure : wfTypeContext { ctxᵢ with pureCtx := true } := by
     simp [wfTypeContext] at hwf ⊢
     exact hwf
@@ -2433,7 +2437,7 @@ private lemma stepFR_ite_true
   have hTmBounded_true : TagMeaningBounded tm ctxTrue.nextTag := by
     simpa [ctxTrue] using hTmBounded
   have hIH_e2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctxTrue hwfTm_true htagBounded_true res2 htc2'
+    e2 ctxTrue hcan2 hwfTm_true htagBounded_true res2 htc2'
   have htcIf : typecheckIf ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_ite_succ] using htc
   have hpredNo : res.qualType.pred = Predicate.noPred :=
@@ -2771,7 +2775,11 @@ private lemma stepFR_ite_true
 private lemma stepFR_ite_false
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (CanUse : Expr → Prop)
+  (hcan1 : CanUse e1) (hcan3 : CanUse e3)
+  (IH :
+    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
   (k : Tag) (deps : Deps) (hmatch : matchGuard e1 ctxᵢ.memEnv ctxᵢ.varEnv fuel' = .ok (k, deps))
   (hregime_false : ctxᵢ.regime.lookup? k = some false)
@@ -2810,7 +2818,7 @@ private lemma stepFR_ite_false
   have htagBounded_pure : TagBoundedCtx { ctxᵢ with pureCtx := true } := by
     simpa [TagBoundedCtx, tagEnvBoundedInCtx, predTagsBoundedInCtx, closureEnvBoundedInCtx] using htagBounded
   have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 { ctxᵢ with pureCtx := true } hwfTm_pure htagBounded_pure res1 htc1'
+    e1 { ctxᵢ with pureCtx := true } hcan1 hwfTm_pure htagBounded_pure res1 htc1'
   have hwf_pure : wfTypeContext { ctxᵢ with pureCtx := true } := by
     simp [wfTypeContext] at hwf ⊢
     exact hwf
@@ -2877,7 +2885,7 @@ private lemma stepFR_ite_false
           (show typecheck _ e2 _ = _ from _htc2)
     simpa [ctxFalse', ctxFalse] using hTmBounded.mono hmono
   have hIH_e3 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e3 ctxFalse' hwfTm_false htagBounded_false res3 htc3'
+    e3 ctxFalse' hcan3 hwfTm_false htagBounded_false res3 htc3'
   have htcIf : typecheckIf ctxᵢ e1 e2 e3 (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr_ite_succ] using htc
   have hpredNo : res.qualType.pred = Predicate.noPred :=
@@ -3425,8 +3433,14 @@ lemma typecheckIf_standard_compat_from_existing_hyps
 private lemma stepFR_ite_standard
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (CanUse : Expr → Prop)
+  (hcan1 : CanUse e1) (hcan2 : CanUse e2) (hcan3 : CanUse e3)
+  (IH :
+    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse (registry := registry))
+  (singleIH :
+    StepFRSingleRunFinalCleanPcTrue_IH_WithExpr
+      predSat tm (Nat.succ (Nat.succ fuel')) CanUse (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res)
   (res1 res2 res3 : TypeResult)
   (htc1 : typecheckExpr ctxᵢ e1 fuel' = .ok res1)
@@ -3468,7 +3482,7 @@ private lemma stepFR_ite_standard
   have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have hIH_e1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hwfTm htagBounded res1 htc1'
+    e1 ctxᵢ hcan1 hwfTm htagBounded res1 htc1'
   have hstep_e1 :=
     hIH_e1 hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.bool b₀) (Value.bool b₁)
       hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
@@ -3634,7 +3648,7 @@ private lemma stepFR_ite_standard
             exact hwfcf₁1
           have hIH_e2 :=
             IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-              e2 ctx'' hwfTm_ctx'' htagBounded_ctx'' res2 htc2'
+              e2 ctx'' hcan2 hwfTm_ctx'' htagBounded_ctx'' res2 htc2'
           -- Thread extern registry for cfg₀1.
           have hreg_cfg₀1_m4 : cfg₀1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₀_e1
@@ -4031,11 +4045,11 @@ private lemma stepFR_ite_standard
           have hsingle_e2 :
               StepFRSingleRunFinalCleanPcTrue ctx'' e2 res2 predSat tm1 (registry := registry) :=
             singleIH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-              e2 ctx'' hwfTm_ctx'' hTmBounded_ctx'' res2 htc2'
+              e2 ctx'' hcan2 hwfTm_ctx'' hTmBounded_ctx'' res2 htc2'
           have hsingle_e3 :
               StepFRSingleRunFinalCleanPcTrue ctxForE3 e3 res3 predSat tm1 (registry := registry) :=
             singleIH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-              e3 ctxForE3 hwfTm_ctxForE3 hTmBounded_ctxForE3 res3 htc3'
+              e3 ctxForE3 hcan3 hwfTm_ctxForE3 hTmBounded_ctxForE3 res3 htc3'
           -- Thread extern registry for cfg₀1 and cfg₁1.
           have hreg_cfg₀1_s : cfg₀1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₀_e1
@@ -4739,11 +4753,11 @@ private lemma stepFR_ite_standard
           have hsingle_e2 :
               StepFRSingleRunFinalCleanPcTrue ctx'' e2 res2 predSat tm1 (registry := registry) :=
             singleIH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-              e2 ctx'' hwfTm_ctx'' hTmBounded_ctx'' res2 htc2'
+              e2 ctx'' hcan2 hwfTm_ctx'' hTmBounded_ctx'' res2 htc2'
           have hsingle_e3 :
               StepFRSingleRunFinalCleanPcTrue ctxForE3 e3 res3 predSat tm1 (registry := registry) :=
             singleIH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-              e3 ctxForE3 hwfTm_ctxForE3 hTmBounded_ctxForE3 res3 htc3'
+              e3 ctxForE3 hcan3 hwfTm_ctxForE3 hTmBounded_ctxForE3 res3 htc3'
           -- Thread extern registry for cfg₀1 and cfg₁1.
           have hreg_cfg₀1_s2 : cfg₀1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₀_e1
@@ -5445,7 +5459,7 @@ private lemma stepFR_ite_standard
             exact hwfcf₁1
           have hIH_e3 :=
             IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-              e3 ctxForE3 hwfTm_ctxForE3 htagBounded_ctxForE3 res3 htc3'
+              e3 ctxForE3 hcan3 hwfTm_ctxForE3 htagBounded_ctxForE3 res3 htc3'
           -- Thread extern registry for cfg₀1.
           have hreg_cfg₀1_e3m : cfg₀1.registry = registry := by
             simpa using terminatesTo_preserves_registry ht₀_e1
@@ -5861,11 +5875,17 @@ private lemma stepFR_ite_standard
               hvalc₀_final, hvalc₁_final, hres_agree_final⟩
 
 -- Main lemma that dispatches to mode-specific lemmas
-lemma stepFR_ite
+lemma stepFR_ite_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (CanUse : Expr → Prop)
+  (hcan1 : CanUse e1) (hcan2 : CanUse e2) (hcan3 : CanUse e3)
+  (IH :
+    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse (registry := registry))
+  (singleIH :
+    StepFRSingleRunFinalCleanPcTrue_IH_WithExpr
+      predSat tm (Nat.succ (Nat.succ fuel')) CanUse (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm (registry := registry) := by
   classical
@@ -5879,7 +5899,8 @@ lemma stepFR_ite
     -- Known true case: the then-branch is the only proof-relevant path.
     obtain ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, _res3, htc2, _htc3,
             hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', hpoison, hetyp⟩ := h_true
-    exact stepFR_ite_true ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_true
+    exact stepFR_ite_true ctxᵢ predSat tm e1 e2 e3 fuel' res
+      CanUse hcan1 hcan2 IH htc k deps hmatch hregime_true
       res1 res2 htc1 hbool htc2 _res3 _htc3 hmemEnv htagEnv hnextLoc_max hnextTag_max hregime'
       hpoison hetyp
   | inr h_rest =>
@@ -5888,7 +5909,8 @@ lemma stepFR_ite
       -- Known false case: the else-branch is the only proof-relevant path.
       obtain ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, _res2, res3, _htc2, htc3,
               hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', hpoison, hetyp⟩ := h_false
-      exact stepFR_ite_false ctxᵢ predSat tm e1 e2 e3 fuel' res IH htc k deps hmatch hregime_false
+      exact stepFR_ite_false ctxᵢ predSat tm e1 e2 e3 fuel' res
+        CanUse hcan1 hcan3 IH htc k deps hmatch hregime_false
         res1 htc1 hbool _res2 _htc2 res3 htc3 hmemEnv htagEnv hnextLoc_max hnextTag_max hregime'
         hpoison hetyp
     | inr h_std =>
@@ -5899,6 +5921,26 @@ lemma stepFR_ite
         typecheckIf_standard_compat_from_existing_hyps
           ctxᵢ e1 e2 e3 fuel' res res1 res2 res3
           h_std_case htc1 hbool htc2 htc3 htc'
-      exact stepFR_ite_standard ctxᵢ predSat tm e1 e2 e3 fuel' res IH singleIH htc
+      exact stepFR_ite_standard ctxᵢ predSat tm e1 e2 e3 fuel' res
+        CanUse hcan1 hcan2 hcan3 IH singleIH htc
         res1 res2 res3 htc1 hbool htc2 htc3 hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
         hcompat_std hetyp hpred
+
+lemma stepFR_ite
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm (registry := registry) := by
+  exact
+    stepFR_ite_with_expr_proof
+      ctxᵢ predSat tm e1 e2 e3 fuel' res
+      (fun _ => True) trivial trivial trivial
+      (StepFR_IH_WithExpr_of_plain
+        (registry := registry)
+        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH)
+      (StepFRSingleRunFinalCleanPcTrue_IH_WithExpr_of_plain
+        (registry := registry)
+        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) singleIH)
+      htc

@@ -347,13 +347,15 @@ private theorem stepFRDeref_ctxToValCons_masked
       (cf := cf) (θ' := θ) (a' := a') (n := n)
       htc' htc1' hmemEq hvloc hlookup_cf hctxCons
 
-lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
+lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (CanUse : Expr → Prop)
+  (hcan : CanUse e)
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel'))
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
+      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -384,7 +386,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
         hwfTm hTmBounded hpredlaws htc
   intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hwfTm hTmBounded res1 htc1'
+    e ctxᵢ hcan hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm⟩
@@ -429,10 +431,48 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
     exact _hfresh' l qt hnotIn (by rwa [h_mem] at hlookup) (by rwa [h_regime] at hclean)
   exact ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
 
-lemma stepFR_deref
+lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
+  (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (IH :
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
+      predSat tm (Nat.succ (Nat.succ fuel'))
+      masked
+      (fun ctx μ ρ θ =>
+        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (fun R qt μ θ v =>
+        valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
+  (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+    masked
+    (fun ctx μ ρ θ =>
+      consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v =>
+      valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    ctxᵢ (Expr.deref e) res predSat tm (registry := registry) := by
+  exact
+    stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
+      masked ctxᵢ predSat tm e fuel' res
+      (fun _ => True) trivial
+      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
+        (registry := registry)
+        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
+        (fun ctx μ ρ θ =>
+          consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+        (fun R qt μ θ v =>
+          valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+        IH)
+      htc
+
+lemma stepFR_deref_with_expr_proof
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (CanUse : Expr → Prop)
+  (hcan : CanUse e)
+  (IH :
+    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse (registry := registry))
   (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.deref e) res predSat tm (registry := registry) := by
   classical
@@ -447,7 +487,7 @@ lemma stepFR_deref
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hwfTm htagBounded res1 htc1'
+    e ctxᵢ hcan hwfTm htagBounded res1 htc1'
   -- Invert deref evaluation (world-free)
   have hstruct₀ := terminatesTo_deref_inv' e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -1635,3 +1675,18 @@ lemma stepFR_deref
       exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun_res hnotref_res hEq
   | guard k htag hreg hnotfun =>
       exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun hnotref_res hEq
+
+lemma stepFR_deref
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (e : Expr) (fuel' : Nat) (res : TypeResult)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFR ctxᵢ (Expr.deref e) res predSat tm (registry := registry) := by
+  exact
+    stepFR_deref_with_expr_proof
+      ctxᵢ predSat tm e fuel' res
+      (fun _ => True) trivial
+      (StepFR_IH_WithExpr_of_plain
+        (registry := registry)
+        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH)
+      htc
