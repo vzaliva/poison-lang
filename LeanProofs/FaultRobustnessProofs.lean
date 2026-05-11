@@ -158,6 +158,107 @@ private theorem app_arg {root e1 e2 : Expr}
 
 end ExternDeclLift
 
+private structure ExternDeclCanUseClosed (CanUse : Expr → Prop) : Prop where
+  op_left :
+    ∀ {e1 e2 : Expr} {op : Op}, CanUse (Expr.op e1 op e2) → CanUse e1
+  op_right :
+    ∀ {e1 e2 : Expr} {op : Op}, CanUse (Expr.op e1 op e2) → CanUse e2
+  unaryop :
+    ∀ {e : Expr} {op : UnaryOp}, CanUse (Expr.unaryop op e) → CanUse e
+  ite_cond :
+    ∀ {e1 e2 e3 : Expr}, CanUse (Expr.ite e1 e2 e3) → CanUse e1
+  ite_then :
+    ∀ {e1 e2 e3 : Expr}, CanUse (Expr.ite e1 e2 e3) → CanUse e2
+  ite_else :
+    ∀ {e1 e2 e3 : Expr}, CanUse (Expr.ite e1 e2 e3) → CanUse e3
+  newRef :
+    ∀ {e : Expr}, CanUse (Expr.newRef e) → CanUse e
+  assign_left :
+    ∀ {e1 e2 : Expr}, CanUse (Expr.assign e1 e2) → CanUse e1
+  assign_right :
+    ∀ {e1 e2 : Expr}, CanUse (Expr.assign e1 e2) → CanUse e2
+  deref :
+    ∀ {e : Expr}, CanUse (Expr.deref e) → CanUse e
+  seq_left :
+    ∀ {e1 e2 : Expr}, CanUse (Expr.seq e1 e2) → CanUse e1
+  seq_right :
+    ∀ {e1 e2 : Expr}, CanUse (Expr.seq e1 e2) → CanUse e2
+  vlet_bound :
+    ∀ {x : Name} {e1 e2 : Expr}, CanUse (Expr.vlet x e1 e2) → CanUse e1
+  vlet_body :
+    ∀ {x : Name} {e1 e2 : Expr}, CanUse (Expr.vlet x e1 e2) → CanUse e2
+  app_fun :
+    ∀ {e1 e2 : Expr}, CanUse (Expr.app e1 e2) → CanUse e1
+  app_arg :
+    ∀ {e1 e2 : Expr}, CanUse (Expr.app e1 e2) → CanUse e2
+  app_fn_body :
+    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
+      {body : Expr} {σcap : List (Name × QTyp)},
+      CanUse (Expr.app e1 e2) → FnTClosure.regular x body σcap ∈ tcls →
+        CanUse body
+  app_pfn_body :
+    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
+      {pbody : PExpr} {σcap : List (Name × QTyp)},
+      CanUse (Expr.app e1 e2) → PFnTClosure.regular x pbody σcap ∈ tcls →
+        CanUse (PExpr.toExpr pbody)
+
+namespace ExternDeclCanUseClosed
+
+private theorem trivial : ExternDeclCanUseClosed (fun _ => True) where
+  op_left := by intros; trivial
+  op_right := by intros; trivial
+  unaryop := by intros; trivial
+  ite_cond := by intros; trivial
+  ite_then := by intros; trivial
+  ite_else := by intros; trivial
+  newRef := by intros; trivial
+  assign_left := by intros; trivial
+  assign_right := by intros; trivial
+  deref := by intros; trivial
+  seq_left := by intros; trivial
+  seq_right := by intros; trivial
+  vlet_bound := by intros; trivial
+  vlet_body := by intros; trivial
+  app_fun := by intros; trivial
+  app_arg := by intros; trivial
+  app_fn_body := by intros; trivial
+  app_pfn_body := by intros; trivial
+
+private theorem of_lift {root : Expr}
+    (hfnBody :
+      ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
+        {body : Expr} {σcap : List (Name × QTyp)},
+        ExternDeclLift root (Expr.app e1 e2) →
+        FnTClosure.regular x body σcap ∈ tcls →
+        ExternDeclLift root body)
+    (hpfnBody :
+      ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
+        {pbody : PExpr} {σcap : List (Name × QTyp)},
+        ExternDeclLift root (Expr.app e1 e2) →
+        PFnTClosure.regular x pbody σcap ∈ tcls →
+        ExternDeclLift root (PExpr.toExpr pbody)) :
+    ExternDeclCanUseClosed (fun current => ExternDeclLift root current) where
+  op_left := fun h => ExternDeclLift.op_left h
+  op_right := fun h => ExternDeclLift.op_right h
+  unaryop := fun h => ExternDeclLift.unaryop h
+  ite_cond := fun h => ExternDeclLift.ite_cond h
+  ite_then := fun h => ExternDeclLift.ite_then h
+  ite_else := fun h => ExternDeclLift.ite_else h
+  newRef := fun h => ExternDeclLift.newRef h
+  assign_left := fun h => ExternDeclLift.assign_left h
+  assign_right := fun h => ExternDeclLift.assign_right h
+  deref := fun h => ExternDeclLift.deref h
+  seq_left := fun h => ExternDeclLift.seq_left h
+  seq_right := fun h => ExternDeclLift.seq_right h
+  vlet_bound := fun h => ExternDeclLift.vlet_bound h
+  vlet_body := fun h => ExternDeclLift.vlet_body h
+  app_fun := fun h => ExternDeclLift.app_fun h
+  app_arg := fun h => ExternDeclLift.app_arg h
+  app_fn_body := fun h hmem => hfnBody h hmem
+  app_pfn_body := fun h hmem => hpfnBody h hmem
+
+end ExternDeclCanUseClosed
+
 private abbrev ExternCallSingleFnProvider (registry : ExternRegistry) : Prop :=
   ∀ {masked : Tag → Prop}
     {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
@@ -272,13 +373,22 @@ private theorem ExternCallFRPfnLocalProvider_empty :
     TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
       (tcls := tcls) (entryKey := ExternCallImpossibleEntryKey)
 
-private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts
+private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse
   (registry : ExternRegistry)
   (hcallSingleFn : ExternCallSingleFnProvider registry)
   (hcallSinglePfn : ExternCallSinglePfnProvider registry)
-  (hdeclSingle : ExternDeclSingleProvider registry)
+  (CanUse : Expr → Prop)
+  (hclosed : ExternDeclCanUseClosed CanUse)
+  (hdeclSingle :
+    ∀ {e : Expr} {id : ExternId} {d : ExternDeclaration}
+      {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+      {predSat : PredSat} {tm : TagMeaning} {impl : ExternImpl},
+      CanUse e →
+      ExternDeclarationInProgram e id d →
+      ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl)
   (masked : Tag → Prop)
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  CanUse e →
   ∀ fuel res,
     typecheck ctxᵢ e fuel = .ok res →
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam
@@ -286,14 +396,16 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       ctxᵢ e res predSat tm (registry := registry) := by
-  intro fuel res htc
-  revert tm masked e ctxᵢ res htc
+  intro hcan fuel res htc
+  revert tm masked e ctxᵢ res htc hcan
   induction fuel using Nat.strong_induction_on with
   | _ n IH =>
-      intro masked e ctxᵢ tm res htc
+      intro masked e ctxᵢ tm hcan res htc
       have IH' :
           ∀ m < n, ∀ (tm' : TagMeaning) (masked' : Tag → Prop) (e' : Expr)
-            (ctx' : TypeContext) (res' : TypeResult),
+            (ctx' : TypeContext),
+            CanUse e' →
+            ∀ (res' : TypeResult),
             typecheck ctx' e' m = .ok res' →
             StepFRSingleRunFinalCleanPcTrueMaskedRegParam
               masked'
@@ -302,8 +414,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               (fun R qt μ θ v =>
                 valueConsistentWithRegimeMasked masked' predSat R qt μ θ v)
               ctx' e' res' predSat tm' (registry := registry) := by
-        intro m hm tm' masked' e' ctx' res' htc'
-        exact IH m hm masked' e' ctx' tm' res' htc'
+        intro m hm tm' masked' e' ctx' hcan' res' htc'
+        exact IH m hm masked' e' ctx' tm' hcan' res' htc'
       cases n with
       | zero =>
           simp [typecheck, typecheckExpr] at htc
@@ -425,18 +537,21 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_op_maskedReg
+                    stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
                       masked ctxᵢ predSat tm e1 e2 op fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                      CanUse
+                      (ExternDeclCanUseClosed.op_left hclosed hcan)
+                      (ExternDeclCanUseClosed.op_right hclosed hcan)
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
-                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                         masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
-                          IH' m hm tmᵢ masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
                       htc
           | unaryop uop e =>
               cases fuel with
@@ -444,18 +559,20 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg
+                    stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg_with_expr_proof
                       masked ctxᵢ predSat tm e uop fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                      CanUse
+                      (ExternDeclCanUseClosed.unaryop hclosed hcan)
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
-                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                         masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
-                          IH' m hm tmᵢ masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
                       htc
           | ite e1 e2 e3 =>
               cases fuel with
@@ -501,7 +618,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxPure, consistentWithRegimeMasked] using hcwr
                     have hpc_pure : ctxPure.pc = true := by
                       simpa [ctxPure] using hpc
-                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxPure res1 htc1'
+                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxPure
+                      (ExternDeclCanUseClosed.ite_cond hclosed hcan) res1 htc1'
                     have hstruct_rt := terminatesTo_ite_inv' e1 e2 e3
                       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
                         registry := registry } cf o ht
@@ -597,7 +715,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxTrue] using hpc
                     have hpredNo : res.qualType.pred = Predicate.noPred := by
                       exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
-                    have hIH_e2 := IH' fuel' (by omega) tm masked e2 ctxTrue res2 htc2'
+                    have hIH_e2 := IH' fuel' (by omega) tm masked e2 ctxTrue
+                      (ExternDeclCanUseClosed.ite_then hclosed hcan) res2 htc2'
                     -- Thread extern registry.
                     have hreg_cfg1_t : cfg1.registry = registry := by
                       simpa using terminatesTo_preserves_registry ht_e1
@@ -726,7 +845,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxPure, consistentWithRegimeMasked] using hcwr
                     have hpc_false : ctxFalse.pc = true := by
                       simpa [ctxFalse] using hpc
-                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxPure res1 htc1'
+                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxPure
+                      (ExternDeclCanUseClosed.ite_cond hclosed hcan) res1 htc1'
                     have hstruct_rt := terminatesTo_ite_inv' e1 e2 e3
                       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
                         registry := registry } cf o ht
@@ -860,7 +980,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxFalse'] using hpc_false
                     have hpredNo : res.qualType.pred = Predicate.noPred := by
                       exact typecheckIf_pred_noPred ctxᵢ e1 e2 e3 (Nat.succ fuel') res htcIf
-                    have hIH_e3 := IH' fuel' (by omega) tm masked e3 ctxFalse' res3 htc3'
+                    have hIH_e3 := IH' fuel' (by omega) tm masked e3 ctxFalse'
+                      (ExternDeclCanUseClosed.ite_else hclosed hcan) res3 htc3'
                     -- Thread extern registry.
                     have hreg_cfg1_f : cfg1.registry = registry := by
                       simpa using terminatesTo_preserves_registry ht_e1
@@ -972,7 +1093,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
                     have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
                       simpa [typecheck, Nat.succ_sub_one] using htc1
-                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxᵢ res1 htc1'
+                    have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxᵢ
+                      (ExternDeclCanUseClosed.ite_cond hclosed hcan) res1 htc1'
                     have hIH_e1_inst := hIH_e1 hpredlaws hExtTyping hwfTm hTmBounded
                     rcases hIH_e1_inst.1 with ⟨tm1, hcanon1, hpredlaws1, _hresTm1, hwfTm1⟩
                     have hstruct_rt := terminatesTo_ite_inv' e1 e2 e3
@@ -1191,7 +1313,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                         cases hbranch with
                           | inl hbranch_true =>
                               have ht_e2 : terminatesTo e2 cfg1 cf o := hbranch_true.2
-                              have hIH_e2 := IH' fuel' (by omega) tm1 masked e2 ctx'' res2 htc2'
+                              have hIH_e2 := IH' fuel' (by omega) tm1 masked e2 ctx''
+                                (ExternDeclCanUseClosed.ite_then hclosed hcan) res2 htc2'
                               -- Thread extern registry.
                               have hreg_cfg1_std2 : cfg1.registry = registry := by
                                 simpa using terminatesTo_preserves_registry ht_e1
@@ -1450,7 +1573,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                       (by simp [hetyp]) hcap2_join
                           | inr hbranch_false =>
                               have ht_e3 : terminatesTo e3 cfg1 cf o := hbranch_false.2
-                              have hIH_e3 := IH' fuel' (by omega) tm1 masked e3 ctxForE3 res3 htc3'
+                              have hIH_e3 := IH' fuel' (by omega) tm1 masked e3 ctxForE3
+                                (ExternDeclCanUseClosed.ite_else hclosed hcan) res3 htc3'
                               -- Thread extern registry.
                               have hreg_cfg1_std3 : cfg1.registry = registry := by
                                 simpa using terminatesTo_preserves_registry ht_e1
@@ -1715,18 +1839,20 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr, typecheckNewRef] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
+                    stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
                       masked ctxᵢ predSat tm e fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                      CanUse
+                      (ExternDeclCanUseClosed.newRef hclosed hcan)
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
-                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                         masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
-                          IH' m hm tmᵢ masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
                       htc
           | assign e1 e2 =>
               cases fuel with
@@ -1734,18 +1860,21 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr, typecheckAssign] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
+                    stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
                       masked ctxᵢ predSat tm e1 e2 fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                      CanUse
+                      (ExternDeclCanUseClosed.assign_left hclosed hcan)
+                      (ExternDeclCanUseClosed.assign_right hclosed hcan)
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
-                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                         masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
-                          IH' m hm tmᵢ masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
                       htc
           | deref e =>
               cases fuel with
@@ -1753,18 +1882,20 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr, typecheckDeref] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_deref_maskedReg
+                    stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
                       masked ctxᵢ predSat tm e fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                      CanUse
+                      (ExternDeclCanUseClosed.deref hclosed hcan)
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
-                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                         masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
-                          IH' m hm tmᵢ masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
                       htc
           | seq e1 e2 =>
               cases fuel with
@@ -1772,18 +1903,21 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
+                    stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
                       masked ctxᵢ predSat tm e1 e2 fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                      CanUse
+                      (ExternDeclCanUseClosed.seq_left hclosed hcan)
+                      (ExternDeclCanUseClosed.seq_right hclosed hcan)
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
-                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                         masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
-                          IH' m hm tmᵢ masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
                       htc
           | vlet z e1 e2 =>
               cases fuel with
@@ -1791,18 +1925,21 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg
+                    stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
                       masked ctxᵢ predSat tm z e1 e2 fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                      CanUse
+                      (ExternDeclCanUseClosed.vlet_bound hclosed hcan)
+                      (ExternDeclCanUseClosed.vlet_body hclosed hcan)
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
-                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                         masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
-                          IH' m hm tmᵢ masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
                       htc
           | fn name ty e1 ty2 =>
               exact
@@ -1818,19 +1955,26 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   simp [typecheck, typecheckExpr, typecheckApp] at htc
               | succ fuel' =>
                   exact
-                    stepFRSingleRunFinalCleanPcTrue_app_maskedReg
+                    stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
                       masked ctxᵢ predSat tm (registry := registry)
                       e1 e2 fuel' res
-                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
+                      CanUse
+                      (ExternDeclCanUseClosed.app_fun hclosed hcan)
+                      (ExternDeclCanUseClosed.app_arg hclosed hcan)
+                      (fun {tcls} {x} {body} {σcap} hmem =>
+                        ExternDeclCanUseClosed.app_fn_body hclosed hcan hmem)
+                      (fun {tcls} {x} {pbody} {σcap} hmem =>
+                        ExternDeclCanUseClosed.app_pfn_body hclosed hcan hmem)
+                      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
-                        predSat tm (Nat.succ (Nat.succ fuel'))
+                        predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                         masked
                         (fun ctx μ ρ θ =>
                           consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
                         (fun R qt μ θ v =>
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-                        (fun m hm {tmᵢ} e' ctx' res' htc' =>
-                          IH' m hm tmᵢ masked e' ctx' res' htc'))
+                        (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
+                          IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
                       (fun {tcls} => hcallSingleFn (tcls := tcls))
                       (fun {tcls} => hcallSinglePfn (tcls := tcls))
                       htc
@@ -1854,7 +1998,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   (e := Expr.externVal id t p pr) (id := id)
                   (d := { id := id, kind := .val, typ := t, argName := none,
                           retSpec := none, effects := [], preds := [pr] })
-                  (impl := impl) ExternDeclarationInProgram.externVal
+                  (impl := impl) hcan ExternDeclarationInProgram.externVal
                   hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
           | externFn id n t r eff =>
@@ -1878,7 +2022,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   (d := { id := id, kind := .fn, typ := t, argName := some n,
                           retSpec := some r, effects := eff,
                           preds := collectExternPreds r eff })
-                  (impl := impl) ExternDeclarationInProgram.externFn
+                  (impl := impl) hcan ExternDeclarationInProgram.externFn
                   hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
           | externPfn id n t r =>
@@ -1902,24 +2046,103 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   (d := { id := id, kind := .pfn, typ := t, argName := some n,
                           retSpec := some r, effects := [],
                           preds := collectExternPreds r [] })
-                  (impl := impl) ExternDeclarationInProgram.externPfn
+                  (impl := impl) hcan ExternDeclarationInProgram.externPfn
                   hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
 
-private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts
+private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts
   (registry : ExternRegistry)
   (hcallSingleFn : ExternCallSingleFnProvider registry)
   (hcallSinglePfn : ExternCallSinglePfnProvider registry)
   (hdeclSingle : ExternDeclSingleProvider registry)
+  (masked : Tag → Prop)
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
   ∀ fuel res,
     typecheck ctxᵢ e fuel = .ok res →
-    StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tm (registry := registry) := by
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+      masked
+      (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+      ctxᵢ e res predSat tm (registry := registry) := by
   intro fuel res htc
+  exact
+    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse
+      registry hcallSingleFn hcallSinglePfn
+      (fun _ => True)
+      ExternDeclCanUseClosed.trivial
+      (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
+          _hcan hprog =>
+        hdeclSingle (e := e) (id := id) (d := d) (masked := masked)
+          (ctx := ctx) (res := res) (predSat := predSat) (tm := tm)
+          (impl := impl) hprog)
+      masked e ctxᵢ predSat tm
+      trivial fuel res htc
+
+private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_for
+  (registry : ExternRegistry)
+  (hcallSingleFn : ExternCallSingleFnProvider registry)
+  (hcallSinglePfn : ExternCallSinglePfnProvider registry)
+  {root current : Expr}
+  (hdeclSingleRoot : ExternDeclSingleProviderFor registry root)
+  (hfnBody :
+    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
+      {body : Expr} {σcap : List (Name × QTyp)},
+      ExternDeclLift root (Expr.app e1 e2) →
+      FnTClosure.regular x body σcap ∈ tcls →
+      ExternDeclLift root body)
+  (hpfnBody :
+    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
+      {pbody : PExpr} {σcap : List (Name × QTyp)},
+      ExternDeclLift root (Expr.app e1 e2) →
+      PFnTClosure.regular x pbody σcap ∈ tcls →
+      ExternDeclLift root (PExpr.toExpr pbody))
+  (hlift : ExternDeclLift root current)
+  (masked : Tag → Prop)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  ∀ fuel res,
+    typecheck ctxᵢ current fuel = .ok res →
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+      masked
+      (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+      ctxᵢ current res predSat tm (registry := registry) := by
+  intro fuel res htc
+  exact
+    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse
+      registry hcallSingleFn hcallSinglePfn
+      (fun e => ExternDeclLift root e)
+      (ExternDeclCanUseClosed.of_lift hfnBody hpfnBody)
+      (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
+          hlift_e hprog =>
+        hdeclSingleRoot (id := id) (d := d) (masked := masked)
+          (ctx := ctx) (res := res) (predSat := predSat) (tm := tm)
+          (impl := impl) (hlift_e hprog))
+      masked current ctxᵢ predSat tm
+      hlift fuel res htc
+
+private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse
+  (registry : ExternRegistry)
+  (hcallSingleFn : ExternCallSingleFnProvider registry)
+  (hcallSinglePfn : ExternCallSinglePfnProvider registry)
+  (CanUse : Expr → Prop)
+  (hclosed : ExternDeclCanUseClosed CanUse)
+  (hdeclSingle :
+    ∀ {e : Expr} {id : ExternId} {d : ExternDeclaration}
+      {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+      {predSat : PredSat} {tm : TagMeaning} {impl : ExternImpl},
+      CanUse e →
+      ExternDeclarationInProgram e id d →
+      ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl)
+  (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  CanUse e →
+  ∀ fuel res,
+    typecheck ctxᵢ e fuel = .ok res →
+    StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tm (registry := registry) := by
+  intro hcan fuel res htc
   have hmasked :=
-    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts
-      registry hcallSingleFn hcallSinglePfn hdeclSingle
-      (masked := fun _ => False) e ctxᵢ predSat tm fuel res htc
+    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse
+      registry hcallSingleFn hcallSinglePfn CanUse hclosed hdeclSingle
+      (masked := fun _ => False) e ctxᵢ predSat tm hcan fuel res htc
   intro hpredlaws hExtTyping hwfTm hTmBounded
   have hmasked_inst := hmasked hpredlaws hExtTyping hwfTm hTmBounded
   refine ⟨hmasked_inst.1, ?_⟩
@@ -1979,6 +2202,67 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
       hmasked_none hvalc_masked'
   exact ⟨θ', hθext, hvaltyp, hric', hcwr', hvalc', hpres, hfresh⟩
 
+private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts
+  (registry : ExternRegistry)
+  (hcallSingleFn : ExternCallSingleFnProvider registry)
+  (hcallSinglePfn : ExternCallSinglePfnProvider registry)
+  (hdeclSingle : ExternDeclSingleProvider registry)
+  (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  ∀ fuel res,
+    typecheck ctxᵢ e fuel = .ok res →
+    StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tm (registry := registry) := by
+  intro fuel res htc
+  exact
+    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse
+      registry hcallSingleFn hcallSinglePfn
+      (fun _ => True)
+      ExternDeclCanUseClosed.trivial
+      (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
+          _hcan hprog =>
+        hdeclSingle (e := e) (id := id) (d := d) (masked := masked)
+          (ctx := ctx) (res := res) (predSat := predSat) (tm := tm)
+          (impl := impl) hprog)
+      e ctxᵢ predSat tm
+      trivial fuel res htc
+
+private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_for
+  (registry : ExternRegistry)
+  (hcallSingleFn : ExternCallSingleFnProvider registry)
+  (hcallSinglePfn : ExternCallSinglePfnProvider registry)
+  {root current : Expr}
+  (hdeclSingleRoot : ExternDeclSingleProviderFor registry root)
+  (hfnBody :
+    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
+      {body : Expr} {σcap : List (Name × QTyp)},
+      ExternDeclLift root (Expr.app e1 e2) →
+      FnTClosure.regular x body σcap ∈ tcls →
+      ExternDeclLift root body)
+  (hpfnBody :
+    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
+      {pbody : PExpr} {σcap : List (Name × QTyp)},
+      ExternDeclLift root (Expr.app e1 e2) →
+      PFnTClosure.regular x pbody σcap ∈ tcls →
+      ExternDeclLift root (PExpr.toExpr pbody))
+  (hlift : ExternDeclLift root current)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  ∀ fuel res,
+    typecheck ctxᵢ current fuel = .ok res →
+    StepFRSingleRunFinalCleanPcTrue ctxᵢ current res predSat tm
+      (registry := registry) := by
+  intro fuel res htc
+  exact
+    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse
+      registry hcallSingleFn hcallSinglePfn
+      (fun e => ExternDeclLift root e)
+      (ExternDeclCanUseClosed.of_lift hfnBody hpfnBody)
+      (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
+          hlift_e hprog =>
+        hdeclSingleRoot (id := id) (d := d) (masked := masked)
+          (ctx := ctx) (res := res) (predSat := predSat) (tm := tm)
+          (impl := impl) (hlift_e hprog))
+      current ctxᵢ predSat tm
+      hlift fuel res htc
+
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
   ∀ fuel res,
@@ -1995,7 +2279,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue
 
 -- Step theorem: proves StepFR directly.
 -- Restructured to avoid variable capture: induction is generalized over all expressions
-private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
+private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse
   (registry : ExternRegistry)
   (hcallSingleFn : ExternCallSingleFnProvider registry)
   (hcallSinglePfn : ExternCallSinglePfnProvider registry)
@@ -2008,18 +2292,34 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
       entryKey id entry → ExternCallBoundaryFR entry.decl entry.impl)
   (hfnLocal : ExternCallFRFnLocalProvider registry entryKey)
   (hpfnLocal : ExternCallFRPfnLocalProvider registry entryKey)
-  (hdeclSingle : ExternDeclSingleProvider registry)
-  (hdeclFR : ExternDeclFRProvider registry)
+  (CanUse : Expr → Prop)
+  (hclosed : ExternDeclCanUseClosed CanUse)
+  (hdeclSingle :
+    ∀ {e : Expr} {id : ExternId} {d : ExternDeclaration}
+      {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+      {predSat : PredSat} {tm : TagMeaning} {impl : ExternImpl},
+      CanUse e →
+      ExternDeclarationInProgram e id d →
+      ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl)
+  (hdeclFR :
+    ∀ {e : Expr} {id : ExternId} {d : ExternDeclaration}
+      {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
+      {predSat : PredSat} {tm : TagMeaning} {impl₀ impl₁ : ExternImpl},
+      CanUse e →
+      ExternDeclarationInProgram e id d →
+      ExternDeclBoundaryFRContract ctx postExpr res predSat tm registry d impl₀ impl₁)
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  CanUse e →
   TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm (registry := registry) := by
+  intro hcan
   unfold TypeSystemEnforcesFaultRobustness_step_spec
   intro fuel res htc
   -- Use strong induction on fuel, generalized over all e and ctxᵢ
   -- The key insight: we need IH to work for any expression, not just our specific e
-  revert tm e ctxᵢ res htc
+  revert tm e ctxᵢ res htc hcan
   induction fuel using Nat.strong_induction_on with
   | _ n IH =>
-    intro e ctxᵢ tm res htc
+    intro e ctxᵢ tm hcan res htc
     cases n with
     | zero =>
         simp [typecheck, typecheckExpr] at htc
@@ -2136,69 +2436,129 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
             | zero =>
                 simp [typecheck, typecheckExpr_op_succ, typecheckOp] at htc
             | succ fuel' =>
-                exact stepFR_op ctxᵢ predSat e1 e2 op fuel' res tm (StepFR_IH_of_induction (registry := registry) predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
+                exact
+                  stepFR_op_with_expr_proof ctxᵢ predSat e1 e2 op fuel' res tm
+                    CanUse
+                    (ExternDeclCanUseClosed.op_left hclosed hcan)
+                    (ExternDeclCanUseClosed.op_right hclosed hcan)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
+                    htc
         | unaryop uop e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_unaryop_succ, typecheckUnaryOp] at htc
             | succ fuel' =>
-                exact stepFR_unaryop ctxᵢ predSat e uop fuel' res tm (StepFR_IH_of_induction (registry := registry) predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
+                exact
+                  stepFR_unaryop_with_expr_proof ctxᵢ predSat e uop fuel' res tm
+                    CanUse
+                    (ExternDeclCanUseClosed.unaryop hclosed hcan)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
+                    htc
         | ite e1 e2 e3 =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckIf] at htc
-            | succ fuel' =>
+              | succ fuel' =>
                 have hsingleIH :
-                    StepFRSingleRunFinalCleanPcTrue_IH predSat tm
-                      (Nat.succ (Nat.succ fuel')) (registry := registry) := by
-                  intro m _hm tmᵢ e ctx' hwfTm' _hTmBounded' res' htc'
+                    StepFRSingleRunFinalCleanPcTrue_IH_WithExpr predSat tm
+                      (Nat.succ (Nat.succ fuel')) CanUse (registry := registry) := by
+                  intro m _hm tmᵢ e ctx' hcan' hwfTm' _hTmBounded' res' htc'
                   exact
-                    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts
-                      registry hcallSingleFn hcallSinglePfn hdeclSingle
-                      e ctx' predSat tmᵢ m res' htc'
+                    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse
+                      registry hcallSingleFn hcallSinglePfn CanUse hclosed hdeclSingle
+                      e ctx' predSat tmᵢ hcan' m res' htc'
                 exact
-                  stepFR_ite ctxᵢ predSat tm e1 e2 e3 fuel' res
-                    (StepFR_IH_of_induction (registry := registry) predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc))
-                    hsingleIH htc
+                  stepFR_ite_with_expr_proof ctxᵢ predSat tm e1 e2 e3 fuel' res
+                    CanUse
+                    (ExternDeclCanUseClosed.ite_cond hclosed hcan)
+                    (ExternDeclCanUseClosed.ite_then hclosed hcan)
+                    (ExternDeclCanUseClosed.ite_else hclosed hcan)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
+                    hsingleIH
+                    htc
         | newRef e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckNewRef] at htc
             | succ fuel' =>
-                exact stepFR_newRef ctxᵢ predSat e fuel' res tm (StepFR_IH_of_induction (registry := registry) predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
+                exact
+                  stepFR_newRef_with_expr_proof ctxᵢ predSat e fuel' res tm
+                    CanUse
+                    (ExternDeclCanUseClosed.newRef hclosed hcan)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
+                    htc
         | assign e1 e2 =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckAssign] at htc
             | succ fuel' =>
-                exact stepFR_assign ctxᵢ predSat tm e1 e2 fuel' res (StepFR_IH_of_induction (registry := registry) predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
+                exact
+                  stepFR_assign_with_expr_proof ctxᵢ predSat tm e1 e2 fuel' res
+                    CanUse
+                    (ExternDeclCanUseClosed.assign_left hclosed hcan)
+                    (ExternDeclCanUseClosed.assign_right hclosed hcan)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
+                    htc
         | deref e =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckDeref] at htc
             | succ fuel' =>
-                exact stepFR_deref ctxᵢ predSat tm e fuel' res (StepFR_IH_of_induction (registry := registry) predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
+                exact
+                  stepFR_deref_with_expr_proof ctxᵢ predSat tm e fuel' res
+                    CanUse
+                    (ExternDeclCanUseClosed.deref hclosed hcan)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
+                    htc
         | seq e1 e2 =>
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_seq_succ, typecheckSeq] at htc
             | succ fuel' =>
-                exact stepFR_seq ctxᵢ predSat e1 e2 fuel' res tm (StepFR_IH_of_induction (registry := registry) predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
+                exact
+                  stepFR_seq_with_expr_proof ctxᵢ predSat e1 e2 fuel' res tm
+                    CanUse
+                    (ExternDeclCanUseClosed.seq_left hclosed hcan)
+                    (ExternDeclCanUseClosed.seq_right hclosed hcan)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
+                    htc
         | vlet z e1 e2 =>
             let vname := z
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr_vlet_succ, typecheckVlet] at htc
             | succ fuel' =>
-                exact stepFR_vlet ctxᵢ predSat vname e1 e2 fuel' res tm (StepFR_IH_of_induction (registry := registry) predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc)) htc
+                exact
+                  stepFR_vlet_with_expr_proof ctxᵢ predSat vname e1 e2 fuel' res tm
+                    CanUse
+                    (ExternDeclCanUseClosed.vlet_bound hclosed hcan)
+                    (ExternDeclCanUseClosed.vlet_body hclosed hcan)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
+                    htc
         | fn name ty e1 ty2 =>
             exact stepFR_fn ctxᵢ predSat tm name ty e1 ty2 fuel res htc
         | pfn name ty e1 ty2 =>
@@ -2207,22 +2567,30 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
             cases fuel with
             | zero =>
                 simp [typecheck, typecheckExpr, typecheckApp] at htc
-            | succ fuel' =>
+              | succ fuel' =>
                 have hsingleIH :
-                    StepFRSingleRunFinalCleanPcTrue_IH predSat tm
-                      (Nat.succ (Nat.succ fuel'))
+                    StepFRSingleRunFinalCleanPcTrue_IH_WithExpr predSat tm
+                      (Nat.succ (Nat.succ fuel')) CanUse
                       (registry := registry) := by
-                  intro m _hm tmᵢ e ctx' hwfTm' _hTmBounded' res' htc'
+                  intro m _hm tmᵢ e ctx' hcan' hwfTm' _hTmBounded' res' htc'
                   exact
-                    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts
-                      registry hcallSingleFn hcallSinglePfn hdeclSingle
-                      e ctx' predSat tmᵢ m res' htc'
+                    TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse
+                      registry hcallSingleFn hcallSinglePfn CanUse hclosed hdeclSingle
+                      e ctx' predSat tmᵢ hcan' m res' htc'
                 exact
-                  stepFR_app ctxᵢ predSat tm (registry := registry)
+                  stepFR_app_with_expr_proof ctxᵢ predSat tm (registry := registry)
                     e1 e2 fuel' res
-                    (StepFR_IH_of_induction (registry := registry)
-                      predSat tm (Nat.succ (Nat.succ fuel'))
-                    (fun m hm {tmᵢ} e ctx res htc => IH m hm e ctx tmᵢ res htc))
+                    CanUse
+                    (ExternDeclCanUseClosed.app_fun hclosed hcan)
+                    (ExternDeclCanUseClosed.app_arg hclosed hcan)
+                    (fun {tcls} {x} {body} {σcap} hmem =>
+                      ExternDeclCanUseClosed.app_fn_body hclosed hcan hmem)
+                    (fun {tcls} {x} {pbody} {σcap} hmem =>
+                      ExternDeclCanUseClosed.app_pfn_body hclosed hcan hmem)
+                    (StepFR_IH_WithExpr_of_induction (registry := registry)
+                      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+                      (fun m hm {tmᵢ} e ctx hcan' res htc =>
+                        IH m hm e ctx tmᵢ hcan' res htc))
                     hsingleIH
                     (entryKey := entryKey)
                     (_hentryKey_unique := hentryKey_unique)
@@ -2248,6 +2616,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
                 (d := { id := id, kind := .val, typ := t, argName := none,
                         retSpec := none, effects := [], preds := [pr] })
                 (impl₀ := impl₀) (impl₁ := impl₁)
+                hcan
                 ExternDeclarationInProgram.externVal
                 hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
@@ -2271,6 +2640,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
                         retSpec := some r, effects := eff,
                         preds := collectExternPreds r eff })
                 (impl₀ := impl₀) (impl₁ := impl₁)
+                hcan
                 ExternDeclarationInProgram.externFn
                 hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
@@ -2294,10 +2664,98 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
                         retSpec := some r, effects := [],
                         preds := collectExternPreds r [] })
                 (impl₀ := impl₀) (impl₁ := impl₁)
+                hcan
                 ExternDeclarationInProgram.externPfn
                 hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
                 hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+
+private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
+  (registry : ExternRegistry)
+  (hcallSingleFn : ExternCallSingleFnProvider registry)
+  (hcallSinglePfn : ExternCallSinglePfnProvider registry)
+  (entryKey : ExternCallEntryKey)
+  (hentryKey_unique :
+    ∀ {id : ExternId} {entry₀ entry₁ : TrustedExternEntry},
+      entryKey id entry₀ → entryKey id entry₁ → entry₀ = entry₁)
+  (hcallFR_of_entryKey :
+    ∀ {id : ExternId} {entry : TrustedExternEntry},
+      entryKey id entry → ExternCallBoundaryFR entry.decl entry.impl)
+  (hfnLocal : ExternCallFRFnLocalProvider registry entryKey)
+  (hpfnLocal : ExternCallFRPfnLocalProvider registry entryKey)
+  (hdeclSingle : ExternDeclSingleProvider registry)
+  (hdeclFR : ExternDeclFRProvider registry)
+  (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm (registry := registry) := by
+  exact
+    TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse
+      registry hcallSingleFn hcallSinglePfn entryKey
+      hentryKey_unique hcallFR_of_entryKey hfnLocal hpfnLocal
+      (fun _ => True)
+      ExternDeclCanUseClosed.trivial
+      (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
+          _hcan hprog =>
+        hdeclSingle (e := e) (id := id) (d := d) (masked := masked)
+          (ctx := ctx) (res := res) (predSat := predSat) (tm := tm)
+          (impl := impl) hprog)
+      (fun {e} {id} {d} {ctx} {postExpr} {res} {predSat} {tm} {impl₀} {impl₁}
+          _hcan hprog =>
+        hdeclFR (e := e) (id := id) (d := d) (ctx := ctx) (postExpr := postExpr)
+          (res := res) (predSat := predSat) (tm := tm) (impl₀ := impl₀)
+          (impl₁ := impl₁) hprog)
+      e ctxᵢ predSat tm
+      trivial
+
+private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_for
+  (registry : ExternRegistry)
+  (hcallSingleFn : ExternCallSingleFnProvider registry)
+  (hcallSinglePfn : ExternCallSinglePfnProvider registry)
+  (entryKey : ExternCallEntryKey)
+  (hentryKey_unique :
+    ∀ {id : ExternId} {entry₀ entry₁ : TrustedExternEntry},
+      entryKey id entry₀ → entryKey id entry₁ → entry₀ = entry₁)
+  (hcallFR_of_entryKey :
+    ∀ {id : ExternId} {entry : TrustedExternEntry},
+      entryKey id entry → ExternCallBoundaryFR entry.decl entry.impl)
+  (hfnLocal : ExternCallFRFnLocalProvider registry entryKey)
+  (hpfnLocal : ExternCallFRPfnLocalProvider registry entryKey)
+  {root current : Expr}
+  (hdeclSingleRoot : ExternDeclSingleProviderFor registry root)
+  (hdeclFRRoot : ExternDeclFRProviderFor registry root)
+  (hfnBody :
+    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
+      {body : Expr} {σcap : List (Name × QTyp)},
+      ExternDeclLift root (Expr.app e1 e2) →
+      FnTClosure.regular x body σcap ∈ tcls →
+      ExternDeclLift root body)
+  (hpfnBody :
+    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
+      {pbody : PExpr} {σcap : List (Name × QTyp)},
+      ExternDeclLift root (Expr.app e1 e2) →
+      PFnTClosure.regular x pbody σcap ∈ tcls →
+      ExternDeclLift root (PExpr.toExpr pbody))
+  (hlift : ExternDeclLift root current)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  TypeSystemEnforcesFaultRobustness_step_spec current ctxᵢ predSat tm
+    (registry := registry) := by
+  exact
+    TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse
+      registry hcallSingleFn hcallSinglePfn entryKey
+      hentryKey_unique hcallFR_of_entryKey hfnLocal hpfnLocal
+      (fun e => ExternDeclLift root e)
+      (ExternDeclCanUseClosed.of_lift hfnBody hpfnBody)
+      (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
+          hlift_e hprog =>
+        hdeclSingleRoot (id := id) (d := d) (masked := masked)
+          (ctx := ctx) (res := res) (predSat := predSat) (tm := tm)
+          (impl := impl) (hlift_e hprog))
+      (fun {e} {id} {d} {ctx} {postExpr} {res} {predSat} {tm} {impl₀} {impl₁}
+          hlift_e hprog =>
+        hdeclFRRoot (id := id) (d := d) (ctx := ctx) (postExpr := postExpr)
+          (res := res) (predSat := predSat) (tm := tm) (impl₀ := impl₀)
+          (impl₁ := impl₁) (hlift_e hprog))
+      current ctxᵢ predSat tm
+      hlift
 
 theorem TypeSystemEnforcesFaultRobustness_step
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :

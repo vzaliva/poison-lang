@@ -147,19 +147,25 @@ Implemented and compiling:
   registry adapters
   `ExternDeclBoundarySingleMaskedContract.of_trustedRegistry` and
   `ExternDeclBoundaryFRContract.of_trustedRegistry`.
-- `FaultRobustnessProofs.lean` now has a provider-parametric proof core for the
-  masked single-run theorem and the two-run step theorem.  The public
-  empty-registry theorem wrappers instantiate that core with the existing
-  empty-registry providers; the declaration branches themselves now consume
-  `hdeclSingle` / `hdeclFR`.
+- `FaultRobustnessProofs.lean` now has `CanUse`-indexed proof cores for the
+  masked single-run theorem, the ordinary single-run theorem, and the two-run
+  step theorem.  The public empty-registry wrappers instantiate those cores with
+  `CanUse := fun _ => True`; declaration branches themselves consume
+  `CanUse`-indexed `hdeclSingle` / `hdeclFR` providers.
 - `FaultRobustnessProofs.lean` has a registry-parametric implementation bridge
   `TypeSystemEnforcesFaultRobustness_impl_with_registry_for` that only requires
   a step theorem for the target expression.  The older global-form bridge is a
   wrapper around this root-expression-specific theorem.
-- `FaultRobustnessProofs.lean` has root-aware declaration-provider foundation:
-  `ExternDeclSingleProviderFor`, `ExternDeclFRProviderFor`, `ExternDeclLift`,
-  trusted-registry constructors, and local lift adapters.  These compile but
-  are not yet threaded through the induction spine.
+- `FaultRobustnessProofs.lean` has root-aware declaration-provider wrappers for
+  the masked single-run theorem, ordinary single-run theorem, and two-run step
+  theorem.  These wrappers instantiate `CanUse current` as
+  `ExternDeclLift root current` and discharge declaration providers from
+  `ExternDeclSingleProviderFor registry root` /
+  `ExternDeclFRProviderFor registry root`.
+- `StepFRApp.lean` now accepts `WithExpr` single-run IHs in both the masked
+  single-run app proof and the two-run app proof.  Regular closure-body
+  recursive calls consume the app proof's `hcanFnBody` / `hcanPfnBody`
+  provenance hooks, while compatibility wrappers recover the old plain-IH API.
 
 Still true:
 
@@ -170,16 +176,23 @@ Still true:
 - `TypeSystemEnforcesFaultRobustness_step` remains the public empty-registry
   compatibility theorem.  The generalized proof core exists privately and must
   be exposed through the populated trusted-registry theorem in Step 6.
-- The private step proof core still takes globally quantified extern-provider
-  hypotheses.  That shape is too strong to instantiate from a single
-  `TrustedRegistryAgreesWithProgram e tr` premise without weakening it into a
-  global "registry agrees with every expression / every closure list" premise.
+- The private step proof core still takes globally quantified extern-call
+  provider hypotheses (`hcallSingleFn`, `hcallSinglePfn`, `hfnLocal`,
+  `hpfnLocal`).  Declaration providers are now root-scoped, but app-call
+  providers are not yet derivable from a single
+  `TrustedRegistryAgreesWithProgram e tr` premise without additional typed
+  closure-list provenance.
+- The root-aware declaration wrappers currently require explicit
+  `hfnBody` / `hpfnBody` premises: a regular closure body found in an app
+  type-closure list must lift back to the root program.  Those premises are the
+  precise remaining provenance gap; they should be replaced by a typed-closure
+  provenance invariant rather than by a vague global trust assumption.
 
-Latest verification after declaration-provider integration,
-root-expression-specific implementation bridge, and root-aware declaration
-provider scaffolding:
+Latest verification after root-aware declaration-provider threading and
+`WithExpr` app single-run/two-run recursion:
 
 - `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeds.
+- `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.
 - `lake build LeanProofs` succeeds.
 - `make test` passes 96/96.
 - `git diff --check` is clean.
@@ -455,12 +468,13 @@ compatibility corollary.
 6. **Generalize the step theorem and bridge trusted agreement.**
 
    Active focus.  The implementation bridge has been split so the top-level
-   theorem only needs a step theorem for the target expression.  The remaining
-   work is to make the step proof core root-expression aware, use that to
-   update the public `TypeSystemEnforcesFaultRobustness` theorem to the
-   populated-registry formulation, instantiate it with
-   `TrustedRegistry.toRuntimeRegistry tr`, and discharge the provider slots
-   under explicit assumptions:
+   theorem only needs a step theorem for the target expression.  The step and
+   single-run proof cores are now root-expression aware for declaration
+   providers through `CanUse := ExternDeclLift root`.  The remaining work is to
+   discharge the app-call provider slots from trusted-registry agreement and
+   typed closure-list provenance, then use that root step theorem to update the
+   public `TypeSystemEnforcesFaultRobustness` theorem to the populated-registry
+   formulation.
 
    - `TrustedRegistryAgreesWithProgram e tr`;
    - `TrustedRegistryAgreesWithFnTClosures` facts for executed impure extern
@@ -472,44 +486,45 @@ compatibility corollary.
    possible, without weakening `TrustedRegistryAgreesWithProgram` into a vague
    global premise.
 
-   Current blocker: `TypeSystemEnforcesFaultRobustness_step_with_contracts`
-   still takes global provider hypotheses:
+   Current blocker: declaration providers are root-scoped, but app-call
+   providers are still global:
 
-   - `ExternDeclSingleProvider registry`;
-   - `ExternDeclFRProvider registry`;
-   - global single-run app-call providers;
-   - global local two-run app-call providers.
+   - `ExternCallSingleFnProvider registry`;
+   - `ExternCallSinglePfnProvider registry`;
+   - local two-run `TrustedRegistryAgreesWithProgramLocal` /
+     `TrustedRegistryAgreesWithPfnProgramLocal` providers.
 
-   These hypotheses quantify over arbitrary current expressions and closure
-   lists.  They cannot be instantiated from only
-   `TrustedRegistryAgreesWithProgram e tr` for the root program without adding
-   provenance.  Using a premise that the trusted registry agrees with all
-   expressions / all closure lists would be the forbidden weakening.
+   The root-aware wrappers also need explicit `hfnBody` / `hpfnBody` closure
+   body lift premises because the current app proof API only exposes
+   `FnTClosure.regular ... ∈ tcls` / `PFnTClosure.regular ... ∈ tcls`, not the
+   typechecking provenance that explains why that closure-list member belongs
+   to the root program.  This is the precise remaining provenance gap.
 
    Suggested fix:
 
-   1. Thread a root expression and a declaration-lift premise through
-      `TypeSystemEnforcesFaultRobustness_step_with_contracts`,
-      `TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts`,
-      and their induction helpers.
-   2. Replace the global declaration providers with root-aware providers that
-      first lift `ExternDeclarationInProgram current id d` to
-      `ExternDeclarationInProgram root id d`, then call the trusted-registry
-      declaration adapters.
-   3. Add the analogous typed-closure provenance for app-call provider
-      assumptions, especially the impure
+   1. Add a typed closure-list provenance predicate for type results / closure
+      lists.  It should state both:
+      - every regular closure body in the list has an
+        `ExternDeclLift root body` witness;
+      - every extern closure member, and every regular extern-body member, can
+        be resolved against the trusted registry without assuming global
+        agreement for arbitrary closure lists.
+   2. Prove the provenance predicate is produced/preserved by typechecking for
+      arrow/parrow closure lists and transported through the app
+      `apply*Closure` / join machinery.
+   3. Use that provenance to build the single-run app-call providers and local
+      two-run app-call providers at each app proof call site, especially the
+      impure
       `FnTClosure.regular x (Expr.externFn ...) ...` case.  The provenance must
       survive closure-list joins/merges and function/pfunction body typing.
-   4. Retry the public top-level theorem only after the provider assumptions can
+   4. Remove the explicit `hfnBody` / `hpfnBody` wrapper assumptions once the
+      closure-body lift facts are available from the typed closure provenance.
+   5. Retry the public top-level theorem only after the provider assumptions can
       be discharged from root program agreement plus closure-list provenance.
 
-   Latest finding: the next proof edit is not only local branch rewiring.  The
-   strong-induction callbacks currently have an "any smaller-fuel expression"
-   shape, so they cannot receive a current-expression-to-root declaration lift
-   without changing the IH abbreviations / adapter lemmas.  The root-aware
-   provider helpers have been added first; the next code slice should update the
-   IH shapes and per-operator recursive-call adapters to carry
-   `ExternDeclLift`.
+   Latest finding: the strong-induction callback problem for declarations is
+   resolved through the `CanUse` / `WithExpr` IH variants.  The remaining proof
+   edit is app-call provider construction from typed closure-list provenance.
 
 7. **Preserve compatibility and verify.**
 
