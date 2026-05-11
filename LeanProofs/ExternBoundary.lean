@@ -447,13 +447,17 @@ def ExternDeclBoundaryFR
       consistentWithRegime predSat ctx.regime ctx μ₀ ρ₀ θ₀ →
       consistentWithRegime predSat ctx.regime ctx μ₁ ρ₁ θ₁ →
       agreeOnClean predSat ctx.regime ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ →
-      ∀ (a₀ a₁ : Address) (pm : Bool),
-        wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } →
-        wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } →
+      ∀ (a₀ a₁ : Address) (pm : Bool) (registry : ExternRegistry),
+        wfConfig { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
+                   registry := registry } →
+        wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
+                   registry := registry } →
         ExternDeclBoundaryRun d impl ctx res
-          { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm } cf₀ o₀ →
+          { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
+            registry := registry } cf₀ o₀ →
         ExternDeclBoundaryRun d impl ctx res
-          { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm } cf₁ o₁ →
+          { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
+            registry := registry } cf₁ o₁ →
         StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
 
 /-- Paired extern-call boundary runs produce the same post as the surrounding
@@ -559,10 +563,12 @@ def ExternDeclBoundarySingle
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtx ctx →
       consistentWithRegime predSat ctx.regime ctx μ ρ θ →
-      ∀ (a : Address) (pm : Bool),
-        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
+      ∀ (a : Address) (pm : Bool) (registry : ExternRegistry),
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+                   registry := registry } →
         ExternDeclBoundaryRun d impl ctx res
-          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } cf o →
+          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+            registry := registry } cf o →
         ctx.pc = true →
         ExternBoundarySinglePost ctx res predSat tm θ μ cf o
 
@@ -661,6 +667,30 @@ theorem ExternDeclBoundarySingleMaskedContract.of_emptyExternRegistry
   have hlookup := ExternDeclBoundaryRun.lookup hrun
   simp [emptyExternRegistry] at hlookup
 
+theorem ExternDeclBoundarySingleMaskedContract.of_spec
+    {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+    {predSat : PredSat} {tm : TagMeaning} {registry : ExternRegistry}
+    {d : ExternDeclaration} {impl : ExternImpl}
+    (hspec : ExternBoundarySpec d impl) :
+    ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl := by
+  intro hpredlaws _hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+    hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
+  have hregOrd : regimeConsistentWithCtx ctx :=
+    regimeConsistentWithCtxMasked_unmask hreg hmasked_absent
+  have hctxConsOrd :
+      consistentWithRegime predSat ctx.regime ctx μ ρ θ :=
+    consistentWithRegimeMasked_unmask hmasked_none hctxCons
+  have hsingle :
+      ExternBoundarySinglePost ctx res predSat tm θ μ cf o :=
+    hspec.declSingle ctx res predSat tm hpredlaws hwfTm hTmBounded
+      μ ρ θ cf o hθwf hwf hric hregOrd hctxConsOrd a pm registry hwfcfg hrun hpc
+  exact
+    ExternBoundarySinglePost.to_maskedRegParamPost
+      (masked := masked) (ctx := ctx) (res := res) (predSat := predSat)
+      (tm := tm) (θ := θ) (μ := μ) (ρ := ρ) (cf := cf) (o := o)
+      (registry := registry)
+      hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hsingle
+
 /-- Registry-parametric two-run declaration-boundary adapter used by the step
     proof. -/
 def ExternDeclBoundaryFRContract
@@ -698,10 +728,10 @@ def ExternDeclBoundaryFRContract
 
 theorem ExternDeclBoundaryFRContract.of_spec
     {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
-    {predSat : PredSat} {tm : TagMeaning}
+    {predSat : PredSat} {tm : TagMeaning} {registry : ExternRegistry}
     {d : ExternDeclaration} {impl : ExternImpl}
     (hspec : ExternBoundarySpec d impl) :
-    ExternDeclBoundaryFRContract ctx postExpr res predSat tm emptyExternRegistry
+    ExternDeclBoundaryFRContract ctx postExpr res predSat tm registry
       d impl impl := by
   intro hpredlaws _hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
@@ -710,7 +740,7 @@ theorem ExternDeclBoundaryFRContract.of_spec
     hspec.declFR postExpr ctx res predSat tm hpredlaws hwfTm hTmBounded
       μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded
       hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm
-      hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+      registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
 
 theorem ExternDeclBoundaryFRContract.of_emptyExternRegistry
     {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
@@ -896,6 +926,53 @@ inductive ExternDeclarationInProgram : Expr → ExternId → ExternDeclaration �
       ExternDeclarationInProgram e2 id d →
       ExternDeclarationInProgram (Expr.app e1 e2) id d
 
+namespace ExternDeclarationInReturn
+
+theorem id_eq
+    {retSpec : ExternReturn} {id : ExternId} {d : ExternDeclaration}
+    (h : ExternDeclarationInReturn retSpec id d) :
+    d.id = id := by
+  induction h with
+  | nestedFn_here => rfl
+  | nestedFn_inner _ ih => exact ih
+  | nestedPfn_here => rfl
+  | nestedPfn_inner _ ih => exact ih
+
+end ExternDeclarationInReturn
+
+namespace ExternDeclarationInProgram
+
+theorem id_eq
+    {e : Expr} {id : ExternId} {d : ExternDeclaration}
+    (h : ExternDeclarationInProgram e id d) :
+    d.id = id := by
+  induction h with
+  | externVal => rfl
+  | externFn => rfl
+  | externFn_return hret => exact ExternDeclarationInReturn.id_eq hret
+  | externPfn => rfl
+  | externPfn_return hret => exact ExternDeclarationInReturn.id_eq hret
+  | op_left _ ih => exact ih
+  | op_right _ ih => exact ih
+  | unaryop _ ih => exact ih
+  | ite_cond _ ih => exact ih
+  | ite_then _ ih => exact ih
+  | ite_else _ ih => exact ih
+  | newRef _ ih => exact ih
+  | assign_left _ ih => exact ih
+  | assign_right _ ih => exact ih
+  | deref _ ih => exact ih
+  | seq_left _ ih => exact ih
+  | seq_right _ ih => exact ih
+  | vlet_bound _ ih => exact ih
+  | vlet_body _ ih => exact ih
+  | fn_body _ ih => exact ih
+  | pfn_body _ ih => exact ih
+  | app_fun _ ih => exact ih
+  | app_arg _ ih => exact ih
+
+end ExternDeclarationInProgram
+
 /-- Trusted entries may only implement declarations with the same id and
     declaration shape as the program. -/
 def TrustedRegistryAgreesWithProgram (e : Expr) (tr : TrustedRegistry) : Prop :=
@@ -903,6 +980,19 @@ def TrustedRegistryAgreesWithProgram (e : Expr) (tr : TrustedRegistry) : Prop :=
     ExternDeclarationInProgram e id d →
     TrustedRegistry.lookup? tr id = some entry →
     entry.decl = d
+
+theorem TrustedRegistryAgreesWithProgram.resolveDeclaration
+    {e : Expr} {tr : TrustedRegistry} {id : ExternId}
+    {d : ExternDeclaration} {impl : ExternImpl}
+    (hagrees : TrustedRegistryAgreesWithProgram e tr)
+    (hprog : ExternDeclarationInProgram e id d)
+    (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
+    ∃ entry,
+      TrustedRegistry.lookup? tr id = some entry ∧
+      entry.impl = impl ∧
+      entry.decl = d := by
+  rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
+  exact ⟨entry, hlookup, himpl, hagrees hprog hlookup⟩
 
 def TrustedRegistryEntryMatchesFn
     (entry : TrustedExternEntry) (id : ExternId) (x : Name)
@@ -961,6 +1051,83 @@ theorem TrustedRegistryAgreesWithProgram.resolvePfnDeclaration
   have hdecl := hagrees hprog hlookup
   refine ⟨entry, hlookup, himpl, ?_⟩
   simp [TrustedRegistryEntryMatchesPfn, hdecl]
+
+theorem ExternDeclBoundarySingleMaskedContract.of_trustedRegistry
+    {tr : TrustedRegistry} {e : Expr} {id : ExternId}
+    {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+    {predSat : PredSat} {tm : TagMeaning}
+    {d : ExternDeclaration} {impl : ExternImpl}
+    (hagrees : TrustedRegistryAgreesWithProgram e tr)
+    (hprog : ExternDeclarationInProgram e id d) :
+    ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm
+      (TrustedRegistry.toRuntimeRegistry tr) d impl := by
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+    hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
+  have hdid : d.id = id := ExternDeclarationInProgram.id_eq hprog
+  have hlookupRun := ExternDeclBoundaryRun.lookup hrun
+  have hlookupRuntime :
+      (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl := by
+    simpa [hdid] using hlookupRun
+  rcases
+      TrustedRegistryAgreesWithProgram.resolveDeclaration hagrees hprog hlookupRuntime
+    with ⟨entry, _hlookupEntry, himpl, hdecl⟩
+  have hrunEntry :
+      ExternDeclBoundaryRun entry.decl entry.impl ctx res
+        { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+          registry := TrustedRegistry.toRuntimeRegistry tr } cf o := by
+    simpa [hdecl, himpl] using hrun
+  exact
+    ExternDeclBoundarySingleMaskedContract.of_spec
+      (masked := masked) (ctx := ctx) (res := res) (predSat := predSat)
+      (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
+      (d := entry.decl) (impl := entry.impl) entry.spec
+      hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+      hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrunEntry hpc
+
+theorem ExternDeclBoundaryFRContract.of_trustedRegistry
+    {tr : TrustedRegistry} {e : Expr} {id : ExternId}
+    {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
+    {predSat : PredSat} {tm : TagMeaning}
+    {d : ExternDeclaration} {impl₀ impl₁ : ExternImpl}
+    (hagrees : TrustedRegistryAgreesWithProgram e tr)
+    (hprog : ExternDeclarationInProgram e id d) :
+    ExternDeclBoundaryFRContract ctx postExpr res predSat tm
+      (TrustedRegistry.toRuntimeRegistry tr) d impl₀ impl₁ := by
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+    o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
+    a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+  have hdid : d.id = id := ExternDeclarationInProgram.id_eq hprog
+  have hlookupRun₀ := ExternDeclBoundaryRun.lookup hrun₀
+  have hlookupRun₁ := ExternDeclBoundaryRun.lookup hrun₁
+  have hlookupRuntime₀ :
+      (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl₀ := by
+    simpa [hdid] using hlookupRun₀
+  have hlookupRuntime₁ :
+      (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl₁ := by
+    simpa [hdid] using hlookupRun₁
+  have himpl₁₀ : impl₁ = impl₀ :=
+    Option.some.inj (hlookupRuntime₁.symm.trans hlookupRuntime₀)
+  rcases
+      TrustedRegistryAgreesWithProgram.resolveDeclaration hagrees hprog hlookupRuntime₀
+    with ⟨entry, _hlookupEntry, himpl₀, hdecl⟩
+  have hrunEntry₀ :
+      ExternDeclBoundaryRun entry.decl entry.impl ctx res
+        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
+          registry := TrustedRegistry.toRuntimeRegistry tr } cf₀ o₀ := by
+    simpa [hdecl, himpl₀] using hrun₀
+  have hrunEntry₁ :
+      ExternDeclBoundaryRun entry.decl entry.impl ctx res
+        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
+          registry := TrustedRegistry.toRuntimeRegistry tr } cf₁ o₁ := by
+    simpa [hdecl, himpl₀, himpl₁₀] using hrun₁
+  exact
+    ExternDeclBoundaryFRContract.of_spec
+      (ctx := ctx) (postExpr := postExpr) (res := res) (predSat := predSat)
+      (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
+      (d := entry.decl) (impl := entry.impl) entry.spec
+      hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+      o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrunEntry₀ hrunEntry₁
 
 namespace TrustedRegistryEntryMatchesFn
 
