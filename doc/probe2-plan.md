@@ -166,32 +166,63 @@ Implemented and compiling:
   single-run app proof and the two-run app proof.  Regular closure-body
   recursive calls consume the app proof's `hcanFnBody` / `hcanPfnBody`
   provenance hooks, while compatibility wrappers recover the old plain-IH API.
+- App-call providers in `FaultRobustnessProofs.lean` are now `CanUse`-indexed
+  as well.  The root-aware proof wrappers instantiate `CanUse current` as
+  `ExternDeclLift root current`, so extern call providers, declaration
+  providers, and closure-body recursive calls are all scoped to the same root
+  expression.
+- `FaultRobustnessProofs.lean` has a public populated-registry theorem:
+
+  ```lean
+  TypeSystemEnforcesFaultRobustness
+  ```
+
+  It proves `TypeSystemEnforcesFaultRobustness_spec_with_registry
+  (TrustedRegistry.toRuntimeRegistry tr) e s obs` from
+  `TrustedRegistryAgreesWithProgram e tr` plus a new explicit
+  `TrustedRegistryAppClosureProvenance e tr` assumption.  The implementation
+  theorem `TypeSystemEnforcesFaultRobustness_with_trustedRegistry` is retained
+  as a staging/helper wrapper under the public theorem.
+- The original empty-registry public statement is retained as
+  `TypeSystemEnforcesFaultRobustness_emptySpec`, and
+  `TypeSystemEnforcesFaultRobustness_emptyRegistry` still proves the
+  registry-relative empty instance.
+- `ExternDeclLift` and `TrustedRegistryAppClosureProvenance` live in
+  `ExternBoundary.lean`.  The provenance structure packages the remaining
+  app-call obligations: regular closure bodies in app closure lists lift back to
+  the root program; impure fn closure lists agree with the trusted registry;
+  regular impure extern-body members resolve to trusted entries; and pure pfn
+  closure lists agree with the trusted registry.
 
 Still true:
 
-- The populated-registry version of the top-level theorem is not proven yet.
-  The final destination is to update `TypeSystemEnforcesFaultRobustness` itself
-  to accept the populated runtime registry / trusted proof obligations; the
-  `_with_registry` bridge theorems are staging helpers.
+- The public theorem now has the populated-registry shape, but its app-call
+  provenance is still explicit.  The remaining target is to derive
+  `TrustedRegistryAppClosureProvenance e tr` from typechecking facts and trusted
+  registry agreement, then simplify the public assumptions accordingly.
 - `TypeSystemEnforcesFaultRobustness_step` remains the public empty-registry
   compatibility theorem.  The generalized proof core exists privately and must
-  be exposed through the populated trusted-registry theorem in Step 6.
-- The private step proof core still takes globally quantified extern-call
-  provider hypotheses (`hcallSingleFn`, `hcallSinglePfn`, `hfnLocal`,
-  `hpfnLocal`).  Declaration providers are now root-scoped, but app-call
-  providers are not yet derivable from a single
-  `TrustedRegistryAgreesWithProgram e tr` premise without additional typed
-  closure-list provenance.
-- The root-aware declaration wrappers currently require explicit
-  `hfnBody` / `hpfnBody` premises: a regular closure body found in an app
-  type-closure list must lift back to the root program.  Those premises are the
-  precise remaining provenance gap; they should be replaced by a typed-closure
-  provenance invariant rather than by a vague global trust assumption.
+  eventually be wrapped or renamed by the populated public theorem.
+- App-call providers are root-scoped but still not derived from typechecking
+  itself.  `TrustedRegistryAppClosureProvenance` is currently an explicit
+  theorem assumption; the remaining proof work is to derive that provenance from
+  typed closure-list construction/transport instead of asking callers to supply
+  it directly.
+- `TrustedRegistryAppClosureProvenance` is temporary scaffolding, not a final
+  public API.  Its current `fnClosures`, `pfnClosures`, and
+  `fnRegularExternBody` fields quantify over arbitrary `tcls` lists, which is
+  stronger than typing can honestly justify for a finite trusted registry.  The
+  next slice must re-index those fields by actual typechecking provenance, then
+  internalize them so the public theorem no longer exposes a separate `happ`
+  premise.
 
-Latest verification after root-aware declaration-provider threading and
-`WithExpr` app single-run/two-run recursion:
+Latest incremental verification after adding the trusted-registry theorem,
+app provenance wrapper, and public theorem API switch:
 
 - `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeds.
+
+Latest full verification from the preceding provider-threading slice:
+
 - `make lean-build-file FILE=LeanProofs/StepFRApp.lean` succeeds.
 - `lake build LeanProofs` succeeds.
 - `make test` passes 96/96.
@@ -352,18 +383,17 @@ through `ctxAfter`, `tagEnv.insert ... false` preserves it immediately, and
 `tagEnv.insert ... true` is discharged by contradicting `hmasked_none`.
 
 The remaining work is no longer a masked-spine, app-extern transport, or
-declaration-adapter problem.  It is expression-provenance wiring for the
-populated top-level theorem:
+declaration-adapter problem.  It is typed closure-list provenance wiring for
+the populated public theorem's final assumption shape:
 
-1. Expose the provider-parametric proof core for arbitrary
-   `registry`, instantiate it with `TrustedRegistry.toRuntimeRegistry tr`, and
-   add the public populated-registry theorem under explicit trusted-registry
-   agreement assumptions.  The implementation bridge is now
-   root-expression-specific, but the step proof core still needs the same
-   treatment.
+1. The provider-parametric proof core is registry-parametric and
+   root-expression-aware.  It is instantiated by the compiled staging theorem
+   `TypeSystemEnforcesFaultRobustness_with_trustedRegistry`, which targets
+   `TypeSystemEnforcesFaultRobustness_spec_with_registry
+   (TrustedRegistry.toRuntimeRegistry tr) e s obs`.
 
-2. Thread root-expression declaration provenance through the step proof core.
-   A minimal shape is a lift premise for the current expression:
+2. Root-expression declaration provenance is threaded through the step proof
+   core.  The lift shape is:
 
    ```lean
    ∀ {id d}, ExternDeclarationInProgram current id d →
@@ -376,14 +406,15 @@ populated top-level theorem:
    local immediate declaration witness to the root and consume
    `TrustedRegistryAgreesWithProgram root tr`.
 
-3. For impure regular-extern-body dispatch, add a precise resolver premise or
-   derivation that connects
+3. The populated theorem currently assumes `TrustedRegistryAppClosureProvenance`,
+   which packages the remaining closure-list facts.  The unresolved part is to
+   derive this provenance from typed closure-list construction and transport.
+   In particular, impure regular-extern-body dispatch must connect
    `FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) σcap ∈ tcls`
    to a trusted entry.  Closure-list extern agreement alone is insufficient for
-   this case.  If the current facts cannot recover an
-   `ExternDeclarationInProgram` witness, add a named typed-closure provenance
-   invariant and thread it explicitly rather than weakening
-   `TrustedRegistryAgreesWithProgram` into a vague global premise.
+   this case, so the proof must use a precise typed-closure provenance
+   invariant rather than weakening `TrustedRegistryAgreesWithProgram` into a
+   vague global premise.
 
 This remains proof-side only.  It does not change evaluation or typechecking.
 The populated top-level theorem will be relative to explicit trusted-registry
@@ -467,64 +498,72 @@ compatibility corollary.
 
 6. **Generalize the step theorem and bridge trusted agreement.**
 
-   Active focus.  The implementation bridge has been split so the top-level
+   Partially done.  The implementation bridge has been split so the top-level
    theorem only needs a step theorem for the target expression.  The step and
-   single-run proof cores are now root-expression aware for declaration
-   providers through `CanUse := ExternDeclLift root`.  The remaining work is to
-   discharge the app-call provider slots from trusted-registry agreement and
-   typed closure-list provenance, then use that root step theorem to update the
-   public `TypeSystemEnforcesFaultRobustness` theorem to the populated-registry
-   formulation.
+   single-run proof cores are root-expression aware for both declaration and
+   app-call providers through `CanUse := ExternDeclLift root`.  The public
+   populated-registry theorem is now:
+
+   ```lean
+   TypeSystemEnforcesFaultRobustness
+   ```
+
+   It proves the registry-relative spec for `TrustedRegistry.toRuntimeRegistry
+   tr` from:
 
    - `TrustedRegistryAgreesWithProgram e tr`;
-   - `TrustedRegistryAgreesWithFnTClosures` facts for executed impure extern
-     closure lists;
-   - `TrustedRegistryAgreesWithPFnTClosures` facts for executed pure extern
-     closure lists.
+   - `TrustedRegistryAppClosureProvenance e tr`.
 
-   The closure-list assumptions should be derived from typechecking facts where
-   possible, without weakening `TrustedRegistryAgreesWithProgram` into a vague
-   global premise.
+   The latter packages the closure-list agreement and regular-body provenance
+   facts needed to build the single-run and two-run app-call providers.  This
+   means the provider contract shape is now validated, but the provenance is
+   still an explicit staging assumption rather than a fact derived from
+   typechecking.
 
-   Current blocker: declaration providers are root-scoped, but app-call
-   providers are still global:
+   Precision warning: the current staging structure is intentionally too strong.
+   Its `fnClosures`, `pfnClosures`, and `fnRegularExternBody` fields quantify
+   over arbitrary `tcls` lists.  That is sound as a theorem precondition, but it
+   is close to the forbidden "registry agrees with every imaginable closure
+   list" shape and is not a dischargeable final API for ordinary finite trusted
+   registries.  Treat this as a temporary bridge only.
 
-   - `ExternCallSingleFnProvider registry`;
-   - `ExternCallSinglePfnProvider registry`;
-   - local two-run `TrustedRegistryAgreesWithProgramLocal` /
-     `TrustedRegistryAgreesWithPfnProgramLocal` providers.
-
-   The root-aware wrappers also need explicit `hfnBody` / `hpfnBody` closure
-   body lift premises because the current app proof API only exposes
-   `FnTClosure.regular ... ∈ tcls` / `PFnTClosure.regular ... ∈ tcls`, not the
-   typechecking provenance that explains why that closure-list member belongs
-   to the root program.  This is the precise remaining provenance gap.
+   Current blocker: derive `TrustedRegistryAppClosureProvenance e tr` from
+   typed closure-list construction/transport.  The app proof API still sees
+   closure-list membership as `FnTClosure.regular ... ∈ tcls` /
+   `PFnTClosure.regular ... ∈ tcls`; it does not yet expose the typechecking
+   provenance explaining why a regular closure body belongs to the root program
+   or why a regular impure extern-body member resolves to a trusted entry.
 
    Suggested fix:
 
-   1. Add a typed closure-list provenance predicate for type results / closure
-      lists.  It should state both:
-      - every regular closure body in the list has an
-        `ExternDeclLift root body` witness;
+   1. High-risk first: replace the universal-over-`tcls` staging assumption with
+      a typed closure-list provenance predicate for type results / closure
+      lists, or prove that the existing typechecking data already implies the
+      needed app provenance.  The predicate must state both:
+      - every regular closure body in the list has an `ExternDeclLift root body`
+        witness;
       - every extern closure member, and every regular extern-body member, can
         be resolved against the trusted registry without assuming global
         agreement for arbitrary closure lists.
    2. Prove the provenance predicate is produced/preserved by typechecking for
       arrow/parrow closure lists and transported through the app
       `apply*Closure` / join machinery.
-   3. Use that provenance to build the single-run app-call providers and local
-      two-run app-call providers at each app proof call site, especially the
-      impure
+   3. Use that provenance to build `TrustedRegistryAppClosureProvenance` for the
+      top-level expression, especially the impure
       `FnTClosure.regular x (Expr.externFn ...) ...` case.  The provenance must
       survive closure-list joins/merges and function/pfunction body typing.
-   4. Remove the explicit `hfnBody` / `hpfnBody` wrapper assumptions once the
-      closure-body lift facts are available from the typed closure provenance.
-   5. Retry the public top-level theorem only after the provider assumptions can
-      be discharged from root program agreement plus closure-list provenance.
+   4. Once the provenance is derivable, reduce the public assumptions so
+      callers supply only the populated runtime/trusted registry obligations.
+      The final public theorem should not expose
+      `TrustedRegistryAppClosureProvenance e tr`; it should derive app-call
+      provenance internally from `TrustedRegistryAgreesWithProgram e tr` plus
+      typing facts, with the old empty-registry theorem retained as a
+      compatibility corollary.
 
-   Latest finding: the strong-induction callback problem for declarations is
-   resolved through the `CanUse` / `WithExpr` IH variants.  The remaining proof
-   edit is app-call provider construction from typed closure-list provenance.
+   Latest finding: the strong-induction callback problem for declarations and
+   app calls is resolved through the `CanUse` / `WithExpr` IH variants.  The
+   remaining proof edit is deriving app-call closure provenance from typing
+   rather than assuming it at the staging theorem boundary.
 
 7. **Preserve compatibility and verify.**
 
@@ -543,6 +582,10 @@ compatibility corollary.
 - Existing empty-registry theorem still compiles.
 - New populated-registry theorem is explicit about its trusted-registry
   assumptions.
+- `TrustedRegistryAppClosureProvenance` is not exposed as a final public theorem
+  premise.  If the structure remains internally, its closure-list fields are
+  indexed by actual typechecking provenance rather than universally quantified
+  over arbitrary `tcls`.
 
 ## Hard Stops
 

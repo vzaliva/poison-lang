@@ -973,6 +973,14 @@ theorem id_eq
 
 end ExternDeclarationInProgram
 
+/-- Every extern declaration visible from `current` is also visible from
+    `root`.  This is the root-program provenance relation used when local
+    step proofs consume trusted-registry agreement for the top-level program. -/
+def ExternDeclLift (root current : Expr) : Prop :=
+  ∀ {id : ExternId} {d : ExternDeclaration},
+    ExternDeclarationInProgram current id d →
+    ExternDeclarationInProgram root id d
+
 /-- Trusted entries may only implement declarations with the same id and
     declaration shape as the program. -/
 def TrustedRegistryAgreesWithProgram (e : Expr) (tr : TrustedRegistry) : Prop :=
@@ -1398,6 +1406,43 @@ def TrustedRegistryAgreesWithPFnTClosures
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
       TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec
+
+/-- Root-scoped provenance needed to turn app closure-list membership into
+    trusted extern-call providers.  This is intentionally separate from the
+    boundary contract: concrete extern boundaries stay body-local, while the
+    app proof supplies the source/typechecking provenance that says which
+    registry entries can be used. -/
+structure TrustedRegistryAppClosureProvenance
+    (root : Expr) (tr : TrustedRegistry) : Prop where
+  fnBody :
+    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
+      {body : Expr} {σcap : CapturedVarEnv},
+      ExternDeclLift root (Expr.app e1 e2) →
+      FnTClosure.regular x body σcap ∈ tcls →
+      ExternDeclLift root body
+  pfnBody :
+    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
+      {body : PExpr} {σcap : CapturedVarEnv},
+      ExternDeclLift root (Expr.app e1 e2) →
+      PFnTClosure.regular x body σcap ∈ tcls →
+      ExternDeclLift root (PExpr.toExpr body)
+  fnClosures :
+    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {argTyp : Typ},
+      ExternDeclLift root (Expr.app e1 e2) →
+      TrustedRegistryAgreesWithFnTClosures tr argTyp tcls
+  fnRegularExternBody :
+    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {argTyp : Typ}
+      {id : ExternId} {x y : Name} {retSpec : ExternReturn}
+      {effects : List Effect} {capturedEnv : CapturedVarEnv},
+      ExternDeclLift root (Expr.app e1 e2) →
+      FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) capturedEnv ∈ tcls →
+      ∃ entry,
+        TrustedRegistry.lookup? tr id = some entry ∧
+        TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects
+  pfnClosures :
+    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {argTyp : Typ},
+      ExternDeclLift root (Expr.app e1 e2) →
+      TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls
 
 theorem TrustedRegistryAgreesWithFnTClosures.resolve
     {tr : TrustedRegistry} {argTyp : Typ} {tcls : List FnTClosure}
