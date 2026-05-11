@@ -83,7 +83,7 @@ Verification baseline:
   Existing `sorry` warnings in `LeanProofs/SemanticsProperties.lean` remain
   pre-existing.
 
-## Active Blocker
+## Active Blocker Resolution
 
 The remaining proof work is to derive `TrustedRegistryAppClosureProvenance e tr`
 from typed closure-list construction rather than asking callers to supply it.
@@ -116,25 +116,42 @@ and `root` contains no extern declaration syntactically.  So the `fnBody`
 field of `TrustedRegistryAppClosureProvenance root tr` cannot be derived from
 root typechecking and `TrustedRegistryAgreesWithProgram root tr` alone.
 
-Three sound options:
+Chosen direction: trust should range over extern declarations reachable from
+the initial typed configuration, not only over declarations syntactically in
+the root expression.  This is a proof/spec trust-domain extension, not a
+language semantics change: evaluation and typechecking are unchanged.
 
-1. **First-order initial context.**  Strengthen the public spec/context
-   well-formedness so every initial `ctx.varEnv` binding is first-order, or at
-   least every function-typed closure in the initial context is excluded.
-   Closest to the existing `wfInputSpec` first-order design; changes the
-   `ctxMatchesInputSpec` surface.
-2. **Initial-context closure provenance premise.**  Keep the current context
-   generality, but add a premise that every closure body and extern member
-   stored in `ctx.varEnv` is lifted to the trusted root/program set.
-   Replaces `TrustedRegistryAppClosureProvenance` with a more local and
-   honest initial-context provenance premise.
-3. **Extend the trusted-program surface.**  Extend `ExternDeclarationInProgram`
-   so the trusted "program" includes initial closure bodies, not only the root
-   expression syntax.  Broader; should be treated as a language/spec design
-   change.
+Add a reachable-extern predicate alongside the existing AST-only
+`ExternDeclarationInProgram`, rather than overloading that name:
 
-Option 1 aligns with the existing first-order input-spec design and is the
-default direction unless option 2 is needed for downstream callers.
+```lean
+ExternDeclarationReachableFromContext root ctx id d
+```
+
+The intended domain is:
+
+- extern declarations in `root`'s AST, using the existing
+  `ExternDeclarationInProgram root id d`;
+- extern declarations in every regular closure body listed in function or
+  pfunction closure lists in `ctx.varEnv`;
+- direct extern closure members in those closure lists;
+- extern declarations in captured type environments of those closure members,
+  recursively;
+- nested extern returns inside `ExternReturn`.
+
+Then the populated theorem should require trusted agreement for this reachable
+domain at each initial context:
+
+```lean
+TrustedRegistryAgreesWithReachable root ctx tr
+```
+
+or equivalently a context-indexed variant of
+`TrustedRegistryAgreesWithProgram`.  The important point is that `ctx` must be
+in scope; `root` alone cannot determine hidden initial closure bodies.  With
+that premise, `TrustedRegistryAppClosureProvenance` should become internally
+derivable from typechecking facts and reachable-extern trust, and should not
+remain in the public API.
 
 ## Remaining Plan
 
@@ -147,39 +164,31 @@ populated-registry theorem `TypeSystemEnforcesFaultRobustness` is in place.
 `TrustedRegistryAppClosureProvenance` is typing-indexed and produces
 program-membership evidence.  Remaining work:
 
-1. Resolve the initial-context spec blocker per one of the three options
-   above.
-2. Prove typed closure-list provenance lemmas, or prove the existing
+1. Define the reachable-extern trust domain for an initial context:
+   `ExternDeclarationReachableFromContext root ctx id d` and
+   `TrustedRegistryAgreesWithReachable root ctx tr`.  Keep the current
+   `ExternDeclarationInProgram` predicate as the AST-only component.
+2. Prove reachability/provenance lemmas for type-level closure structures:
+   closure bodies, direct extern closure members, nested extern returns, and
+   captured type environments.  These lemmas should expose
+   `ExternDeclarationReachableFromContext root ctx id d` facts without
+   weakening to global registry coverage.
+3. Prove typed closure-list provenance lemmas, or prove the existing
    typechecking data already implies the needed
    `TrustedRegistryAppClosureProvenance` fields:
    - every regular closure body in the list has an
-     `ExternDeclLift root body` witness;
+     appropriate reachable-context body provenance witness;
    - every extern closure member, and every regular extern-body member, has
-     precise root-program declaration membership evidence.
-3. Prove the provenance predicate is produced/preserved by typechecking for
+     precise reachable-context declaration membership evidence.
+4. Prove the provenance predicate is produced/preserved by typechecking for
    arrow/parrow closure lists and transported through the app
    `apply*Closure` / join machinery.
-4. Reduce the public assumptions so the final public theorem no longer
-   exposes `TrustedRegistryAppClosureProvenance e tr`.  The exact final
-   assumption shape depends on which Active Blocker option is chosen:
-   - **Under Option 1 (first-order initial context):** callers supply only
-     the populated runtime/trusted registry obligations
-     (`TrustedRegistryAgreesWithProgram e tr`).  App-call provenance is
-     derived internally from typing facts plus the strengthened
-     `ctxMatchesInputSpec`.
-   - **Under Option 2 (initial-context closure provenance premise):**
-     callers additionally supply a local initial-context closure provenance
-     premise stating that closure bodies and extern members stored in the
-     initial `ctx.varEnv` lift to the trusted root/program set.  This is
-     a narrower premise than the current `TrustedRegistryAppClosureProvenance`,
-     and the rest of the app-call provenance is still derived internally
-     from typing facts.
-   - **Under Option 3 (extend trusted-program surface):** the public
-     assumptions match Option 1 in shape, but the meaning of "in the
-     program" widens to include initial closure bodies — a language/spec
-     design change rather than a proof-side change.
-   In all cases, the old empty-registry theorem is retained as a
-   compatibility corollary.
+5. Reduce the public assumptions so the final public theorem no longer
+   exposes `TrustedRegistryAppClosureProvenance e tr`.  The public trusted
+   premise should be the context-indexed reachable-domain agreement
+   (`TrustedRegistryAgreesWithReachable e ctx tr`, or an equivalent
+   higher-rank premise over all initial contexts admitted by the spec), with
+   the old empty-registry theorem retained as the compatibility corollary.
 
 ### 7. Preserve compatibility and verify
 
@@ -219,6 +228,9 @@ compatibility corollary.  Run `lake build LeanProofs`, `make test`,
   requires weakening `TrustedRegistryAgreesWithProgram` into a global
   "all extern ids are trusted" premise instead of adding a precise provenance
   invariant.
+- Stop if the reachable-extern trust domain cannot be stated with the initial
+  `ctx` in scope and must instead quantify over arbitrary hidden closure
+  bodies independent of the initial context.
 - Stop if a required `ExternBoundarySpec` field lacks enough payload to
   reconstruct the body post needed by the app transport helper.
 - Stop if direct `FnTClosure.extern` effect typing remains under caller
