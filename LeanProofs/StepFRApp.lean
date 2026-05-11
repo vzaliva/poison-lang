@@ -7673,6 +7673,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (hcan2 : CanUse e2)
   (hcanFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls → CanUse body)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
@@ -7703,6 +7704,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm
       (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded
+  have happTyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
+    { appFuel := Nat.succ (Nat.succ fuel')
+      fnFuel := fuel'
+      result2 := result2
+      result1 := result1
+      st1 := st1
+      st2 := st2
+      p := p
+      app_typed := htc
+      arg_typed := htc2'
+      fn_typed := htc1'
+      result_arrow := hetyp1 }
   refine ⟨?_, ?_⟩
   · exact
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
@@ -7939,7 +7952,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         have hTmBoundedBody : TagMeaningBounded tm1 bodyCtx.nextTag := by
           simpa [bodyCtx] using hTmBounded1.mono hcursorTagA
         have hSingle_body :=
-          singleIH fuelBody hfuel_lt body bodyCtx (hcanFnBody hσcap_mem)
+          singleIH fuelBody hfuel_lt body bodyCtx (hcanFnBody happTyped hσcap_mem)
             hTmBody hTmBoundedBody result3 htcBody'
         have hpc_body : bodyCtx.pc = true := by
           simp [bodyCtx, hpc, joinPoison]
@@ -8838,6 +8851,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (hcanPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
       {σcap : List (Name × QTyp)},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
@@ -8865,6 +8879,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm
       (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded
+  have happTyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
+    { appFuel := Nat.succ (Nat.succ fuel')
+      fnFuel := fuel'
+      result2 := result2
+      result1 := result1
+      st1 := st1
+      st2 := st2
+      p := p
+      app_typed := htc
+      arg_typed := htc2'
+      fn_typed := htc1'
+      result_parrow := hetyp1 }
   refine ⟨?_, ?_⟩
   · exact
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
@@ -9234,7 +9260,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           simpa [bodyCtx] using hTmBounded1.mono hcursorTagA
         have hSingle_body :=
           singleIH fuelBody hfuel_lt body bodyCtx
-            (by simpa [hbody_eq] using hcanPfnBody hσcap_mem)
+            (by simpa [hbody_eq] using hcanPfnBody happTyped hσcap_mem)
             hTmBody hTmBoundedBody result3 htcBody_body
         have hpc_body : bodyCtx.pc = true := by
           simp [bodyCtx, hpc, joinPoison]
@@ -10004,10 +10030,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
   (hcanFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls → CanUse body)
   (hcanPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
       {σcap : List (Name × QTyp)},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
@@ -10015,10 +10043,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
       masked CtxCons ValCons)
   (extFnSpec :
     ∀ {tcls : List FnTClosure},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls
         (registry := registry))
   (extPfnSpec :
     ∀ {tcls : List PFnTClosure},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls
         (registry := registry))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
@@ -10039,6 +10069,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   | inl h_arrow =>
       obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1, _hnpure,
         _hnempty, _hsub, hmap, heq_results, h_join⟩ := h_arrow
+      have hfnTyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
+        { appFuel := Nat.succ (Nat.succ fuel')
+          fnFuel := fuel'
+          result2 := result2
+          result1 := result1
+          st1 := st1
+          st2 := st2
+          p := p
+          app_typed := htc
+          arg_typed := htc2'
+          fn_typed := htc1'
+          result_arrow := hetyp1 }
       exact
         stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm registry
@@ -10046,15 +10088,28 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           ctxMember ctxJoinMember valBodyResult valJoinMember
           ctxConsOfRegular valConsOfRegular ctxConsToRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
-          CanUse hcan1 hcan2 (fun {tcls} {x} {body} {σcap} hmem =>
-            hcanFnBody (tcls := tcls) (x := x) (body := body) (σcap := σcap) hmem)
+          CanUse hcan1 hcan2 (fun {tcls} {x} {body} {σcap} htyped hmem =>
+            hcanFnBody (tcls := tcls) (x := x) (body := body) (σcap := σcap)
+              htyped hmem)
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest
-          (extFnSpec (tcls := tcls))
+          (extFnSpec (tcls := tcls) hfnTyped)
           hetyp1 hmap heq_results h_join htc
   | inr h_parrow =>
       obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1,
         _hnempty, _hsub, hmap, heq_results, h_join⟩ := h_parrow
+      have hpfnTyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
+        { appFuel := Nat.succ (Nat.succ fuel')
+          fnFuel := fuel'
+          result2 := result2
+          result1 := result1
+          st1 := st1
+          st2 := st2
+          p := p
+          app_typed := htc
+          arg_typed := htc2'
+          fn_typed := htc1'
+          result_parrow := hetyp1 }
       exact
         stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           masked CtxCons ValCons ctxᵢ predSat tm registry
@@ -10062,11 +10117,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           ctxMember ctxJoinMember valBodyResult valJoinMember
           ctxConsOfRegular valConsOfRegular ctxConsToRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
-          CanUse hcan1 hcan2 (fun {tcls} {x} {pbody} {σcap} hmem =>
-            hcanPfnBody (tcls := tcls) (x := x) (pbody := pbody) (σcap := σcap) hmem)
+          CanUse hcan1 hcan2 (fun {tcls} {x} {pbody} {σcap} htyped hmem =>
+            hcanPfnBody (tcls := tcls) (x := x) (pbody := pbody) (σcap := σcap)
+              htyped hmem)
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest
-          (extPfnSpec (tcls := tcls))
+          (extPfnSpec (tcls := tcls) hpfnTyped)
           hetyp1 hmap heq_results h_join htc
 
 lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
@@ -10078,10 +10134,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
   (hcanFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls → CanUse body)
   (hcanPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
       {σcap : List (Name × QTyp)},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
@@ -10091,12 +10149,14 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
   (extFnSpec :
     ∀ {tcls : List FnTClosure},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       ExternCallBoundarySingleFnContract masked
         (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
         (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
         ctxᵢ res e1 e2 tcls (registry := registry))
   (extPfnSpec :
     ∀ {tcls : List PFnTClosure},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       ExternCallBoundarySinglePfnContract masked
         (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
         (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
@@ -10146,12 +10206,14 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v))
   (extFnSpec :
     ∀ {tcls : List FnTClosure},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       ExternCallBoundarySingleFnContract masked
         (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
         (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
         ctxᵢ res e1 e2 tcls (registry := registry))
   (extPfnSpec :
     ∀ {tcls : List PFnTClosure},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       ExternCallBoundarySinglePfnContract masked
         (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
         (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
@@ -10188,9 +10250,11 @@ lemma stepFR_app_with_expr_proof
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
   (hcanFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls → CanUse body)
   (hcanPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr} {σcap : List (Name × QTyp)},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
   (IH :
     StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
@@ -10207,10 +10271,12 @@ lemma stepFR_app_with_expr_proof
       entryKey id entry → ExternCallBoundaryFR entry.decl entry.impl)
   (_hfnLocal :
     ∀ {tcls : List FnTClosure},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls
         (entryKey := entryKey) (registry := registry))
   (_hpfnLocal :
     ∀ {tcls : List PFnTClosure},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls
         (entryKey := entryKey) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
@@ -10231,6 +10297,18 @@ lemma stepFR_app_with_expr_proof
     have htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1 := by
       simp [ctxAfter] at htc1 ⊢
       exact htc1
+    have hfnTyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
+      { appFuel := Nat.succ (Nat.succ fuel')
+        fnFuel := fuel'
+        result2 := result2
+        result1 := result1
+        st1 := st1
+        st2 := st2
+        p := p
+        app_typed := htc
+        arg_typed := htc2'
+        fn_typed := htc1'
+        result_arrow := hetyp1 }
     intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
@@ -10943,7 +11021,7 @@ lemma stepFR_app_with_expr_proof
                 · simpa [VarEnv.update] using wfVarEnv.cons x₀ v₂₀ env₀ hv₂₀_wf henv₀_wf
               have hSingle_bodyA₀ :=
                 singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀
-                  (hcanFnBody hσcapA₀_mem) hTmBodyA₀
+                  (hcanFnBody hfnTyped hσcapA₀_mem) hTmBodyA₀
                   (by simpa [bodyCtxA₀] using
                     (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀)
                   result3A₀ htcBodyA₀'
@@ -11149,7 +11227,7 @@ lemma stepFR_app_with_expr_proof
                 · simpa [VarEnv.update] using wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf
               have hSingle_bodyA₁ :=
                 singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁
-                  (hcanFnBody hσcapA₁_mem) hTmBodyA₁
+                  (hcanFnBody hfnTyped hσcapA₁_mem) hTmBodyA₁
                   (by simpa [bodyCtxA₁] using
                     (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁)
                   result3A₁ htcBodyA₁'
@@ -11731,7 +11809,7 @@ lemma stepFR_app_with_expr_proof
                     BoundaryTagMeaningPost.bounded hcanon1
                   simpa [bodyCtx, ctxAfter] using hbase.mono hcursorSharedTag
                 have hIH_body :=
-                  IH fuelBody hfuel_lt body₀ bodyCtx (hcanFnBody hmem) hTmBody
+                  IH fuelBody hfuel_lt body₀ bodyCtx (hcanFnBody hfnTyped hmem) hTmBody
                     htagBoundedBody result3Shared htcBody'
                 have hwfBodyCtx : wfTypeContext bodyCtx := by
                   simp only [bodyCtx, wfTypeContext]
@@ -12862,7 +12940,7 @@ lemma stepFR_app_with_expr_proof
                 ⟨cursorU₀, fuelBodyU₀, firstU₀, result3U₀, hcursorTagU₀,
                   hcursorLocU₀, hfirstU₀_mem, _happlyU₀, hfuelU₀,
                   htc_bodyU₀, _hsubU₀, hfirstU₀_eq⟩
-              have hproviders := _hfnLocal (tcls := tcls)
+              have hproviders := _hfnLocal hfnTyped
               rcases
                 stepFRApp_externClosureBodyStart_regular predSat tm
                   ctxᵢ result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls
@@ -13228,7 +13306,7 @@ lemma stepFR_app_with_expr_proof
                 exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               have hSingle_bodyU₀ :=
                 singleIH fuelBodyU₀ hfuel_ltU₀ body₀ bodyCtxU₀
-                  (hcanFnBody hσcap₀_mem) hTmBodyU₀
+                  (hcanFnBody hfnTyped hσcap₀_mem) hTmBodyU₀
                   hTmBoundedBodyU₀ result3U₀ htcBodyU₀'
               have hpc_bodyU₀ : bodyCtxU₀.pc = true := by
                 cases p1 <;> cases p <;> cases ctxᵢ.pc <;>
@@ -13511,7 +13589,7 @@ lemma stepFR_app_with_expr_proof
                     (results := results) (first := first) (rest := rest) (res := res)
                     hmap heq_results h_join
                 simpa [ctxAfter] using hmono
-              have hproviders := _hfnLocal (tcls := tcls)
+              have hproviders := _hfnLocal hfnTyped
               rcases
                 stepFRApp_externClosureBodyStart_regular predSat tm
                   ctxᵢ result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls
@@ -13936,7 +14014,7 @@ lemma stepFR_app_with_expr_proof
                     hcwrBody hwfcfg_body_initE₀ hpcBody
               have hSingle_bodyU₁ :=
                 singleIH fuelBodyU₁ hfuel_ltU₁ body₁ bodyCtxU₁
-                  (hcanFnBody hσcap₁_mem) hTmBodyU₁
+                  (hcanFnBody hfnTyped hσcap₁_mem) hTmBodyU₁
                   hTmBoundedBodyU₁ result3U₁ htcBodyU₁'
               have hreg_c₁₁ : c₁₁.registry = registry := by
                 have h2 : c₂'₁.registry = registry := by
@@ -14157,7 +14235,7 @@ lemma stepFR_app_with_expr_proof
                     (results := results) (first := first) (rest := rest) (res := res)
                     hmap heq_results h_join
                 simpa [ctxAfter] using hmono
-              have hproviders := _hfnLocal (tcls := tcls)
+              have hproviders := _hfnLocal hfnTyped
               rcases
                 stepFRApp_externClosureBodyStart_regular predSat tm
                   ctxᵢ result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls
@@ -15220,7 +15298,7 @@ lemma stepFR_app_with_expr_proof
                         hθ₀1wf hθ₁1wf hwfBodyCtx htagBoundedBody hricBody₀ hricBody₁
                         htagR_body hcwrBody₀ hcwrBody₁ hagreeBody
                         hwfcfg_body_init₀ hwfcfg_body_init₁
-                  have hproviders := _hfnLocal (tcls := tcls)
+                  have hproviders := _hfnLocal hfnTyped
                   have hrunProvider₀ :
                       ∃ entry : TrustedExternEntry,
                         entryKey id₀ entry ∧
@@ -15476,6 +15554,18 @@ lemma stepFR_app_with_expr_proof
     have htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1 := by
       simp [ctxAfter] at htc1 ⊢
       exact htc1
+    have hpfnTyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
+      { appFuel := Nat.succ (Nat.succ fuel')
+        fnFuel := fuel'
+        result2 := result2
+        result1 := result1
+        st1 := st1
+        st2 := st2
+        p := p
+        app_typed := htc
+        arg_typed := htc2'
+        fn_typed := htc1'
+        result_parrow := hetyp1 }
     intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
@@ -16336,7 +16426,7 @@ lemma stepFR_app_with_expr_proof
             have hSingle_bodyA₀ :=
               singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀
                 (by
-                  have hcan := hcanPfnBody hσcapA₀_mem
+                  have hcan := hcanPfnBody hpfnTyped hσcapA₀_mem
                   simpa [PExpr_toExpr_of_toPExpr?_some body₀ pbodyA₀ htoPExprA₀] using hcan)
                 hTmBodyA₀
                 (by simpa [bodyCtxA₀] using
@@ -16551,7 +16641,7 @@ lemma stepFR_app_with_expr_proof
             have hSingle_bodyA₁ :=
               singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁
                 (by
-                  have hcan := hcanPfnBody hσcapA₁_mem
+                  have hcan := hcanPfnBody hpfnTyped hσcapA₁_mem
                   simpa [PExpr_toExpr_of_toPExpr?_some body₁ pbodyA₁ htoPExprA₁] using hcan)
                 hTmBodyA₁
                 (by simpa [bodyCtxA₁] using
@@ -17110,7 +17200,8 @@ lemma stepFR_app_with_expr_proof
                       predTagsBoundedInMemEnv_mono
                         (by simpa [ctxAfter] using hb_predM1) hcursorSharedTag
               have hIH_body :=
-                IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx (hcanPfnBody hmem)
+                IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx
+                  (hcanPfnBody hpfnTyped hmem)
                   hTmBody htagBoundedBody result3Shared htcBody'
               have hTmBoundedBody : TagMeaningBounded tm1 bodyCtx.nextTag := by
                 have hbase : TagMeaningBounded tm1 result1.nextTag' :=
@@ -18338,7 +18429,7 @@ lemma stepFR_app_with_expr_proof
                 ⟨cursorU₀, fuelBodyU₀, firstU₀, result3U₀, hcursorTagU₀,
                   hcursorLocU₀, hfirstU₀_mem, _happlyU₀, hfuelU₀,
                   htc_bodyU₀, _hsubU₀, hfirstU₀_eq⟩
-              have hproviders := _hpfnLocal (tcls := tcls)
+              have hproviders := _hpfnLocal hpfnTyped
               rcases
                 stepFRApp_externPClosureBodyStart_regular predSat tm
                   ctxᵢ result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls
@@ -18640,7 +18731,7 @@ lemma stepFR_app_with_expr_proof
                 exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               have hSingle_bodyU₀ :=
                 singleIH fuelBodyU₀ hfuel_ltU₀ (PExpr.toExpr pbody₀) bodyCtxU₀
-                  (hcanPfnBody hsource₀) hTmBodyU₀
+                  (hcanPfnBody hpfnTyped hsource₀) hTmBodyU₀
                   hTmBoundedBodyU₀ result3U₀ htcBodyU₀'
               have hpc_bodyU₀ : bodyCtxU₀.pc = true := by
                 cases p1 <;> cases p <;> cases ctxᵢ.pc <;>
@@ -18938,7 +19029,7 @@ lemma stepFR_app_with_expr_proof
                     (results := results) (first := first) (rest := rest) (res := res)
                     hmap heq_results h_join
                 simpa [ctxAfter] using hmono
-              have hproviders := _hpfnLocal (tcls := tcls)
+              have hproviders := _hpfnLocal hpfnTyped
               rcases
                 stepFRApp_externPClosureBodyStart_regular predSat tm
                   ctxᵢ result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls
@@ -19299,7 +19390,7 @@ lemma stepFR_app_with_expr_proof
                     hcwrBody hwfcfg_body_initE₀ hpcBody
               have hSingle_bodyU₁ :=
                 singleIH fuelBodyU₁ hfuel_ltU₁ (PExpr.toExpr pbody₁) bodyCtxU₁
-                  (hcanPfnBody hsource₁) hTmBodyU₁
+                  (hcanPfnBody hpfnTyped hsource₁) hTmBodyU₁
                   hTmBoundedBodyU₁ result3U₁ htcBodyU₁'
               have hreg_c₁₁ : c₁₁.registry = registry := by
                 have h2 : c₂'₁.registry = registry := by
@@ -19542,7 +19633,7 @@ lemma stepFR_app_with_expr_proof
                     (results := results) (first := first) (rest := rest) (res := res)
                     hmap heq_results h_join
                 simpa [ctxAfter] using hmono
-              have hproviders := _hpfnLocal (tcls := tcls)
+              have hproviders := _hpfnLocal hpfnTyped
               rcases
                 stepFRApp_externPClosureBodyStart_regular predSat tm
                   ctxᵢ result2 result1 etyp2 p2 pred2 st1 st2 p p1 tcls
@@ -20616,7 +20707,7 @@ lemma stepFR_app_with_expr_proof
                         hθ₀1wf hθ₁1wf hwfBodyCtx htagBoundedBody hricBody₀ hricBody₁
                         htagR_body hcwrBody₀ hcwrBody₁ hagreeBody
                         hwfcfg_body_init₀ hwfcfg_body_init₁
-                  have hproviders := _hpfnLocal (tcls := tcls)
+                  have hproviders := _hpfnLocal hpfnTyped
                   have hrunProvider₀ :
                       ∃ entry : TrustedExternEntry,
                         entryKey id₀ entry ∧
@@ -20811,10 +20902,12 @@ lemma stepFR_app
       entryKey id entry → ExternCallBoundaryFR entry.decl entry.impl)
   (_hfnLocal :
     ∀ {tcls : List FnTClosure},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls
         (entryKey := entryKey) (registry := registry))
   (_hpfnLocal :
     ∀ {tcls : List PFnTClosure},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls
         (entryKey := entryKey) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
@@ -20823,8 +20916,8 @@ lemma stepFR_app
     stepFR_app_with_expr_proof
       ctxᵢ predSat tm registry e1 e2 fuel' res
       (fun _ => True) trivial trivial
-      (fun {_tcls} {_x} {_body} {_σcap} _ => trivial)
-      (fun {_tcls} {_x} {_pbody} {_σcap} _ => trivial)
+      (fun {_tcls} {_x} {_body} {_σcap} _ _ => trivial)
+      (fun {_tcls} {_x} {_pbody} {_σcap} _ _ => trivial)
       (StepFR_IH_WithExpr_of_plain
         (registry := registry)
         predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH)

@@ -192,7 +192,10 @@ Implemented and compiling:
   app-call obligations: regular closure bodies in app closure lists lift back to
   the root program; impure fn closure lists agree with the trusted registry;
   regular impure extern-body members resolve to trusted entries; and pure pfn
-  closure lists agree with the trusted registry.
+  closure lists agree with the trusted registry.  These fields are now indexed
+  by `AppFnClosureListFromTypecheck` / `AppPfnClosureListFromTypecheck`, so the
+  trusted-registry obligations are tied to closure lists actually produced by
+  app typechecking rather than to arbitrary imagined `tcls` lists.
 
 Still true:
 
@@ -209,17 +212,17 @@ Still true:
   typed closure-list construction/transport instead of asking callers to supply
   it directly.
 - `TrustedRegistryAppClosureProvenance` is temporary scaffolding, not a final
-  public API.  Its current `fnClosures`, `pfnClosures`, and
-  `fnRegularExternBody` fields quantify over arbitrary `tcls` lists, which is
-  stronger than typing can honestly justify for a finite trusted registry.  The
-  next slice must re-index those fields by actual typechecking provenance, then
-  internalize them so the public theorem no longer exposes a separate `happ`
-  premise.
+  public API.  The universal-over-`tcls` shape has been removed: app closure
+  agreement fields now require typed app closure-list provenance.  The next
+  slice is to internalize that provenance so the public theorem no longer
+  exposes a separate `happ` premise.
 
-Latest incremental verification after adding the trusted-registry theorem,
-app provenance wrapper, and public theorem API switch:
+Latest incremental verification after re-indexing app provenance by typed app
+closure-list witnesses:
 
 - `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeds.
+- `git diff --check` is clean.
+- `scripts/sorry-count.py --no-build` reports no `sorry` / `axiom` delta.
 
 Latest full verification from the preceding provider-threading slice:
 
@@ -520,36 +523,38 @@ compatibility corollary.
    still an explicit staging assumption rather than a fact derived from
    typechecking.
 
-   Precision warning: the current staging structure is intentionally too strong.
-   Its `fnClosures`, `pfnClosures`, and `fnRegularExternBody` fields quantify
-   over arbitrary `tcls` lists.  That is sound as a theorem precondition, but it
-   is close to the forbidden "registry agrees with every imaginable closure
-   list" shape and is not a dischargeable final API for ordinary finite trusted
-   registries.  Treat this as a temporary bridge only.
+   The precision warning from the previous slice has been addressed at the
+   contract boundary.  `TrustedRegistryAppClosureProvenance.fnClosures`,
+   `.pfnClosures`, and `.fnRegularExternBody` no longer quantify over arbitrary
+   `tcls` lists; each field now requires an
+   `AppFnClosureListFromTypecheck` / `AppPfnClosureListFromTypecheck` witness
+   showing that the closure list came from typechecking the concrete app.
 
-   Current blocker: derive `TrustedRegistryAppClosureProvenance e tr` from
-   typed closure-list construction/transport.  The app proof API still sees
-   closure-list membership as `FnTClosure.regular ... ∈ tcls` /
-   `PFnTClosure.regular ... ∈ tcls`; it does not yet expose the typechecking
-   provenance explaining why a regular closure body belongs to the root program
-   or why a regular impure extern-body member resolves to a trusted entry.
+   Current blocker: derive the now typechecking-indexed
+   `TrustedRegistryAppClosureProvenance e tr` instead of assuming it.  The
+   remaining proof must show that typed closure-list construction/transport
+   supplies the body-lift and trusted-lookup facts for every app closure list
+   reachable from the root expression, including the impure
+   `FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) σcap ∈ tcls`
+   case.
 
    Suggested fix:
 
-   1. High-risk first: replace the universal-over-`tcls` staging assumption with
-      a typed closure-list provenance predicate for type results / closure
+   1. Prove typed closure-list provenance lemmas for type results / closure
       lists, or prove that the existing typechecking data already implies the
-      needed app provenance.  The predicate must state both:
+      needed `TrustedRegistryAppClosureProvenance` fields.  The provenance must
+      state both:
       - every regular closure body in the list has an `ExternDeclLift root body`
         witness;
       - every extern closure member, and every regular extern-body member, can
-        be resolved against the trusted registry without assuming global
-        agreement for arbitrary closure lists.
+        be resolved against the trusted registry using root-program agreement
+        and typed provenance, without assuming global agreement for arbitrary
+        closure lists.
    2. Prove the provenance predicate is produced/preserved by typechecking for
       arrow/parrow closure lists and transported through the app
       `apply*Closure` / join machinery.
-   3. Use that provenance to build `TrustedRegistryAppClosureProvenance` for the
-      top-level expression, especially the impure
+   3. Use that provenance to build or eliminate `TrustedRegistryAppClosureProvenance`
+      for the top-level expression, especially the impure
       `FnTClosure.regular x (Expr.externFn ...) ...` case.  The provenance must
       survive closure-list joins/merges and function/pfunction body typing.
    4. Once the provenance is derivable, reduce the public assumptions so

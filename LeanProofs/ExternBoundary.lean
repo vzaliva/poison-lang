@@ -1407,6 +1407,40 @@ def TrustedRegistryAgreesWithPFnTClosures
       TrustedRegistry.lookup? tr id = some entry ∧
       TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec
 
+/-- Evidence that an impure app proof is using the function closure list
+    produced by typechecking the app's function expression. -/
+structure AppFnClosureListFromTypecheck
+    (ctx : TypeContext) (e1 e2 : Expr) (res : TypeResult)
+    (tcls : List FnTClosure) where
+  appFuel : Nat
+  fnFuel : Nat
+  result2 : TypeResult
+  result1 : TypeResult
+  st1 : Typ
+  st2 : Typ
+  p : Poison
+  app_typed : typecheck ctx (Expr.app e1 e2) appFuel = .ok res
+  arg_typed : typecheck ctx e2 fnFuel = .ok result2
+  fn_typed : typecheck (ctxAfter ctx result2) e1 fnFuel = .ok result1
+  result_arrow : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls
+
+/-- Evidence that a pure app proof is using the pfunction closure list produced
+    by typechecking the app's function expression. -/
+structure AppPfnClosureListFromTypecheck
+    (ctx : TypeContext) (e1 e2 : Expr) (res : TypeResult)
+    (tcls : List PFnTClosure) where
+  appFuel : Nat
+  fnFuel : Nat
+  result2 : TypeResult
+  result1 : TypeResult
+  st1 : Typ
+  st2 : Typ
+  p : Poison
+  app_typed : typecheck ctx (Expr.app e1 e2) appFuel = .ok res
+  arg_typed : typecheck ctx e2 fnFuel = .ok result2
+  fn_typed : typecheck (ctxAfter ctx result2) e1 fnFuel = .ok result1
+  result_parrow : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls
+
 /-- Root-scoped provenance needed to turn app closure-list membership into
     trusted extern-call providers.  This is intentionally separate from the
     boundary contract: concrete extern boundaries stay body-local, while the
@@ -1415,33 +1449,43 @@ def TrustedRegistryAgreesWithPFnTClosures
 structure TrustedRegistryAppClosureProvenance
     (root : Expr) (tr : TrustedRegistry) : Prop where
   fnBody :
-    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure} {x : Name}
       {body : Expr} {σcap : CapturedVarEnv},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls →
       ExternDeclLift root body
   pfnBody :
-    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure} {x : Name}
       {body : PExpr} {σcap : CapturedVarEnv},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
       PFnTClosure.regular x body σcap ∈ tcls →
       ExternDeclLift root (PExpr.toExpr body)
   fnClosures :
-    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {argTyp : Typ},
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure} {argTyp : Typ},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
       TrustedRegistryAgreesWithFnTClosures tr argTyp tcls
   fnRegularExternBody :
-    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {argTyp : Typ}
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure} {argTyp : Typ}
       {id : ExternId} {x y : Name} {retSpec : ExternReturn}
       {effects : List Effect} {capturedEnv : CapturedVarEnv},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
       FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) capturedEnv ∈ tcls →
       ∃ entry,
         TrustedRegistry.lookup? tr id = some entry ∧
         TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects
   pfnClosures :
-    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {argTyp : Typ},
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure} {argTyp : Typ},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
       TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls
 
 theorem TrustedRegistryAgreesWithFnTClosures.resolve

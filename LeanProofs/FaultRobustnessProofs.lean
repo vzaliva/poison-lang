@@ -187,14 +187,20 @@ private structure ExternDeclCanUseClosed (CanUse : Expr → Prop) : Prop where
   app_arg :
     ∀ {e1 e2 : Expr}, CanUse (Expr.app e1 e2) → CanUse e2
   app_fn_body :
-    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
-      {body : Expr} {σcap : List (Name × QTyp)},
-      CanUse (Expr.app e1 e2) → FnTClosure.regular x body σcap ∈ tcls →
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure} {x : Name} {body : Expr}
+      {σcap : List (Name × QTyp)},
+      CanUse (Expr.app e1 e2) →
+        AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
+        FnTClosure.regular x body σcap ∈ tcls →
         CanUse body
   app_pfn_body :
-    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
-      {pbody : PExpr} {σcap : List (Name × QTyp)},
-      CanUse (Expr.app e1 e2) → PFnTClosure.regular x pbody σcap ∈ tcls →
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)},
+      CanUse (Expr.app e1 e2) →
+        AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
+        PFnTClosure.regular x pbody σcap ∈ tcls →
         CanUse (PExpr.toExpr pbody)
 
 namespace ExternDeclCanUseClosed
@@ -221,15 +227,19 @@ private theorem trivial : ExternDeclCanUseClosed (fun _ => True) where
 
 private theorem of_lift {root : Expr}
     (hfnBody :
-      ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
-        {body : Expr} {σcap : List (Name × QTyp)},
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List FnTClosure} {x : Name} {body : Expr}
+        {σcap : List (Name × QTyp)},
         ExternDeclLift root (Expr.app e1 e2) →
+        AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
         FnTClosure.regular x body σcap ∈ tcls →
         ExternDeclLift root body)
     (hpfnBody :
-      ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
-        {pbody : PExpr} {σcap : List (Name × QTyp)},
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+        {σcap : List (Name × QTyp)},
         ExternDeclLift root (Expr.app e1 e2) →
+        AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
         PFnTClosure.regular x pbody σcap ∈ tcls →
         ExternDeclLift root (PExpr.toExpr pbody)) :
     ExternDeclCanUseClosed (fun current => ExternDeclLift root current) where
@@ -249,8 +259,8 @@ private theorem of_lift {root : Expr}
   vlet_body := fun h => ExternDeclLift.vlet_body h
   app_fun := fun h => ExternDeclLift.app_fun h
   app_arg := fun h => ExternDeclLift.app_arg h
-  app_fn_body := fun h hmem => hfnBody h hmem
-  app_pfn_body := fun h hmem => hpfnBody h hmem
+  app_fn_body := fun h htyped hmem => hfnBody h htyped hmem
+  app_pfn_body := fun h htyped hmem => hpfnBody h htyped hmem
 
 end ExternDeclCanUseClosed
 
@@ -260,6 +270,7 @@ private abbrev ExternCallSingleFnProvider (registry : ExternRegistry) : Prop :=
     {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
     {ctx : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List FnTClosure},
+    AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctx res e1 e2 tcls
       (registry := registry)
 
@@ -271,6 +282,7 @@ private abbrev ExternCallSingleFnProviderCanUse
     {ctx : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List FnTClosure},
     CanUse (Expr.app e1 e2) →
+    AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctx res e1 e2 tcls
       (registry := registry)
 
@@ -280,6 +292,7 @@ private abbrev ExternCallSinglePfnProvider (registry : ExternRegistry) : Prop :=
     {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
     {ctx : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List PFnTClosure},
+    AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
     ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctx res e1 e2 tcls
       (registry := registry)
 
@@ -291,6 +304,7 @@ private abbrev ExternCallSinglePfnProviderCanUse
     {ctx : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List PFnTClosure},
     CanUse (Expr.app e1 e2) →
+    AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
     ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctx res e1 e2 tcls
       (registry := registry)
 
@@ -298,6 +312,7 @@ private abbrev ExternCallFRFnLocalProvider
     (registry : ExternRegistry) (entryKey : ExternCallEntryKey) : Prop :=
   ∀ {ctx : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure},
+    AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
     TrustedRegistryAgreesWithProgramLocal ctx predSat tm e1 e2 res tcls
       (entryKey := entryKey) (registry := registry)
 
@@ -307,6 +322,7 @@ private abbrev ExternCallFRFnLocalProviderCanUse
   ∀ {ctx : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure},
     CanUse (Expr.app e1 e2) →
+    AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
     TrustedRegistryAgreesWithProgramLocal ctx predSat tm e1 e2 res tcls
       (entryKey := entryKey) (registry := registry)
 
@@ -314,6 +330,7 @@ private abbrev ExternCallFRPfnLocalProvider
     (registry : ExternRegistry) (entryKey : ExternCallEntryKey) : Prop :=
   ∀ {ctx : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure},
+    AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
     TrustedRegistryAgreesWithPfnProgramLocal ctx predSat tm e1 e2 res tcls
       (entryKey := entryKey) (registry := registry)
 
@@ -323,6 +340,7 @@ private abbrev ExternCallFRPfnLocalProviderCanUse
   ∀ {ctx : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure},
     CanUse (Expr.app e1 e2) →
+    AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
     TrustedRegistryAgreesWithPfnProgramLocal ctx predSat tm e1 e2 res tcls
       (entryKey := entryKey) (registry := registry)
 
@@ -386,24 +404,24 @@ private theorem ExternDeclFRProviderFor.to_current
 
 private theorem ExternCallSingleFnProvider_empty :
     ExternCallSingleFnProvider emptyExternRegistry := by
-  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 tcls
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 tcls _htyped
   exact ExternCallBoundarySingleFnContract.of_emptyExternRegistry (tcls := tcls)
 
 private theorem ExternCallSinglePfnProvider_empty :
     ExternCallSinglePfnProvider emptyExternRegistry := by
-  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 tcls
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 tcls _htyped
   exact ExternCallBoundarySinglePfnContract.of_emptyExternRegistry (tcls := tcls)
 
 private theorem ExternCallFRFnLocalProvider_empty :
     ExternCallFRFnLocalProvider emptyExternRegistry ExternCallImpossibleEntryKey := by
-  intro _ctx _predSat _tm _e1 _e2 _res tcls
+  intro _ctx _predSat _tm _e1 _e2 _res tcls _htyped
   exact
     TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
       (tcls := tcls) (entryKey := ExternCallImpossibleEntryKey)
 
 private theorem ExternCallFRPfnLocalProvider_empty :
     ExternCallFRPfnLocalProvider emptyExternRegistry ExternCallImpossibleEntryKey := by
-  intro _ctx _predSat _tm _e1 _e2 _res tcls
+  intro _ctx _predSat _tm _e1 _e2 _res tcls _htyped
   exact
     TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
       (tcls := tcls) (entryKey := ExternCallImpossibleEntryKey)
@@ -413,21 +431,21 @@ private theorem ExternCallSingleFnProviderCanUse_of_appProvenance
     (happ : TrustedRegistryAppClosureProvenance root tr) :
     ExternCallSingleFnProviderCanUse
       (TrustedRegistry.toRuntimeRegistry tr) (fun e => ExternDeclLift root e) := by
-  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hlift
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hlift htyped
   exact
     ExternCallBoundarySingleFnContract.of_trustedRegistry
-      (fun {argTyp} => happ.fnClosures (argTyp := argTyp) hlift)
-      (fun {argTyp} => happ.fnRegularExternBody (argTyp := argTyp) hlift)
+      (fun {argTyp} => happ.fnClosures (argTyp := argTyp) hlift htyped)
+      (fun {argTyp} => happ.fnRegularExternBody (argTyp := argTyp) hlift htyped)
 
 private theorem ExternCallSinglePfnProviderCanUse_of_appProvenance
     {tr : TrustedRegistry} {root : Expr}
     (happ : TrustedRegistryAppClosureProvenance root tr) :
     ExternCallSinglePfnProviderCanUse
       (TrustedRegistry.toRuntimeRegistry tr) (fun e => ExternDeclLift root e) := by
-  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hlift
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hlift htyped
   exact
     ExternCallBoundarySinglePfnContract.of_trustedRegistry
-      (fun {argTyp} => happ.pfnClosures (argTyp := argTyp) hlift)
+      (fun {argTyp} => happ.pfnClosures (argTyp := argTyp) hlift htyped)
 
 private theorem ExternCallFRFnLocalProviderCanUse_of_appProvenance
     {tr : TrustedRegistry} {root : Expr}
@@ -435,11 +453,11 @@ private theorem ExternCallFRFnLocalProviderCanUse_of_appProvenance
     ExternCallFRFnLocalProviderCanUse
       (TrustedRegistry.toRuntimeRegistry tr) (ExternCallTrustedEntryKey tr)
       (fun e => ExternDeclLift root e) := by
-  intro _ctx _predSat _tm _e1 _e2 _res _tcls hlift
+  intro _ctx _predSat _tm _e1 _e2 _res _tcls hlift htyped
   exact
     TrustedRegistryAgreesWithProgramLocal.of_trustedRegistry
-      (fun {argTyp} => happ.fnClosures (argTyp := argTyp) hlift)
-      (fun {argTyp} => happ.fnRegularExternBody (argTyp := argTyp) hlift)
+      (fun {argTyp} => happ.fnClosures (argTyp := argTyp) hlift htyped)
+      (fun {argTyp} => happ.fnRegularExternBody (argTyp := argTyp) hlift htyped)
 
 private theorem ExternCallFRPfnLocalProviderCanUse_of_appProvenance
     {tr : TrustedRegistry} {root : Expr}
@@ -447,10 +465,10 @@ private theorem ExternCallFRPfnLocalProviderCanUse_of_appProvenance
     ExternCallFRPfnLocalProviderCanUse
       (TrustedRegistry.toRuntimeRegistry tr) (ExternCallTrustedEntryKey tr)
       (fun e => ExternDeclLift root e) := by
-  intro _ctx _predSat _tm _e1 _e2 _res _tcls hlift
+  intro _ctx _predSat _tm _e1 _e2 _res _tcls hlift htyped
   exact
     TrustedRegistryAgreesWithPfnProgramLocal.of_trustedRegistry
-      (fun {argTyp} => happ.pfnClosures (argTyp := argTyp) hlift)
+      (fun {argTyp} => happ.pfnClosures (argTyp := argTyp) hlift htyped)
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse
   (registry : ExternRegistry)
@@ -2040,10 +2058,10 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       CanUse
                       (ExternDeclCanUseClosed.app_fun hclosed hcan)
                       (ExternDeclCanUseClosed.app_arg hclosed hcan)
-                      (fun {tcls} {x} {body} {σcap} hmem =>
-                        ExternDeclCanUseClosed.app_fn_body hclosed hcan hmem)
-                      (fun {tcls} {x} {pbody} {σcap} hmem =>
-                        ExternDeclCanUseClosed.app_pfn_body hclosed hcan hmem)
+                      (fun {tcls} {x} {body} {σcap} htyped hmem =>
+                        ExternDeclCanUseClosed.app_fn_body hclosed hcan htyped hmem)
+                      (fun {tcls} {x} {pbody} {σcap} htyped hmem =>
+                        ExternDeclCanUseClosed.app_pfn_body hclosed hcan htyped hmem)
                       (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
                         (registry := registry)
                         predSat tm (Nat.succ (Nat.succ fuel')) CanUse
@@ -2054,8 +2072,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
                       (fun m hm {tmᵢ} e' ctx' hcan' res' htc' =>
                           IH' m hm tmᵢ masked e' ctx' hcan' res' htc'))
-                      (fun {tcls} => hcallSingleFn (tcls := tcls) hcan)
-                      (fun {tcls} => hcallSinglePfn (tcls := tcls) hcan)
+                      (fun {tcls} htyped => hcallSingleFn (tcls := tcls) hcan htyped)
+                      (fun {tcls} htyped => hcallSinglePfn (tcls := tcls) hcan htyped)
                       htc
           | externVal id t p pr =>
               -- Extern declaration success is normalized to boundary-run
@@ -2148,12 +2166,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse
       registry
       (fun _ => True)
-      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan =>
+      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan htyped =>
         hcallSingleFn (masked := masked) (CtxCons := CtxCons) (ValCons := ValCons)
-          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls))
-      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan =>
+          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls) htyped)
+      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan htyped =>
         hcallSinglePfn (masked := masked) (CtxCons := CtxCons) (ValCons := ValCons)
-          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls))
+          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls) htyped)
       ExternDeclCanUseClosed.trivial
       (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
           _hcan hprog =>
@@ -2172,15 +2190,19 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
     ExternCallSinglePfnProviderCanUse registry (fun e => ExternDeclLift root e))
   (hdeclSingleRoot : ExternDeclSingleProviderFor registry root)
   (hfnBody :
-    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
-      {body : Expr} {σcap : List (Name × QTyp)},
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure} {x : Name} {body : Expr}
+      {σcap : List (Name × QTyp)},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls →
       ExternDeclLift root body)
   (hpfnBody :
-    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
-      {pbody : PExpr} {σcap : List (Name × QTyp)},
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls →
       ExternDeclLift root (PExpr.toExpr pbody))
   (hlift : ExternDeclLift root current)
@@ -2304,12 +2326,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse
       registry
       (fun _ => True)
-      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan =>
+      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan htyped =>
         hcallSingleFn (masked := masked) (CtxCons := CtxCons) (ValCons := ValCons)
-          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls))
-      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan =>
+          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls) htyped)
+      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan htyped =>
         hcallSinglePfn (masked := masked) (CtxCons := CtxCons) (ValCons := ValCons)
-          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls))
+          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls) htyped)
       ExternDeclCanUseClosed.trivial
       (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
           _hcan hprog =>
@@ -2328,15 +2350,19 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
     ExternCallSinglePfnProviderCanUse registry (fun e => ExternDeclLift root e))
   (hdeclSingleRoot : ExternDeclSingleProviderFor registry root)
   (hfnBody :
-    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
-      {body : Expr} {σcap : List (Name × QTyp)},
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure} {x : Name} {body : Expr}
+      {σcap : List (Name × QTyp)},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls →
       ExternDeclLift root body)
   (hpfnBody :
-    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
-      {pbody : PExpr} {σcap : List (Name × QTyp)},
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls →
       ExternDeclLift root (PExpr.toExpr pbody))
   (hlift : ExternDeclLift root current)
@@ -2680,10 +2706,10 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse
                     CanUse
                     (ExternDeclCanUseClosed.app_fun hclosed hcan)
                     (ExternDeclCanUseClosed.app_arg hclosed hcan)
-                    (fun {tcls} {x} {body} {σcap} hmem =>
-                      ExternDeclCanUseClosed.app_fn_body hclosed hcan hmem)
-                    (fun {tcls} {x} {pbody} {σcap} hmem =>
-                      ExternDeclCanUseClosed.app_pfn_body hclosed hcan hmem)
+                    (fun {tcls} {x} {body} {σcap} htyped hmem =>
+                      ExternDeclCanUseClosed.app_fn_body hclosed hcan htyped hmem)
+                    (fun {tcls} {x} {pbody} {σcap} htyped hmem =>
+                      ExternDeclCanUseClosed.app_pfn_body hclosed hcan htyped hmem)
                     (StepFR_IH_WithExpr_of_induction (registry := registry)
                       predSat tm (Nat.succ (Nat.succ fuel')) CanUse
                       (fun m hm {tmᵢ} e ctx hcan' res htc =>
@@ -2692,8 +2718,8 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse
                     (entryKey := entryKey)
                     (_hentryKey_unique := hentryKey_unique)
                     (_hcallFR_of_entryKey := hcallFR_of_entryKey)
-                    (_hfnLocal := fun {tcls} => hfnLocal (tcls := tcls) hcan)
-                    (_hpfnLocal := fun {tcls} => hpfnLocal (tcls := tcls) hcan)
+                    (_hfnLocal := fun {tcls} htyped => hfnLocal (tcls := tcls) hcan htyped)
+                    (_hpfnLocal := fun {tcls} htyped => hpfnLocal (tcls := tcls) hcan htyped)
                     htc
         | externVal id t p pr =>
             -- Extern declaration success is normalized to boundary-run
@@ -2788,18 +2814,18 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts
     TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse
       registry entryKey hentryKey_unique hcallFR_of_entryKey
       (fun _ => True)
-      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan =>
+      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan htyped =>
         hcallSingleFn (masked := masked) (CtxCons := CtxCons) (ValCons := ValCons)
-          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls))
-      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan =>
+          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls) htyped)
+      (fun {masked} {CtxCons} {ValCons} {ctx} {res} {e1} {e2} {tcls} _hcan htyped =>
         hcallSinglePfn (masked := masked) (CtxCons := CtxCons) (ValCons := ValCons)
-          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls))
-      (fun {ctx} {predSat} {tm} {e1} {e2} {res} {tcls} _hcan =>
+          (ctx := ctx) (res := res) (e1 := e1) (e2 := e2) (tcls := tcls) htyped)
+      (fun {ctx} {predSat} {tm} {e1} {e2} {res} {tcls} _hcan htyped =>
         hfnLocal (ctx := ctx) (predSat := predSat) (tm := tm)
-          (e1 := e1) (e2 := e2) (res := res) (tcls := tcls))
-      (fun {ctx} {predSat} {tm} {e1} {e2} {res} {tcls} _hcan =>
+          (e1 := e1) (e2 := e2) (res := res) (tcls := tcls) htyped)
+      (fun {ctx} {predSat} {tm} {e1} {e2} {res} {tcls} _hcan htyped =>
         hpfnLocal (ctx := ctx) (predSat := predSat) (tm := tm)
-          (e1 := e1) (e2 := e2) (res := res) (tcls := tcls))
+          (e1 := e1) (e2 := e2) (res := res) (tcls := tcls) htyped)
       ExternDeclCanUseClosed.trivial
       (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
           _hcan hprog =>
@@ -2837,15 +2863,19 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_for
   (hdeclSingleRoot : ExternDeclSingleProviderFor registry root)
   (hdeclFRRoot : ExternDeclFRProviderFor registry root)
   (hfnBody :
-    ∀ {e1 e2 : Expr} {tcls : List FnTClosure} {x : Name}
-      {body : Expr} {σcap : List (Name × QTyp)},
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure} {x : Name} {body : Expr}
+      {σcap : List (Name × QTyp)},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls →
       ExternDeclLift root body)
   (hpfnBody :
-    ∀ {e1 e2 : Expr} {tcls : List PFnTClosure} {x : Name}
-      {pbody : PExpr} {σcap : List (Name × QTyp)},
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)},
       ExternDeclLift root (Expr.app e1 e2) →
+      AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls →
       ExternDeclLift root (PExpr.toExpr pbody))
   (hlift : ExternDeclLift root current)
@@ -3136,8 +3166,8 @@ theorem TypeSystemEnforcesFaultRobustness_with_trustedRegistry
         (ExternCallFRPfnLocalProviderCanUse_of_appProvenance happ)
         (ExternDeclSingleProviderFor_trustedRegistry hagrees)
         (ExternDeclFRProviderFor_trustedRegistry hagrees)
-        (fun hlift hmem => happ.fnBody hlift hmem)
-        (fun hlift hmem => happ.pfnBody hlift hmem)
+        (fun hlift htyped hmem => happ.fnBody hlift htyped hmem)
+        (fun hlift htyped hmem => happ.pfnBody hlift htyped hmem)
         ExternDeclLift.refl
         ctxᵢ predSat tm)
 
