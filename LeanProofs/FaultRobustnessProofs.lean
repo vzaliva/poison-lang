@@ -40,6 +40,124 @@ private abbrev ExternDeclFRProvider (registry : ExternRegistry) : Prop :=
     ExternDeclarationInProgram e id d →
     ExternDeclBoundaryFRContract ctx postExpr res predSat tm registry d impl₀ impl₁
 
+private abbrev ExternDeclSingleProviderFor
+    (registry : ExternRegistry) (root : Expr) : Prop :=
+  ∀ {id : ExternId} {d : ExternDeclaration}
+    {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+    {predSat : PredSat} {tm : TagMeaning} {impl : ExternImpl},
+    ExternDeclarationInProgram root id d →
+    ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl
+
+private abbrev ExternDeclFRProviderFor
+    (registry : ExternRegistry) (root : Expr) : Prop :=
+  ∀ {id : ExternId} {d : ExternDeclaration}
+    {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
+    {predSat : PredSat} {tm : TagMeaning} {impl₀ impl₁ : ExternImpl},
+    ExternDeclarationInProgram root id d →
+    ExternDeclBoundaryFRContract ctx postExpr res predSat tm registry d impl₀ impl₁
+
+private abbrev ExternDeclLift (root current : Expr) : Prop :=
+  ∀ {id : ExternId} {d : ExternDeclaration},
+    ExternDeclarationInProgram current id d →
+    ExternDeclarationInProgram root id d
+
+namespace ExternDeclLift
+
+private theorem refl {e : Expr} : ExternDeclLift e e :=
+  fun h => h
+
+private theorem op_left {root e1 e2 : Expr} {op : Op}
+    (hlift : ExternDeclLift root (Expr.op e1 op e2)) :
+    ExternDeclLift root e1 :=
+  fun h => hlift (ExternDeclarationInProgram.op_left h)
+
+private theorem op_right {root e1 e2 : Expr} {op : Op}
+    (hlift : ExternDeclLift root (Expr.op e1 op e2)) :
+    ExternDeclLift root e2 :=
+  fun h => hlift (ExternDeclarationInProgram.op_right h)
+
+private theorem unaryop {root e : Expr} {op : UnaryOp}
+    (hlift : ExternDeclLift root (Expr.unaryop op e)) :
+    ExternDeclLift root e :=
+  fun h => hlift (ExternDeclarationInProgram.unaryop h)
+
+private theorem ite_cond {root e1 e2 e3 : Expr}
+    (hlift : ExternDeclLift root (Expr.ite e1 e2 e3)) :
+    ExternDeclLift root e1 :=
+  fun h => hlift (ExternDeclarationInProgram.ite_cond h)
+
+private theorem ite_then {root e1 e2 e3 : Expr}
+    (hlift : ExternDeclLift root (Expr.ite e1 e2 e3)) :
+    ExternDeclLift root e2 :=
+  fun h => hlift (ExternDeclarationInProgram.ite_then h)
+
+private theorem ite_else {root e1 e2 e3 : Expr}
+    (hlift : ExternDeclLift root (Expr.ite e1 e2 e3)) :
+    ExternDeclLift root e3 :=
+  fun h => hlift (ExternDeclarationInProgram.ite_else h)
+
+private theorem newRef {root e : Expr}
+    (hlift : ExternDeclLift root (Expr.newRef e)) :
+    ExternDeclLift root e :=
+  fun h => hlift (ExternDeclarationInProgram.newRef h)
+
+private theorem assign_left {root e1 e2 : Expr}
+    (hlift : ExternDeclLift root (Expr.assign e1 e2)) :
+    ExternDeclLift root e1 :=
+  fun h => hlift (ExternDeclarationInProgram.assign_left h)
+
+private theorem assign_right {root e1 e2 : Expr}
+    (hlift : ExternDeclLift root (Expr.assign e1 e2)) :
+    ExternDeclLift root e2 :=
+  fun h => hlift (ExternDeclarationInProgram.assign_right h)
+
+private theorem deref {root e : Expr}
+    (hlift : ExternDeclLift root (Expr.deref e)) :
+    ExternDeclLift root e :=
+  fun h => hlift (ExternDeclarationInProgram.deref h)
+
+private theorem seq_left {root e1 e2 : Expr}
+    (hlift : ExternDeclLift root (Expr.seq e1 e2)) :
+    ExternDeclLift root e1 :=
+  fun h => hlift (ExternDeclarationInProgram.seq_left h)
+
+private theorem seq_right {root e1 e2 : Expr}
+    (hlift : ExternDeclLift root (Expr.seq e1 e2)) :
+    ExternDeclLift root e2 :=
+  fun h => hlift (ExternDeclarationInProgram.seq_right h)
+
+private theorem vlet_bound {root e1 e2 : Expr} {x : Name}
+    (hlift : ExternDeclLift root (Expr.vlet x e1 e2)) :
+    ExternDeclLift root e1 :=
+  fun h => hlift (ExternDeclarationInProgram.vlet_bound h)
+
+private theorem vlet_body {root e1 e2 : Expr} {x : Name}
+    (hlift : ExternDeclLift root (Expr.vlet x e1 e2)) :
+    ExternDeclLift root e2 :=
+  fun h => hlift (ExternDeclarationInProgram.vlet_body h)
+
+private theorem fn_body {root body : Expr} {x : Name} {argTyp retTyp : Typ}
+    (hlift : ExternDeclLift root (Expr.fn x argTyp body retTyp)) :
+    ExternDeclLift root body :=
+  fun h => hlift (ExternDeclarationInProgram.fn_body h)
+
+private theorem pfn_body {root body : Expr} {x : Name} {argTyp retTyp : Typ}
+    (hlift : ExternDeclLift root (Expr.pfn x argTyp body retTyp)) :
+    ExternDeclLift root body :=
+  fun h => hlift (ExternDeclarationInProgram.pfn_body h)
+
+private theorem app_fun {root e1 e2 : Expr}
+    (hlift : ExternDeclLift root (Expr.app e1 e2)) :
+    ExternDeclLift root e1 :=
+  fun h => hlift (ExternDeclarationInProgram.app_fun h)
+
+private theorem app_arg {root e1 e2 : Expr}
+    (hlift : ExternDeclLift root (Expr.app e1 e2)) :
+    ExternDeclLift root e2 :=
+  fun h => hlift (ExternDeclarationInProgram.app_arg h)
+
+end ExternDeclLift
+
 private abbrev ExternCallSingleFnProvider (registry : ExternRegistry) : Prop :=
   ∀ {masked : Tag → Prop}
     {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
@@ -81,6 +199,54 @@ private theorem ExternDeclFRProvider_empty :
     ExternDeclFRProvider emptyExternRegistry := by
   intro _e _id _d _ctx _postExpr _res _predSat _tm _impl₀ _impl₁ _hprog
   exact ExternDeclBoundaryFRContract.of_emptyExternRegistry
+
+private theorem ExternDeclSingleProviderFor_empty {root : Expr} :
+    ExternDeclSingleProviderFor emptyExternRegistry root := by
+  intro _id _d _masked _ctx _res _predSat _tm _impl _hroot
+  exact ExternDeclBoundarySingleMaskedContract.of_emptyExternRegistry
+
+private theorem ExternDeclFRProviderFor_empty {root : Expr} :
+    ExternDeclFRProviderFor emptyExternRegistry root := by
+  intro _id _d _ctx _postExpr _res _predSat _tm _impl₀ _impl₁ _hroot
+  exact ExternDeclBoundaryFRContract.of_emptyExternRegistry
+
+private theorem ExternDeclSingleProviderFor_trustedRegistry
+    {tr : TrustedRegistry} {root : Expr}
+    (hagrees : TrustedRegistryAgreesWithProgram root tr) :
+    ExternDeclSingleProviderFor (TrustedRegistry.toRuntimeRegistry tr) root := by
+  intro _id _d _masked _ctx _res _predSat _tm _impl hroot
+  exact ExternDeclBoundarySingleMaskedContract.of_trustedRegistry hagrees hroot
+
+private theorem ExternDeclFRProviderFor_trustedRegistry
+    {tr : TrustedRegistry} {root : Expr}
+    (hagrees : TrustedRegistryAgreesWithProgram root tr) :
+    ExternDeclFRProviderFor (TrustedRegistry.toRuntimeRegistry tr) root := by
+  intro _id _d _ctx _postExpr _res _predSat _tm _impl₀ _impl₁ hroot
+  exact ExternDeclBoundaryFRContract.of_trustedRegistry hagrees hroot
+
+private theorem ExternDeclSingleProviderFor.to_current
+    {registry : ExternRegistry} {root current : Expr}
+    (hprovider : ExternDeclSingleProviderFor registry root)
+    (hlift : ExternDeclLift root current) :
+    ∀ {id : ExternId} {d : ExternDeclaration}
+      {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+      {predSat : PredSat} {tm : TagMeaning} {impl : ExternImpl},
+      ExternDeclarationInProgram current id d →
+      ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl := by
+  intro _id _d _masked _ctx _res _predSat _tm _impl hcurrent
+  exact hprovider (hlift hcurrent)
+
+private theorem ExternDeclFRProviderFor.to_current
+    {registry : ExternRegistry} {root current : Expr}
+    (hprovider : ExternDeclFRProviderFor registry root)
+    (hlift : ExternDeclLift root current) :
+    ∀ {id : ExternId} {d : ExternDeclaration}
+      {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
+      {predSat : PredSat} {tm : TagMeaning} {impl₀ impl₁ : ExternImpl},
+      ExternDeclarationInProgram current id d →
+      ExternDeclBoundaryFRContract ctx postExpr res predSat tm registry d impl₀ impl₁ := by
+  intro _id _d _ctx _postExpr _res _predSat _tm _impl₀ _impl₁ hcurrent
+  exact hprovider (hlift hcurrent)
 
 private theorem ExternCallSingleFnProvider_empty :
     ExternCallSingleFnProvider emptyExternRegistry := by

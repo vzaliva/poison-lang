@@ -10,16 +10,21 @@ trusted boundary evidence in the proof stack. Reusable concrete driver
 constructors such as `ExternBoundarySpec.pureUnaryCleanInt` are intentionally
 left to the next high-level probe.
 
-The target shape is a relative theorem:
+The staging target is a relative theorem:
 
 ```lean
 TypeSystemEnforcesFaultRobustness_spec_with_registry
   (TrustedRegistry.toRuntimeRegistry tr) e s obs
 ```
 
-under explicit trusted-registry agreement hypotheses. Successful extern
-declarations and extern calls should be justified by `ExternBoundarySpec`
-evidence instead of by the current empty-registry vacuity arguments.
+under explicit trusted-registry agreement hypotheses.  The final public API
+target is still `TypeSystemEnforcesFaultRobustness`: it should be updated to
+take the non-empty runtime registry / trusted-registry proof obligations rather
+than leaving the populated theorem as a parallel endpoint.  Compatibility
+theorems may recover the old empty-registry formulation as corollaries.
+Successful extern declarations and extern calls should be justified by
+`ExternBoundarySpec` evidence instead of by the current empty-registry vacuity
+arguments.
 
 No new `sorry` or `axiom` is acceptable.
 
@@ -151,10 +156,17 @@ Implemented and compiling:
   `TypeSystemEnforcesFaultRobustness_impl_with_registry_for` that only requires
   a step theorem for the target expression.  The older global-form bridge is a
   wrapper around this root-expression-specific theorem.
+- `FaultRobustnessProofs.lean` has root-aware declaration-provider foundation:
+  `ExternDeclSingleProviderFor`, `ExternDeclFRProviderFor`, `ExternDeclLift`,
+  trusted-registry constructors, and local lift adapters.  These compile but
+  are not yet threaded through the induction spine.
 
 Still true:
 
-- The populated-registry theorem is not proven yet.
+- The populated-registry version of the top-level theorem is not proven yet.
+  The final destination is to update `TypeSystemEnforcesFaultRobustness` itself
+  to accept the populated runtime registry / trusted proof obligations; the
+  `_with_registry` bridge theorems are staging helpers.
 - `TypeSystemEnforcesFaultRobustness_step` remains the public empty-registry
   compatibility theorem.  The generalized proof core exists privately and must
   be exposed through the populated trusted-registry theorem in Step 6.
@@ -163,8 +175,9 @@ Still true:
   `TrustedRegistryAgreesWithProgram e tr` premise without weakening it into a
   global "registry agrees with every expression / every closure list" premise.
 
-Latest verification after declaration-provider integration and the
-root-expression-specific implementation bridge:
+Latest verification after declaration-provider integration,
+root-expression-specific implementation bridge, and root-aware declaration
+provider scaffolding:
 
 - `make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean` succeeds.
 - `lake build LeanProofs` succeeds.
@@ -176,20 +189,20 @@ root-expression-specific implementation bridge:
 
 ## Main Refactor
 
-The remaining work is now the declaration-adapter and top-level theorem bridge.
-The registry-parametric theorem spine exists and compiles, and app extern-call
-evidence is consumed at the app proof boundary.  The populated registry theorem
-cannot be completed until successful extern declarations consume trusted
-boundary evidence and the step theorem is generalized away from the
-empty-registry instance.
+The remaining work is now the root-provenance and top-level theorem bridge.
+The registry-parametric theorem spine exists and compiles, app extern-call
+evidence is consumed at the app proof boundary, and successful extern
+declarations are routed through provider slots in the generalized proof core.
+The populated top-level theorem cannot be completed until those provider slots
+are discharged from root-program trusted-registry agreement rather than from
+globally quantified provider hypotheses.
 
 With a populated registry, extern declaration expressions can terminate.  The
-current declaration branches in `FaultRobustnessProofs.lean` have already been
-reshaped so successful runs become `ExternDeclBoundaryRun` evidence before the
-empty-registry instance discharges them.  When the populated theorem is added,
-those adapters must be replaced by trusted-registry consumers of
-`ExternBoundarySpec.declFR`, `ExternBoundarySpec.declSingle`, and
-`ExternBoundarySpec.wf`.
+current declaration branches in `FaultRobustnessProofs.lean` normalize
+successful runs to `ExternDeclBoundaryRun` evidence and consume declaration
+providers.  The next bridge is root expression provenance: each local extern
+declaration proof must be lifted back to the top-level program before
+`TrustedRegistryAgreesWithProgram root tr` can justify the boundary contract.
 
 Successful extern calls are different from declaration expressions: the extern
 boundary should justify only the body-level call result.  The surrounding
@@ -198,10 +211,10 @@ application proof owns the app-specific transport through
 `joinTypeResults`, and the final app configuration restoration.  This keeps
 concrete `ExternBoundarySpec` instances independent of app proof internals.
 
-The change is proof-side only.  It does not change evaluation, typechecking, or
-the existing empty-registry compatibility theorem.  The new populated-registry
-theorem will add explicit trusted-registry assumptions rather than weakening
-fault-robustness.
+The change is proof-side only.  It does not change evaluation or typechecking.
+The populated top-level theorem will add explicit trusted-registry assumptions
+rather than weakening fault-robustness, and the existing empty-registry theorem
+will remain as a compatibility corollary.
 
 ## Current Status
 
@@ -359,9 +372,10 @@ populated top-level theorem:
    invariant and thread it explicitly rather than weakening
    `TrustedRegistryAgreesWithProgram` into a vague global premise.
 
-This remains proof-side only.  It does not change evaluation, typechecking, or
-the empty-registry theorem.  The populated theorem will still be a relative
-theorem with explicit trusted-registry assumptions.
+This remains proof-side only.  It does not change evaluation or typechecking.
+The populated top-level theorem will be relative to explicit trusted-registry
+assumptions, and the old empty-registry theorem should remain available as a
+compatibility corollary.
 
 ## Remaining Plan
 
@@ -442,8 +456,9 @@ theorem with explicit trusted-registry assumptions.
 
    Active focus.  The implementation bridge has been split so the top-level
    theorem only needs a step theorem for the target expression.  The remaining
-   work is to make the step proof core root-expression aware, expose it through
-   a public populated-registry theorem, instantiate it with
+   work is to make the step proof core root-expression aware, use that to
+   update the public `TypeSystemEnforcesFaultRobustness` theorem to the
+   populated-registry formulation, instantiate it with
    `TrustedRegistry.toRuntimeRegistry tr`, and discharge the provider slots
    under explicit assumptions:
 
@@ -485,8 +500,16 @@ theorem with explicit trusted-registry assumptions.
       assumptions, especially the impure
       `FnTClosure.regular x (Expr.externFn ...) ...` case.  The provenance must
       survive closure-list joins/merges and function/pfunction body typing.
-   4. Retry the public theorem only after the provider assumptions can be
-      discharged from root program agreement plus closure-list provenance.
+   4. Retry the public top-level theorem only after the provider assumptions can
+      be discharged from root program agreement plus closure-list provenance.
+
+   Latest finding: the next proof edit is not only local branch rewiring.  The
+   strong-induction callbacks currently have an "any smaller-fuel expression"
+   shape, so they cannot receive a current-expression-to-root declaration lift
+   without changing the IH abbreviations / adapter lemmas.  The root-aware
+   provider helpers have been added first; the next code slice should update the
+   IH shapes and per-operator recursive-call adapters to carry
+   `ExternDeclLift`.
 
 7. **Preserve compatibility and verify.**
 
