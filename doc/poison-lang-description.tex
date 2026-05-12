@@ -1231,7 +1231,7 @@ The specification is stated for the full language.
 \subsubsection*{Handling Extern Constructs}
 
 Extern constructs (\texttt{externVal}, \texttt{externFn},
-\texttt{externPfn}) are now executable through a Lean-supplied registry stored
+\texttt{externPfn}) are executable through a Lean-supplied registry stored
 in the runtime configuration.  Evaluating an \texttt{externVal} looks up the
 registered value by identifier and performs shallow shape checking.
 Evaluating \texttt{externFn} or \texttt{externPfn} produces an ordinary closure
@@ -1241,8 +1241,8 @@ validation.  Missing registrations, kind mismatches, shape mismatches, and
 extern-implementation failures surface as \texttt{runtimeError}.
 
 The fault-robustness development nevertheless does not inspect Lean extern
-implementations directly.  It still reasons about externs through typing
-summaries and proof assumptions rather than by analyzing registry code.
+implementations directly. It reasons about externs through typing summaries
+and trusted-registry boundary evidence rather than by analyzing registry code.
 
 Even with executable extern dispatch, externs must still \emph{typecheck
 soundly}.
@@ -1252,9 +1252,9 @@ conditional, the body of the not-taken branch does not execute but must still
 typecheck. If that branch contains an extern call, the typing rules for externs
 are on the critical path of the proof even though that branch never reaches
 runtime dispatch.
-Externs therefore affect the FR proof only at the \emph{typechecking summary}
-layer: the proof surface concerns what the typechecker states about external
-code. One typing-side assumption, packaged as a field of the
+Externs therefore affect the FR proof at two explicit trust boundaries. The
+typing boundary concerns what the typechecker states about external code. One
+typing-side assumption, packaged as a field of the
 \texttt{ExternTypingAssumptions} structure (defined in
 \texttt{LeanProofs/ExternTypingAssumptions.lean}), pins the typechecker's
 extern summaries to the proof layer: preserving abstract predicate laws
@@ -1263,7 +1263,11 @@ tag denotes which guard descriptor are derived from the allocation trace
 itself. Extern effect writes erase predicates whenever the effect-pc gate
 \(\textit{pc} \sqcup p_1 \sqcup p\) is poisoned, mirroring assignment, so
 every guard tag carried by a post-call cell traces back to a pre-call
-guarded cell.
+guarded cell. The runtime boundary concerns successful extern declaration and
+call events. The public fault-robustness theorem is stated for the runtime
+registry projected from a \texttt{TrustedRegistry}, and each reachable
+registered extern entry supplies the declaration and call boundary facts
+consumed by the proof.
 The fault-robustness theorem is relative to a witness of
 \texttt{ExternTypingAssumptions}: a caller must supply (or postulate) one to
 instantiate the theorem, making this trust boundary explicit at the public
@@ -1315,13 +1319,13 @@ those new tags is opaque to the structural proof.  The \texttt{externPredSatDelt
 field captures exactly this transport: given
 \texttt{PredSatLaws}~\textit{predSat}~tm and an
 \texttt{ExternBatchTagMeaningExtension} from $tm$ to $tm'$, it asserts
-\texttt{PredSatLaws}~\textit{predSat}~tm'.  This is a temporary broad trust
-input: it ranges over all structurally valid extern batch extensions, so it is
-still broader than the intended final API.  The follow-up FFI registry design
-(\texttt{doc/ffi-axioms.md}) replaces this broad field with per-extern
-registry evidence: each trusted extern declaration supplies the descriptor
-laws for the guard descriptors that its declared return and effect summaries
-can allocate.
+\texttt{PredSatLaws}~\textit{predSat}~tm'.  This remains a broad trust input:
+it ranges over all structurally valid extern batch extensions, so it is broader
+than the intended final constructor API. The follow-up FFI proof work
+(\texttt{doc/ffi-axioms.md}) tracks whether this obligation should move into
+per-extern trusted-entry evidence, so each trusted extern declaration supplies
+the descriptor laws for the guard descriptors that its declared return and
+effect summaries can allocate.
 
 \paragraph{Guard provenance for impure memory effects (structural).}
 The typechecker's \texttt{applyExternEffect} erases the stored predicate to

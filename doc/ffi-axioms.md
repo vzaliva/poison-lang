@@ -487,11 +487,17 @@ structure TrustedExternEntry where
   impl : ExternImpl
   spec : ExternBoundarySpec decl impl
 
-abbrev TrustedRegistry := Std.HashMap ExternId TrustedExternEntry
+abbrev TrustedRegistry := List TrustedExternEntry
+
+namespace TrustedRegistry
+
+def lookup? : TrustedRegistry → ExternId → Option TrustedExternEntry := ...
 
 /-- Runtime registry projected from the trusted entries. -/
-def TrustedRegistry.toRuntimeRegistry (tr : TrustedRegistry) : ExternRegistry :=
-  tr.mapValues (fun entry => entry.impl)
+def toRuntimeRegistry (tr : TrustedRegistry) : ExternRegistry :=
+  tr.foldr (fun entry reg => reg.insert entry.decl.id entry.impl) emptyExternRegistry
+
+end TrustedRegistry
 
 /-- Predicate saying expression `e` contains, or can synthesize through a
     nested extern return descriptor, an extern declaration with id `id` and
@@ -506,7 +512,7 @@ def ExternDeclarationInProgram
 def TrustedRegistryAgreesWithProgram (e : Expr) (tr : TrustedRegistry) : Prop :=
   ∀ {id d entry},
     ExternDeclarationInProgram e id d →
-    tr.get? id = some entry →
+    TrustedRegistry.lookup? tr id = some entry →
     entry.decl = d
 
 /-- The public theorem uses the wider reachable domain: root AST externs plus
@@ -516,7 +522,7 @@ def TrustedRegistryAgreesWithReachable
     (root : Expr) (ctxRoot : TypeContext) (tr : TrustedRegistry) : Prop :=
   ∀ {id d entry},
     ExternDeclarationReachableFromContext root ctxRoot id d →
-    tr.get? id = some entry →
+    TrustedRegistry.lookup? tr id = some entry →
     entry.decl = d
 ```
 
@@ -541,7 +547,7 @@ Typing-side extern reasoning still uses `ExternTypingAssumptions` through the
 FR spec. Structural induction threads expression reachability and a
 `ContextReachableFrom` invariant while reusing the same trusted registry. Call
 sites that need the relational boundary contract look up the trusted entry by
-id; if `tr.get? id = some entry`, then `entry.spec.declFR` /
+id; if `TrustedRegistry.lookup? tr id = some entry`, then `entry.spec.declFR` /
 `entry.spec.callFR` are the relational boundary contracts, and
 `entry.spec.declSingle` / `entry.spec.callSingle` are the single-run clean-pc
 contracts. The `entry.spec.wf` field remains the operational well-formedness
