@@ -60,10 +60,15 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
+  (CtxReach : TypeContext → Prop)
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
+  (hctxCurrent : CtxReach ctx)
+  (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
+    CtxReach ctx → CtxReach (ctxAfter ctx res))
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
       predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+      CtxReach
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -94,7 +99,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctx hcan1 hwfTm hTmBounded res1 htc1'
+    e1 ctx hctxCurrent hcan1 hwfTm hTmBounded res1 htc1'
   have hIH1Inst := hIH1 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH1Inst.1 with ⟨tm1, hcanon1, hpredlaws1, _hresTm1, hTm1⟩
   have hwf1 : wfTypeContext (ctxAfter ctx res1) :=
@@ -143,7 +148,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
   have hwf1' : wfTypeContext ctx' := by
     simpa [hctx', ctxAfter] using hwf1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hcan2 hwfTm' hTmBounded' res htc2'
+    e2 ctx' (by simpa [hctx', updateCtxFromResult, ctxAfter] using hctxAfter hctxCurrent)
+      hcan2 hwfTm' hTmBounded' res htc2'
   -- Thread extern registry: cfg1 has default registry (preserved by beval).
   have hreg_cfg1 : cfg1.registry = registry := by
     simpa using terminatesTo_preserves_registry ht_e1
@@ -235,25 +241,31 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   exact
     stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
       masked ctx predSat tm e1 e2 fuel' res
-      (fun _ => True) trivial trivial
-      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
-        (registry := registry)
-        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
-        (fun ctx μ ρ θ =>
-          consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-        (fun R qt μ θ v =>
-          valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-        IH)
+      (fun _ => True) (fun _ => True) trivial trivial trivial
+      (fun {_ctx} {_res} _ => trivial)
+      (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
+        StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
+          (registry := registry)
+          predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
+          (fun ctx μ ρ θ =>
+            consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+          (fun R qt μ θ v =>
+            valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+          IH m hm (tmᵢ := tmᵢ) e ctx trivial hwfTm hTmBounded res htc)
       htc
 
 lemma stepFR_seq_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (tm : TagMeaning) (CanUse : Expr → Prop)
+  (CtxReach : TypeContext → Prop)
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
+  (hctxCurrent : CtxReach ctxᵢ)
+  (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
+    CtxReach ctx → CtxReach (ctxAfter ctx res))
   (IH :
-    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
-      CanUse (registry := registry))
+    StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse CtxReach (registry := registry))
   (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.seq e1 e2) res predSat tm (registry := registry) := by
   -- Parse typecheck result
@@ -267,7 +279,7 @@ lemma stepFR_seq_with_expr_proof
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e1 ctxᵢ hcan1 hwfTm htagBounded res1 htc1'
+    e1 ctxᵢ hctxCurrent hcan1 hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for seq
   have hstruct₀ := terminatesTo_seq_inv' e1 e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -288,7 +300,8 @@ lemma stepFR_seq_with_expr_proof
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
     simpa [hctx', ctxAfter] using BoundaryTagMeaningPost.bounded hcanon1
   have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e2 ctx' hcan2 hwfTm' htagBounded1' res htc2'
+    e2 ctx' (by simpa [hctx', ctxAfter] using hctxAfter hctxCurrent)
+      hcan2 hwfTm' htagBounded1' res htc2'
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
@@ -396,13 +409,12 @@ lemma stepFR_seq
   (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.seq e1 e2) res predSat tm (registry := registry) := by
-  exact
-    stepFR_seq_with_expr_proof
-      ctxᵢ predSat e1 e2 fuel' res tm
-      (fun _ => True) trivial trivial
-      (StepFR_IH_WithExpr_of_plain
-        (registry := registry)
-        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH)
-      htc
+    exact
+      stepFR_seq_with_expr_proof
+        ctxᵢ predSat e1 e2 fuel' res tm
+        (fun _ => True) (fun _ => True) trivial trivial trivial (fun _ => trivial)
+        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
+          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
+        htc
 
 -- World-free version of stepFRW_vlet

@@ -4959,16 +4959,28 @@ abbrev StepFR_IH (registry : ExternRegistry := emptyExternRegistry) : Prop :=
     ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res →
       StepFR ctxᵢ e res predSat tmᵢ (registry := registry)
 
-abbrev StepFR_IH_WithExpr
-    (CanUse : Expr → Prop)
-    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
-  let _tmAnchor := tm
-  ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
-    CanUse e →
-    wfTagMeaningCtx tmᵢ ctxᵢ →
-    TagBoundedCtx ctxᵢ →
-    ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res →
-      StepFR ctxᵢ e res predSat tmᵢ (registry := registry)
+  abbrev StepFR_IH_WithExpr
+      (CanUse : Expr → Prop)
+      (registry : ExternRegistry := emptyExternRegistry) : Prop :=
+    let _tmAnchor := tm
+    ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
+      CanUse e →
+      wfTagMeaningCtx tmᵢ ctxᵢ →
+      TagBoundedCtx ctxᵢ →
+      ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res →
+        StepFR ctxᵢ e res predSat tmᵢ (registry := registry)
+
+  abbrev StepFR_IH_WithExprCtx
+      (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
+      (registry : ExternRegistry := emptyExternRegistry) : Prop :=
+    let _tmAnchor := tm
+    ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
+      CtxReach ctxᵢ →
+      CanUse e →
+      wfTagMeaningCtx tmᵢ ctxᵢ →
+      TagBoundedCtx ctxᵢ →
+      ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res →
+        StepFR ctxᵢ e res predSat tmᵢ (registry := registry)
 
 abbrev StepFRSingleRunFinalCleanPcTrue_IH
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
@@ -4980,17 +4992,30 @@ abbrev StepFRSingleRunFinalCleanPcTrue_IH
       typecheck ctxᵢ e m = .ok res →
       StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
 
-abbrev StepFRSingleRunFinalCleanPcTrue_IH_WithExpr
-    (CanUse : Expr → Prop)
-    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
-  let _tmAnchor := tm
-  ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
-    CanUse e →
-    wfTagMeaningCtx tmᵢ ctxᵢ →
-    TagMeaningBounded tmᵢ ctxᵢ.nextTag →
-    ∀ (res : TypeResult),
-      typecheck ctxᵢ e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
+  abbrev StepFRSingleRunFinalCleanPcTrue_IH_WithExpr
+      (CanUse : Expr → Prop)
+      (registry : ExternRegistry := emptyExternRegistry) : Prop :=
+    let _tmAnchor := tm
+    ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
+      CanUse e →
+      wfTagMeaningCtx tmᵢ ctxᵢ →
+      TagMeaningBounded tmᵢ ctxᵢ.nextTag →
+      ∀ (res : TypeResult),
+        typecheck ctxᵢ e m = .ok res →
+        StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
+
+  abbrev StepFRSingleRunFinalCleanPcTrue_IH_WithExprCtx
+      (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
+      (registry : ExternRegistry := emptyExternRegistry) : Prop :=
+    let _tmAnchor := tm
+    ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
+      CtxReach ctxᵢ →
+      CanUse e →
+      wfTagMeaningCtx tmᵢ ctxᵢ →
+      TagMeaningBounded tmᵢ ctxᵢ.nextTag →
+      ∀ (res : TypeResult),
+        typecheck ctxᵢ e m = .ok res →
+        StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
 
 abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
     (masked : Tag → Prop)
@@ -5006,21 +5031,38 @@ abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
       StepFRSingleRunFinalCleanPcTrueMaskedRegParam
         masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
 
-abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
-    (CanUse : Expr → Prop)
-    (masked : Tag → Prop)
-    (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+  abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
+      (CanUse : Expr → Prop)
+      (masked : Tag → Prop)
+      (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+      (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   let _tmAnchor := tm
   ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctx : TypeContext),
     CanUse e →
     wfTagMeaningCtx tmᵢ ctx →
     TagMeaningBounded tmᵢ ctx.nextTag →
-    ∀ (res : TypeResult),
-      typecheck ctx e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-        masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
+      ∀ (res : TypeResult),
+        typecheck ctx e m = .ok res →
+        StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+          masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
+
+  abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
+      (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
+      (masked : Tag → Prop)
+      (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
+      (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
+      (registry : ExternRegistry := emptyExternRegistry) : Prop :=
+    let _tmAnchor := tm
+    ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctx : TypeContext),
+      CtxReach ctx →
+      CanUse e →
+      wfTagMeaningCtx tmᵢ ctx →
+      TagMeaningBounded tmᵢ ctx.nextTag →
+      ∀ (res : TypeResult),
+        typecheck ctx e m = .ok res →
+        StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+          masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
 
 -- Convert strong-induction IH (no wfTagMeaningCtx/TagBoundedCtx) to StepFR_IH; extra premises are unused
 lemma StepFR_IH_of_induction

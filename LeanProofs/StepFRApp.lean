@@ -8945,16 +8945,28 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   (CanUse : Expr → Prop)
+  (CtxReach : TypeContext → Prop)
   (hcan1 : CanUse e1)
   (hcan2 : CanUse e2)
+  (hctxCurrent : CtxReach ctxᵢ)
+  (hctxE1 : CtxReach (ctxAfter ctxᵢ result2))
   (hcanFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
       AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       FnTClosure.regular x body σcap ∈ tcls → CanUse body)
+  (hctxFnBody :
+    ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)}
+      {bodyCtx : TypeContext},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      FnTClosure.regular x body σcap ∈ tcls →
+      bodyCtx.varEnv =
+        VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          { etyp := etyp2, poison := joinPoison ctxᵢ.pc p2, pred := pred2 } →
+      CtxReach bodyCtx)
   (singleIH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
-      predSat tm (Nat.succ (Nat.succ fuel')) CanUse (registry := registry)
-      masked CtxCons ValCons)
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
+      predSat tm (Nat.succ (Nat.succ fuel')) CanUse CtxReach masked CtxCons ValCons
+      (registry := registry))
   (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
   (htc2' : typecheck ctxᵢ e2 fuel' = .ok result2)
   (htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1)
@@ -9001,7 +9013,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   let cinit : Config :=
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-    e2 ctxᵢ hcan2 hwfTm hTmBounded result2 htc2'
+    e2 ctxᵢ hctxCurrent hcan2 hwfTm hTmBounded result2 htc2'
   have hIH_e2_inst := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH_e2_inst.1 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hTm2⟩
   have hstruct := terminatesTo_app_inv_full e1 e2 cinit cf o ht
@@ -9045,7 +9057,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 hTmBounded2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
     rcases
       hIH_e1_inst.2
@@ -9228,8 +9240,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         have hTmBoundedBody : TagMeaningBounded tm1 bodyCtx.nextTag := by
           simpa [bodyCtx] using hTmBounded1.mono hcursorTagA
         have hSingle_body :=
-          singleIH fuelBody hfuel_lt body bodyCtx (hcanFnBody happTyped hσcap_mem)
-            hTmBody hTmBoundedBody result3 htcBody'
+          singleIH fuelBody hfuel_lt body bodyCtx
+            (hctxFnBody happTyped hσcap_mem (by simp [bodyCtx]))
+            (hcanFnBody happTyped hσcap_mem) hTmBody hTmBoundedBody result3 htcBody'
         have hpc_body : bodyCtx.pc = true := by
           simp [bodyCtx, hpc, joinPoison]
         -- Thread extern registry: c₂' inherits it from cinit, c₁ from c₂'.
@@ -9548,7 +9561,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 hTmBounded2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
     rcases
       hIH_e1_inst.2
@@ -10023,7 +10036,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 hTmBounded2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
@@ -10075,7 +10088,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 hTmBounded2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
@@ -10122,17 +10135,29 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (e1 e2 : Expr) (fuel' : Nat) (res result2 result1 : TypeResult)
   (etyp2 : ETyp) (p2 : Poison) (pred2 : Predicate)
   (CanUse : Expr → Prop)
+  (CtxReach : TypeContext → Prop)
   (hcan1 : CanUse e1)
   (hcan2 : CanUse e2)
+  (hctxCurrent : CtxReach ctxᵢ)
+  (hctxE1 : CtxReach (ctxAfter ctxᵢ result2))
   (hcanPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
       {σcap : List (Name × QTyp)},
       AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
+  (hctxPfnBody :
+    ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      PFnTClosure.regular x pbody σcap ∈ tcls →
+      bodyCtx.varEnv =
+        VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          { etyp := etyp2, poison := joinPoison ctxᵢ.pc p2, pred := pred2 } →
+      CtxReach bodyCtx)
   (singleIH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
-      predSat tm (Nat.succ (Nat.succ fuel')) CanUse (registry := registry)
-      masked CtxCons ValCons)
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
+      predSat tm (Nat.succ (Nat.succ fuel')) CanUse CtxReach masked CtxCons ValCons
+      (registry := registry))
   (hqt2 : result2.qualType = ⟨etyp2, p2, pred2⟩)
   (htc2' : typecheck ctxᵢ e2 fuel' = .ok result2)
   (htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1)
@@ -10176,7 +10201,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   let cinit : Config :=
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-    e2 ctxᵢ hcan2 hwfTm hTmBounded result2 htc2'
+    e2 ctxᵢ hctxCurrent hcan2 hwfTm hTmBounded result2 htc2'
   have hIH_e2_inst := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH_e2_inst.1 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hTm2⟩
   have hstruct := terminatesTo_app_inv_full e1 e2 cinit cf o ht
@@ -10222,7 +10247,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 hTmBounded2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
@@ -10274,7 +10299,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 hTmBounded2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
@@ -10327,7 +10352,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 hTmBounded2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
     rcases
       hIH_e1_inst.2
@@ -10536,6 +10561,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           simpa [bodyCtx] using hTmBounded1.mono hcursorTagA
         have hSingle_body :=
           singleIH fuelBody hfuel_lt body bodyCtx
+            (hctxPfnBody happTyped hσcap_mem (by simp [bodyCtx]))
             (by simpa [hbody_eq] using hcanPfnBody happTyped hσcap_mem)
             hTmBody hTmBoundedBody result3 htcBody_body
         have hpc_body : bodyCtx.pc = true := by
@@ -10869,7 +10895,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     have hwfcfg2 : wfConfig c₂' := by
       exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 hTmBounded2 result1 htc1'
+      e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
@@ -11303,7 +11329,11 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
       consistentWithRegime predSat ctx.regime ctx μ ρ θ)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
+  (CtxReach : TypeContext → Prop)
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
+  (hctxCurrent : CtxReach ctxᵢ)
+  (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
+    CtxReach ctx → CtxReach (ctxAfter ctx res))
   (hcanFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
       AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
@@ -11313,10 +11343,32 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
       {σcap : List (Name × QTyp)},
       AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
+  (hctxFnBody :
+    ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)}
+      {bodyCtx : TypeContext} {result2 : TypeResult}
+      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      FnTClosure.regular x body σcap ∈ tcls →
+      bodyCtx.varEnv =
+        VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          { etyp := etyp2, poison := joinPoison ctxᵢ.pc p2, pred := pred2 } →
+      CtxReach bodyCtx)
+  (hctxPfnBody :
+    ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext} {result2 : TypeResult}
+      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      PFnTClosure.regular x pbody σcap ∈ tcls →
+      bodyCtx.varEnv =
+        VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          { etyp := etyp2, poison := joinPoison ctxᵢ.pc p2, pred := pred2 } →
+      CtxReach bodyCtx)
   (singleIH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
-      predSat tm (Nat.succ (Nat.succ fuel')) CanUse (registry := registry)
-      masked CtxCons ValCons)
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
+      predSat tm (Nat.succ (Nat.succ fuel')) CanUse CtxReach masked CtxCons ValCons
+      (registry := registry))
   (extFnSpec :
     ∀ {tcls : List FnTClosure},
       (htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
@@ -11364,9 +11416,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           ctxMember ctxJoinMember valBodyResult valJoinMember
           ctxConsOfRegular valConsOfRegular ctxConsToRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
-          CanUse hcan1 hcan2 (fun {tcls} {x} {body} {σcap} htyped hmem =>
+          CanUse CtxReach hcan1 hcan2 hctxCurrent (hctxAfter hctxCurrent)
+          (fun {tcls} {x} {body} {σcap} htyped hmem =>
             hcanFnBody (tcls := tcls) (x := x) (body := body) (σcap := σcap)
               htyped hmem)
+          (fun {tcls} {x} {body} {σcap} {bodyCtx} htyped hmem hvar =>
+            hctxFnBody (x := x) (body := body) (σcap := σcap)
+              (bodyCtx := bodyCtx) (result2 := result2) htyped hqt2 hmem hvar)
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest
           (by simpa [hfnTyped] using extFnSpec (tcls := tcls) hfnTyped)
@@ -11393,9 +11449,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           ctxMember ctxJoinMember valBodyResult valJoinMember
           ctxConsOfRegular valConsOfRegular ctxConsToRegular
           e1 e2 fuel' res result2 result1 etyp2 p2 pred2
-          CanUse hcan1 hcan2 (fun {tcls} {x} {pbody} {σcap} htyped hmem =>
+          CanUse CtxReach hcan1 hcan2 hctxCurrent (hctxAfter hctxCurrent)
+          (fun {tcls} {x} {pbody} {σcap} htyped hmem =>
             hcanPfnBody (tcls := tcls) (x := x) (pbody := pbody) (σcap := σcap)
               htyped hmem)
+          (fun {tcls} {x} {pbody} {σcap} {bodyCtx} htyped hmem hvar =>
+            hctxPfnBody (x := x) (pbody := pbody) (σcap := σcap)
+              (bodyCtx := bodyCtx) (result2 := result2) htyped hqt2 hmem hvar)
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest
           (by simpa [hpfnTyped] using extPfnSpec (tcls := tcls) hpfnTyped)
@@ -11466,7 +11526,110 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
           (masked := masked) (predSat := predSat) (R := ctx.regime)
           hnone hctx)
       e1 e2 fuel' res
-      CanUse hcan1 hcan2 hcanFnBody hcanPfnBody
+      CanUse (fun _ => True) hcan1 hcan2 trivial
+      (fun {_ctx} {_res} _ => trivial)
+      hcanFnBody hcanPfnBody
+      (fun {_tcls} {_x} {_body} {_σcap} {_bodyCtx} {_result2} {_etyp2} {_p2}
+        {_pred2} _ _ _ _ => trivial)
+      (fun {_tcls} {_x} {_pbody} {_σcap} {_bodyCtx} {_result2} {_etyp2} {_p2}
+        {_pred2} _ _ _ _ => trivial)
+      (fun m hm {tmᵢ} e ctx _hctx hcan hwfTm hTmBounded res htc =>
+        singleIH m hm (tmᵢ := tmᵢ) e ctx hcan hwfTm hTmBounded res htc)
+      extFnSpec extPfnSpec htc
+
+lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof_ctxReach
+  (masked : Tag → Prop)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (registry : ExternRegistry := emptyExternRegistry)
+  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
+  (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
+  (hcan1 : CanUse e1) (hcan2 : CanUse e2)
+  (hctxCurrent : CtxReach ctxᵢ)
+  (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
+    CtxReach ctx → CtxReach (ctxAfter ctx res))
+  (hcanFnBody :
+    ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      FnTClosure.regular x body σcap ∈ tcls → CanUse body)
+  (hcanPfnBody :
+    ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
+  (hctxFnBody :
+    ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)}
+      {bodyCtx : TypeContext} {result2 : TypeResult}
+      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      FnTClosure.regular x body σcap ∈ tcls →
+      bodyCtx.varEnv =
+        VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          { etyp := etyp2, poison := joinPoison ctxᵢ.pc p2, pred := pred2 } →
+      CtxReach bodyCtx)
+  (hctxPfnBody :
+    ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext} {result2 : TypeResult}
+      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      PFnTClosure.regular x pbody σcap ∈ tcls →
+      bodyCtx.varEnv =
+        VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          { etyp := etyp2, poison := joinPoison ctxᵢ.pc p2, pred := pred2 } →
+      CtxReach bodyCtx)
+  (singleIH :
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
+      predSat tm (Nat.succ (Nat.succ fuel')) CanUse CtxReach
+      masked
+      (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+      (registry := registry))
+  (extFnSpec :
+    ∀ {tcls : List FnTClosure},
+      (htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      ExternCallBoundarySingleFnContract masked
+        (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+        (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+        ctxᵢ res e1 e2 tcls htyped.st1 (registry := registry))
+  (extPfnSpec :
+    ∀ {tcls : List PFnTClosure},
+      (htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      ExternCallBoundarySinglePfnContract masked
+        (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+        (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+        ctxᵢ res e1 e2 tcls htyped.st1 (registry := registry))
+  (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
+  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
+    masked
+    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+    ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
+  exact
+    stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
+      masked
+      (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+      (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+      ctxᵢ predSat tm registry
+      (stepFRApp_closureBodyStart_masked masked predSat tm)
+      (stepFRApp_pClosureBodyStart_masked masked predSat tm)
+      (stepFRApp_externClosureBodyStart_masked masked predSat tm)
+      (stepFRApp_externPClosureBodyStart_masked masked predSat tm)
+      (stepFRApp_memberCtxCons_masked masked predSat)
+      (stepFRApp_joinCtxConsFromMember_masked masked predSat)
+      (stepFRApp_bodyResultValCons_masked masked predSat)
+      (stepFRApp_joinValConsFromMember_masked masked predSat)
+      (fun {ctx} {μ} {ρ} {θ} h =>
+        consistentWithRegime_to_masked (masked := masked) h)
+      (fun {R} {qt} {μ} {θ} {v} h =>
+        valueConsistentWithRegime_to_masked (masked := masked) h)
+      (fun {ctx} {_μ} {_ρ} {_θ} hnone hctx =>
+        consistentWithRegimeMasked_unmask
+          (masked := masked) (predSat := predSat) (R := ctx.regime)
+          hnone hctx)
+      e1 e2 fuel' res
+      CanUse CtxReach hcan1 hcan2 hctxCurrent hctxAfter
+      hcanFnBody hcanPfnBody hctxFnBody hctxPfnBody
       singleIH extFnSpec extPfnSpec htc
 
 lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
@@ -11523,7 +11686,11 @@ lemma stepFR_app_with_expr_proof
   (registry : ExternRegistry := emptyExternRegistry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
+  (CtxReach : TypeContext → Prop)
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
+  (hctxCurrent : CtxReach ctxᵢ)
+  (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
+    CtxReach ctx → CtxReach (ctxAfter ctx res))
   (hcanFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)},
       AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
@@ -11532,12 +11699,34 @@ lemma stepFR_app_with_expr_proof
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr} {σcap : List (Name × QTyp)},
       AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
+  (hctxFnBody :
+    ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)}
+      {bodyCtx : TypeContext} {result2 : TypeResult}
+      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      FnTClosure.regular x body σcap ∈ tcls →
+      bodyCtx.varEnv =
+        VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          { etyp := etyp2, poison := joinPoison ctxᵢ.pc p2, pred := pred2 } →
+      CtxReach bodyCtx)
+  (hctxPfnBody :
+    ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext} {result2 : TypeResult}
+      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      PFnTClosure.regular x pbody σcap ∈ tcls →
+      bodyCtx.varEnv =
+        VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
+          { etyp := etyp2, poison := joinPoison ctxᵢ.pc p2, pred := pred2 } →
+      CtxReach bodyCtx)
   (IH :
-    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
-      CanUse (registry := registry))
+    StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse CtxReach (registry := registry))
   (singleIH :
-    StepFRSingleRunFinalCleanPcTrue_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
-      CanUse (registry := registry))
+    StepFRSingleRunFinalCleanPcTrue_IH_WithExprCtx predSat tm
+      (Nat.succ (Nat.succ fuel')) CanUse CtxReach (registry := registry))
   (entryKey : ExternCallEntryKey := ExternCallImpossibleEntryKey)
   (_hentryKey_unique :
     ∀ {id : ExternId} {entry₀ entry₁ : TrustedExternEntry},
@@ -11589,7 +11778,7 @@ lemma stepFR_app_with_expr_proof
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
     -- Phase 2: IH for e2 (e1 IH defined after we have hTm2 from e2)
-    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hcan2 hwfTm htagBounded result2 htc2'
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hctxCurrent hcan2 hwfTm htagBounded result2 htc2'
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config :=
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
@@ -11616,7 +11805,7 @@ lemma stepFR_app_with_expr_proof
         hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -11653,9 +11842,7 @@ lemma stepFR_app_with_expr_proof
           hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-      have hIH_e1 :=
-        IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-          e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -11889,7 +12076,7 @@ lemma stepFR_app_with_expr_proof
           have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
             simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
           -- Phase B: Apply IH for e1
-          have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+          have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
           have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
           have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
           have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -12297,6 +12484,8 @@ lemma stepFR_app_with_expr_proof
                 · simpa [VarEnv.update] using wfVarEnv.cons x₀ v₂₀ env₀ hv₂₀_wf henv₀_wf
               have hSingle_bodyA₀ :=
                 singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀
+                  (hctxFnBody (bodyCtx := bodyCtxA₀) (result2 := result2)
+                    hfnTyped hqt2 hσcapA₀_mem (by simp [bodyCtxA₀]))
                   (hcanFnBody hfnTyped hσcapA₀_mem) hTmBodyA₀
                   (by simpa [bodyCtxA₀] using
                     (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀)
@@ -12503,6 +12692,8 @@ lemma stepFR_app_with_expr_proof
                 · simpa [VarEnv.update] using wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf
               have hSingle_bodyA₁ :=
                 singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁
+                  (hctxFnBody (bodyCtx := bodyCtxA₁) (result2 := result2)
+                    hfnTyped hqt2 hσcapA₁_mem (by simp [bodyCtxA₁]))
                   (hcanFnBody hfnTyped hσcapA₁_mem) hTmBodyA₁
                   (by simpa [bodyCtxA₁] using
                     (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁)
@@ -13085,7 +13276,10 @@ lemma stepFR_app_with_expr_proof
                     BoundaryTagMeaningPost.bounded hcanon1
                   simpa [bodyCtx, ctxAfter] using hbase.mono hcursorSharedTag
                 have hIH_body :=
-                  IH fuelBody hfuel_lt body₀ bodyCtx (hcanFnBody hfnTyped hmem) hTmBody
+                  IH fuelBody hfuel_lt body₀ bodyCtx
+                    (hctxFnBody (bodyCtx := bodyCtx) (result2 := result2)
+                      hfnTyped hqt2 hmem (by simp [bodyCtx]))
+                    (hcanFnBody hfnTyped hmem) hTmBody
                     htagBoundedBody result3Shared htcBody'
                 have hwfBodyCtx : wfTypeContext bodyCtx := by
                   simp only [bodyCtx, wfTypeContext]
@@ -14154,9 +14348,7 @@ lemma stepFR_app_with_expr_proof
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-              have hIH_e1 :=
-                IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+              have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -14582,6 +14774,8 @@ lemma stepFR_app_with_expr_proof
                 exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               have hSingle_bodyU₀ :=
                 singleIH fuelBodyU₀ hfuel_ltU₀ body₀ bodyCtxU₀
+                  (hctxFnBody (bodyCtx := bodyCtxU₀) (result2 := result2)
+                    hfnTyped hqt2 hσcap₀_mem (by simp [bodyCtxU₀]))
                   (hcanFnBody hfnTyped hσcap₀_mem) hTmBodyU₀
                   hTmBoundedBodyU₀ result3U₀ htcBodyU₀'
               have hpc_bodyU₀ : bodyCtxU₀.pc = true := by
@@ -14817,9 +15011,7 @@ lemma stepFR_app_with_expr_proof
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-              have hIH_e1 :=
-                IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+              have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -15292,6 +15484,8 @@ lemma stepFR_app_with_expr_proof
                     hcwrBody hwfcfg_body_initE₀ hpcBody
               have hSingle_bodyU₁ :=
                 singleIH fuelBodyU₁ hfuel_ltU₁ body₁ bodyCtxU₁
+                  (hctxFnBody (bodyCtx := bodyCtxU₁) (result2 := result2)
+                    hfnTyped hqt2 hσcap₁_mem (by simp [bodyCtxU₁]))
                   (hcanFnBody hfnTyped hσcap₁_mem) hTmBodyU₁
                   hTmBoundedBodyU₁ result3U₁ htcBodyU₁'
               have hreg_c₁₁ : c₁₁.registry = registry := by
@@ -15464,9 +15658,7 @@ lemma stepFR_app_with_expr_proof
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-              have hIH_e1 :=
-                IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+              have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -16018,9 +16210,7 @@ lemma stepFR_app_with_expr_proof
                   have hTmBounded2 :
                       TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                     simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-                  have hIH_e1 :=
-                    IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+                  have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
                   have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
                   have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
                   obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -16852,7 +17042,7 @@ lemma stepFR_app_with_expr_proof
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
     -- Phase 2: IH for e2
-    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hcan2 hwfTm htagBounded result2 htc2'
+    have hIH_e2 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e2 ctxᵢ hctxCurrent hcan2 hwfTm htagBounded result2 htc2'
     -- Phase 3: Runtime evaluation inversion
     let cinit₀ : Config :=
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
@@ -16877,7 +17067,7 @@ lemma stepFR_app_with_expr_proof
         hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -16914,9 +17104,7 @@ lemma stepFR_app_with_expr_proof
           hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-      have hIH_e1 :=
-        IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-          e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+      have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
       have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -17164,7 +17352,7 @@ lemma stepFR_app_with_expr_proof
           have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
             simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
           -- Phase B: Apply IH for e1
-          have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+          have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
           have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
           have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
           have h_mono2 : Regime.monotoneStep ctxᵢ.regime result2.regime' := regime_monotone ctxᵢ e2 fuel' result2 htc2'
@@ -17707,6 +17895,8 @@ lemma stepFR_app_with_expr_proof
                   registry := registry } evalCfg₀ o₀ := ht₀_body
             have hSingle_bodyA₀ :=
               singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀
+                (hctxPfnBody (bodyCtx := bodyCtxA₀) (result2 := result2)
+                  hpfnTyped hqt2 hσcapA₀_mem (by simp [bodyCtxA₀]))
                 (by
                   have hcan := hcanPfnBody hpfnTyped hσcapA₀_mem
                   simpa [PExpr_toExpr_of_toPExpr?_some body₀ pbodyA₀ htoPExprA₀] using hcan)
@@ -17922,6 +18112,8 @@ lemma stepFR_app_with_expr_proof
                   registry := registry } evalCfg₁ o₁ := ht₁_body
             have hSingle_bodyA₁ :=
               singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁
+                (hctxPfnBody (bodyCtx := bodyCtxA₁) (result2 := result2)
+                  hpfnTyped hqt2 hσcapA₁_mem (by simp [bodyCtxA₁]))
                 (by
                   have hcan := hcanPfnBody hpfnTyped hσcapA₁_mem
                   simpa [PExpr_toExpr_of_toPExpr?_some body₁ pbodyA₁ htoPExprA₁] using hcan)
@@ -18483,6 +18675,8 @@ lemma stepFR_app_with_expr_proof
                         (by simpa [ctxAfter] using hb_predM1) hcursorSharedTag
               have hIH_body :=
                 IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx
+                  (hctxPfnBody (bodyCtx := bodyCtx) (result2 := result2)
+                    hpfnTyped hqt2 hmem (by simp [bodyCtx, hx₀]))
                   (hcanPfnBody hpfnTyped hmem)
                   hTmBody htagBoundedBody result3Shared htcBody'
               have hTmBoundedBody : TagMeaningBounded tm1 bodyCtx.nextTag := by
@@ -19649,9 +19843,7 @@ lemma stepFR_app_with_expr_proof
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-              have hIH_e1 :=
-                IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+              have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -20013,6 +20205,8 @@ lemma stepFR_app_with_expr_proof
                 exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               have hSingle_bodyU₀ :=
                 singleIH fuelBodyU₀ hfuel_ltU₀ (PExpr.toExpr pbody₀) bodyCtxU₀
+                  (hctxPfnBody (bodyCtx := bodyCtxU₀) (result2 := result2)
+                    hpfnTyped hqt2 hsource₀ (by simp [bodyCtxU₀]))
                   (hcanPfnBody hpfnTyped hsource₀) hTmBodyU₀
                   hTmBoundedBodyU₀ result3U₀ htcBodyU₀'
               have hpc_bodyU₀ : bodyCtxU₀.pc = true := by
@@ -20263,9 +20457,7 @@ lemma stepFR_app_with_expr_proof
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-              have hIH_e1 :=
-                IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+              have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -20674,6 +20866,8 @@ lemma stepFR_app_with_expr_proof
                     hcwrBody hwfcfg_body_initE₀ hpcBody
               have hSingle_bodyU₁ :=
                 singleIH fuelBodyU₁ hfuel_ltU₁ (PExpr.toExpr pbody₁) bodyCtxU₁
+                  (hctxPfnBody (bodyCtx := bodyCtxU₁) (result2 := result2)
+                    hpfnTyped hqt2 hsource₁ (by simp [bodyCtxU₁]))
                   (hcanPfnBody hpfnTyped hsource₁) hTmBodyU₁
                   hTmBoundedBodyU₁ result3U₁ htcBodyU₁'
               have hreg_c₁₁ : c₁₁.registry = registry := by
@@ -20868,9 +21062,7 @@ lemma stepFR_app_with_expr_proof
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-              have hIH_e1 :=
-                IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                  e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+              have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
               have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -21436,9 +21628,7 @@ lemma stepFR_app_with_expr_proof
                   have hTmBounded2 :
                       TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                     simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
-                  have hIH_e1 :=
-                    IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
-                      e1 (ctxAfter ctxᵢ result2) hcan1 hTm2 _htagBounded2 result1 htc1'
+                  have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
                   have hθ₀2wf : wfRealizationMap θ₀2 := hθext₀2.2 hθ₀
                   have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
                   obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
@@ -22200,16 +22390,19 @@ lemma stepFR_app
         htyped.st1 (entryKey := entryKey) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
-  exact
-    stepFR_app_with_expr_proof
-      ctxᵢ predSat tm registry e1 e2 fuel' res
-      (fun _ => True) trivial trivial
-      (fun {_tcls} {_x} {_body} {_σcap} _ _ => trivial)
-      (fun {_tcls} {_x} {_pbody} {_σcap} _ _ => trivial)
-      (StepFR_IH_WithExpr_of_plain
-        (registry := registry)
-        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH)
-      (StepFRSingleRunFinalCleanPcTrue_IH_WithExpr_of_plain
-        (registry := registry)
-        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) singleIH)
-      entryKey _hentryKey_unique _hcallFR_of_entryKey _hfnLocal _hpfnLocal htc
+    exact
+      stepFR_app_with_expr_proof
+        ctxᵢ predSat tm registry e1 e2 fuel' res
+        (fun _ => True) (fun _ => True) trivial trivial trivial
+        (fun {_ctx} {_res} _ => trivial)
+        (fun {_tcls} {_x} {_body} {_σcap} _ _ => trivial)
+        (fun {_tcls} {_x} {_pbody} {_σcap} _ _ => trivial)
+        (fun {_tcls} {_x} {_body} {_σcap} {_bodyCtx} {_result2} {_etyp2} {_p2}
+          {_pred2} _ _ _ _ => trivial)
+        (fun {_tcls} {_x} {_pbody} {_σcap} {_bodyCtx} {_result2} {_etyp2} {_p2}
+          {_pred2} _ _ _ _ => trivial)
+        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
+          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
+        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
+          singleIH m hm (tmᵢ := tmᵢ) e ctx hwfTm hTmBounded res htc)
+        entryKey _hentryKey_unique _hcallFR_of_entryKey _hfnLocal _hpfnLocal htc

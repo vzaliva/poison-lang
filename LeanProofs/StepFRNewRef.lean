@@ -276,10 +276,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
+  (CtxReach : TypeContext → Prop)
   (hcan : CanUse e)
+  (hctxCurrent : CtxReach ctxᵢ)
   (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
+    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
       predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+      CtxReach
       masked
       (fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
@@ -306,7 +309,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
         hwfTm hTmBounded hpredlaws htc
   intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hcan hwfTm hTmBounded res1 htc1'
+    e ctxᵢ hctxCurrent hcan hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_newRef_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg', n, ht_e, ho, hmem, _hnext, hvar, _hpm⟩
@@ -554,25 +557,28 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
   exact
     stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
       masked ctxᵢ predSat tm e fuel' res
-      (fun _ => True) trivial
-      (StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
-        (registry := registry)
-        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
-        (fun ctx μ ρ θ =>
-          consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-        (fun R qt μ θ v =>
-          valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-        IH)
+      (fun _ => True) (fun _ => True) trivial trivial
+      (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
+        StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
+          (registry := registry)
+          predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
+          (fun ctx μ ρ θ =>
+            consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
+          (fun R qt μ θ v =>
+            valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
+          IH m hm (tmᵢ := tmᵢ) e ctx trivial hwfTm hTmBounded res htc)
       htc
 
 lemma stepFR_newRef_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (tm : TagMeaning) (CanUse : Expr → Prop)
+  (CtxReach : TypeContext → Prop)
   (hcan : CanUse e)
+  (hctxCurrent : CtxReach ctxᵢ)
   (IH :
-    StepFR_IH_WithExpr predSat tm (Nat.succ (Nat.succ fuel'))
-      CanUse (registry := registry))
+    StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
+      CanUse CtxReach (registry := registry))
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.newRef e) res predSat tm (registry := registry) := by
   -- Parse typecheck result
@@ -584,7 +590,7 @@ lemma stepFR_newRef_with_expr_proof
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
-    e ctxᵢ hcan hwfTm htagBounded res1 htc1'
+    e ctxᵢ hctxCurrent hcan hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for newRef
   have hstruct₀ := terminatesTo_newRef_inv' e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -1535,13 +1541,12 @@ lemma stepFR_newRef
   (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.newRef e) res predSat tm (registry := registry) := by
-  exact
-    stepFR_newRef_with_expr_proof
-      ctxᵢ predSat e fuel' res tm
-      (fun _ => True) trivial
-      (StepFR_IH_WithExpr_of_plain
-        (registry := registry)
-        predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH)
-      htc
+    exact
+      stepFR_newRef_with_expr_proof
+        ctxᵢ predSat e fuel' res tm
+        (fun _ => True) (fun _ => True) trivial trivial
+        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
+          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
+        htc
 
 -- World-free version of stepFRW_seq

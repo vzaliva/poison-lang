@@ -916,6 +916,12 @@ inductive ExternDeclarationInProgram : Expr → ExternId → ExternDeclaration �
   | fn_body {x argTyp body retTyp id d} :
       ExternDeclarationInProgram body id d →
       ExternDeclarationInProgram (Expr.fn x argTyp body retTyp) id d
+  | fn_extern_body_runtime {x argTyp retTyp id y bodyArgTyp retSpec effects} :
+      ExternDeclarationInProgram
+        (Expr.fn x argTyp (Expr.externFn id y bodyArgTyp retSpec effects) retTyp) id
+        { id := id, kind := .fn, typ := bodyArgTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects }
   | pfn_body {x argTyp body retTyp id d} :
       ExternDeclarationInProgram body id d →
       ExternDeclarationInProgram (Expr.pfn x argTyp body retTyp) id d
@@ -967,6 +973,7 @@ theorem id_eq
   | vlet_bound _ ih => exact ih
   | vlet_body _ ih => exact ih
   | fn_body _ ih => exact ih
+  | fn_extern_body_runtime => rfl
   | pfn_body _ ih => exact ih
   | app_fun _ ih => exact ih
   | app_arg _ ih => exact ih
@@ -2093,6 +2100,21 @@ theorem context_ofCaptured
 
 end CapturedEnvReachableFrom
 
+namespace ContextReachableFrom
+
+theorem ofCaptured_update
+    {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
+    (hcap : CapturedEnvReachableFrom root ctxRoot σcap)
+    (ctx : TypeContext)
+    {x : Name} {qt : QTyp}
+    (hqt : QTypReachableFrom root ctxRoot qt) :
+    ContextReachableFrom root ctxRoot
+      { ctx with varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x qt } := by
+  exact ContextReachableFrom.update
+    (CapturedEnvReachableFrom.context_ofCaptured hcap ctx) hqt
+
+end ContextReachableFrom
+
 namespace QTypReachableFrom
 
 theorem arrow_redecorate
@@ -2140,6 +2162,45 @@ theorem parrow_redecorate
       exact hqt (ExternDeclarationReachableFromQTyp.parrow_extern_return hmem hret)
   | parrow_extern_captured hmem hcap =>
       exact hqt (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmem hcap)
+
+theorem etyp_redecorate
+    {root : Expr} {ctxRoot : TypeContext} {etyp : ETyp}
+    {qpoison₀ qpoison₁ : Poison} {qpred₀ qpred₁ : Predicate}
+    (hqt :
+      QTypReachableFrom root ctxRoot
+        { etyp := etyp, poison := qpoison₀, pred := qpred₀ }) :
+    QTypReachableFrom root ctxRoot
+        { etyp := etyp, poison := qpoison₁, pred := qpred₁ } := by
+  cases etyp with
+  | int =>
+      intro _id _d hreach
+      cases hreach
+  | bool =>
+      intro _id _d hreach
+      cases hreach
+  | unit =>
+      intro _id _d hreach
+      cases hreach
+  | string =>
+      intro _id _d hreach
+      cases hreach
+  | ref _ls =>
+      intro _id _d hreach
+      cases hreach
+  | arrow st1 st2 p tcls =>
+      exact arrow_redecorate hqt
+  | parrow st1 st2 p tcls =>
+      exact parrow_redecorate hqt
+
+theorem of_eq_redecorate
+    {root : Expr} {ctxRoot : TypeContext} {qt : QTyp}
+    {etyp : ETyp} {qpoison₀ qpoison₁ : Poison} {qpred₀ qpred₁ : Predicate}
+    (hqt : QTypReachableFrom root ctxRoot qt)
+    (heq : qt = { etyp := etyp, poison := qpoison₀, pred := qpred₀ }) :
+    QTypReachableFrom root ctxRoot
+      { etyp := etyp, poison := qpoison₁, pred := qpred₁ } := by
+  subst qt
+  exact etyp_redecorate hqt
 
 theorem fn_regular_body
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
@@ -2290,7 +2351,402 @@ theorem pfn_extern_captured
   intro _id _d hcap
   exact hqt (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmem hcap)
 
+theorem of_fn_result
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {x : Name} {st1 st2 : Typ} {body : Expr}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (hcurrent :
+      ExternDeclarationReachableFromExpr root ctxRoot
+        (Expr.fn x st1 body st2)) :
+    QTypReachableFrom root ctxRoot
+      { etyp :=
+          ETyp.arrow st1 st2 ctx.pc
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+        poison := ctx.pc,
+        pred := Predicate.noPred } := by
+  intro _id _d hreach
+  cases hreach with
+  | arrow_regular_body hmem hprog =>
+      cases hmem with
+      | head => exact hcurrent (ExternDeclarationInProgram.fn_body hprog)
+      | tail _ htail => cases htail
+  | arrow_regular_captured hmem hcap =>
+      cases hmem with
+      | head => exact CapturedEnvReachableFrom.of_toCaptured hctx hcap
+      | tail _ htail => cases htail
+  | arrow_extern_member hmem =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | arrow_extern_return hmem _hret =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | arrow_extern_captured hmem _hcap =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | arrow_regular_extern_body hmem =>
+      cases hmem with
+      | head => exact hcurrent ExternDeclarationInProgram.fn_extern_body_runtime
+      | tail _ htail => cases htail
+
+theorem of_pfn_result
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {x : Name} {st1 st2 : Typ} {body : PExpr}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (hcurrent :
+      ExternDeclarationReachableFromExpr root ctxRoot
+        (Expr.pfn x st1 (PExpr.toExpr body) st2)) :
+    QTypReachableFrom root ctxRoot
+      { etyp :=
+          ETyp.parrow st1 st2 ctx.pc
+            [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+        poison := ctx.pc,
+        pred := Predicate.noPred } := by
+  intro _id _d hreach
+  cases hreach with
+  | parrow_regular_body hmem hprog =>
+      cases hmem with
+      | head => exact hcurrent (ExternDeclarationInProgram.pfn_body hprog)
+      | tail _ htail => cases htail
+  | parrow_regular_captured hmem hcap =>
+      cases hmem with
+      | head => exact CapturedEnvReachableFrom.of_toCaptured hctx hcap
+      | tail _ htail => cases htail
+  | parrow_extern_member hmem =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | parrow_extern_return hmem _hret =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | parrow_extern_captured hmem _hcap =>
+      cases hmem with
+      | tail _ htail => cases htail
+
+theorem of_externFn_result
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {id : ExternId} {x : Name} {argTyp : Typ}
+    {retSpec : ExternReturn} {effects : List Effect}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (hcurrent :
+      ExternDeclarationReachableFromExpr root ctxRoot
+        (Expr.externFn id x argTyp retSpec effects)) :
+    QTypReachableFrom root ctxRoot
+      { etyp :=
+          ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
+            [FnTClosure.extern id x retSpec effects
+              (VarTypeEnv.toCaptured ctx.varEnv)],
+        poison := ctx.pc,
+        pred := Predicate.noPred } := by
+  intro _nestedId _d hreach
+  cases hreach with
+  | arrow_regular_body hmem _hprog =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | arrow_regular_captured hmem _hcap =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | arrow_extern_member hmem =>
+      cases hmem with
+      | head => exact hcurrent ExternDeclarationInProgram.externFn
+      | tail _ htail => cases htail
+  | arrow_extern_return hmem hret =>
+      cases hmem with
+      | head => exact hcurrent (ExternDeclarationInProgram.externFn_return hret)
+      | tail _ htail => cases htail
+  | arrow_extern_captured hmem hcap =>
+      cases hmem with
+      | head => exact CapturedEnvReachableFrom.of_toCaptured hctx hcap
+      | tail _ htail => cases htail
+  | arrow_regular_extern_body hmem =>
+      cases hmem with
+      | tail _ htail => cases htail
+
+theorem of_externPfn_result
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {id : ExternId} {x : Name} {argTyp : Typ}
+    {retSpec : ExternReturn}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (hcurrent :
+      ExternDeclarationReachableFromExpr root ctxRoot
+        (Expr.externPfn id x argTyp retSpec)) :
+    QTypReachableFrom root ctxRoot
+      { etyp :=
+          ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
+            [PFnTClosure.extern id x retSpec
+              (VarTypeEnv.toCaptured ctx.varEnv)],
+        poison := ctx.pc,
+        pred := Predicate.noPred } := by
+  intro _nestedId _d hreach
+  cases hreach with
+  | parrow_regular_body hmem _hprog =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | parrow_regular_captured hmem _hcap =>
+      cases hmem with
+      | tail _ htail => cases htail
+  | parrow_extern_member hmem =>
+      cases hmem with
+      | head => exact hcurrent ExternDeclarationInProgram.externPfn
+      | tail _ htail => cases htail
+  | parrow_extern_return hmem hret =>
+      cases hmem with
+      | head => exact hcurrent (ExternDeclarationInProgram.externPfn_return hret)
+      | tail _ htail => cases htail
+  | parrow_extern_captured hmem hcap =>
+      cases hmem with
+      | head => exact CapturedEnvReachableFrom.of_toCaptured hctx hcap
+      | tail _ htail => cases htail
+
+theorem of_typecheckFn
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {x : Name} {st1 st2 : Typ} {body : Expr} {res : TypeResult}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (hcurrent :
+      ExternDeclarationReachableFromExpr root ctxRoot
+        (Expr.fn x st1 body st2))
+    (htc : typecheckFn ctx x st1 body st2 = .ok res) :
+    QTypReachableFrom root ctxRoot res.qualType := by
+  simp [typecheckFn, pure, Except.pure] at htc
+  cases htc
+  exact of_fn_result hctx hcurrent
+
+theorem of_typecheckPfn
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {x : Name} {st1 st2 : Typ} {body : Expr} {res : TypeResult}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (hcurrent :
+      ExternDeclarationReachableFromExpr root ctxRoot
+        (Expr.pfn x st1 body st2))
+    (htc : typecheckPfn ctx x st1 body st2 = .ok res) :
+    QTypReachableFrom root ctxRoot res.qualType := by
+  cases hbody : body.toPExpr with
+  | error err =>
+      simp [typecheckPfn, hbody, bind, Except.bind] at htc
+  | ok pbody =>
+      simp [typecheckPfn, hbody, bind, Except.bind, pure, Except.pure] at htc
+      cases htc
+      have hsome : Expr.toPExpr? body = some pbody :=
+        Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
+      have hbody_eq : PExpr.toExpr pbody = body :=
+        PExpr_toExpr_of_toPExpr?_some body pbody hsome
+      rw [← hbody_eq] at hcurrent
+      change ∀ {id : ExternId} {d : ExternDeclaration},
+        ExternDeclarationReachableFromQTyp root ctxRoot
+          { etyp := ETyp.parrow st1 st2 ctx.pc
+              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctx.varEnv)],
+            poison := ctx.pc, pred := Predicate.noPred } id d →
+        ExternDeclarationReachableFromContext root ctxRoot id d
+      exact of_pfn_result hctx hcurrent
+
+theorem of_typecheckExternFn
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {id : ExternId} {x : Name} {argTyp : Typ}
+    {retSpec : ExternReturn} {effects : List Effect} {res : TypeResult}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (hcurrent :
+      ExternDeclarationReachableFromExpr root ctxRoot
+        (Expr.externFn id x argTyp retSpec effects))
+    (htc : typecheckExternFn ctx id x argTyp retSpec effects = .ok res) :
+    QTypReachableFrom root ctxRoot res.qualType := by
+  have hres :=
+    typecheckExternFn_ok_res_eq ctx id x argTyp retSpec effects res htc
+  subst res
+  change ∀ {nestedId : ExternId} {d : ExternDeclaration},
+    ExternDeclarationReachableFromQTyp root ctxRoot
+      { etyp := ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
+          [FnTClosure.extern id x retSpec effects
+            (VarTypeEnv.toCaptured ctx.varEnv)],
+        poison := ctx.pc, pred := Predicate.noPred } nestedId d →
+    ExternDeclarationReachableFromContext root ctxRoot nestedId d
+  exact of_externFn_result hctx hcurrent
+
+theorem of_typecheckExternPfn
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {id : ExternId} {x : Name} {argTyp : Typ}
+    {retSpec : ExternReturn} {res : TypeResult}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (hcurrent :
+      ExternDeclarationReachableFromExpr root ctxRoot
+        (Expr.externPfn id x argTyp retSpec))
+    (htc : typecheckExternPfn ctx id x argTyp retSpec = .ok res) :
+    QTypReachableFrom root ctxRoot res.qualType := by
+  have hres :=
+    typecheckExternPfn_ok_res_eq ctx id x argTyp retSpec res htc
+  subst res
+  change ∀ {nestedId : ExternId} {d : ExternDeclaration},
+    ExternDeclarationReachableFromQTyp root ctxRoot
+      { etyp := ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
+          [PFnTClosure.extern id x retSpec
+            (VarTypeEnv.toCaptured ctx.varEnv)],
+        poison := ctx.pc, pred := Predicate.noPred } nestedId d →
+    ExternDeclarationReachableFromContext root ctxRoot nestedId d
+  exact of_externPfn_result hctx hcurrent
+
+theorem of_non_function_etyp
+    {root : Expr} {ctxRoot : TypeContext} {qt : QTyp}
+    (hfun : qt.etyp.isFunctionType = false) :
+    QTypReachableFrom root ctxRoot qt := by
+  intro _id _d hreach
+  cases qt with
+  | mk etyp poison pred =>
+      cases etyp <;> simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hfun
+      all_goals cases hreach
+
+theorem of_typecheckVar
+    {root : Expr} {ctxRoot ctx : TypeContext}
+    {x : Name} {res : TypeResult}
+    (hctx : ContextReachableFrom root ctxRoot ctx)
+    (htc : typecheckVar ctx x = .ok res) :
+    QTypReachableFrom root ctxRoot res.qualType := by
+  unfold typecheckVar at htc
+  cases hlookup : ctx.varEnv.lookup x with
+  | none =>
+      simp [hlookup] at htc
+  | some qt =>
+      have hqt : QTypReachableFrom root ctxRoot qt :=
+        ContextReachableFrom.lookup hctx hlookup
+      cases qt with
+      | mk etyp poison pred =>
+          have hred (qpoison : Poison) (qpred : Predicate) :
+              QTypReachableFrom root ctxRoot
+                { etyp := etyp, poison := qpoison, pred := qpred } := by
+            unfold QTypReachableFrom
+            intro id d hreach
+            exact (QTypReachableFrom.etyp_redecorate hqt) hreach
+          cases pred with
+          | noPred =>
+              simp [hlookup, pure, Except.pure] at htc
+              cases htc
+              change QTypReachableFrom root ctxRoot
+                { etyp := etyp, poison := joinPoison ctx.pc poison, pred := Predicate.noPred }
+              exact hred (joinPoison ctx.pc poison) Predicate.noPred
+          | guardOnly k =>
+              show QTypReachableFrom root ctxRoot res.qualType
+              by_cases hfun : etyp.isFunctionType = true
+              · simp [hlookup, hfun] at htc
+                cases htc
+              · have hfunFalse : etyp.isFunctionType = false := by
+                  cases hif : etyp.isFunctionType <;> simp [hif] at hfun ⊢
+                cases htag : ctx.tagEnv[k]? with
+                | none =>
+                    simp [hlookup, hfunFalse, htag, pure, Except.pure] at htc
+                    cases htc
+                    intro hreach
+                    exact (hred (joinPoison ctx.pc poison) (Predicate.guardOnly k)) hreach
+                | some tv =>
+                    cases tv with
+                    | mk b deps =>
+                        cases b
+                        · simp [hlookup, hfunFalse, htag, pure, Except.pure] at htc
+                          cases htc
+                          intro hreach
+                          exact (hred true Predicate.noPred) hreach
+                        · simp [hlookup, hfunFalse, htag, pure, Except.pure] at htc
+                          cases htc
+                          intro hreach
+                          exact (hred ctx.pc Predicate.noPred) hreach
+          | guardClosure k arg body env =>
+              show QTypReachableFrom root ctxRoot res.qualType
+              by_cases hfun : etyp.isFunctionType = true
+              · simp [hlookup, hfun] at htc
+                cases htc
+              · have hfunFalse : etyp.isFunctionType = false := by
+                  cases hif : etyp.isFunctionType <;> simp [hif] at hfun ⊢
+                cases htag : ctx.tagEnv[k]? with
+                | none =>
+                    simp [hlookup, hfunFalse, htag, pure, Except.pure] at htc
+                    cases htc
+                    intro hreach
+                    exact
+                      (hred (joinPoison ctx.pc poison)
+                        (Predicate.guardClosure k arg body env)) hreach
+                | some tv =>
+                    cases tv with
+                    | mk b deps =>
+                        cases b
+                        · simp [hlookup, hfunFalse, htag, pure, Except.pure] at htc
+                          cases htc
+                          intro hreach
+                          exact (hred true Predicate.noPred) hreach
+                        · simp [hlookup, hfunFalse, htag, pure, Except.pure] at htc
+                          cases htc
+                          intro hreach
+                          exact (hred ctx.pc Predicate.noPred) hreach
+
 end QTypReachableFrom
+
+namespace ContextReachableFrom
+
+theorem fnBody_of_arrow_member
+    {root : Expr} {ctxRoot bodyCtx : TypeContext}
+    {result1 : TypeResult} {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
+    {x : Name} {body : Expr} {σcap : CapturedVarEnv} {argQt : QTyp}
+    (hqtFn : QTypReachableFrom root ctxRoot result1.qualType)
+    (hetyp : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
+    (hmem : FnTClosure.regular x body σcap ∈ tcls)
+    (harg : QTypReachableFrom root ctxRoot argQt)
+    (hvar :
+      bodyCtx.varEnv = VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt) :
+    ContextReachableFrom root ctxRoot bodyCtx := by
+  have hqtArrow :
+      QTypReachableFrom root ctxRoot
+        { etyp := ETyp.arrow st1 st2 p tcls,
+          poison := result1.qualType.poison, pred := result1.qualType.pred } := by
+    cases hres : result1.qualType with
+    | mk etyp qpoison qpred =>
+        have harrow : etyp = ETyp.arrow st1 st2 p tcls := by
+          simpa [hres] using hetyp
+        subst etyp
+        intro id d hreach
+        have hreach' :
+            ExternDeclarationReachableFromQTyp root ctxRoot
+              result1.qualType id d := by
+          simpa [hres] using hreach
+        exact hqtFn hreach'
+  have hcap : CapturedEnvReachableFrom root ctxRoot σcap :=
+    QTypReachableFrom.fn_regular_captured hqtArrow hmem
+  have hctx :
+      ContextReachableFrom root ctxRoot
+        { bodyCtx with varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt } :=
+    ContextReachableFrom.ofCaptured_update hcap bodyCtx harg
+  intro y qt hlookup
+  exact hctx (by simpa [hvar] using hlookup)
+
+theorem pfnBody_of_parrow_member
+    {root : Expr} {ctxRoot bodyCtx : TypeContext}
+    {result1 : TypeResult} {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
+    {x : Name} {body : PExpr} {σcap : CapturedVarEnv} {argQt : QTyp}
+    (hqtPfn : QTypReachableFrom root ctxRoot result1.qualType)
+    (hetyp : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
+    (hmem : PFnTClosure.regular x body σcap ∈ tcls)
+    (harg : QTypReachableFrom root ctxRoot argQt)
+    (hvar :
+      bodyCtx.varEnv = VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt) :
+    ContextReachableFrom root ctxRoot bodyCtx := by
+  have hqtParrow :
+      QTypReachableFrom root ctxRoot
+        { etyp := ETyp.parrow st1 st2 p tcls,
+          poison := result1.qualType.poison, pred := result1.qualType.pred } := by
+    cases hres : result1.qualType with
+    | mk etyp qpoison qpred =>
+        have hparrow : etyp = ETyp.parrow st1 st2 p tcls := by
+          simpa [hres] using hetyp
+        subst etyp
+        intro id d hreach
+        have hreach' :
+            ExternDeclarationReachableFromQTyp root ctxRoot
+              result1.qualType id d := by
+          simpa [hres] using hreach
+        exact hqtPfn hreach'
+  have hcap : CapturedEnvReachableFrom root ctxRoot σcap :=
+    QTypReachableFrom.pfn_regular_captured hqtParrow hmem
+  have hctx :
+      ContextReachableFrom root ctxRoot
+        { bodyCtx with varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt } :=
+    ContextReachableFrom.ofCaptured_update hcap bodyCtx harg
+  intro y qt hlookup
+  exact hctx (by simpa [hvar] using hlookup)
+
+end ContextReachableFrom
 
 /-- Root-scoped provenance needed to turn app closure-list membership into
     trusted extern-call providers.  This is intentionally separate from the
