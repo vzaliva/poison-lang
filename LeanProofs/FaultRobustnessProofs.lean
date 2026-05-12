@@ -182,6 +182,12 @@ private structure ExternDeclCanUseClosed (CanUse : Expr → Prop) : Prop where
     ∀ {x : Name} {e1 e2 : Expr}, CanUse (Expr.vlet x e1 e2) → CanUse e1
   vlet_body :
     ∀ {x : Name} {e1 e2 : Expr}, CanUse (Expr.vlet x e1 e2) → CanUse e2
+  fn_body :
+    ∀ {x : Name} {argTyp retTyp : Typ} {body : Expr},
+      CanUse (Expr.fn x argTyp body retTyp) → CanUse body
+  pfn_body :
+    ∀ {x : Name} {argTyp retTyp : Typ} {body : Expr},
+      CanUse (Expr.pfn x argTyp body retTyp) → CanUse body
   app_fun :
     ∀ {e1 e2 : Expr}, CanUse (Expr.app e1 e2) → CanUse e1
   app_arg :
@@ -220,6 +226,8 @@ private theorem trivial : ExternDeclCanUseClosed (fun _ => True) where
   seq_right := by intros; trivial
   vlet_bound := by intros; trivial
   vlet_body := by intros; trivial
+  fn_body := by intros; trivial
+  pfn_body := by intros; trivial
   app_fun := by intros; trivial
   app_arg := by intros; trivial
   app_fn_body := by intros; trivial
@@ -257,8 +265,50 @@ private theorem of_lift {root : Expr}
   seq_right := fun h => ExternDeclLift.seq_right h
   vlet_bound := fun h => ExternDeclLift.vlet_bound h
   vlet_body := fun h => ExternDeclLift.vlet_body h
+  fn_body := fun h => ExternDeclLift.fn_body h
+  pfn_body := fun h => ExternDeclLift.pfn_body h
   app_fun := fun h => ExternDeclLift.app_fun h
   app_arg := fun h => ExternDeclLift.app_arg h
+  app_fn_body := fun h htyped hmem => hfnBody h htyped hmem
+  app_pfn_body := fun h htyped hmem => hpfnBody h htyped hmem
+
+private theorem of_reachable {root : Expr} {ctxRoot : TypeContext}
+    (hfnBody :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List FnTClosure} {x : Name} {body : Expr}
+        {σcap : List (Name × QTyp)},
+        ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2) →
+        AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
+        FnTClosure.regular x body σcap ∈ tcls →
+        ExternDeclarationReachableFromExpr root ctxRoot body)
+    (hpfnBody :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+        {σcap : List (Name × QTyp)},
+        ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2) →
+        AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
+        PFnTClosure.regular x pbody σcap ∈ tcls →
+        ExternDeclarationReachableFromExpr root ctxRoot (PExpr.toExpr pbody)) :
+    ExternDeclCanUseClosed
+      (fun current => ExternDeclarationReachableFromExpr root ctxRoot current) where
+  op_left := fun h => ExternDeclarationReachableFromExpr.op_left h
+  op_right := fun h => ExternDeclarationReachableFromExpr.op_right h
+  unaryop := fun h => ExternDeclarationReachableFromExpr.unaryop h
+  ite_cond := fun h => ExternDeclarationReachableFromExpr.ite_cond h
+  ite_then := fun h => ExternDeclarationReachableFromExpr.ite_then h
+  ite_else := fun h => ExternDeclarationReachableFromExpr.ite_else h
+  newRef := fun h => ExternDeclarationReachableFromExpr.newRef h
+  assign_left := fun h => ExternDeclarationReachableFromExpr.assign_left h
+  assign_right := fun h => ExternDeclarationReachableFromExpr.assign_right h
+  deref := fun h => ExternDeclarationReachableFromExpr.deref h
+  seq_left := fun h => ExternDeclarationReachableFromExpr.seq_left h
+  seq_right := fun h => ExternDeclarationReachableFromExpr.seq_right h
+  vlet_bound := fun h => ExternDeclarationReachableFromExpr.vlet_bound h
+  vlet_body := fun h => ExternDeclarationReachableFromExpr.vlet_body h
+  fn_body := fun h => ExternDeclarationReachableFromExpr.fn_body h
+  pfn_body := fun h => ExternDeclarationReachableFromExpr.pfn_body h
+  app_fun := fun h => ExternDeclarationReachableFromExpr.app_fun h
+  app_arg := fun h => ExternDeclarationReachableFromExpr.app_arg h
   app_fn_body := fun h htyped hmem => hfnBody h htyped hmem
   app_pfn_body := fun h htyped hmem => hpfnBody h htyped hmem
 
@@ -270,9 +320,9 @@ private abbrev ExternCallSingleFnProvider (registry : ExternRegistry) : Prop :=
     {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
     {ctx : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List FnTClosure},
-    AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
+    (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctx res e1 e2 tcls
-      (registry := registry)
+      htyped.st1 (registry := registry)
 
 private abbrev ExternCallSingleFnProviderCanUse
     (registry : ExternRegistry) (CanUse : Expr → Prop) : Prop :=
@@ -282,9 +332,9 @@ private abbrev ExternCallSingleFnProviderCanUse
     {ctx : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List FnTClosure},
     CanUse (Expr.app e1 e2) →
-    AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
+    (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctx res e1 e2 tcls
-      (registry := registry)
+      htyped.st1 (registry := registry)
 
 private abbrev ExternCallSinglePfnProvider (registry : ExternRegistry) : Prop :=
   ∀ {masked : Tag → Prop}
@@ -292,9 +342,9 @@ private abbrev ExternCallSinglePfnProvider (registry : ExternRegistry) : Prop :=
     {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
     {ctx : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List PFnTClosure},
-    AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
+    (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
     ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctx res e1 e2 tcls
-      (registry := registry)
+      htyped.st1 (registry := registry)
 
 private abbrev ExternCallSinglePfnProviderCanUse
     (registry : ExternRegistry) (CanUse : Expr → Prop) : Prop :=
@@ -304,17 +354,17 @@ private abbrev ExternCallSinglePfnProviderCanUse
     {ctx : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List PFnTClosure},
     CanUse (Expr.app e1 e2) →
-    AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
+    (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
     ExternCallBoundarySinglePfnContract masked CtxCons ValCons ctx res e1 e2 tcls
-      (registry := registry)
+      htyped.st1 (registry := registry)
 
 private abbrev ExternCallFRFnLocalProvider
     (registry : ExternRegistry) (entryKey : ExternCallEntryKey) : Prop :=
   ∀ {ctx : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure},
-    AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
+    (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
     TrustedRegistryAgreesWithProgramLocal ctx predSat tm e1 e2 res tcls
-      (entryKey := entryKey) (registry := registry)
+      htyped.st1 (entryKey := entryKey) (registry := registry)
 
 private abbrev ExternCallFRFnLocalProviderCanUse
     (registry : ExternRegistry) (entryKey : ExternCallEntryKey)
@@ -322,17 +372,17 @@ private abbrev ExternCallFRFnLocalProviderCanUse
   ∀ {ctx : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure},
     CanUse (Expr.app e1 e2) →
-    AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
+    (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
     TrustedRegistryAgreesWithProgramLocal ctx predSat tm e1 e2 res tcls
-      (entryKey := entryKey) (registry := registry)
+      htyped.st1 (entryKey := entryKey) (registry := registry)
 
 private abbrev ExternCallFRPfnLocalProvider
     (registry : ExternRegistry) (entryKey : ExternCallEntryKey) : Prop :=
   ∀ {ctx : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure},
-    AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
+    (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
     TrustedRegistryAgreesWithPfnProgramLocal ctx predSat tm e1 e2 res tcls
-      (entryKey := entryKey) (registry := registry)
+      htyped.st1 (entryKey := entryKey) (registry := registry)
 
 private abbrev ExternCallFRPfnLocalProviderCanUse
     (registry : ExternRegistry) (entryKey : ExternCallEntryKey)
@@ -340,9 +390,9 @@ private abbrev ExternCallFRPfnLocalProviderCanUse
   ∀ {ctx : TypeContext} {predSat : PredSat} {tm : TagMeaning}
     {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure},
     CanUse (Expr.app e1 e2) →
-    AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
+    (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
     TrustedRegistryAgreesWithPfnProgramLocal ctx predSat tm e1 e2 res tcls
-      (entryKey := entryKey) (registry := registry)
+      htyped.st1 (entryKey := entryKey) (registry := registry)
 
 private theorem ExternDeclSingleProvider_empty :
     ExternDeclSingleProvider emptyExternRegistry := by
@@ -404,27 +454,33 @@ private theorem ExternDeclFRProviderFor.to_current
 
 private theorem ExternCallSingleFnProvider_empty :
     ExternCallSingleFnProvider emptyExternRegistry := by
-  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 tcls _htyped
-  exact ExternCallBoundarySingleFnContract.of_emptyExternRegistry (tcls := tcls)
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 tcls htyped
+  exact
+    ExternCallBoundarySingleFnContract.of_emptyExternRegistry
+      (tcls := tcls) (sourceArgTyp := htyped.st1)
 
 private theorem ExternCallSinglePfnProvider_empty :
     ExternCallSinglePfnProvider emptyExternRegistry := by
-  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 tcls _htyped
-  exact ExternCallBoundarySinglePfnContract.of_emptyExternRegistry (tcls := tcls)
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 tcls htyped
+  exact
+    ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
+      (tcls := tcls) (sourceArgTyp := htyped.st1)
 
 private theorem ExternCallFRFnLocalProvider_empty :
     ExternCallFRFnLocalProvider emptyExternRegistry ExternCallImpossibleEntryKey := by
-  intro _ctx _predSat _tm _e1 _e2 _res tcls _htyped
+  intro _ctx _predSat _tm _e1 _e2 _res tcls htyped
   exact
     TrustedRegistryAgreesWithProgramLocal.of_emptyExternRegistry
-      (tcls := tcls) (entryKey := ExternCallImpossibleEntryKey)
+      (tcls := tcls) (sourceArgTyp := htyped.st1)
+      (entryKey := ExternCallImpossibleEntryKey)
 
 private theorem ExternCallFRPfnLocalProvider_empty :
     ExternCallFRPfnLocalProvider emptyExternRegistry ExternCallImpossibleEntryKey := by
-  intro _ctx _predSat _tm _e1 _e2 _res tcls _htyped
+  intro _ctx _predSat _tm _e1 _e2 _res tcls htyped
   exact
     TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
-      (tcls := tcls) (entryKey := ExternCallImpossibleEntryKey)
+      (tcls := tcls) (sourceArgTyp := htyped.st1)
+      (entryKey := ExternCallImpossibleEntryKey)
 
 private theorem ExternCallSingleFnProviderCanUse_of_appProvenance
     {tr : TrustedRegistry} {root : Expr}
@@ -435,9 +491,10 @@ private theorem ExternCallSingleFnProviderCanUse_of_appProvenance
   intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hlift htyped
   exact
     ExternCallBoundarySingleFnContract.of_trustedProgram hagrees
-      (fun {argTyp} {_id} {_x} {_y} {_retSpec} {_effects} {_capturedEnv} hsource => by
+      (fun {sourceArgTyp} {argTyp} {_id} {_x} {_y} {_retSpec} {_effects}
+          {_capturedEnv} hsource => by
         cases hsource with
-        | externMember hmem =>
+        | externMember _harg hmem =>
             exact happ.fnExternMember (argTyp := argTyp) hlift htyped hmem
         | regularExternBody hmem =>
             exact happ.fnRegularExternBody (argTyp := argTyp) hlift htyped hmem)
@@ -451,9 +508,10 @@ private theorem ExternCallSinglePfnProviderCanUse_of_appProvenance
   intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hlift htyped
   exact
     ExternCallBoundarySinglePfnContract.of_trustedProgram hagrees
-      (fun {argTyp} {_id} {_x} {_y} {_retSpec} {_capturedEnv} hsource => by
+      (fun {sourceArgTyp} {argTyp} {_id} {_x} {_y} {_retSpec} {_capturedEnv}
+          hsource => by
         cases hsource with
-        | externMember hmem =>
+        | externMember _harg hmem =>
             exact happ.pfnExternMember (argTyp := argTyp) hlift htyped hmem)
 
 private theorem ExternCallFRFnLocalProviderCanUse_of_appProvenance
@@ -466,9 +524,10 @@ private theorem ExternCallFRFnLocalProviderCanUse_of_appProvenance
   intro _ctx _predSat _tm _e1 _e2 _res _tcls hlift htyped
   exact
     TrustedRegistryAgreesWithProgramLocal.of_trustedProgram hagrees
-      (fun {argTyp} {_id} {_x} {_y} {_retSpec} {_effects} {_capturedEnv} hsource => by
+      (fun {sourceArgTyp} {argTyp} {_id} {_x} {_y} {_retSpec} {_effects}
+          {_capturedEnv} hsource => by
         cases hsource with
-        | externMember hmem =>
+        | externMember _harg hmem =>
             exact happ.fnExternMember (argTyp := argTyp) hlift htyped hmem
         | regularExternBody hmem =>
             exact happ.fnRegularExternBody (argTyp := argTyp) hlift htyped hmem)
@@ -483,10 +542,249 @@ private theorem ExternCallFRPfnLocalProviderCanUse_of_appProvenance
   intro _ctx _predSat _tm _e1 _e2 _res _tcls hlift htyped
   exact
     TrustedRegistryAgreesWithPfnProgramLocal.of_trustedProgram hagrees
-      (fun {argTyp} {_id} {_x} {_y} {_retSpec} {_capturedEnv} hsource => by
+      (fun {sourceArgTyp} {argTyp} {_id} {_x} {_y} {_retSpec} {_capturedEnv}
+          hsource => by
         cases hsource with
-        | externMember hmem =>
+        | externMember _harg hmem =>
             exact happ.pfnExternMember (argTyp := argTyp) hlift htyped hmem)
+
+private theorem AppFnClosureListFromTypecheck.regularBody_reachable
+    {root : Expr} {ctxRoot ctx : TypeContext} {e1 e2 body : Expr}
+    {res : TypeResult} {tcls : List FnTClosure} {x : Name}
+    {σcap : CapturedVarEnv}
+    (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls)
+    (hqt : QTypReachableFrom root ctxRoot htyped.result1.qualType)
+    (hmem : FnTClosure.regular x body σcap ∈ tcls) :
+    ExternDeclarationReachableFromExpr root ctxRoot body := by
+  intro id d hprog
+  have hqtArrow :
+      QTypReachableFrom root ctxRoot
+        { etyp := ETyp.arrow htyped.st1 htyped.st2 htyped.p tcls,
+          poison := htyped.result1.qualType.poison, pred := htyped.result1.qualType.pred } := by
+    cases hres : htyped.result1.qualType with
+    | mk etyp qpoison qpred =>
+        have harrow : etyp = ETyp.arrow htyped.st1 htyped.st2 htyped.p tcls := by
+          simpa [hres] using htyped.result_arrow
+        subst etyp
+        intro id d hreach
+        have hreach' :
+            ExternDeclarationReachableFromQTyp root ctxRoot
+              htyped.result1.qualType id d := by
+          simpa [hres] using hreach
+        exact hqt hreach'
+  exact QTypReachableFrom.fn_regular_body hqtArrow hmem hprog
+
+private theorem AppPfnClosureListFromTypecheck.regularBody_reachable
+    {root : Expr} {ctxRoot ctx : TypeContext} {e1 e2 : Expr} {body : PExpr}
+    {res : TypeResult} {tcls : List PFnTClosure} {x : Name}
+    {σcap : CapturedVarEnv}
+    (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls)
+    (hqt : QTypReachableFrom root ctxRoot htyped.result1.qualType)
+    (hmem : PFnTClosure.regular x body σcap ∈ tcls) :
+    ExternDeclarationReachableFromExpr root ctxRoot (PExpr.toExpr body) := by
+  intro id d hprog
+  have hqtParrow :
+      QTypReachableFrom root ctxRoot
+        { etyp := ETyp.parrow htyped.st1 htyped.st2 htyped.p tcls,
+          poison := htyped.result1.qualType.poison, pred := htyped.result1.qualType.pred } := by
+    cases hres : htyped.result1.qualType with
+    | mk etyp qpoison qpred =>
+        have hparrow : etyp = ETyp.parrow htyped.st1 htyped.st2 htyped.p tcls := by
+          simpa [hres] using htyped.result_parrow
+        subst etyp
+        intro id d hreach
+        have hreach' :
+            ExternDeclarationReachableFromQTyp root ctxRoot
+              htyped.result1.qualType id d := by
+          simpa [hres] using hreach
+        exact hqt hreach'
+  exact QTypReachableFrom.pfn_regular_body hqtParrow hmem hprog
+
+private theorem ExternCallSingleFnProviderCanUse_of_reachable
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {CanUse : Expr → Prop}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hqtOfApp :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List FnTClosure},
+        CanUse (Expr.app e1 e2) →
+        (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
+        QTypReachableFrom root ctxRoot htyped.result1.qualType) :
+    ExternCallSingleFnProviderCanUse
+      (TrustedRegistry.toRuntimeRegistry tr) CanUse := by
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hcan htyped
+  exact
+    ExternCallBoundarySingleFnContract.of_trustedReachable hagrees
+      (fun {_argTyp} {_id} {_x} {_y} {_retSpec} {_effects}
+          {_capturedEnv} hsource =>
+        ExternCallBoundaryFnStaticSource.reachable_from_app_typecheck
+          htyped (hqtOfApp hcan htyped) hsource)
+
+private theorem ExternCallSinglePfnProviderCanUse_of_reachable
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {CanUse : Expr → Prop}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hqtOfApp :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List PFnTClosure},
+        CanUse (Expr.app e1 e2) →
+        (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
+        QTypReachableFrom root ctxRoot htyped.result1.qualType) :
+    ExternCallSinglePfnProviderCanUse
+      (TrustedRegistry.toRuntimeRegistry tr) CanUse := by
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hcan htyped
+  exact
+    ExternCallBoundarySinglePfnContract.of_trustedReachable hagrees
+      (fun {_argTyp} {_id} {_x} {_y} {_retSpec}
+          {_capturedEnv} hsource =>
+        ExternCallBoundaryPfnStaticSource.reachable_from_app_typecheck
+          htyped (hqtOfApp hcan htyped) hsource)
+
+private theorem ExternCallFRFnLocalProviderCanUse_of_reachable
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {CanUse : Expr → Prop}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hqtOfApp :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List FnTClosure},
+        CanUse (Expr.app e1 e2) →
+        (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
+        QTypReachableFrom root ctxRoot htyped.result1.qualType) :
+    ExternCallFRFnLocalProviderCanUse
+      (TrustedRegistry.toRuntimeRegistry tr) (ExternCallTrustedEntryKey tr) CanUse := by
+  intro _ctx _predSat _tm _e1 _e2 _res _tcls hcan htyped
+  exact
+    TrustedRegistryAgreesWithProgramLocal.of_trustedReachable hagrees
+      (fun {_argTyp} {_id} {_x} {_y} {_retSpec} {_effects}
+          {_capturedEnv} hsource =>
+        ExternCallBoundaryFnStaticSource.reachable_from_app_typecheck
+          htyped (hqtOfApp hcan htyped) hsource)
+
+private theorem ExternCallFRPfnLocalProviderCanUse_of_reachable
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {CanUse : Expr → Prop}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hqtOfApp :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List PFnTClosure},
+        CanUse (Expr.app e1 e2) →
+        (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
+        QTypReachableFrom root ctxRoot htyped.result1.qualType) :
+    ExternCallFRPfnLocalProviderCanUse
+      (TrustedRegistry.toRuntimeRegistry tr) (ExternCallTrustedEntryKey tr) CanUse := by
+  intro _ctx _predSat _tm _e1 _e2 _res _tcls hcan htyped
+  exact
+    TrustedRegistryAgreesWithPfnProgramLocal.of_trustedReachable hagrees
+      (fun {_argTyp} {_id} {_x} {_y} {_retSpec}
+          {_capturedEnv} hsource =>
+        ExternCallBoundaryPfnStaticSource.reachable_from_app_typecheck
+          htyped (hqtOfApp hcan htyped) hsource)
+
+private theorem ExternCallSingleFnProviderCanUse_of_reachableSource
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {CanUse : Expr → Prop}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hsourceOfApp :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List FnTClosure},
+        CanUse (Expr.app e1 e2) →
+        (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
+        ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
+          {retSpec : ExternReturn} {effects : List Effect}
+          {capturedEnv : CapturedVarEnv},
+          ExternCallBoundaryFnStaticSource tcls htyped.st1 id x y argTyp retSpec
+            effects capturedEnv →
+          ExternDeclarationReachableFromContext root ctxRoot id
+            { id := id, kind := .fn, typ := argTyp, argName := some x,
+              retSpec := some retSpec, effects := effects,
+              preds := collectExternPreds retSpec effects }) :
+    ExternCallSingleFnProviderCanUse
+      (TrustedRegistry.toRuntimeRegistry tr) CanUse := by
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hcan htyped
+  exact
+    ExternCallBoundarySingleFnContract.of_trustedReachable hagrees
+      (fun {_argTyp} {_id} {_x} {_y} {_retSpec} {_effects}
+          {_capturedEnv} hsource =>
+        hsourceOfApp hcan htyped hsource)
+
+private theorem ExternCallSinglePfnProviderCanUse_of_reachableSource
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {CanUse : Expr → Prop}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hsourceOfApp :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List PFnTClosure},
+        CanUse (Expr.app e1 e2) →
+        (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
+        ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
+          {retSpec : ExternReturn} {capturedEnv : CapturedVarEnv},
+          ExternCallBoundaryPfnStaticSource tcls htyped.st1 id x y argTyp retSpec
+            capturedEnv →
+          ExternDeclarationReachableFromContext root ctxRoot id
+            { id := id, kind := .pfn, typ := argTyp, argName := some x,
+              retSpec := some retSpec, effects := [],
+              preds := collectExternPreds retSpec [] }) :
+    ExternCallSinglePfnProviderCanUse
+      (TrustedRegistry.toRuntimeRegistry tr) CanUse := by
+  intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hcan htyped
+  exact
+    ExternCallBoundarySinglePfnContract.of_trustedReachable hagrees
+      (fun {_argTyp} {_id} {_x} {_y} {_retSpec}
+          {_capturedEnv} hsource =>
+        hsourceOfApp hcan htyped hsource)
+
+private theorem ExternCallFRFnLocalProviderCanUse_of_reachableSource
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {CanUse : Expr → Prop}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hsourceOfApp :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List FnTClosure},
+        CanUse (Expr.app e1 e2) →
+        (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
+        ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
+          {retSpec : ExternReturn} {effects : List Effect}
+          {capturedEnv : CapturedVarEnv},
+          ExternCallBoundaryFnStaticSource tcls htyped.st1 id x y argTyp retSpec
+            effects capturedEnv →
+          ExternDeclarationReachableFromContext root ctxRoot id
+            { id := id, kind := .fn, typ := argTyp, argName := some x,
+              retSpec := some retSpec, effects := effects,
+              preds := collectExternPreds retSpec effects }) :
+    ExternCallFRFnLocalProviderCanUse
+      (TrustedRegistry.toRuntimeRegistry tr) (ExternCallTrustedEntryKey tr) CanUse := by
+  intro _ctx _predSat _tm _e1 _e2 _res _tcls hcan htyped
+  exact
+    TrustedRegistryAgreesWithProgramLocal.of_trustedReachable hagrees
+      (fun {_argTyp} {_id} {_x} {_y} {_retSpec} {_effects}
+          {_capturedEnv} hsource =>
+        hsourceOfApp hcan htyped hsource)
+
+private theorem ExternCallFRPfnLocalProviderCanUse_of_reachableSource
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {CanUse : Expr → Prop}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hsourceOfApp :
+      ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+        {tcls : List PFnTClosure},
+        CanUse (Expr.app e1 e2) →
+        (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
+        ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
+          {retSpec : ExternReturn} {capturedEnv : CapturedVarEnv},
+          ExternCallBoundaryPfnStaticSource tcls htyped.st1 id x y argTyp retSpec
+            capturedEnv →
+          ExternDeclarationReachableFromContext root ctxRoot id
+            { id := id, kind := .pfn, typ := argTyp, argName := some x,
+              retSpec := some retSpec, effects := [],
+              preds := collectExternPreds retSpec [] }) :
+    ExternCallFRPfnLocalProviderCanUse
+      (TrustedRegistry.toRuntimeRegistry tr) (ExternCallTrustedEntryKey tr) CanUse := by
+  intro _ctx _predSat _tm _e1 _e2 _res _tcls hcan htyped
+  exact
+    TrustedRegistryAgreesWithPfnProgramLocal.of_trustedReachable hagrees
+      (fun {_argTyp} {_id} {_x} {_y} {_retSpec}
+          {_capturedEnv} hsource =>
+        hsourceOfApp hcan htyped hsource)
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse
   (registry : ExternRegistry)
@@ -2918,6 +3216,161 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_for
           (impl₁ := impl₁) (hlift_e hprog))
       current ctxᵢ predSat tm
       hlift
+
+private theorem TypeSystemEnforcesFaultRobustness_step_with_reachable_hqt
+  {tr : TrustedRegistry} {root ctxCurrent : Expr} {ctxRoot : TypeContext}
+  (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+  (hqtFn :
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure},
+      ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2) →
+      (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
+      QTypReachableFrom root ctxRoot htyped.result1.qualType)
+  (hqtPfn :
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure},
+      ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2) →
+      (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
+      QTypReachableFrom root ctxRoot htyped.result1.qualType)
+  (hcurrent : ExternDeclarationReachableFromExpr root ctxRoot ctxCurrent)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  TypeSystemEnforcesFaultRobustness_step_spec ctxCurrent ctxᵢ predSat tm
+    (registry := TrustedRegistry.toRuntimeRegistry tr) := by
+  exact
+    TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse
+      (TrustedRegistry.toRuntimeRegistry tr)
+      (ExternCallTrustedEntryKey tr)
+      (by
+        intro _id _entry₀ _entry₁ h₀ h₁
+        exact ExternCallTrustedEntryKey_eq_of_same_id h₀ h₁)
+      (by
+        intro _id entry _hkey
+        exact entry.spec.callFR)
+      (fun e => ExternDeclarationReachableFromExpr root ctxRoot e)
+      (ExternCallSingleFnProviderCanUse_of_reachable hagrees hqtFn)
+      (ExternCallSinglePfnProviderCanUse_of_reachable hagrees hqtPfn)
+      (ExternCallFRFnLocalProviderCanUse_of_reachable hagrees hqtFn)
+      (ExternCallFRPfnLocalProviderCanUse_of_reachable hagrees hqtPfn)
+      (ExternDeclCanUseClosed.of_reachable
+        (fun hcan htyped hmem =>
+          AppFnClosureListFromTypecheck.regularBody_reachable
+            htyped (hqtFn hcan htyped) hmem)
+        (fun hcan htyped hmem =>
+          AppPfnClosureListFromTypecheck.regularBody_reachable
+            htyped (hqtPfn hcan htyped) hmem))
+      (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
+          hcan hprog =>
+        have hreachable :
+            ExternDeclarationReachableFromContext root ctxRoot d.id d := by
+          have hdid : d.id = id := ExternDeclarationInProgram.id_eq hprog
+          simpa [hdid] using hcan hprog
+        ExternDeclBoundarySingleMaskedContract.of_trustedReachable
+          (tr := tr) (root := root) (ctxRoot := ctxRoot)
+          (masked := masked) (ctx := ctx) (res := res) (predSat := predSat)
+          (tm := tm) (d := d) (impl := impl) hagrees hreachable)
+      (fun {e} {id} {d} {ctx} {postExpr} {res} {predSat} {tm} {impl₀} {impl₁}
+          hcan hprog =>
+        have hreachable :
+            ExternDeclarationReachableFromContext root ctxRoot d.id d := by
+          have hdid : d.id = id := ExternDeclarationInProgram.id_eq hprog
+          simpa [hdid] using hcan hprog
+        ExternDeclBoundaryFRContract.of_trustedReachable
+          (tr := tr) (root := root) (ctxRoot := ctxRoot)
+          (ctx := ctx) (postExpr := postExpr) (res := res) (predSat := predSat)
+          (tm := tm) (d := d) (impl₀ := impl₀) (impl₁ := impl₁)
+          hagrees hreachable)
+      ctxCurrent ctxᵢ predSat tm
+      hcurrent
+
+private theorem TypeSystemEnforcesFaultRobustness_step_with_reachable_members
+  {tr : TrustedRegistry} {root current : Expr} {ctxRoot : TypeContext}
+  (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+  (hfnSource :
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure},
+      ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2) →
+      (htyped : AppFnClosureListFromTypecheck ctx e1 e2 res tcls) →
+      ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
+        {retSpec : ExternReturn} {effects : List Effect}
+        {capturedEnv : CapturedVarEnv},
+        ExternCallBoundaryFnStaticSource tcls htyped.st1 id x y argTyp retSpec
+          effects capturedEnv →
+        ExternDeclarationReachableFromContext root ctxRoot id
+          { id := id, kind := .fn, typ := argTyp, argName := some x,
+            retSpec := some retSpec, effects := effects,
+            preds := collectExternPreds retSpec effects })
+  (hpfnSource :
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure},
+      ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2) →
+      (htyped : AppPfnClosureListFromTypecheck ctx e1 e2 res tcls) →
+      ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
+        {retSpec : ExternReturn} {capturedEnv : CapturedVarEnv},
+        ExternCallBoundaryPfnStaticSource tcls htyped.st1 id x y argTyp retSpec
+          capturedEnv →
+        ExternDeclarationReachableFromContext root ctxRoot id
+          { id := id, kind := .pfn, typ := argTyp, argName := some x,
+            retSpec := some retSpec, effects := [],
+            preds := collectExternPreds retSpec [] })
+  (hfnBody :
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List FnTClosure} {x : Name} {body : Expr}
+      {σcap : CapturedVarEnv},
+      ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2) →
+      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
+      FnTClosure.regular x body σcap ∈ tcls →
+      ExternDeclarationReachableFromExpr root ctxRoot body)
+  (hpfnBody :
+    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
+      {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
+      {σcap : CapturedVarEnv},
+      ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2) →
+      AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
+      PFnTClosure.regular x pbody σcap ∈ tcls →
+      ExternDeclarationReachableFromExpr root ctxRoot (PExpr.toExpr pbody))
+  (hcurrent : ExternDeclarationReachableFromExpr root ctxRoot current)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  TypeSystemEnforcesFaultRobustness_step_spec current ctxᵢ predSat tm
+    (registry := TrustedRegistry.toRuntimeRegistry tr) := by
+  exact
+    TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse
+      (TrustedRegistry.toRuntimeRegistry tr)
+      (ExternCallTrustedEntryKey tr)
+      (by
+        intro _id _entry₀ _entry₁ h₀ h₁
+        exact ExternCallTrustedEntryKey_eq_of_same_id h₀ h₁)
+      (by
+        intro _id entry _hkey
+        exact entry.spec.callFR)
+      (fun e => ExternDeclarationReachableFromExpr root ctxRoot e)
+      (ExternCallSingleFnProviderCanUse_of_reachableSource hagrees hfnSource)
+      (ExternCallSinglePfnProviderCanUse_of_reachableSource hagrees hpfnSource)
+      (ExternCallFRFnLocalProviderCanUse_of_reachableSource hagrees hfnSource)
+      (ExternCallFRPfnLocalProviderCanUse_of_reachableSource hagrees hpfnSource)
+      (ExternDeclCanUseClosed.of_reachable hfnBody hpfnBody)
+      (fun {e} {id} {d} {masked} {ctx} {res} {predSat} {tm} {impl}
+          hcan hprog =>
+        have hreachable :
+            ExternDeclarationReachableFromContext root ctxRoot d.id d := by
+          have hdid : d.id = id := ExternDeclarationInProgram.id_eq hprog
+          simpa [hdid] using hcan hprog
+        ExternDeclBoundarySingleMaskedContract.of_trustedReachable
+          (tr := tr) (root := root) (ctxRoot := ctxRoot)
+          (masked := masked) (ctx := ctx) (res := res) (predSat := predSat)
+          (tm := tm) (d := d) (impl := impl) hagrees hreachable)
+      (fun {e} {id} {d} {ctx} {postExpr} {res} {predSat} {tm} {impl₀} {impl₁}
+          hcan hprog =>
+        have hreachable :
+            ExternDeclarationReachableFromContext root ctxRoot d.id d := by
+          have hdid : d.id = id := ExternDeclarationInProgram.id_eq hprog
+          simpa [hdid] using hcan hprog
+        ExternDeclBoundaryFRContract.of_trustedReachable
+          (tr := tr) (root := root) (ctxRoot := ctxRoot)
+          (ctx := ctx) (postExpr := postExpr) (res := res) (predSat := predSat)
+          (tm := tm) (d := d) (impl₀ := impl₀) (impl₁ := impl₁)
+          hagrees hreachable)
+      current ctxᵢ predSat tm
+      hcurrent
 
 theorem TypeSystemEnforcesFaultRobustness_step
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :

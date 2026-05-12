@@ -153,6 +153,44 @@ that premise, `TrustedRegistryAppClosureProvenance` should become internally
 derivable from typechecking facts and reachable-extern trust, and should not
 remain in the public API.
 
+Implementation direction: keep `CanUse : Expr → Prop` focused on syntactic
+root reachability, and thread only a context monotonicity invariant through the
+proof spine:
+
+```lean
+ContextReachableFrom root ctxRoot ctx
+```
+
+This invariant means every closure-bearing qualified type in `ctx.varEnv`,
+including nested closure lists and captured type environments, is covered by
+the initial `(root, ctxRoot)` reachable trust domain.  Do **not** widen
+`CanUse` to `CanUse ctx e` unless this monotonicity route fails.
+
+Do not thread `QTypReachableFrom` as a separate invariant.  Treat it as the
+postcondition of an on-demand preservation lemma:
+
+```lean
+ContextReachableFrom root ctxRoot ctx →
+CanUse e →
+typecheck ctx e fuel = .ok res →
+QTypReachableFrom root ctxRoot res.qualType
+```
+
+At app-provider use sites, apply this lemma to the `typecheck` evidence inside
+`AppFnClosureListFromTypecheck` / `AppPfnClosureListFromTypecheck`, then use
+extraction lemmas from `QTypReachableFrom` to obtain the exact reachable
+declarations needed for extern members and regular extern-body members.
+
+This factoring handles both sources of app closure lists: those inherited from
+`ctx.varEnv` and those produced by typechecking root subexpressions.  The
+load-bearing preservation cases are variable lookup, `fn` / `pfn`, extern
+callable declarations, `app` / `apply*Closure`, and `ite` / `joinTypeResults`.
+Most other expression forms are expected to be closure-provenance no-ops.
+Sanity-check the `joinTypeResults` case early against
+`JoinMemberTransport.lean`; if the existing join-member lemmas do not compose
+with qtype-level reachability, switch to member-level reachability before
+threading the context invariant globally.
+
 ## Remaining Plan
 
 Steps 1–5 are complete; see History for narratives.
@@ -167,28 +205,42 @@ program-membership evidence.  Remaining work:
 1. Define the reachable-extern trust domain for an initial context:
    `ExternDeclarationReachableFromContext root ctx id d` and
    `TrustedRegistryAgreesWithReachable root ctx tr`.  Keep the current
-   `ExternDeclarationInProgram` predicate as the AST-only component.
-2. Prove reachability/provenance lemmas for type-level closure structures:
-   closure bodies, direct extern closure members, nested extern returns, and
-   captured type environments.  These lemmas should expose
-   `ExternDeclarationReachableFromContext root ctx id d` facts without
-   weakening to global registry coverage.
-3. Prove typed closure-list provenance lemmas, or prove the existing
-   typechecking data already implies the needed
-   `TrustedRegistryAppClosureProvenance` fields:
-   - every regular closure body in the list has an
-     appropriate reachable-context body provenance witness;
-   - every extern closure member, and every regular extern-body member, has
-     precise reachable-context declaration membership evidence.
-4. Prove the provenance predicate is produced/preserved by typechecking for
-   arrow/parrow closure lists and transported through the app
-   `apply*Closure` / join machinery.
-5. Reduce the public assumptions so the final public theorem no longer
+   `ExternDeclarationInProgram` predicate as the AST-only component.  The
+   initial slice has introduced this domain and reachable-based trusted lookup
+   helpers in `ExternBoundary.lean`; continue from there.
+2. Define the threaded monotonicity invariant
+   `ContextReachableFrom root ctxRoot ctx`, plus proof-side closure-list and
+   captured-environment predicates used to state its contents precisely.  Keep
+   it tied to the initial `(root, ctxRoot)` domain; do not quantify over
+   arbitrary closure lists or arbitrary hidden bodies.
+3. Define `QTypReachableFrom root ctxRoot qt` as a lemma-level postcondition,
+   not as a threaded spine invariant.  Prove extraction lemmas from
+   `QTypReachableFrom` and `AppFnClosureListFromTypecheck` /
+   `AppPfnClosureListFromTypecheck` to the reachable declarations needed by
+   app providers:
+   - regular closure bodies;
+   - direct extern closure members;
+   - regular extern-body members;
+   - nested extern returns;
+   - captured type environments.
+4. Prove on-demand typecheck preservation for closure provenance:
+   `ContextReachableFrom root ctxRoot ctx` plus `CanUse e` plus
+   `typecheck ctx e fuel = .ok res` yields
+   `QTypReachableFrom root ctxRoot res.qualType`.  The critical cases are
+   `var`, `fn`, `pfn`, `externFn`, `externPfn`, `app`, and `ite`/joins.  Check
+   `joinTypeResults` composition with `JoinMemberTransport.lean` before
+   committing to the chosen qtype/member-level extraction shape.
+5. Use the preservation/extraction lemmas to derive app-call providers from
+   `TrustedRegistryAgreesWithReachable root ctxRoot tr`, making
+   `TrustedRegistryAppClosureProvenance` an internal staging artifact or
+   removing it from the provider path.
+6. Reduce the public assumptions so the final public theorem no longer
    exposes `TrustedRegistryAppClosureProvenance e tr`.  The public trusted
-   premise should be the context-indexed reachable-domain agreement
-   (`TrustedRegistryAgreesWithReachable e ctx tr`, or an equivalent
-   higher-rank premise over all initial contexts admitted by the spec), with
-   the old empty-registry theorem retained as the compatibility corollary.
+   premise should be the context-indexed reachable-domain agreement over the
+   initial context (`TrustedRegistryAgreesWithReachable e ctx tr`, or an
+   equivalent higher-rank premise over all initial contexts admitted by the
+   spec), with the old empty-registry theorem retained as the compatibility
+   corollary.
 
 ### 7. Preserve compatibility and verify
 
@@ -300,6 +352,16 @@ compatibility corollary.  Run `lake build LeanProofs`, `make test`,
   acceptance criterion forbids exposing it as a final public theorem premise.
   The structure may persist internally if its closure-list fields remain
   indexed by actual typechecking provenance.
+
+- **Extern ids are tracked literals.**  Runtime extern dispatch can only use
+  ids that came from source `Expr.externVal` / `Expr.externFn` /
+  `Expr.externPfn` declarations or from `FnTClosure.extern` /
+  `PFnTClosure.extern` members already present in typed closure data.  The
+  typechecker transports, combines, and exposes those ids through var lookup,
+  closure capture, `apply*Closure`, nested returns, and joins; it does not
+  synthesize a third source of ids.  This is the structural reason the final
+  trust premise can be a single configuration-wide reachable-domain statement
+  over `(root, ctxRoot)` rather than a global "all ids are trusted" premise.
 
 ### Resolved blockers and lessons
 
