@@ -499,26 +499,6 @@ def ExternBoundarySinglePost
 
 namespace ExternBoundarySinglePost
 
-theorem to_singleRunPost
-    {ctx : TypeContext} {res : TypeResult}
-    {predSat : PredSat} {tm : TagMeaning}
-    {θ : RealizationMap} {μ : Memory} {ρ : VarEnv}
-    {cf : Config} {o : Value} {registry : ExternRegistry}
-    (hθwf : wfRealizationMap θ)
-    (hwf : wfTypeContext ctx)
-    (hric : runtimeInstantiatesCtx ctx μ ρ θ)
-    (hreg : regimeConsistentWithCtx ctx)
-    (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-    (a : Address) (pm : Bool)
-    (hwfcfg :
-      wfConfig ({ memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } : Config))
-    (h : ExternBoundarySinglePost ctx res predSat tm θ μ cf o) :
-    StepFRSingleRunFinalCleanPcTruePost ctx res predSat
-      (registry := registry) μ ρ θ cf o
-      hθwf hwf hric hreg hcwr a pm hwfcfg := by
-  rcases h with ⟨_tm', _htag, θ', hθext, hvtyp, hric', hcwr', hvalc', hpres, hfresh⟩
-  exact ⟨θ', hθext, hvtyp, hric', hcwr', hvalc', hpres, hfresh⟩
-
 theorem to_maskedRegParamPost
     {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
     {predSat : PredSat} {tm : TagMeaning}
@@ -1180,13 +1160,6 @@ theorem retSpec_eq
     (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
     entry.decl.retSpec = some retSpec :=
   h.2.2.2.2.1
-
-theorem effects_eq
-    {entry : TrustedExternEntry} {id : ExternId} {x : Name}
-    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
-    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
-    entry.decl.effects = effects :=
-  h.2.2.2.2.2
 
 end TrustedRegistryEntryMatchesFn
 
@@ -1967,14 +1940,6 @@ theorem ctxAfter
     ContextReachableFrom root ctxRoot (ctxAfter ctx res) := by
   intro x qt hlookup
   exact hctx (by simpa [ctxAfter] using hlookup)
-
-theorem of_same_varEnv
-    {root : Expr} {ctxRoot ctx ctx' : TypeContext}
-    (hctx : ContextReachableFrom root ctxRoot ctx)
-    (hvar : ctx'.varEnv = ctx.varEnv) :
-    ContextReachableFrom root ctxRoot ctx' := by
-  intro x qt hlookup
-  exact hctx (by simpa [hvar] using hlookup)
 
 theorem lookup
     {root : Expr} {ctxRoot ctx : TypeContext}
@@ -3248,45 +3213,6 @@ end ContextReachableFrom
 
 namespace QTypReachableFrom
 
-private theorem applyClosuresThreaded_forall_reachable
-    {α : Type} {root : Expr} {ctxRoot : TypeContext}
-    (applyOne : α → Tag × Loc → TypecheckM TypeResult)
-    (items : List α) (cursor : Tag × Loc) (results : List TypeResult)
-    (hOne :
-      ∀ item cursor result,
-        applyOne item cursor = .ok result →
-        QTypReachableFrom root ctxRoot result.qualType)
-    (hthread : applyClosuresThreaded applyOne items cursor = .ok results) :
-    ∀ result ∈ results, QTypReachableFrom root ctxRoot result.qualType := by
-  induction items generalizing cursor results with
-  | nil =>
-      simp [applyClosuresThreaded, pure, Except.pure] at hthread
-      cases hthread
-      intro result hmem
-      cases hmem
-  | cons item rest ih =>
-      simp [applyClosuresThreaded, bind, Except.bind] at hthread
-      cases hfirst : applyOne item cursor with
-      | error _err =>
-          simp [hfirst] at hthread
-      | ok first =>
-          simp [hfirst] at hthread
-          cases hrest : applyClosuresThreaded applyOne rest
-              (first.nextTag', first.nextLoc') with
-          | error _err =>
-              simp [hrest] at hthread
-          | ok restResults =>
-              simp [hrest, pure, Except.pure] at hthread
-              cases hthread
-              intro result hmem
-              simp at hmem
-              cases hmem with
-              | inl hfirstEq =>
-                  subst result
-                  exact hOne item cursor first hfirst
-              | inr htail =>
-                  exact ih _ _ hrest result htail
-
 private theorem applyClosuresThreaded_forall_reachable_mem
     {α : Type} {root : Expr} {ctxRoot : TypeContext}
     (applyOne : α → Tag × Loc → TypecheckM TypeResult)
@@ -4407,66 +4333,6 @@ theorem of_typecheck
                   (by simpa [typecheckExpr] using htc)
 end QTypReachableFrom
 
-
-/-- Root-scoped provenance needed to turn app closure-list membership into
-    trusted extern-call providers.  This is intentionally separate from the
-    boundary contract: concrete extern boundaries stay body-local, while the
-    app proof supplies the source/typechecking provenance that says which
-    registry entries can be used. -/
-structure TrustedRegistryAppClosureProvenance
-    (root : Expr) (tr : TrustedRegistry) : Prop where
-  fnBody :
-    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
-      {tcls : List FnTClosure} {x : Name}
-      {body : Expr} {σcap : CapturedVarEnv},
-      ExternDeclLift root (Expr.app e1 e2) →
-      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
-      FnTClosure.regular x body σcap ∈ tcls →
-      ExternDeclLift root body
-  pfnBody :
-    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
-      {tcls : List PFnTClosure} {x : Name}
-      {body : PExpr} {σcap : CapturedVarEnv},
-      ExternDeclLift root (Expr.app e1 e2) →
-      AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
-      PFnTClosure.regular x body σcap ∈ tcls →
-      ExternDeclLift root (PExpr.toExpr body)
-  fnExternMember :
-    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
-      {tcls : List FnTClosure} {argTyp : Typ}
-      {id : ExternId} {x : Name} {retSpec : ExternReturn}
-      {effects : List Effect} {capturedEnv : CapturedVarEnv},
-      ExternDeclLift root (Expr.app e1 e2) →
-      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
-      FnTClosure.extern id x retSpec effects capturedEnv ∈ tcls →
-      ExternDeclarationInProgram root id
-        { id := id, kind := .fn, typ := argTyp, argName := some x,
-          retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
-  fnRegularExternBody :
-    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
-      {tcls : List FnTClosure} {argTyp : Typ}
-      {id : ExternId} {x y : Name} {retSpec : ExternReturn}
-      {effects : List Effect} {capturedEnv : CapturedVarEnv},
-      ExternDeclLift root (Expr.app e1 e2) →
-      AppFnClosureListFromTypecheck ctx e1 e2 res tcls →
-      FnTClosure.regular x (Expr.externFn id y argTyp retSpec effects) capturedEnv ∈ tcls →
-      ExternDeclarationInProgram root id
-        { id := id, kind := .fn, typ := argTyp, argName := some x,
-          retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
-  pfnExternMember :
-    ∀ {ctx : TypeContext} {e1 e2 : Expr} {res : TypeResult}
-      {tcls : List PFnTClosure} {argTyp : Typ}
-      {id : ExternId} {x : Name} {retSpec : ExternReturn}
-      {capturedEnv : CapturedVarEnv},
-      ExternDeclLift root (Expr.app e1 e2) →
-      AppPfnClosureListFromTypecheck ctx e1 e2 res tcls →
-      PFnTClosure.extern id x retSpec capturedEnv ∈ tcls →
-      ExternDeclarationInProgram root id
-        { id := id, kind := .pfn, typ := argTyp, argName := some x,
-          retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [] }
 
 theorem TrustedRegistryAgreesWithFnTClosures.resolve
     {tr : TrustedRegistry} {argTyp : Typ} {tcls : List FnTClosure}

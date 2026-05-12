@@ -1,7 +1,10 @@
 # Poison FFI: Runtime Baseline and Proof Roadmap
 
 Status: working document. The runtime side is implemented and is treated here
-as a baseline; the remaining open work is entirely on the proof side.
+as a baseline. The fault-robustness proof now has a populated-registry theorem
+that consumes trusted extern boundary evidence; remaining open work is proof
+constructor/API work for concrete extern drivers and the operational
+well-formedness projections.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
@@ -220,97 +223,61 @@ without inspecting Lean implementation code.
 
 ### Topics To Settle
 
-- Which extern properties are needed only for execution (and already follow
-  from basic-shape checking) versus which are needed to prove FR.
 - Whether current extern summaries (`ExternReturn`, `Effect`,
   `SyntaxPredicate`) are sufficient for FR, or whether extra
   proof-only metadata is needed.
-- What assumptions or evidence state that executable behaviour matches
-  declared effect summaries. In the safe case this is trusted evidence,
-  not something the runtime is expected to enforce.
+- Which reusable constructor lemmas should be the driver-facing API for common
+  extern shapes, and what small behavior facts each constructor should require.
 - How trust tiers such as `safe` and `unsafe` are represented at the proof
   layer.
-- How FR evidence is indexed by extern identity (including for nested
-  returned callables).
 - How any new semantics-side assumptions relate to the existing
   typing-side `ExternTypingAssumptions` fields in
   `ExternTypingAssumptions.lean`.
-- How callable values returned by externs are handled by FR.
+- How much convenience API is needed to build finite trusted registries and
+  discharge reachable-domain trust for programs using them.
 - Whether the same interface can stand in for a separately verified Poison
   component linked through an extern boundary.
 - What soundness relation should hold between executable extern
   semantics, typing, and FR.
 
-### Pending Proof Obligations
+### Proof Status And Remaining Obligations
 
-These three `sorry`s in `LeanProofs/` are the concrete anchors for the
-Part II design. They genuinely require the extern evidence interface; the
-proof work that introduces that interface should discharge them together.
-All other extern-related `sorry`s in the proof development concern
-top-level extern *declarations* (which leave `Config` unchanged) and are
-mechanical to close without any extern guarantees.
+The main FR proof obligation is discharged through a registry-aware theorem:
+`TypeSystemEnforcesFaultRobustness` now proves the registry-relative spec for
+`TrustedRegistry.toRuntimeRegistry tr`, assuming `TrustedRegistryAgreesWithReachable`
+for every initial context admitted by the input spec. The old
+`terminatesTo_extern_absurd` path has been replaced by declaration and call
+boundary consumption.
 
+The remaining concrete proof obligations are:
+
+- **Constructor API for trusted entries.** Directly proving
+  `ExternBoundarySpec` for every extern would require assembling large
+  `StepFRPost` and single-run conjunctions by hand. The next proof layer should
+  provide constructors such as `ExternBoundarySpec.pureUnaryCleanInt`,
+  `constCleanInt`, `nestedPfn`, `refValInitialized`, and `impureCellUpdate`.
 - **`LeanProofs/SemanticsProperties.lean` — `app` case of the `wfConfig`
-  preservation lemma.** For the `ExternImpl.fn` dispatch path, the
-  driver-supplied implementation returns an arbitrary `(mem', addr')`
-  pair. Preserving `wfConfig` requires:
-  - `mem'` well-formed with respect to `addr'` (consumes `D-FN-1`),
-  - `addr₀ ≤ addr'` so the pre-existing `varEnv` remains well-formed
-    (consumes `D-FN-2`).
-
-  The `ExternImpl.pfn` sub-case and the user-closure sub-case are
-  provable without extern guarantees; only the `fn` sub-case is
-  guarantee-dependent.
-
+  preservation lemma.** For `ExternImpl.fn`, preservation should consume the
+  `ExternBoundarySpec.wf` projection on `ExternCallBoundaryRun.fn`.
 - **`LeanProofs/SemanticsProperties.lean` — `externVal` case of the
-  `wfConfig` preservation lemma.** `wfConfig cfg₁` is trivial (`cfg`
-  unchanged), but `wfValue cfg₁.nextAddr v` for the `ref int` sub-case
-  needs the registry contract that any registered `Value.loc a`
-  satisfies `a < cfg.nextAddr` (consumes `D-REF-1`). `valueMatchesTyp`
-  only enforces basic shape and accepts any `loc a`; the
-  numeric/boolean/unit/string sub-cases are provable without extern
-  guarantees.
+  `wfConfig` preservation lemma.** For `ref int`, preservation should consume
+  the `ExternBoundarySpec.wf` projection on `ExternDeclBoundaryRun.val`.
+- **End-to-end driver examples.** Once constructors exist, prove trusted
+  entries for `abs`, then the curried `max` pair, then low-risk extern values
+  and errno-style impure updates.
 
-- **`LeanProofs/FaultRobustnessProofs.lean` — `terminatesTo_extern_absurd`
-  and its six call sites.** Under the previous placeholder runtime, every
-  extern evaluation errored, which made this lemma vacuously true; with
-  a live registry the lemma is statically false. Its six call sites —
-  all inside the masked-single-run FR theorem — currently discharge the
-  extern cases by `exfalso`. Each must be replaced with a real
-  FR-at-extern-dispatch proof consuming extern-invocation evidence:
-  when a registered extern with declared return qtype `qt` produces
-  value `v`, `v` satisfies
-  `valueConsistentWithRegime qt μ θ v` at the post-dispatch
-  memory/realisation-map. This is the central FR obligation for
-  trusted externs and is the natural fit for an id-indexed evidence
-  bundle.
+### Chosen Guarantee Interface
 
-### Guarantee Interface Options
+The proof consumes a `StepFR`-level evidence bundle:
+`ExternBoundarySpec` stores declaration and call FR posts, single-run posts,
+and an operational `wf` projection. This keeps the core theorem generic over
+extern implementations while giving app/declaration proof sites exactly the
+facts they need.
 
-Any new guarantee interface should be compared against the
-`ExternTypingAssumptions.lean` baseline, not designed in isolation.
-
-1. **Top-level theorem interface.** One theorem per trusted extern, close
-   to the final FR statement.
-   - Pros: simple user story.
-   - Cons: coarse, hard to reuse locally, awkward for nested externs.
-
-2. **`StepFR`-level interface.** A lemma or evidence bundle matching the
-   local proof obligations at extern call sites.
-   - Pros: matches the current proof decomposition; direct fit for the
-     `terminatesTo_extern_absurd` replacement above.
-   - Cons: exposes some proof internals.
-
-3. **Fine-grained assumptions.** Smaller obligations (predicate-law extension,
-   effect provenance, value/memory agreement) from which the required
-   `StepFR` facts are derived.
-   - Pros: modular, close to the true semantic obligations, most
-     natural fit for extending `ExternTypingAssumptions.lean`.
-   - Cons: heavier user-facing API.
-
-Options 1 and 2 may repackage or subsume parts of the current baseline.
-Option 3 extends `ExternTypingAssumptions.lean` with explicit semantics-side
-assumptions beside the two typing-side ones already there.
+Concrete drivers should not expose this large interface directly. They should
+prove small behavior lemmas that feed constructor lemmas, and those
+constructors should assemble the `ExternBoundarySpec` fields. That constructor
+layer is the main remaining API work.
 
 ### High-Level Direction
 
@@ -320,15 +287,17 @@ assumptions beside the two typing-side ones already there.
   properties executable externs must satisfy.
 - Reuse explicit extern ids as the common indexing story for runtime
   dispatch, nested returned callables, and proof-facing evidence.
+- Use reachable-domain trust over the initial typed configuration, not
+  root-AST-only trust and not a global "all ids are trusted" assumption.
 - Unsafe externs are outside FR in the current plan.
-- Whether the primary consumed interface should be `StepFR`-shaped or
-  finer-grained is still open.
+- The consumed proof-core interface is `StepFR`-shaped; driver-facing APIs
+  should be finer-grained constructors over that core.
 
 ### Success Criteria (Part II)
 
-- `S-1`: The proof layer discharges the three pending obligations above
-  using an id-indexed evidence interface that composes with
-  `ExternTypingAssumptions.lean`.
+- `S-1`: The proof layer discharges the remaining constructor and
+  `wfConfig_preserved` obligations using an id-indexed evidence interface that
+  composes with `ExternTypingAssumptions.lean`.
 - `S-2`: FR handles callable values returned by externs — including
   nested returned callables — without special-casing them outside the
   id-indexed story.
@@ -345,13 +314,16 @@ assumptions beside the two typing-side ones already there.
 
 Primarily on the proof side:
 
-- `LeanProofs/ExternTypingAssumptions.lean` — likely extended with semantics-side
-  evidence.
+- `LeanProofs/ExternBoundary.lean` — trusted registry, extern boundary runs,
+  reachable-domain trust, and the future constructor API.
+- `LeanProofs/ExternTypingAssumptions.lean` — possible future localization of
+  `externPredSatDelta` into per-extern evidence.
 - `LeanProofs/SemanticsProperties.lean` — `wfConfig` preservation for
   `app` (fn sub-case) and `externVal` (ref int sub-case).
-- `LeanProofs/FaultRobustnessProofs.lean` — `terminatesTo_extern_absurd`
-  replacement at its six call sites.
-- `LeanProofs/StepFR.lean` — if the interface is `StepFR`-shaped.
+- `LeanProofs/FaultRobustnessProofs.lean` and `LeanProofs/StepFRApp.lean` —
+  existing consumers of populated-registry boundary evidence.
+- `LeanProofs/StepFR.lean` — `StepFRPost` / `BoundaryTagMeaningPost`
+  definitions consumed by boundary constructors.
 
 Runtime-side artefacts (`LeanPoison/Syntax.lean`, `Runtime.lean`,
 `BigStep.lean`, `Typecheck.lean`) are expected to remain stable, though
@@ -382,9 +354,9 @@ All open questions are now on the proof side:
   and FR? Is basic-shape execution enough for a minimal baseline? Do
   safe guarantees support a stronger theorem? Does FR itself imply the
   desired soundness property?
-- If new semantics assumptions are needed, should they live beside the
-  current ones in `LeanProofs/ExternTypingAssumptions.lean` or in a separate
-  module?
+- Should the broad `ExternTypingAssumptions.externPredSatDelta` field remain
+  global, or should constructor lemmas localize it into per-extern trusted
+  entry evidence?
 - How much of the concrete runtime should be reflected in proof-facing
   lemmas directly, and how much should stay hidden behind abstract
   evidence?

@@ -1,33 +1,35 @@
 # FFI Axioms: Externs as FR-Preserving Boundary Steps
 
-Status: the `ExternTypingAssumptions` structure is implemented and threaded
-through the fault-robustness proof; the broader extern-boundary design below
-is a proposal.
+Status: the `ExternTypingAssumptions` structure and registry-aware
+extern-boundary consumption are implemented and threaded through the
+fault-robustness proof. The remaining design work is the constructor layer for
+concrete trusted entries and the operational well-formedness projections.
 
 Recent work records the runtime call boundary in `BevalAppSuccess` (`externFn` /
 `externPfn` cases of successful `Expr.app`), factors the typing-side tag-meaning
 bundle as `BoundaryTagMeaningPost` in `LeanProofs/StepFR.lean` (reachable from
 `typecheck` via `StepFRApp.boundary_tag_meaning_post_of_typecheck`), and adds
-the first shared `TrustedRegistry` / extern-boundary scaffolding. The remaining
-work is to thread that scaffolding through a registry-aware step theorem; this
-is tracked as Probe 2 in `doc/probe2-plan.md`.
+the shared `TrustedRegistry` / extern-boundary scaffolding. Probe 2 is complete:
+the public fault-robustness theorem is registry-aware and consumes trusted
+extern boundary evidence under a populated registry. The remaining work is to
+build reusable constructors for concrete trusted entries and then prove
+end-to-end driver examples.
 
 This document covers two pieces of the FFI trust story:
 
 1. The `ExternTypingAssumptions` structure (in
-   `LeanProofs/ExternTypingAssumptions.lean`), which packages the two typing-side
-   assumptions extern typechecking depends on. The fault-robustness theorem is
+   `LeanProofs/ExternTypingAssumptions.lean`), which packages the typing-side
+   assumption extern typechecking depends on. The fault-robustness theorem is
    relative to a witness of this structure: every consumer threads it through
    the proof, and the public API requires callers to supply (or postulate) one.
 
-2. A proposed extern-boundary contract framework that would extend the same
-   pattern to runtime extern dispatch, replacing per-implementation reasoning
-   with a single FR-shaped property at every successful extern boundary. This
-   would hide frame, address, initialization, and non-leakage details behind a
-   per-extern witness rather than exposing them to the core language theorem.
+2. The extern-boundary contract framework, which extends the same pattern to
+   runtime extern dispatch by replacing per-implementation reasoning with a
+   single FR-shaped property at every successful extern boundary. This hides
+   frame, address, initialization, and non-leakage details behind a per-extern
+   witness rather than exposing them to the core language theorem.
 
-The intended top-level theorem (with the boundary contract in place) is
-relative:
+The current top-level theorem is relative:
 
 > The Poison type system enforces fault-robustness for programs whose
 > registered externs satisfy the extern-boundary FR contract.
@@ -450,10 +452,10 @@ There are two trust inputs:
 - `ExternTypingAssumptions` (implemented in `LeanProofs/ExternTypingAssumptions.lean`):
   generic assumptions about extern typechecking machinery, threaded through
   every consumer.
-- `TrustedRegistry` (proposed): per-implementation evidence only for extern
-  ids that are present in the runtime registry. Each trusted entry would store
-  the implementation, the declaration shape it implements, and the boundary
-  proof for that pair.
+- `TrustedRegistry` (implemented): per-implementation evidence only for extern
+  ids that are present in the runtime registry. Each trusted entry stores the
+  implementation, the declaration shape it implements, and the boundary proof
+  for that pair.
 
 This distinction matters for conditionals. Both branches of an `if` typecheck,
 so extern declarations in an unexecuted branch may still need the generic
@@ -506,112 +508,92 @@ def TrustedRegistryAgreesWithProgram (e : Expr) (tr : TrustedRegistry) : Prop :=
     ExternDeclarationInProgram e id d →
     tr.get? id = some entry →
     entry.decl = d
+
+/-- The public theorem uses the wider reachable domain: root AST externs plus
+    externs reachable from callable closure data already present in the initial
+    typed context. -/
+def TrustedRegistryAgreesWithReachable
+    (root : Expr) (ctxRoot : TypeContext) (tr : TrustedRegistry) : Prop :=
+  ∀ {id d entry},
+    ExternDeclarationReachableFromContext root ctxRoot id d →
+    tr.get? id = some entry →
+    entry.decl = d
 ```
 
 The top-level theorem then becomes relative to both inputs:
 
 ```lean
 theorem TypeSystemEnforcesFaultRobustness
-    (e : Expr)
-    (tr : TrustedRegistry)
-    (hTrust : TrustedRegistryAgreesWithProgram e tr)
-    (extTyping : ExternTypingAssumptions)
-    (s : InputSpec) (obs : ObservableSpec) :
-  TypeSystemEnforcesFaultRobustness_spec e s obs := ...
+    (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+    (hTrust :
+      ∀ {ctx : TypeContext},
+        ctxMatchesInputSpec s ctx →
+        TrustedRegistryAgreesWithReachable e ctx tr) :
+  TypeSystemEnforcesFaultRobustness_spec_with_registry
+    (TrustedRegistry.toRuntimeRegistry tr) e s obs := ...
 ```
 
-In the current runtime, `Config.registry` is the actual implementation map.
-The FR theorem must connect the initial runtime configs to the implementation
-projection of the trusted registry, for example by requiring the initial
-configs' `registry` fields to equal `tr.toRuntimeRegistry`.
+In the current runtime, `Config.registry` is the actual implementation map. The
+registry-relative FR spec fixes successful runs to use the implementation
+projection of the trusted registry: `TrustedRegistry.toRuntimeRegistry tr`.
 
-Typing-side extern reasoning uses `extTyping`. Structural induction decomposes
-`hTrust` for subexpressions while reusing the same trusted registry. Call sites
-that need the relational boundary contract look up the trusted entry by id; if
-`tr.get? id = some entry`, then `entry.spec.declFR` / `entry.spec.callFR` are
-the relational boundary contracts, `entry.spec.declSingle` /
-`entry.spec.callSingle` are the single-run clean-pc contracts, and
-`entry.spec.wf` is the operational well-formedness contract.
+Typing-side extern reasoning still uses `ExternTypingAssumptions` through the
+FR spec. Structural induction threads expression reachability and a
+`ContextReachableFrom` invariant while reusing the same trusted registry. Call
+sites that need the relational boundary contract look up the trusted entry by
+id; if `tr.get? id = some entry`, then `entry.spec.declFR` /
+`entry.spec.callFR` are the relational boundary contracts, and
+`entry.spec.declSingle` / `entry.spec.callSingle` are the single-run clean-pc
+contracts. The `entry.spec.wf` field remains the operational well-formedness
+projection for preservation consumers.
 
 There is intentionally no obligation of the form "every extern declaration has
 an implementation." If a trusted entry is absent, the projected runtime registry
 has no implementation for that id; dispatch is a runtime error, not a
 successful boundary event.
 
-## Proof Gaps Addressed
+## Proof Status
 
-### `bevalApp_structure`
+The fault-robustness proof now consumes trusted extern evidence under a
+populated registry:
 
-`LeanProofs/SemanticsProperties.lean` has a `bevalApp_structure`
-gap because the existing inversion lemma assumes only user-closure dispatch. The
-extern runtime adds extra successful branches for extern closure bodies.
+- `bevalApp_structure` and related app inversion facts expose user and extern
+  dispatch cases, including successful `ExternCallBoundaryRun.fn` and
+  `ExternCallBoundaryRun.pfn` events.
+- Extern declaration cases in `FaultRobustnessProofs.lean` no longer close by
+  empty-registry contradiction. Successful `externVal`, `externFn`, and
+  `externPfn` declaration runs consume `entry.spec.declFR` /
+  `entry.spec.declSingle`.
+- Application cases in `StepFRApp.lean` consume `entry.spec.callFR` /
+  `entry.spec.callSingle` for runtime `externFn` / `externPfn` dispatch and
+  transport the body-local boundary post back to the outer app post.
+- Extern ids are present in `FnTClosure.extern` / `PFnTClosure.extern`, extern
+  closures are covered by value typing, regime consistency, and clean
+  agreement, and reachable declaration evidence is derived from typechecking
+  instead of from a global "all ids are trusted" assumption.
+- The public theorem is registry-relative:
+  `TypeSystemEnforcesFaultRobustness` proves
+  `TypeSystemEnforcesFaultRobustness_spec_with_registry
+  (TrustedRegistry.toRuntimeRegistry tr) e s obs` from
+  `TrustedRegistryAgreesWithReachable` for every initial context admitted by
+  the input spec.
 
-Under this approach, the inversion lemma should be strengthened to expose all
-successful dispatch cases:
+Two operational well-formedness proof gaps remain in
+`LeanProofs/SemanticsProperties.lean`:
 
-- user closure body evaluation,
-- pure user closure body evaluation,
-- impure extern dispatch described by `ExternCallBoundaryRun.fn`,
-- pure extern dispatch described by `ExternCallBoundaryRun.pfn`.
+- the `app` / `ExternImpl.fn` dispatch path of `wfConfig_preserved`, which
+  should consume `entry.spec.wf` on `ExternCallBoundaryRun.fn`;
+- the `externVal ref int` path of `wfConfig_preserved`, which should consume
+  `entry.spec.wf` on `ExternDeclBoundaryRun.val`.
 
-This is not a cosmetic change. The current inversion proof is incomplete, and
-the statement does not expose extern dispatch. The strengthened operational
-inversion lemma is part of the main proof budget; the high-level extern
-contract only makes the extern branch easy to consume after the branch has been
-exposed.
-
-### `wfConfig_preserved`, application extern dispatch
-
-The `app` case of `wfConfig_preserved` needs to show that a successful
-`ExternImpl.fn` dispatch returns a well-formed config and value. The proof can
-look up the trusted entry by id and use `entry.spec.wf` on the
-`ExternCallBoundaryRun.fn` branch.
-
-No separate frame, domain, or address monotonicity lemma is needed in the main
-proof. Those facts may be how a concrete driver justifies the `wf` field, but
-the core proof only consumes the high-level result.
-
-### `wfConfig_preserved`, `externVal ref int`
-
-The `externVal` case needs `wfValue nextAddr (Value.loc a)` when the registered
-extern value is a reference. The proof can look up the trusted entry by id and
-use `entry.spec.wf` on the `ExternDeclBoundaryRun.val` branch.
-
-This hides the details of address bounds, runtime memory presence, and reference
-initialization behind the trusted boundary. If a driver registers a bad
-reference, it cannot supply the `wf` field.
-
-### Former `terminatesTo_extern_absurd` sites
-
-The FR proof currently closes extern declaration cases vacuously under an empty
-registry. Once a populated registry is threaded into the theorem, successful
-extern declaration evaluations are no longer contradictory.
-
-In those cases, the proof looks up the trusted entry by id and invokes
-`entry.spec.declFR` on the declaration boundary:
-
-- `ExternDeclBoundaryRun.val` for `externVal`,
-- `ExternDeclBoundaryRun.fn` for `externFn`,
-- `ExternDeclBoundaryRun.pfn` for `externPfn`.
-
-The witness directly provides `StepFRPost`, including result typing,
-tag-meaning obligations, regime consistency, runtime instantiation, and clean
-result agreement.
-
-### Extern fn/pfn dispatch in `StepFRApp`
-
-When application evaluates a closure whose body is `Expr.externFn` or
-`Expr.externPfn`, the proof invokes `entry.spec.callFR` on:
-
-- `ExternCallBoundaryRun.fn`, or
-- `ExternCallBoundaryRun.pfn`.
-
-The witness supplies the postconditions that the ordinary user-closure proof
-would otherwise derive structurally from the function body.
+These are not FR proof blockers, but they are still part of the complete FFI
+trust story. Concrete constructor work should make the `wf` projection cheap to
+derive from the same implementation facts used for FR and single-run posts.
 
 ## Relationship to `LeanProofs/ExternTypingAssumptions.lean`
 
-`LeanProofs/ExternTypingAssumptions.lean` contains:
+`LeanProofs/ExternTypingAssumptions.lean` contains the typing-side contract
+floor:
 
 - `TagMappingRespectsTagMeaning` — the semantic predicate that fresh-tag
   allocation must respect a `TagMeaning`.
@@ -621,99 +603,25 @@ would otherwise derive structurally from the function body.
   - `externPredSatDelta`: `PredSatLaws` preservation across one structural
     extern allocation batch.
 
-A previous `guardProvenance` field (with supporting predicates
-`trustedGuardedCell` and `ImpureExternCallOk`) was removed once the
-typechecker was tightened to erase predicates on extern effect writes under
-poisoned `pc`, mirroring assignment.  The guard-origin trace is now
-structurally provable via `applyFnTClosure_extern_ok_memEnv_guard_origin` in
-`StepFR.lean`.
-
-If the extern-boundary design above is implemented, this file would also
-contain:
-
-- `ExternDeclaration`
-- `TrustedExternEntry`
-- `TrustedRegistry`
-- `TrustedRegistry.toRuntimeRegistry`
-- `ExternDeclarationInProgram`
-- `TrustedRegistryAgreesWithProgram`
-- `ExternDeclBoundaryRun`
-- `ExternCallEntry`
-- `ExternCallBoundaryRun`
-- `BoundaryTagMeaningPost`
-- `StepFRPost` or an import of it from `StepFR.lean`
-- `ExternDeclBoundaryFR`
-- `ExternCallBoundaryFR`
-- `ExternBoundarySinglePost`
-- `ExternDeclBoundarySingle`
-- `ExternCallBoundarySingle`
-- `ExternBoundaryWFRun`
-- `ExternBoundaryPreservesWF`
-- `ExternBoundarySpec`
-- the registry-scoped replacement for the broad
-  `ExternTypingAssumptions.externPredSatDelta` field
-- helper lemmas for looking up declaration and implementation evidence
+The runtime-boundary structures live in `LeanProofs/ExternBoundary.lean`:
+`ExternDeclaration`, `TrustedExternEntry`, `TrustedRegistry`,
+`TrustedRegistryAgreesWithReachable`, declaration/call boundary runs,
+`ExternBoundarySpec`, and the reachable-domain provenance lemmas used by the
+public theorem.
 
 `TagMeaning` is threaded through typechecking, and structural extern allocation
 extends the output tag table with exactly the resolved guard descriptors via
-`ExternBatchTagMeaningExtension`. This structural extension is part of the
-boundary postcondition: a successful extern boundary must not only return
-runtime agreement facts, it must also identify the extended tag meaning under
-which those facts are stated. The boundary postcondition consumes
-`PredSatLaws predSat tm'`; for extern-generated descriptor batches, the intended
-way to construct that conjunct is exactly the existing
-`externPredSatDelta` field applied to the corresponding
-`ExternBatchTagMeaningExtension`.
-
-`externPredSatDelta` is intentionally broader than the final FFI interface. It
-is a caller-supplied field of `ExternTypingAssumptions`, so the kernel does not
-assume it unconditionally. It should be incorporated into `TrustedRegistry` /
-`ExternBoundarySpec` as per-extern evidence and the broad field should be
-removed. Typing-side reasoning for extern declarations in unexecuted branches
-may still need declaration-level evidence, because those branches typecheck
-even when no runtime boundary event occurs.
-
-This is why the boundary contracts above do not take an
-`ExternTypingAssumptions` premise directly. The current `StepFR` needs that
-premise so it can call `externPredSatDelta` while proving extern-batch tag
-extensions. A per-extern boundary witness instead provides
-`PredSatLaws predSat tm'` for its own batch as part of `BoundaryTagMeaningPost`,
-which is the localized replacement for the broad assumption at successful
-boundary points.
+`ExternBatchTagMeaningExtension`. A successful extern boundary must still
+identify the extended tag meaning under which post facts are stated. Today the
+FR spec remains relative to `ExternTypingAssumptions.externPredSatDelta`; a
+future API cleanup may move that obligation into per-extern trusted-entry
+constructors so callers do not supply one broad typing-side axiom.
 
 `ExternTypingAssumptions.guardProvenance` no longer exists: the typechecker
 fix to `applyExternEffect` (predicate erasure under poisoned `pc`, mirroring
 assignment) makes the guard-origin trace structurally provable, so the field
 was removed and the call site at the impure-extern dispatch path now invokes
 `applyFnTClosure_extern_ok_memEnv_guard_origin` directly.
-
-If the extern-boundary design lands, a successful extern execution would
-additionally produce a boundary witness supplying `StepFRPost`. That
-postcondition includes the canonical tag-meaning extension, `PredSatLaws` for
-the extended table, and the regime-consistency and agreement facts needed after
-the boundary.
-
-## Required Structural Refactors
-
-This approach still requires a few structural changes.
-
-- Extern ids must be recoverable at type-level extern call sites. Today
-  `FnTClosure.extern` and `PFnTClosure.extern` do not carry `ExternId`, so the
-  proof cannot look up the matching registry evidence during `StepFRApp`.
-- The top-level FR theorem must thread `ExternTypingAssumptions`, a trusted
-  registry, and the program/registry agreement predicate, and must ensure the
-  evaluated configs use the projected runtime registry.
-- The registry constraint must land in the actual `FaultRobustnessSpec` shape,
-  or in `InputSpec`, not only in the final theorem wrapper. Otherwise the spec
-  can still instantiate initial configs with `emptyExternRegistry`, and extern
-  cases remain vacuous.
-- `valueHasETyp`, `deepValueQTypProperty`, and closure agreement need explicit
-  support for extern closures, or the boundary witness must provide equivalent
-  typing/agreement evidence for returned extern callables.
-- `bevalApp_structure` needs an extern-dispatch branch so the semantics and FR
-  proofs can expose successful extern calls as `ExternCallBoundaryRun` events.
-
-These are interface refactors, not per-extern semantic obligations.
 
 ## Trust Boundary
 
@@ -739,12 +647,12 @@ inside Lean, one can later prove the relevant declaration/call boundary fields
 from more detailed lemmas. The core FR theorem does not need to know those
 details.
 
-## Viability Probes
+## Roadmap
 
-The approach should be validated high-risk-first before doing broad theorem
-threading.
+The remaining work is now constructor and driver evidence, not registry-aware
+proof-spine plumbing.
 
-### Probe 1: Structural Prerequisites
+### Probe 1: Structural Prerequisites — Complete
 
 Before any end-to-end extern proof, make extern closures and call boundaries
 first-class proof objects:
@@ -767,33 +675,25 @@ This is a prerequisite for even simple call examples such as `abs`, because the
 caller must first evaluate an extern `pfn` declaration to a closure value before
 the call boundary can execute.
 
-Implementation note: the current shared `StepFRPost` is a transitional factoring
-of the existing `StepFR` conclusion and still carries the source expression /
-`IsCanonicalExtension` shape. If Probe 2 discovers that real boundary consumers
-must prove `IsCanonicalExtension` for an arbitrary `postExpr`, finish the
-`BoundaryTagMeaningPost` refactor before continuing.
+### Probe 2: Registry-Aware Boundary Consumption — Complete
 
-### Probe 2: Registry-Aware Boundary Consumption
+The step theorem consumes trusted boundary evidence under a populated runtime
+registry:
 
-Before proving concrete extern drivers, make the step theorem consume trusted
-boundary evidence under a populated runtime registry. This is the sub-task
-tracked in `doc/probe2-plan.md`.
+- `StepFR` and the single-run IH families are registry-parametric;
+- top-level `externVal` / `externFn` / `externPfn` branches consume
+  `ExternBoundarySpec` declaration evidence;
+- app proofs expose successful extern dispatch and consume call-boundary
+  evidence;
+- static closure-list membership is bridged to trusted registry lookup through
+  reachable-domain provenance; and
+- the public populated-registry theorem targets
+  `TrustedRegistry.toRuntimeRegistry`.
 
-At minimum:
+The old Probe 2 checkpoint plan was removed after completion; this document is
+now the roadmap for remaining FFI proof work.
 
-- make `StepFR` and the single-run IH families registry-parametric;
-- replace top-level `externVal` / `externFn` / `externPfn` empty-registry
-  contradictions with `ExternBoundarySpec` declaration evidence;
-- switch application proofs to the full app inversion that exposes successful
-  extern dispatch;
-- bridge static extern closure-list membership to trusted registry lookup;
-- prove the populated-registry theorem for `TrustedRegistry.toRuntimeRegistry`.
-
-This probe is deliberately high-risk-first. It validates that the proof stack
-can actually consume boundary evidence before investing in reusable driver
-constructors.
-
-### Probe 3: Boundary Constructors
+### Probe 3: Boundary Constructors — Next
 
 Write constructor lemmas before proving concrete drivers directly against the
 full `StepFRPost` conjunction. At minimum:
@@ -816,7 +716,8 @@ exist, prove a trusted entry for built-in `abs` (`@12`):
 - construct the `TrustedExternEntry` for `@12`;
 - prove its `ExternBoundarySpec`;
 - build a `TrustedRegistry` containing that entry;
-- pass the registry and `ExternTypingAssumptions` into the step/FR proof;
+- supply the reachable-domain trust premise and the required
+  `ExternTypingAssumptions` witness at the FR spec boundary;
 - apply the resulting theorem to a small program that calls `abs`.
 
 This is the minimal end-to-end exercise. It checks that trusted-boundary
@@ -886,17 +787,12 @@ shared facts.
 
 1. Move the `ExternTypingAssumptions.externPredSatDelta` obligation into the
    trusted registry interface as per-extern evidence and delete the broad field.
-2. Decide where registry agreement belongs in the public FR API:
-   `FaultRobustnessSpec` itself or `InputSpec`. The trusted-boundary proof is
-   not meaningful until successful runs use `tr.toRuntimeRegistry` instead of
-   the default empty registry.
-3. Decide whether `ExternBoundaryPreservesWF` should remain a field of
+2. Decide whether `ExternBoundaryPreservesWF` should remain a field of
    `ExternBoundarySpec` or be exposed only as a derived projection from the
    constructor API. It should not become an independent third proof burden for
    drivers.
-4. Finalize the exact `ExternCallEntry` / `BodyEntryInputsAgree` payload. It
-   must include enough captured-env and argument information for `StepFRApp` to
-   plug the extern boundary proof in where the user-closure body IH is used.
+3. Decide how much convenience API to expose for reachable-domain trust when a
+   driver registry is built from a finite list of trusted entries.
 
 The resulting theorem is a clean relative statement: Poison's type system
 enforces fault-robustness assuming every registered extern boundary is itself

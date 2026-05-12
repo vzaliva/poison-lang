@@ -8973,9 +8973,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (htc1' : typecheck (ctxAfter ctxᵢ result2) e1 fuel' = .ok result1)
   (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure) (results : List TypeResult)
   (first : TypeResult) (rest : List TypeResult)
-  -- Probe 2 spike: contract-shaped hypothesis for the `closure_extern` arm.
-  -- See `doc/probe2-plan.md`.  Discharged at the caller via the empty-registry
-  -- vacuity argument bundled in `ExternCallBoundarySingleFnContract.of_emptyExternRegistry`.
+  -- Contract-shaped hypothesis for the `closure_extern` arm.  Callers supply
+  -- either the empty-registry vacuity provider or a trusted-registry boundary
+  -- provider.
   (_extCallSpec :
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls
       st1 (registry := registry))
@@ -10391,9 +10391,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       simpa [hetyp1] using hv₁_typed
     cases hv₁_parrow with
     | peClosure_extern _ _ _ =>
-        -- Probe 2 vertical-slice discharge.  The peClosure_extern constructor
-        -- forces `body = Expr.externPfn id y argTyp retSpec` for some implicits,
-        -- but the user pure-closure branch of full app inversion provides
+        -- The peClosure_extern constructor forces
+        -- `body = Expr.externPfn id y argTyp retSpec` for some implicits, but
+        -- the user pure-closure branch of full app inversion provides
         -- `_htoPExpr_body : Expr.toPExpr? body ≠ none`.  For extern bodies
         -- `Expr.toPExpr?` returns `none` (`Expr.toPExpr?` falls through to `_ => none`
         -- for `externPfn`), so the precondition is contradictory.

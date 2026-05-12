@@ -24,17 +24,6 @@ private lemma emptyExternRegistry_get?_eq_none (id : ExternId) :
 -- Big-step termination relation to a final configuration and resulting Value
 -- Note: evaluation returns EvalResult (pure, no IO)
 
-/-- Any `Config` whose registry matches the default can be rewritten as an
-    update of its memory/varEnv/nextAddr/pureMode fields alone. -/
-lemma config_eq_of_registry_default (cfg : Config)
-    (h : cfg.registry = emptyExternRegistry) :
-  cfg = { memory := cfg.memory, varEnv := cfg.varEnv,
-          nextAddr := cfg.nextAddr, pureMode := cfg.pureMode } := by
-  cases cfg with
-  | mk _ _ _ _ _ =>
-    simp only [Config.mk.injEq, true_and]
-    exact h
-
 def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value): Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
     LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.success c₁ out
