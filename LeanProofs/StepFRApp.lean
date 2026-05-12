@@ -8957,7 +8957,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (hctxFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)}
       {bodyCtx : TypeContext},
-      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      (htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      htyped.result2.qualType = ⟨etyp2, p2, pred2⟩ →
       FnTClosure.regular x body σcap ∈ tcls →
       bodyCtx.varEnv =
         VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
@@ -8992,7 +8993,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm
       (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded
-  have happTyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
+  let happTyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
     { appFuel := Nat.succ (Nat.succ fuel')
       fnFuel := fuel'
       result2 := result2
@@ -9241,7 +9242,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           simpa [bodyCtx] using hTmBounded1.mono hcursorTagA
         have hSingle_body :=
           singleIH fuelBody hfuel_lt body bodyCtx
-            (hctxFnBody happTyped hσcap_mem (by simp [bodyCtx]))
+            (hctxFnBody happTyped (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2) hσcap_mem
+              (by simp [bodyCtx]))
             (hcanFnBody happTyped hσcap_mem) hTmBody hTmBoundedBody result3 htcBody'
         have hpc_body : bodyCtx.pc = true := by
           simp [bodyCtx, hpc, joinPoison]
@@ -10148,7 +10150,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (hctxPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
       {σcap : List (Name × QTyp)} {bodyCtx : TypeContext},
-      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
+      (htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      htyped.result2.qualType = ⟨etyp2, p2, pred2⟩ →
       PFnTClosure.regular x pbody σcap ∈ tcls →
       bodyCtx.varEnv =
         VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
@@ -10180,7 +10183,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
     masked CtxCons ValCons ctxᵢ (Expr.app e1 e2) res predSat tm
       (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded
-  have happTyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
+  let happTyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls :=
     { appFuel := Nat.succ (Nat.succ fuel')
       fnFuel := fuel'
       result2 := result2
@@ -10561,7 +10564,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           simpa [bodyCtx] using hTmBounded1.mono hcursorTagA
         have hSingle_body :=
           singleIH fuelBody hfuel_lt body bodyCtx
-            (hctxPfnBody happTyped hσcap_mem (by simp [bodyCtx]))
+            (hctxPfnBody happTyped (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2) hσcap_mem
+              (by simp [bodyCtx]))
             (by simpa [hbody_eq] using hcanPfnBody happTyped hσcap_mem)
             hTmBody hTmBoundedBody result3 htcBody_body
         have hpc_body : bodyCtx.pc = true := by
@@ -11345,10 +11349,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
   (hctxFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)}
-      {bodyCtx : TypeContext} {result2 : TypeResult}
-      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
-      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
-      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      {bodyCtx : TypeContext} {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      (htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      htyped.result2.qualType = ⟨etyp2, p2, pred2⟩ →
       FnTClosure.regular x body σcap ∈ tcls →
       bodyCtx.varEnv =
         VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
@@ -11356,10 +11359,10 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
       CtxReach bodyCtx)
   (hctxPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
-      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext} {result2 : TypeResult}
+      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext}
       {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
-      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
-      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      (htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      htyped.result2.qualType = ⟨etyp2, p2, pred2⟩ →
       PFnTClosure.regular x pbody σcap ∈ tcls →
       bodyCtx.varEnv =
         VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
@@ -11420,9 +11423,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           (fun {tcls} {x} {body} {σcap} htyped hmem =>
             hcanFnBody (tcls := tcls) (x := x) (body := body) (σcap := σcap)
               htyped hmem)
-          (fun {tcls} {x} {body} {σcap} {bodyCtx} htyped hmem hvar =>
+          (fun {tcls} {x} {body} {σcap} {bodyCtx} htyped hqt_arg hmem hvar =>
             hctxFnBody (x := x) (body := body) (σcap := σcap)
-              (bodyCtx := bodyCtx) (result2 := result2) htyped hqt2 hmem hvar)
+              (bodyCtx := bodyCtx) htyped hqt_arg hmem hvar)
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest
           (by simpa [hfnTyped] using extFnSpec (tcls := tcls) hfnTyped)
@@ -11453,9 +11456,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           (fun {tcls} {x} {pbody} {σcap} htyped hmem =>
             hcanPfnBody (tcls := tcls) (x := x) (pbody := pbody) (σcap := σcap)
               htyped hmem)
-          (fun {tcls} {x} {pbody} {σcap} {bodyCtx} htyped hmem hvar =>
+          (fun {tcls} {x} {pbody} {σcap} {bodyCtx} htyped hqt_arg hmem hvar =>
             hctxPfnBody (x := x) (pbody := pbody) (σcap := σcap)
-              (bodyCtx := bodyCtx) (result2 := result2) htyped hqt2 hmem hvar)
+              (bodyCtx := bodyCtx) htyped hqt_arg hmem hvar)
           singleIH hqt2 htc2' htc1'
           st1 st2 p p1 tcls results first rest
           (by simpa [hpfnTyped] using extPfnSpec (tcls := tcls) hpfnTyped)
@@ -11529,10 +11532,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
       CanUse (fun _ => True) hcan1 hcan2 trivial
       (fun {_ctx} {_res} _ => trivial)
       hcanFnBody hcanPfnBody
-      (fun {_tcls} {_x} {_body} {_σcap} {_bodyCtx} {_result2} {_etyp2} {_p2}
-        {_pred2} _ _ _ _ => trivial)
-      (fun {_tcls} {_x} {_pbody} {_σcap} {_bodyCtx} {_result2} {_etyp2} {_p2}
-        {_pred2} _ _ _ _ => trivial)
+      (fun {_tcls} {_x} {_body} {_σcap} {_bodyCtx} {_etyp2} {_p2}
+        {_pred2} (_htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res _tcls) _ _ _ =>
+          trivial)
+      (fun {_tcls} {_x} {_pbody} {_σcap} {_bodyCtx} {_etyp2} {_p2}
+        {_pred2} (_htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res _tcls) _ _ _ =>
+          trivial)
       (fun m hm {tmᵢ} e ctx _hctx hcan hwfTm hTmBounded res htc =>
         singleIH m hm (tmᵢ := tmᵢ) e ctx hcan hwfTm hTmBounded res htc)
       extFnSpec extPfnSpec htc
@@ -11558,10 +11563,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof_ctxReach
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
   (hctxFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)}
-      {bodyCtx : TypeContext} {result2 : TypeResult}
-      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
-      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
-      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      {bodyCtx : TypeContext} {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      (htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      htyped.result2.qualType = ⟨etyp2, p2, pred2⟩ →
       FnTClosure.regular x body σcap ∈ tcls →
       bodyCtx.varEnv =
         VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
@@ -11569,10 +11573,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof_ctxReach
       CtxReach bodyCtx)
   (hctxPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
-      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext} {result2 : TypeResult}
+      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext}
       {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
-      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
-      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      (htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      htyped.result2.qualType = ⟨etyp2, p2, pred2⟩ →
       PFnTClosure.regular x pbody σcap ∈ tcls →
       bodyCtx.varEnv =
         VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
@@ -11701,10 +11705,9 @@ lemma stepFR_app_with_expr_proof
       PFnTClosure.regular x pbody σcap ∈ tcls → CanUse (PExpr.toExpr pbody))
   (hctxFnBody :
     ∀ {tcls : List FnTClosure} {x : Name} {body : Expr} {σcap : List (Name × QTyp)}
-      {bodyCtx : TypeContext} {result2 : TypeResult}
-      {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
-      AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
-      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      {bodyCtx : TypeContext} {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
+      (htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      htyped.result2.qualType = ⟨etyp2, p2, pred2⟩ →
       FnTClosure.regular x body σcap ∈ tcls →
       bodyCtx.varEnv =
         VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
@@ -11712,10 +11715,10 @@ lemma stepFR_app_with_expr_proof
       CtxReach bodyCtx)
   (hctxPfnBody :
     ∀ {tcls : List PFnTClosure} {x : Name} {pbody : PExpr}
-      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext} {result2 : TypeResult}
+      {σcap : List (Name × QTyp)} {bodyCtx : TypeContext}
       {etyp2 : ETyp} {p2 : Poison} {pred2 : Predicate},
-      AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls →
-      result2.qualType = ⟨etyp2, p2, pred2⟩ →
+      (htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
+      htyped.result2.qualType = ⟨etyp2, p2, pred2⟩ →
       PFnTClosure.regular x pbody σcap ∈ tcls →
       bodyCtx.varEnv =
         VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x
@@ -12484,8 +12487,9 @@ lemma stepFR_app_with_expr_proof
                 · simpa [VarEnv.update] using wfVarEnv.cons x₀ v₂₀ env₀ hv₂₀_wf henv₀_wf
               have hSingle_bodyA₀ :=
                 singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀
-                  (hctxFnBody (bodyCtx := bodyCtxA₀) (result2 := result2)
-                    hfnTyped hqt2 hσcapA₀_mem (by simp [bodyCtxA₀]))
+                  (hctxFnBody (bodyCtx := bodyCtxA₀) hfnTyped
+                    (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                    hσcapA₀_mem (by simp [bodyCtxA₀]))
                   (hcanFnBody hfnTyped hσcapA₀_mem) hTmBodyA₀
                   (by simpa [bodyCtxA₀] using
                     (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀)
@@ -12692,8 +12696,9 @@ lemma stepFR_app_with_expr_proof
                 · simpa [VarEnv.update] using wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf
               have hSingle_bodyA₁ :=
                 singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁
-                  (hctxFnBody (bodyCtx := bodyCtxA₁) (result2 := result2)
-                    hfnTyped hqt2 hσcapA₁_mem (by simp [bodyCtxA₁]))
+                  (hctxFnBody (bodyCtx := bodyCtxA₁) hfnTyped
+                    (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                    hσcapA₁_mem (by simp [bodyCtxA₁]))
                   (hcanFnBody hfnTyped hσcapA₁_mem) hTmBodyA₁
                   (by simpa [bodyCtxA₁] using
                     (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁)
@@ -13277,8 +13282,9 @@ lemma stepFR_app_with_expr_proof
                   simpa [bodyCtx, ctxAfter] using hbase.mono hcursorSharedTag
                 have hIH_body :=
                   IH fuelBody hfuel_lt body₀ bodyCtx
-                    (hctxFnBody (bodyCtx := bodyCtx) (result2 := result2)
-                      hfnTyped hqt2 hmem (by simp [bodyCtx]))
+                    (hctxFnBody (bodyCtx := bodyCtx) hfnTyped
+                      (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                      hmem (by simp [bodyCtx]))
                     (hcanFnBody hfnTyped hmem) hTmBody
                     htagBoundedBody result3Shared htcBody'
                 have hwfBodyCtx : wfTypeContext bodyCtx := by
@@ -14774,8 +14780,9 @@ lemma stepFR_app_with_expr_proof
                 exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               have hSingle_bodyU₀ :=
                 singleIH fuelBodyU₀ hfuel_ltU₀ body₀ bodyCtxU₀
-                  (hctxFnBody (bodyCtx := bodyCtxU₀) (result2 := result2)
-                    hfnTyped hqt2 hσcap₀_mem (by simp [bodyCtxU₀]))
+                  (hctxFnBody (bodyCtx := bodyCtxU₀) hfnTyped
+                    (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                    hσcap₀_mem (by simp [bodyCtxU₀]))
                   (hcanFnBody hfnTyped hσcap₀_mem) hTmBodyU₀
                   hTmBoundedBodyU₀ result3U₀ htcBodyU₀'
               have hpc_bodyU₀ : bodyCtxU₀.pc = true := by
@@ -15484,8 +15491,9 @@ lemma stepFR_app_with_expr_proof
                     hcwrBody hwfcfg_body_initE₀ hpcBody
               have hSingle_bodyU₁ :=
                 singleIH fuelBodyU₁ hfuel_ltU₁ body₁ bodyCtxU₁
-                  (hctxFnBody (bodyCtx := bodyCtxU₁) (result2 := result2)
-                    hfnTyped hqt2 hσcap₁_mem (by simp [bodyCtxU₁]))
+                  (hctxFnBody (bodyCtx := bodyCtxU₁) hfnTyped
+                    (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                    hσcap₁_mem (by simp [bodyCtxU₁]))
                   (hcanFnBody hfnTyped hσcap₁_mem) hTmBodyU₁
                   hTmBoundedBodyU₁ result3U₁ htcBodyU₁'
               have hreg_c₁₁ : c₁₁.registry = registry := by
@@ -17895,8 +17903,9 @@ lemma stepFR_app_with_expr_proof
                   registry := registry } evalCfg₀ o₀ := ht₀_body
             have hSingle_bodyA₀ :=
               singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀
-                (hctxPfnBody (bodyCtx := bodyCtxA₀) (result2 := result2)
-                  hpfnTyped hqt2 hσcapA₀_mem (by simp [bodyCtxA₀]))
+                (hctxPfnBody (bodyCtx := bodyCtxA₀) hpfnTyped
+                  (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                  hσcapA₀_mem (by simp [bodyCtxA₀]))
                 (by
                   have hcan := hcanPfnBody hpfnTyped hσcapA₀_mem
                   simpa [PExpr_toExpr_of_toPExpr?_some body₀ pbodyA₀ htoPExprA₀] using hcan)
@@ -18112,8 +18121,9 @@ lemma stepFR_app_with_expr_proof
                   registry := registry } evalCfg₁ o₁ := ht₁_body
             have hSingle_bodyA₁ :=
               singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁
-                (hctxPfnBody (bodyCtx := bodyCtxA₁) (result2 := result2)
-                  hpfnTyped hqt2 hσcapA₁_mem (by simp [bodyCtxA₁]))
+                (hctxPfnBody (bodyCtx := bodyCtxA₁) hpfnTyped
+                  (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                  hσcapA₁_mem (by simp [bodyCtxA₁]))
                 (by
                   have hcan := hcanPfnBody hpfnTyped hσcapA₁_mem
                   simpa [PExpr_toExpr_of_toPExpr?_some body₁ pbodyA₁ htoPExprA₁] using hcan)
@@ -18675,8 +18685,9 @@ lemma stepFR_app_with_expr_proof
                         (by simpa [ctxAfter] using hb_predM1) hcursorSharedTag
               have hIH_body :=
                 IH fuelBody hfuel_lt (PExpr.toExpr pbody) bodyCtx
-                  (hctxPfnBody (bodyCtx := bodyCtx) (result2 := result2)
-                    hpfnTyped hqt2 hmem (by simp [bodyCtx, hx₀]))
+                  (hctxPfnBody (bodyCtx := bodyCtx) hpfnTyped
+                    (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                    hmem (by simp [bodyCtx, hx₀]))
                   (hcanPfnBody hpfnTyped hmem)
                   hTmBody htagBoundedBody result3Shared htcBody'
               have hTmBoundedBody : TagMeaningBounded tm1 bodyCtx.nextTag := by
@@ -20205,8 +20216,9 @@ lemma stepFR_app_with_expr_proof
                 exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
               have hSingle_bodyU₀ :=
                 singleIH fuelBodyU₀ hfuel_ltU₀ (PExpr.toExpr pbody₀) bodyCtxU₀
-                  (hctxPfnBody (bodyCtx := bodyCtxU₀) (result2 := result2)
-                    hpfnTyped hqt2 hsource₀ (by simp [bodyCtxU₀]))
+                  (hctxPfnBody (bodyCtx := bodyCtxU₀) hpfnTyped
+                    (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                    hsource₀ (by simp [bodyCtxU₀]))
                   (hcanPfnBody hpfnTyped hsource₀) hTmBodyU₀
                   hTmBoundedBodyU₀ result3U₀ htcBodyU₀'
               have hpc_bodyU₀ : bodyCtxU₀.pc = true := by
@@ -20866,8 +20878,9 @@ lemma stepFR_app_with_expr_proof
                     hcwrBody hwfcfg_body_initE₀ hpcBody
               have hSingle_bodyU₁ :=
                 singleIH fuelBodyU₁ hfuel_ltU₁ (PExpr.toExpr pbody₁) bodyCtxU₁
-                  (hctxPfnBody (bodyCtx := bodyCtxU₁) (result2 := result2)
-                    hpfnTyped hqt2 hsource₁ (by simp [bodyCtxU₁]))
+                  (hctxPfnBody (bodyCtx := bodyCtxU₁) hpfnTyped
+                    (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2)
+                    hsource₁ (by simp [bodyCtxU₁]))
                   (hcanPfnBody hpfnTyped hsource₁) hTmBodyU₁
                   hTmBoundedBodyU₁ result3U₁ htcBodyU₁'
               have hreg_c₁₁ : c₁₁.registry = registry := by
@@ -22397,10 +22410,12 @@ lemma stepFR_app
         (fun {_ctx} {_res} _ => trivial)
         (fun {_tcls} {_x} {_body} {_σcap} _ _ => trivial)
         (fun {_tcls} {_x} {_pbody} {_σcap} _ _ => trivial)
-        (fun {_tcls} {_x} {_body} {_σcap} {_bodyCtx} {_result2} {_etyp2} {_p2}
-          {_pred2} _ _ _ _ => trivial)
-        (fun {_tcls} {_x} {_pbody} {_σcap} {_bodyCtx} {_result2} {_etyp2} {_p2}
-          {_pred2} _ _ _ _ => trivial)
+        (fun {_tcls} {_x} {_body} {_σcap} {_bodyCtx} {_etyp2} {_p2}
+          {_pred2} (_htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res _tcls) _ _ _ =>
+            trivial)
+        (fun {_tcls} {_x} {_pbody} {_σcap} {_bodyCtx} {_etyp2} {_p2}
+          {_pred2} (_htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res _tcls) _ _ _ =>
+            trivial)
         (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
         (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
