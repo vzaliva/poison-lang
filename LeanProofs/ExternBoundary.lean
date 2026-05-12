@@ -960,14 +960,6 @@ theorem id_eq
 
 end ExternDeclarationInProgram
 
-/-- Every extern declaration visible from `current` is also visible from
-    `root`.  This is the root-program provenance relation used when local
-    step proofs consume trusted-registry agreement for the top-level program. -/
-def ExternDeclLift (root current : Expr) : Prop :=
-  ∀ {id : ExternId} {d : ExternDeclaration},
-    ExternDeclarationInProgram current id d →
-    ExternDeclarationInProgram root id d
-
 /-- Trusted entries may only implement declarations with the same id and
     declaration shape as the program. -/
 def TrustedRegistryAgreesWithProgram (e : Expr) (tr : TrustedRegistry) : Prop :=

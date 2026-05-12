@@ -529,7 +529,7 @@ theorem TypeSystemEnforcesFaultRobustness
       ∀ {ctx : TypeContext},
         ctxMatchesInputSpec s ctx →
         TrustedRegistryAgreesWithReachable e ctx tr) :
-  TypeSystemEnforcesFaultRobustness_spec_with_registry
+  FaultRobustnessSpec
     (TrustedRegistry.toRuntimeRegistry tr) e s obs := ...
 ```
 
@@ -573,7 +573,7 @@ populated registry:
   instead of from a global "all ids are trusted" assumption.
 - The public theorem is registry-relative:
   `TypeSystemEnforcesFaultRobustness` proves
-  `TypeSystemEnforcesFaultRobustness_spec_with_registry
+  `FaultRobustnessSpec
   (TrustedRegistry.toRuntimeRegistry tr) e s obs` from
   `TrustedRegistryAgreesWithReachable` for every initial context admitted by
   the input spec.

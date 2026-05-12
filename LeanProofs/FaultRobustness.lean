@@ -700,36 +700,11 @@ inductive trustedVarsClosureRegimeInit
 
 -- ------------------------ Top-level definitions -------------------------------
 
--- Fault-Robustness property (top-level, spec-driven).
--- Same shape as NI but with an extra premise requiring agreement on trusted inputs.
-private def FaultRobustnessSpec (e : Expr) (s : InputSpec) (obs : ObservableSpec) (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
-  ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap) (a₁ a₂ : Address) (pm : Bool),
-    ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
-    wfRegime ctx.regime s →
-    wfRealizationMap θ₁ →  wfRealizationMap θ₂ →
-    wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm} →  -- initial config₁ well-formed
-    wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm} →  -- initial config₂ well-formed
-    inputsConformSpec s μ₁ ρ₁ θ₁ →  inputsConformSpec s μ₂ ρ₂ θ₂ →
-    runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ →  runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ θ₁ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ θ₂ →
-    consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →  consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
-    agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm} cf₁ o₁ →
-    terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm} cf₂ o₂ →
-    ∃ (θ₁' θ₂' : RealizationMap),
-      wfExtendsMap θ₁ θ₁' ∧
-      wfExtendsMap θ₂ θ₂' ∧
-      observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
-
-/-- Registry-relative fault-robustness property.
-
-    This is the same top-level semantic property as `FaultRobustnessSpec`, but
-    the two initial configurations carry an explicit runtime extern registry
-    instead of relying on `Config.mk`'s default empty registry.  The proof side
-    trusted registry projects to this runtime registry in `LeanProofs.ExternBoundary`. -/
-def FaultRobustnessSpecWithRegistry
+/-- Pointwise two-run fault-robustness obligation under an explicit runtime
+    extern registry.  This is the semantic relation used inside the public
+    top-level spec after typechecking/setup premises have selected a context
+    and tag meaning. -/
+private def FaultRobustnessPointwise
     (registry : ExternRegistry)
     (e : Expr) (s : InputSpec) (obs : ObservableSpec)
     (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
@@ -755,28 +730,12 @@ def FaultRobustnessSpecWithRegistry
       wfExtendsMap θ₂ θ₂' ∧
       observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
 
--- Type system enforces Fault-Robustness.
-def TypeSystemEnforcesFaultRobustness_spec
-  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
-  wfInputSpec s →
-  wfObsSpec obs →
-  ∀ (ctx : TypeContext),
-      ctxMatchesInputSpec s ctx →
-      wfTypeContext ctx → -- all locations in memEnv are below nextLoc
-      ctx.pc = false → -- we start from clean program counter
-      ctx.tagEnv = {} → -- we start with empty tag environment
-      TagBoundedCtx ctx → -- all tags in varEnv/memEnv predicates and closures are below nextTag
-      ∀ (predSat : PredSat) (tm : TagMeaning),
-        wfTagMeaningCtx tm ctx →
-        TagMeaningBounded tm ctx.nextTag →
-        PredSatLaws predSat tm →
-        ExternTypingAssumptions →
-        ((∃ (fuel : Nat) (res : TypeResult),
-          typecheck ctx e fuel = .ok res ∧
-          ObsConstraints obs res) →
-          FaultRobustnessSpec e s obs ctx predSat tm)
+/-- The public registry-parametric fault-robustness specification.
 
-def TypeSystemEnforcesFaultRobustness_spec_with_registry
+    The type system enforces the pointwise two-run FR relation for every
+    initial type context admitted by the input spec, under the supplied runtime
+    extern registry. -/
+def FaultRobustnessSpec
   (registry : ExternRegistry)
   (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
   wfInputSpec s →
@@ -795,4 +754,4 @@ def TypeSystemEnforcesFaultRobustness_spec_with_registry
         ((∃ (fuel : Nat) (res : TypeResult),
           typecheck ctx e fuel = .ok res ∧
           ObsConstraints obs res) →
-          FaultRobustnessSpecWithRegistry registry e s obs ctx predSat tm)
+          FaultRobustnessPointwise registry e s obs ctx predSat tm)

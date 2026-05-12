@@ -1146,7 +1146,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
           masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
           hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg
 
--- TypeSystemEnforcesFaultRobustness_impl_proof
+-- Helper proof utilities for top-level fault-robustness orchestration.
 
 -- Helper lemmas: transport predicate-based properties across qualified types
 -- that differ only in irrelevant fields (e.g. poison), but share the same predicate.
