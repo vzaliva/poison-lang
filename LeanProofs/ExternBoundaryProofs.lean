@@ -67,14 +67,14 @@ theorem TrustedRegistryAgreesWithReachable.resolvePfnDeclaration
 
 theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
-    {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+    {masked : Tag → Prop} {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
     {predSat : PredSat} {tm : TagMeaning}
     {d : ExternDeclaration} {impl : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
     (hreachable : ExternDeclarationReachableFromContext root ctxRoot d.id d) :
-    ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm
+    ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl := by
-  intro hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+  intro hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
     hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
   have hlookupRun := ExternDeclBoundaryRun.lookup hrun
   have hlookupRuntime :
@@ -87,12 +87,15 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
           registry := TrustedRegistry.toRuntimeRegistry tr } cf o := by
     simpa [hdecl, himpl] using hrun
+  have htypedEntry : ExternBoundaryTyping.Decl entry.decl postExpr ctx res := by
+    simpa [hdecl] using htyped
   exact
     ExternDeclBoundarySingleMaskedContract.of_spec
-      (masked := masked) (ctx := ctx) (res := res) (predSat := predSat)
+      (masked := masked) (postExpr := postExpr) (ctx := ctx) (res := res)
+      (predSat := predSat)
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
-      hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+      hpredlaws hExtTyping hwfTm hTmBounded htypedEntry μ ρ θ cf o hθwf hwf hric
       hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrunEntry hpc
 
 theorem ExternDeclBoundaryFRContract.of_trustedReachable
@@ -104,7 +107,7 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
     (hreachable : ExternDeclarationReachableFromContext root ctxRoot d.id d) :
     ExternDeclBoundaryFRContract ctx postExpr res predSat tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl₀ impl₁ := by
-  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+  intro hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
     a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
   have hlookupRun₀ := ExternDeclBoundaryRun.lookup hrun₀
@@ -128,12 +131,14 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
           registry := TrustedRegistry.toRuntimeRegistry tr } cf₁ o₁ := by
     simpa [hdecl, himpl₀, himpl₁₀] using hrun₁
+  have htypedEntry : ExternBoundaryTyping.Decl entry.decl postExpr ctx res := by
+    simpa [hdecl] using htyped
   exact
     ExternDeclBoundaryFRContract.of_spec
       (ctx := ctx) (postExpr := postExpr) (res := res) (predSat := predSat)
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
-      hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+      hpredlaws hExtTyping hwfTm hTmBounded htypedEntry μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrunEntry₀ hrunEntry₁
 

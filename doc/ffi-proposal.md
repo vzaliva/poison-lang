@@ -46,8 +46,9 @@ This document has two parts:
 - `basic shape`: the coarse runtime kind checked dynamically — integer,
   boolean, unit, string, location, or callable — as distinct from full
   summary conformance.
-- `trust tier`: the proof-level status of an extern, such as `safe` or
-  `unsafe`.
+- `trusted extern`: an extern id with a `TrustedExternEntry` in a
+  `TrustedRegistry`; ids absent from that registry have no proof-facing
+  boundary evidence.
 - `evidence`: an explicit proof object or theorem bundle supplying FR-facing
   guarantees for trusted externs.
 
@@ -228,8 +229,8 @@ without inspecting Lean implementation code.
   proof-only metadata is needed.
 - Which reusable constructor lemmas should be the driver-facing API for common
   extern shapes, and what small behavior facts each constructor should require.
-- How trust tiers such as `safe` and `unsafe` are represented at the proof
-  layer.
+- Whether the current binary `TrustedRegistry` model is the intended long-term
+  proof boundary, or future work needs multiple trust levels.
 - How any new semantics-side assumptions relate to the existing
   typing-side `ExternTypingAssumptions` fields in
   `ExternTypingAssumptions.lean`.
@@ -257,23 +258,22 @@ The remaining concrete proof obligations are:
   `StepFRPost` and single-run conjunctions by hand. The next proof layer should
   provide constructors such as `ExternBoundarySpec.pureUnaryCleanInt`,
   `constCleanInt`, `nestedPfn`, `refValInitialized`, and `impureCellUpdate`.
-- **`LeanProofs/SemanticsProperties.lean` — `app` case of the `wfConfig`
-  preservation lemma.** For `ExternImpl.fn`, preservation should consume the
-  `ExternBoundarySpec.wf` projection on `ExternCallBoundaryRun.fn`.
-- **`LeanProofs/SemanticsProperties.lean` — `externVal` case of the
-  `wfConfig` preservation lemma.** For `ref int`, preservation should consume
-  the `ExternBoundarySpec.wf` projection on `ExternDeclBoundaryRun.val`.
 - **End-to-end driver examples.** Once constructors exist, prove trusted
   entries for `abs`, then the curried `max` pair, then low-risk extern values
   and errno-style impure updates.
+
+The operational-safety portion of the stack is already discharged through
+`ExternBoundarySpec.operational`: `TrustedRegistry.operationalSafe` derives
+`RegistryOperationalSafe`, which `SemanticsProperties.lean` consumes for
+extern-aware preservation and monotonicity.
 
 ### Chosen Guarantee Interface
 
 The proof consumes a `StepFR`-level evidence bundle:
 `ExternBoundarySpec` stores declaration and call FR posts, single-run posts,
-and an operational `wf` projection. This keeps the core theorem generic over
-extern implementations while giving app/declaration proof sites exactly the
-facts they need.
+and an `operational : ExternOperationalSafe d impl` projection. This keeps the
+core theorem generic over extern implementations while giving app/declaration
+proof sites exactly the facts they need.
 
 Concrete drivers should not expose this large interface directly. They should
 prove small behavior lemmas that feed constructor lemmas, and those
@@ -290,15 +290,17 @@ layer is the main remaining API work.
   dispatch, nested returned callables, and proof-facing evidence.
 - Use reachable-domain trust over the initial typed configuration, not
   root-AST-only trust and not a global "all ids are trusted" assumption.
-- Unsafe externs are outside FR in the current plan.
+- Extern ids absent from `TrustedRegistry` are outside the proof-facing FR
+  boundary in the current plan.
 - The consumed proof-core interface is `StepFR`-shaped; driver-facing APIs
   should be finer-grained constructors over that core.
 
 ### Success Criteria (Part II)
 
-- `S-1`: The proof layer discharges the remaining constructor and
-  `wfConfig_preserved` obligations using an id-indexed evidence interface that
-  composes with `ExternTypingAssumptions.lean`.
+- `S-1`: The proof layer discharges the remaining constructor obligations using
+  an id-indexed evidence interface that composes with
+  `ExternTypingAssumptions.lean`; operational preservation and monotonicity flow
+  through `ExternBoundarySpec.operational` and `RegistryOperationalSafe`.
 - `S-2`: FR handles callable values returned by externs — including
   nested returned callables — without special-casing them outside the
   id-indexed story.
@@ -319,8 +321,8 @@ Primarily on the proof side:
   reachable-domain trust, and the future constructor API.
 - `LeanProofs/ExternTypingAssumptions.lean` — possible future localization of
   `externPredSatDelta` into per-extern evidence.
-- `LeanProofs/SemanticsProperties.lean` — `wfConfig` preservation for
-  `app` (fn sub-case) and `externVal` (ref int sub-case).
+- `LeanProofs/SemanticsProperties.lean` — consumes `RegistryOperationalSafe`
+  derived from trusted entries for extern-aware preservation and monotonicity.
 - `LeanProofs/FaultRobustnessProofs.lean` and `LeanProofs/StepFRApp.lean` —
   existing consumers of populated-registry boundary evidence.
 - `LeanProofs/StepFR.lean` — `StepFRPost` / `BoundaryTagMeaningPost`
@@ -345,9 +347,8 @@ All open questions are now on the proof side:
   unavoidable?
 - Beyond within-run determinism, what additional stability properties
   are needed for trusted externs?
-- Are the current typing-side `ExternTypingAssumptions` fields already too
-  strong for unsafe externs, or should unsafe externs sit entirely outside
-  that baseline?
+- Should the current binary `TrustedRegistry` model remain the only proof
+  boundary, or should future work introduce multiple trust levels?
 - Is the proposed extern/evidence interface strong enough to model
   separate compilation, with FR proved once for a component and reused
   by a client program?
@@ -379,7 +380,8 @@ All open questions are now on the proof side:
 - `ExternTypingAssumptions.lean` is the known typing-side contract floor. Any
   semantics-side extension should connect to that baseline rather than
   replace it wholesale.
-- Unsafe externs are outside FR in the current plan.
+- Extern ids absent from `TrustedRegistry` are outside the proof-facing FR
+  boundary in the current plan.
 - The interface should be suitable for modelling separately verified
   Poison components, even though building the actual
   separate-compilation pipeline is out of scope.

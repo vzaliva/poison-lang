@@ -42,6 +42,106 @@ structure BodyEntryInputsAgree
   wfConfig₀ : wfConfig entry₀.bodyConfig
   wfConfig₁ : wfConfig entry₁.bodyConfig
 
+namespace ExternBoundaryTyping
+
+/-- Declaration-boundary typing origin: the result is the one produced by
+    typechecking the same extern declaration expression represented by `d`. -/
+inductive Decl : ExternDeclaration → Expr → TypeContext → TypeResult → Prop where
+  | val {ctx : TypeContext} {fuel : Nat} {id : ExternId}
+      {typ : Typ} {poison : Poison} {pred : SyntaxPredicate} {res : TypeResult} :
+      typecheck ctx (Expr.externVal id typ poison pred) fuel = .ok res →
+      Decl
+        { id := id, kind := .val, typ := typ, argName := none, retSpec := none,
+          effects := [], preds := [pred] }
+        (Expr.externVal id typ poison pred) ctx res
+  | fn {ctx : TypeContext} {fuel : Nat} {id : ExternId} {x : Name}
+      {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
+      {res : TypeResult} :
+      typecheck ctx (Expr.externFn id x argTyp retSpec effects) fuel = .ok res →
+      Decl
+        { id := id, kind := .fn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects }
+        (Expr.externFn id x argTyp retSpec effects) ctx res
+  | pfn {ctx : TypeContext} {fuel : Nat} {id : ExternId} {x : Name}
+      {argTyp : Typ} {retSpec : ExternReturn} {res : TypeResult} :
+      typecheck ctx (Expr.externPfn id x argTyp retSpec) fuel = .ok res →
+      Decl
+        { id := id, kind := .pfn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := [], preds := collectExternPreds retSpec [] }
+        (Expr.externPfn id x argTyp retSpec) ctx res
+
+/-- Call-boundary typing origin: the selected extern call result is the result
+    of applying the closure member that corresponds to the same boundary
+    declaration and runtime call entry. -/
+inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult → Prop where
+  | fnExternMember
+      {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {fuel : Nat}
+      {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
+      {argPred : Predicate} {id : ExternId} {x y : Name} {argTyp : Typ}
+      {retSpec : ExternReturn} {effects : List Effect} {tenv : CapturedVarEnv}
+      {entry : ExternCallEntry} {res : TypeResult} :
+      entry.bodyCtx =
+        { ctx with
+          pc := joinPoison p (joinPoison p1 ctx.pc)
+          memEnv := bodyState.memEnv'
+          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+          tagEnv := bodyState.tagEnv'
+          nextTag := cursor.1
+          nextLoc := cursor.2
+          regime := bodyState.regime' } →
+      applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv)
+        st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res →
+      Call
+        { id := id, kind := .fn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects }
+        (Expr.externFn id y argTyp retSpec effects) entry res
+  | fnRegularExternBody
+      {bodyCtx : TypeContext} {result3 : TypeResult} {fuel : Nat}
+      {p p1 : Poison} {id : ExternId} {x y : Name} {argTyp : Typ}
+      {retSpec : ExternReturn} {effects : List Effect}
+      {entry : ExternCallEntry} {res : TypeResult} :
+      entry.bodyCtx = bodyCtx →
+      typecheck bodyCtx (Expr.externFn id y argTyp retSpec effects) fuel = .ok result3 →
+      res =
+        { result3 with
+          qualType :=
+            normalizeAppResultByProvenance (joinPoison p1 p)
+              { result3.qualType with
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } →
+      Call
+        { id := id, kind := .fn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := effects,
+          preds := collectExternPreds retSpec effects }
+        (Expr.externFn id y argTyp retSpec effects) entry res
+  | pfnExternMember
+      {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {fuel : Nat}
+      {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
+      {argPred : Predicate} {id : ExternId} {x y : Name} {argTyp : Typ}
+      {retSpec : ExternReturn} {tenv : CapturedVarEnv}
+      {entry : ExternCallEntry} {res : TypeResult} :
+      entry.bodyCtx =
+        { ctx with
+          pc := joinPoison p (joinPoison ctx.pc p1)
+          memEnv := bodyState.memEnv'
+          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+          tagEnv := bodyState.tagEnv'
+          pureCtx := true
+          nextTag := cursor.1
+          nextLoc := cursor.2
+          regime := bodyState.regime' } →
+      applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv)
+        st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res →
+      Call
+        { id := id, kind := .pfn, typ := argTyp, argName := some x,
+          retSpec := some retSpec, effects := [], preds := collectExternPreds retSpec [] }
+        (Expr.externPfn id y argTyp retSpec) entry res
+
+end ExternBoundaryTyping
+
 /-- Paired extern-declaration boundary runs produce the same post as `StepFR`.
 
     `postExpr` is explicit because the current `StepFRPost` remains indexed by
@@ -50,6 +150,7 @@ def ExternDeclBoundaryFR
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
   ∀ (postExpr : Expr) (ctx : TypeContext) (res : TypeResult)
     (predSat : PredSat) (tm : TagMeaning),
+    ExternBoundaryTyping.Decl d postExpr ctx res →
     PredSatLaws predSat tm →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
@@ -150,8 +251,9 @@ end ExternBoundarySinglePost
 
 def ExternDeclBoundarySingle
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
-  ∀ (ctx : TypeContext) (res : TypeResult)
+  ∀ (postExpr : Expr) (ctx : TypeContext) (res : TypeResult)
     (predSat : PredSat) (tm : TagMeaning),
+    ExternBoundaryTyping.Decl d postExpr ctx res →
     PredSatLaws predSat tm →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
@@ -203,13 +305,14 @@ structure ExternBoundarySpec
 /-- Registry-parametric masked single-run declaration-boundary adapter used by
     the step proof. -/
 def ExternDeclBoundarySingleMaskedContract
-    (masked : Tag → Prop) (ctx : TypeContext) (res : TypeResult)
+    (masked : Tag → Prop) (postExpr : Expr) (ctx : TypeContext) (res : TypeResult)
     (predSat : PredSat) (tm : TagMeaning) (registry : ExternRegistry)
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
   PredSatLaws predSat tm →
   ExternTypingAssumptions →
   wfTagMeaningCtx tm ctx →
   TagMeaningBounded tm ctx.nextTag →
+  ExternBoundaryTyping.Decl d postExpr ctx res →
   ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
     (cf : Config) (o : Value),
     (hθwf : wfRealizationMap θ) →
@@ -235,12 +338,13 @@ def ExternDeclBoundarySingleMaskedContract
         hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg
 
 theorem ExternDeclBoundarySingleMaskedContract.of_spec
-    {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
+    {masked : Tag → Prop} {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
     {predSat : PredSat} {tm : TagMeaning} {registry : ExternRegistry}
     {d : ExternDeclaration} {impl : ExternImpl}
     (hspec : ExternBoundarySpec d impl) :
-    ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl := by
-  intro hpredlaws _hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+    ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm registry
+      d impl := by
+  intro hpredlaws _hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
     hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
   have hregOrd : regimeConsistentWithCtx ctx :=
     regimeConsistentWithCtxMasked_unmask hreg hmasked_absent
@@ -249,7 +353,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_spec
     consistentWithRegimeMasked_unmask hmasked_none hctxCons
   have hsingle :
       ExternBoundarySinglePost ctx res predSat tm θ μ cf o :=
-    hspec.declSingle ctx res predSat tm hpredlaws hwfTm hTmBounded
+    hspec.declSingle postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
       μ ρ θ cf o hθwf hwf hric hregOrd hctxConsOrd a pm registry hwfcfg hrun hpc
   exact
     ExternBoundarySinglePost.to_maskedRegParamPost
@@ -268,6 +372,7 @@ def ExternDeclBoundaryFRContract
   ExternTypingAssumptions →
   wfTagMeaningCtx tm ctx →
   TagMeaningBounded tm ctx.nextTag →
+  ExternBoundaryTyping.Decl d postExpr ctx res →
   ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
     (cf₀ cf₁ : Config) (o₀ o₁ : Value),
     wfRealizationMap θ₀ →
@@ -300,11 +405,11 @@ theorem ExternDeclBoundaryFRContract.of_spec
     (hspec : ExternBoundarySpec d impl) :
     ExternDeclBoundaryFRContract ctx postExpr res predSat tm registry
       d impl impl := by
-  intro hpredlaws _hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+  intro hpredlaws _hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
     a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
   exact
-    hspec.declFR postExpr ctx res predSat tm hpredlaws hwfTm hTmBounded
+    hspec.declFR postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
       μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded
       hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm
       registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁

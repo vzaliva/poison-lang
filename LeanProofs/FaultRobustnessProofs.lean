@@ -427,7 +427,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
       {predSat : PredSat} {tm : TagMeaning} {impl : ExternImpl},
       CanUse e →
       ExternDeclarationInProgram e id d →
-      ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl)
+      ExternDeclBoundarySingleMaskedContract masked e ctx res predSat tm registry d impl)
   (masked : Tag → Prop)
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
   CtxReach ctxᵢ →
@@ -2016,13 +2016,19 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               obtain ⟨impl, hrun⟩ :=
                 ExternDeclBoundaryRun.of_terminatesTo_externVal
                   (ctx := ctxᵢ) (res := res) ht
+              have htyped :
+                  ExternBoundaryTyping.Decl
+                    { id := id, kind := .val, typ := t, argName := none,
+                      retSpec := none, effects := [], preds := [pr] }
+                    (Expr.externVal id t p pr) ctxᵢ res :=
+                ExternBoundaryTyping.Decl.val htc
               exact
                 hdeclSingle
                   (e := Expr.externVal id t p pr) (id := id)
                   (d := { id := id, kind := .val, typ := t, argName := none,
                           retSpec := none, effects := [], preds := [pr] })
                   (impl := impl) hcan ExternDeclarationInProgram.externVal
-                  hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+                  hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
           | externFn id n t r eff =>
               -- Extern declaration success is normalized to boundary-run
@@ -2038,6 +2044,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               obtain ⟨impl, hrun⟩ :=
                 ExternDeclBoundaryRun.of_terminatesTo_externFn
                   (ctx := ctxᵢ) (res := res) ht
+              have htyped :
+                  ExternBoundaryTyping.Decl
+                    { id := id, kind := .fn, typ := t, argName := some n,
+                      retSpec := some r, effects := eff,
+                      preds := collectExternPreds r eff }
+                    (Expr.externFn id n t r eff) ctxᵢ res :=
+                ExternBoundaryTyping.Decl.fn htc
               exact
                 hdeclSingle
                   (e := Expr.externFn id n t r eff) (id := id)
@@ -2045,7 +2058,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           retSpec := some r, effects := eff,
                           preds := collectExternPreds r eff })
                   (impl := impl) hcan ExternDeclarationInProgram.externFn
-                  hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+                  hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
           | externPfn id n t r =>
               -- Extern declaration success is normalized to boundary-run
@@ -2061,6 +2074,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               obtain ⟨impl, hrun⟩ :=
                 ExternDeclBoundaryRun.of_terminatesTo_externPfn
                   (ctx := ctxᵢ) (res := res) ht
+              have htyped :
+                  ExternBoundaryTyping.Decl
+                    { id := id, kind := .pfn, typ := t, argName := some n,
+                      retSpec := some r, effects := [],
+                      preds := collectExternPreds r [] }
+                    (Expr.externPfn id n t r) ctxᵢ res :=
+                ExternBoundaryTyping.Decl.pfn htc
               exact
                 hdeclSingle
                   (e := Expr.externPfn id n t r) (id := id)
@@ -2068,7 +2088,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           retSpec := some r, effects := [],
                           preds := collectExternPreds r [] })
                   (impl := impl) hcan ExternDeclarationInProgram.externPfn
-                  hpredlaws hExtTyping hwfTm hTmBounded μ ρ θ cf o hθwf hwf hric
+                  hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse_ctxReach
@@ -2167,7 +2187,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
       {predSat : PredSat} {tm : TagMeaning} {impl : ExternImpl},
       CanUse e →
       ExternDeclarationInProgram e id d →
-      ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl)
+      ExternDeclBoundarySingleMaskedContract masked e ctx res predSat tm registry d impl)
   (e : Expr) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
   CtxReach ctxᵢ →
   CanUse e →
@@ -2347,7 +2367,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
       {predSat : PredSat} {tm : TagMeaning} {impl : ExternImpl},
       CanUse e →
       ExternDeclarationInProgram e id d →
-      ExternDeclBoundarySingleMaskedContract masked ctx res predSat tm registry d impl)
+      ExternDeclBoundarySingleMaskedContract masked e ctx res predSat tm registry d impl)
   (hdeclFR :
     ∀ {e : Expr} {id : ExternId} {d : ExternDeclaration}
       {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
@@ -2704,6 +2724,12 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
             obtain ⟨impl₁, hrun₁⟩ :=
               ExternDeclBoundaryRun.of_terminatesTo_externVal
                 (ctx := ctxᵢ) (res := res) ht₁
+            have htyped :
+                ExternBoundaryTyping.Decl
+                  { id := id, kind := .val, typ := t, argName := none,
+                    retSpec := none, effects := [], preds := [pr] }
+                  (Expr.externVal id t p pr) ctxᵢ res :=
+              ExternBoundaryTyping.Decl.val htc
             exact
               hdeclFR
                 (e := Expr.externVal id t p pr) (id := id)
@@ -2712,7 +2738,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 (impl₀ := impl₀) (impl₁ := impl₁)
                 hcan
                 ExternDeclarationInProgram.externVal
-                hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
+                hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
                 hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
         | externFn id n t r eff =>
@@ -2727,6 +2753,13 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
             obtain ⟨impl₁, hrun₁⟩ :=
               ExternDeclBoundaryRun.of_terminatesTo_externFn
                 (ctx := ctxᵢ) (res := res) ht₁
+            have htyped :
+                ExternBoundaryTyping.Decl
+                  { id := id, kind := .fn, typ := t, argName := some n,
+                    retSpec := some r, effects := eff,
+                    preds := collectExternPreds r eff }
+                  (Expr.externFn id n t r eff) ctxᵢ res :=
+              ExternBoundaryTyping.Decl.fn htc
             exact
               hdeclFR
                 (e := Expr.externFn id n t r eff) (id := id)
@@ -2736,7 +2769,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 (impl₀ := impl₀) (impl₁ := impl₁)
                 hcan
                 ExternDeclarationInProgram.externFn
-                hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
+                hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
                 hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
         | externPfn id n t r =>
@@ -2751,6 +2784,13 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
             obtain ⟨impl₁, hrun₁⟩ :=
               ExternDeclBoundaryRun.of_terminatesTo_externPfn
                 (ctx := ctxᵢ) (res := res) ht₁
+            have htyped :
+                ExternBoundaryTyping.Decl
+                  { id := id, kind := .pfn, typ := t, argName := some n,
+                    retSpec := some r, effects := [],
+                    preds := collectExternPreds r [] }
+                  (Expr.externPfn id n t r) ctxᵢ res :=
+              ExternBoundaryTyping.Decl.pfn htc
             exact
               hdeclFR
                 (e := Expr.externPfn id n t r) (id := id)
@@ -2760,7 +2800,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 (impl₀ := impl₀) (impl₁ := impl₁)
                 hcan
                 ExternDeclarationInProgram.externPfn
-                hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
+                hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
                 hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
 
@@ -2911,8 +2951,9 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
           simpa [hdid] using hcan hprog
         ExternDeclBoundarySingleMaskedContract.of_trustedReachable
           (tr := tr) (root := root) (ctxRoot := ctxRoot)
-          (masked := masked) (ctx := ctx) (res := res) (predSat := predSat)
-          (tm := tm) (d := d) (impl := impl) hagrees hreachable)
+          (masked := masked) (postExpr := e) (ctx := ctx) (res := res)
+          (predSat := predSat) (tm := tm) (d := d) (impl := impl)
+          hagrees hreachable)
       (fun {e} {id} {d} {ctx} {postExpr} {res} {predSat} {tm} {impl₀} {impl₁}
           hcan hprog =>
         have hreachable :
