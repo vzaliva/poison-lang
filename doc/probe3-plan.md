@@ -193,6 +193,104 @@ make lean-build-file FILE=LeanProofs/ExternBoundaryConstructors.lean
 make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean
 ```
 
+Status: partially completed / blocked on 2026-05-13.
+
+Implemented the public `PureUnaryCleanIntSpec` behavior structure and a private
+`pureUnaryCleanInt_operational` helper that derives the `ExternOperationalSafe`
+projection for pure unary integer `pfn` implementations. The full public
+constructor theorem
+
+```lean
+theorem ExternBoundarySpec.pureUnaryCleanInt :
+  PureUnaryCleanIntSpec d impl ->
+  ExternBoundarySpec d impl
+```
+
+is not yet added, because Stage 2 exposed an underspecification in the current
+FR boundary contract:
+
+- `ExternDeclBoundaryRun` is runtime evidence. It is indexed by `res`, but the
+  declaration facts rightly do not restate the typechecker's result-shape facts.
+  The problem is that `ExternBoundarySpec.declFR` / `.declSingle` currently ask
+  a driver spec to prove posts for an arbitrary `res` under a successful
+  runtime declaration run, without also receiving the evidence that this `res`
+  was produced by successful typechecking.
+- `ExternCallBoundaryRun` has the same split. The runtime run records the
+  extern implementation call and `validateExternReturn` success. It should not
+  duplicate the typechecker's conclusions about the member result. The FR
+  contract nevertheless needs a typing-origin premise for the call result in
+  order to derive `ctxAfter bodyCtx res`, result `QTyp`, regime, and clean
+  agreement facts.
+
+Chosen cascading adjustment before continuing Stage 2:
+
+- Strengthen the theorem-facing boundary contracts with explicit
+  typechecking-origin premises, instead of adding structural typechecker facts
+  to `ExternDecl*Facts` / `ExternCall*Facts`.
+- Keep `ExternRuntime.lean` focused on runtime facts. This avoids duplicating
+  typechecker logic in boundary-run payloads and keeps the source of truth for
+  `res.qualType`, `res.tagEnv'`, predicates, and `ctxAfter` in the typechecker
+  proof layer.
+- Add small proof-carrying wrappers under one namespace:
+
+  ```lean
+  namespace ExternBoundaryTyping
+
+  inductive Decl :
+      ExternDeclaration -> Expr -> TypeContext -> TypeResult -> Prop
+
+  inductive Call :
+      ExternDeclaration -> Expr -> ExternCallEntry -> TypeResult -> Prop
+
+  end ExternBoundaryTyping
+  ```
+
+  These wrappers should carry successful typechecking / closure-application
+  origin evidence, not hand-written copies of the resulting shape. Constructor
+  proofs can then invert the wrapper using existing typechecker lemmas. The
+  declaration predicate should be relation-carrying, not merely
+  `∃ fuel, typecheck ctx postExpr fuel = .ok res`: it must also tie
+  `postExpr` to the corresponding `d` so a boundary proof cannot use a result
+  typed from an unrelated expression.
+- Make `ExternBoundaryTyping.Call` project from the existing app-typing evidence already
+  built by StepFRApp (`AppFnClosureListFromTypecheck` /
+  `AppPfnClosureListFromTypecheck`) plus the selected extern closure-member
+  application evidence. Avoid introducing a second, parallel notion of "this
+  call result came from typechecking".
+- Before threading the wrappers through every provider, do a narrow spike on
+  the `pureUnaryCleanInt` declaration `declFR` case: assume
+  `ExternBoundaryTyping.Decl` exists and confirm that existing extern
+  typecheck inversion lemmas expose the needed projections for
+  `res.qualType.etyp`, `res.qualType.pred`, `ctxAfter ctx res`, and
+  `res.tagEnv'`. If any projection is missing, add a focused typechecker
+  inversion lemma before the broader boundary-contract refactor.
+- Thread the declaration wrapper through `ExternBoundarySpec.declFR`,
+  `.declSingle`, `ExternDeclBoundaryFRContract`,
+  `ExternDeclBoundarySingleMaskedContract`, and their adapters.
+- Thread the call wrapper through `ExternBoundarySpec.callFR`, `.callSingle`,
+  `ExternCallBoundaryFRContract`, `ExternCallBoundarySingle*Contract`, the
+  StepFRApp boundary-run provider helpers, and the keyed/direct call adapters.
+
+Feasibility check:
+
+- Declaration sites are straightforward. In `FaultRobustnessProofs.lean`, both
+  single-run and two-run extern declaration branches still have
+  `htc : typecheck ctxᵢ (Expr.extern...) ... = .ok res` in scope when they
+  build `ExternDeclBoundaryRun.of_terminatesTo_extern*` and call
+  `hdeclSingle` / `hdeclFR`.
+- Call sites are feasible but higher-impact. `StepFRApp.lean` already builds
+  `AppFnClosureListFromTypecheck` / `AppPfnClosureListFromTypecheck` from the
+  app-level `htc`, and the extern-member paths expose
+  `applyFnTClosure_staticSource_of_threaded_mem` /
+  `applyPFnTClosure_staticSource_of_threaded_mem` evidence for the concrete
+  member result passed to `ExternCallBoundaryRun`. Some provider signatures
+  currently discard that evidence, so the refactor must thread a compact call
+  result-origin witness alongside the existing run provider.
+- Only after this boundary-contract adjustment should the public
+  `ExternBoundarySpec.pureUnaryCleanInt` theorem be added. Stages 3-5 should
+  wait on it, because value, nested, and impure constructors need the same
+  typechecking-origin discipline.
+
 ### Stage 3: Value Constructors
 
 Implement `constCleanInt` and `refValInitialized`.

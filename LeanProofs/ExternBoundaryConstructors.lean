@@ -212,6 +212,63 @@ private theorem resultAgreesIfClean_cleanInt_of_eq
   intro _hclean
   exact agreeValueUnder_cleanInt_of_eq heq
 
+/-- Compact behavior contract for pure unary integer extern implementations.
+
+    The remaining `pureUnaryCleanInt` constructor proof needs result-shape
+    projections from `ExternDeclBoundaryRun` / `ExternCallBoundaryRun`; see
+    Stage 2's plan note before adding the public constructor theorem. -/
+structure PureUnaryCleanIntSpec (d : ExternDeclaration) (impl : ExternImpl) where
+  argName : Name
+  implPfn : VarEnv → Value → Memory → Except ExternError Value
+  compute : VarEnv → Int → Int
+  kind_pfn : d.kind = .pfn
+  typ_int : d.typ = Typ.int
+  argName_eq : d.argName = some argName
+  retSpec_eq : d.retSpec = some (.simple .int false .noPred)
+  impl_eq : impl = ExternImpl.pfn implPfn
+  success_num :
+    ∀ {env : VarEnv} {vArg : Value} {mem : Memory} {vOut : Value},
+      implPfn env vArg mem = .ok vOut →
+      ∃ n, vArg = Value.num n ∧ vOut = Value.num (compute env n)
+  clean_agree :
+    ∀ {predSat : PredSat} {ctx : TypeContext}
+      {entry₀ entry₁ : ExternCallEntry} {θ₀ θ₁ : RealizationMap}
+      {n₀ n₁ : Int},
+      BodyEntryInputsAgree predSat ctx entry₀ entry₁ θ₀ θ₁ →
+      entry₀.argValue = Value.num n₀ →
+      entry₁.argValue = Value.num n₁ →
+      agreeValueUnder predSat ctx.regime
+        entry₀.bodyConfig.memory entry₁.bodyConfig.memory θ₀ θ₁
+        { etyp := ETyp.int, poison := false, pred := Predicate.noPred }
+        (Value.num n₀) (Value.num n₁) →
+      compute entry₀.unifiedEnv n₀ = compute entry₁.unifiedEnv n₁
+  output_wf :
+    ∀ {env : VarEnv} {vArg : Value} {mem : Memory} {addr : Address} {vRaw : Value},
+      implPfn env vArg mem = .ok vRaw →
+      (∀ a, mem.contains a → a < addr) →
+      wfVarEnv addr env →
+      wfValue addr vArg →
+      wfValue addr vRaw
+
+private theorem pureUnaryCleanInt_operational
+    {d : ExternDeclaration} {impl : ExternImpl}
+    (hspec : PureUnaryCleanIntSpec d impl) :
+    ExternOperationalSafe d impl := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro implFn himpl env vArg mem addr vRaw mem' addr' _hrun
+    have hbad : ExternImpl.pfn hspec.implPfn = ExternImpl.fn implFn :=
+      hspec.impl_eq.symm.trans himpl
+    exact False.elim (false_of_impl_pfn_eq_fn hbad)
+  · intro implPfn himpl env vArg mem addr vRaw hrun hmem henv harg
+    have heq : ExternImpl.pfn hspec.implPfn = ExternImpl.pfn implPfn :=
+      hspec.impl_eq.symm.trans himpl
+    cases heq
+    exact hspec.output_wf hrun hmem henv harg
+  · intro v himpl cfg _hwf
+    have hbad : ExternImpl.pfn hspec.implPfn = ExternImpl.val v :=
+      hspec.impl_eq.symm.trans himpl
+    exact False.elim (false_of_impl_pfn_eq_val hbad)
+
 private theorem boundaryTagMeaningPost_of_parts
     {ctx : TypeContext} {res : TypeResult} {predSat : PredSat}
     {tm tm' : TagMeaning}
