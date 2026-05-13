@@ -8917,6 +8917,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (ctxBodyStart :
     AppClosureBodyStart CtxCons ValCons predSat tm)
   (_ctxExternBodyStart :
@@ -9064,7 +9065,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       hIH_e1_inst.2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
-        ((wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
+        ((wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
     rcases hIH_e1_inst.1 with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hTm1⟩
@@ -9217,18 +9218,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
                 pureMode := false
                 registry := registry } := by
           have hwfcfg2 : wfConfig c₂' :=
-            (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
+            (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
           have hwfcfg1 : wfConfig c₁ :=
-            (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).1
+            (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).1
           have hv₂_wf_e2 : wfValue c₂'.nextAddr v₂ :=
-            (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).2
+            (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).2
           have hnext₂_to₁ : c₂'.nextAddr ≤ c₁.nextAddr :=
             terminatesTo_nextAddr_mono e1 c₂' c₁
-              (Value.closure x body env) ht_e1
+              (Value.closure x body env) (hreg2'.symm ▸ hOp) ht_e1
           have hv₂_wf : wfValue c₁.nextAddr v₂ :=
             wfValue_mono_of_le_nextAddr hnext₂_to₁ x v₂ hv₂_wf_e2
           have henv_wf : wfVarEnv c₁.nextAddr env := by
-            cases (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).2 with
+            cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).2 with
             | closure _ _ _ henv => exact henv
           constructor
           · intro a ha; exact hwfcfg1.1 a ha
@@ -9570,7 +9571,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hcwr2 c₂'.nextAddr pm
-        ((wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
+        ((wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, hfresh1⟩
     have hv₁_arrow :
         valueHasETyp θ1
@@ -9728,18 +9729,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hwfcfg_body_init :
         wfConfig { c₁ with varEnv := env.update x v₂ } := by
       have hwfcfg2 : wfConfig c₂' :=
-        (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
+        (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
       have hwfcfg1 : wfConfig c₁ :=
-        (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).1
+        (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).1
       have hv₂_wf_e2 : wfValue c₂'.nextAddr v₂ :=
-        (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).2
+        (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).2
       have hnext₂_to₁ : c₂'.nextAddr ≤ c₁.nextAddr :=
         terminatesTo_nextAddr_mono e1 c₂' c₁
-          (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) ht_e1
+          (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) (hreg2'.symm ▸ hOp) ht_e1
       have hv₂_wf : wfValue c₁.nextAddr v₂ :=
         wfValue_mono_of_le_nextAddr hnext₂_to₁ x v₂ hv₂_wf_e2
       have henv_wf : wfVarEnv c₁.nextAddr env := by
-        cases (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).2 with
+        cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).2 with
         | closure _ _ _ henv => exact henv
       constructor
       · intro a ha
@@ -10036,7 +10037,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
@@ -10088,7 +10089,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
@@ -10109,6 +10110,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (ctxBodyStart :
     AppPClosureBodyStart CtxCons ValCons predSat tm)
   (_ctxExternBodyStart :
@@ -10248,7 +10250,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
@@ -10300,7 +10302,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
@@ -10353,7 +10355,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
@@ -10520,8 +10522,10 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           simpa [bodyCtx, ctxAfter] using hmasked_none1 k hk
         have hmasked_absent_body : MaskedTagsAbsentFromTrueTagEnv masked bodyCtx := by
           simpa [bodyCtx, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hmasked_absent1
+        have hreg2' : c₂'.registry = registry := by
+          simpa [cinit] using terminatesTo_preserves_registry ht_e2
         have hwfcfg1 : wfConfig cf := by
-          simpa [hcf] using (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).1
+          simpa [hcf] using (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).1
         have hwfcfg_body_init :
             wfConfig
               { memory := cf.memory
@@ -10529,14 +10533,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
                 nextAddr := cf.nextAddr
                 pureMode := true } := by
           have hv₂_wf_e2 : wfValue c₂'.nextAddr v₂ :=
-            (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).2
+            (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).2
           have hnext₂_to₁ : c₂'.nextAddr ≤ cf.nextAddr := by
             simpa [hcf] using
-              (terminatesTo_nextAddr_mono e1 c₂' c₁ (Value.peClosure x body env) ht_e1)
+              (terminatesTo_nextAddr_mono e1 c₂' c₁ (Value.peClosure x body env) (hreg2'.symm ▸ hOp) ht_e1)
           have hv₂_wf : wfValue cf.nextAddr v₂ :=
             wfValue_mono_of_le_nextAddr hnext₂_to₁ x v₂ hv₂_wf_e2
           have henv_wf : wfVarEnv cf.nextAddr env := by
-            have hwf_val := (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).2
+            have hwf_val := (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).2
             cases hwf_val with
             | peClosure _ _ _ henv =>
                 simpa [hcf] using henv
@@ -10897,7 +10901,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     rcases
@@ -11064,17 +11068,19 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       simpa [runtimeInstantiatesCtx, bodyCtx, ctxCapBase, ctxAfter] using hric_body'
     have hwfcfg_body_init :
         wfConfig { c₁ with varEnv := env.update x v₂ } := by
+      have hreg2' : c₂'.registry = registry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
       have hwfcfg1 : wfConfig c₁ :=
-        (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).1
+        (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).1
       have hv₂_wf_e2 : wfValue c₂'.nextAddr v₂ :=
-        (wfConfig_preserved e2 _ c₂' _ ht_e2 hwfcfg).2
+        (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).2
       have hnext₂_to₁ : c₂'.nextAddr ≤ c₁.nextAddr :=
         terminatesTo_nextAddr_mono e1 c₂' c₁
-          (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) ht_e1
+          (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) (hreg2'.symm ▸ hOp) ht_e1
       have hv₂_wf : wfValue c₁.nextAddr v₂ :=
         wfValue_mono_of_le_nextAddr hnext₂_to₁ x v₂ hv₂_wf_e2
       have henv_wf : wfVarEnv c₁.nextAddr env := by
-        cases (wfConfig_preserved e1 _ c₁ _ ht_e1 hwfcfg2).2 with
+        cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).2 with
         | peClosure _ _ _ henv => exact henv
       constructor
       · intro a ha
@@ -11302,6 +11308,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (ctxClosureBodyStart :
     AppClosureBodyStart CtxCons ValCons predSat tm)
   (ctxPClosureBodyStart :
@@ -11414,7 +11421,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           result_arrow := hetyp1 }
       exact
         stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
-          masked CtxCons ValCons ctxᵢ predSat tm registry
+          masked CtxCons ValCons ctxᵢ predSat tm registry hOp
           ctxClosureBodyStart ctxExternClosureBodyStart
           ctxMember ctxJoinMember valBodyResult valJoinMember
           ctxConsOfRegular valConsOfRegular ctxConsToRegular
@@ -11447,7 +11454,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
           result_parrow := hetyp1 }
       exact
         stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
-          masked CtxCons ValCons ctxᵢ predSat tm registry
+          masked CtxCons ValCons ctxᵢ predSat tm registry hOp
           ctxPClosureBodyStart ctxExternPClosureBodyStart
           ctxMember ctxJoinMember valBodyResult valJoinMember
           ctxConsOfRegular valConsOfRegular ctxConsToRegular
@@ -11468,6 +11475,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
@@ -11511,7 +11519,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
       masked
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      ctxᵢ predSat tm registry
+      ctxᵢ predSat tm registry hOp
       (stepFRApp_closureBodyStart_masked masked predSat tm)
       (stepFRApp_pClosureBodyStart_masked masked predSat tm)
       (stepFRApp_externClosureBodyStart_masked masked predSat tm)
@@ -11546,6 +11554,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof_ctxReach
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
   (hcan1 : CanUse e1) (hcan2 : CanUse e2)
@@ -11614,7 +11623,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof_ctxReach
       masked
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      ctxᵢ predSat tm registry
+      ctxᵢ predSat tm registry hOp
       (stepFRApp_closureBodyStart_masked masked predSat tm)
       (stepFRApp_pClosureBodyStart_masked masked predSat tm)
       (stepFRApp_externClosureBodyStart_masked masked predSat tm)
@@ -11640,6 +11649,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
   (masked : Tag → Prop)
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (singleIH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
@@ -11669,7 +11679,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_app_maskedReg
     ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
   exact
     stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof
-      masked ctxᵢ predSat tm (registry := registry)
+      masked ctxᵢ predSat tm (registry := registry) hOp
       e1 e2 fuel' res
       (fun _ => True) trivial trivial
       (by intros; trivial)
@@ -11688,6 +11698,7 @@ set_option maxHeartbeats 800000 in
 lemma stepFR_app_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
   (CtxReach : TypeContext → Prop)
@@ -12049,8 +12060,8 @@ lemma stepFR_app_with_expr_proof
             h_rest_wf
       · exact typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2)
           (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded
-      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
-      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
       · exact
           join_transport_regimeConsistentWithCtx
             (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
@@ -12472,15 +12483,17 @@ lemma stepFR_app_with_expr_proof
                       nextAddr := c₁₀.nextAddr
                       pureMode := false
                       registry := registry } := by
+                have hreg₂'₀ : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
-                    (Value.closure x₀ body₀ env₀) ht₀_e1
+                    (Value.closure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                   | closure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact hwfcf₁₀.1 a ha
@@ -12681,15 +12694,17 @@ lemma stepFR_app_with_expr_proof
                       nextAddr := c₁₁.nextAddr
                       pureMode := false
                       registry := registry } := by
+                have hreg₂'₁ : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
-                    (Value.closure x₁ body₁ env₁) ht₁_e1
+                    (Value.closure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                   | closure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact hwfcf₁₁.1 a ha
@@ -13708,14 +13723,16 @@ lemma stepFR_app_with_expr_proof
                         nextAddr := c₁₀.nextAddr
                         pureMode := false
                         registry := registry } := by
+                  have hreg₂'₀ : c₂'₀.registry = registry := by
+                    simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                   have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                    (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                    (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                   have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
-                    terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀ (Value.closure x₀ body₀ env₀) ht₀_e1
+                    terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀ (Value.closure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                   have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                     wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                   have hv₀_closure_wf : wfValue c₁₀.nextAddr (Value.closure x₀ body₀ env₀) :=
-                    (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2
+                    (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2
                   have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
                     cases hv₀_closure_wf with
                     | closure _ _ _ henv => exact henv
@@ -13730,14 +13747,16 @@ lemma stepFR_app_with_expr_proof
                         nextAddr := c₁₁.nextAddr
                         pureMode := false
                         registry := registry } := by
+                  have hreg₂'₁ : c₂'₁.registry = registry := by
+                    simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                   have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                    (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                    (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                   have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
-                    terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁ (Value.closure x₁ body₁ env₁) ht₁_e1
+                    terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁ (Value.closure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                   have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                     wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                   have hv₁_closure_wf : wfValue c₁₁.nextAddr (Value.closure x₁ body₁ env₁) :=
-                    (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2
+                    (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2
                   have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
                     cases hv₁_closure_wf with
                     | closure _ _ _ henv => exact henv
@@ -13745,10 +13764,6 @@ lemma stepFR_app_with_expr_proof
                   · intro a ha
                     exact hwfcf₁₁.1 a ha
                   · simpa [VarEnv.update] using (wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf)
-                have hwfcfg_body_final₀ : wfConfig evalCfg₀ := by
-                  exact (wfConfig_preserved body₀ _ evalCfg₀ o₀ ht₀_body hwfcfg_body_init₀).1
-                have hwfcfg_body_final₁ : wfConfig evalCfg₁ := by
-                  exact (wfConfig_preserved body₁ _ evalCfg₁ o₁ ht₁_body hwfcfg_body_init₁).1
                 -- Thread extern registry: c₁₀/c₁₁ inherit the app registry.
                 have hreg_c₁₀_B : c₁₀.registry = registry := by
                   have h2 : c₂'₀.registry = registry := by
@@ -13760,6 +13775,10 @@ lemma stepFR_app_with_expr_proof
                   exact (terminatesTo_preserves_registry ht₁_e1).trans h2
                 rw [hreg_c₁₀_B] at ht₀_body
                 rw [hreg_c₁₁_B] at ht₁_body
+                have hwfcfg_body_final₀ : wfConfig evalCfg₀ := by
+                  exact (wfConfig_preserved body₀ _ evalCfg₀ o₀ hOp ht₀_body hwfcfg_body_init₀).1
+                have hwfcfg_body_final₁ : wfConfig evalCfg₁ := by
+                  exact (wfConfig_preserved body₁ _ evalCfg₁ o₁ hOp ht₁_body hwfcfg_body_init₁).1
                 have ht₀_body' :
                     terminatesTo body₀
                       { memory := c₁₀.memory
@@ -14731,32 +14750,36 @@ lemma stepFR_app_with_expr_proof
                       nextAddr := c₁₀.nextAddr
                       pureMode := false
                       registry := registry } := by
+                have hreg₂'₀ : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
-                    (Value.closure x₀ body₀ env₀) ht₀_e1
+                    (Value.closure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                   | closure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact _hwfcf₁₀.1 a ha
                 · simpa [VarEnv.update] using wfVarEnv.cons x₀ v₂₀ env₀ hv₂₀_wf henv₀_wf
               have hwfcfg_body_initE₁ : wfConfig callEntry₁.bodyConfig := by
+                have hreg₂'₁ : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hwfcfg1 : wfConfig c₁₁ :=
-                  (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).1
+                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.closure x₁ (Expr.externFn id₁ y₁ argTyp₁ retSpec₁ eff₁) env₁)
-                    ht₁_e1
+                    (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                   | closure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₁ with varEnv := env₁.update x₁ v₂₁ } := by
@@ -15389,18 +15412,20 @@ lemma stepFR_app_with_expr_proof
                           (valueConsistentWithRegime_closureCapturedVarsRegime
                             _hvalc₂₁))))
               have hwfcfg_body_initE₀ : wfConfig callEntry₀.bodyConfig := by
+                have hreg₂'₀ : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hwfcfg1 : wfConfig c₁₀ :=
-                  (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).1
+                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) env₀)
-                    ht₀_e1
+                    (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                   | closure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -15418,15 +15443,17 @@ lemma stepFR_app_with_expr_proof
                       nextAddr := c₁₁.nextAddr
                       pureMode := false
                       registry := registry } := by
+                have hreg₂'₁ : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
-                    (Value.closure x₁ body₁ env₁) ht₁_e1
+                    (Value.closure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                   | closure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact _hwfcf₁₁.1 a ha
@@ -15979,18 +16006,20 @@ lemma stepFR_app_with_expr_proof
                     c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 := by
                 simpa [bodyCtx₁] using hcwr_body_for₁ cursorA₁
               have hwfcfg_body_init₀ : wfConfig callEntry₀.bodyConfig := by
+                have hreg₂'₀ : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hwfcfg1 : wfConfig c₁₀ :=
-                  (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).1
+                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) env₀)
-                    ht₀_e1
+                    (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                   | closure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -16002,18 +16031,20 @@ lemma stepFR_app_with_expr_proof
                 simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                   using hwf_body
               have hwfcfg_body_init₁ : wfConfig callEntry₁.bodyConfig := by
+                have hreg₂'₁ : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hwfcfg1 : wfConfig c₁₁ :=
-                  (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).1
+                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.closure x₁ (Expr.externFn id₁ y₁ argTyp₁ retSpec₁ eff₁) env₁)
-                    ht₁_e1
+                    (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                   | closure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₁ with varEnv := env₁.update x₁ v₂₁ } := by
@@ -16698,18 +16729,20 @@ lemma stepFR_app_with_expr_proof
                         c₁₀.memory c₁₁.memory θ₀1 θ₁1 env₀ env₁ v₂₀ v₂₁
                         hmem_agree hcap harg_agree
                   have hwfcfg_body_init₀ : wfConfig callEntry₀.bodyConfig := by
+                    have hreg₂'₀ : c₂'₀.registry = registry := by
+                      simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                     have hwfcfg1 : wfConfig c₁₀ :=
-                      (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).1
+                      (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
                     have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                      (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                      (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                     have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                       terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                         (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) env₀)
-                        ht₀_e1
+                        (hreg₂'₀.symm ▸ hOp) ht₀_e1
                     have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                       wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                     have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                      cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                      cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                       | closure _ _ _ henv => exact henv
                     have hwf_body :
                         wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -16721,18 +16754,20 @@ lemma stepFR_app_with_expr_proof
                     simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                       using hwf_body
                   have hwfcfg_body_init₁ : wfConfig callEntry₁.bodyConfig := by
+                    have hreg₂'₁ : c₂'₁.registry = registry := by
+                      simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                     have hwfcfg1 : wfConfig c₁₁ :=
-                      (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).1
+                      (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
                     have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                      (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                      (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                     have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                       terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                         (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) env₁)
-                        ht₁_e1
+                        (hreg₂'₁.symm ▸ hOp) ht₁_e1
                     have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                       wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₁ hv₂₁_wf_e2
                     have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                      cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                      cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                       | closure _ _ _ henv => exact henv
                     have hwf_body :
                         wfConfig { c₁₁ with varEnv := env₁.update x₀ v₂₁ } := by
@@ -17310,8 +17345,8 @@ lemma stepFR_app_with_expr_proof
             h_rest_wf
       · exact typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2)
           (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded
-      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
-      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
       · exact
           join_transport_regimeConsistentWithCtx
             (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
@@ -17877,15 +17912,17 @@ lemma stepFR_app_with_expr_proof
                     nextAddr := cf₀.nextAddr
                     pureMode := true
                     registry := registry } := by
+              have hreg₂'₀ : c₂'₀.registry = registry := by
+                simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
               have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
               have hnext₂_to₁ : c₂'₀.nextAddr ≤ cf₀.nextAddr :=
                 terminatesTo_nextAddr_mono e1 c₂'₀ cf₀
-                  (Value.peClosure x₀ body₀ env₀) ht₀_e1
+                  (Value.peClosure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
               have hv₂₀_wf : wfValue cf₀.nextAddr v₂₀ :=
                 wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
               have henv₀_wf : wfVarEnv cf₀.nextAddr env₀ := by
-                cases (wfConfig_preserved e1 _ cf₀ _ ht₀_e1 hwfcf₂₀).2 with
+                cases (wfConfig_preserved e1 _ cf₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                 | peClosure _ _ _ henv => exact henv
               constructor
               · intro a ha; exact hwfcf₁₀.1 a ha
@@ -18096,15 +18133,17 @@ lemma stepFR_app_with_expr_proof
                     nextAddr := cf₁.nextAddr
                     pureMode := true
                     registry := registry } := by
+              have hreg₂'₁ : c₂'₁.registry = registry := by
+                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
               have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
               have hnext₂_to₁ : c₂'₁.nextAddr ≤ cf₁.nextAddr :=
                 terminatesTo_nextAddr_mono e1 c₂'₁ cf₁
-                  (Value.peClosure x₁ body₁ env₁) ht₁_e1
+                  (Value.peClosure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
               have hv₂₁_wf : wfValue cf₁.nextAddr v₂₁ :=
                 wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
               have henv₁_wf : wfVarEnv cf₁.nextAddr env₁ := by
-                cases (wfConfig_preserved e1 _ cf₁ _ ht₁_e1 hwfcf₂₁).2 with
+                cases (wfConfig_preserved e1 _ cf₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                 | peClosure _ _ _ henv => exact henv
               constructor
               · intro a ha; exact hwfcf₁₁.1 a ha
@@ -19112,14 +19151,16 @@ lemma stepFR_app_with_expr_proof
                       nextAddr := cf₀.nextAddr
                       pureMode := true
                       registry := registry } := by
+                have hreg₂'₀ : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ cf₀.nextAddr :=
-                  terminatesTo_nextAddr_mono e1 c₂'₀ cf₀ (Value.peClosure x₀ body₀ env₀) ht₀_e1
+                  terminatesTo_nextAddr_mono e1 c₂'₀ cf₀ (Value.peClosure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue cf₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have hv₀_closure_wf : wfValue cf₀.nextAddr (Value.peClosure x₀ body₀ env₀) :=
-                  (wfConfig_preserved e1 _ cf₀ _ ht₀_e1 hwfcf₂₀).2
+                  (wfConfig_preserved e1 _ cf₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2
                 have henv₀_wf : wfVarEnv cf₀.nextAddr env₀ := by
                   cases hv₀_closure_wf with
                   | peClosure _ _ _ henv => exact henv
@@ -19134,14 +19175,16 @@ lemma stepFR_app_with_expr_proof
                       nextAddr := cf₁.nextAddr
                       pureMode := true
                       registry := registry } := by
+                have hreg₂'₁ : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ cf₁.nextAddr :=
-                  terminatesTo_nextAddr_mono e1 c₂'₁ cf₁ (Value.peClosure x₁ body₁ env₁) ht₁_e1
+                  terminatesTo_nextAddr_mono e1 c₂'₁ cf₁ (Value.peClosure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue cf₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have hv₁_closure_wf : wfValue cf₁.nextAddr (Value.peClosure x₁ body₁ env₁) :=
-                  (wfConfig_preserved e1 _ cf₁ _ ht₁_e1 hwfcf₂₁).2
+                  (wfConfig_preserved e1 _ cf₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2
                 have henv₁_wf : wfVarEnv cf₁.nextAddr env₁ := by
                   cases hv₁_closure_wf with
                   | peClosure _ _ _ henv => exact henv
@@ -20167,32 +20210,36 @@ lemma stepFR_app_with_expr_proof
                       nextAddr := c₁₀.nextAddr
                       pureMode := true
                       registry := registry } := by
+                have hreg₂'₀ : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
-                    (Value.peClosure x₀ body₀ env₀) ht₀_e1
+                    (Value.peClosure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                   | peClosure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact _hwfcf₁₀.1 a ha
                 · simpa [VarEnv.update] using wfVarEnv.cons x₀ v₂₀ env₀ hv₂₀_wf henv₀_wf
               have hwfcfg_body_initE₁ : wfConfig callEntry₁.bodyConfig := by
+                have hreg₂'₁ : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hwfcfg1 : wfConfig c₁₁ :=
-                  (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).1
+                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.peClosure x₁ (Expr.externPfn id₁ y₁ argTyp₁ retSpec₁) env₁)
-                    ht₁_e1
+                    (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                   | peClosure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₁ with varEnv := env₁.update x₁ v₂₁ } := by
@@ -20776,18 +20823,20 @@ lemma stepFR_app_with_expr_proof
                     c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 := by
                 simpa [bodyCtxU₁] using hcwr_body_for₁ cursorU₁
               have hwfcfg_body_initE₀ : wfConfig callEntry₀.bodyConfig := by
+                have hreg₂'₀ : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hwfcfg1 : wfConfig c₁₀ :=
-                  (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).1
+                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) env₀)
-                    ht₀_e1
+                    (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                   | peClosure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -20805,15 +20854,17 @@ lemma stepFR_app_with_expr_proof
                       nextAddr := c₁₁.nextAddr
                       pureMode := true
                       registry := registry } := by
+                have hreg₂'₁ : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
-                    (Value.peClosure x₁ body₁ env₁) ht₁_e1
+                    (Value.peClosure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                   | peClosure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact _hwfcf₁₁.1 a ha
@@ -21389,18 +21440,20 @@ lemma stepFR_app_with_expr_proof
                     c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 := by
                 simpa [bodyCtx₁] using hcwr_body_for₁ cursorA₁
               have hwfcfg_body_init₀ : wfConfig callEntry₀.bodyConfig := by
+                have hreg₂'₀ : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hwfcfg1 : wfConfig c₁₀ :=
-                  (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).1
+                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) env₀)
-                    ht₀_e1
+                    (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                   | peClosure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -21412,18 +21465,20 @@ lemma stepFR_app_with_expr_proof
                 simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                   using hwf_body
               have hwfcfg_body_init₁ : wfConfig callEntry₁.bodyConfig := by
+                have hreg₂'₁ : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hwfcfg1 : wfConfig c₁₁ :=
-                  (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).1
+                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.peClosure x₁ (Expr.externPfn id₁ y₁ argTyp₁ retSpec₁) env₁)
-                    ht₁_e1
+                    (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                   | peClosure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₁ with varEnv := env₁.update x₁ v₂₁ } := by
@@ -22120,17 +22175,19 @@ lemma stepFR_app_with_expr_proof
                         c₁₀.memory c₁₁.memory θ₀1 θ₁1 env₀ env₁ v₂₀ v₂₁
                         hmem_agree hcap harg_agree
                   have hwfcfg_body_init₀ : wfConfig callEntry₀.bodyConfig := by
+                    have hreg₂'₀ : c₂'₀.registry = registry := by
+                      simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                     have hwfcfg1 : wfConfig c₁₀ :=
-                      (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).1
+                      (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
                     have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                      (wfConfig_preserved e2 _ c₂'₀ _ ht₀_e2 hwfcfg₀).2
+                      (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
                     have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                       terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
-                        (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) env₀) ht₀_e1
+                        (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                     have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                       wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                     have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                      cases (wfConfig_preserved e1 _ c₁₀ _ ht₀_e1 hwfcf₂₀).2 with
+                      cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
                       | peClosure _ _ _ henv => exact henv
                     have hwf_body :
                         wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -22142,17 +22199,19 @@ lemma stepFR_app_with_expr_proof
                     simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                       using hwf_body
                   have hwfcfg_body_init₁ : wfConfig callEntry₁.bodyConfig := by
+                    have hreg₂'₁ : c₂'₁.registry = registry := by
+                      simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                     have hwfcfg1 : wfConfig c₁₁ :=
-                      (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).1
+                      (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
                     have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                      (wfConfig_preserved e2 _ c₂'₁ _ ht₁_e2 hwfcfg₁).2
+                      (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
                     have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                       terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
-                        (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) env₁) ht₁_e1
+                        (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                     have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                       wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₁ hv₂₁_wf_e2
                     have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                      cases (wfConfig_preserved e1 _ c₁₁ _ ht₁_e1 hwfcf₂₁).2 with
+                      cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
                       | peClosure _ _ _ henv => exact henv
                     have hwf_body :
                         wfConfig { c₁₁ with varEnv := env₁.update x₀ v₂₁ } := by
@@ -22379,6 +22438,7 @@ set_option maxHeartbeats 800000 in
 lemma stepFR_app
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (registry : ExternRegistry := emptyExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (singleIH :
@@ -22405,7 +22465,7 @@ lemma stepFR_app
   StepFR ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
     exact
       stepFR_app_with_expr_proof
-        ctxᵢ predSat tm registry e1 e2 fuel' res
+        ctxᵢ predSat tm registry hOp e1 e2 fuel' res
         (fun _ => True) (fun _ => True) trivial trivial trivial
         (fun {_ctx} {_res} _ => trivial)
         (fun {_tcls} {_x} {_body} {_σcap} _ _ => trivial)

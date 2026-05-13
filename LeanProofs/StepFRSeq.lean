@@ -58,6 +58,7 @@ private abbrev StepFRSingleRunFinalCleanPcTrueWithCtxValCons_IH
 lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
   (masked : Tag → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (hOp : RegistryOperationalSafe registry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
   (CtxReach : TypeContext → Prop)
@@ -108,7 +109,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
       hwf (typecheck_nextLoc_mono ctx e1 fuel' res1 htc1')
   have hreg1 : regimeConsistentWithCtxMasked masked (ctxAfter ctx res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtxMasked masked ctx e1 fuel' res1 hregCtx htc1'
-  have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved e1 _ cfg1 v1 ht_e1 hwfcfg).1
+  have hwfcfg1 : wfConfig cfg1 := (wfConfig_preserved e1 _ cfg1 v1 hOp ht_e1 hwfcfg).1
   rcases
     hIH1Inst.2 μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hmasked_none hmasked_absent hctxCons a pm hwfcfg ht_e1 hpc
@@ -223,6 +224,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
 lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
   (masked : Tag → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (hOp : RegistryOperationalSafe registry)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
@@ -240,7 +242,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
     ctx (Expr.seq e1 e2) res predSat tm (registry := registry) := by
   exact
     stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
-      masked ctx predSat tm e1 e2 fuel' res
+      masked ctx predSat tm hOp e1 e2 fuel' res
       (fun _ => True) (fun _ => True) trivial trivial trivial
       (fun {_ctx} {_res} _ => trivial)
       (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>

@@ -398,6 +398,7 @@ lemma stepFR_unaryop_with_expr_proof
   (CtxReach : TypeContext → Prop)
   (hcan : CanUse e)
   (hctxCurrent : CtxReach ctxᵢ)
+  (hOp : RegistryOperationalSafe registry)
   (IH :
     StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
       CanUse CtxReach (registry := registry))
@@ -446,8 +447,8 @@ lemma stepFR_unaryop_with_expr_proof
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₁, hvar₁] using hcwr₁'
   -- Derive wfConfig for final configs using wfConfig_preserved
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.unaryop op e) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.unaryop op e) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.unaryop op e) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.unaryop op e) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
   have hresTm : QTypRespectsTagMeaning tm_e res.qualType := by
     have hnonfun_arg :
         res1.qualType.etyp.isFunctionType = false ∧
@@ -548,13 +549,15 @@ lemma stepFR_unaryop_with_expr_proof
 lemma stepFR_unaryop
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (op : UnaryOp) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (tm : TagMeaning)
+  (hOp : RegistryOperationalSafe registry)
+  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.unaryop op e) res predSat tm (registry := registry) := by
     exact
       stepFR_unaryop_with_expr_proof
         ctxᵢ predSat e op fuel' res tm
-        (fun _ => True) (fun _ => True) trivial trivial
+        (fun _ => True) (fun _ => True) trivial trivial hOp
         (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
         htc
@@ -573,6 +576,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
   (hctxCurrent : CtxReach ctx)
   (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
     CtxReach ctx → CtxReach (ctxAfter ctx res))
+  (hOp : RegistryOperationalSafe registry)
   (IH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
       predSat tm (Nat.succ (Nat.succ fuel')) CanUse
@@ -627,7 +631,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
   have hreg1 : regimeConsistentWithCtxMasked masked (ctxAfter ctx res1) :=
     typecheckExpr_preserves_regimeConsistentWithCtxMasked masked ctx e1 fuel' res1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
-    exact (wfConfig_preserved e1 _ cfg1 v1 ht_e1 hwfcfg).1
+    exact (wfConfig_preserved e1 _ cfg1 v1 hOp ht_e1 hwfcfg).1
   rcases
     hIH1Inst.2 μ ρ θ cfg1 v1
       hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e1 hpc
@@ -772,6 +776,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
   (masked : Tag → Prop)
   (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
+  (hOp : RegistryOperationalSafe registry)
   (IH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
       predSat tm (Nat.succ (Nat.succ fuel'))
@@ -791,6 +796,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
       masked ctx predSat tm e1 e2 op fuel' res
       (fun _ => True) (fun _ => True) trivial trivial trivial
       (fun {_ctx} {_res} _ => trivial)
+      hOp
       (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
         StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
           (registry := registry)

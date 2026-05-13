@@ -1,12 +1,16 @@
 -- Common big-step semantics properties for the Poison Language
 --
--- This file contains shared definitions and properties related to evaluation
--- semantics, including evaluation relations and runtime configuration well-formedness.
+-- This file contains shared properties about evaluation: structural inversion
+-- lemmas, `nextAddr` monotonicity, and `wfConfig` preservation.  The core
+-- definitions (`terminatesTo`, `stuck`, `wfValue`, `wfVarEnv`, `wfConfig`,
+-- `nextAddr_not_in_memory`) live in `LeanProofs/Semantics.lean`.
 
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.Aux
+import LeanProofs.Semantics
+import LeanProofs.ExternRuntime
 import Mathlib.Tactic
 import Batteries.Data.List.Lemmas
 
@@ -16,63 +20,6 @@ open LeanPoison
 private lemma emptyExternRegistry_get?_eq_none (id : ExternId) :
     emptyExternRegistry.get? id = none := by
   simp [emptyExternRegistry]
-
--- ================================================================
--- Evaluation Relations
--- ================================================================
-
--- Big-step termination relation to a final configuration and resulting Value
--- Note: evaluation returns EvalResult (pure, no IO)
-
-def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value): Prop :=
-  ∃ (fuel : Nat) (verbose : Bool),
-    LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.success c₁ out
-
--- Divergence relation: program runs out of fuel
-def stuck (e : Expr) (c₀ : Config)  : Prop :=
-  ∃ (fuel : Nat) (verbose : Bool) (msg : String),
-    LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.runtimeError msg
-
--- ================================================================
--- Runtime Configuration Well-formedness
--- ================================================================
-
-mutual
-  /-- A runtime value is well-formed w.r.t. a bound on addresses. -/
-  inductive wfValue (next : Address) : Value → Prop
-    | num (n : Int) : wfValue next (Value.num n)
-    | bool (b : Bool) : wfValue next (Value.bool b)
-    | unit : wfValue next Value.unit
-    | str (s : String) : wfValue next (Value.str s)
-    | loc {a : Address} : a < next → wfValue next (Value.loc a)
-    | closure (x : Name) (e : Expr) (env : VarEnv) :
-        wfVarEnv next env → wfValue next (Value.closure x e env)
-    | peClosure (x : Name) (e : Expr) (env : VarEnv) :
-        wfVarEnv next env → wfValue next (Value.peClosure x e env)
-
-  /-- A runtime variable environment is well-formed if all stored values are. -/
-  inductive wfVarEnv (next : Address) : VarEnv → Prop
-    | nil : wfVarEnv next []
-    | cons (x : Name) (v : Value) (env : VarEnv) :
-        wfValue next v → wfVarEnv next env → wfVarEnv next ((x, v) :: env)
-end
-
-/-- A runtime configuration is well-formed if:
-    (1) all addresses in memory are below nextAddr, and
-    (2) all values in varEnv only reference addresses below nextAddr.
-    This captures that nextAddr is the "high-water mark" for allocated physical addresses,
-    analogous to wfTypeContext for logical locations. -/
-def wfConfig (cfg : Config) : Prop :=
-  (∀ a, cfg.memory.contains a → a < cfg.nextAddr) ∧
-  wfVarEnv cfg.nextAddr cfg.varEnv
-
-/-- If a config is well-formed, then nextAddr is not already in memory.
-    This is the key property needed to prove freshness of newly allocated addresses. -/
-lemma nextAddr_not_in_memory (cfg : Config) :
-    wfConfig cfg → ¬cfg.memory.contains cfg.nextAddr := by
-  intro hwf hcontains
-  have h := hwf.1 cfg.nextAddr hcontains
-  exact Nat.lt_irrefl cfg.nextAddr h
 
 -- ================================================================
 -- Runtime VarEnv Lookup/Update Lemmas
@@ -1869,7 +1816,9 @@ lemma terminatesTo_assign_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Valu
 private lemma bevalFunctionBody_nextAddr_mono
     (fuel : Nat) (verbose : Bool) (currentConfig finalConfig : Config)
     (closureEnv : VarEnv) (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool) (v : Value)
+    (registry : ExternRegistry) (hreg_cur : currentConfig.registry = registry)
     (IH : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
+      config₀.registry = registry →
       LeanPoison.beval m config₀ e verbose = .success config₁ v →
       config₀.nextAddr ≤ config₁.nextAddr) :
   LeanPoison.bevalFunctionBody fuel verbose currentConfig closureEnv paramName argValue body isPure =
@@ -1897,7 +1846,12 @@ private lemma bevalFunctionBody_nextAddr_mono
             rfl
           have h_bodyConfig_next : ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure } : Config).nextAddr = currentConfig.nextAddr := rfl
           have h_fuel' : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-          have IH_body := IH fuel' h_fuel' body ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure }) evalConfig v_body h_beval_body
+          have h_bodyConfig_reg :
+              ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure } : Config).registry
+              = registry := hreg_cur
+          have IH_body := IH fuel' h_fuel' body
+            ({ currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := isPure })
+            evalConfig v_body h_bodyConfig_reg h_beval_body
           have IH_body' : currentConfig.nextAddr ≤ evalConfig.nextAddr := by
             simpa [h_bodyConfig_next] using IH_body
           simp [h_next_eq]
@@ -1909,18 +1863,20 @@ private lemma bevalFunctionBody_nextAddr_mono
 
 private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
     (config₀ config₁ : Config) (v : Value),
+  RegistryOperationalSafe config₀.registry →
   LeanPoison.beval fuel config₀ e verbose = .success config₁ v →
   config₀.nextAddr ≤ config₁.nextAddr := by
-  intro e fuel verbose config₀ config₁ v h_eval
-  revert e verbose config₀ config₁ v h_eval
+  intro e fuel verbose config₀ config₁ v hOp h_eval
+  revert e verbose config₀ config₁ v hOp h_eval
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
-    intro e verbose config₀ config₁ v h_eval
-    have IH_converted : ∀ m < fuel, ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-      LeanPoison.beval m config₀ e verbose = .success config₁ v →
-      config₀.nextAddr ≤ config₁.nextAddr := by
-      intro m h_lt e' config₀' config₁' v' h_eval'
-      exact IH m h_lt e' verbose config₀' config₁' v' h_eval'
+    intro e verbose config₀ config₁ v hOp h_eval
+    have IH_converted : ∀ m < fuel, ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v : Value),
+      cfg₀'.registry = config₀.registry →
+      LeanPoison.beval m cfg₀' e verbose = .success cfg₁' v →
+      cfg₀'.nextAddr ≤ cfg₁'.nextAddr := by
+      intro m h_lt e' cfg₀' cfg₁' v' hreg' h_eval'
+      exact IH m h_lt e' verbose cfg₀' cfg₁' v' (hreg'.symm ▸ hOp) h_eval'
     cases e with
     | externVal _id _typ _poison _pred =>
         cases fuel with
@@ -1985,9 +1941,10 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               ⟨cfg₁1, cfg₁2, v1, v2, hbeval1, hbeval2, _h_evalOp, _h_mem, _h_var, h_next, _h_pure, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
             have hle1 :=
-              IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+              IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 rfl hbeval1
             have hle2 :=
-              IH_converted fuel' h_fuel e2 cfg₁1 cfg₁2 v2 hbeval2
+              IH_converted fuel' h_fuel e2 cfg₁1 cfg₁2 v2
+                (beval_preserves_registry _ _ _ _ _ _ hbeval1) hbeval2
             have hle02 : config₀.nextAddr ≤ cfg₁2.nextAddr := Nat.le_trans hle1 hle2
             simpa [h_next] using hle02
     | unaryop op e1 =>
@@ -1998,7 +1955,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               bevalUnaryOp_structure op e1 (fuel' + 1) verbose config₀ config₁ v h_eval
             rcases hstruct with ⟨cfg₁1, v1, hbeval1, _h_evalOp, _h_mem, _h_var, h_next, _h_pure, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 rfl hbeval1
             simpa [h_next] using hle1
     | ite e1 e2 e3 =>
         cases fuel with
@@ -2011,13 +1968,15 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             cases hbranch with
             | inl htrue =>
               rcases htrue with ⟨_, hbeval2⟩
-              have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁ (Value.bool b) hbeval1
-              have hle2 := IH_converted fuel' h_fuel e2 cfg₁ config₁ v hbeval2
+              have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁ (Value.bool b) rfl hbeval1
+              have hle2 := IH_converted fuel' h_fuel e2 cfg₁ config₁ v
+                (beval_preserves_registry _ _ _ _ _ _ hbeval1) hbeval2
               exact Nat.le_trans hle1 hle2
             | inr hfalse =>
               rcases hfalse with ⟨_, hbeval3⟩
-              have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁ (Value.bool b) hbeval1
-              have hle3 := IH_converted fuel' h_fuel e3 cfg₁ config₁ v hbeval3
+              have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁ (Value.bool b) rfl hbeval1
+              have hle3 := IH_converted fuel' h_fuel e3 cfg₁ config₁ v
+                (beval_preserves_registry _ _ _ _ _ _ hbeval1) hbeval3
               exact Nat.le_trans hle1 hle3
     | newRef e1 =>
         cases fuel with
@@ -2027,7 +1986,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               bevalNewRef_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
             rcases hstruct with ⟨cfg₁1, n, a, hbeval1, _ha, _hmem, h_next, _hvar, _hpure, _, _hval⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.num n) hbeval1
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.num n) rfl hbeval1
             have hle1' : config₀.nextAddr ≤ cfg₁1.nextAddr + 1 :=
               Nat.le_trans hle1 (Nat.le_succ _)
             simpa [h_next] using hle1'
@@ -2039,8 +1998,9 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               bevalAssign_structure e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
             rcases hstruct with ⟨cfg₁, cfg₁', a, n, hbeval1, hbeval2, _, _, _, hnext, _, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁ (Value.loc a) hbeval1
-            have hle2 := IH_converted fuel' h_fuel e2 cfg₁ cfg₁' (Value.num n) hbeval2
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁ (Value.loc a) rfl hbeval1
+            have hle2 := IH_converted fuel' h_fuel e2 cfg₁ cfg₁' (Value.num n)
+              (beval_preserves_registry _ _ _ _ _ _ hbeval1) hbeval2
             have hle02 : config₀.nextAddr ≤ cfg₁'.nextAddr := Nat.le_trans hle1 hle2
             simpa [hnext] using hle02
     | deref e1 =>
@@ -2051,7 +2011,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               bevalDeref_structure e1 (fuel' + 1) verbose config₀ config₁ v h_eval
             rcases hstruct with ⟨cfg₁1, a, n, hbeval1, _, _, hmem, hvar, hnext, hpure, _⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.loc a) hbeval1
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 (Value.loc a) rfl hbeval1
             -- config₁ = cfg₁1 since all fields match
             have : config₁.nextAddr = cfg₁1.nextAddr := hnext
             simpa [this] using hle1
@@ -2063,8 +2023,9 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               bevalSeq_structure e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
             rcases hstruct with ⟨cfg₁1, v1, hbeval1, hbeval2⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
-            have hle2 := IH_converted fuel' h_fuel e2 cfg₁1 config₁ v hbeval2
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 rfl hbeval1
+            have hle2 := IH_converted fuel' h_fuel e2 cfg₁1 config₁ v
+              (beval_preserves_registry _ _ _ _ _ _ hbeval1) hbeval2
             exact Nat.le_trans hle1 hle2
     | vlet x e1 e2 =>
         cases fuel with
@@ -2074,8 +2035,10 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               bevalVlet_structure x e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
             rcases hstruct with ⟨cfg₁1, cfg₁2, cfg₁3, v1, hbeval1, hcfg2, hbeval2, hcfg_final⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 hbeval1
-            have hle2 := IH_converted fuel' h_fuel e2 cfg₁2 cfg₁3 v hbeval2
+            have hle1 := IH_converted fuel' h_fuel e1 config₀ cfg₁1 v1 rfl hbeval1
+            have hreg₂ : cfg₁2.registry = config₀.registry := by
+              simp [hcfg2]; exact beval_preserves_registry _ _ _ _ _ _ hbeval1
+            have hle2 := IH_converted fuel' h_fuel e2 cfg₁2 cfg₁3 v hreg₂ hbeval2
             have h_next_eq1 : cfg₁2.nextAddr = cfg₁1.nextAddr := by
               simp [hcfg2]
             have h_next_eq2 : config₁.nextAddr = cfg₁3.nextAddr := by
@@ -2092,49 +2055,79 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               bevalApp_structure e1 e2 (fuel' + 1) verbose config₀ config₁ v h_eval
             rcases hstruct with ⟨cfg₁, cfg₂, v₂, hcase⟩
             have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
-            have IH_fuel' : ∀ m < fuel', ∀ (e : Expr) (config₀ config₁ : Config) (v : Value),
-              LeanPoison.beval m config₀ e verbose = .success config₁ v →
-              config₀.nextAddr ≤ config₁.nextAddr := by
-              intro m h_m_lt e config₀ config₁ v h_beval_ex
+            have IH_fuel' : ∀ m < fuel', ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v : Value),
+              cfg₀'.registry = config₀.registry →
+              LeanPoison.beval m cfg₀' e verbose = .success cfg₁' v →
+              cfg₀'.nextAddr ≤ cfg₁'.nextAddr := by
+              intro m h_m_lt e cfg₀' cfg₁' v hreg' h_beval_ex
               have h_m_lt_succ : m < fuel'.succ := Nat.lt_of_lt_of_le h_m_lt (Nat.le_succ fuel')
-              exact IH m h_m_lt_succ e verbose config₀ config₁ v h_beval_ex
+              exact IH m h_m_lt_succ e verbose cfg₀' cfg₁' v (hreg'.symm ▸ hOp) h_beval_ex
             have hbeval_e2 :
                 LeanPoison.beval fuel' config₀ e2 verbose = .success cfg₁ v₂ := by
               cases hcase <;> assumption
-            have hle_e2 := IH_converted fuel' h_fuel e2 config₀ cfg₁ v₂ hbeval_e2
+            have hle_e2 := IH_converted fuel' h_fuel e2 config₀ cfg₁ v₂ rfl hbeval_e2
             cases hcase with
             | @userFn x body env he2 he1 hNot hpureFalse hBody hpfinal =>
+              have hreg_cfg₁ : cfg₁.registry = config₀.registry :=
+                beval_preserves_registry _ _ _ _ _ _ hbeval_e2
               have hle_e1 :=
-                IH_converted fuel' h_fuel e1 cfg₁ cfg₂ (Value.closure x body env) he1
+                IH_converted fuel' h_fuel e1 cfg₁ cfg₂ (Value.closure x body env) hreg_cfg₁ he1
+              have hreg_cfg₂ : cfg₂.registry = config₀.registry :=
+                (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁
               have hle_body :=
-                bevalFunctionBody_nextAddr_mono fuel' verbose cfg₂ config₁ env x v₂ body false v IH_fuel' hBody
+                bevalFunctionBody_nextAddr_mono fuel' verbose cfg₂ config₁ env x v₂ body false v
+                  config₀.registry hreg_cfg₂ IH_fuel' hBody
               exact Nat.le_trans hle_e2 (Nat.le_trans hle_e1 hle_body)
             | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
+              have hreg_cfg₁ : cfg₁.registry = config₀.registry :=
+                beval_preserves_registry _ _ _ _ _ _ hbeval_e2
               have hle_e1 :=
-                IH_converted fuel' h_fuel e1 cfg₁ cfg₂ (Value.peClosure x body env) he1
+                IH_converted fuel' h_fuel e1 cfg₁ cfg₂ (Value.peClosure x body env) hreg_cfg₁ he1
+              have hreg_cfg₂ : cfg₂.registry = config₀.registry :=
+                (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁
               have hle_body :=
-                bevalFunctionBody_nextAddr_mono fuel' verbose cfg₂ config₁ env x v₂ body true v IH_fuel' hBody
+                bevalFunctionBody_nextAddr_mono fuel' verbose cfg₂ config₁ env x v₂ body true v
+                  config₀.registry hreg_cfg₂ IH_fuel' hBody
               exact Nat.le_trans hle_e2 (Nat.le_trans hle_e1 hle_body)
             | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr' hImpl hValRet
                 hcfg =>
-              /- `addr'` is not forced to be monotone by the operational semantics alone;
-                 this should be supplied by an extern contract once FFI verification tightens. -/
+              -- Monotonicity for an impure extern call is supplied by the
+              -- registered impl's operational safety contract: every successful
+              -- impure dispatch pushes `nextAddr` forward.  Combined with the
+              -- IHs on `e2` and `e1`, this closes the chain
+              -- `config₀.nextAddr ≤ cfg₁.nextAddr ≤ cfg₂.nextAddr ≤ addr'`.
+              have hreg_cfg₁ : cfg₁.registry = config₀.registry :=
+                beval_preserves_registry _ _ _ _ _ _ hbeval_e2
               have hle_e1 :=
                 IH_converted fuel' h_fuel e1 cfg₁ cfg₂
-                  (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) he1
-              sorry
+                  (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) hreg_cfg₁ he1
+              have hreg_cfg₂ : cfg₂.registry = config₀.registry :=
+                (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁
+              have hGet_outer : cfg₂.registry.get? id = some (ExternImpl.fn impl) := hGet
+              have hle_impl : cfg₂.nextAddr ≤ addr' :=
+                hOp.1 id impl (hreg_cfg₂ ▸ hGet_outer) _ _ _ _ _ _ _ hImpl
+              have hfinal : config₁.nextAddr = addr' := by simp [hcfg]
+              calc config₀.nextAddr
+                  ≤ cfg₁.nextAddr := hle_e2
+                _ ≤ cfg₂.nextAddr := hle_e1
+                _ ≤ addr' := hle_impl
+                _ = config₁.nextAddr := hfinal.symm
             | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
+              have hreg_cfg₁ : cfg₁.registry = config₀.registry :=
+                beval_preserves_registry _ _ _ _ _ _ hbeval_e2
               have hle_e1 :=
                 IH_converted fuel' h_fuel e1 cfg₁ cfg₂
-                  (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) he1
+                  (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) hreg_cfg₁ he1
               subst hcfg
               exact Nat.le_trans hle_e2 hle_e1
 
-/-- Next address is monotone for terminating evaluations. -/
-lemma terminatesTo_nextAddr_mono (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
+/-- Next address is monotone for terminating evaluations, given operational
+    safety of the runtime registry. -/
+lemma terminatesTo_nextAddr_mono (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
+    (hOp : RegistryOperationalSafe cfg₀.registry) :
     terminatesTo e cfg₀ cfg₁ v → cfg₀.nextAddr ≤ cfg₁.nextAddr := by
   intro ⟨fuel, verbose, hbeval⟩
-  exact beval_nextAddr_mono e fuel verbose cfg₀ cfg₁ v hbeval
+  exact beval_nextAddr_mono e fuel verbose cfg₀ cfg₁ v hOp hbeval
 
 
 -- ================================================================
@@ -2485,17 +2478,138 @@ lemma wfConfig_mono (cfg₀ : Config) (n' : Address) :
     exact Nat.lt_of_lt_of_le (hmem a ha) hle
   · exact wfVarEnv_mono hle cfg₀.varEnv henv
 
-/-- Evaluation preserves config well-formedness. -/
-lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
+/-- `bevalFunctionBody` (impure case) preserves `wfConfig` and produces a
+    `wfValue` result, assuming the outer strong-induction IH. -/
+private lemma bevalFunctionBody_impure_preserves_wfConfig
+    (fuel : Nat) (verbose : Bool) (currentConfig finalConfig : Config)
+    (closureEnv : VarEnv) (paramName : Name) (argValue : Value) (body : Expr)
+    (v : Value)
+    (registry : ExternRegistry)
+    (hreg_cur : currentConfig.registry = registry)
+    (hOp_reg : RegistryOperationalSafe registry)
+    (hwf_cur : wfConfig currentConfig)
+    (hwf_env : wfVarEnv currentConfig.nextAddr closureEnv)
+    (hwf_arg : wfValue currentConfig.nextAddr argValue)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+      cfg₀'.registry = registry →
+      wfConfig cfg₀' →
+      LeanPoison.beval m cfg₀' e verbose = .success cfg₁' v' →
+      wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
+  LeanPoison.bevalFunctionBody fuel verbose currentConfig closureEnv paramName argValue body false =
+      .success finalConfig v →
+  wfConfig finalConfig ∧ wfValue finalConfig.nextAddr v := by
+  intro h_eq
+  cases fuel with
+  | zero => unfold LeanPoison.bevalFunctionBody at h_eq; simp at h_eq
+  | succ fuel' =>
+      unfold LeanPoison.bevalFunctionBody at h_eq
+      simp at h_eq
+      split at h_eq
+      · next evalConfig v_body h_beval_body =>
+          let bodyConfig : Config :=
+            { currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := false }
+          have hreg_body : bodyConfig.registry = registry := hreg_cur
+          have hwf_body : wfConfig bodyConfig := by
+            refine ⟨?_, ?_⟩
+            · intro a ha; exact hwf_cur.1 a ha
+            · exact wfVarEnv_update currentConfig.nextAddr closureEnv paramName argValue
+                hwf_env hwf_arg
+          have hfuel' : fuel' < fuel'.succ := Nat.lt_succ_self _
+          have ⟨hwf_eval, hwf_vbody⟩ :=
+            IH fuel' hfuel' body bodyConfig evalConfig v_body hreg_body hwf_body h_beval_body
+          have hle_body_eval : bodyConfig.nextAddr ≤ evalConfig.nextAddr := by
+            exact beval_nextAddr_mono body fuel' verbose bodyConfig evalConfig v_body
+              (hreg_body.symm ▸ hOp_reg) h_beval_body
+          have hbody_next_eq : bodyConfig.nextAddr = currentConfig.nextAddr := rfl
+          have hle_cur_eval : currentConfig.nextAddr ≤ evalConfig.nextAddr := by
+            simpa [hbody_next_eq] using hle_body_eval
+          -- finalConfig = { currentConfig with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := currentConfig.pureMode }
+          injection h_eq with h_cfg_eq h_val_eq
+          cases h_cfg_eq; subst h_val_eq
+          refine ⟨⟨?_, ?_⟩, ?_⟩
+          · intro a ha
+            exact hwf_eval.1 a ha
+          · exact wfVarEnv_mono hle_cur_eval currentConfig.varEnv hwf_cur.2
+          · exact hwf_vbody
+      · next h_oof => nomatch h_eq
+      · next msg h_err => nomatch h_eq
+
+/-- `bevalFunctionBody` (pure case) preserves `wfConfig` and produces a
+    `wfValue` result.  Pure evaluation does not change memory/nextAddr,
+    so we use `beval_pure_config_eq` (which requires `Expr.toPExpr? body = some pe`). -/
+private lemma bevalFunctionBody_pure_preserves_wfConfig
+    (fuel : Nat) (verbose : Bool) (currentConfig finalConfig : Config)
+    (closureEnv : VarEnv) (paramName : Name) (argValue : Value) (body : Expr)
+    (pe : PExpr) (htp : Expr.toPExpr? body = some pe)
+    (v : Value)
+    (registry : ExternRegistry)
+    (hreg_cur : currentConfig.registry = registry)
+    (hwf_cur : wfConfig currentConfig)
+    (hwf_env : wfVarEnv currentConfig.nextAddr closureEnv)
+    (hwf_arg : wfValue currentConfig.nextAddr argValue)
+    (IH : ∀ m < fuel, ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+      cfg₀'.registry = registry →
+      wfConfig cfg₀' →
+      LeanPoison.beval m cfg₀' e verbose = .success cfg₁' v' →
+      wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v') :
+  LeanPoison.bevalFunctionBody fuel verbose currentConfig closureEnv paramName argValue body true =
+      .success finalConfig v →
+  wfConfig finalConfig ∧ wfValue finalConfig.nextAddr v := by
+  intro h_eq
+  cases fuel with
+  | zero => unfold LeanPoison.bevalFunctionBody at h_eq; simp at h_eq
+  | succ fuel' =>
+      unfold LeanPoison.bevalFunctionBody at h_eq
+      simp at h_eq
+      split at h_eq
+      · next evalConfig v_body h_beval_body =>
+          let bodyConfig : Config :=
+            { currentConfig with varEnv := closureEnv.update paramName argValue, pureMode := true }
+          have hreg_body : bodyConfig.registry = registry := hreg_cur
+          have hwf_body : wfConfig bodyConfig := by
+            refine ⟨?_, ?_⟩
+            · intro a ha; exact hwf_cur.1 a ha
+            · exact wfVarEnv_update currentConfig.nextAddr closureEnv paramName argValue
+                hwf_env hwf_arg
+          have hfuel' : fuel' < fuel'.succ := Nat.lt_succ_self _
+          have ⟨_hwf_eval, hwf_vbody⟩ :=
+            IH fuel' hfuel' body bodyConfig evalConfig v_body hreg_body hwf_body h_beval_body
+          -- bodyConfig.pureMode = true, so beval is pure: evalConfig.nextAddr = bodyConfig.nextAddr
+          have h_pure_eq := beval_pure_config_eq body fuel' bodyConfig evalConfig v_body verbose pe
+            htp rfl h_beval_body
+          have h_evalNext_eq : evalConfig.nextAddr = bodyConfig.nextAddr := h_pure_eq.1
+          have hbody_next_eq : bodyConfig.nextAddr = currentConfig.nextAddr := rfl
+          have h_eval_eq_cur : evalConfig.nextAddr = currentConfig.nextAddr := by
+            rw [h_evalNext_eq, hbody_next_eq]
+          -- finalConfig = { currentConfig with pureMode := currentConfig.pureMode }
+          injection h_eq with h_cfg_eq h_val_eq
+          cases h_cfg_eq; subst h_val_eq
+          refine ⟨?_, ?_⟩
+          · -- wfConfig { currentConfig with pureMode := currentConfig.pureMode }
+            refine ⟨?_, ?_⟩
+            · intro a ha; exact hwf_cur.1 a ha
+            · exact hwf_cur.2
+          · -- wfValue at finalConfig.nextAddr (= currentConfig.nextAddr) for v_body
+            show wfValue ({ currentConfig with pureMode := currentConfig.pureMode } : Config).nextAddr v_body
+            have : ({ currentConfig with pureMode := currentConfig.pureMode } : Config).nextAddr = currentConfig.nextAddr := rfl
+            rw [this, ← h_eval_eq_cur]
+            exact hwf_vbody
+      · next h_oof => nomatch h_eq
+      · next msg h_err => nomatch h_eq
+
+/-- Evaluation preserves config well-formedness, given operational safety
+    of the runtime registry. -/
+lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
+    (hOp : RegistryOperationalSafe cfg₀.registry) :
     terminatesTo e cfg₀ cfg₁ v →
     wfConfig cfg₀ →
     wfConfig cfg₁ ∧ wfValue cfg₁.nextAddr v := by
   intro hterm hwf₀
   rcases hterm with ⟨fuel, verbose, hbeval⟩
-  revert e cfg₀ cfg₁ v hwf₀ verbose hbeval
+  revert e cfg₀ cfg₁ v hOp hwf₀ verbose hbeval
   induction fuel using Nat.strong_induction_on with
   | _ fuel IH =>
-      intro e cfg₀ cfg₁ v hwf₀ verbose hbeval
+      intro e cfg₀ cfg₁ v hOp hwf₀ verbose hbeval
       cases fuel with
       | zero =>
           unfold LeanPoison.beval at hbeval
@@ -2503,12 +2617,13 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
       | succ fuel =>
           have ih :
               ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+                cfg₀'.registry = cfg₀.registry →
                 wfConfig cfg₀' →
                 LeanPoison.beval fuel cfg₀' e verbose = .success cfg₁' v' →
                 wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v' := by
-            intro e cfg₀' cfg₁' v' hwf₀' hbeval'
+            intro e cfg₀' cfg₁' v' hreg' hwf₀' hbeval'
             have hlt : fuel < fuel.succ := Nat.lt_succ_self fuel
-            exact IH fuel hlt e cfg₀' cfg₁' v' hwf₀' verbose hbeval'
+            exact IH fuel hlt e cfg₀' cfg₁' v' (hreg'.symm ▸ hOp) hwf₀' verbose hbeval'
           cases e with
       -- Literals
       | num n =>
@@ -2567,8 +2682,9 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
             bevalOp_structure e1 e2 op (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with
             ⟨cfg₁1, cfg₁2, v1, v2, hbeval1', hbeval2', h_evalOp, h_mem, h_var, h_next, _h_pure, _⟩
-          have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ hbeval1'
-          have hih2 := ih e2 cfg₁1 cfg₁2 v2 hih1.1 hbeval2'
+          have hih1 := ih e1 cfg₀ cfg₁1 v1 rfl hwf₀ hbeval1'
+          have hih2 := ih e2 cfg₁1 cfg₁2 v2
+            (beval_preserves_registry _ _ _ _ _ _ hbeval1') hih1.1 hbeval2'
           constructor
           · rcases hih2.1 with ⟨hwfmem2, hwfenv2⟩
             constructor
@@ -2584,7 +2700,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           have hstruct :=
             bevalUnaryOp_structure op e1 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with ⟨cfg₁1, v1, hbeval1', h_evalOp, h_mem, h_var, h_next, _h_pure, _⟩
-          have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ hbeval1'
+          have hih1 := ih e1 cfg₀ cfg₁1 v1 rfl hwf₀ hbeval1'
           constructor
           · rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
             constructor
@@ -2600,20 +2716,22 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           have hstruct :=
             bevalIte_structure e1 e2 e3 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with ⟨cfg₁1, b, hbeval1, hbranch⟩
-          have hih1 := ih e1 cfg₀ cfg₁1 (Value.bool b) hwf₀ hbeval1
+          have hih1 := ih e1 cfg₀ cfg₁1 (Value.bool b) rfl hwf₀ hbeval1
           cases hbranch with
           | inl htrue =>
             rcases htrue with ⟨_, hbeval2⟩
-            exact ih e2 cfg₁1 cfg₁ v hih1.1 hbeval2
+            exact ih e2 cfg₁1 cfg₁ v
+              (beval_preserves_registry _ _ _ _ _ _ hbeval1) hih1.1 hbeval2
           | inr hfalse =>
             rcases hfalse with ⟨_, hbeval3⟩
-            exact ih e3 cfg₁1 cfg₁ v hih1.1 hbeval3
+            exact ih e3 cfg₁1 cfg₁ v
+              (beval_preserves_registry _ _ _ _ _ _ hbeval1) hih1.1 hbeval3
       -- New reference
       | newRef e1 =>
           have hstruct :=
             bevalNewRef_structure e1 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with ⟨cfg₁1, n, a, hbeval1, ha, hmem_eq, hnext_eq, hvar_eq, _hpure_eq, _, hval_eq⟩
-          have hih1 := ih e1 cfg₀ cfg₁1 (Value.num n) hwf₀ hbeval1
+          have hih1 := ih e1 cfg₀ cfg₁1 (Value.num n) rfl hwf₀ hbeval1
           constructor
           · rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
             constructor
@@ -2650,13 +2768,16 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           have hstruct :=
             bevalAssign_structure e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with ⟨cfgA, cfgB, a, n, hbeval1, hbeval2, hv, hmem, hvar, hnext, hpure, _⟩
-          have hih1 := ih e1 cfg₀ cfgA (Value.loc a) hwf₀ hbeval1
-          have hih2 := ih e2 cfgA cfgB (Value.num n) hih1.1 hbeval2
+          have hreg_cfgA : cfgA.registry = cfg₀.registry :=
+            beval_preserves_registry _ _ _ _ _ _ hbeval1
+          have hih1 := ih e1 cfg₀ cfgA (Value.loc a) rfl hwf₀ hbeval1
+          have hih2 := ih e2 cfgA cfgB (Value.num n) hreg_cfgA hih1.1 hbeval2
           have hloc_lt : a < cfgA.nextAddr := by
             cases hih1.2 with
             | loc hlt => exact hlt
           have hle_next : cfgA.nextAddr ≤ cfgB.nextAddr :=
-            terminatesTo_nextAddr_mono e2 cfgA cfgB (Value.num n) ⟨fuel, verbose, hbeval2⟩
+            terminatesTo_nextAddr_mono e2 cfgA cfgB (Value.num n) (hreg_cfgA.symm ▸ hOp)
+              ⟨fuel, verbose, hbeval2⟩
           have hloc_lt' : a < cfgB.nextAddr :=
             Nat.lt_of_lt_of_le hloc_lt hle_next
           constructor
@@ -2686,7 +2807,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           have hstruct :=
             bevalDeref_structure e1 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with ⟨config', a, n, hbeval1, _, hv, hmem, hvar, hnext, hpure, _⟩
-          have hih1 := ih e1 cfg₀ config' (Value.loc a) hwf₀ hbeval1
+          have hih1 := ih e1 cfg₀ config' (Value.loc a) rfl hwf₀ hbeval1
           constructor
           · -- cfg₁ has same fields as config'
             rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
@@ -2703,23 +2824,27 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           have hstruct :=
             bevalSeq_structure e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with ⟨cfg₁1, v1, hbeval1, hbeval2⟩
-          have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ hbeval1
-          exact ih e2 cfg₁1 cfg₁ v hih1.1 hbeval2
+          have hih1 := ih e1 cfg₀ cfg₁1 v1 rfl hwf₀ hbeval1
+          exact ih e2 cfg₁1 cfg₁ v
+            (beval_preserves_registry _ _ _ _ _ _ hbeval1) hih1.1 hbeval2
       -- Let binding
       | vlet x e1 e2 =>
           have hstruct :=
             bevalVlet_structure x e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with ⟨cfg₁1, cfg₂, cfg₃, v1, hbeval1, hcfg2_eq, hbeval2, hcfg_final_eq⟩
-          have hih1 := ih e1 cfg₀ cfg₁1 v1 hwf₀ hbeval1
+          have hih1 := ih e1 cfg₀ cfg₁1 v1 rfl hwf₀ hbeval1
           have hwf_cfg2 : wfConfig cfg₂ := by
             rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
             have hwfenv2 : wfVarEnv cfg₁1.nextAddr (cfg₁1.varEnv.update x v1) :=
               wfVarEnv_update cfg₁1.nextAddr cfg₁1.varEnv x v1 hwfenv1 hih1.2
             subst hcfg2_eq
             exact ⟨hwfmem1, hwfenv2⟩
-          have hih2 := ih e2 cfg₂ cfg₃ v hwf_cfg2 hbeval2
+          have hreg_cfg₂ : cfg₂.registry = cfg₀.registry := by
+            simp [hcfg2_eq]; exact beval_preserves_registry _ _ _ _ _ _ hbeval1
+          have hih2 := ih e2 cfg₂ cfg₃ v hreg_cfg₂ hwf_cfg2 hbeval2
           have hle_next : cfg₁1.nextAddr ≤ cfg₃.nextAddr := by
-            have hle := terminatesTo_nextAddr_mono e2 cfg₂ cfg₃ v ⟨fuel, verbose, hbeval2⟩
+            have hle := terminatesTo_nextAddr_mono e2 cfg₂ cfg₃ v (hreg_cfg₂.symm ▸ hOp)
+              ⟨fuel, verbose, hbeval2⟩
             simpa [hcfg2_eq] using hle
           have hwfenv1_lift : wfVarEnv cfg₃.nextAddr cfg₁1.varEnv :=
             wfVarEnv_mono hle_next cfg₁1.varEnv hih1.1.2
@@ -2730,20 +2855,200 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value) :
           · simpa using hih2.2
       -- Application
       | app e1 e2 =>
-          -- TODO: FFI runtime — `Expr.app` dispatch now has an additional
-          -- match on `body` for extern closures before the pureMode split, so
-          -- the original nested `split at hbeval` structure no longer aligns.
-          -- Proof deferred: the user-closure cases are unchanged, and the
-          -- extern cases preserve `wfConfig` by the registry contract.
-          sorry
+          -- Decompose hbeval via bevalApp_structure into four sub-cases
+          -- (userFn, userPfn, externFn, externPfn).  User cases recurse
+          -- through `bevalFunctionBody_preserves_wfConfig`; extern cases
+          -- discharge via `hOp`'s fn/pfn clauses.
+          have hstruct :=
+            bevalApp_structure e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
+          rcases hstruct with ⟨cfg₁_inner, cfg₂, v₂, hcase⟩
+          have hbeval_e2 :
+              LeanPoison.beval fuel cfg₀ e2 verbose = .success cfg₁_inner v₂ := by
+            cases hcase <;> assumption
+          have hih_e2 :=
+            ih e2 cfg₀ cfg₁_inner v₂ rfl hwf₀ hbeval_e2
+          have hreg_cfg₁_inner : cfg₁_inner.registry = cfg₀.registry :=
+            beval_preserves_registry _ _ _ _ _ _ hbeval_e2
+          have hOp_inner : RegistryOperationalSafe cfg₁_inner.registry :=
+            hreg_cfg₁_inner.symm ▸ hOp
+          cases hcase with
+          | @userFn x body env he2 he1 hNot hpureFalse hBody hpfinal =>
+            have hih_e1 :=
+              ih e1 cfg₁_inner cfg₂ (Value.closure x body env)
+                hreg_cfg₁_inner hih_e2.1 he1
+            have hreg_cfg₂ : cfg₂.registry = cfg₀.registry :=
+              (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁_inner
+            -- Extract wfVarEnv env from wfValue cfg₂.nextAddr (closure ...)
+            have hwf_env : wfVarEnv cfg₂.nextAddr env := by
+              cases hih_e1.2 with
+              | closure _ _ _ hwfenv => exact hwfenv
+            have hle_inner_cfg₂ : cfg₁_inner.nextAddr ≤ cfg₂.nextAddr :=
+              beval_nextAddr_mono e1 fuel verbose cfg₁_inner cfg₂
+                (Value.closure x body env) hOp_inner he1
+            have hwf_v₂ : wfValue cfg₂.nextAddr v₂ :=
+              wfValue_mono hle_inner_cfg₂ v₂ hih_e2.2
+            have IH_for_body : ∀ m < fuel, ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+                cfg₀'.registry = cfg₀.registry →
+                wfConfig cfg₀' →
+                LeanPoison.beval m cfg₀' e verbose = .success cfg₁' v' →
+                wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v' := by
+              intro m h_m_lt e' cfg₀' cfg₁' v' hreg' hwf₀' h_beval'
+              have h_m_lt_succ : m < fuel.succ :=
+                Nat.lt_of_lt_of_le h_m_lt (Nat.le_succ fuel)
+              exact IH m h_m_lt_succ e' cfg₀' cfg₁' v' (hreg'.symm ▸ hOp) hwf₀' verbose h_beval'
+            exact bevalFunctionBody_impure_preserves_wfConfig fuel verbose cfg₂ cfg₁ env x v₂ body v
+              cfg₀.registry hreg_cfg₂ hOp hih_e1.1 hwf_env hwf_v₂ IH_for_body hBody
+          | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
+            have hih_e1 :=
+              ih e1 cfg₁_inner cfg₂ (Value.peClosure x body env)
+                hreg_cfg₁_inner hih_e2.1 he1
+            have hreg_cfg₂ : cfg₂.registry = cfg₀.registry :=
+              (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁_inner
+            have hwf_env : wfVarEnv cfg₂.nextAddr env := by
+              cases hih_e1.2 with
+              | peClosure _ _ _ hwfenv => exact hwfenv
+            have hle_inner_cfg₂ : cfg₁_inner.nextAddr ≤ cfg₂.nextAddr :=
+              beval_nextAddr_mono e1 fuel verbose cfg₁_inner cfg₂
+                (Value.peClosure x body env) hOp_inner he1
+            have hwf_v₂ : wfValue cfg₂.nextAddr v₂ :=
+              wfValue_mono hle_inner_cfg₂ v₂ hih_e2.2
+            have IH_for_body : ∀ m < fuel, ∀ (e : Expr) (cfg₀' cfg₁' : Config) (v' : Value),
+                cfg₀'.registry = cfg₀.registry →
+                wfConfig cfg₀' →
+                LeanPoison.beval m cfg₀' e verbose = .success cfg₁' v' →
+                wfConfig cfg₁' ∧ wfValue cfg₁'.nextAddr v' := by
+              intro m h_m_lt e' cfg₀' cfg₁' v' hreg' hwf₀' h_beval'
+              have h_m_lt_succ : m < fuel.succ :=
+                Nat.lt_of_lt_of_le h_m_lt (Nat.le_succ fuel)
+              exact IH m h_m_lt_succ e' cfg₀' cfg₁' v' (hreg'.symm ▸ hOp) hwf₀' verbose h_beval'
+            obtain ⟨pe, htp_some⟩ := Option.isSome_iff_exists.mp (Option.ne_none_iff_isSome.mp htp)
+            exact bevalFunctionBody_pure_preserves_wfConfig fuel verbose cfg₂ cfg₁ env x v₂ body pe htp_some v
+              cfg₀.registry hreg_cfg₂ hih_e1.1 hwf_env hwf_v₂ IH_for_body hBody
+          | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr' hImpl hValRet hcfg =>
+            -- The closure carrying the externFn AST is wf at cfg₂.nextAddr
+            have hih_e1 :=
+              ih e1 cfg₁_inner cfg₂
+                (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
+                hreg_cfg₁_inner hih_e2.1 he1
+            have hreg_cfg₂ : cfg₂.registry = cfg₀.registry :=
+              (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁_inner
+            -- Apply the fn-wf clause of hOp to get wfMemory and wfValue at addr'
+            have hGet_outer : cfg₂.registry.get? id = some (ExternImpl.fn impl) := hGet
+            have hGet_at_reg : cfg₀.registry.get? id = some (ExternImpl.fn impl) :=
+              hreg_cfg₂ ▸ hGet_outer
+            -- Memory wf at cfg₂.nextAddr
+            have hmem_cfg₂ : ∀ a, cfg₂.memory.contains a → a < cfg₂.nextAddr := hih_e1.1.1
+            -- Closure env wf
+            have hwf_env : wfVarEnv cfg₂.nextAddr env := by
+              cases hih_e1.2 with
+              | closure _ _ _ hwfenv => exact hwfenv
+            have hle_inner_cfg₂ : cfg₁_inner.nextAddr ≤ cfg₂.nextAddr :=
+              beval_nextAddr_mono e1 fuel verbose cfg₁_inner cfg₂ _ hOp_inner he1
+            have hwf_v₂ : wfValue cfg₂.nextAddr v₂ :=
+              wfValue_mono hle_inner_cfg₂ v₂ hih_e2.2
+            have hwf_unified : wfVarEnv cfg₂.nextAddr (env.update x v₂) :=
+              wfVarEnv_update cfg₂.nextAddr env x v₂ hwf_env hwf_v₂
+            have ⟨hmem_out, hwf_vRaw⟩ :=
+              hOp.2.1 id impl hGet_at_reg
+                (env.update x v₂) v₂ cfg₂.memory cfg₂.nextAddr vRaw mem' addr'
+                hImpl hmem_cfg₂ hwf_unified hwf_v₂
+            -- Use fn-monotonicity for the next-addr bound
+            have hle_cfg₂_addr' : cfg₂.nextAddr ≤ addr' :=
+              hOp.1 id impl hGet_at_reg _ _ _ _ _ _ _ hImpl
+            -- validateExternReturn returns v unchanged on success
+            have hv_eq_vRaw : v = vRaw := by
+              -- validateExternReturn returns .ok v with v = its input on success
+              unfold validateExternReturn at hValRet
+              split at hValRet
+              · split at hValRet
+                · injection hValRet with h_eq; exact h_eq.symm
+                · simp at hValRet
+              · split at hValRet
+                · injection hValRet with h_eq; exact h_eq.symm
+                · simp at hValRet
+              · split at hValRet
+                · injection hValRet with h_eq; exact h_eq.symm
+                · simp at hValRet
+              · simp at hValRet
+              · simp at hValRet
+            subst hv_eq_vRaw
+            -- cfg₁ = { cfg₂ with memory := mem', nextAddr := addr' } (from hcfg)
+            refine ⟨?_, ?_⟩
+            · subst hcfg
+              refine ⟨?_, ?_⟩
+              · simpa using hmem_out
+              · -- wfVarEnv addr' cfg₂.varEnv (the outer caller's varEnv)
+                simpa using
+                  wfVarEnv_mono hle_cfg₂_addr' cfg₂.varEnv hih_e1.1.2
+            · subst hcfg
+              simpa using hwf_vRaw
+          | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
+            have hih_e1 :=
+              ih e1 cfg₁_inner cfg₂
+                (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env)
+                hreg_cfg₁_inner hih_e2.1 he1
+            have hreg_cfg₂ : cfg₂.registry = cfg₀.registry :=
+              (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁_inner
+            have hGet_outer : cfg₂.registry.get? id = some (ExternImpl.pfn impl) := hGet
+            have hGet_at_reg : cfg₀.registry.get? id = some (ExternImpl.pfn impl) :=
+              hreg_cfg₂ ▸ hGet_outer
+            have hmem_cfg₂ : ∀ a, cfg₂.memory.contains a → a < cfg₂.nextAddr := hih_e1.1.1
+            have hwf_env : wfVarEnv cfg₂.nextAddr env := by
+              cases hih_e1.2 with
+              | peClosure _ _ _ hwfenv => exact hwfenv
+            have hle_inner_cfg₂ : cfg₁_inner.nextAddr ≤ cfg₂.nextAddr :=
+              beval_nextAddr_mono e1 fuel verbose cfg₁_inner cfg₂ _ hOp_inner he1
+            have hwf_v₂ : wfValue cfg₂.nextAddr v₂ :=
+              wfValue_mono hle_inner_cfg₂ v₂ hih_e2.2
+            have hwf_unified : wfVarEnv cfg₂.nextAddr (env.update x v₂) :=
+              wfVarEnv_update cfg₂.nextAddr env x v₂ hwf_env hwf_v₂
+            have hwf_vRaw : wfValue cfg₂.nextAddr vRaw :=
+              hOp.2.2.1 id impl hGet_at_reg
+                (env.update x v₂) v₂ cfg₂.memory cfg₂.nextAddr vRaw
+                hImpl hmem_cfg₂ hwf_unified hwf_v₂
+            have hv_eq_vRaw : v = vRaw := by
+              unfold validateExternReturn at hValRet
+              split at hValRet
+              · split at hValRet
+                · injection hValRet with h_eq; exact h_eq.symm
+                · simp at hValRet
+              · split at hValRet
+                · injection hValRet with h_eq; exact h_eq.symm
+                · simp at hValRet
+              · split at hValRet
+                · injection hValRet with h_eq; exact h_eq.symm
+                · simp at hValRet
+              · simp at hValRet
+              · simp at hValRet
+            subst hv_eq_vRaw
+            subst hcfg
+            exact ⟨hih_e1.1, hwf_vRaw⟩
       -- Extern cases
       | externVal _id _t _p _pred =>
-          -- TODO: FFI runtime — `wfConfig cfg₁` is trivial (cfg unchanged),
-          -- but `wfValue cfg₁.nextAddr v` for the `ref int` subcase requires
-          -- the registry contract that registered `Value.loc a` values
-          -- satisfy `a < cfg.nextAddr`. See `doc/ffi-proposal.md` §
-          -- "Pending Proof Obligations (Category B)".
-          sorry
+          -- externVal returns the stored registry value at the unchanged config.
+          -- wfConfig cfg₀ is direct; wfValue cfg₀.nextAddr v comes from the
+          -- val-clause of hOp.
+          unfold LeanPoison.beval at hbeval
+          simp at hbeval
+          rw [← Std.HashMap.get?_eq_getElem?] at hbeval
+          cases hlookup : cfg₀.registry.get? _id with
+          | none =>
+              rw [hlookup] at hbeval; simp at hbeval
+          | some impl =>
+            cases impl with
+            | val vImpl =>
+                by_cases hmatch : valueMatchesTyp vImpl _t = true
+                · rw [hlookup] at hbeval
+                  simp [hmatch] at hbeval
+                  obtain ⟨hcfg_eq, hv_eq⟩ := hbeval
+                  subst hcfg_eq
+                  subst hv_eq
+                  refine ⟨hwf₀, ?_⟩
+                  exact hOp.2.2.2 cfg₀ hwf₀ rfl _id vImpl hlookup
+                · rw [hlookup] at hbeval
+                  simp [hmatch] at hbeval
+            | fn implFn => rw [hlookup] at hbeval; simp at hbeval
+            | pfn implPfn => rw [hlookup] at hbeval; simp at hbeval
       | externFn _id name _t _ret _effs =>
           unfold LeanPoison.beval at hbeval
           simp at hbeval

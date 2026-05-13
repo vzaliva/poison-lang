@@ -550,8 +550,12 @@ sites that need the relational boundary contract look up the trusted entry by
 id; if `TrustedRegistry.lookup? tr id = some entry`, then `entry.spec.declFR` /
 `entry.spec.callFR` are the relational boundary contracts, and
 `entry.spec.declSingle` / `entry.spec.callSingle` are the single-run clean-pc
-contracts. The `entry.spec.wf` field remains the operational well-formedness
-projection for preservation consumers.
+contracts. The `entry.spec.operational` field (`ExternOperationalSafe d impl`) carries
+the strengthened operational contract: it asserts that a successful extern
+boundary preserves `wfConfig`, produces a `wfValue` at the output `nextAddr`,
+and pushes the address cursor forward (`cᵢ.nextAddr ≤ cₒ.nextAddr`). The
+strengthening over the prior narrow `wf` field is the address monotonicity,
+needed by `beval_nextAddr_mono` in `SemanticsProperties.lean`.
 
 There is intentionally no obligation of the form "every extern declaration has
 an implementation." If a trusted entry is absent, the projected runtime registry
@@ -584,17 +588,33 @@ populated registry:
   `TrustedRegistryAgreesWithReachable` for every initial context admitted by
   the input spec.
 
-Two operational well-formedness proof gaps remain in
-`LeanProofs/SemanticsProperties.lean`:
+All three operational sorries in `LeanProofs/SemanticsProperties.lean` —
+`beval_nextAddr_mono` (externFn dispatch), `wfConfig_preserved` (app dispatch),
+and `wfConfig_preserved` (externVal `ref int` subcase) — are now discharged
+under a new operational safety contract:
 
-- the `app` / `ExternImpl.fn` dispatch path of `wfConfig_preserved`, which
-  should consume `entry.spec.wf` on `ExternCallBoundaryRun.fn`;
-- the `externVal ref int` path of `wfConfig_preserved`, which should consume
-  `entry.spec.wf` on `ExternDeclBoundaryRun.val`.
-
-These are not FR proof blockers, but they are still part of the complete FFI
-trust story. Concrete constructor work should make the `wf` projection cheap to
-derive from the same implementation facts used for FR and single-run posts.
+- `RegistryOperationalSafe (reg : ExternRegistry) : Prop` lives in
+  `LeanProofs/ExternRuntime.lean` and packages four per-kind facts: fn-
+  monotonicity (unconditional), fn-wf preservation (conditional on wf input),
+  pfn-wf preservation, and val-wf at the consumer's `nextAddr`.
+- `beval_nextAddr_mono`, `terminatesTo_nextAddr_mono`, and `wfConfig_preserved`
+  now take `(hOp : RegistryOperationalSafe cfg₀.registry)` as an explicit
+  hypothesis. The hypothesis is threaded through every consumer in
+  `StepFRApp.lean` and the per-operator `StepFR*.lean` files via
+  `beval_preserves_registry` (or `terminatesTo_preserves_registry`) to chain
+  registry equalities across intermediate configs.
+- The strengthened operational projection on `ExternBoundarySpec` is the
+  `.operational : ExternOperationalSafe d impl` field (replacing the prior
+  narrow `.wf` field that proved only `wfConfig` + `wfValue`).
+- The public theorem `TypeSystemEnforcesFaultRobustness` now takes
+  `(hOp : RegistryOperationalSafe (TrustedRegistry.toRuntimeRegistry tr))` as
+  a public hypothesis. A future cleanup may prove the bridge
+  `TrustedRegistry.operationalSafe : RegistryOperationalSafe (tr.toRuntimeRegistry)`
+  from each entry's `spec.operational`, which would make `hOp` derivable
+  rather than required separately. That bridge requires kind-consistency
+  invariants between `entry.decl.kind` and `entry.impl`'s constructor that
+  are not currently enforced structurally in `TrustedExternEntry`; see
+  `doc/refactor.md` for the design considerations.
 
 ## Relationship to `LeanProofs/ExternTypingAssumptions.lean`
 
@@ -609,11 +629,25 @@ floor:
   - `externPredSatDelta`: `PredSatLaws` preservation across one structural
     extern allocation batch.
 
-The runtime-boundary structures live in `LeanProofs/ExternBoundary.lean`:
-`ExternDeclaration`, `TrustedExternEntry`, `TrustedRegistry`,
-`TrustedRegistryAgreesWithReachable`, declaration/call boundary runs,
-`ExternBoundarySpec`, and the reachable-domain provenance lemmas used by the
-public theorem.
+The runtime-boundary structures are split across two modules after the
+operational-safety refactor:
+
+- `LeanProofs/ExternRuntime.lean` (below `StepFR` in the dependency graph)
+  contains runtime-event predicates that do not depend on FR-shaped machinery:
+  `ExternDeclaration`, `ExternDeclBoundaryRun`, `ExternCallEntry`,
+  `ExternCallBoundaryRun`, `ExternBoundaryWFRun`, the operational safety
+  contracts `ExternOperationalSafe` (per trusted entry) and
+  `RegistryOperationalSafe` (per registry, consumed by
+  `SemanticsProperties.lean`). Low-level definitions previously in
+  `SemanticsProperties.lean` (`terminatesTo`, `stuck`, `wfValue`, `wfVarEnv`,
+  `wfConfig`, `nextAddr_not_in_memory`) also moved to
+  `LeanProofs/Semantics.lean` so `ExternRuntime` can import them.
+- `LeanProofs/ExternBoundary.lean` (above `StepFR`) contains the FR-shaped
+  theorem-facing API: `TrustedExternEntry`, `TrustedRegistry`,
+  `TrustedRegistryAgreesWithReachable`, `BodyEntryInputsAgree`,
+  `ExternBoundarySpec` (with `declFR`, `callFR`, `declSingle`, `callSingle`,
+  and `operational` fields), reachable-domain provenance lemmas, and the
+  trusted-registry interface consumed by the top-level FR theorem.
 
 `TagMeaning` is threaded through typechecking, and structural extern allocation
 extends the output tag table with exactly the resolved guard descriptors via
@@ -710,9 +744,13 @@ full `StepFRPost` conjunction. At minimum:
 - `ExternBoundarySpec.refValInitialized`;
 - `ExternBoundarySpec.impureCellUpdate`.
 
-These constructors should derive the FR, single-run, and WF projections from a
-small implementation-specific behavior lemma. Concrete drivers should not have
-to assemble the raw `StepFRPost` conjunction by hand.
+These constructors should derive the FR, single-run, and `operational`
+projections from a small implementation-specific behavior lemma. The
+`operational` field (`ExternOperationalSafe d impl`) now strengthens the
+prior `.wf` projection to also include `nextAddr` monotonicity for impure
+extern calls — constructors must establish all three facts (wfConfig, wfValue,
+and address monotonicity). Concrete drivers should not have to assemble the
+raw `StepFRPost` conjunction by hand.
 
 ### Probe 4: End-to-End `abs`
 
@@ -780,25 +818,34 @@ The single-run fields overlap with the two-run postcondition, but they serve a
 different consumer: the existing `StepFRSingle...` lemmas. They should remain
 separate projections in `ExternBoundarySpec`.
 
-`ExternBoundaryPreservesWF` is even smaller. It is for operational preservation
-lemmas such as `wfConfig_preserved`, where the proof only needs final
-well-formedness and does not need the full single-run clean-pc postcondition.
+`ExternOperationalSafe` (the type of `entry.spec.operational`) is the
+operational projection. It carries the same final `wfConfig`/`wfValue` facts
+as the prior `ExternBoundaryPreservesWF` plus `nextAddr` monotonicity for
+impure calls, consumed by `wfConfig_preserved` and `beval_nextAddr_mono` in
+`SemanticsProperties.lean`.
 
 The proof effort should not be duplicated manually. The intended driver pattern
 is to prove lower-level implementation facts once, then derive
-the FR, single-run, and `ExternBoundaryPreservesWF` projections from those
-shared facts.
+the FR, single-run, and operational projections from those shared facts.
 
 ## Open Questions
 
 1. Move the `ExternTypingAssumptions.externPredSatDelta` obligation into the
    trusted registry interface as per-extern evidence and delete the broad field.
-2. Decide whether `ExternBoundaryPreservesWF` should remain a field of
-   `ExternBoundarySpec` or be exposed only as a derived projection from the
-   constructor API. It should not become an independent third proof burden for
-   drivers.
+2. Eliminate the public `hOp : RegistryOperationalSafe (TrustedRegistry.toRuntimeRegistry tr)`
+   hypothesis on `TypeSystemEnforcesFaultRobustness` by proving the bridge
+   `TrustedRegistry.operationalSafe`. The bridge requires kind-consistency
+   invariants between `entry.decl.kind` and `entry.impl`'s constructor that
+   are not currently enforced structurally in `TrustedExternEntry`; this is a
+   design choice (add a structural invariant, or restructure `ExternOperationalSafe`
+   to mirror `RegistryOperationalSafe` directly) deferred to a follow-up.
 3. Decide how much convenience API to expose for reachable-domain trust when a
    driver registry is built from a finite list of trusted entries.
+4. Trim the theorem-facing surface: move proof-heavy reachability adapters and
+   integration theorems from `ExternBoundary.lean` to a new
+   `ExternBoundaryProofs.lean`, so the public API of `ExternBoundary.lean` is
+   small enough to read end-to-end. This is the deferred Step 6 of the
+   operational-safety refactor (see `doc/refactor.md`).
 
 The resulting theorem is a clean relative statement: Poison's type system
 enforces fault-robustness assuming every registered extern boundary is itself

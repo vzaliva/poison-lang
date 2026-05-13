@@ -288,6 +288,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
@@ -322,7 +323,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
     wfTypeContext_of_wfTypeResult ctxᵢ res1
       (typecheckExpr_preserves_wfTypeResult ctxᵢ e fuel' res1 hwf htc1')
       hwf (typecheck_nextLoc_mono ctxᵢ e fuel' res1 htc1')
-  have hwfcfg1 : wfConfig cfg' := (wfConfig_preserved e _ cfg' (Value.num n) ht_e hwfcfg).1
+  have hwfcfg1 : wfConfig cfg' := (wfConfig_preserved e _ cfg' (Value.num n) hOp ht_e hwfcfg).1
   have hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime := by
     simp [ctxAfter, h_regime]
   let θ' := θ1.update l cfg'.nextAddr
@@ -548,6 +549,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
@@ -567,7 +569,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
           (fun R qt μ θ v =>
             valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
           IH m hm (tmᵢ := tmᵢ) e ctx trivial hwfTm hTmBounded res htc)
-      htc
+      hOp htc
 
 lemma stepFR_newRef_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat)
@@ -579,6 +581,7 @@ lemma stepFR_newRef_with_expr_proof
   (IH :
     StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
       CanUse CtxReach (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.newRef e) res predSat tm (registry := registry) := by
   -- Parse typecheck result
@@ -819,8 +822,8 @@ lemma stepFR_newRef_with_expr_proof
       hθext₀' hθext₁' hwfcf₀1 hwfcf₁1 hqtypPredHolds_mem₀ hqtypPredHolds_mem₁
       hagree_clean_e hres_agree_e
   -- Derive wfConfig for final configs
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.newRef e) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.newRef e) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.newRef e) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.newRef e) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
   -- consistentWithRegime for extended realization maps
   -- Key insight: res.regime' = res1.regime' (newRef doesn't change regime)
   -- For newRef:
@@ -1539,6 +1542,7 @@ lemma stepFR_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.newRef e) res predSat tm (registry := registry) := by
     exact
@@ -1547,6 +1551,6 @@ lemma stepFR_newRef
         (fun _ => True) (fun _ => True) trivial trivial
         (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        htc
+        hOp htc
 
 -- World-free version of stepFRW_seq

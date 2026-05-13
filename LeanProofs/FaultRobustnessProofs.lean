@@ -332,6 +332,7 @@ private theorem ExternCallFRPfnLocalProviderReachableCtx_of_reachable
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse_ctxReach
     (registry : ExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (CanUse : Expr → Prop)
   (CtxReach : TypeContext → Prop)
   (hcallSingleFn : ExternCallSingleFnProviderCtx registry CanUse CtxReach)
@@ -587,6 +588,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       (ExternDeclCanUseSyntaxClosed.op_right hclosed hcan)
                       hctxCurrent
                       hctxAfter
+                      hOp
                       (fun m hm {tmᵢ} e' ctx' _hctx hcan' _hwfTm _hTmBounded res' htc' =>
                         IH' m hm tmᵢ masked e' ctx' _hctx hcan' res' htc')
                       htc
@@ -686,7 +688,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           contradiction
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
-                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) ht_e1 hwfcfg).1
+                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp ht_e1 hwfcfg).1
                     have htc2' : typecheck ctxTrue e2 fuel' = .ok res2 := by
                       simpa [ctxTrue, typecheck, Nat.succ_sub_one] using htc2
                     have hwfTm_true : wfTagMeaningCtx tm ctxTrue := by
@@ -915,7 +917,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       | inr h => exact h.2
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
-                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) ht_e1 hwfcfg).1
+                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp ht_e1 hwfcfg).1
                     have htc3' : typecheck ctxFalse' e3 fuel' = .ok res3 := by
                       simpa [ctxFalse', ctxFalse, typecheck, Nat.succ_sub_one] using htc3
                     have hwfTm_false : wfTagMeaningCtx tm ctxFalse' := by
@@ -1150,7 +1152,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
-                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) ht_e1 hwfcfg).1
+                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp ht_e1 hwfcfg).1
                     have hmono1 :
                         Regime.monotoneStep ctxᵢ.regime (ctxAfter ctxᵢ res1).regime :=
                       regime_monotone ctxᵢ e1 fuel' res1 htc1'
@@ -1889,6 +1891,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       hctxCurrent
                       (fun m hm {tmᵢ} e' ctx' _hctx hcan' _hwfTm _hTmBounded res' htc' =>
                         IH' m hm tmᵢ masked e' ctx' _hctx hcan' res' htc')
+                      hOp
                       htc
           | assign e1 e2 =>
               cases fuel with
@@ -1906,6 +1909,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       hctxAfter
                       (fun m hm {tmᵢ} e' ctx' _hctx hcan' _hwfTm _hTmBounded res' htc' =>
                         IH' m hm tmᵢ masked e' ctx' _hctx hcan' res' htc')
+                      hOp
                       htc
           | deref e =>
               cases fuel with
@@ -1929,7 +1933,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               | succ fuel' =>
                   exact
                     stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
-                      masked ctxᵢ predSat tm e1 e2 fuel' res
+                      masked ctxᵢ predSat tm hOp e1 e2 fuel' res
                       CanUse
                       CtxReach
                       (ExternDeclCanUseSyntaxClosed.seq_left hclosed hcan)
@@ -1957,6 +1961,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           htc1 hbodyEq)
                       (fun m hm {tmᵢ} e' ctx' _hctx hcan' _hwfTm _hTmBounded res' htc' =>
                         IH' m hm tmᵢ masked e' ctx' _hctx hcan' res' htc')
+                      hOp
                       htc
           | fn name ty e1 ty2 =>
               exact
@@ -1973,7 +1978,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               | succ fuel' =>
                   exact
                     stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof_ctxReach
-                      masked ctxᵢ predSat tm (registry := registry)
+                      masked ctxᵢ predSat tm (registry := registry) hOp
                       e1 e2 fuel' res
                       CanUse
                       CtxReach
@@ -2067,6 +2072,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse_ctxReach
   (registry : ExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (CanUse : Expr → Prop)
   (CtxReach : TypeContext → Prop)
   (hcallSingleFn : ExternCallSingleFnProviderCtx registry CanUse CtxReach)
@@ -2170,7 +2176,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
   intro hctxCurrent hcan fuel res htc
   have hmasked :=
     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMasked_with_contracts_canUse_ctxReach
-      registry CanUse CtxReach hcallSingleFn hcallSinglePfn hclosed
+      registry hOp CanUse CtxReach hcallSingleFn hcallSinglePfn hclosed
       hctxPure hctxAfter hctxTagTrue hctxTagFalseNext hctxAfterPc hctxNext
       hctxVletBody hctxFnBody hctxPfnBody hcanFnBody hcanPfnBody hdeclSingle
       (masked := fun _ => False) e ctxᵢ predSat tm hctxCurrent hcan fuel res htc
@@ -2237,6 +2243,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
 -- Restructured to avoid variable capture: induction is generalized over all expressions
 private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctxReach
   (registry : ExternRegistry)
+  (hOp : RegistryOperationalSafe registry)
   (entryKey : ExternCallEntryKey)
   (hentryKey_unique :
     ∀ {id : ExternId} {entry₀ entry₁ : TrustedExternEntry},
@@ -2498,6 +2505,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                       CtxReach
                       (ExternDeclCanUseSyntaxClosed.unaryop hclosed hcan)
                       hctxCurrent
+                      hOp
                       (fun m hm {tmᵢ} e ctx hctx hcan' _hwfTm _htagBounded res htc =>
                         IH m hm e ctx tmᵢ hctx hcan' res htc)
                       htc
@@ -2513,7 +2521,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                   intro m _hm tmᵢ e ctx' hctx' hcan' hwfTm' hTmBounded' res' htc'
                   exact
                     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse_ctxReach
-                      registry CanUse CtxReach hcallSingleFn hcallSinglePfn hclosed
+                      registry hOp CanUse CtxReach hcallSingleFn hcallSinglePfn hclosed
                       hctxPure hctxAfter hctxTagTrue hctxTagFalseNext hctxAfterPc hctxNext
                       hctxVletBody hctxFnBody hctxPfnBody
                       hcanFnBody hcanPfnBody hdeclSingle
@@ -2522,6 +2530,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                   stepFR_ite_with_expr_proof ctxᵢ predSat tm e1 e2 e3 fuel' res
                     CanUse
                     CtxReach
+                    hOp
                     hctxCurrent
                     (hctxPure hctxCurrent)
                     (fun k deps => hctxTagTrue hctxCurrent)
@@ -2558,6 +2567,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                       hctxCurrent
                       (fun m hm {tmᵢ} e ctx hctx hcan' _hwfTm _htagBounded res htc =>
                         IH m hm e ctx tmᵢ hctx hcan' res htc)
+                      hOp
                       htc
         | assign e1 e2 =>
             cases fuel with
@@ -2574,6 +2584,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                       hctxAfter
                       (fun m hm {tmᵢ} e ctx hctx hcan' _hwfTm _htagBounded res htc =>
                         IH m hm e ctx tmᵢ hctx hcan' res htc)
+                      hOp
                       htc
         | deref e =>
             cases fuel with
@@ -2588,6 +2599,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                       hctxCurrent
                       (fun m hm {tmᵢ} e ctx hctx hcan' _hwfTm _htagBounded res htc =>
                         IH m hm e ctx tmᵢ hctx hcan' res htc)
+                      hOp
                       htc
         | seq e1 e2 =>
             cases fuel with
@@ -2623,6 +2635,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                           htc1 hbodyEq)
                       (fun m hm {tmᵢ} e ctx hctx hcan' _hwfTm _htagBounded res htc =>
                         IH m hm e ctx tmᵢ hctx hcan' res htc)
+                      hOp
                       htc
         | fn name ty e1 ty2 =>
             exact stepFR_fn ctxᵢ predSat tm name ty e1 ty2 fuel res htc
@@ -2641,13 +2654,13 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                   intro m _hm tmᵢ e ctx' hctx' hcan' hwfTm' _hTmBounded' res' htc'
                   exact
                     TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse_ctxReach
-                      registry CanUse CtxReach hcallSingleFn hcallSinglePfn hclosed
+                      registry hOp CanUse CtxReach hcallSingleFn hcallSinglePfn hclosed
                       hctxPure hctxAfter hctxTagTrue hctxTagFalseNext hctxAfterPc hctxNext
                       hctxVletBody hctxFnBody hctxPfnBody
                       hcanFnBody hcanPfnBody hdeclSingle
                       e ctx' predSat tmᵢ hctx' hcan' m res' htc'
                 exact
-                    stepFR_app_with_expr_proof ctxᵢ predSat tm (registry := registry)
+                    stepFR_app_with_expr_proof ctxᵢ predSat tm (registry := registry) hOp
                       e1 e2 fuel' res
                       CanUse
                       CtxReach
@@ -2754,7 +2767,8 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
   {tr : TrustedRegistry} {root current : Expr} {ctxRoot : TypeContext}
   (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
   (hcurrent : ExternDeclarationReachableFromExpr root ctxRoot current)
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning) :
+  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (hOp : RegistryOperationalSafe (TrustedRegistry.toRuntimeRegistry tr)) :
   ContextReachableFrom root ctxRoot ctxᵢ →
   TypeSystemEnforcesFaultRobustness_step_spec current ctxᵢ predSat tm
     (registry := TrustedRegistry.toRuntimeRegistry tr) := by
@@ -2769,7 +2783,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
       QTypReachableFrom.of_typecheck hctx hcan htc
   exact
     TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctxReach
-      (TrustedRegistry.toRuntimeRegistry tr)
+      (TrustedRegistry.toRuntimeRegistry tr) hOp
       (ExternCallTrustedEntryKey tr)
       (by
         intro _id _entry₀ _entry₁ h₀ h₁
@@ -2915,7 +2929,8 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
 -- Bridge from a registry-parametric step theorem for one expression to the
 -- full registry-relative specification for that expression.
 private theorem faultRobustnessSpec_of_step
-  (registry : ExternRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+  (registry : ExternRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+  (_hOp : RegistryOperationalSafe registry) :
   (∀ ctxᵢ, ctxMatchesInputSpec s ctxᵢ → ∀ predSat tm,
       TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm
         (registry := registry)) →
@@ -3135,17 +3150,18 @@ private theorem faultRobustnessSpec_of_step
 -- Main trusted-registry fault-robustness theorem.
 theorem TypeSystemEnforcesFaultRobustness
   (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+  (hOp : RegistryOperationalSafe (TrustedRegistry.toRuntimeRegistry tr))
   (hagrees :
     ∀ {ctx : TypeContext},
       ctxMatchesInputSpec s ctx →
       TrustedRegistryAgreesWithReachable e ctx tr) :
   FaultRobustnessSpec (TrustedRegistry.toRuntimeRegistry tr) e s obs :=
   faultRobustnessSpec_of_step
-    (TrustedRegistry.toRuntimeRegistry tr) e s obs
+    (TrustedRegistry.toRuntimeRegistry tr) e s obs hOp
     (fun ctxᵢ hctx predSat tm =>
       TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
         (tr := tr) (root := e) (current := e) (ctxRoot := ctxᵢ)
         (hagrees hctx)
         (ExternDeclarationReachableFromExpr.root e ctxᵢ)
-        ctxᵢ predSat tm
+        ctxᵢ predSat tm hOp
         (ContextReachableFrom.refl e ctxᵢ))

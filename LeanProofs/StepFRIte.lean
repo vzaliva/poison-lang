@@ -3440,6 +3440,7 @@ private lemma stepFR_ite_standard
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
+  (hOp : RegistryOperationalSafe registry)
   (hctxCurrent : CtxReach ctxᵢ)
   (hcan1 : CanUse e1) (hcan2 : CanUse e2) (hcan3 : CanUse e3)
   (IH :
@@ -4721,9 +4722,13 @@ private lemma stepFR_ite_standard
                 closureCapturedVarsRegime_transport_etyp hresJoin_etyp hcap_join
               simpa [ctxAfter, ctx'', ctx', pc', resJoin, hregime'] using hcap_res
           have hwfcf₀_final : wfConfig cf₀ := by
-            exact (wfConfig_preserved e2 _ cf₀ o₀ ht₀_e2 hwfcf₀1).1
+            exact (wfConfig_preserved e2 _ cf₀ o₀
+              ((terminatesTo_preserves_registry ht₀_e1).symm ▸ hOp)
+              ht₀_e2 hwfcf₀1).1
           have hwfcf₁_final : wfConfig cf₁ := by
-            exact (wfConfig_preserved e3 _ cf₁ o₁ ht₁_e3 hwfcf₁1).1
+            exact (wfConfig_preserved e3 _ cf₁ o₁
+              ((terminatesTo_preserves_registry ht₁_e1).symm ▸ hOp)
+              ht₁_e3 hwfcf₁1).1
           have hres_poison_true : res.qualType.poison = true := by
             calc
               res.qualType.poison =
@@ -5428,9 +5433,13 @@ private lemma stepFR_ite_standard
                 closureCapturedVarsRegime_transport_etyp hresJoin_etyp hcap_join
               simpa [ctxAfter, ctx'', ctx', pc', resJoin, hregime'] using hcap_res
           have hwfcf₀_final : wfConfig cf₀ := by
-            exact (wfConfig_preserved e3 _ cf₀ o₀ ht₀_e3 hwfcf₀1).1
+            exact (wfConfig_preserved e3 _ cf₀ o₀
+              ((terminatesTo_preserves_registry ht₀_e1).symm ▸ hOp)
+              ht₀_e3 hwfcf₀1).1
           have hwfcf₁_final : wfConfig cf₁ := by
-            exact (wfConfig_preserved e2 _ cf₁ o₁ ht₁_e2 hwfcf₁1).1
+            exact (wfConfig_preserved e2 _ cf₁ o₁
+              ((terminatesTo_preserves_registry ht₁_e1).symm ▸ hOp)
+              ht₁_e2 hwfcf₁1).1
           have hres_poison_true : res.qualType.poison = true := by
             calc
               res.qualType.poison =
@@ -5912,6 +5921,7 @@ lemma stepFR_ite_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
+  (hOp : RegistryOperationalSafe registry)
   (hctxCurrent : CtxReach ctxᵢ)
   (hctxPure : CtxReach { ctxᵢ with pureCtx := true })
   (hctxTagTrue :
@@ -5995,7 +6005,7 @@ lemma stepFR_ite_with_expr_proof
       have htc1_tc : typecheck ctxᵢ e1 fuel' = .ok res1 := by
         simpa [typecheck, Nat.succ_sub_one] using htc1
       exact stepFR_ite_standard ctxᵢ predSat tm e1 e2 e3 fuel' res
-        CanUse CtxReach hctxCurrent hcan1 hcan2 hcan3 IH singleIH htc
+        CanUse CtxReach hOp hctxCurrent hcan1 hcan2 hcan3 IH singleIH htc
         res1 res2 res3 htc1 hbool htc2 htc3 (hctxStandardThen htc1_tc)
         (hctxStandardElse htc1_tc) hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
         hcompat_std hetyp hpred
@@ -6003,6 +6013,7 @@ lemma stepFR_ite_with_expr_proof
 lemma stepFR_ite
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
+  (hOp : RegistryOperationalSafe registry)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
   (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
@@ -6010,7 +6021,7 @@ lemma stepFR_ite
   exact
     stepFR_ite_with_expr_proof
       ctxᵢ predSat tm e1 e2 e3 fuel' res
-      (fun _ => True) (fun _ => True) trivial trivial
+      (fun _ => True) (fun _ => True) hOp trivial trivial
       (fun _ _ => trivial)
       (fun _ _ _ _ => trivial)
       (fun _ => trivial)

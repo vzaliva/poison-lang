@@ -2108,6 +2108,7 @@ lemma stepFR_assign_with_expr_proof
   (IH :
     StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
       CanUse CtxReach (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.assign e1 e2) res predSat tm (registry := registry) := by
   classical
@@ -2233,8 +2234,8 @@ lemma stepFR_assign_with_expr_proof
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm2 res.qualType hnotfun hguard) hinq hqd
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.assign e1 e2) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.assign e1 e2) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.assign e1 e2) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.assign e1 e2) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
   have hassign_eq :
       { qualType := { etyp := ETyp.unit, poison := joinPoison ctxᵢ.pc res1.qualType.poison, pred := Predicate.noPred }
         memEnv' :=
@@ -4282,6 +4283,7 @@ lemma stepFR_assign
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.assign e1 e2) res predSat tm (registry := registry) := by
     exact
@@ -4291,7 +4293,7 @@ lemma stepFR_assign
         (fun _ => trivial)
         (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        htc
+        hOp htc
 
 -- World-free version of stepFRW_deref (simplified with sorry)
 
@@ -5089,6 +5091,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctx (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
@@ -5138,7 +5141,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
     typecheckExpr_preserves_regimeConsistentWithCtxMasked
       (masked := masked) ctx e1 fuel' result1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
-    exact (wfConfig_preserved e1 _ cfg1 (Value.loc aw) ht_e1 hwfcfg).1
+    exact (wfConfig_preserved e1 _ cfg1 (Value.loc aw) hOp ht_e1 hwfcfg).1
   rcases
     hIH1Inst.2 μ ρ θ cfg1 (Value.loc aw)
       hθwf hwf hric hregCtx hmasked_none hmasked_absent hctxCons a pm hwfcfg ht_e1 hpc
@@ -5265,7 +5268,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
         hwf1
         hmem_res hRegime hpc hvloc1 hθext2 hθ2wf hric2 hmem hpres1 hpres2
   have hwfcfg_final : wfConfig cf := by
-    exact (wfConfig_preserved (Expr.assign e1 e2) _ cf o ht hwfcfg).1
+    exact (wfConfig_preserved (Expr.assign e1 e2) _ cf o hOp ht hwfcfg).1
   have hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θ2 := by
     intro l qt hnotIn hlookup hclean
     have h_not_in_ls : l ∉ ls := by
@@ -5379,6 +5382,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctx (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     masked
@@ -5401,4 +5405,4 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg
           (fun R qt μ θ v =>
             valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
           IH m hm (tmᵢ := tmᵢ) e ctx trivial hwfTm hTmBounded res htc)
-      htc
+      hOp htc

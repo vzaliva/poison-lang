@@ -479,6 +479,7 @@ lemma stepFR_deref_with_expr_proof
   (IH :
     StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
       CanUse CtxReach (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.deref e) res predSat tm (registry := registry) := by
   classical
@@ -524,8 +525,8 @@ lemma stepFR_deref_with_expr_proof
   have hreg_final : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     simpa [hctxAfter] using hreg'
   -- Derive wfConfig for final configs using wfConfig_preserved
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.deref e) _ cf₀ o₀ ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.deref e) _ cf₁ o₁ ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.deref e) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.deref e) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
   have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     simpa [hctxAfter, hmem₀, hvar₀] using hcwr₀'
   have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
@@ -1686,6 +1687,7 @@ lemma stepFR_deref
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
+  (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
   StepFR ctxᵢ (Expr.deref e) res predSat tm (registry := registry) := by
     exact
@@ -1694,4 +1696,4 @@ lemma stepFR_deref
         (fun _ => True) (fun _ => True) trivial trivial
         (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        htc
+        hOp htc
