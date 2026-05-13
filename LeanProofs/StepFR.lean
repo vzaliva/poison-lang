@@ -677,7 +677,7 @@ private lemma agreeCapturedEnv_same
         · exact hhenv y qt' v' (by simp only [heq, CapturedVarEnv.lookup_eq, List.lookup]; exact hσ) hρ
 
 -- Auxiliary: builds agreeValueUnder from deepValueQTypProperty evidence (induction on the tree).
--- This resolves the mutual recursion that previously required sorry in agreeCapturedEnv_same_toCaptured.
+-- This resolves the mutual recursion that previously causing issues in agreeCapturedEnv_same_toCaptured.
 -- Note: hclean and htyp are in the conclusion (not parameters) so that induction on hdeep
 -- automatically generalizes them without needing manual revert/intro.
 private lemma agreeValueUnder_same_aux

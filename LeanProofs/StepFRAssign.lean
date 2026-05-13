@@ -17,7 +17,7 @@ variable {registry : ExternRegistry}
 private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  
+
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
@@ -2120,7 +2120,7 @@ lemma stepFR_assign_with_expr_proof
     simpa [Nat.succ_sub_one] using htc1
   have htc2_expr :
       typecheckExpr
-         
+
           { ctxᵢ with
             memEnv := res1.memEnv', tagEnv := res1.tagEnv',
             nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
@@ -4295,7 +4295,7 @@ lemma stepFR_assign
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
         hOp htc
 
--- World-free version of stepFRW_deref (simplified with sorry)
+-- World-free version of stepFRW_deref
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Assign single-run infrastructure (moved from FaultRobustnessProofs.lean)
@@ -5109,7 +5109,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
     simpa [Nat.succ_sub_one] using htc1
   have htc2_expr_raw :
       typecheckExpr
-         
+
           { ctx with
             memEnv := result1.memEnv', tagEnv := result1.tagEnv',
             nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
@@ -5369,4 +5369,3 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
   refine ⟨θ2, hθext, ?_, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
   subst ho
   simpa [hEtyp] using valueHasETyp.unit (θ := θ2)
-
