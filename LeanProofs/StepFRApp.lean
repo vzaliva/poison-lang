@@ -3525,6 +3525,7 @@ theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
     (hcfg : cf = { callEntry.callConfig with memory := mem', nextAddr := addr' }) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   cases hstatic with
   | externMember harg hmem =>
@@ -3550,7 +3551,7 @@ theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
       have himpl : entry.impl = ExternImpl.fn implFn :=
         Option.some.inj (hlookupCall.symm.trans hGetDecl)
       exact
-        ⟨entry, hlookup,
+        ⟨entry, hlookup, hmatch,
           ExternCallBoundaryRun.fn_of_match hmatch' hpure hunified hlookupCall himpl
             hArg hImpl hValRet hcfg⟩
 
@@ -3586,6 +3587,7 @@ theorem ExternCallBoundaryFnStaticSource.callBoundaryRun_of_program
     (hcfg : cf = { callEntry.callConfig with memory := mem', nextAddr := addr' }) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   have hGetRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.fn implFn) := by
@@ -3605,7 +3607,7 @@ theorem ExternCallBoundaryFnStaticSource.callBoundaryRun_of_program
     rw [hregistry]
     simpa [TrustedRegistryEntryMatchesFn.id_eq hmatch] using hlookupRuntime
   exact
-    ⟨entry, hlookup,
+    ⟨entry, hlookup, hmatch,
       ExternCallBoundaryRun.fn_of_match hmatch' hpure hunified hlookupCall himpl
         hArg hImpl hValRet hcfg⟩
 
@@ -3695,6 +3697,7 @@ theorem ExternCallBoundaryFnStaticSource.callBoundaryRun_of_reachable
     (hcfg : cf = { callEntry.callConfig with memory := mem', nextAddr := addr' }) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v :=
   TrustedRegistryAgreesWithReachable.callBoundaryRunFn
     hagrees hreachable hargName hregistry hpure hunified hGet hArg hImpl hValRet hcfg
@@ -3723,6 +3726,7 @@ theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   cases hstatic with
   | externMember harg hmem =>
@@ -3761,6 +3765,7 @@ theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_program
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   have hGetRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.pfn implFn) := by
@@ -3780,7 +3785,7 @@ theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_program
     rw [hregistry]
     simpa [TrustedRegistryEntryMatchesPfn.id_eq hmatch] using hlookupRuntime
   exact
-    ⟨entry, hlookup,
+    ⟨entry, hlookup, hmatch,
       ExternCallBoundaryRun.pfn_of_match hmatch' hunified hlookupCall himpl
         hArg hImpl hValRet hcfg⟩
 
@@ -3864,15 +3869,118 @@ theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_reachable
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v :=
   TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
     hagrees hreachable hargName hregistry hunified hGet hArg hImpl hValRet hcfg
 
+def ExternCallFnTypingProvider
+    (id : ExternId) (x y : Name) (argTyp : Typ)
+    (retSpec : ExternReturn) (effects : List Effect)
+    (callEntry : ExternCallEntry) (res : TypeResult) : Prop :=
+  ∀ entry,
+    TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects →
+    ExternBoundaryTyping.Call entry.decl
+      (Expr.externFn id y argTyp retSpec effects) callEntry res
+
+def ExternCallPfnTypingProvider
+    (id : ExternId) (x y : Name) (argTyp : Typ)
+    (retSpec : ExternReturn)
+    (callEntry : ExternCallEntry) (res : TypeResult) : Prop :=
+  ∀ entry,
+    TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec →
+    ExternBoundaryTyping.Call entry.decl
+      (Expr.externPfn id y argTyp retSpec) callEntry res
+
+private theorem externCallFnTypingProvider_of_selected
+    {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc}
+    {fuel : Nat} {st1 st2 : Typ} {p p1 : Poison}
+    {argEtyp : ETyp} {argPoison : Poison} {argPred : Predicate}
+    {id : ExternId} {x y : Name} {argTyp : Typ}
+    {retSpec : ExternReturn} {effects : List Effect} {tenv : CapturedVarEnv}
+    {callEntry : ExternCallEntry} {res : TypeResult}
+    (hbodyCtx :
+      callEntry.bodyCtx =
+        { ctx with
+          pc := joinPoison p (joinPoison p1 ctx.pc)
+          memEnv := bodyState.memEnv'
+          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+          tagEnv := bodyState.tagEnv'
+          nextTag := cursor.1
+          nextLoc := cursor.2
+          regime := bodyState.regime' })
+    (hselected :
+      applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv)
+          st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res ∨
+        ∃ fuelBody result3,
+          fuel = Nat.succ fuelBody ∧
+          typecheckExpr
+            { ctx with
+              pc := joinPoison p (joinPoison p1 ctx.pc)
+              memEnv := bodyState.memEnv'
+              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              tagEnv := bodyState.tagEnv'
+              nextTag := cursor.1
+              nextLoc := cursor.2
+              regime := bodyState.regime' }
+            (Expr.externFn id y argTyp retSpec effects) fuelBody = .ok result3 ∧
+          res =
+            { result3 with
+              qualType :=
+                normalizeAppResultByProvenance (joinPoison p1 p)
+                  { result3.qualType with
+                    poison := joinPoison p1 (joinPoison p result3.qualType.poison) } }) :
+    ExternCallFnTypingProvider id x y argTyp retSpec effects callEntry res := by
+  intro entry hmatch
+  rcases hmatch with ⟨hid, hkind, htyp, hargName, hretSpec, heffects⟩
+  cases hselected with
+  | inl happly =>
+      exact
+        ExternBoundaryTyping.Call.fnExternMember
+          hid hkind htyp hargName hretSpec heffects hbodyCtx happly
+  | inr hregular =>
+      rcases hregular with ⟨fuelBody, result3, _hfuel, htcBody, hres⟩
+      exact
+        ExternBoundaryTyping.Call.fnRegularExternBody
+          hid hkind htyp hargName hretSpec heffects hbodyCtx htcBody hres
+
+private theorem externCallPfnTypingProvider_of_selected
+    {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc}
+    {fuel : Nat} {st1 st2 : Typ} {p p1 : Poison}
+    {argEtyp : ETyp} {argPoison : Poison} {argPred : Predicate}
+    {id : ExternId} {x y : Name} {argTyp : Typ}
+    {retSpec : ExternReturn} {tenv : CapturedVarEnv}
+    {callEntry : ExternCallEntry} {res : TypeResult}
+    (hbodyCtx :
+      callEntry.bodyCtx =
+        { ctx with
+          pc := joinPoison p (joinPoison ctx.pc p1)
+          memEnv := bodyState.memEnv'
+          varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+          tagEnv := bodyState.tagEnv'
+          pureCtx := true
+          nextTag := cursor.1
+          nextLoc := cursor.2
+          regime := bodyState.regime' })
+    (hselected :
+      applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv)
+        st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res) :
+    ExternCallPfnTypingProvider id x y argTyp retSpec callEntry res := by
+  intro entry hmatch
+  rcases hmatch with ⟨hid, hkind, htyp, hargName, hretSpec⟩
+  exact
+    ExternBoundaryTyping.Call.pfnExternMember
+      hid hkind htyp hargName hretSpec hbodyCtx hselected
+
 private theorem externCallBoundaryRun_singlePost
-    {entry : TrustedExternEntry} {result3 : TypeResult}
+    {entry : TrustedExternEntry} {typedExpr : Expr} {result3 : TypeResult}
     {predSatBody : PredSat} {tmBody : TagMeaning}
     {θBody : RealizationMap} {callEntry : ExternCallEntry}
     {cf : Config} {o : Value}
+    (htypedCall : ExternBoundaryTyping.Call entry.decl typedExpr callEntry result3)
     (hpredlawsBody : PredSatLaws predSatBody tmBody)
     (hwfTmBody : wfTagMeaningCtx tmBody callEntry.bodyCtx)
     (hTmBoundedBody : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag)
@@ -3890,8 +3998,8 @@ private theorem externCallBoundaryRun_singlePost
     (hpcBody : callEntry.bodyCtx.pc = true) :
     ExternBoundarySinglePost callEntry.bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o :=
-  entry.spec.callSingle result3 predSatBody tmBody callEntry
-    hpredlawsBody hwfTmBody hTmBoundedBody θBody cf o
+  entry.spec.callSingle typedExpr result3 predSatBody tmBody callEntry
+    htypedCall hpredlawsBody hwfTmBody hTmBoundedBody θBody cf o
     hθBodyWf hwfBody hricBody htagRBody hcwrBody hwfcfgBody hrun hpcBody
 
 /-- Body-local single-run contract for successful impure extern app dispatch.
@@ -3946,6 +4054,7 @@ def ExternCallBoundarySingleFnContract
     (impl : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address))
     (vRaw : Value) (mem' : Memory) (addr' : Address),
     ExternCallBoundaryFnStaticSource tcls sourceArgTyp id x y argTyp retSpec eff tenv →
+    ExternCallFnTypingProvider id x y argTyp retSpec eff callEntry result3 →
     terminatesTo e2
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
         registry := registry } c₂' v₂ →
@@ -3984,7 +4093,7 @@ theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
         _hpredlawsBody _hwfTmBody _hTmBoundedBody _hθBodyWf _hwfBody _hricBody
         _htagRBody _hcwrBody _hwfcfgBody _hpcBody
         c₂' v₂ c₁ id x y argTyp retSpec eff _tenv _env
-        _impl _vRaw _mem' _addr' _hstatic ht_e2 ht_e1 _hpure hGet _hArg _hImpl
+        _impl _vRaw _mem' _addr' _hstatic _htypedCall ht_e2 ht_e1 _hpure hGet _hArg _hImpl
         _hValRet _hcf _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured
         _hunified
   exfalso
@@ -4022,7 +4131,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
         htagRBody hcwrBody hwfcfgBody hpcBody
         c₂' v₂ c₁ id x y argTyp retSpec eff tenv env impl vRaw mem' addr'
-        hstatic ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
+        hstatic htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
   have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht_e2
@@ -4060,7 +4169,10 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
       (effects := eff) (capturedEnv := tenv)
       hstatic hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  have htypedEntryCall : ExternBoundaryTyping.Call entry.decl
+      (Expr.externFn id y argTyp retSpec eff) callEntry result3 :=
+    htypedCallProvider entry hmatch
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
@@ -4084,7 +4196,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
+      htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
       htagRCall hcwrCall hwfcfgBody hrun hpcCall
 
 theorem ExternCallBoundarySingleFnContract.of_trustedProgram
@@ -4112,7 +4224,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedProgram
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
         htagRBody hcwrBody hwfcfgBody hpcBody
         c₂' v₂ c₁ id x y argTyp retSpec eff tenv env impl vRaw mem' addr'
-        hstatic ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
+        hstatic htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
   have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht_e2
@@ -4148,7 +4260,10 @@ theorem ExternCallBoundarySingleFnContract.of_trustedProgram
       hagrees hstatic (hsourceProgram hstatic)
       hargName hregistryCall hpureCall hunified hGetCall hArgCall
       hImplCall hValRet hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  have htypedEntryCall : ExternBoundaryTyping.Call entry.decl
+      (Expr.externFn id y argTyp retSpec eff) callEntry result3 :=
+    htypedCallProvider entry hmatch
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
@@ -4172,7 +4287,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedProgram
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
+      htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
       htagRCall hcwrCall hwfcfgBody hrun hpcCall
 
 theorem ExternCallBoundarySingleFnContract.of_trustedReachable
@@ -4200,7 +4315,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
         htagRBody hcwrBody hwfcfgBody hpcBody
         c₂' v₂ c₁ id x y argTyp retSpec eff tenv env impl vRaw mem' addr'
-        hstatic ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
+        hstatic htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
   have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht_e2
@@ -4236,7 +4351,10 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
       hagrees hstatic (hsourceReachable hstatic)
       hargName hregistryCall hpureCall hunified hGetCall hArgCall
       hImplCall hValRet hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  have htypedEntryCall : ExternBoundaryTyping.Call entry.decl
+      (Expr.externFn id y argTyp retSpec eff) callEntry result3 :=
+    htypedCallProvider entry hmatch
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
@@ -4260,7 +4378,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
+      htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
       htagRCall hcwrCall hwfcfgBody hrun hpcCall
 
 /-- Body-local single-run contract for successful pure extern app dispatch. -/
@@ -4309,6 +4427,7 @@ def ExternCallBoundarySinglePfnContract
     (impl : VarEnv → Value → Memory → Except ExternError Value)
     (vRaw : Value),
     ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id x y argTyp retSpec tenv →
+    ExternCallPfnTypingProvider id x y argTyp retSpec callEntry result3 →
     terminatesTo e2
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
         registry := registry } c₂' v₂ →
@@ -4342,7 +4461,7 @@ theorem ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
         _hpredlawsBody _hwfTmBody _hTmBoundedBody _hθBodyWf _hwfBody _hricBody
         _htagRBody _hcwrBody _hwfcfgBody _hpcBody
         c₂' v₂ c₁ id x y argTyp retSpec _tenv _env _impl _vRaw
-        _hstatic ht_e2 ht_e1 hGet _hArg _hImpl _hValRet _hcf
+        _hstatic _htypedCall ht_e2 ht_e1 hGet _hArg _hImpl _hValRet _hcf
         _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
   exfalso
   have hreg2' : c₂'.registry = emptyExternRegistry :=
@@ -4369,7 +4488,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedRegistry
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
         htagRBody hcwrBody hwfcfgBody hpcBody
         c₂' v₂ c₁ id x y argTyp retSpec tenv env impl vRaw
-        hstatic ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
+        hstatic htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
   have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht_e2
@@ -4401,7 +4520,10 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedRegistry
       (capturedEnv := tenv)
       hstatic hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  have htypedEntryCall : ExternBoundaryTyping.Call entry.decl
+      (Expr.externPfn id y argTyp retSpec) callEntry result3 :=
+    htypedCallProvider entry hmatch
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
@@ -4425,7 +4547,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedRegistry
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
+      htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
       htagRCall hcwrCall hwfcfgBody hrun hpcCall
 
 theorem ExternCallBoundarySinglePfnContract.of_trustedProgram
@@ -4453,7 +4575,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedProgram
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
         htagRBody hcwrBody hwfcfgBody hpcBody
         c₂' v₂ c₁ id x y argTyp retSpec tenv env impl vRaw
-        hstatic ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
+        hstatic htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
   have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht_e2
@@ -4483,7 +4605,10 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedProgram
       (tcls := tcls)
       hagrees hstatic (hsourceProgram hstatic)
       hargName hregistryCall hunified hGetCall hArgCall hImplCall hValRet hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  have htypedEntryCall : ExternBoundaryTyping.Call entry.decl
+      (Expr.externPfn id y argTyp retSpec) callEntry result3 :=
+    htypedCallProvider entry hmatch
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
@@ -4507,7 +4632,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedProgram
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
+      htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
       htagRCall hcwrCall hwfcfgBody hrun hpcCall
 
 theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
@@ -4535,7 +4660,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
         htagRBody hcwrBody hwfcfgBody hpcBody
         c₂' v₂ c₁ id x y argTyp retSpec tenv env impl vRaw
-        hstatic ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
+        hstatic htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
   have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht_e2
@@ -4565,7 +4690,10 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
       (sourceArgTyp := sourceArgTyp) (argTyp := argTyp) (tcls := tcls)
       hagrees hstatic (hsourceReachable hstatic)
       hargName hregistryCall hunified hGetCall hArgCall hImplCall hValRet hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  have htypedEntryCall : ExternBoundaryTyping.Call entry.decl
+      (Expr.externPfn id y argTyp retSpec) callEntry result3 :=
+    htypedCallProvider entry hmatch
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
@@ -4589,7 +4717,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
+      htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
       htagRCall hcwrCall hwfcfgBody hrun hpcCall
 
 private def AppTwoRunOutPack
@@ -5361,8 +5489,11 @@ private lemma appTwoRunOutChoice_from_direct_call_boundaryFR
     {θpre₀ θpre₁ : RealizationMap}
     {o₀ o₁ : Value}
     {entry₀ entry₁ : ExternCallEntry}
+    {typedExpr₀ typedExpr₁ : Expr}
     (hcallFR : ExternCallBoundaryFR d impl)
     (hctx₁ : entry₁.bodyCtx = entry₀.bodyCtx)
+    (htyped₀ : ExternBoundaryTyping.Call d typedExpr₀ entry₀ src)
+    (htyped₁ : ExternBoundaryTyping.Call d typedExpr₁ entry₁ src)
     (hpredlaws : PredSatLaws predSat tmBody)
     (hTmBody : wfTagMeaningCtx tmBody entry₀.bodyCtx)
     (hTmBoundedBody : TagMeaningBounded tmBody entry₀.bodyCtx.nextTag)
@@ -5415,8 +5546,8 @@ private lemma appTwoRunOutChoice_from_direct_call_boundaryFR
       StepFRPost entry₀.bodyCtx postExpr src predSat tmBody
         θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁ := by
     simpa [hevalCfg₀, hevalCfg₁] using
-      hcallFR postExpr src predSat tmBody entry₀ entry₁ hctx₁
-        hpredlaws hTmBody hTmBoundedBody θpre₀ θpre₁ hinputs
+      hcallFR postExpr typedExpr₀ typedExpr₁ src predSat tmBody entry₀ entry₁ hctx₁
+        htyped₀ htyped₁ hpredlaws hTmBody hTmBoundedBody θpre₀ θpre₁ hinputs
         cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
   exact
     appTwoRunOutChoice_from_direct_body_stepFRPost
@@ -6187,13 +6318,15 @@ theorem ExternCallTrustedEntryKey_eq_of_same_id
   Option.some.inj (h₀.symm.trans h₁)
 
 private theorem externCallBoundaryRunProvider_singlePost
-    {entryKey : ExternCallEntryKey} {id : ExternId} {result3 : TypeResult}
+    {entryKey : ExternCallEntryKey} {id : ExternId} {typedExpr : Expr}
+    {result3 : TypeResult}
     {predSatBody : PredSat} {tmBody : TagMeaning}
     {θBody : RealizationMap} {callEntry : ExternCallEntry}
     {cf : Config} {o : Value}
     (hrunProvider :
       ∃ entry : TrustedExternEntry,
         entryKey id entry ∧
+        ExternBoundaryTyping.Call entry.decl typedExpr callEntry result3 ∧
         ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf o)
     (hpredlawsBody : PredSatLaws predSatBody tmBody)
     (hwfTmBody : wfTagMeaningCtx tmBody callEntry.bodyCtx)
@@ -6211,13 +6344,13 @@ private theorem externCallBoundaryRunProvider_singlePost
     (hpcBody : callEntry.bodyCtx.pc = true) :
     ExternBoundarySinglePost callEntry.bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o := by
-  rcases hrunProvider with ⟨entry, _hkey, hrun⟩
+  rcases hrunProvider with ⟨entry, _hkey, htypedCall, hrun⟩
   exact
     externCallBoundaryRun_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
+      htypedCall hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
       htagRBody hcwrBody hwfcfgBody hrun hpcBody
 
 /-- Body-local boundary-run contract for the side-0 impure extern arm. -/
@@ -6267,6 +6400,7 @@ def ExternCallBoundaryFRFnSide0Contract
     (vRaw₀ : Value) (mem'₀ : Memory) (addr'₀ : Address),
     ExternCallBoundaryFnStaticSource tcls sourceArgTyp id₀ x₀ y₀ argTyp₀ retSpec₀
       eff₀ tenv₀ →
+    ExternCallFnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀ callEntry result3 →
     terminatesTo e2
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
         registry := registry } c₂'₀ v₂₀ →
@@ -6290,6 +6424,8 @@ def ExternCallBoundaryFRFnSide0Contract
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ∃ entry : TrustedExternEntry,
       entryKey id₀ entry ∧
+      ExternBoundaryTyping.Call entry.decl
+        (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) callEntry result3 ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₀ o₀
 
 /-- Empty-registry discharge for the side-0 two-run extern-call contract. -/
@@ -6307,7 +6443,7 @@ theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
         _ht₀ _ht₁ _bodyCtx _result3 _callEntry
         c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
         _tenv₀ _env₀ _impl₀ _vRaw₀ _mem'₀ _addr'₀ _hstatic₀
-        ht₀_e2 ht₀_e1 _hpure₀ hGet₀ _hArg₀ _hImpl₀ _hValRet₀ _heq_cfg₀
+        _htypedCall₀ ht₀_e2 ht₀_e1 _hpure₀ hGet₀ _hArg₀ _hImpl₀ _hValRet₀ _heq_cfg₀
         _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
   exfalso
   have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
@@ -6375,7 +6511,7 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
         tenv₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hstatic₀
-        ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
+        htypedCall₀ ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht₀_e2
@@ -6413,8 +6549,10 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
       (effects := eff₀) (capturedEnv := tenv₀)
       hstatic₀ hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₀ entry hmatch, hrun⟩
 
 /-- Body-local boundary-run contract for the side-1 impure extern arm. -/
 def ExternCallBoundaryFRFnSide1Contract
@@ -6463,6 +6601,7 @@ def ExternCallBoundaryFRFnSide1Contract
     (vRaw₁ : Value) (mem'₁ : Memory) (addr'₁ : Address),
     ExternCallBoundaryFnStaticSource tcls sourceArgTyp id₁ x₁ y₁ argTyp₁ retSpec₁
       eff₁ tenv₁ →
+    ExternCallFnTypingProvider id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁ callEntry result3 →
     terminatesTo e2
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
         registry := registry } c₂'₁ v₂₁ →
@@ -6486,6 +6625,8 @@ def ExternCallBoundaryFRFnSide1Contract
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ∃ entry : TrustedExternEntry,
       entryKey id₁ entry ∧
+      ExternBoundaryTyping.Call entry.decl
+        (Expr.externFn id₁ y₁ argTyp₁ retSpec₁ eff₁) callEntry result3 ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₁ o₁
 
 /-- Empty-registry discharge for the side-1 two-run extern-call contract. -/
@@ -6503,7 +6644,7 @@ theorem ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
         _ht₀ _ht₁ _bodyCtx _result3 _callEntry
         c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
         _tenv₁ _env₁ _impl₁ _vRaw₁ _mem'₁ _addr'₁ _hstatic₁
-        ht₁_e2 ht₁_e1 _hpure₁ hGet₁ _hArg₁ _hImpl₁ _hValRet₁ _heq_cfg₁
+        _htypedCall₁ ht₁_e2 ht₁_e1 _hpure₁ hGet₁ _hArg₁ _hImpl₁ _hValRet₁ _heq_cfg₁
         _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
   exfalso
   have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
@@ -6568,7 +6709,7 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
         tenv₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hstatic₁
-        ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
+        htypedCall₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht₁_e2
@@ -6606,8 +6747,10 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
       (effects := eff₁) (capturedEnv := tenv₁)
       hstatic₁ hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₁ entry hmatch, hrun⟩
 
 theorem ExternCallBoundaryFRFnSide0Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -6637,7 +6780,7 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedProgram
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
         tenv₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hstatic₀
-        ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
+        htypedCall₀ ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht₀_e2
@@ -6673,8 +6816,10 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedProgram
       hagrees hstatic₀ (hsourceProgram hstatic₀)
       hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₀ entry hmatch, hrun⟩
 
 theorem ExternCallBoundaryFRFnSide1Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -6704,7 +6849,7 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedProgram
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
         tenv₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hstatic₁
-        ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
+        htypedCall₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht₁_e2
@@ -6740,8 +6885,10 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedProgram
       hagrees hstatic₁ (hsourceProgram hstatic₁)
       hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₁ entry hmatch, hrun⟩
 
 theorem ExternCallBoundaryFRFnSide0Provider.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -6771,7 +6918,7 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedReachable
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
         tenv₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hstatic₀
-        ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
+        htypedCall₀ ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht₀_e2
@@ -6807,8 +6954,10 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedReachable
       hagrees hstatic₀ (hsourceReachable hstatic₀)
       hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₀ entry hmatch, hrun⟩
 
 theorem ExternCallBoundaryFRFnSide1Provider.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -6838,7 +6987,7 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedReachable
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
         tenv₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hstatic₁
-        ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
+        htypedCall₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht₁_e2
@@ -6874,8 +7023,10 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedReachable
       hagrees hstatic₁ (hsourceReachable hstatic₁)
       hargName hregistryCall hpureCall hunified hGetCall
       hArgCall hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₁ entry hmatch, hrun⟩
 
 /-- Body-local boundary-run contract for the side-0 pure extern arm. -/
 def ExternCallBoundaryFRPfnSide0Contract
@@ -6923,6 +7074,7 @@ def ExternCallBoundaryFRPfnSide0Contract
     (vRaw₀ : Value),
     ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id₀ x₀ y₀ argTyp₀ retSpec₀
       tenv₀ →
+    ExternCallPfnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ callEntry result3 →
     terminatesTo e2
       { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
         registry := registry } c₂'₀ v₂₀ →
@@ -6942,6 +7094,8 @@ def ExternCallBoundaryFRPfnSide0Contract
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ∃ entry : TrustedExternEntry,
       entryKey id₀ entry ∧
+      ExternBoundaryTyping.Call entry.decl
+        (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) callEntry result3 ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₀ o₀
 
 theorem ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
@@ -6957,7 +7111,7 @@ theorem ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
         _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
         _ht₀ _ht₁ _bodyCtx _result3 _callEntry
         c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
-        _tenv₀ _env₀ _impl₀ _vRaw₀ _hstatic₀ ht₀_e2 ht₀_e1
+        _tenv₀ _env₀ _impl₀ _vRaw₀ _hstatic₀ _htypedCall₀ ht₀_e2 ht₀_e1
         hGet₀ _hArg₀ _hImpl₀ _hValRet₀ _heq_cfg₀
         _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
   exfalso
@@ -7009,7 +7163,7 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry
         _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
-        tenv₀ env₀ impl₀ vRaw₀ hstatic₀ ht₀_e2 ht₀_e1
+        tenv₀ env₀ impl₀ vRaw₀ hstatic₀ htypedCall₀ ht₀_e2 ht₀_e1
         hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
@@ -7042,8 +7196,10 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry
       (capturedEnv := tenv₀)
       hstatic₀ hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₀ entry hmatch, hrun⟩
 
 /-- Body-local boundary-run contract for the side-1 pure extern arm. -/
 def ExternCallBoundaryFRPfnSide1Contract
@@ -7091,6 +7247,7 @@ def ExternCallBoundaryFRPfnSide1Contract
     (vRaw₁ : Value),
     ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id₁ x₁ y₁ argTyp₁ retSpec₁
       tenv₁ →
+    ExternCallPfnTypingProvider id₁ x₁ y₁ argTyp₁ retSpec₁ callEntry result3 →
     terminatesTo e2
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
         registry := registry } c₂'₁ v₂₁ →
@@ -7110,6 +7267,8 @@ def ExternCallBoundaryFRPfnSide1Contract
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
     ∃ entry : TrustedExternEntry,
       entryKey id₁ entry ∧
+      ExternBoundaryTyping.Call entry.decl
+        (Expr.externPfn id₁ y₁ argTyp₁ retSpec₁) callEntry result3 ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₁ o₁
 
 theorem ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
@@ -7125,7 +7284,7 @@ theorem ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
         _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
         _ht₀ _ht₁ _bodyCtx _result3 _callEntry
         c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁
-        _tenv₁ _env₁ _impl₁ _vRaw₁ _hstatic₁ ht₁_e2 ht₁_e1
+        _tenv₁ _env₁ _impl₁ _vRaw₁ _hstatic₁ _htypedCall₁ ht₁_e2 ht₁_e1
         hGet₁ _hArg₁ _hImpl₁ _hValRet₁ _heq_cfg₁
         _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
   exfalso
@@ -7177,7 +7336,7 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry
         _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁
-        tenv₁ env₁ impl₁ vRaw₁ hstatic₁ ht₁_e2 ht₁_e1
+        tenv₁ env₁ impl₁ vRaw₁ hstatic₁ htypedCall₁ ht₁_e2 ht₁_e1
         hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
@@ -7210,8 +7369,10 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry
       (capturedEnv := tenv₁)
       hstatic₁ hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₁ entry hmatch, hrun⟩
 
 theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -7239,7 +7400,7 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedProgram
         _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
-        tenv₀ env₀ impl₀ vRaw₀ hstatic₀ ht₀_e2 ht₀_e1
+        tenv₀ env₀ impl₀ vRaw₀ hstatic₀ htypedCall₀ ht₀_e2 ht₀_e1
         hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
@@ -7271,8 +7432,10 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedProgram
       hagrees hstatic₀ (hsourceProgram hstatic₀)
       hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₀ entry hmatch, hrun⟩
 
 theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -7300,7 +7463,7 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedProgram
         _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁
-        tenv₁ env₁ impl₁ vRaw₁ hstatic₁ ht₁_e2 ht₁_e1
+        tenv₁ env₁ impl₁ vRaw₁ hstatic₁ htypedCall₁ ht₁_e2 ht₁_e1
         hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
@@ -7332,8 +7495,10 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedProgram
       hagrees hstatic₁ (hsourceProgram hstatic₁)
       hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₁ entry hmatch, hrun⟩
 
 theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -7361,7 +7526,7 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedReachable
         _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
-        tenv₀ env₀ impl₀ vRaw₀ hstatic₀ ht₀_e2 ht₀_e1
+        tenv₀ env₀ impl₀ vRaw₀ hstatic₀ htypedCall₀ ht₀_e2 ht₀_e1
         hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
@@ -7393,8 +7558,10 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedReachable
       hagrees hstatic₀ (hsourceReachable hstatic₀)
       hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₀ entry hmatch, hrun⟩
 
 theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -7422,7 +7589,7 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedReachable
         _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
         _ht₀ _ht₁ _bodyCtx result3 callEntry
         c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁
-        tenv₁ env₁ impl₁ vRaw₁ hstatic₁ ht₁_e2 ht₁_e1
+        tenv₁ env₁ impl₁ vRaw₁ hstatic₁ htypedCall₁ ht₁_e2 ht₁_e1
         hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
   have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
@@ -7454,8 +7621,10 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedReachable
       hagrees hstatic₁ (hsourceReachable hstatic₁)
       hargName hregistryCall hunified hGetCall hArgCall
       hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hrun⟩
-  exact ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup, hrun⟩
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall₁ entry hmatch, hrun⟩
 
 /-- Local registry-agreement-shaped adapter for the two impure arrow sides.
 
@@ -7638,6 +7807,7 @@ private lemma appTwoRunOutChoice_from_keyed_direct_call_boundaryFR
     {θpre₀ θpre₁ : RealizationMap}
     {o₀ o₁ : Value}
     {callEntry₀ callEntry₁ : ExternCallEntry}
+    {typedExpr₀ typedExpr₁ : Expr}
     (hentryKey_unique :
       ∀ {id : ExternId} {entry₀ entry₁ : TrustedExternEntry},
         entryKey id entry₀ → entryKey id entry₁ → entry₀ = entry₁)
@@ -7647,10 +7817,12 @@ private lemma appTwoRunOutChoice_from_keyed_direct_call_boundaryFR
     (hrunProvider₀ :
       ∃ entry : TrustedExternEntry,
         entryKey id entry ∧
+          ExternBoundaryTyping.Call entry.decl typedExpr₀ callEntry₀ src ∧
           ExternCallBoundaryRun entry.decl entry.impl callEntry₀ src cf₀ o₀)
     (hrunProvider₁ :
       ∃ entry : TrustedExternEntry,
         entryKey id entry ∧
+          ExternBoundaryTyping.Call entry.decl typedExpr₁ callEntry₁ src ∧
           ExternCallBoundaryRun entry.decl entry.impl callEntry₁ src cf₁ o₁)
     (hctx₁ : callEntry₁.bodyCtx = callEntry₀.bodyCtx)
     (hpredlaws : PredSatLaws predSat tmBody)
@@ -7699,8 +7871,8 @@ private lemma appTwoRunOutChoice_from_keyed_direct_call_boundaryFR
         agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
           cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁) :
     AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
-  rcases hrunProvider₀ with ⟨trusted₀, hkey₀, hrun₀⟩
-  rcases hrunProvider₁ with ⟨trusted₁, hkey₁, hrun₁⟩
+  rcases hrunProvider₀ with ⟨trusted₀, hkey₀, htyped₀, hrun₀⟩
+  rcases hrunProvider₁ with ⟨trusted₁, hkey₁, htyped₁, hrun₁⟩
   have htrusted_eq : trusted₀ = trusted₁ := hentryKey_unique hkey₀ hkey₁
   subst trusted₁
   exact
@@ -7716,7 +7888,7 @@ private lemma appTwoRunOutChoice_from_keyed_direct_call_boundaryFR
       (θpre₀ := θpre₀) (θpre₁ := θpre₁)
       (o₀ := o₀) (o₁ := o₁)
       (entry₀ := callEntry₀) (entry₁ := callEntry₁)
-      (hcallFR_of_entryKey hkey₀) hctx₁ hpredlaws hTmBody hTmBoundedBody
+      (hcallFR_of_entryKey hkey₀) hctx₁ htyped₀ htyped₁ hpredlaws hTmBody hTmBoundedBody
       hinputs hrun₀ hrun₁ hevalCfg₀ hevalCfg₁ h_join hsrc_mem
       hlookup_back_pre_to_src hvar_lookup_src_to_pre
       hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
@@ -9279,6 +9451,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       have hwfcfgBody : wfConfig callEntry.bodyConfig := by
         simpa [callEntry, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime] using
           hwfcfg_body_init
+      have htypedCallProvider :
+          ExternCallFnTypingProvider id x y argTyp retSpec eff callEntry firstA :=
+        externCallFnTypingProvider_of_selected (hbodyCtx := rfl) hselectedA
       have hb :=
         _extCallSpec μ ρ θ cf o
           hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg
@@ -9286,7 +9461,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           hpredlaws1 hTmBody hTmBoundedBody hθ1wf hwfBody hricBody'
           htagR_body_regular hcwrBody' hwfcfgBody hpc_body
           c₂' v₂ c₁ id x y argTyp retSpec eff σcap env impl vRaw mem' addr'
-          hsource ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcfg
+          hsource htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcfg
           rfl rfl rfl rfl rfl rfl
       simpa [evalCfg, callEntry, ExternCallEntry.bodyConfig,
         ExternCallEntry.bodyOutputConfig, ExternCallEntry.ofRuntime] using hb
@@ -10619,6 +10794,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       have hwfcfgBody : wfConfig callEntry.bodyConfig := by
         simpa [callEntry, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime] using
           hwfcfg_body_init
+      have htypedCallProvider :
+          ExternCallPfnTypingProvider id x y argTyp retSpec callEntry firstA :=
+        externCallPfnTypingProvider_of_selected (hbodyCtx := rfl) _happlyA
       have hb :=
         _extPfnSpec μ ρ θ cf o
           hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg
@@ -10626,7 +10804,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           hpredlaws1 hTmBody hTmBoundedBody hθ1wf hwfBody hricBody'
           htagR_body_regular hcwrBody' hwfcfgBody hpc_body
           c₂' v₂ c₁ id x y argTyp retSpec σcap env impl vRaw
-          hsource ht_e2 ht_e1 hGet hArg hImpl hValRet hcfg
+          hsource htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcfg
           rfl rfl rfl rfl rfl rfl
       simpa [evalCfg, callEntry, ExternCallEntry.bodyConfig,
         ExternCallEntry.bodyOutputConfig, ExternCallEntry.ofRuntime] using hb
@@ -14221,7 +14399,13 @@ lemma stepFR_app_with_expr_proof
               have hrunProvider₁ :
                   ∃ entry : TrustedExternEntry,
                     entryKey id₁ entry ∧
+                      ExternBoundaryTyping.Call entry.decl
+                        (Expr.externFn id₁ y₁ argTyp₁ retSpec₁ eff₁) callEntry₁ firstE₁ ∧
                       ExternCallBoundaryRun entry.decl entry.impl callEntry₁ firstE₁ cf₁ o₁ :=
+                have htypedCallProvider₁ :
+                    ExternCallFnTypingProvider id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
+                      callEntry₁ firstE₁ :=
+                  externCallFnTypingProvider_of_selected (hbodyCtx := rfl) hselectedE₁
                 hproviders.2 (by simpa [hfnTyped] using hsource₁)
                   hpredlaws hExtTyping hwfTm hTmBounded
                   μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -14229,7 +14413,7 @@ lemma stepFR_app_with_expr_proof
                   a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                   bodyCtxE₁ firstE₁ callEntry₁
                   c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
-                  σcap₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hsource₁ ht₁_e2 ht₁_e1
+                  σcap₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hsource₁ htypedCallProvider₁ ht₁_e2 ht₁_e1
                   hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁
                   rfl rfl rfl rfl rfl rfl
               have hboundary₁ :
@@ -14861,7 +15045,13 @@ lemma stepFR_app_with_expr_proof
               have hrunProvider₀ :
                   ∃ entry : TrustedExternEntry,
                     entryKey id₀ entry ∧
+                      ExternBoundaryTyping.Call entry.decl
+                        (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) callEntry₀ firstE₀ ∧
                       ExternCallBoundaryRun entry.decl entry.impl callEntry₀ firstE₀ cf₀ o₀ :=
+                have htypedCallProvider₀ :
+                    ExternCallFnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
+                      callEntry₀ firstE₀ :=
+                  externCallFnTypingProvider_of_selected (hbodyCtx := rfl) hselectedE₀
                 hproviders.1 (by simpa [hfnTyped] using hsource₀)
                   hpredlaws hExtTyping hwfTm hTmBounded
                   μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -14869,7 +15059,7 @@ lemma stepFR_app_with_expr_proof
                   a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                   bodyCtxE₀ firstE₀ callEntry₀
                   c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
-                  σcap₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hsource₀ ht₀_e2 ht₀_e1
+                  σcap₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hsource₀ htypedCallProvider₀ ht₀_e2 ht₀_e1
                   hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀
                   rfl rfl rfl rfl rfl rfl
               have hboundary₀ :
@@ -15441,7 +15631,13 @@ lemma stepFR_app_with_expr_proof
               have hrunProvider₀ :
                   ∃ entry : TrustedExternEntry,
                     entryKey id₀ entry ∧
+                      ExternBoundaryTyping.Call entry.decl
+                        (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) callEntry₀ firstA₀ ∧
                       ExternCallBoundaryRun entry.decl entry.impl callEntry₀ firstA₀ cf₀ o₀ :=
+                have htypedCallProvider₀ :
+                    ExternCallFnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
+                      callEntry₀ firstA₀ :=
+                  externCallFnTypingProvider_of_selected (hbodyCtx := rfl) hselectedA₀
                 hproviders.1 (by simpa [hfnTyped] using hsource₀)
                   hpredlaws hExtTyping hwfTm hTmBounded
                   μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -15449,13 +15645,19 @@ lemma stepFR_app_with_expr_proof
                   a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                   bodyCtx₀ firstA₀ callEntry₀
                   c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
-                  σcap₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hsource₀ ht₀_e2 ht₀_e1
+                  σcap₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hsource₀ htypedCallProvider₀ ht₀_e2 ht₀_e1
                   hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀
                   rfl rfl rfl rfl rfl rfl
               have hrunProvider₁ :
                   ∃ entry : TrustedExternEntry,
                     entryKey id₁ entry ∧
+                      ExternBoundaryTyping.Call entry.decl
+                        (Expr.externFn id₁ y₁ argTyp₁ retSpec₁ eff₁) callEntry₁ firstA₁ ∧
                       ExternCallBoundaryRun entry.decl entry.impl callEntry₁ firstA₁ cf₁ o₁ :=
+                have htypedCallProvider₁ :
+                    ExternCallFnTypingProvider id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
+                      callEntry₁ firstA₁ :=
+                  externCallFnTypingProvider_of_selected (hbodyCtx := rfl) hselectedA₁
                 hproviders.2 (by simpa [hfnTyped] using hsource₁)
                   hpredlaws hExtTyping hwfTm hTmBounded
                   μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -15463,7 +15665,7 @@ lemma stepFR_app_with_expr_proof
                   a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                   bodyCtx₁ firstA₁ callEntry₁
                   c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁
-                  σcap₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hsource₁ ht₁_e2 ht₁_e1
+                  σcap₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hsource₁ htypedCallProvider₁ ht₁_e2 ht₁_e1
                   hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁
                   rfl rfl rfl rfl rfl rfl
               have hpc_body₀ : bodyCtx₀.pc = true := by
@@ -16198,7 +16400,13 @@ lemma stepFR_app_with_expr_proof
                   have hrunProvider₀ :
                       ∃ entry : TrustedExternEntry,
                         entryKey id₀ entry ∧
+                          ExternBoundaryTyping.Call entry.decl
+                            (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) callEntry₀ firstA ∧
                           ExternCallBoundaryRun entry.decl entry.impl callEntry₀ firstA cf₀ o₀ :=
+                    have htypedCallProvider₀ :
+                        ExternCallFnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
+                          callEntry₀ firstA :=
+                      externCallFnTypingProvider_of_selected (hbodyCtx := rfl) hselectedA
                     hproviders.1 (by simpa [hfnTyped] using hsource)
                       hpredlaws hExtTyping hwfTm hTmBounded
                       μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -16206,13 +16414,19 @@ lemma stepFR_app_with_expr_proof
                       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                       bodyCtx firstA callEntry₀
                       c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
-                      σcap env₀ impl₀ vRaw₀ mem'₀ addr'₀ hsource ht₀_e2 ht₀_e1
+                      σcap env₀ impl₀ vRaw₀ mem'₀ addr'₀ hsource htypedCallProvider₀ ht₀_e2 ht₀_e1
                       hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀
                       rfl rfl rfl rfl rfl rfl
                   have hrunProvider₁ :
                       ∃ entry : TrustedExternEntry,
                         entryKey id₀ entry ∧
+                          ExternBoundaryTyping.Call entry.decl
+                            (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) callEntry₁ firstA ∧
                           ExternCallBoundaryRun entry.decl entry.impl callEntry₁ firstA cf₁ o₁ :=
+                    have htypedCallProvider₁ :
+                        ExternCallFnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
+                          callEntry₁ firstA :=
+                      externCallFnTypingProvider_of_selected (hbodyCtx := rfl) hselectedA
                     hproviders.2 (by simpa [hfnTyped] using hsource)
                       hpredlaws hExtTyping hwfTm hTmBounded
                       μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -16220,7 +16434,7 @@ lemma stepFR_app_with_expr_proof
                       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                       bodyCtx firstA callEntry₁
                       c₂'₁ v₂₁ c₁₁ id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
-                      σcap env₁ impl₁ vRaw₁ mem'₁ addr'₁ hsource ht₁_e2 ht₁_e1
+                      σcap env₁ impl₁ vRaw₁ mem'₁ addr'₁ hsource htypedCallProvider₁ ht₁_e2 ht₁_e1
                       hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁
                       rfl rfl rfl rfl rfl rfl
                   let evalCfg₀ : Config := callEntry₀.bodyOutputConfig cf₀
@@ -19691,7 +19905,13 @@ lemma stepFR_app_with_expr_proof
               have hrunProvider₁ :
                   ∃ entry : TrustedExternEntry,
                     entryKey id₁ entry ∧
+                      ExternBoundaryTyping.Call entry.decl
+                        (Expr.externPfn id₁ y₁ argTyp₁ retSpec₁) callEntry₁ firstE₁ ∧
                       ExternCallBoundaryRun entry.decl entry.impl callEntry₁ firstE₁ cf₁ o₁ :=
+                have htypedCallProvider₁ :
+                    ExternCallPfnTypingProvider id₁ x₁ y₁ argTyp₁ retSpec₁
+                      callEntry₁ firstE₁ :=
+                  externCallPfnTypingProvider_of_selected (hbodyCtx := rfl) _happlyE₁
                 hproviders.2 (by simpa [hpfnTyped] using hsource₁)
                   hpredlaws hExtTyping hwfTm hTmBounded
                   μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -19699,7 +19919,7 @@ lemma stepFR_app_with_expr_proof
                   a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                   bodyCtxE₁ firstE₁ callEntry₁
                   c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁
-                  σcap₁ env₁ impl₁ vRaw₁ hsource₁ ht₁_e2 ht₁_e1
+                  σcap₁ env₁ impl₁ vRaw₁ hsource₁ htypedCallProvider₁ ht₁_e2 ht₁_e1
                   hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁
                   rfl rfl rfl rfl rfl rfl
               have hboundary₁ :
@@ -20272,7 +20492,13 @@ lemma stepFR_app_with_expr_proof
               have hrunProvider₀ :
                   ∃ entry : TrustedExternEntry,
                     entryKey id₀ entry ∧
+                      ExternBoundaryTyping.Call entry.decl
+                        (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) callEntry₀ firstE₀ ∧
                       ExternCallBoundaryRun entry.decl entry.impl callEntry₀ firstE₀ cf₀ o₀ :=
+                have htypedCallProvider₀ :
+                    ExternCallPfnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀
+                      callEntry₀ firstE₀ :=
+                  externCallPfnTypingProvider_of_selected (hbodyCtx := rfl) _happlyE₀
                 hproviders.1 (by simpa [hpfnTyped] using hsource₀)
                   hpredlaws hExtTyping hwfTm hTmBounded
                   μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -20280,7 +20506,7 @@ lemma stepFR_app_with_expr_proof
                   a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                   bodyCtxE₀ firstE₀ callEntry₀
                   c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
-                  σcap₀ env₀ impl₀ vRaw₀ hsource₀ ht₀_e2 ht₀_e1
+                  σcap₀ env₀ impl₀ vRaw₀ hsource₀ htypedCallProvider₀ ht₀_e2 ht₀_e1
                   hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀
                   rfl rfl rfl rfl rfl rfl
               have hboundary₀ :
@@ -20875,7 +21101,13 @@ lemma stepFR_app_with_expr_proof
               have hrunProvider₀ :
                   ∃ entry : TrustedExternEntry,
                     entryKey id₀ entry ∧
+                      ExternBoundaryTyping.Call entry.decl
+                        (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) callEntry₀ firstA₀ ∧
                       ExternCallBoundaryRun entry.decl entry.impl callEntry₀ firstA₀ cf₀ o₀ :=
+                have htypedCallProvider₀ :
+                    ExternCallPfnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀
+                      callEntry₀ firstA₀ :=
+                  externCallPfnTypingProvider_of_selected (hbodyCtx := rfl) happlyA₀
                 hproviders.1 (by simpa [hpfnTyped] using hsource₀)
                   hpredlaws hExtTyping hwfTm hTmBounded
                   μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -20883,13 +21115,19 @@ lemma stepFR_app_with_expr_proof
                   a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                   bodyCtx₀ firstA₀ callEntry₀
                   c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
-                  σcap₀ env₀ impl₀ vRaw₀ hsource₀ ht₀_e2 ht₀_e1
+                  σcap₀ env₀ impl₀ vRaw₀ hsource₀ htypedCallProvider₀ ht₀_e2 ht₀_e1
                   hGet₀ hArg₀ hImpl₀ hValRet₀ hcfg₀
                   rfl rfl rfl rfl rfl rfl
               have hrunProvider₁ :
                   ∃ entry : TrustedExternEntry,
                     entryKey id₁ entry ∧
+                      ExternBoundaryTyping.Call entry.decl
+                        (Expr.externPfn id₁ y₁ argTyp₁ retSpec₁) callEntry₁ firstA₁ ∧
                       ExternCallBoundaryRun entry.decl entry.impl callEntry₁ firstA₁ cf₁ o₁ :=
+                have htypedCallProvider₁ :
+                    ExternCallPfnTypingProvider id₁ x₁ y₁ argTyp₁ retSpec₁
+                      callEntry₁ firstA₁ :=
+                  externCallPfnTypingProvider_of_selected (hbodyCtx := rfl) happlyA₁
                 hproviders.2 (by simpa [hpfnTyped] using hsource₁)
                   hpredlaws hExtTyping hwfTm hTmBounded
                   μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -20897,7 +21135,7 @@ lemma stepFR_app_with_expr_proof
                   a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                   bodyCtx₁ firstA₁ callEntry₁
                   c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ retSpec₁
-                  σcap₁ env₁ impl₁ vRaw₁ hsource₁ ht₁_e2 ht₁_e1
+                  σcap₁ env₁ impl₁ vRaw₁ hsource₁ htypedCallProvider₁ ht₁_e2 ht₁_e1
                   hGet₁ hArg₁ hImpl₁ hValRet₁ hcfg₁
                   rfl rfl rfl rfl rfl rfl
               have hpc_body₀ : bodyCtx₀.pc = true := by
@@ -21642,7 +21880,13 @@ lemma stepFR_app_with_expr_proof
                   have hrunProvider₀ :
                       ∃ entry : TrustedExternEntry,
                         entryKey id₀ entry ∧
+                          ExternBoundaryTyping.Call entry.decl
+                            (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) callEntry₀ firstA ∧
                           ExternCallBoundaryRun entry.decl entry.impl callEntry₀ firstA cf₀ o₀ :=
+                    have htypedCallProvider₀ :
+                        ExternCallPfnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀
+                          callEntry₀ firstA :=
+                      externCallPfnTypingProvider_of_selected (hbodyCtx := rfl) _happlyA
                     hproviders.1 (by simpa [hpfnTyped] using hsource)
                       hpredlaws hExtTyping hwfTm hTmBounded
                       μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -21650,12 +21894,18 @@ lemma stepFR_app_with_expr_proof
                       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                       bodyCtx firstA callEntry₀
                       c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ retSpec₀
-                      σcap env₀ impl₀ vRaw₀ hsource ht₀_e2 ht₀_e1 hGet₀ hArg₀
+                      σcap env₀ impl₀ vRaw₀ hsource htypedCallProvider₀ ht₀_e2 ht₀_e1 hGet₀ hArg₀
                       hImpl₀ hValRet₀ hcfg₀ rfl rfl rfl rfl rfl rfl
                   have hrunProvider₁ :
                       ∃ entry : TrustedExternEntry,
                         entryKey id₀ entry ∧
+                          ExternBoundaryTyping.Call entry.decl
+                            (Expr.externPfn id₀ y₀ argTyp₀ retSpec₀) callEntry₁ firstA ∧
                           ExternCallBoundaryRun entry.decl entry.impl callEntry₁ firstA cf₁ o₁ :=
+                    have htypedCallProvider₁ :
+                        ExternCallPfnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀
+                          callEntry₁ firstA :=
+                      externCallPfnTypingProvider_of_selected (hbodyCtx := rfl) _happlyA
                     hproviders.2 (by simpa [hpfnTyped] using hsource)
                       hpredlaws hExtTyping hwfTm hTmBounded
                       μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf
@@ -21663,7 +21913,7 @@ lemma stepFR_app_with_expr_proof
                       a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
                       bodyCtx firstA callEntry₁
                       c₂'₁ v₂₁ c₁₁ id₀ x₀ y₀ argTyp₀ retSpec₀
-                      σcap env₁ impl₁ vRaw₁ hsource ht₁_e2 ht₁_e1 hGet₁ hArg₁
+                      σcap env₁ impl₁ vRaw₁ hsource htypedCallProvider₁ ht₁_e2 ht₁_e1 hGet₁ hArg₁
                       hImpl₁ hValRet₁ hcfg₁ rfl rfl rfl rfl rfl rfl
                   let evalCfg₀ : Config := callEntry₀.bodyOutputConfig cf₀
                   let evalCfg₁ : Config := callEntry₁.bodyOutputConfig cf₁

@@ -171,6 +171,7 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunFn
     (hcfg : cf = { callEntry.callConfig with memory := mem', nextAddr := addr' }) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   have hGetRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.fn implFn) := by
@@ -187,7 +188,7 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunFn
     simpa [TrustedRegistryEntryMatchesFn.id_eq hmatch] using
       (TrustedRegistry.lookup_toRuntimeRegistry hlookup)
   exact
-    ⟨entry, hlookup,
+    ⟨entry, hlookup, hmatch,
       ExternCallBoundaryRun.fn_of_match hmatch' hpure hunified hlookupCall himpl
         hArg hImpl hValRet hcfg⟩
 
@@ -217,6 +218,7 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   have hGetRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.pfn implFn) := by
@@ -233,7 +235,7 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
     simpa [TrustedRegistryEntryMatchesPfn.id_eq hmatch] using
       (TrustedRegistry.lookup_toRuntimeRegistry hlookup)
   exact
-    ⟨entry, hlookup,
+    ⟨entry, hlookup, hmatch,
       ExternCallBoundaryRun.pfn_of_match hmatch' hunified hlookupCall himpl
         hArg hImpl hValRet hcfg⟩
 
@@ -2720,6 +2722,7 @@ theorem TrustedRegistryAgreesWithFnTClosures.callBoundaryRun
     (hcfg : cf = { callEntry.callConfig with memory := mem', nextAddr := addr' }) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   rcases TrustedRegistryAgreesWithFnTClosures.resolve hagrees hmem with
     ⟨entry, hlookup, hlookupRuntime, hmatch⟩
@@ -2735,7 +2738,7 @@ theorem TrustedRegistryAgreesWithFnTClosures.callBoundaryRun
   have himpl : entry.impl = ExternImpl.fn implFn := by
     exact Option.some.inj (hlookupCall.symm.trans hGetDecl)
   exact
-    ⟨entry, hlookup,
+    ⟨entry, hlookup, hmatch,
       ExternCallBoundaryRun.fn_of_match hmatch' hpure hunified hlookupCall himpl
         hArg hImpl hValRet hcfg⟩
 
@@ -2762,6 +2765,7 @@ theorem TrustedRegistryAgreesWithPFnTClosures.callBoundaryRun
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   rcases TrustedRegistryAgreesWithPFnTClosures.resolve hagrees hmem with
     ⟨entry, hlookup, hlookupRuntime, hmatch⟩
@@ -2777,6 +2781,6 @@ theorem TrustedRegistryAgreesWithPFnTClosures.callBoundaryRun
   have himpl : entry.impl = ExternImpl.pfn implFn := by
     exact Option.some.inj (hlookupCall.symm.trans hGetDecl)
   exact
-    ⟨entry, hlookup,
+    ⟨entry, hlookup, hmatch,
       ExternCallBoundaryRun.pfn_of_match hmatch' hunified hlookupCall himpl
         hArg hImpl hValRet hcfg⟩

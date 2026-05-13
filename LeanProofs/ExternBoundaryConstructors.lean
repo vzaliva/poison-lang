@@ -212,6 +212,44 @@ private theorem resultAgreesIfClean_cleanInt_of_eq
   intro _hclean
   exact agreeValueUnder_cleanInt_of_eq heq
 
+private theorem valueConsistentWithRegime_int_noPred
+    {predSat : PredSat} {R : Regime} {qt : QTyp}
+    {μ : Memory} {θ : RealizationMap} {n : Int}
+    (hetyp : qt.etyp = ETyp.int)
+    (hpred : qt.pred = Predicate.noPred) :
+    valueConsistentWithRegime predSat R qt μ θ (Value.num n) := by
+  refine valueConsistentWithRegime.noTag ?_ ?_
+  · simp [qtypGuardTag, hpred]
+  · exact
+      closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+        (by simpa [hetyp] using (valueHasETyp.num (θ := θ) n))
+        (by rw [hetyp]; rfl)
+
+private theorem resultAgreesIfClean_int_noPred_of_eq
+    {predSat : PredSat} {R : Regime} {qt : QTyp}
+    {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap} {n₀ n₁ : Int}
+    (hetyp : qt.etyp = ETyp.int)
+    (hpred : qt.pred = Predicate.noPred)
+    (heq : n₀ = n₁) :
+    resultAgreesIfClean predSat R μ₀ μ₁ θ₀ θ₁ qt
+      (Value.num n₀) (Value.num n₁) := by
+  intro hclean
+  cases hclean with
+  | clean hpoison =>
+      cases heq
+      exact
+        agreeValueUnder.clean_eq_nonref_nonarrow hpoison
+          (by rw [hetyp]; rfl)
+          (by
+            intro href
+            rcases href with ⟨ls, hls⟩
+            simp [hetyp] at hls)
+          rfl
+  | guard k htag _hregime _hnotfun =>
+      have hnone : qtypGuardTag qt = none := by
+        simp [qtypGuardTag, hpred]
+      simp [hnone] at htag
+
 /-- Compact behavior contract for pure unary integer extern implementations.
 
     The remaining `pureUnaryCleanInt` constructor proof needs result-shape
@@ -365,5 +403,87 @@ private theorem externBoundarySinglePost_of_same_state
   · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl
       (ctx := ctx) (res := res) (ρ := ρ) hric)
   · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+
+private theorem collectAndAllocExternTags_noPred (nextTag : Tag) :
+    collectAndAllocExternTags [SyntaxPredicate.noPred] nextTag = .ok ({}, nextTag) := by
+  rfl
+
+private theorem pureUnaryCleanInt_call_result_shape
+    {d : ExternDeclaration} {impl : ExternImpl}
+    {typedExpr : Expr} {entry : ExternCallEntry} {res : TypeResult}
+    (hspec : PureUnaryCleanIntSpec d impl)
+    (htyped : ExternBoundaryTyping.Call d typedExpr entry res) :
+    res.qualType.etyp = ETyp.int ∧
+      res.qualType.pred = Predicate.noPred ∧
+      ctxAfter entry.bodyCtx res = entry.bodyCtx := by
+  cases htyped with
+  | fnExternMember hid hkind htyp harg hret heff hbody happly =>
+      have hbad : ExternDeclarationKind.pfn = ExternDeclarationKind.fn :=
+        hspec.kind_pfn.symm.trans hkind
+      cases hbad
+  | fnRegularExternBody hid hkind htyp harg hret heff hbody htc hres =>
+      have hbad : ExternDeclarationKind.pfn = ExternDeclarationKind.fn :=
+        hspec.kind_pfn.symm.trans hkind
+      cases hbad
+  | pfnExternMember hid hkind htyp harg hret hbody happly =>
+      rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
+        id x y argTyp retSpec tenv
+      have hargTyp : argTyp = Typ.int :=
+        htyp.symm.trans hspec.typ_int
+      subst argTyp
+      have hretSpec :
+          retSpec = ExternReturn.simple Typ.int false SyntaxPredicate.noPred := by
+        have :
+            some retSpec =
+              some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) :=
+          hret.symm.trans hspec.retSpec_eq
+        exact Option.some.inj this
+      subst retSpec
+      cases fuel with
+      | zero =>
+          simp [applyPFnTClosureAtCursor] at happly
+      | succ fuel' =>
+          have hcollect := collectAndAllocExternTags_noPred cursor.1
+          simp [applyPFnTClosureAtCursor, hcollect, resolveSyntaxPred, returnSpecToQTyp,
+            bind, Except.bind, pure, Except.pure] at happly
+          subst res
+          refine ⟨?_, ?_, ?_⟩
+          · by_cases hprov : joinPoison p1 p = true
+            · simp [normalizeAppResultByProvenance, hprov]
+            · simp [normalizeAppResultByProvenance, hprov]
+          · by_cases hprov : joinPoison p1 p = true
+            · simp [normalizeAppResultByProvenance, hprov]
+            · simp [normalizeAppResultByProvenance, hprov]
+          · rw [hbody]
+            simp [ctxAfter]
+
+private theorem pureUnaryCleanInt_call_output
+    {d : ExternDeclaration} {impl : ExternImpl}
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hspec : PureUnaryCleanIntSpec d impl)
+    (hfacts : ExternCallPfnFacts d impl entry res cf o) :
+    ∃ n, entry.argValue = Value.num n ∧
+      o = Value.num (hspec.compute entry.unifiedEnv n) ∧
+      cf = entry.callConfig := by
+  rcases hfacts.impl_success with
+    ⟨implPfn, retSpec, vRaw, himpl, hretSpec, _hargMatch, hrun, hvalRet⟩
+  have himplEq : ExternImpl.pfn hspec.implPfn = ExternImpl.pfn implPfn :=
+    hspec.impl_eq.symm.trans himpl
+  cases himplEq
+  have hret :
+      retSpec = ExternReturn.simple Typ.int false SyntaxPredicate.noPred := by
+    have :
+        some retSpec =
+          some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) :=
+      hretSpec.symm.trans hspec.retSpec_eq
+    exact Option.some.inj this
+  subst retSpec
+  rcases hspec.success_num hrun with ⟨n, harg, hraw⟩
+  have hout : o = Value.num (hspec.compute entry.unifiedEnv n) := by
+    rw [hraw] at hvalRet
+    unfold validateExternReturn at hvalRet
+    simp [valueMatchesTyp] at hvalRet
+    exact hvalRet.symm
+  exact ⟨n, harg, hout, hfacts.output_config⟩
 
 end ExternBoundarySpec

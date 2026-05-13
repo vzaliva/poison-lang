@@ -76,11 +76,18 @@ inductive Decl : ExternDeclaration → Expr → TypeContext → TypeResult → P
     declaration and runtime call entry. -/
 inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult → Prop where
   | fnExternMember
+      {d : ExternDeclaration}
       {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {fuel : Nat}
       {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
       {argPred : Predicate} {id : ExternId} {x y : Name} {argTyp : Typ}
       {retSpec : ExternReturn} {effects : List Effect} {tenv : CapturedVarEnv}
       {entry : ExternCallEntry} {res : TypeResult} :
+      d.id = id →
+      d.kind = .fn →
+      d.typ = argTyp →
+      d.argName = some x →
+      d.retSpec = some retSpec →
+      d.effects = effects →
       entry.bodyCtx =
         { ctx with
           pc := joinPoison p (joinPoison p1 ctx.pc)
@@ -94,15 +101,20 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
       applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res →
       Call
-        { id := id, kind := .fn, typ := argTyp, argName := some x,
-          retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
+        d
         (Expr.externFn id y argTyp retSpec effects) entry res
   | fnRegularExternBody
+      {d : ExternDeclaration}
       {bodyCtx : TypeContext} {result3 : TypeResult} {fuel : Nat}
       {p p1 : Poison} {id : ExternId} {x y : Name} {argTyp : Typ}
       {retSpec : ExternReturn} {effects : List Effect}
       {entry : ExternCallEntry} {res : TypeResult} :
+      d.id = id →
+      d.kind = .fn →
+      d.typ = argTyp →
+      d.argName = some x →
+      d.retSpec = some retSpec →
+      d.effects = effects →
       entry.bodyCtx = bodyCtx →
       typecheck bodyCtx (Expr.externFn id y argTyp retSpec effects) fuel = .ok result3 →
       res =
@@ -112,16 +124,20 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
               { result3.qualType with
                 poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } →
       Call
-        { id := id, kind := .fn, typ := argTyp, argName := some x,
-          retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
+        d
         (Expr.externFn id y argTyp retSpec effects) entry res
   | pfnExternMember
+      {d : ExternDeclaration}
       {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {fuel : Nat}
       {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
       {argPred : Predicate} {id : ExternId} {x y : Name} {argTyp : Typ}
       {retSpec : ExternReturn} {tenv : CapturedVarEnv}
       {entry : ExternCallEntry} {res : TypeResult} :
+      d.id = id →
+      d.kind = .pfn →
+      d.typ = argTyp →
+      d.argName = some x →
+      d.retSpec = some retSpec →
       entry.bodyCtx =
         { ctx with
           pc := joinPoison p (joinPoison ctx.pc p1)
@@ -136,8 +152,7 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
       applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res →
       Call
-        { id := id, kind := .pfn, typ := argTyp, argName := some x,
-          retSpec := some retSpec, effects := [], preds := collectExternPreds retSpec [] }
+        d
         (Expr.externPfn id y argTyp retSpec) entry res
 
 end ExternBoundaryTyping
@@ -184,10 +199,13 @@ def ExternDeclBoundaryFR
     expression step. -/
 def ExternCallBoundaryFR
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
-  ∀ (postExpr : Expr) (res : TypeResult) (predSat : PredSat) (tm : TagMeaning)
+  ∀ (postExpr typedExpr₀ typedExpr₁ : Expr)
+    (res : TypeResult) (predSat : PredSat) (tm : TagMeaning)
     (entry₀ entry₁ : ExternCallEntry),
     let ctx := entry₀.bodyCtx
     entry₁.bodyCtx = ctx →
+    ExternBoundaryTyping.Call d typedExpr₀ entry₀ res →
+    ExternBoundaryTyping.Call d typedExpr₁ entry₁ res →
     PredSatLaws predSat tm →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
@@ -275,9 +293,10 @@ def ExternDeclBoundarySingle
 
 def ExternCallBoundarySingle
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
-  ∀ (res : TypeResult) (predSat : PredSat) (tm : TagMeaning)
+  ∀ (typedExpr : Expr) (res : TypeResult) (predSat : PredSat) (tm : TagMeaning)
     (entry : ExternCallEntry),
     let ctx := entry.bodyCtx
+    ExternBoundaryTyping.Call d typedExpr entry res →
     PredSatLaws predSat tm →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
