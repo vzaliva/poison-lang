@@ -421,15 +421,45 @@ inductive ExternBoundaryWFRun
 
 /-- Operational safety contract for a single trusted extern entry.
 
-    Strengthens the previous `ExternBoundaryPreservesWF` to also require
-    `nextAddr` monotonicity, which is needed for `beval_nextAddr_mono` in
-    `SemanticsProperties.lean`. -/
+    Per-kind shape mirroring `RegistryOperationalSafe`'s clauses, so the
+    bridge `TrustedRegistry.operationalSafe` is a direct unpacking.  The `d`
+    parameter is retained for signature continuity with
+    `ExternBoundarySpec.operational : ExternOperationalSafe d impl`, but the
+    contract is determined entirely by `impl`'s constructor.
+
+    Three clauses, one per `ExternImpl` constructor:
+
+    * `fn` (impure): unconditional `nextAddr` monotonicity plus conditional
+      memory/value well-formedness preservation.
+    * `pfn` (pure): unchanged memory/`nextAddr`; well-formed return value
+      under wf input.
+    * `val`: stored value is `wfValue` at the consumer config's `nextAddr`. -/
 def ExternOperationalSafe
-    (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
-  ∀ (cᵢ cₒ : Config) (v : Value),
-    ExternBoundaryWFRun d impl cᵢ cₒ v →
-    wfConfig cᵢ →
-    wfConfig cₒ ∧ wfValue cₒ.nextAddr v ∧ cᵢ.nextAddr ≤ cₒ.nextAddr
+    (_d : ExternDeclaration) (impl : ExternImpl) : Prop :=
+  (∀ (implFn : VarEnv → Value → Memory → Address →
+        Except ExternError (Value × Memory × Address)),
+      impl = ExternImpl.fn implFn →
+    ∀ (env : VarEnv) (vArg : Value) (mem : Memory) (addr : Address)
+      (vRaw : Value) (mem' : Memory) (addr' : Address),
+      implFn env vArg mem addr = .ok (vRaw, mem', addr') →
+      addr ≤ addr' ∧
+      ((∀ a, mem.contains a → a < addr) →
+        wfVarEnv addr env →
+        wfValue addr vArg →
+        (∀ a, mem'.contains a → a < addr') ∧ wfValue addr' vRaw))
+  ∧
+  (∀ (implPfn : VarEnv → Value → Memory → Except ExternError Value),
+      impl = ExternImpl.pfn implPfn →
+    ∀ (env : VarEnv) (vArg : Value) (mem : Memory) (addr : Address)
+      (vRaw : Value),
+      implPfn env vArg mem = .ok vRaw →
+      (∀ a, mem.contains a → a < addr) →
+      wfVarEnv addr env →
+      wfValue addr vArg →
+      wfValue addr vRaw)
+  ∧
+  (∀ (v : Value), impl = ExternImpl.val v →
+    ∀ (cfg : Config), wfConfig cfg → wfValue cfg.nextAddr v)
 
 /-- Registry-level operational safety contract.
 

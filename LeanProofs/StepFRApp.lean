@@ -7,6 +7,7 @@
 -/
 import LeanProofs.StepFR
 import LeanProofs.ExternBoundary
+import LeanProofs.ExternBoundaryProofs
 import LeanProofs.JoinMemberTransport
 
 open List

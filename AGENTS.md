@@ -76,15 +76,22 @@ The executable language implementation. **Tests apply to this package.**
 Formal correctness proofs establishing type safety and semantic properties. **No tests for this package.**
 
 **Core definitions:**
+- `Semantics.lean` - Low-level semantic definitions: `terminatesTo`, `stuck`, `wfValue`, `wfVarEnv`, `wfConfig`, `nextAddr_not_in_memory`. Foundational module imported by `ExternRuntime.lean` and `SemanticsProperties.lean`.
 - `TypeSafety.lean` - Typing contexts, realisation maps, value typing, runtime context instantiation
-- `SemanticsProperties.lean` - Evaluation relations (terminatesTo, diverges, stuck), runtime configuration well-formedness
+- `SemanticsProperties.lean` - Structural inversion lemmas, `bevalApp_structure` / `BevalAppSuccess`, `nextAddr` monotonicity (`beval_nextAddr_mono`, `terminatesTo_nextAddr_mono`), and `wfConfig_preserved`. These three lemmas take `(hOp : RegistryOperationalSafe cfg₀.registry)` as a hypothesis discharged at the orchestration layer via `TrustedRegistry.operationalSafe`.
+
+**Extern boundary stack (FFI trust):**
+- `ExternRuntime.lean` - Runtime extern event predicates living below the FR proof stack: `ExternDeclaration`, `ExternDeclBoundaryRun`, `ExternCallEntry`, `ExternCallBoundaryRun`, `ExternBoundaryWFRun`, and the operational safety contracts `ExternOperationalSafe` (per trusted entry, per-kind shape) and `RegistryOperationalSafe` (per runtime registry, consumed by `SemanticsProperties.lean`).
+- `ExternBoundary.lean` - Theorem-facing FR boundary contract layer (small, readable API): `BodyEntryInputsAgree`, `ExternBoundarySpec` (with `declFR`, `callFR`, `declSingle`, `callSingle`, `operational` fields), `TrustedExternEntry`, `TrustedRegistry` (with `toRuntimeRegistry`, `runtime_lookup_exists`, and the `operationalSafe` bridge proving `RegistryOperationalSafe` from `entry.spec.operational`), `TrustedRegistryAgreesWithReachable`, and reachability-domain inductives + navigation theorems.
+- `ExternBoundaryProofs.lean` - Proof-heavy adapters and reachability integration theorems split off from `ExternBoundary.lean` (kept above it in the import graph). Resolution variants of `TrustedRegistryAgreesWithReachable`, captured-environment/QTyp reachability namespaces, and call-boundary integration. Consumers needing these proof bodies (e.g. `FaultRobustnessProofs.lean`, `StepFRApp.lean`) import this file in addition to `ExternBoundary.lean`.
+- `ExternTypingAssumptions.lean` - Semantic contracts for extern typechecking (the typing-side contract floor) used in fault-robustness.
 
 **Main properties:**
 - `RegimeConsistency.lean` - Regime-consistency definitions (tag meaning, guard descriptors) plus the masked-regime / `tagEnvConsistentWithRegime*` machinery (definitions, insert/invalidate/join lemmas) shared by `StepFR` and downstream FR proofs
 - `FaultRobustness.lean` - Top-level fault-robustness definitions (`FaultRobustnessSpec`, `agreeOnClean`, `agreeValueUnder`, etc.)
 - `StepFR.lean` - Shared step-based machinery (`StepFR`, `StepFR_IH`, `resultAgreesIfClean`, `consistentRegimeSpec_implies_consistentWithRegime` bridge lemma, and helper lemmas for value/captured/closure consistency) used by every per-operator FR proof
 - `JoinMemberTransport.lean` - Shared join-member transport machinery: lemmas about how `joinTypeResults` transports per-member properties (`valueConsistentWithRegime`, `agreeOnClean`, etyp signatures, member-of-arrow/parrow, ref membership, internal-poison) to the joined result. Imported by `StepFRApp` and `StepFRIte` so per-operator FR proof modules stay mutually independent
-- **Per-expression case proofs** (each file contains the corresponding `stepFR_*` / masked single-run lemmas; shared imports from `StepFR`; `StepFRApp` and `StepFRIte` additionally import `JoinMemberTransport`):
+- **Per-expression case proofs** (each file contains the corresponding `stepFR_*` / masked single-run lemmas; shared imports from `StepFR`; `StepFRApp` and `StepFRIte` additionally import `JoinMemberTransport`; each per-operator lemma threads `(hOp : RegistryOperationalSafe registry)` to discharge `wfConfig_preserved` / `terminatesTo_nextAddr_mono` calls):
   - `StepFRApp.lean` - function application
   - `StepFRAssign.lean` - assignment
   - `StepFRLiteral.lean`, `StepFRVar.lean`, `StepFROp.lean` - literals, variables, primitive operators
@@ -93,11 +100,21 @@ Formal correctness proofs establishing type safety and semantic properties. **No
   - `StepFRDeref.lean`, `StepFRNewRef.lean` - memory operations
   - `StepFRSeq.lean` - sequencing
   - `StepFRVlet.lean` - `vlet`
-- `FaultRobustnessProofs.lean` - Orchestration: imports all `StepFR*` case modules and proves the step theorem (`TypeSystemEnforcesFaultRobustness_step`), the implementation bridge (`TypeSystemEnforcesFaultRobustness_impl`), and the top-level statement (`TypeSystemEnforcesFaultRobustness`)
+- `FaultRobustnessProofs.lean` - Orchestration: imports all `StepFR*` case modules and proves the step theorem (`TypeSystemEnforcesFaultRobustness_step`), the implementation bridge (`TypeSystemEnforcesFaultRobustness_impl`), and the top-level statement (`TypeSystemEnforcesFaultRobustness`). The public top-level theorem derives `RegistryOperationalSafe` internally via `TrustedRegistry.operationalSafe tr` — no separate public operational-safety hypothesis.
 - `Progress.lean` - Progress (well-typed expressions evaluate or diverge, never get stuck)
 - `MemoryMonotonicity.lean` - Memory monotonicity (evaluation only adds locations, never removes)
 
-**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`, `ExternTypingAssumptions.lean` (semantic contracts for extern typechecking used in fault-robustness)
+**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`
+
+**Dependency graph (extern boundary stack):**
+
+```
+Semantics → ExternRuntime → SemanticsProperties → StepFR → ExternBoundary → ExternBoundaryProofs
+                                                                                      ↓
+                                                              FaultRobustnessProofs (orchestration)
+```
+
+The split puts runtime extern event predicates and `RegistryOperationalSafe` *below* `StepFR` so `SemanticsProperties.lean` can consume them without an import cycle. FR-shaped contracts (`StepFRPost`-producing) live above `StepFR` in `ExternBoundary.lean`.
 
 **Module visibility / `private` discipline:** declarations used only within their declaring file are marked `private`. The `private` keyword scopes the binding to the file, which keeps the public surface of each module small and gives reviewers a quick read of "what is this module's API." When adding a new helper, default to `private` until another file actually needs it.
 

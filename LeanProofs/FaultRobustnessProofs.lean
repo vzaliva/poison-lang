@@ -20,6 +20,7 @@ import LeanProofs.StepFRNewRef
 import LeanProofs.StepFRSeq
 import LeanProofs.StepFRVlet
 import LeanProofs.ExternBoundary
+import LeanProofs.ExternBoundaryProofs
 
 open List
 open List.Mem
@@ -3147,15 +3148,18 @@ private theorem faultRobustnessSpec_of_step
             exfalso
             simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hret_notfun_obs
 
--- Main trusted-registry fault-robustness theorem.
+-- Main trusted-registry fault-robustness theorem.  The operational safety
+-- predicate is derived internally from the trusted registry via the bridge
+-- `TrustedRegistry.operationalSafe`, so the public hypotheses are just the
+-- trusted registry and the reachable-trust premise.
 theorem TypeSystemEnforcesFaultRobustness
   (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
-  (hOp : RegistryOperationalSafe (TrustedRegistry.toRuntimeRegistry tr))
   (hagrees :
     ∀ {ctx : TypeContext},
       ctxMatchesInputSpec s ctx →
       TrustedRegistryAgreesWithReachable e ctx tr) :
   FaultRobustnessSpec (TrustedRegistry.toRuntimeRegistry tr) e s obs :=
+  let hOp := TrustedRegistry.operationalSafe tr
   faultRobustnessSpec_of_step
     (TrustedRegistry.toRuntimeRegistry tr) e s obs hOp
     (fun ctxᵢ hctx predSat tm =>
