@@ -221,41 +221,6 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
   · simpa [hctxAfter] using hctxCons2
   · simpa [hctxAfter] using hvalc2
 
-lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg
-  (masked : Tag → Prop)
-  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (hOp : RegistryOperationalSafe registry)
-  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel'))
-      masked
-      (fun ctx μ ρ θ =>
-        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-      (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
-  (htc : typecheck ctx (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-    masked
-    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctx (Expr.seq e1 e2) res predSat tm (registry := registry) := by
-  exact
-    stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
-      masked ctx predSat tm hOp e1 e2 fuel' res
-      (fun _ => True) (fun _ => True) trivial trivial trivial
-      (fun {_ctx} {_res} _ => trivial)
-      (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
-        StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
-          (registry := registry)
-          predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
-          (fun ctx μ ρ θ =>
-            consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-          (fun R qt μ θ v =>
-            valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-          IH m hm (tmᵢ := tmᵢ) e ctx trivial hwfTm hTmBounded res htc)
-      htc
-
 lemma stepFR_seq_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)

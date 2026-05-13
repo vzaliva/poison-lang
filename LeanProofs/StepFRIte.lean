@@ -6010,31 +6010,3 @@ lemma stepFR_ite_with_expr_proof
         (hctxStandardElse htc1_tc) hmemEnv htagEnv hnextLoc hnextTag hregime' hpoison
         hcompat_std hetyp hpred
 
-lemma stepFR_ite
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e1 e2 e3 : Expr) (fuel' : Nat) (res : TypeResult)
-  (hOp : RegistryOperationalSafe registry)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (singleIH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (htc : typecheck ctxᵢ (Expr.ite e1 e2 e3) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.ite e1 e2 e3) res predSat tm (registry := registry) := by
-  exact
-    stepFR_ite_with_expr_proof
-      ctxᵢ predSat tm e1 e2 e3 fuel' res
-      (fun _ => True) (fun _ => True) hOp trivial trivial
-      (fun _ _ => trivial)
-      (fun _ _ _ _ => trivial)
-      (fun _ => trivial)
-      (fun _ => trivial)
-      trivial trivial trivial
-      (fun m hm {tmᵢ} e ctx _hctx hcan hwfTm htagBounded res htc =>
-        StepFR_IH_WithExpr_of_plain
-          (registry := registry)
-          predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) IH
-          m hm e ctx hcan hwfTm htagBounded res htc)
-      (fun m hm {tmᵢ} e ctx _hctx hcan hwfTm hTmBounded res htc =>
-        StepFRSingleRunFinalCleanPcTrue_IH_WithExpr_of_plain
-          (registry := registry)
-          predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) singleIH
-          m hm e ctx hcan hwfTm hTmBounded res htc)
-      htc

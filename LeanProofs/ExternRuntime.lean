@@ -99,7 +99,7 @@ inductive ExternDeclBoundaryRun
 
 namespace ExternDeclBoundaryRun
 
-theorem val_of_runtime
+private theorem val_of_runtime
     {d : ExternDeclaration} {impl : ExternImpl}
     {ctx : TypeContext} {res : TypeResult}
     {cᵢ cₒ : Config} {v : Value}
@@ -115,7 +115,7 @@ theorem val_of_runtime
       impl_value := ⟨v, himpl, rfl⟩
       output_config := hcfg }
 
-theorem fn_of_runtime
+private theorem fn_of_runtime
     {d : ExternDeclaration} {impl : ExternImpl}
     {ctx : TypeContext} {res : TypeResult}
     {cᵢ cₒ : Config} {v : Value}
@@ -139,7 +139,7 @@ theorem fn_of_runtime
       output_config := hcfg
       value_shape := ⟨x, retSpec, harg, hret, hval⟩ }
 
-theorem pfn_of_runtime
+private theorem pfn_of_runtime
     {d : ExternDeclaration} {impl : ExternImpl}
     {ctx : TypeContext} {res : TypeResult}
     {cᵢ cₒ : Config} {v : Value}

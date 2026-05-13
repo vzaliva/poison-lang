@@ -537,40 +537,6 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
     ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
 
 
-lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg
-  (masked : Tag → Prop)
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel'))
-      masked
-      (fun ctx μ ρ θ =>
-        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-      (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
-  (hOp : RegistryOperationalSafe registry)
-  (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-    masked
-    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.newRef e) res predSat tm (registry := registry) := by
-  exact
-    stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
-      masked ctxᵢ predSat tm e fuel' res
-      (fun _ => True) (fun _ => True) trivial trivial
-      (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
-        StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
-          (registry := registry)
-          predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
-          (fun ctx μ ρ θ =>
-            consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-          (fun R qt μ θ v =>
-            valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-          IH m hm (tmᵢ := tmᵢ) e ctx trivial hwfTm hTmBounded res htc)
-      hOp htc
-
 lemma stepFR_newRef_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (fuel' : Nat) (res : TypeResult)

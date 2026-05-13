@@ -99,12 +99,6 @@ theorem respectsResult
     QTypRespectsTagMeaning tm' res.qualType :=
   h.2.2.2.1
 
-theorem predSatLaws
-    {ctx : TypeContext} {res : TypeResult} {predSat : PredSat} {tm tm' : TagMeaning}
-    (h : BoundaryTagMeaningPost ctx res predSat tm tm') :
-    PredSatLaws predSat tm' :=
-  h.2.2.2.2
-
 theorem of_isCanonical_predSat
     {tm tm' : TagMeaning} {ctx : TypeContext} {e : Expr} {res : TypeResult}
     {predSat : PredSat}
@@ -5017,36 +5011,6 @@ abbrev StepFRSingleRunFinalCleanPcTrue_IH
         typecheck ctxᵢ e m = .ok res →
         StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
 
-abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-    (masked : Tag → Prop)
-    (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-    (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
-  let _tmAnchor := tm
-  ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctx : TypeContext),
-    wfTagMeaningCtx tmᵢ ctx →
-    TagMeaningBounded tmᵢ ctx.nextTag →
-    ∀ (res : TypeResult),
-      typecheck ctx e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-        masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
-
-  abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
-      (CanUse : Expr → Prop)
-      (masked : Tag → Prop)
-      (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-      (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
-  let _tmAnchor := tm
-  ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctx : TypeContext),
-    CanUse e →
-    wfTagMeaningCtx tmᵢ ctx →
-    TagMeaningBounded tmᵢ ctx.nextTag →
-      ∀ (res : TypeResult),
-        typecheck ctx e m = .ok res →
-        StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-          masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
-
   abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
       (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
       (masked : Tag → Prop)
@@ -5065,107 +5029,6 @@ abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
           masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
 
 -- Convert strong-induction IH (no wfTagMeaningCtx/TagBoundedCtx) to StepFR_IH; extra premises are unused
-lemma StepFR_IH_of_induction
-  {registry : ExternRegistry}
-  (IH : ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext)
-    (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res →
-      StepFR ctxᵢ e res predSat tmᵢ (registry := registry)) :
-  StepFR_IH predSat tm fuel (registry := registry) :=
-  fun m hm {tmᵢ} e ctxᵢ _hwfTm _htagBounded res htc =>
-    IH m hm (tmᵢ := tmᵢ) e ctxᵢ res htc
-
-lemma StepFR_IH_WithExpr_of_induction
-  (CanUse : Expr → Prop)
-  {registry : ExternRegistry}
-  (IH : ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
-    CanUse e →
-    ∀ (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res →
-      StepFR ctxᵢ e res predSat tmᵢ (registry := registry)) :
-  StepFR_IH_WithExpr predSat tm fuel CanUse (registry := registry) :=
-  fun m hm {tmᵢ} e ctxᵢ hcan _hwfTm _htagBounded res htc =>
-    IH m hm (tmᵢ := tmᵢ) e ctxᵢ hcan res htc
-
-lemma StepFR_IH_WithExpr_of_plain
-  (CanUse : Expr → Prop)
-  {registry : ExternRegistry}
-  (IH : StepFR_IH predSat tm fuel (registry := registry)) :
-  StepFR_IH_WithExpr predSat tm fuel CanUse (registry := registry) :=
-  fun m hm {tmᵢ} e ctxᵢ _hcan hwfTm htagBounded res htc =>
-    IH m hm (tmᵢ := tmᵢ) e ctxᵢ hwfTm htagBounded res htc
-
-lemma StepFRSingleRunFinalCleanPcTrue_IH_WithExpr_of_induction
-  (CanUse : Expr → Prop)
-  {registry : ExternRegistry}
-  (IH : ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
-    CanUse e →
-    ∀ (res : TypeResult),
-    typecheck ctxᵢ e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)) :
-  StepFRSingleRunFinalCleanPcTrue_IH_WithExpr predSat tm fuel CanUse
-    (registry := registry) :=
-  fun m hm {tmᵢ} e ctxᵢ hcan _hwfTm _hBounded res htc =>
-    IH m hm (tmᵢ := tmᵢ) e ctxᵢ hcan res htc
-
-lemma StepFRSingleRunFinalCleanPcTrue_IH_WithExpr_of_plain
-  (CanUse : Expr → Prop)
-  {registry : ExternRegistry}
-  (IH : StepFRSingleRunFinalCleanPcTrue_IH predSat tm fuel (registry := registry)) :
-  StepFRSingleRunFinalCleanPcTrue_IH_WithExpr predSat tm fuel CanUse
-    (registry := registry) :=
-  fun m hm {tmᵢ} e ctxᵢ _hcan hwfTm hBounded res htc =>
-    IH m hm (tmᵢ := tmᵢ) e ctxᵢ hwfTm hBounded res htc
-
-lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_of_induction
-  (masked : Tag → Prop)
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  {registry : ExternRegistry}
-  (IH : ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctx : TypeContext)
-    (res : TypeResult),
-    typecheck ctx e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-        masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)) :
-  StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-    predSat tm fuel (registry := registry) masked CtxCons ValCons :=
-  fun m hm {tmᵢ} e ctx _hwfTm _hBounded res htc =>
-    IH m hm (tmᵢ := tmᵢ) e ctx res htc
-
-lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_induction
-  (CanUse : Expr → Prop)
-  (masked : Tag → Prop)
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  {registry : ExternRegistry}
-  (IH : ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctx : TypeContext),
-    CanUse e →
-    ∀ (res : TypeResult),
-    typecheck ctx e m = .ok res →
-      StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-        masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)) :
-  StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
-    predSat tm fuel CanUse (registry := registry) masked CtxCons ValCons :=
-  fun m hm {tmᵢ} e ctx hcan _hwfTm _hBounded res htc =>
-    IH m hm (tmᵢ := tmᵢ) e ctx hcan res htc
-
-lemma StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
-  (CanUse : Expr → Prop)
-  (masked : Tag → Prop)
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  {registry : ExternRegistry}
-  (IH : StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-    predSat tm fuel (registry := registry) masked CtxCons ValCons) :
-  StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr
-    predSat tm fuel CanUse (registry := registry) masked CtxCons ValCons :=
-  fun m hm {tmᵢ} e ctx _hcan hwfTm hBounded res htc =>
-    IH m hm (tmᵢ := tmᵢ) e ctx hwfTm hBounded res htc
-
-end StepFR_IH_Abbrevs
-
-
--- Used by both stepFR_ite and stepFR_app
 lemma agreeValueUnder_clean_transport_by_cleanBack
     {predSat : PredSat} {R R' : Regime}
     {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}

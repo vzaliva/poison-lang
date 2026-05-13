@@ -90,39 +90,6 @@ lemma stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg_with_expr_proof
   · intro l qt hnotIn hlookup hclean
     exact _hfresh' l qt hnotIn (by rwa [h_mem] at hlookup) (by rwa [h_regime] at hclean)
 
-lemma stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg
-  (masked : Tag → Prop)
-  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e : Expr) (op : UnaryOp) (fuel' : Nat) (res : TypeResult)
-  (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel'))
-      masked
-      (fun ctx μ ρ θ =>
-        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-      (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
-  (htc : typecheck ctx (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-    masked
-    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctx (Expr.unaryop op e) res predSat tm (registry := registry) := by
-  exact
-    stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg_with_expr_proof
-      masked ctx predSat tm e op fuel' res
-      (fun _ => True) (fun _ => True) trivial trivial
-      (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
-        StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
-          predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
-          (fun ctx μ ρ θ =>
-            consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-          (fun R qt μ θ v =>
-            valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-          IH m hm (tmᵢ := tmᵢ) e ctx trivial hwfTm hTmBounded res htc)
-      htc
-
-
 lemma stepFR_op_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
@@ -374,23 +341,6 @@ lemma stepFR_op_with_expr_proof
     simpa [h_ret_etyp] using hnonfun_args.2.2
   exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison_res hnotfun_res hnotref hEq
 
-lemma stepFR_op
-  (ctxᵢ : TypeContext) (predSat : PredSat)
-  (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (htc : typecheck ctxᵢ (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.op e1 op e2) res predSat tm (registry := registry) := by
-    exact
-      stepFR_op_with_expr_proof
-        ctxᵢ predSat e1 e2 op fuel' res tm
-        (fun _ => True) (fun _ => True) trivial trivial trivial
-        (fun _ => trivial)
-        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
-          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        htc
-
--- World-free version of stepFRW_unaryop
-
 lemma stepFR_unaryop_with_expr_proof
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (op : UnaryOp) (fuel' : Nat) (res : TypeResult)
@@ -545,26 +495,6 @@ lemma stepFR_unaryop_with_expr_proof
   have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
     simpa [h_ret_etyp] using hnonfun_arg.2
   exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison_res hnotfun_res hnotref hEq
-
-lemma stepFR_unaryop
-  (ctxᵢ : TypeContext) (predSat : PredSat)
-  (e : Expr) (op : UnaryOp) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning)
-  (hOp : RegistryOperationalSafe registry)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (htc : typecheck ctxᵢ (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.unaryop op e) res predSat tm (registry := registry) := by
-    exact
-      stepFR_unaryop_with_expr_proof
-        ctxᵢ predSat e op fuel' res tm
-        (fun _ => True) (fun _ => True) trivial trivial hOp
-        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
-          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        htc
-
--- ═══════════════════════════════════════════════════════════════════════════
--- Op single-run infrastructure (moved from FaultRobustnessProofs.lean)
--- ═══════════════════════════════════════════════════════════════════════════
 
 lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
   (masked : Tag → Prop)
@@ -772,38 +702,3 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
   · simpa [hctxAfter, hcfg_eq] using hric2
   · simpa [hctxAfter, hcfg_eq] using hcwr2
 
-lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg
-  (masked : Tag → Prop)
-  (ctx : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e1 e2 : Expr) (op : Op) (fuel' : Nat) (res : TypeResult)
-  (hOp : RegistryOperationalSafe registry)
-  (IH :
-    StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH
-      predSat tm (Nat.succ (Nat.succ fuel'))
-      masked
-      (fun ctx μ ρ θ =>
-        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-      (fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v) (registry := registry))
-  (htc : typecheck ctx (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-    masked
-    (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-    (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctx (Expr.op e1 op e2) res predSat tm (registry := registry) := by
-  exact
-    stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
-      masked ctx predSat tm e1 e2 op fuel' res
-      (fun _ => True) (fun _ => True) trivial trivial trivial
-      (fun {_ctx} {_res} _ => trivial)
-      hOp
-      (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
-        StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExpr_of_plain
-          (registry := registry)
-          predSat tm (Nat.succ (Nat.succ fuel')) (fun _ => True) masked
-          (fun ctx μ ρ θ =>
-            consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-          (fun R qt μ θ v =>
-            valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-          IH m hm (tmᵢ := tmᵢ) e ctx trivial hwfTm hTmBounded res htc)
-      htc
