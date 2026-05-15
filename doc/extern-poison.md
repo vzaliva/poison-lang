@@ -267,71 +267,15 @@ they actually invoke. This needs a clear public-API statement.
 
 ### 5.9 Regime as FR theorem parameter
 
-The guard regime `R` (per `doc/poison-lang-description.tex`,
-"Guard Regime" definition at line 1116) is **not runtime state and
-not source-level state**. It is a *universally quantified parameter
-of the FR theorem*: the FR claim is "for every well-formed `R`, two
-runs that conform to `R` produce agreeing outputs."
+The guard regime `R` is a universally quantified parameter of the FR
+theorem, not runtime state or source-level state. Extern trust contracts
+should be stated relative to the same `R`: for every well-formed regime,
+inputs that are regime-consistent should produce outputs that honor the
+extern's declared `QTyp`.
 
-`R` is defined exactly on `K_S` — the set of guard tags that occur in
-predicates attached to entries of the critical-input specification
-`S`. Tags allocated *during* typechecking (e.g., for an extern's
-output predicate) are not in `K_S` and not in `R`'s domain. The
-"exactly on" is mechanized as a bidirectional constraint:
-`LeanProofs/FaultRobustness.lean:71` (`wfRegime`) requires
-`dom(R) ⊆ K_S` *and* `K_S ⊆ dom(R)`, and the FR theorem takes
-`wfRegime` as a premise. The typechecker only ever shrinks `R`
-(via `invalidateRegimeDeps` / `joinRegimes`); it never inserts.
-
-**Two modes for the typechecker** (description doc lines 1143-1147):
-
-- Source execution: `R = ∅`. Conservative. No depoisoning fires.
-- FR reasoning: `R` instantiated for the two-run scenario. The if-
-  rule's `R(k) = some true / some false` branches become reachable;
-  the typechecker exploits regime-deterministic guard outcomes.
-
-**Extern boundaries are quantified by the same R.** The extern trust
-contract should be universally quantified over `R`, paralleling the
-FR theorem's outer quantifier:
-
-> For every well-formed `R`, for inputs whose typing is regime-
-> consistent with `R`, the extern's implementation produces an output
-> that honors its declared `QTyp` under `R`.
-
-This parametrization gives the extern proof leverage on the **input
-side** of the boundary: when a critical input flows into the extern,
-the proof can assume `R(k)` determines whether the input is
-agreement-clean. Under `R(k) = true`, the input is depoisoned and
-agrees across runs; the deterministic implementation then produces
-an agreeing output.
-
-**A significant limitation.** Predicates allocated on the **output
-side** of an extern get fresh tags that are not in `K_S` and so not
-in `R`'s domain. Downstream code cannot use `R` to depoison such
-outputs. Empirically: the if-rule's regime lookup returns `none` for
-these tags and falls through to the conservative `if_std` joining
-path, so the predicate is dropped at the join and the result stays
-poisoned.
-
-In effect: **extern functions cannot currently return results that
-carry a predicate intended for later depoisoning**. This is a
-substantial limitation. It means the latent-marker reading (§5.4) is
-FR-decorative for extern outputs given the current regime mechanism;
-the predicate annotation is type-level information that the FR
-machinery does not act on.
-
-**Design alternative left open: extend `R`'s domain.** One way to
-lift the limitation is to allow `R` to constrain tags beyond `K_S` —
-e.g., freshly-allocated tags from extern outputs. This would
-require revising regime well-formedness to admit the larger domain,
-defining regime consistency for the new tags (a value-level condition
-that the extern's implementation establishes), and reworking the FR
-theorem's quantification and the extern trust contract to thread the
-extended `R`. This is a real and substantial design change, parked
-for further consideration (§7.5).
-
-**Alternative rejected: tag-sharing between extern outputs and
-critical inputs.** See §6.2.
+There is an important open issue around whether this regime can also
+cover tags allocated by extern return/effect predicates. That issue is
+tracked separately in [doc/extern-regime.md](extern-regime.md).
 
 ## 6. Resolved positions and rejected alternatives
 
@@ -413,30 +357,26 @@ precondition language for read-side memory must be analyzed alongside
 the argument/captured-env case so we do not commit to a precondition
 shape that cannot extend to memory.
 
-### 7.5 Extending `R`'s domain to internal tags  *(from §5.9)*
+### 7.5 Extern-produced regime tags  *(from §5.9)*
 
-Should the guard regime `R` be allowed to constrain tags allocated
-during typechecking (e.g., extern output predicate tags) in addition
-to the current `K_S`-only domain? Without this extension, extern
-outputs cannot carry FR-effective latent depoisoning markers — a
-substantial limitation. The cost of the extension is revising regime
-well-formedness, regime consistency (so it says something meaningful
-about internally-allocated tags), and the FR theorem's quantification
-structure. Parked for further consideration; not committed to.
+Resolve the regime-domain issue for extern-produced return/effect tags.
+The problem statement, current analysis, and planning placeholder live in
+[doc/extern-regime.md](extern-regime.md).
 
 ## 8. Next steps (analysis-level)
 
 1. Resolve §7.2 (precondition placement).
 2. Resolve §7.4 (read-side memory annotations).
 3. Resolve §7.1 (predicate language expressiveness).
-4. Construct §7.3 (latent-marker example) to validate the
+4. Resolve §7.5 in `doc/extern-regime.md`.
+5. Construct §7.3 (latent-marker example) to validate the
    interpretation against existing predicate machinery.
-5. Sketch the proof obligation in Lean terms once §7.2 is pinned.
-6. Identify or construct a concrete `sqrt`-style example in
+6. Sketch the proof obligation in Lean terms once §7.2 is pinned.
+7. Identify or construct a concrete `sqrt`-style example in
    `examples/` to drive the design.
-7. Decide what to do operationally with `abs` and `max`: leave declared
+8. Decide what to do operationally with `abs` and `max`: leave declared
    but untrusted (i.e., not added to the trusted registry), remove from
    examples, or rewrite.
-8. Update `doc/ffi-axioms.md` once the model is firm, replacing the
+9. Update `doc/ffi-axioms.md` once the model is firm, replacing the
    current §1/§2 roadmap items with a target consistent with this
    document.
