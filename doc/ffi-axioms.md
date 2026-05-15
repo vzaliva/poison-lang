@@ -719,6 +719,17 @@ Done means one of two outcomes:
   records whether the fix is to tighten the `abs` declaration, tighten
   `ExternBoundarySpec`, or expose a missing boundary payload fact.
 
+Validation result: the direct `abs` check reaches the second outcome.  The
+current `@12` declaration overclaims a clean result.  `LeanProofs/ExternProofs.lean`
+records the proof-side declaration and implementation shape, plus
+`ExternProofs.builtinAbs_cleanPost_obstruction`: for a clean integer result,
+`StepFRPost` requires `resultAgreesIfClean`, but `abs` is input-sensitive and
+dirty integer inputs need not agree.  Concretely, the implementation can return
+`1` for `-1` and `2` for `2`, and those outputs cannot satisfy clean integer
+agreement.  The appropriate fix is to tighten the `abs` declaration (for
+example, stop promising `clean {}` for a possibly dirty argument) unless a
+future declassification-style proof obligation is added.
+
 This is the minimal boundary validation exercise. It checks that trusted
 boundary evidence can actually be packaged, looked up, and consumed by the
 `StepFR` extern branch. It does not validate nested returned callables.
