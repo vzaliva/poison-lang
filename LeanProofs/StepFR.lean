@@ -3917,14 +3917,10 @@ lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
                 _ = some qt := by
                   exact hctx_lookup
             exact Option.some.inj this
-          have hcrit_locs' := hcrit_locs
-          rw [List.forall_iff_forall_mem] at hcrit_locs'
-          have hmem' : (l, qt_s) ∈ memEnvToLocQTypList s.locs := by
-            rw [memEnvToLocQTypList, List.mem_map]
-            refine ⟨(l, e_s), (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).2 hlookup_s, ?_⟩
-            rfl
+          have hclean_s : qtypCleanUnder R qt_s := by
+            simpa [hqt] using hclean
           have hlocEntry : agreeLocUnder predSat R μ₀ μ₁ θ₀ θ₁ (l, qt_s) :=
-            hcrit_locs' (l, qt_s) hmem'
+            hcrit_locs l qt_s hlookup_s' hclean_s
           simpa [hqt] using hlocEntry
     · -- Trusted location: use trusted-input agreement.
       exact htrusted_locs l qt hctx_lookup hkey hclean
@@ -3953,14 +3949,10 @@ lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
                 _ = some qt := by
                   exact hctx_lookup
             exact Option.some.inj this
-          have hcrit_vars' := hcrit_vars
-          rw [List.forall_iff_forall_mem] at hcrit_vars'
-          have hmem' : (x, qt_s) ∈ s.vars.toList := by
-            rw [Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some]
-            dsimp [VarTypeEnv.lookup] at hlookup_s
-            simpa using hlookup_s
+          have hclean_s : qtypCleanUnder R qt_s := by
+            simpa [hqt] using hclean
           have hvarEntry : agreeVarUnder predSat R μ₀ ρ₀ μ₁ ρ₁ θ₀ θ₁ (x, qt_s) :=
-            hcrit_vars' (x, qt_s) hmem'
+            hcrit_vars x qt_s hlookup_s hclean_s
           simpa [hqt] using hvarEntry
     · -- Trusted variable: use trusted-input agreement.
       exact htrusted_vars x qt hctx_lookup hkey hclean
