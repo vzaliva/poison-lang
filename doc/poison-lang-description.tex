@@ -1037,6 +1037,9 @@ We fix a \emph{critical-input specification} $S$ comprising finite maps of criti
   S.\mathrm{vars} : \text{Variable} \rightharpoonup Q.
 \]
 Context entries not listed in $S$ are considered \emph{trusted inputs}.
+Cross-run agreement for critical entries is required only when the entry is
+clean under the chosen guard regime $\mathcal{R}$; dirty critical entries are
+not required to agree in their payload values.
 
 \paragraph{Current mechanized proof restriction.}
 In the current Lean development, well-formed critical-variable specifications are
@@ -1066,6 +1069,9 @@ For a single run, we say that $\mathcal{R}$ is \emph{consistent} with the critic
   is satisfied according to the abstract predicate satisfaction relation iff
   $\mathcal{R}(k)=\text{true}$ (and is not satisfied iff $\mathcal{R}(k)=\text{false}$).
 \end{itemize}
+Thus dirty critical entries with guard-closure predicates may differ in payload
+across the two runs, but each run must still satisfy the regime-consistency
+condition for that predicate.
 \end{definition}
 
 \subsubsection{Regime-Aware Typing}
@@ -1110,7 +1116,7 @@ A program $e$ satisfies fault robustness with respect to the critical-input spec
     \item \textbf{Context instantiation:} The initial runtime states instantiate the typing context used to check $e$.
     \item \textbf{Trusted-closure initialization (mechanized proof assumption):} Any trusted top-level variable value (i.e.\ a context variable not listed in $S.\mathrm{vars}$) already satisfies the deep closure-captured-vars regime invariant under $\mathcal{R}$.
     \item \textbf{Regime consistency:} For each critical input, the regime is consistent with predicate satisfaction on that input (for guard-only tags there is no additional consistency requirement; for guarded predicates, satisfaction agrees with the regime's truth value).
-    \item \textbf{Agreement on critical inputs under $\mathcal{R}$:} The two runs agree on each critical entry in the manner dictated by the regime and predicate satisfaction.
+    \item \textbf{Agreement on critical inputs under $\mathcal{R}$:} The two runs agree on each critical entry that is clean under $\mathcal{R}$. Dirty guard-closure entries may differ in payload, while regime consistency still constrains predicate satisfaction in each run.
     \item \textbf{Agreement on trusted inputs:} The two runs agree on context entries not in $S$ whenever those entries are typed clean under $\mathcal{R}$.
     \item \textbf{Termination under the chosen evaluation mode:} Both runs terminate under the same evaluation mode, producing final configurations and return values.
 \end{itemize}
@@ -1159,8 +1165,8 @@ the regime's domain, predicate satisfaction on the return value agrees with
 the regime's truth value. This enables the proof to establish regime
 consistency for newly introduced bindings (e.g.\ in the \texttt{let} rule)
 without changing the top-level specification. A short bridge
-argument then shows that the spec-level premises (agreement on critical inputs
-and on trusted clean inputs) imply the initial hypothesis required by
+argument then shows that the spec-level premises (agreement on clean critical
+inputs and on trusted clean inputs) imply the initial hypothesis required by
 \texttt{StepFR}, yielding the desired observable equality.
 
 The specification is stated for arbitrary evaluation modes, but the proof

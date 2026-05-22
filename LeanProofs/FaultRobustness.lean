@@ -638,8 +638,10 @@ def agreeOnCriticalInputsUnderRegimeSpec
   (predSat : PredSat) (R : Regime) (s : InputSpec)
   (μ₁ : Memory) (ρ₁ : VarEnv) (θ₁ : RealizationMap)
   (μ₂ : Memory) (ρ₂ : VarEnv) (θ₂ : RealizationMap) : Prop :=
-  List.Forall (agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂) (memEnvToLocQTypList s.locs) ∧
-  List.Forall (agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂) s.vars.toList
+  (∀ l qt, s.locs.lookup l = some qt → qtypCleanUnder R qt →
+    agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂ (l, qt)) ∧
+  (∀ x qt, s.vars.lookup x = some qt → qtypCleanUnder R qt →
+    agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt))
 
 -- Typing results must satisfy the observable constraints.
 def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
