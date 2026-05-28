@@ -177,12 +177,11 @@ mutual
       | Expr.vlet x e1 e2 =>
         match beval (fuel - 1) config e1 verbose with
         | .success config' v =>
-          let config'' := { config' with varEnv := config'.varEnv.update x v }
+          let config'' := { config' with varEnv := config.varEnv.update x v }
           match beval (fuel - 1) config'' e2 verbose with
           | .success config''' v2 =>
-            -- Restore original variable environment, keeping memory changes
-            -- According to OTT semantics, let-bound variables should not escape their scope
-            let finalConfig := { config''' with varEnv := config'.varEnv }
+            -- Restore the incoming variable environment, keeping heap/address effects.
+            let finalConfig := { config''' with varEnv := config.varEnv }
             .success finalConfig v2
           | .outOfFuel => .outOfFuel
           | .runtimeError msg => .runtimeError msg

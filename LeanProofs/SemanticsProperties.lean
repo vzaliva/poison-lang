@@ -179,10 +179,10 @@ lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool
   ∃ (config₁ config₂ config₃ : Config) (v1 : Value),
     LeanPoison.beval (fuel - 1) config₀ e1 verbose =
         .success config₁ v1 ∧
-    config₂ = { config₁ with varEnv := config₁.varEnv.update x v1 } ∧
+    config₂ = { config₁ with varEnv := config₀.varEnv.update x v1 } ∧
     LeanPoison.beval (fuel - 1) config₂ e2 verbose =
         .success config₃ v ∧
-    config_final = { config₃ with varEnv := config₁.varEnv } := by
+    config_final = { config₃ with varEnv := config₀.varEnv } := by
   intro h_eq
   cases fuel with
   | zero =>
@@ -193,7 +193,7 @@ lemma bevalVlet_structure (x : Name) (e1 e2 : Expr) (fuel : Nat) (verbose : Bool
       simp at h_eq
       split at h_eq
       · next config₁' v₁ h_beval1 =>
-        let config₂' := { config₁' with varEnv := config₁'.varEnv.update x v₁ }
+        let config₂' := { config₁' with varEnv := config₀.varEnv.update x v₁ }
         split at h_eq
         · next config₃' v₂ h_beval2 =>
           injection h_eq with h_eq_cfg h_eq_val
@@ -1777,14 +1777,14 @@ lemma terminatesTo_seq_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) 
 lemma terminatesTo_vlet_inv' (x : Name) (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value) :
     terminatesTo (Expr.vlet x e₁ e₂) c₀ c₂ v →
     ∃ c₁ v₁ c₃, terminatesTo e₁ c₀ c₁ v₁ ∧
-                terminatesTo e₂ { c₁ with varEnv := c₁.varEnv.update x v₁ } c₃ v ∧
-                c₂ = { c₃ with varEnv := c₁.varEnv } ∧
+                terminatesTo e₂ { c₁ with varEnv := c₀.varEnv.update x v₁ } c₃ v ∧
+                c₂ = { c₃ with varEnv := c₀.varEnv } ∧
                 c₁.pureMode = c₀.pureMode ∧
                 c₂.pureMode = c₀.pureMode := by
   intro ⟨fuel, verbose, hbeval⟩
   have hstruct := bevalVlet_structure x e₁ e₂ fuel verbose c₀ c₂ v hbeval
   rcases hstruct with ⟨cfg₁, cfg₂, cfg₃, v₁, hbeval_e1, hcfg2_eq, hbeval_e2, hcfg_final⟩
-  have hpure_e2' : LeanPoison.beval (fuel - 1) { cfg₁ with varEnv := cfg₁.varEnv.update x v₁ } e₂ verbose =
+  have hpure_e2' : LeanPoison.beval (fuel - 1) { cfg₁ with varEnv := c₀.varEnv.update x v₁ } e₂ verbose =
       .success cfg₃ v := by rw [← hcfg2_eq]; exact hbeval_e2
   refine ⟨cfg₁, v₁, cfg₃, ⟨fuel - 1, verbose, hbeval_e1⟩, ⟨fuel - 1, verbose, hpure_e2'⟩, hcfg_final, ?_, ?_⟩
   · exact terminatesTo_preserves_pureMode e₁ c₀ cfg₁ v₁ ⟨fuel - 1, verbose, hbeval_e1⟩
@@ -2839,25 +2839,30 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
             bevalVlet_structure x e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v hbeval
           rcases hstruct with ⟨cfg₁1, cfg₂, cfg₃, v1, hbeval1, hcfg2_eq, hbeval2, hcfg_final_eq⟩
           have hih1 := ih e1 cfg₀ cfg₁1 v1 rfl hwf₀ hbeval1
+          have hle_next1 : cfg₀.nextAddr ≤ cfg₁1.nextAddr :=
+            beval_nextAddr_mono e1 fuel verbose cfg₀ cfg₁1 v1 hOp hbeval1
           have hwf_cfg2 : wfConfig cfg₂ := by
-            rcases hih1.1 with ⟨hwfmem1, hwfenv1⟩
-            have hwfenv2 : wfVarEnv cfg₁1.nextAddr (cfg₁1.varEnv.update x v1) :=
-              wfVarEnv_update cfg₁1.nextAddr cfg₁1.varEnv x v1 hwfenv1 hih1.2
+            rcases hih1.1 with ⟨hwfmem1, _hwfenv1⟩
+            have hwfenv0_lift : wfVarEnv cfg₁1.nextAddr cfg₀.varEnv :=
+              wfVarEnv_mono hle_next1 cfg₀.varEnv hwf₀.2
+            have hwfenv2 : wfVarEnv cfg₁1.nextAddr (cfg₀.varEnv.update x v1) :=
+              wfVarEnv_update cfg₁1.nextAddr cfg₀.varEnv x v1 hwfenv0_lift hih1.2
             subst hcfg2_eq
             exact ⟨hwfmem1, hwfenv2⟩
           have hreg_cfg₂ : cfg₂.registry = cfg₀.registry := by
             simp [hcfg2_eq]; exact beval_preserves_registry _ _ _ _ _ _ hbeval1
           have hih2 := ih e2 cfg₂ cfg₃ v hreg_cfg₂ hwf_cfg2 hbeval2
-          have hle_next : cfg₁1.nextAddr ≤ cfg₃.nextAddr := by
+          have hle_next2 : cfg₁1.nextAddr ≤ cfg₃.nextAddr := by
             have hle := terminatesTo_nextAddr_mono e2 cfg₂ cfg₃ v (hreg_cfg₂.symm ▸ hOp)
               ⟨fuel, verbose, hbeval2⟩
             simpa [hcfg2_eq] using hle
-          have hwfenv1_lift : wfVarEnv cfg₃.nextAddr cfg₁1.varEnv :=
-            wfVarEnv_mono hle_next cfg₁1.varEnv hih1.1.2
+          have hle_next : cfg₀.nextAddr ≤ cfg₃.nextAddr := Nat.le_trans hle_next1 hle_next2
+          have hwfenv0_lift : wfVarEnv cfg₃.nextAddr cfg₀.varEnv :=
+            wfVarEnv_mono hle_next cfg₀.varEnv hwf₀.2
           subst hcfg_final_eq
           constructor
           · rcases hih2.1 with ⟨hwfmem3, _⟩
-            exact ⟨by simpa using hwfmem3, by simpa using hwfenv1_lift⟩
+            exact ⟨by simpa using hwfmem3, by simpa using hwfenv0_lift⟩
           · simpa using hih2.2
       -- Application
       | app e1 e2 =>

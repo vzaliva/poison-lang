@@ -503,11 +503,12 @@ m1(a) = n
 < pm, if e then e1 else e2, m, r > ==> < v, m2, r2 >
 
 % Let binding
-% Note: The final environment r1 excludes the let-bound variable x (lexical scoping)
+% Note: the body sees the incoming environment extended with x, and the whole
+% expression restores the incoming environment (heap effects remain).
 <pm, e1, m, r> ==> < v, m1, r1>
-<pm, e2, m1, r1[x |-> v]> ==> < v2, m2, r2>
+<pm, e2, m1, r[x |-> v]> ==> < v2, m2, r2>
 -------------------------------------------------------- :: b_let
-< pm, let x = e1 in e2, m, r > ==> < v2, m2, r1 >
+< pm, let x = e1 in e2, m, r > ==> < v2, m2, r >
 
 % Function abstraction
 --------------------------------------------------------------- :: b_fn_abs

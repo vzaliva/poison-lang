@@ -237,6 +237,9 @@ the scenes.
     \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (no nested pure functions)
     \item \textbf{Strings}: literals of type \texttt{string}
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings.
+      The binding is visible only in \texttt{e2}; after the expression finishes,
+      the incoming runtime variable environment is restored, while heap effects
+      from \texttt{e1} and \texttt{e2} remain.
       Shadowing a variable that carries an active guard predicate (a \texttt{guardClosure}
       whose tag is interpreted by the current regime) is rejected by the typechecker.
     \item \textbf{Memory access only through references}: You need a valid

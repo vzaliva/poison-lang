@@ -1,0 +1,2 @@
+let y = (let leaked = 1 in 2) in
+  leaked

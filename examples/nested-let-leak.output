@@ -1,0 +1,4 @@
+Evaluating file: examples/nested-let-leak.poison (verbose mode)
+
+Type checking error: Variable leaked not found in environment
+

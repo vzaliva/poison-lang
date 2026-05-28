@@ -330,6 +330,17 @@ lemma stepFR_vlet_with_expr_proof
   have hstruct₁ := terminatesTo_vlet_inv' vname e1 e2
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   rcases hstruct₁ with ⟨cfg₁1, v₁1, cfg₁3, ht₁_e1, ht₁_e2, hcf₁_eq, hpm₁1, hpm₁2⟩
+  -- The let restores the incoming runtime varEnv (ρ₀ / ρ₁), and e1 preserves it,
+  -- so ρ = cfg1.varEnv.  Normalise the inversion outputs to the cfg₀1.varEnv /
+  -- cfg₁1.varEnv form used throughout the rest of the proof.
+  have hvar_e1₀ : ρ₀ = cfg₀1.varEnv := by
+    rcases ht₀_e1 with ⟨fuel_w, verbose_w, h_beval_w⟩
+    exact beval_preserves_varEnv e1 fuel_w verbose_w _ _ _ h_beval_w
+  have hvar_e1₁ : ρ₁ = cfg₁1.varEnv := by
+    rcases ht₁_e1 with ⟨fuel_w, verbose_w, h_beval_w⟩
+    exact beval_preserves_varEnv e1 fuel_w verbose_w _ _ _ h_beval_w
+  simp only [hvar_e1₀] at ht₀_e2 hcf₀_eq
+  simp only [hvar_e1₁] at ht₁_e2 hcf₁_eq
   -- Define intermediate configs with extended varEnv
   let cfg₀2 : Config := { cfg₀1 with varEnv := cfg₀1.varEnv.update vname v₀1 }
   let cfg₁2 : Config := { cfg₁1 with varEnv := cfg₁1.varEnv.update vname v₁1 }
@@ -1613,6 +1624,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg1, v1, cfg3, ht_e1, ht_e2, hcf_eq, _hpm1, _hpm_final⟩
   let cfg2 : Config := { cfg1 with varEnv := cfg1.varEnv.update vname v1 }
+  -- The let restores the incoming runtime varEnv (ρ), and e1 preserves it, so
+  -- ρ = cfg1.varEnv.  Normalise the inversion outputs to the cfg1.varEnv form.
+  have hvar_e1 : ρ = cfg1.varEnv := by
+    rcases ht_e1 with ⟨fuel_w, verbose_w, h_beval_w⟩
+    exact beval_preserves_varEnv e1 fuel_w verbose_w _ _ _ h_beval_w
+  simp only [hvar_e1] at ht_e2 hcf_eq
   have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctxᵢ hctxCurrent hcan1 hwfTm hTmBounded res1 htc1'
   have hIH1Inst := hIH1 hpredlaws hExtTyping hwfTm hTmBounded

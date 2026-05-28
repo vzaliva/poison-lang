@@ -94,12 +94,11 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool)
                   ⟨config', v', hEval₁, hEval₂⟩
                 exact (ih' e₁ config₀ config' v' hEval₁).trans (ih' e₂ config' config₁ v hEval₂)
             | vlet x e₁ e₂ =>
+                -- The final config restores the incoming varEnv directly, so the
+                -- conclusion is immediate from the structure equation.
                 rcases bevalVlet_structure x e₁ e₂ (fuel' + 1) verbose config₀ config₁ v hEval with
-                  ⟨config₁', config₂', config₃', v₁, hEval₁, hCfg₂, hEval₂, hCfgFinal⟩
-                have hVar₁ : config₀.varEnv = config₁'.varEnv := ih' e₁ config₀ config₁' v₁ hEval₁
-                have hFinal : config₁.varEnv = config₁'.varEnv := by
-                  rw [hCfgFinal]
-                exact hVar₁.trans hFinal.symm
+                  ⟨_, _, _, _, _, _, _, hCfgFinal⟩
+                rw [hCfgFinal]
             | newRef e₁ =>
                 rcases bevalNewRef_structure e₁ (fuel' + 1) verbose config₀ config₁ v hEval with
                   ⟨config', n, a, hEval₁, _ha, _hMem, _hNext, hVar, _hPure, _, _hv⟩
