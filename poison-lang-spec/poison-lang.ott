@@ -467,11 +467,11 @@ not b = b1
 --------------------------------------------------------------- :: b_unary_op_not 
 <pm, not e, m, r> ==> < b1, m1, r1>
 
-% References
-<pm, e, m, r> ==> < n, m1, r1>
+% References (allocation is impure)
+<impure, e, m, r> ==> < n, m1, r1>
 fresh a
 ------------------------------ :: b_ref
-<pm, ref e, m, r> ==> < a, m1 [ a |-> n ], r1>
+<impure, ref e, m, r> ==> < a, m1 [ a |-> n ], r1>
 
 % Dereference
 <pm, e, m, r> ==> < a, m1, r1>
@@ -479,11 +479,11 @@ m1(a) = n
 ------------------------------ :: b_deref
 <pm, !e, m, r> ==> < n, m1, r1>
 
-% Assignment
-<pm, e1, m, r> ==> < a, m1, r1>
-<pm, e2, m1, r1> ==> < n, m2, r2>
+% Assignment (mutation is impure)
+<impure, e1, m, r> ==> < a, m1, r1>
+<impure, e2, m1, r1> ==> < n, m2, r2>
 -------------------------------------- :: b_assign
-< pm, e1 := e2, m, r > ==> < unit, m2 [ a |-> n ], r2 >
+< impure, e1 := e2, m, r > ==> < unit, m2 [ a |-> n ], r2 >
 
 % Sequencing
 <pm, e1, m, r> ==> < v1, m1, r1>

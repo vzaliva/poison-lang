@@ -232,8 +232,11 @@ lemma bevalNewRef_structure (e1 : Expr) (fuel : Nat) (verbose : Bool)
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
+    -- Pure-mode guard: success forces the else (pureMode = false) branch; the
+    -- true branch reduces to `.runtimeError ≠ .success` and is closed by simp.
     split at h_eq <;> try simp at h_eq
-    -- Only the success-num branch survives
+    -- Only the success-num branch of the inner match on e1 survives
+    split at h_eq <;> try simp at h_eq
     rename_i config' n h_beval1
     obtain ⟨h_eq_cfg, h_eq_val⟩ := h_eq
     simp only [Nat.add_sub_cancel]
@@ -305,8 +308,11 @@ lemma bevalAssign_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
   | succ fuel' =>
     unfold LeanPoison.beval at h_eq
     simp at h_eq
+    -- Pure-mode guard: success forces the else (pureMode = false) branch; the
+    -- true branch reduces to `.runtimeError ≠ .success` and is closed by simp.
     split at h_eq <;> try simp at h_eq
     -- First split: e1 -> .success config₁ (Value.loc a); inner match on e2 remains
+    split at h_eq <;> try simp at h_eq
     rename_i config₁ a heq_beval1
     split at h_eq <;> try simp at h_eq
     -- Second split: e2 -> .success config₁' (Value.num n)

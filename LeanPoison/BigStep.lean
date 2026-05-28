@@ -100,15 +100,20 @@ mutual
 
 
       -- References
+      -- Pure-mode guard is defense-in-depth: typecheckPfn already rejects this
+      -- syntactically via Expr.toPExpr at pfn definition (see Typecheck.lean).
       | Expr.newRef e =>
-        match beval (fuel - 1) config e verbose with
-        | .success config' (Value.num n) =>
-          let (l, config'') := freshAddr config'
-          let config''' := { config'' with memory := config''.memory.update l n }
-          .success config''' (Value.loc l)
-        | .success _ _ => .runtimeError "Runtime type error: ref expects a number"
-        | .outOfFuel => .outOfFuel
-        | .runtimeError msg => .runtimeError msg
+        if config.pureMode then
+          .runtimeError "ref allocation forbidden in pure mode"
+        else
+          match beval (fuel - 1) config e verbose with
+          | .success config' (Value.num n) =>
+            let (l, config'') := freshAddr config'
+            let config''' := { config'' with memory := config''.memory.update l n }
+            .success config''' (Value.loc l)
+          | .success _ _ => .runtimeError "Runtime type error: ref expects a number"
+          | .outOfFuel => .outOfFuel
+          | .runtimeError msg => .runtimeError msg
 
       -- Dereference
       | Expr.deref e =>
@@ -122,19 +127,23 @@ mutual
         | .runtimeError msg => .runtimeError msg
 
       -- Assignment
+      -- Pure-mode guard is defense-in-depth (see Expr.newRef note above).
       | Expr.assign e1 e2 =>
-        match beval (fuel - 1) config e1 verbose with
-        | .success config' (Value.loc l) =>
-          match beval (fuel - 1) config' e2 verbose with
-          | .success config'' (Value.num n) =>
-            let config''' := { config'' with memory := config''.memory.update l n }
-            .success config''' Value.unit
-          | .success _ _ => .runtimeError "Runtime type error: assignment expects number on right side"
+        if config.pureMode then
+          .runtimeError "assignment forbidden in pure mode"
+        else
+          match beval (fuel - 1) config e1 verbose with
+          | .success config' (Value.loc l) =>
+            match beval (fuel - 1) config' e2 verbose with
+            | .success config'' (Value.num n) =>
+              let config''' := { config'' with memory := config''.memory.update l n }
+              .success config''' Value.unit
+            | .success _ _ => .runtimeError "Runtime type error: assignment expects number on right side"
+            | .outOfFuel => .outOfFuel
+            | .runtimeError msg => .runtimeError msg
+          | .success _ _ => .runtimeError "Runtime type error: assignment expects location on left side"
           | .outOfFuel => .outOfFuel
           | .runtimeError msg => .runtimeError msg
-        | .success _ _ => .runtimeError "Runtime type error: assignment expects location on left side"
-        | .outOfFuel => .outOfFuel
-        | .runtimeError msg => .runtimeError msg
 
       -- Sequencing
       | Expr.seq e1 e2 =>
