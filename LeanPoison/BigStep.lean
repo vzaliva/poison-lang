@@ -200,7 +200,12 @@ mutual
       | Expr.app e1 e2 =>
         match beval (fuel - 1) config e2 verbose with
         | .success config' v2 =>
-          match beval (fuel - 1) config' e1 verbose with
+          -- Evaluate the function expression under the caller's variable
+          -- environment: argument evaluation may carry heap/address effects
+          -- forward, but must not dynamically extend the variable environment
+          -- used to evaluate the function expression.
+          let functionConfig := { config' with varEnv := config.varEnv }
+          match beval (fuel - 1) functionConfig e1 verbose with
           | .success config'' (Value.closure x body env) =>
             -- Extern impure dispatch: body is an extern AST node.
             match body with
@@ -227,7 +232,9 @@ mutual
               if config''.pureMode then
                 .runtimeError "Pure function cannot apply impure closure"
               else
-                bevalFunctionBody (fuel - 1) verbose config'' env x v2 body false
+                -- Restore the caller's variable environment for the body result.
+                let bodyReturnConfig := { config'' with varEnv := config.varEnv }
+                bevalFunctionBody (fuel - 1) verbose bodyReturnConfig env x v2 body false
           | .success config'' (Value.peClosure x body env) =>
             -- Extern pure dispatch: body is an extern AST node.
             match body with
@@ -248,7 +255,10 @@ mutual
               | some _ => .runtimeError (ExternError.format (.kindMismatch id))
             | _ =>
               match Expr.toPExpr? body with
-              | some _ => bevalFunctionBody (fuel - 1) verbose config'' env x v2 body true
+              | some _ =>
+                -- Restore the caller's variable environment for the body result.
+                let bodyReturnConfig := { config'' with varEnv := config.varEnv }
+                bevalFunctionBody (fuel - 1) verbose bodyReturnConfig env x v2 body true
               | none => .runtimeError "Pure closure body is not pure"
           | .success _ _ => .runtimeError "Runtime type error: expected function in application"
           | .outOfFuel => .outOfFuel

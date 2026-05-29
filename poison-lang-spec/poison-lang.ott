@@ -519,16 +519,19 @@ m1(a) = n
 < pm, pfn x : ST1 => pe : ST2, m, r > ==> < pe_closure(x, pe, r), m, r >
 
 % Impure function application (call-by-value)
+% The function expression is evaluated under the caller environment r, and the
+% whole application restores r: argument evaluation carries heap/address effects
+% forward but cannot dynamically extend the variable environment.
 < impure , e2 , m , r > ==> < v , m1 , r1 >
-< impure , e1 , m1 , r1 > ==> < closure ( x , e , r3 ) , m2 , r2 >
+< impure , e1 , m1 , r > ==> < closure ( x , e , r3 ) , m2 , r2 >
 < impure , e , m2 , r3 [ x |-> v ] > ==> < v0 , m3 , r4 >
 --------------------------------------------------------------- :: b_app_closure
-< impure , e1 e2 , m , r > ==> < v0 , m3 , r4 >
+< impure , e1 e2 , m , r > ==> < v0 , m3 , r >
 
 % Pure function application (no effects)
 < pm , pe2 , m , r > ==> < v , m , r >
 < pm , pe1 , m , r > ==> < pe_closure ( x , pe , r1 ) , m , r >
-< pure , pe , m , r1 [ x |-> v ] > ==> < v0 , m , r >
+< pure , pe , m , r1 [ x |-> v ] > ==> < v0 , m , r2 >
 --------------------------------------------------------------- :: b_app_pure_closure
 < pm , pe1 pe2 , m , r > ==> < v0 , m , r >
 

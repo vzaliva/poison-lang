@@ -374,11 +374,14 @@ inductive BevalAppSuccess (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool)
     (config₀ config₁ config₂ config_final : Config) (v₂ v : Value) : Prop where
   | userFn {x : Name} {body : Expr} {env : VarEnv}
       (he2 : LeanPoison.beval fuel' config₀ e2 verbose = .success config₁ v₂)
-      (he1 : LeanPoison.beval fuel' config₁ e1 verbose = .success config₂ (Value.closure x body env))
+      (he1 :
+        LeanPoison.beval fuel' { config₁ with varEnv := config₀.varEnv } e1 verbose =
+          .success config₂ (Value.closure x body env))
       (hNotExternAst : ¬ Expr.IsExternFnAst body)
       (hpureMode : config₂.pureMode = false)
       (hBody :
-        LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body false =
+        LeanPoison.bevalFunctionBody fuel' verbose
+          { config₂ with varEnv := config₀.varEnv } env x v₂ body false =
           .success config_final v)
       (hpureFinal : config_final.pureMode = config₂.pureMode) :
       BevalAppSuccess e1 e2 fuel' verbose config₀ config₁ config₂ config_final v₂ v
@@ -386,8 +389,9 @@ inductive BevalAppSuccess (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool)
       {eff : List Effect} {env : VarEnv}
       (he2 : LeanPoison.beval fuel' config₀ e2 verbose = .success config₁ v₂)
       (he1 :
-        LeanPoison.beval fuel' config₁ e1 verbose = .success config₂
-          (Value.closure x (Expr.externFn id y argTyp retSpec eff) env))
+        LeanPoison.beval fuel' { config₁ with varEnv := config₀.varEnv } e1 verbose =
+          .success config₂
+            (Value.closure x (Expr.externFn id y argTyp retSpec eff) env))
       (hpureMode : config₂.pureMode = false)
       (impl : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address))
       (hGet : config₂.registry.get? id = some (ExternImpl.fn impl))
@@ -401,11 +405,14 @@ inductive BevalAppSuccess (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool)
       BevalAppSuccess e1 e2 fuel' verbose config₀ config₁ config₂ config_final v₂ v
   | userPfn {x : Name} {body : Expr} {env : VarEnv}
       (he2 : LeanPoison.beval fuel' config₀ e2 verbose = .success config₁ v₂)
-      (he1 : LeanPoison.beval fuel' config₁ e1 verbose = .success config₂ (Value.peClosure x body env))
+      (he1 :
+        LeanPoison.beval fuel' { config₁ with varEnv := config₀.varEnv } e1 verbose =
+          .success config₂ (Value.peClosure x body env))
       (hNotExternAst : ¬ Expr.IsExternPfnAst body)
       (htoPExpr : Expr.toPExpr? body ≠ none)
       (hBody :
-        LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ body true =
+        LeanPoison.bevalFunctionBody fuel' verbose
+          { config₂ with varEnv := config₀.varEnv } env x v₂ body true =
           .success config_final v)
       (hpureFinal : config_final.pureMode = config₂.pureMode) :
       BevalAppSuccess e1 e2 fuel' verbose config₀ config₁ config₂ config_final v₂ v
@@ -413,8 +420,9 @@ inductive BevalAppSuccess (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool)
       {env : VarEnv}
       (he2 : LeanPoison.beval fuel' config₀ e2 verbose = .success config₁ v₂)
       (he1 :
-        LeanPoison.beval fuel' config₁ e1 verbose = .success config₂
-          (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env))
+        LeanPoison.beval fuel' { config₁ with varEnv := config₀.varEnv } e1 verbose =
+          .success config₂
+            (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env))
       (impl : VarEnv → Value → Memory → Except ExternError Value)
       (hGet : config₂.registry.get? id = some (ExternImpl.pfn impl))
       (hArg : valueMatchesTyp v₂ argTyp = true)
@@ -527,7 +535,8 @@ private lemma bevalApp_success_shape_of_inner
     (fuel' : Nat) (verbose : Bool) (e1 e2 : Expr)
     (config₀ config₁ config₂ config_final : Config) (v₂ v : Value) (vv : Value)
     (hb2 : LeanPoison.beval fuel' config₀ e2 verbose = .success config₁ v₂)
-    (hb1 : LeanPoison.beval fuel' config₁ e1 verbose = .success config₂ vv)
+    (hb1 : LeanPoison.beval fuel' { config₁ with varEnv := config₀.varEnv } e1 verbose =
+        .success config₂ vv)
     (hmain : LeanPoison.beval (fuel' + 1) config₀ (Expr.app e1 e2) verbose =
         .success config_final v) :
     BevalAppSuccess e1 e2 fuel' verbose config₀ config₁ config₂ config_final v₂ v := by
@@ -599,13 +608,12 @@ private lemma bevalApp_success_shape_of_inner
           simp [hb, hp] at hmain
           refine
             BevalAppSuccess.userFn (hNotExternAst := ?_) (he2 := hb2) (he1 := by simpa [hb] using hb1)
-              (hpureMode := hp) (hBody := by simpa [hb] using hmain)
+              (hpureMode := hp) (hBody := by simpa [hb, hp] using hmain)
               (hpureFinal := by
-                have hBody :=
-                  show
-                    LeanPoison.bevalFunctionBody fuel' verbose config₂ env x v₂ b false =
-                      .success config_final v from by simpa [hb] using hmain
-                exact bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ false _ _ hBody)
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ b false config_final v
+                  (by simpa [hb, hp] using hmain)
+                simpa using hpf)
           cases b <;> intro h <;> cases h
       | true =>
         cases b <;> simp [hp] at hmain
@@ -686,8 +694,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | num n =>
           rw [htp] at hmain
@@ -695,8 +706,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | bool b0 =>
           rw [htp] at hmain
@@ -704,8 +718,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | str s =>
           rw [htp] at hmain
@@ -713,8 +730,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | var x0 =>
           rw [htp] at hmain
@@ -722,8 +742,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | op e1' opName e2' =>
           rw [htp] at hmain
@@ -731,8 +754,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | unaryop op e =>
           rw [htp] at hmain
@@ -740,8 +766,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | ite e1' e2' e3' =>
           rw [htp] at hmain
@@ -749,8 +778,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | newRef _ => simp [Expr.toPExpr?] at htp
         | assign _ _ => simp [Expr.toPExpr?] at htp
@@ -760,8 +792,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | seq _ _ => simp [Expr.toPExpr?] at htp
         | vlet x0 e1' e2' =>
@@ -770,8 +805,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | fn _ _ _ _ => simp [Expr.toPExpr?] at htp
         | pfn _ _ _ _ => simp [Expr.toPExpr?] at htp
@@ -781,8 +819,11 @@ private lemma bevalApp_success_shape_of_inner
           refine
             BevalAppSuccess.userPfn (hNotExternAst := ?_) (he2 := hb2) (he1 := hb1)
               (htoPExpr := by intro hnone; simp [hnone] at htp) (hBody := by simpa using hmain)
-              (hpureFinal := bevalFunctionBody_success_same_pureMode _ _ _ _ _ _ _ true _ _
-                (by simpa using hmain))
+              (hpureFinal := by
+                have hpf := bevalFunctionBody_success_same_pureMode fuel' verbose
+                  { config₂ with varEnv := config₀.varEnv } env x v₂ _ true config_final v
+                  (by simpa using hmain)
+                simpa using hpf)
           exact fun h => nomatch h
         | externVal _ _ _ _ => simp [Expr.toPExpr?] at htp
         | externFn _ _ _ _ _ => simp [Expr.toPExpr?] at htp
@@ -807,7 +848,7 @@ lemma bevalApp_structure (e1 e2 : Expr) (fuel : Nat) (verbose : Bool)
     | runtimeError _msg =>
       simp [LeanPoison.beval, hb2] at h
     | success config₁ v₂ =>
-      cases hb1 : LeanPoison.beval fuel' config₁ e1 verbose with
+      cases hb1 : LeanPoison.beval fuel' { config₁ with varEnv := config₀.varEnv } e1 verbose with
       | outOfFuel =>
         simp [LeanPoison.beval, hb2, hb1] at h
       | runtimeError _msg =>
@@ -866,7 +907,8 @@ private lemma bevalFunctionBody_preserves_registry (fuel : Nat) (verbose : Bool)
 private lemma bevalApp_success_registry_eq (fuel' : Nat) (verbose : Bool)
     (cfg₀ cfg' cfg'' cfg_final : Config) (e1 e2 : Expr) (v₂ vv v : Value)
     (h₂ : LeanPoison.beval fuel' cfg₀ e2 verbose = .success cfg' v₂)
-    (h₁ : LeanPoison.beval fuel' cfg' e1 verbose = .success cfg'' vv)
+    (h₁ : LeanPoison.beval fuel' { cfg' with varEnv := cfg₀.varEnv } e1 verbose =
+        .success cfg'' vv)
     (hmain : LeanPoison.beval (fuel' + 1) cfg₀ (Expr.app e1 e2) verbose =
         .success cfg_final v) :
     cfg_final.registry = cfg''.registry := by
@@ -900,8 +942,8 @@ private lemma bevalApp_success_registry_eq (fuel' : Nat) (verbose : Bool)
           rfl
         | _ =>
           simp [hb, hp] at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ b false v
-            (by simpa [hb] using hmain)
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ b false v
+            (by simpa [hb, hp] using hmain)
       | true =>
         cases b <;> simp [hp] at hmain
   case peClosure x body env =>
@@ -952,62 +994,62 @@ private lemma bevalApp_success_registry_eq (fuel' : Nat) (verbose : Bool)
         | unit =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ Expr.unit true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ Expr.unit true v
             (by simpa using hmain)
         | num n =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.num n) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.num n) true v
             (by simpa using hmain)
         | bool b0 =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.bool b0) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.bool b0) true v
             (by simpa using hmain)
         | str s =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.str s) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.str s) true v
             (by simpa using hmain)
         | var x0 =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.var x0) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.var x0) true v
             (by simpa using hmain)
         | op e1 opName e2 =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.op e1 opName e2) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.op e1 opName e2) true v
             (by simpa using hmain)
         | unaryop op e =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.unaryop op e) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.unaryop op e) true v
             (by simpa using hmain)
         | ite e1 e2 e3 =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.ite e1 e2 e3) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.ite e1 e2 e3) true v
             (by simpa using hmain)
         | newRef _ => simp [Expr.toPExpr?] at htp
         | assign _ _ => simp [Expr.toPExpr?] at htp
         | deref e =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.deref e) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.deref e) true v
             (by simpa using hmain)
         | seq _ _ => simp [Expr.toPExpr?] at htp
         | vlet x0 e1 e2 =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.vlet x0 e1 e2) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.vlet x0 e1 e2) true v
             (by simpa using hmain)
         | fn _ _ _ _ => simp [Expr.toPExpr?] at htp
         | pfn _ _ _ _ => simp [Expr.toPExpr?] at htp
         | app e1 e2 =>
           rw [htp] at hmain
           simp at hmain
-          exact bevalFunctionBody_preserves_registry fuel' verbose cfg'' cfg_final env x v₂ (Expr.app e1 e2) true v
+          exact bevalFunctionBody_preserves_registry fuel' verbose { cfg'' with varEnv := cfg₀.varEnv } cfg_final env x v₂ (Expr.app e1 e2) true v
             (by simpa using hmain)
         | externVal _ _ _ _ => simp [Expr.toPExpr?] at htp
         | externFn _ _ _ _ _ => simp [Expr.toPExpr?] at htp
@@ -1025,14 +1067,16 @@ private lemma bevalApp_preserves_registry (fuel' : Nat) (verbose : Bool)
   | runtimeError msg =>
     simp [LeanPoison.beval, hb2] at hmain
   | success cfg' v₂ =>
-    cases hb1 : LeanPoison.beval fuel' cfg' e1 verbose with
+    cases hb1 : LeanPoison.beval fuel' { cfg' with varEnv := cfg₀.varEnv } e1 verbose with
     | outOfFuel =>
       simp [LeanPoison.beval, hb2, hb1] at hmain
     | runtimeError msg =>
       simp [LeanPoison.beval, hb2, hb1] at hmain
     | success cfg'' vv =>
       have hg2 : cfg'.registry = cfg₀.registry := ih _ _ _ _ _ hb2
-      have hg1 : cfg''.registry = cfg'.registry := ih _ _ _ _ _ hb1
+      have hg1 : cfg''.registry = cfg'.registry := by
+        have h := ih _ _ _ _ _ hb1
+        simpa using h
       have hgf : cfg_final.registry = cfg''.registry :=
         bevalApp_success_registry_eq fuel' verbose cfg₀ cfg' cfg'' cfg_final e1 e2 v₂ vv v hb2 hb1 hmain
       exact hgf.trans (hg1.trans hg2)
@@ -1204,7 +1248,8 @@ lemma terminatesTo_preserves_registry {e : Expr} {c₀ c₁ : Config} {out : Val
 -- ================================================================
 
 -- Helper: Convert bevalFunctionBody success to terminatesTo for the body
-private lemma bevalFunctionBody_to_terminatesTo
+-- Used by `terminatesTo_app_inv_full` in `LeanProofs/VarEnvPreservation.lean`.
+lemma bevalFunctionBody_to_terminatesTo
     (fuel : Nat) (verbose : Bool) (currentConfig : Config) (closureEnv : VarEnv)
     (paramName : Name) (argValue : Value) (body : Expr) (isPure : Bool)
     (finalConfig : Config) (v : Value) :
@@ -1521,21 +1566,25 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
           have hrec_e2 := ih fuel' h_fuel e2 c₀ cfg₁ v₂ verbose he2
           cases hcase with
           | userFn he2 he1 hNot hpureFalse hBody hpfinal =>
-            have hrec_e1 := ih fuel' h_fuel e1 cfg₁ cfg₂ _ verbose he1
+            have hrec_e1 : cfg₂.pureMode = cfg₁.pureMode :=
+              ih fuel' h_fuel e1 { cfg₁ with varEnv := c₀.varEnv } cfg₂ _ verbose he1
             have h_pure_cfg2 : cfg₂.pureMode = c₀.pureMode := by rw [hrec_e1, hrec_e2]
             rw [hpfinal, h_pure_cfg2]
           | userPfn he2 he1 hNot htp hBody hpfinal =>
-            have hrec_e1 := ih fuel' h_fuel e1 cfg₁ cfg₂ _ verbose he1
+            have hrec_e1 : cfg₂.pureMode = cfg₁.pureMode :=
+              ih fuel' h_fuel e1 { cfg₁ with varEnv := c₀.varEnv } cfg₂ _ verbose he1
             have h_pure_cfg2 : cfg₂.pureMode = c₀.pureMode := by rw [hrec_e1, hrec_e2]
             rw [hpfinal, h_pure_cfg2]
           | externFn he2 he1 hp impl hGet hArg vRaw mem' addr' hImpl hValRet hcfg =>
-            have hrec_e1 := ih fuel' h_fuel e1 cfg₁ cfg₂ _ verbose he1
+            have hrec_e1 : cfg₂.pureMode = cfg₁.pureMode :=
+              ih fuel' h_fuel e1 { cfg₁ with varEnv := c₀.varEnv } cfg₂ _ verbose he1
             have h_pure_cfg2 : cfg₂.pureMode = c₀.pureMode := by rw [hrec_e1, hrec_e2]
             have hpure_eq : c₁.pureMode = cfg₂.pureMode := by
               rw [hcfg]
             rw [hpure_eq, h_pure_cfg2]
           | externPfn he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
-            have hrec_e1 := ih fuel' h_fuel e1 cfg₁ cfg₂ _ verbose he1
+            have hrec_e1 : cfg₂.pureMode = cfg₁.pureMode :=
+              ih fuel' h_fuel e1 { cfg₁ with varEnv := c₀.varEnv } cfg₂ _ verbose he1
             have h_pure_cfg2 : cfg₂.pureMode = c₀.pureMode := by rw [hrec_e1, hrec_e2]
             rw [hcfg]
             exact h_pure_cfg2
@@ -1557,88 +1606,10 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
 -- Composite terminatesTo inversions
 -- ================================================================
 
-/-- Full inversion lemma for successful application evaluation.  This exposes
-    extern dispatch branches and therefore remains valid for populated
-    registries. -/
-lemma terminatesTo_app_inv_full (e₁ e₂ : Expr) (c₀ cf : Config) (v : Value) :
-    terminatesTo (Expr.app e₁ e₂) c₀ cf v →
-    TerminatesToAppSuccess e₁ e₂ c₀ cf v := by
-  intro ⟨fuel, verbose, hbeval⟩
-  rcases bevalApp_structure e₁ e₂ fuel verbose c₀ cf v hbeval with
-    ⟨cfg2, cfg1, v2, hcase⟩
-  have hpure_cfg2 : cfg2.pureMode = c₀.pureMode := by
-    have he2 : LeanPoison.beval (fuel - 1) c₀ e₂ verbose = .success cfg2 v2 := by
-      cases hcase <;> assumption
-    exact terminatesTo_preserves_pureMode e₂ c₀ cfg2 v2 ⟨fuel - 1, verbose, he2⟩
-  cases hcase with
-  | @userFn x body env he2 he1 hNot hpureFalse hBody hpfinal =>
-      have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-        terminatesTo_preserves_pureMode e₁ cfg2 cfg1
-          (Value.closure x body env) ⟨fuel - 1, verbose, he1⟩
-      obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
-        bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body false
-          cf v hBody
-      exact
-        TerminatesToAppSuccess.userFn
-          (ht_e2 := ⟨fuel - 1, verbose, he2⟩)
-          (ht_e1 := ⟨fuel - 1, verbose, he1⟩)
-          (hNotExternAst := hNot)
-          (hpureMode := hpureFalse)
-          (ht_body := hbody_terminates)
-          (hcfg := by simpa using hcfg_final)
-          (hpure_e2 := hpure_cfg2)
-          (hpure_final := by rw [hpfinal, hpure_cfg1, hpure_cfg2])
-  | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr'
-      hImpl hValRet hcfg =>
-      have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-        terminatesTo_preserves_pureMode e₁ cfg2 cfg1
-          (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
-          ⟨fuel - 1, verbose, he1⟩
-      exact
-        TerminatesToAppSuccess.externFn
-          (ht_e2 := ⟨fuel - 1, verbose, he2⟩)
-          (ht_e1 := ⟨fuel - 1, verbose, he1⟩)
-          (hpureMode := hp)
-          (hGet := hGet)
-          (hArg := hArg)
-          (hImpl := hImpl)
-          (hValRet := hValRet)
-          (hcfg := hcfg)
-          (hpure_e2 := hpure_cfg2)
-          (hpure_final := by rw [hcfg, hpure_cfg1, hpure_cfg2])
-  | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
-      have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-        terminatesTo_preserves_pureMode e₁ cfg2 cfg1
-          (Value.peClosure x body env) ⟨fuel - 1, verbose, he1⟩
-      obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
-        bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body true
-          cf v hBody
-      exact
-        TerminatesToAppSuccess.userPfn
-          (ht_e2 := ⟨fuel - 1, verbose, he2⟩)
-          (ht_e1 := ⟨fuel - 1, verbose, he1⟩)
-          (hNotExternAst := hNot)
-          (htoPExpr := htp)
-          (ht_body := hbody_terminates)
-          (hcfg := by simpa using hcfg_final)
-          (hpure_e2 := hpure_cfg2)
-          (hpure_final := by rw [hpfinal, hpure_cfg1, hpure_cfg2])
-  | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
-      have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-        terminatesTo_preserves_pureMode e₁ cfg2 cfg1
-          (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env)
-          ⟨fuel - 1, verbose, he1⟩
-      exact
-        TerminatesToAppSuccess.externPfn
-          (ht_e2 := ⟨fuel - 1, verbose, he2⟩)
-          (ht_e1 := ⟨fuel - 1, verbose, he1⟩)
-          (hGet := hGet)
-          (hArg := hArg)
-          (hImpl := hImpl)
-          (hValRet := hValRet)
-          (hcfg := hcfg)
-          (hpure_e2 := hpure_cfg2)
-          (hpure_final := by rw [hcfg, hpure_cfg1, hpure_cfg2])
+-- `terminatesTo_app_inv_full` lives in `LeanProofs/VarEnvPreservation.lean`:
+-- with the caller-`varEnv` restore in `Expr.app`, its proof normalises the
+-- explicit reset configs back to the post-`e₂`/post-`e₁` configs via
+-- `beval_preserves_varEnv`, which is only available downstream of this module.
 
 /-- Inversion lemma for terminatesTo on app (function application).
     The body terminates to some intermediate evalConfig (not c₂), because bevalFunctionBody
@@ -1646,22 +1617,23 @@ lemma terminatesTo_app_inv_full (e₁ e₂ : Expr) (c₀ cf : Config) (v : Value
 lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value)
     (hreg : c₀.registry = emptyExternRegistry) :
     terminatesTo (Expr.app e₁ e₂) c₀ c₂ v →
-    -- User impure closure case
+    -- User impure closure case.  The function expression is evaluated under the
+    -- caller's variable environment, and the result restores it.
     (∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr) (env : VarEnv) (evalConfig : Config),
       terminatesTo e₂ c₀ c₂' v₂ ∧
-      terminatesTo e₁ c₂' c₁ (Value.closure x body env) ∧
+      terminatesTo e₁ { c₂' with varEnv := c₀.varEnv } c₁ (Value.closure x body env) ∧
       c₁.pureMode = false ∧
       terminatesTo body { c₁ with varEnv := env.update x v₂, pureMode := false } evalConfig v ∧
-      c₂ = { c₁ with memory := evalConfig.memory, nextAddr := evalConfig.nextAddr, pureMode := c₁.pureMode } ∧
+      c₂ = { c₁ with memory := evalConfig.memory, varEnv := c₀.varEnv, nextAddr := evalConfig.nextAddr, pureMode := c₁.pureMode } ∧
       c₂'.pureMode = c₀.pureMode ∧
       c₂.pureMode = c₀.pureMode) ∨
     -- User pure closure case
     (∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr) (env : VarEnv) (evalConfig : Config),
       terminatesTo e₂ c₀ c₂' v₂ ∧
-      terminatesTo e₁ c₂' c₁ (Value.peClosure x body env) ∧
+      terminatesTo e₁ { c₂' with varEnv := c₀.varEnv } c₁ (Value.peClosure x body env) ∧
       Expr.toPExpr? body ≠ none ∧
       terminatesTo body { c₁ with varEnv := env.update x v₂, pureMode := true } evalConfig v ∧
-      c₂ = c₁ ∧
+      c₂ = { c₁ with varEnv := c₀.varEnv } ∧
       c₂'.pureMode = c₀.pureMode ∧
       c₂.pureMode = c₀.pureMode) := by
   intro ⟨fuel, verbose, hbeval⟩
@@ -1676,9 +1648,11 @@ lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value)
     have hpure_cfg2 : cfg2.pureMode = c₀.pureMode :=
       terminatesTo_preserves_pureMode e₂ c₀ cfg2 v2 ⟨fuel - 1, verbose, he2⟩
     have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-      terminatesTo_preserves_pureMode e₁ cfg2 cfg1 (Value.closure x body env) ⟨fuel - 1, verbose, he1⟩
+      terminatesTo_preserves_pureMode e₁ { cfg2 with varEnv := c₀.varEnv } cfg1
+        (Value.closure x body env) ⟨fuel - 1, verbose, he1⟩
     obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
-      bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body false c₂ v hBody
+      bevalFunctionBody_to_terminatesTo (fuel - 1) verbose { cfg1 with varEnv := c₀.varEnv }
+        env x v2 body false c₂ v hBody
     refine ⟨cfg2, v2, cfg1, x, body, env, evalConfig, ⟨fuel - 1, verbose, he2⟩, ⟨fuel - 1, verbose, he1⟩,
       hpureFalse, hbody_terminates, (by simpa using hcfg_final), hpure_cfg2, ?_⟩
     rw [hpfinal, hpure_cfg1, hpure_cfg2]
@@ -1687,16 +1661,18 @@ lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value)
     have hpure_cfg2 : cfg2.pureMode = c₀.pureMode :=
       terminatesTo_preserves_pureMode e₂ c₀ cfg2 v2 ⟨fuel - 1, verbose, he2⟩
     have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-      terminatesTo_preserves_pureMode e₁ cfg2 cfg1 (Value.peClosure x body env) ⟨fuel - 1, verbose, he1⟩
+      terminatesTo_preserves_pureMode e₁ { cfg2 with varEnv := c₀.varEnv } cfg1
+        (Value.peClosure x body env) ⟨fuel - 1, verbose, he1⟩
     obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
-      bevalFunctionBody_to_terminatesTo (fuel - 1) verbose cfg1 env x v2 body true c₂ v hBody
+      bevalFunctionBody_to_terminatesTo (fuel - 1) verbose { cfg1 with varEnv := c₀.varEnv }
+        env x v2 body true c₂ v hBody
     refine ⟨cfg2, v2, cfg1, x, body, env, evalConfig, ⟨fuel - 1, verbose, he2⟩, ⟨fuel - 1, verbose, he1⟩,
       htp, hbody_terminates, (by simpa using hcfg_final), hpure_cfg2, ?_⟩
     rw [hpfinal, hpure_cfg1, hpure_cfg2]
   | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr' hImpl hValRet hcfg =>
     exfalso
     have hreg1 : cfg1.registry = emptyExternRegistry :=
-      (beval_preserves_registry (fuel - 1) cfg2 cfg1 e₁
+      (beval_preserves_registry (fuel - 1) { cfg2 with varEnv := c₀.varEnv } cfg1 e₁
           (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) verbose he1).trans
         hreg2
     rw [hreg1] at hGet
@@ -1705,7 +1681,7 @@ lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value)
   | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
     exfalso
     have hreg1 : cfg1.registry = emptyExternRegistry :=
-      (beval_preserves_registry (fuel - 1) cfg2 cfg1 e₁
+      (beval_preserves_registry (fuel - 1) { cfg2 with varEnv := c₀.varEnv } cfg1 e₁
           (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) verbose he1).trans
         hreg2
     rw [hreg1] at hGet
@@ -2077,22 +2053,22 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               have hreg_cfg₁ : cfg₁.registry = config₀.registry :=
                 beval_preserves_registry _ _ _ _ _ _ hbeval_e2
               have hle_e1 :=
-                IH_converted fuel' h_fuel e1 cfg₁ cfg₂ (Value.closure x body env) hreg_cfg₁ he1
+                IH_converted fuel' h_fuel e1 { cfg₁ with varEnv := config₀.varEnv } cfg₂ (Value.closure x body env) hreg_cfg₁ he1
               have hreg_cfg₂ : cfg₂.registry = config₀.registry :=
                 (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁
               have hle_body :=
-                bevalFunctionBody_nextAddr_mono fuel' verbose cfg₂ config₁ env x v₂ body false v
+                bevalFunctionBody_nextAddr_mono fuel' verbose { cfg₂ with varEnv := config₀.varEnv } config₁ env x v₂ body false v
                   config₀.registry hreg_cfg₂ IH_fuel' hBody
               exact Nat.le_trans hle_e2 (Nat.le_trans hle_e1 hle_body)
             | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
               have hreg_cfg₁ : cfg₁.registry = config₀.registry :=
                 beval_preserves_registry _ _ _ _ _ _ hbeval_e2
               have hle_e1 :=
-                IH_converted fuel' h_fuel e1 cfg₁ cfg₂ (Value.peClosure x body env) hreg_cfg₁ he1
+                IH_converted fuel' h_fuel e1 { cfg₁ with varEnv := config₀.varEnv } cfg₂ (Value.peClosure x body env) hreg_cfg₁ he1
               have hreg_cfg₂ : cfg₂.registry = config₀.registry :=
                 (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁
               have hle_body :=
-                bevalFunctionBody_nextAddr_mono fuel' verbose cfg₂ config₁ env x v₂ body true v
+                bevalFunctionBody_nextAddr_mono fuel' verbose { cfg₂ with varEnv := config₀.varEnv } config₁ env x v₂ body true v
                   config₀.registry hreg_cfg₂ IH_fuel' hBody
               exact Nat.le_trans hle_e2 (Nat.le_trans hle_e1 hle_body)
             | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr' hImpl hValRet
@@ -2105,7 +2081,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               have hreg_cfg₁ : cfg₁.registry = config₀.registry :=
                 beval_preserves_registry _ _ _ _ _ _ hbeval_e2
               have hle_e1 :=
-                IH_converted fuel' h_fuel e1 cfg₁ cfg₂
+                IH_converted fuel' h_fuel e1 { cfg₁ with varEnv := config₀.varEnv } cfg₂
                   (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) hreg_cfg₁ he1
               have hreg_cfg₂ : cfg₂.registry = config₀.registry :=
                 (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁
@@ -2122,7 +2098,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
               have hreg_cfg₁ : cfg₁.registry = config₀.registry :=
                 beval_preserves_registry _ _ _ _ _ _ hbeval_e2
               have hle_e1 :=
-                IH_converted fuel' h_fuel e1 cfg₁ cfg₂
+                IH_converted fuel' h_fuel e1 { cfg₁ with varEnv := config₀.varEnv } cfg₂
                   (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) hreg_cfg₁ he1
               subst hcfg
               exact Nat.le_trans hle_e2 hle_e1
@@ -2326,20 +2302,21 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
                     cases hcase with
                     | @userFn x body env he2 he1 hNot hpureFalse hBody hpfinal =>
                       have h1 :=
-                        IH fuel' h_fuel e1 cfg₁' cfg₂ (Value.closure x body env) verbose pe1 h_pe1 h2.2.1 he1
+                        IH fuel' h_fuel e1 { cfg₁' with varEnv := cfg₀.varEnv } cfg₂ (Value.closure x body env) verbose pe1 h_pe1 h2.2.1 he1
                       simp_all
                     | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr' hImpl
                         hValRet hcfg =>
                       have h1 :=
-                        IH fuel' h_fuel e1 cfg₁' cfg₂
+                        IH fuel' h_fuel e1 { cfg₁' with varEnv := cfg₀.varEnv } cfg₂
                           (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) verbose pe1 h_pe1 h2.2.1
                           he1
                       simp_all
                     | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
                       have h1 :=
-                        IH fuel' h_fuel e1 cfg₁' cfg₂ (Value.peClosure x body env) verbose pe1 h_pe1 h2.2.1 he1
+                        IH fuel' h_fuel e1 { cfg₁' with varEnv := cfg₀.varEnv } cfg₂ (Value.peClosure x body env) verbose pe1 h_pe1 h2.2.1 he1
                       obtain ⟨evalConfig, hbody_term, hcfg_final⟩ :=
-                        bevalFunctionBody_to_terminatesTo (fuel') verbose cfg₂ env x v₂ body true cfg₁ v hBody
+                        bevalFunctionBody_to_terminatesTo (fuel') verbose
+                          { cfg₂ with varEnv := cfg₀.varEnv } env x v₂ body true cfg₁ v hBody
                       simp at hcfg_final
                       refine ⟨?_, ?_, ?_⟩
                       · calc cfg₁.nextAddr = cfg₂.nextAddr := by rw [hcfg_final]
@@ -2351,7 +2328,7 @@ private lemma beval_pure_config_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Conf
                           _ = cfg₀.memory := h2.2.2
                     | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
                       have h1 :=
-                        IH fuel' h_fuel e1 cfg₁' cfg₂
+                        IH fuel' h_fuel e1 { cfg₁' with varEnv := cfg₀.varEnv } cfg₂
                           (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) verbose pe1 h_pe1 h2.2.1
                           he1
                       refine ⟨?_, ?_, ?_⟩
@@ -2882,11 +2859,18 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
             beval_preserves_registry _ _ _ _ _ _ hbeval_e2
           have hOp_inner : RegistryOperationalSafe cfg₁_inner.registry :=
             hreg_cfg₁_inner.symm ▸ hOp
+          -- e₁ is evaluated under the caller's varEnv: lift cfg₀.varEnv to the
+          -- function-config so the inductive hypothesis for e₁ applies there.
+          have hle_e2 : cfg₀.nextAddr ≤ cfg₁_inner.nextAddr :=
+            beval_nextAddr_mono e2 fuel verbose cfg₀ cfg₁_inner v₂ hOp hbeval_e2
+          have hwf_fnCfg : wfConfig ({ cfg₁_inner with varEnv := cfg₀.varEnv } : Config) :=
+            ⟨by simpa using hih_e2.1.1,
+             by simpa using wfVarEnv_mono hle_e2 cfg₀.varEnv hwf₀.2⟩
           cases hcase with
           | @userFn x body env he2 he1 hNot hpureFalse hBody hpfinal =>
             have hih_e1 :=
-              ih e1 cfg₁_inner cfg₂ (Value.closure x body env)
-                hreg_cfg₁_inner hih_e2.1 he1
+              ih e1 { cfg₁_inner with varEnv := cfg₀.varEnv } cfg₂ (Value.closure x body env)
+                hreg_cfg₁_inner hwf_fnCfg he1
             have hreg_cfg₂ : cfg₂.registry = cfg₀.registry :=
               (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁_inner
             -- Extract wfVarEnv env from wfValue cfg₂.nextAddr (closure ...)
@@ -2894,7 +2878,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
               cases hih_e1.2 with
               | closure _ _ _ hwfenv => exact hwfenv
             have hle_inner_cfg₂ : cfg₁_inner.nextAddr ≤ cfg₂.nextAddr :=
-              beval_nextAddr_mono e1 fuel verbose cfg₁_inner cfg₂
+              beval_nextAddr_mono e1 fuel verbose { cfg₁_inner with varEnv := cfg₀.varEnv } cfg₂
                 (Value.closure x body env) hOp_inner he1
             have hwf_v₂ : wfValue cfg₂.nextAddr v₂ :=
               wfValue_mono hle_inner_cfg₂ v₂ hih_e2.2
@@ -2907,19 +2891,24 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
               have h_m_lt_succ : m < fuel.succ :=
                 Nat.lt_of_lt_of_le h_m_lt (Nat.le_succ fuel)
               exact IH m h_m_lt_succ e' cfg₀' cfg₁' v' (hreg'.symm ▸ hOp) hwf₀' verbose h_beval'
-            exact bevalFunctionBody_impure_preserves_wfConfig fuel verbose cfg₂ cfg₁ env x v₂ body v
-              cfg₀.registry hreg_cfg₂ hOp hih_e1.1 hwf_env hwf_v₂ IH_for_body hBody
+            have hwf_bodyCfg : wfConfig ({ cfg₂ with varEnv := cfg₀.varEnv } : Config) :=
+              ⟨by simpa using hih_e1.1.1,
+               by simpa using
+                 wfVarEnv_mono (Nat.le_trans hle_e2 hle_inner_cfg₂) cfg₀.varEnv hwf₀.2⟩
+            exact bevalFunctionBody_impure_preserves_wfConfig fuel verbose
+              { cfg₂ with varEnv := cfg₀.varEnv } cfg₁ env x v₂ body v
+              cfg₀.registry hreg_cfg₂ hOp hwf_bodyCfg hwf_env hwf_v₂ IH_for_body hBody
           | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
             have hih_e1 :=
-              ih e1 cfg₁_inner cfg₂ (Value.peClosure x body env)
-                hreg_cfg₁_inner hih_e2.1 he1
+              ih e1 { cfg₁_inner with varEnv := cfg₀.varEnv } cfg₂ (Value.peClosure x body env)
+                hreg_cfg₁_inner hwf_fnCfg he1
             have hreg_cfg₂ : cfg₂.registry = cfg₀.registry :=
               (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁_inner
             have hwf_env : wfVarEnv cfg₂.nextAddr env := by
               cases hih_e1.2 with
               | peClosure _ _ _ hwfenv => exact hwfenv
             have hle_inner_cfg₂ : cfg₁_inner.nextAddr ≤ cfg₂.nextAddr :=
-              beval_nextAddr_mono e1 fuel verbose cfg₁_inner cfg₂
+              beval_nextAddr_mono e1 fuel verbose { cfg₁_inner with varEnv := cfg₀.varEnv } cfg₂
                 (Value.peClosure x body env) hOp_inner he1
             have hwf_v₂ : wfValue cfg₂.nextAddr v₂ :=
               wfValue_mono hle_inner_cfg₂ v₂ hih_e2.2
@@ -2933,14 +2922,19 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
                 Nat.lt_of_lt_of_le h_m_lt (Nat.le_succ fuel)
               exact IH m h_m_lt_succ e' cfg₀' cfg₁' v' (hreg'.symm ▸ hOp) hwf₀' verbose h_beval'
             obtain ⟨pe, htp_some⟩ := Option.isSome_iff_exists.mp (Option.ne_none_iff_isSome.mp htp)
-            exact bevalFunctionBody_pure_preserves_wfConfig fuel verbose cfg₂ cfg₁ env x v₂ body pe htp_some v
-              cfg₀.registry hreg_cfg₂ hih_e1.1 hwf_env hwf_v₂ IH_for_body hBody
+            have hwf_bodyCfg : wfConfig ({ cfg₂ with varEnv := cfg₀.varEnv } : Config) :=
+              ⟨by simpa using hih_e1.1.1,
+               by simpa using
+                 wfVarEnv_mono (Nat.le_trans hle_e2 hle_inner_cfg₂) cfg₀.varEnv hwf₀.2⟩
+            exact bevalFunctionBody_pure_preserves_wfConfig fuel verbose
+              { cfg₂ with varEnv := cfg₀.varEnv } cfg₁ env x v₂ body pe htp_some v
+              cfg₀.registry hreg_cfg₂ hwf_bodyCfg hwf_env hwf_v₂ IH_for_body hBody
           | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr' hImpl hValRet hcfg =>
             -- The closure carrying the externFn AST is wf at cfg₂.nextAddr
             have hih_e1 :=
-              ih e1 cfg₁_inner cfg₂
+              ih e1 { cfg₁_inner with varEnv := cfg₀.varEnv } cfg₂
                 (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
-                hreg_cfg₁_inner hih_e2.1 he1
+                hreg_cfg₁_inner hwf_fnCfg he1
             have hreg_cfg₂ : cfg₂.registry = cfg₀.registry :=
               (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁_inner
             -- Apply the fn-wf clause of hOp to get wfMemory and wfValue at addr'
@@ -2954,7 +2948,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
               cases hih_e1.2 with
               | closure _ _ _ hwfenv => exact hwfenv
             have hle_inner_cfg₂ : cfg₁_inner.nextAddr ≤ cfg₂.nextAddr :=
-              beval_nextAddr_mono e1 fuel verbose cfg₁_inner cfg₂ _ hOp_inner he1
+              beval_nextAddr_mono e1 fuel verbose { cfg₁_inner with varEnv := cfg₀.varEnv } cfg₂ _ hOp_inner he1
             have hwf_v₂ : wfValue cfg₂.nextAddr v₂ :=
               wfValue_mono hle_inner_cfg₂ v₂ hih_e2.2
             have hwf_unified : wfVarEnv cfg₂.nextAddr (env.update x v₂) :=
@@ -2995,9 +2989,9 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
               simpa using hwf_vRaw
           | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
             have hih_e1 :=
-              ih e1 cfg₁_inner cfg₂
+              ih e1 { cfg₁_inner with varEnv := cfg₀.varEnv } cfg₂
                 (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env)
-                hreg_cfg₁_inner hih_e2.1 he1
+                hreg_cfg₁_inner hwf_fnCfg he1
             have hreg_cfg₂ : cfg₂.registry = cfg₀.registry :=
               (beval_preserves_registry _ _ _ _ _ _ he1).trans hreg_cfg₁_inner
             have hGet_outer : cfg₂.registry.get? id = some (ExternImpl.pfn impl) := hGet
@@ -3008,7 +3002,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
               cases hih_e1.2 with
               | peClosure _ _ _ hwfenv => exact hwfenv
             have hle_inner_cfg₂ : cfg₁_inner.nextAddr ≤ cfg₂.nextAddr :=
-              beval_nextAddr_mono e1 fuel verbose cfg₁_inner cfg₂ _ hOp_inner he1
+              beval_nextAddr_mono e1 fuel verbose { cfg₁_inner with varEnv := cfg₀.varEnv } cfg₂ _ hOp_inner he1
             have hwf_v₂ : wfValue cfg₂.nextAddr v₂ :=
               wfValue_mono hle_inner_cfg₂ v₂ hih_e2.2
             have hwf_unified : wfVarEnv cfg₂.nextAddr (env.update x v₂) :=
