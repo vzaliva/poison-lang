@@ -893,3 +893,30 @@ build-first in an isolated file, mirroring `PureUnaryCleanIntSpec` but with retS
 `.simple .int true <v≥0>`, the two trust fields above, the `collectAndAllocExternTags_pred`
 + inserted-regime result-shape lemmas from (a)/(b), and `withPred_true_eq` /
 `valueConsistentWithRegime.inRegimeTrue` discharging the per-run components.
+
+FOUNDATION LANDED (session 5, committed, whole tree green = 10840 jobs, 0 sorry/0 axiom):
+`LeanProofs/ExternRegimeInt.lean` proves the two divergence-point lemmas build cleanly:
+  - `collectAndAllocExternTags_pred` : `[guardClosure idx nm body] nextTag = .ok ({idx ↦
+    nextTag}, nextTag+1)` — by `rfl`. (a) confirmed.
+  - `applyExternRegimePolicy_singleton` : on `{idx ↦ freshTag}` with `policy id freshTag =
+    some b` and `R.lookup? freshTag = none`, the regime becomes `R.insert freshTag b` — by
+    `unfold; rw [toList_singleton]; simp [foldl, hpolicy, hnone]`. (b) confirmed; the regime
+    genuinely changes so `ctxAfter ≠ ctx` for the predicate case.
+TWO HARD UNKNOWNS NOW SETTLED: the cross-run discriminator (above) and the structural
+allocator/regime reductions (here). The file is NOT imported by the tree but the lib glob
+builds it, so it stays in the whole-tree green check.
+
+REMAINING IS THE FULL ASSEMBLY — and a scoping surprise found this session: there is NO
+template anywhere. `PureUnaryCleanIntSpec` is DEAD (grep: zero uses) — never assembled into
+a `TrustedRegistry`, never fed to `TypeSystemEnforcesFaultRobustness` (which has NO
+instantiation anywhere). So Phase D builds the FIRST complete FR instantiation from scratch
+(declFR/callFR/declSingle/callSingle/operational → TrustedExternEntry → TrustedRegistry →
+InputSpec → the top theorem at FaultRobustnessProofs.lean:~3235). Each *FR field discharges
+a full StepFRPost (~18 conjuncts via `stepFRPost_of_parts`) over a concrete config — large
+mechanical plumbing, not novel risk. ACCESS NOTE: the assembly helpers
+(`stepFRPost_of_parts`, `externBoundarySinglePost_of_parts`, the `PureUnary*` mirrors) are
+`private` to ExternBoundaryConstructors; either drop `private` (justified — another file
+now needs them) or build the spec inside that file and export only the final record, then
+instantiate the top theorem from a new file importing FaultRobustnessProofs. FRONT-LOAD
+(advisor): confirm `callFR` hands you `BodyEntryInputsAgree` + `agreeValueUnder` on the
+clean int arg (trivial for the literal-arg `openf 0` example) before writing the rest.
