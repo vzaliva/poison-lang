@@ -949,3 +949,51 @@ in ExternBoundaryConstructors — one green build. (2) In ExternRegimeInt.lean b
 `externBoundarySinglePost_of_parts`. (4) callFR/declFR via `stepFRPost_of_parts` (the bulk —
 the inserted-regime transports). (5) TrustedExternEntry/TrustedRegistry. (6) hagrees +
 top-theorem instantiation. Commit each green field.
+
+## PHASE D — RESOLVED: the meaningful instantiation is BLOCKED (machine-checked, session 5)
+
+The "NEXT ACTIONS" grind above is SUPERSEDED. Pursuing step (6) first (verify-the-gate, per
+advisor) surfaced a hard obstruction that no amount of step (1)-(5) work can route around.
+
+THE FINDING (proved in `LeanProofs/ExternRegimeInt.lean`,
+`nonempty_registry_hagrees_unprovable`, axioms = propext/Classical.choice/Quot.sound only):
+`TypeSystemEnforcesFaultRobustness` (FaultRobustnessProofs.lean:3259) cannot be NON-VACUOUSLY
+instantiated for the open example. Its `hagrees` premise
+`∀ {ctx}, ctxMatchesInputSpec s ctx → TrustedRegistryAgreesWithReachable e ctx tr` is:
+  - VACUOUS for `tr = []` (empty registry): `TrustedRegistry.lookup? [] = none`, so agreement
+    holds trivially. BUT then `toRuntimeRegistry [] = ∅`, @238 is unregistered at runtime
+    (matches the Phase-E executable: "extern 238 not registered", exit 6), the extern never
+    runs, and the de-poisoned value never materialises — de-poisoning is NOT dynamically
+    exercised. This guts the deliverable.
+  - FALSE / UNPROVABLE for any non-empty `tr` over a program containing @238: `ctxMatchesInputSpec`
+    (FaultRobustness.lean:243) constrains `ctx.varEnv` only ONE-WAY (`s.vars ⊆ ctx.varEnv`),
+    and its 4th conjunct (`deepVarEnvProperty`) only checks GUARD TAGS of varEnv entries (which
+    a `noPred` arrow lacks) and recurses into captured envs (vacuous for an empty σcap). So an
+    adversarial `ctx` may bind a rogue var `r ↦ {arrow Bool Int false [extern 238 q <retSpec'> [] []], noPred}`
+    and still satisfy `ctxMatchesInputSpec ∅`. The reachability `var → ExternDeclarationReachableFromQTyp.arrow_extern_member`
+    (ExternBoundary.lean:1088, 1003) then reaches @238 with a decl `≠` the registry's (the decl
+    is reconstructed from the closure, NOT from the program `root`), falsifying
+    `TrustedRegistryAgreesWithReachable`. `nonempty_registry_hagrees_unprovable` exhibits exactly
+    this `ctx` and derives the contradiction.
+
+CONSEQUENCE: the done-criterion "TypeSystemEnforcesFaultRobustness holds for a non-trivial
+externRegime policy (the open example de-poisons under R(k)=true) — dynamically" is NOT
+achievable against the FR theorem AS STATED. The de-poisoning IS real and IS demonstrated at
+the typecheck level (Phase E executable: poison flips true→false under `--extern-regime`); what
+is blocked is the additional FORMAL FR instantiation with the extern live.
+
+TO UNBLOCK (future work, a spec change — out of the additive/no-floor-risk scope of this task):
+strengthen the FR theorem's `ctx` hypothesis so adversarial extern-reaching vars are excluded —
+e.g. require `ctx.varEnv` to contain no extern declarations beyond those syntactically in `e`
+(a closed-context / `ExternDeclarationReachableFromContext ⊆ ExternDeclarationInProgram e`
+premise), or quantify `hagrees` only over the program's canonical initial typing context rather
+than all `ctxMatchesInputSpec`-matching contexts. Either is a change to the PROVEN
+`TypeSystemEnforcesFaultRobustness` statement and its `faultRobustnessSpec_of_step` plumbing,
+not an additive lemma — design carefully and re-verify the whole FR stack.
+
+WHAT LANDED THIS SESSION (all committed, whole tree green = 10840 jobs, 0 sorry / 0 custom axiom):
+the four foundation lemmas (`collectAndAllocExternTags_pred`, `applyExternRegimePolicy_singleton`,
+`valueConsistentWithRegime_int_inRegimeTrue`, + `extTreeMap_toList_singleton`) and the
+machine-checked obstruction. The cross-run discriminator was resolved analytically (equality via
+determinism, not predicate-satisfaction). Net: Phase D is not "large but doable" — its meaningful
+form is BLOCKED by a spec-level limitation, now proved rather than suspected.
