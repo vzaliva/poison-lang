@@ -920,3 +920,32 @@ now needs them) or build the spec inside that file and export only the final rec
 instantiate the top theorem from a new file importing FaultRobustnessProofs. FRONT-LOAD
 (advisor): confirm `callFR` hands you `BodyEntryInputsAgree` + `agreeValueUnder` on the
 clean int arg (trivial for the literal-arg `openf 0` example) before writing the rest.
+
+GATE VERIFICATION (session 5, by reading the defs — NO obstruction found, grind sanctioned):
+  - `BodyEntryInputsAgree` (ExternBoundary.lean:19) is a HYPOTHESIS bundle GIVEN to callFR:
+    it already carries `agree : agreeOnClean`, `consistent₀/₁`, `runtime₀/₁`, `tagBounded`,
+    `wfConfig₀/₁` — all over the PRE-insert `ctx.regime`. So callFR does not PROVE input
+    agreement; it TRANSPORTS it across the fresh-tag insertion to the output's
+    `(ctxAfter ctx res).regime`. Because freshTag is fresh (no existing loc/var's guard tag
+    is freshTag), the transport should be a monotoneStepExt-style step exactly like the
+    StepFRApp source-step transports — mechanical, but a real (re)derivation.
+  - `callFR` (= ExternCallBoundaryFR, ExternBoundary.lean:200) must PRODUCE a full
+    `StepFRPost … (entry₀.bodyOutputConfig cf₀) (entry₁.bodyOutputConfig cf₁) o₀ o₁`,
+    assembled via `stepFRPost_of_parts` (~18 conjuncts). The three regime-sensitive ones:
+    `hagree` (output agreeOnClean over inserted regime — transport above), `hvalc₀/₁`
+    (= `valueConsistentWithRegime_int_inRegimeTrue`, ExternRegimeInt.lean — DONE, needs the
+    qtypPredHolds trust field), `hresult` (= resultAgreesIfClean → withPred_true_eq needs
+    `o₀=o₁`, from the `clean_agree` determinism trust field; for `openf 0` the literal arg
+    gives n₀=n₁ so o₀=o₁). The other ~15 are wf/typing transports from ExternCallBoundaryRun.
+  - TOP THEOREM `TypeSystemEnforcesFaultRobustness` (FaultRobustnessProofs.lean:3259) takes
+    `(tr, e, s, obs, hagrees)` where `hagrees : ctxMatchesInputSpec s ctx →
+    TrustedRegistryAgreesWithReachable e ctx tr`. So there is a SECOND sub-construction
+    beyond the ExternBoundarySpec: the reachability-agreement proof for the open AST `e`.
+NEXT ACTIONS (grind, green-checkpointed): (1) un-`private` `stepFRPost_of_parts`,
+`externBoundarySinglePost_of_parts`, `boundaryTagMeaningPost_of_parts` (+ any mirror helpers)
+in ExternBoundaryConstructors — one green build. (2) In ExternRegimeInt.lean build the open
+`ExternDeclaration`+`ExternImpl`+`PureUnaryRegimeIntSpec`(both trust fields)+`operational`
+(mirror, small) → green checkpoint. (3) callSingle/declSingle via
+`externBoundarySinglePost_of_parts`. (4) callFR/declFR via `stepFRPost_of_parts` (the bulk —
+the inserted-regime transports). (5) TrustedExternEntry/TrustedRegistry. (6) hagrees +
+top-theorem instantiation. Commit each green field.
