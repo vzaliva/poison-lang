@@ -836,3 +836,23 @@ NOT "equal across runs" — two `open` runs may return different fds. value-cons
 agreeOnClean are DISTINCT StepFRPost components (stepFRPost_of_parts @356), which suggests
 this holds, but confirm with a real build, never a sorry. Develop in an isolated file and
 build with `lake build LeanProofs.<NewFile>` so a red WIP never threatens the green tree.
+
+CONFIRMED divergence points (session 5, by reading the clean template end to end — do NOT
+assume "mirror `PureUnaryCleanIntSpec` and flip a bool"; the predicate case differs
+structurally at two precise places):
+  (a) `collectAndAllocExternTags_noPred` (ExternBoundaryConstructors.lean:408) is `rfl`
+      because noPred allocates nothing. A predicate ALLOCATES a fresh output tag, so the
+      regime case needs a NEW `collectAndAllocExternTags_pred` characterization (returns a
+      one-entry tagMapping `{freshTag ↦ ...}` and `nextTag+1`) — NOT rfl; prove by unfolding
+      the allocator on the `v≥0` SyntaxPredicate.
+  (b) `pureUnaryCleanInt_call_result_shape`'s THIRD conjunct `ctxAfter entry.bodyCtx res =
+      entry.bodyCtx` (lines 457-459) holds for clean ONLY because the empty tag mapping makes
+      `applyExternRegimePolicy` reduce to identity by `rfl`. For a predicate the mapping is
+      non-empty, so `applyExternRegimePolicy` INSERTS `freshTag ↦ policy(id)` and the regime
+      genuinely changes: `ctxAfter entry.bodyCtx res ≠ entry.bodyCtx`. The regime-case
+      result-shape lemma must therefore EXPOSE the inserted regime (`(ctxAfter …).regime =
+      insert freshTag (policy id) entry.bodyCtx.regime`), and every downstream consistency /
+      value-consistency obligation is stated over that INSERTED regime — this is exactly where
+      `inRegimeTrue k=freshTag` with `R(freshTag)=policy(id)=some true` is discharged.
+Net: realistic size is a few hundred lines of genuinely new proof (not a copy-edit), gated on
+the §4.4 watch-point. The verified green floor + executable acceptance stands without it.
