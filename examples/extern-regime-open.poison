@@ -1,0 +1,13 @@
+--! poison-interpreter --extern-regime "238=true"
+-- Acceptance (doc/extern-regime.md sec 4.6): extern-id regime de-poisons a
+-- checked extern return value.
+--
+-- The `open`-style extern returns a poisoned int with the return predicate
+-- (v >= 0). Listing its extern id (238) as true via --extern-regime inserts the
+-- freshly generated return tag into the active regime, so the later `fd >= 0`
+-- guard sees R(tag) = true and the then-branch may treat fd as clean.
+let openf = extern fn @238 p : (int) -> ((int :> poisoned { 5, v => (v >= 0) }))
+in
+let fd = openf 0
+in
+if fd >= 0 then fd else 0

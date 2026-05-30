@@ -204,6 +204,8 @@ L {{ tex \mathcal{L} }} :: L_ ::=     {{ com logical environment (tag valuation)
 
 % Regime (partial map from tags to booleans)
 % R is both input and output of typing; propagates like L (thread through sequencing, join at branches, invalidate on write)
+% At selected extern call sites the active regime is extended with the freshly generated
+% output tags (the extern-regime policy, keyed by extern id); unselected sites leave R unchanged.
 R {{ tex \mathcal{R} }} :: R_ ::= {{ com regime (partial map from tags to booleans) }}
   | empty                   ::   :: empty {{ coq [] }}
   | R [ k |-> b ]           ::   :: extend {{ tex [[R]] [ k \rightharpoonup [[b]] ] }}

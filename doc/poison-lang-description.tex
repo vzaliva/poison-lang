@@ -315,6 +315,24 @@ predicates to concrete predicates for that use only. Nested returned externs
 remain symbolic until they are themselves applied, ensuring separate calls get
 independent tags.
 
+The active regime can be extended at extern call sites by an
+\emph{extern-regime policy}. When the type checker allocates the fresh concrete
+output tags for a selected extern identifier, it inserts those tags into the
+active regime with the scenario's chosen boolean. A later guard check that
+matches an extern-produced predicate then sees the inserted regime entry and may
+treat the value as clean, instead of taking the conservative poisoned path that
+applies when the generated tag is absent from the regime. Selection is by extern
+identifier: every output tag generated for a selected identifier receives the
+same value, and unselected identifiers leave the regime unchanged. The
+executable interface is the command-line flag
+\texttt{--extern-regime "id=bool"}, which installs an identifier-keyed policy of
+this shape; the underlying type-context field is the more precise per-generated
+tag policy \(\mathit{ExternId} \to \mathit{Tag} \to \mathit{Option}\,
+\mathit{Bool}\). For instance, an \texttt{open}-style extern returning
+\texttt{int :> poisoned \{ v => v >= 0 \}} de-poisons its checked result under a
+later \texttt{fd >= 0} guard exactly when its identifier is selected as
+\texttt{true}.
+
 Extern \emph{effects} write to memory at the locations named by their target
 references, just as ordinary assignment does. Like assignment, extern effect
 writes are sensitive to provenance, and the spec encodes the dichotomy as

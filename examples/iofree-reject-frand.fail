@@ -1,7 +1,7 @@
 Error: Unknown option: --io-free
 Usage:
   poison-interpreter --repl
-  poison-interpreter [--verbose] [--regime "100=true,101=false"] <file>
+  poison-interpreter [--verbose] [--regime "100=true,101=false"] [--extern-regime "238=true"] <file>
   poison-interpreter --help
 
 Exit Codes:

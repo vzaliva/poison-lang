@@ -117,10 +117,12 @@ def defaultInitialState : DefaultInitialState :=
 /-- Back-compat alias: older call sites that just want the registry. -/
 def defaultRegistry : ExternRegistry := defaultInitialState.registry
 
-private def initialTypeContext (regime : Regime) : TypeContext :=
+private def initialTypeContext (regime : Regime)
+    (externRegime : ExternId → Tag → Option Bool := fun _ _ => none) : TypeContext :=
   {
     pc := false
     regime := regime
+    externRegime := externRegime
     memEnv := {}
     varEnv := ({} : VarTypeEnv)
     tagEnv := {}
@@ -129,16 +131,19 @@ private def initialTypeContext (regime : Regime) : TypeContext :=
     pureCtx := false
   }
 
-def typecheckExprSimple (e : _root_.Expr) (regime : Regime := emptyRegime) : TypecheckM QTyp := do
-  let result ← typecheck (initialTypeContext regime) e defaultFuel
+def typecheckExprSimple (e : _root_.Expr) (regime : Regime := emptyRegime)
+    (externRegime : ExternId → Tag → Option Bool := fun _ _ => none) : TypecheckM QTyp := do
+  let result ← typecheck (initialTypeContext regime externRegime) e defaultFuel
   return result.qualType
 
-def typecheckExprVerbose (e : _root_.Expr) (regime : Regime := emptyRegime) : TypecheckM TypeResult := do
-  typecheck (initialTypeContext regime) e defaultFuel
+def typecheckExprVerbose (e : _root_.Expr) (regime : Regime := emptyRegime)
+    (externRegime : ExternId → Tag → Option Bool := fun _ _ => none) : TypecheckM TypeResult := do
+  typecheck (initialTypeContext regime externRegime) e defaultFuel
 
 structure CliOptions where
   verbose : Bool := false
   regime : Option Regime := none
+  externRegime : ExternId → Tag → Option Bool := fun _ _ => none
   filename : Option String := none
   repl : Bool := false
   help : Bool := false
@@ -207,6 +212,39 @@ def parseRegimeSpec (spec : String) : Except String Regime := do
     throw "Invalid --regime: no assignments provided"
   return map
 
+/-- Parse `--extern-regime "238=true,239=false"` into an id-only executable policy:
+    every output tag generated for an extern id receives the same boolean. -/
+def parseExternRegimeSpec (spec : String) :
+    Except String (ExternId → Tag → Option Bool) := do
+  let parts := spec.splitOn ","
+  let mut map : ExtTreeMap ExternId Bool := {}
+  let mut hasEntry := false
+  for entry in parts do
+    let trimmed := entry.trim
+    if trimmed.isEmpty then
+      throw "Invalid --extern-regime entry: empty assignment"
+    let kv := trimmed.splitOn "="
+    match kv with
+    | [idStr, valStr] =>
+        let idStr := idStr.trim
+        let valStr := valStr.trim
+        match idStr.toNat? with
+        | none => throw s!"Invalid --extern-regime id: {idStr}"
+        | some id =>
+            let boolOpt :=
+              if valStr == "true" then some true
+              else if valStr == "false" then some false
+              else none
+            match boolOpt with
+            | none => throw s!"Invalid --extern-regime value for id {id}: {valStr}"
+            | some b =>
+                map := map.insert id b
+                hasEntry := true
+    | _ => throw s!"Invalid --extern-regime assignment: {trimmed}"
+  if not hasEntry then
+    throw "Invalid --extern-regime: no assignments provided"
+  return fun id _tag => map[id]?
+
 partial def parseArgs (args : List String) (opts : CliOptions := {}) : Except String CliOptions :=
   match args with
   | [] => return opts
@@ -218,6 +256,12 @@ partial def parseArgs (args : List String) (opts : CliOptions := {}) : Except St
       | .error msg => throw msg
   | "--regime" :: [] =>
       throw "Missing value for --regime"
+  | "--extern-regime" :: spec :: rest =>
+      match parseExternRegimeSpec spec with
+      | .ok policy => parseArgs rest { opts with externRegime := policy }
+      | .error msg => throw msg
+  | "--extern-regime" :: [] =>
+      throw "Missing value for --extern-regime"
   | "--repl" :: rest =>
       if rest.isEmpty then
         return { opts with repl := true }
@@ -272,14 +316,15 @@ def handleEvalResult (result : LeanPoison.EvalResult) (verbose : Bool) : IO UInt
       IO.println s!"Runtime error: {msg}"
       return (6 : UInt32)  -- Exit code 6: Runtime error
 
-def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 := do
+def evalProgram (input : String) (verbose : Bool) (regime : Regime)
+    (externRegime : ExternId → Tag → Option Bool := fun _ _ => none) : IO UInt32 := do
   match parse input with
   | Except.ok xmlElement =>
 
     match xmlToExpr xmlElement with
     | Except.ok expr =>
       if verbose then
-        match typecheckExprVerbose expr regime with
+        match typecheckExprVerbose expr regime externRegime with
         | .ok resultType =>
             printDoc (formatTypecheckPassedVerbose resultType)
             let st := defaultInitialState
@@ -293,7 +338,7 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
             else
               return (0 : UInt32)  -- Exit code 0: Type error successfully found
       else
-        match typecheckExprSimple expr regime with
+        match typecheckExprSimple expr regime externRegime with
         | .ok qualType =>
             printDoc (formatTypecheckPassedSimple qualType)
             let st := defaultInitialState
@@ -315,12 +360,13 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime) : IO UInt32 
                       return (2 : UInt32)  -- Exit code 2: Parse error
 
 -- Read and evaluate a file
-def runFile (filename : String) (verbose : Bool) (regime : Regime) : IO UInt32 := do
+def runFile (filename : String) (verbose : Bool) (regime : Regime)
+    (externRegime : ExternId → Tag → Option Bool := fun _ _ => none) : IO UInt32 := do
   try
     let xmlStr ← runTreeSitterXml filename
     IO.println s!"Evaluating file: {filename}"
     IO.println ""
-    evalProgram xmlStr verbose regime
+    evalProgram xmlStr verbose regime externRegime
   catch e =>
     IO.println s!"Error reading file {filename}: {e}"
     return (5 : UInt32)  -- Exit code 5: File I/O error
@@ -379,7 +425,7 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
 def printUsage : IO Unit := do
   IO.println "Usage:"
   IO.println "  poison-interpreter --repl"
-  IO.println "  poison-interpreter [--verbose] [--regime \"100=true,101=false\"] <file>"
+  IO.println "  poison-interpreter [--verbose] [--regime \"100=true,101=false\"] [--extern-regime \"238=true\"] <file>"
   IO.println "  poison-interpreter --help"
   IO.println ""
   IO.println "Exit Codes:"
@@ -422,6 +468,7 @@ def main (args : List String) : IO UInt32 := do
         replLoop initialConfig tmpPath
       else
         let regime := opts.regime.getD emptyRegime
+        let externRegime := opts.externRegime
         match opts.filename with
         | none =>
             IO.println "Error: missing input file"
@@ -435,7 +482,7 @@ def main (args : List String) : IO UInt32 := do
                 IO.println ""
                 match ExprTree with
                 | expr =>
-                  match typecheckExprVerbose expr regime with
+                  match typecheckExprVerbose expr regime externRegime with
                   | .ok resultType =>
                       printDoc (formatTypecheckPassedVerbose resultType)
                       IO.println ""
@@ -454,4 +501,4 @@ def main (args : List String) : IO UInt32 := do
                 IO.println s!"Error reading file {filename}: {e}"
                 return (5 : UInt32)
             else
-              runFile filename false regime
+              runFile filename false regime externRegime
