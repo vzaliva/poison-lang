@@ -777,3 +777,62 @@ clean transport res→result1. Bound each member qt's guard tag from the member/
 spend review attention here. ESCALATE to `ExternBoundarySpec.regimeFR` (Phase D) ONLY if a member qt's
 guard tag is provably NOT bounded by result1.nextTag' (advisor's open flag on `h_clean_res_to_pre`
 ~8358; not observed yet — confirm with a real build / lean_goal before declaring App near-done).
+
+## SESSION 5 (2026-05-30) — Tasks 1 & 2 GREEN + Phase E DONE; Phase D scoped
+
+STATE (committed, whole tree green via `env LAKE_NO_CACHE=1 lake build` = 10839 jobs,
+0 sorry / 0 axiom; `make test` 98 passed / 0 failed):
+- `cf94e58` StepFRApp monotoneStepExt conversion (the 49→0 leaf grind).
+- `62c4b00` FaultRobustnessProofs + whole tree green. The masked Post gained
+  `(hmasked_bounded)(hbnd : TagBoundedCtx ctx)`; this forced threading `TagBoundedCtx`
+  as a *new input* of `StepFRSingleRunFinalCleanPcTrue` (StepFR.lean:1086) so the
+  top-level bridge `_with_contracts_canUse_ctxReach` can supply it when instantiating
+  the masked Post (the `ContextReachableFrom` CtxReach does NOT imply TagBoundedCtx —
+  it only constrains varEnv provenance, so a `CtxReach → TagBoundedCtx` contract is
+  unprovable; threading as data was the only option). Cascade: 5 wrapper per-op files
+  (Literal/Var/FnPfn/Deref/NewRef) + StepFRIte (htagBounded_ctx''/ctxForE3 at the
+  hsingle_e2/e3 applications) + StepFRApp (6 new `htagBnd_body{U₀,U₁,A₀,A₁}` via
+  `tagBoundedCtx_closure_body` with `pcBody := _`/`pureCtxBody := _` inferred) +
+  the FRP if-true/if-false/if-std masked dispatch (per-branch bounds) + externVal.
+  Also fixed a pre-existing Phase-B latent break: ExternBoundaryConstructors.lean:457
+  `simp only [ctxAfter, applyExternRegimePolicy]; rfl` (empty tag mapping for noPred
+  externs reduces applyExternRegimePolicy to identity by `rfl`).
+- `37e2a35` Phase E: `--extern-regime "id=bool"` (Main.parseExternRegimeSpec, id-keyed
+  exec policy → TypeContext.externRegime); examples/extern-regime-open (the §4.6 example);
+  doc/tex + ott prose + regenerated PDF; refreshed the 6 iofree usage-string goldens.
+  VERIFIED de-poisoning: without the flag the result is `poison=true`; with
+  `--extern-regime "238=true"` it is `poison=false` (the checked extern return is treated
+  clean in the then-branch). So done-criterion's executable acceptance is met.
+
+## PHASE D — remaining (production-side regime value-consistency; build-driven)
+NOT a new `ExternBoundarySpec` field (advisor + trace): the extern result's
+`valueConsistentWithRegime` is NOT built in StepFRApp (StepFRApp only *transports* it,
+2325-2369). It is asserted by the ASSUMED boundary contract (`ExternBoundarySinglePost`
+carries it; ExternBoundary.lean:233) over `(ctxAfter ctx res).regime` = the inserted
+regime. For current trusted entries (noPred clean externs, `PureUnaryCleanIntSpec`) the
+value has no guard tag → consistency is `valueConsistentWithRegime.noTag` → R(k) is
+irrelevant → green. A predicate-bearing `open` extern is the first case where the value
+carries a guard tag k and R(k)=some b must yield `inRegimeTrue`/`inRegimeFalse`.
+
+REMAINING WORK (largest single chunk; there is NO existing complete
+`ExternBoundarySpec`/`TrustedRegistry` instantiation to mirror — even the clean
+`PureUnaryCleanIntSpec` only provides helper lemmas, never a full record):
+1. New trust spec `PureUnaryRegimeIntSpec` (mirror `PureUnaryCleanIntSpec`,
+   ExternBoundaryConstructors.lean:258) with `retSpec_eq : d.retSpec = some (.simple .int
+   true <pred v≥0>)` and a two-run predicate-satisfaction assumption (THE regimeFR obligation,
+   as a spec field, TRUST): `R(k)=true ⇒ both runs' returned value satisfies qtypPredHolds;
+   R(k)=false ⇒ both fail`.
+2. `valueConsistentWithRegime_int_inRegimeTrue` (mirror `_int_noPred` @215): build
+   `valueConsistentWithRegime.inRegimeTrue k htag hRk hqtypPredHolds hcap` from the spec.
+3. Mirror the clean constructors (operational/call_result_shape/call_output) and assemble
+   declFR/callFR/declSingle/callSingle through `stepFRPost_of_parts` (@356) and
+   `externBoundarySinglePost_of_parts` (@362), feeding the inRegimeTrue value consistency.
+4. Assemble a full `ExternBoundarySpec` + `TrustedExternEntry` + `TrustedRegistry` + an
+   `InputSpec` with `regimeExterns=[open_id]` and instantiate
+   `TypeSystemEnforcesFaultRobustness` (FaultRobustnessProofs.lean:3235).
+WATCH-POINT (§4.4, the one genuine non-mechanical risk): the two-run `agreeOnClean` for
+the extern value when R(k)=true. "clean under regime" must mean "satisfies the predicate",
+NOT "equal across runs" — two `open` runs may return different fds. value-consistency and
+agreeOnClean are DISTINCT StepFRPost components (stepFRPost_of_parts @356), which suggests
+this holds, but confirm with a real build, never a sorry. Develop in an isolated file and
+build with `lake build LeanProofs.<NewFile>` so a red WIP never threatens the green tree.
