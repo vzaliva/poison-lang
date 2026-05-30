@@ -60,4 +60,22 @@ theorem applyExternRegimePolicy_singleton
   rw [extTreeMap_toList_singleton]
   simp only [List.foldl_cons, List.foldl_nil, hpolicy, hnone]
 
+/-- Value-consistency for a predicate-bearing int output that the regime
+    de-poisons (`R(k) = some true`).  Mirror of `valueConsistentWithRegime_int_noPred`
+    but landing in the `inRegimeTrue` constructor; the predicate-satisfaction
+    obligation `qtypPredHolds` is supplied (it is one of the two Phase-D trust
+    fields). -/
+theorem valueConsistentWithRegime_int_inRegimeTrue
+    {predSat : PredSat} {R : Regime} {qt : QTyp} {k : Tag}
+    {μ : Memory} {θ : RealizationMap} {n : Int}
+    (hetyp : qt.etyp = ETyp.int)
+    (htag : qtypGuardTag qt = some k)
+    (hRk : R.lookup? k = some true)
+    (hpred : qtypPredHolds predSat qt μ (Value.num n)) :
+    valueConsistentWithRegime predSat R qt μ θ (Value.num n) :=
+  valueConsistentWithRegime.inRegimeTrue k htag hRk hpred
+    (closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+      (by simpa [hetyp] using (valueHasETyp.num (θ := θ) n))
+      (by rw [hetyp]; rfl))
+
 end ExternRegimeInt
