@@ -50,7 +50,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.fn x paramType body returnType) (Nat.succ fuel) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hcwr a pm hwfcfg ht _hpc
+  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   subst hcf
@@ -170,7 +170,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
           StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
             (Expr.pfn x paramType body returnType) (Nat.succ fuel) res
             hwfTm hTmBounded hpredlaws htc
-      intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hcwr a pm hwfcfg ht _hpc
+      intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg ht _hpc
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
       subst hcf

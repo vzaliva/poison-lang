@@ -12563,7 +12563,7 @@ lemma stepFR_app_with_expr_proof
               have hsr₀ :=
                 (hSingle_bodyA₀ hpredlaws1 hExtTyping hTmBodyA₀
                   (by simpa [bodyCtxA₀] using
-                    (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀)).2
+                    (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀) htagBoundedBodyA₀).2
                   c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
                   hθ₀1wf hwfBodyCtxA₀ hric_bodyA₀ htagR_bodyA₀
                   hcwr_bodyA₀ c₁₀.nextAddr false hwfcfg_body_initA₀ ht₀_body
@@ -12756,6 +12756,20 @@ lemma stepFR_app_with_expr_proof
                 constructor
                 · intro a ha; exact hwfcf₁₁.1 a ha
                 · simpa [VarEnv.update] using wfVarEnv.cons x₁ v₂₁ env₁ hv₂₁_wf henv₁_wf
+              have htagBnd_bodyA₁ : TagBoundedCtx bodyCtxA₁ := by
+                have hCapBoundBase : CapturedEnvFullBounded σcapA₁ result1.nextTag' := by
+                  have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                    (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                  rw [hetyp1] at hClosFull
+                  exact hClosFull _ hσcapA₁_mem
+                exact tagBoundedCtx_closure_body
+                  (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                  (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcapA₁)
+                  (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                  (pcBody := _) (pureCtxBody := _)
+                  (cursor := cursorA₁) (x := x₁)
+                  htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagA₁
               have hSingle_bodyA₁ :=
                 singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁
                   (hctxFnBody (bodyCtx := bodyCtxA₁) hfnTyped
@@ -12777,7 +12791,7 @@ lemma stepFR_app_with_expr_proof
               have hsr₁ :=
                 (hSingle_bodyA₁ hpredlaws1 hExtTyping hTmBodyA₁
                   (by simpa [bodyCtxA₁] using
-                    (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁)).2
+                    (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁) htagBnd_bodyA₁).2
                   c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
                   hθ₁1wf hwfBodyCtxA₁ hric_bodyA₁ htagR_bodyA₁
                   hcwr_bodyA₁ c₁₁.nextAddr false hwfcfg_body_initA₁ ht₁_body
@@ -14868,6 +14882,20 @@ lemma stepFR_app_with_expr_proof
               have hfuel_ltU₀ : fuelBodyU₀ < Nat.succ (Nat.succ fuel') := by
                 have : fuelBodyU₀ < fuel' := by rw [hfuelU₀]; exact Nat.lt_succ_self _
                 exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+              have htagBnd_bodyU₀ : TagBoundedCtx bodyCtxU₀ := by
+                have hCapBoundBase : CapturedEnvFullBounded σcap₀ result1.nextTag' := by
+                  have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                    (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                  rw [hetyp1] at hClosFull
+                  exact hClosFull _ hσcap₀_mem
+                exact tagBoundedCtx_closure_body
+                  (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                  (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₀)
+                  (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                  (pcBody := _) (pureCtxBody := _)
+                  (cursor := cursorU₀) (x := x₀)
+                  htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagU₀
               have hSingle_bodyU₀ :=
                 singleIH fuelBodyU₀ hfuel_ltU₀ body₀ bodyCtxU₀
                   (hctxFnBody (bodyCtx := bodyCtxU₀) hfnTyped
@@ -14888,7 +14916,7 @@ lemma stepFR_app_with_expr_proof
                     (registry := registry) c₁₀.memory (env₀.update x₀ v₂₀) θ₀1
                     evalCfg₀ o₀ hθ₀1wf hwfBodyCtxU₀ hric_bodyU₀ htagR_bodyU₀
                     hcwr_bodyU₀ c₁₀.nextAddr false hwfcfg_body_initU₀ :=
-                (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀).2
+                (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀ htagBnd_bodyU₀).2
                   c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
                   hθ₀1wf hwfBodyCtxU₀ hric_bodyU₀ htagR_bodyU₀ hcwr_bodyU₀
                   c₁₀.nextAddr false hwfcfg_body_initU₀ ht₀_body hpc_bodyU₀
@@ -14897,7 +14925,7 @@ lemma stepFR_app_with_expr_proof
                     θ₀1 c₁₀.memory evalCfg₀ o₀ :=
                 externBoundarySinglePost_of_singleRun_normalized_app
                   (p := p) (p1 := p1) h_p1p hfirstU₀_eq
-                  (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀).1
+                  (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀ htagBnd_bodyU₀).1
                   hbodyRunPostU₀
               have hpc_bodyE₁ : bodyCtxE₁.pc = true := by
                 cases p1 <;> cases p <;> cases ctxᵢ.pc <;>
@@ -15615,6 +15643,20 @@ lemma stepFR_app_with_expr_proof
                     hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtxE₀)
                     hricBody (by simpa [callEntry₀] using htagR_bodyE₀)
                     hcwrBody hwfcfg_body_initE₀ hpcBody
+              have htagBnd_bodyU₁ : TagBoundedCtx bodyCtxU₁ := by
+                have hCapBoundBase : CapturedEnvFullBounded σcap₁ result1.nextTag' := by
+                  have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                    (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                  rw [hetyp1] at hClosFull
+                  exact hClosFull _ hσcap₁_mem
+                exact tagBoundedCtx_closure_body
+                  (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                  (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₁)
+                  (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                  (pcBody := _) (pureCtxBody := _)
+                  (cursor := cursorU₁) (x := x₁)
+                  htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagU₁
               have hSingle_bodyU₁ :=
                 singleIH fuelBodyU₁ hfuel_ltU₁ body₁ bodyCtxU₁
                   (hctxFnBody (bodyCtx := bodyCtxU₁) hfnTyped
@@ -15632,7 +15674,7 @@ lemma stepFR_app_with_expr_proof
                     (registry := registry) c₁₁.memory (env₁.update x₁ v₂₁) θ₁1
                     evalCfg₁ o₁ hθ₁1wf hwfBodyCtxU₁ hric_bodyU₁ htagR_bodyU₁
                     hcwr_bodyU₁ c₁₁.nextAddr false hwfcfg_body_initU₁ :=
-                (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁).2
+                (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁ htagBnd_bodyU₁).2
                   c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
                   hθ₁1wf hwfBodyCtxU₁ hric_bodyU₁ htagR_bodyU₁ hcwr_bodyU₁
                   c₁₁.nextAddr false hwfcfg_body_initU₁ ht₁_body hpc_bodyU₁
@@ -15641,7 +15683,7 @@ lemma stepFR_app_with_expr_proof
                     θ₁1 c₁₁.memory evalCfg₁ o₁ :=
                 externBoundarySinglePost_of_singleRun_normalized_app
                   (p := p) (p1 := p1) h_p1p hfirstU₁_eq
-                  (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁).1
+                  (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁ htagBnd_bodyU₁).1
                   hbodyRunPostU₁
               have h_mono_bodyU₁ :
                   Regime.monotoneStepExt bodyCtxU₁.regime (ctxAfter bodyCtxU₁ result3U₁).regime
@@ -18126,6 +18168,20 @@ lemma stepFR_app_with_expr_proof
                 { memory := cf₀.memory, varEnv := env₀.update x₀ v₂₀,
                   nextAddr := cf₀.nextAddr, pureMode := true,
                   registry := registry } evalCfg₀ o₀ := ht₀_body
+            have htagBnd_bodyA₀ : TagBoundedCtx bodyCtxA₀ := by
+              have hCapBoundBase : CapturedEnvFullBounded σcapA₀ result1.nextTag' := by
+                have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                  (ctxAfter ctxᵢ result2) e1 fuel' result1
+                  (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                rw [hetyp1] at hClosFull
+                exact hClosFull _ hσcapA₀_mem
+              exact tagBoundedCtx_closure_body
+                (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcapA₀)
+                (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                (pcBody := _) (pureCtxBody := _)
+                (cursor := cursorA₀) (x := x₀)
+                htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagA₀
             have hSingle_bodyA₀ :=
               singleIH fuelBodyA₀ hfuel_ltA₀ body₀ bodyCtxA₀
                 (hctxPfnBody (bodyCtx := bodyCtxA₀) hpfnTyped
@@ -18144,7 +18200,7 @@ lemma stepFR_app_with_expr_proof
             have hsr₀ :=
               (hSingle_bodyA₀ hpredlaws1 hExtTyping hTmBodyA₀
                 (by simpa [bodyCtxA₀] using
-                  (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀)).2
+                  (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀) htagBnd_bodyA₀).2
                 cf₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
                 hθ₀1wf hwfBodyCtxA₀ hric_bodyA₀ htagR_bodyA₀
                 hcwr_bodyA₀ cf₀.nextAddr true hwfcfg_body_initA₀ ht₀_body'
@@ -18349,6 +18405,20 @@ lemma stepFR_app_with_expr_proof
                 { memory := cf₁.memory, varEnv := env₁.update x₁ v₂₁,
                   nextAddr := cf₁.nextAddr, pureMode := true,
                   registry := registry } evalCfg₁ o₁ := ht₁_body
+            have htagBnd_bodyA₁ : TagBoundedCtx bodyCtxA₁ := by
+              have hCapBoundBase : CapturedEnvFullBounded σcapA₁ result1.nextTag' := by
+                have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                  (ctxAfter ctxᵢ result2) e1 fuel' result1
+                  (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                rw [hetyp1] at hClosFull
+                exact hClosFull _ hσcapA₁_mem
+              exact tagBoundedCtx_closure_body
+                (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcapA₁)
+                (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                (pcBody := _) (pureCtxBody := _)
+                (cursor := cursorA₁) (x := x₁)
+                htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagA₁
             have hSingle_bodyA₁ :=
               singleIH fuelBodyA₁ hfuel_ltA₁ body₁ bodyCtxA₁
                 (hctxPfnBody (bodyCtx := bodyCtxA₁) hpfnTyped
@@ -18367,7 +18437,7 @@ lemma stepFR_app_with_expr_proof
             have hsr₁ :=
               (hSingle_bodyA₁ hpredlaws1 hExtTyping hTmBodyA₁
                 (by simpa [bodyCtxA₁] using
-                  (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁)).2
+                  (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁) htagBnd_bodyA₁).2
                 cf₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
                 hθ₁1wf hwfBodyCtxA₁ hric_bodyA₁ htagR_bodyA₁
                 hcwr_bodyA₁ cf₁.nextAddr true hwfcfg_body_initA₁ ht₁_body'
@@ -20460,6 +20530,20 @@ lemma stepFR_app_with_expr_proof
               have hfuel_ltU₀ : fuelBodyU₀ < Nat.succ (Nat.succ fuel') := by
                 have : fuelBodyU₀ < fuel' := by rw [hfuelU₀]; exact Nat.lt_succ_self _
                 exact Nat.lt_trans this (Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+              have htagBnd_bodyU₀ : TagBoundedCtx bodyCtxU₀ := by
+                have hCapBoundBase : CapturedEnvFullBounded σcap₀ result1.nextTag' := by
+                  have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                    (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                  rw [hetyp1] at hClosFull
+                  exact hClosFull _ hsource₀
+                exact tagBoundedCtx_closure_body
+                  (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                  (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₀)
+                  (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                  (pcBody := _) (pureCtxBody := _)
+                  (cursor := cursorU₀) (x := x₀)
+                  htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagU₀
               have hSingle_bodyU₀ :=
                 singleIH fuelBodyU₀ hfuel_ltU₀ (PExpr.toExpr pbody₀) bodyCtxU₀
                   (hctxPfnBody (bodyCtx := bodyCtxU₀) hpfnTyped
@@ -20493,7 +20577,7 @@ lemma stepFR_app_with_expr_proof
                     (registry := registry) c₁₀.memory (env₀.update x₀ v₂₀) θ₀1
                     evalCfg₀ o₀ hθ₀1wf hwfBodyCtxU₀ hric_bodyU₀ htagR_bodyU₀
                     hcwr_bodyU₀ c₁₀.nextAddr true hwfcfg_body_initU₀ :=
-                (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀).2
+                (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀ htagBnd_bodyU₀).2
                   c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
                   hθ₀1wf hwfBodyCtxU₀ hric_bodyU₀ htagR_bodyU₀ hcwr_bodyU₀
                   c₁₀.nextAddr true hwfcfg_body_initU₀ ht₀_body' hpc_bodyU₀
@@ -20502,7 +20586,7 @@ lemma stepFR_app_with_expr_proof
                     θ₀1 c₁₀.memory evalCfg₀ o₀ :=
                 externBoundarySinglePost_of_singleRun_normalized_app
                   (p := p) (p1 := p1) h_p1p hfirstU₀_eq
-                  (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀).1
+                  (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀ htagBnd_bodyU₀).1
                   hbodyRunPostU₀
               have hrunProvider₁ :
                   ∃ entry : TrustedExternEntry,
@@ -21155,6 +21239,20 @@ lemma stepFR_app_with_expr_proof
                     hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtxE₀)
                     hricBody (by simpa [callEntry₀] using htagR_bodyE₀)
                     hcwrBody hwfcfg_body_initE₀ hpcBody
+              have htagBnd_bodyU₁ : TagBoundedCtx bodyCtxU₁ := by
+                have hCapBoundBase : CapturedEnvFullBounded σcap₁ result1.nextTag' := by
+                  have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                    (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                  rw [hetyp1] at hClosFull
+                  exact hClosFull _ hsource₁
+                exact tagBoundedCtx_closure_body
+                  (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                  (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₁)
+                  (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                  (pcBody := _) (pureCtxBody := _)
+                  (cursor := cursorU₁) (x := x₁)
+                  htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagU₁
               have hSingle_bodyU₁ :=
                 singleIH fuelBodyU₁ hfuel_ltU₁ (PExpr.toExpr pbody₁) bodyCtxU₁
                   (hctxPfnBody (bodyCtx := bodyCtxU₁) hpfnTyped
@@ -21182,7 +21280,7 @@ lemma stepFR_app_with_expr_proof
                     (registry := registry) c₁₁.memory (env₁.update x₁ v₂₁) θ₁1
                     evalCfg₁ o₁ hθ₁1wf hwfBodyCtxU₁ hric_bodyU₁ htagR_bodyU₁
                     hcwr_bodyU₁ c₁₁.nextAddr true hwfcfg_body_initU₁ :=
-                (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁).2
+                (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁ htagBnd_bodyU₁).2
                   c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
                   hθ₁1wf hwfBodyCtxU₁ hric_bodyU₁ htagR_bodyU₁ hcwr_bodyU₁
                   c₁₁.nextAddr true hwfcfg_body_initU₁ ht₁_body' hpc_bodyU₁
@@ -21191,7 +21289,7 @@ lemma stepFR_app_with_expr_proof
                     θ₁1 c₁₁.memory evalCfg₁ o₁ :=
                 externBoundarySinglePost_of_singleRun_normalized_app
                   (p := p) (p1 := p1) h_p1p hfirstU₁_eq
-                  (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁).1
+                  (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁ htagBnd_bodyU₁).1
                   hbodyRunPostU₁
               have h_mono_bodyU₁ :
                   Regime.monotoneStepExt bodyCtxU₁.regime (ctxAfter bodyCtxU₁ result3U₁).regime

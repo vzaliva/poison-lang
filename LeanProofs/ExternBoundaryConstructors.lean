@@ -455,7 +455,8 @@ private theorem pureUnaryCleanInt_call_result_shape
             · simp [normalizeAppResultByProvenance, hprov]
             · simp [normalizeAppResultByProvenance, hprov]
           · rw [hbody]
-            simp [ctxAfter]
+            simp only [ctxAfter, applyExternRegimePolicy]
+            rfl
 
 private theorem pureUnaryCleanInt_call_output
     {d : ExternDeclaration} {impl : ExternImpl}

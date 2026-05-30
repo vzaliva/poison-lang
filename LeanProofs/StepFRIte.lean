@@ -4119,13 +4119,13 @@ private lemma stepFR_ite_standard
           have hwfcf₁1_s : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode, registry := registry } := by
             rw [← hcfg₁1_eq_s]; exact hwfcf₁1
           rcases
-              (hsingle_e2 hpredlaws1 hExtTyping hwfTm_ctx'' hTmBounded_ctx'').2
+              (hsingle_e2 hpredlaws1 hExtTyping hwfTm_ctx'' hTmBounded_ctx'' htagBounded_ctx'').2
                 cfg₀1.memory cfg₀1.varEnv θ₀1 cf₀ o₀
                 hθ₀1wf hwf_ctx'' hric₀1_ctx'' htagR_ctx''
                 hcwr₀1_ctx'' cfg₀1.nextAddr cfg₀1.pureMode hwfcf₀1_s ht₀_e2'' hpc''
             with ⟨θ₀2, hθext₀2, hvtyp₀2, hric₀2, hcwr₀2, hvalc₀2, hpres₂, _hfresh₂⟩
           rcases
-              (hsingle_e3 hpredlaws1 hExtTyping hwfTm_ctxForE3 hTmBounded_ctxForE3).2
+              (hsingle_e3 hpredlaws1 hExtTyping hwfTm_ctxForE3 hTmBounded_ctxForE3 htagBounded_ctxForE3).2
                 cfg₁1.memory cfg₁1.varEnv θ₁1 cf₁ o₁
                 hθ₁1wf hwf_ctxForE3 hric₁1_ctxForE3 htagR_ctxForE3
                 hcwr₁1_ctxForE3 cfg₁1.nextAddr cfg₁1.pureMode hwfcf₁1_s ht₁_e3'' hpcForE3
@@ -4774,13 +4774,13 @@ private lemma stepFR_ite_standard
           have hwfcf₁1_s2 : wfConfig { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₁1.pureMode, registry := registry } := by
             rw [← hcfg₁1_eq_s2]; exact hwfcf₁1
           rcases
-              (hsingle_e3 hpredlaws1 hExtTyping hwfTm_ctxForE3 hTmBounded_ctxForE3).2
+              (hsingle_e3 hpredlaws1 hExtTyping hwfTm_ctxForE3 hTmBounded_ctxForE3 htagBounded_ctxForE3).2
                 cfg₀1.memory cfg₀1.varEnv θ₀1 cf₀ o₀
                 hθ₀1wf hwf_ctxForE3 hric₀1_ctxForE3 htagR_ctxForE3
                 hcwr₀1_ctxForE3 cfg₀1.nextAddr cfg₀1.pureMode hwfcf₀1_s2 ht₀_e3'' hpcForE3
             with ⟨θ₀3, hθext₀3, hvtyp₀3, hric₀3, hcwr₀3, hvalc₀3, hpres₃, _hfresh₃⟩
           rcases
-              (hsingle_e2 hpredlaws1 hExtTyping hwfTm_ctx'' hTmBounded_ctx'').2
+              (hsingle_e2 hpredlaws1 hExtTyping hwfTm_ctx'' hTmBounded_ctx'' htagBounded_ctx'').2
                 cfg₁1.memory cfg₁1.varEnv θ₁1 cf₁ o₁
                 hθ₁1wf hwf_ctx'' hric₁1_ctx'' htagR_ctx''
                 hcwr₁1_ctx'' cfg₁1.nextAddr cfg₁1.pureMode hwfcf₁1_s2 ht₁_e2'' hpc''

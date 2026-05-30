@@ -543,7 +543,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
   · exact
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.var name) (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hmasked_absent hctxCons a pm hwfcfg ht _hpc
+  intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hmasked_absent _hmasked_bounded _hbnd hctxCons a pm hwfcfg ht _hpc
   rcases
     terminatesTo_var_inv' name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht

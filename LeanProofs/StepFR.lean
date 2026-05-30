@@ -1094,6 +1094,7 @@ def StepFRSingleRunFinalCleanPcTrue
     ExternTypingAssumptions →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
+    TagBoundedCtx ctx →
     StepFRSingleRunTagMeaningPost ctx e res predSat tm ∧
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),

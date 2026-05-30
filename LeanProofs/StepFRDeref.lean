@@ -387,7 +387,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.deref e) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctxᵢ hctxCurrent hcan hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
@@ -395,7 +395,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
   rcases hstruct with ⟨cfg', a', n, ht_e, hlookup, ho, hmem, hvar, _hnext, _hpm⟩
   rcases
     (hIH hpredlaws hExtTyping hwfTm hTmBounded).2 μ ρ θ cfg' (Value.loc a')
-      hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e hpc
+      hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e hpc
     with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres', _hfresh'⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
