@@ -856,3 +856,40 @@ structurally at two precise places):
       `inRegimeTrue k=freshTag` with `R(freshTag)=policy(id)=some true` is discharged.
 Net: realistic size is a few hundred lines of genuinely new proof (not a copy-edit), gated on
 the §4.4 watch-point. The verified green floor + executable acceptance stands without it.
+
+DISCRIMINATOR RESOLVED (session 5, by reading the actual inductives — supersedes the
+"predicate-satisfaction" obligation guessed above; that guess was WRONG for the cross-run
+component): the linchpin is whether `qtypCleanUnder R qt` (the hypothesis of
+`resultAgreesIfClean`, StepFR.lean:30-33) fires for a regime-de-poisoned value, and if so
+what `agreeValueUnder` it then demands.
+  - `qtypCleanUnder` (FaultRobustness.lean:404-411) has a `guard` constructor that FIRES on
+    `qtypGuardTag qt = some k ∧ R(k)=some true ∧ ¬isFunctionType`. For the open extern the
+    predicate gives the guard tag and the policy gives R(k)=true → it FIRES. (Vacuity via
+    `resultAgreesIfClean_of_poison_noPred` holds ONLY for `noPred`, which is why every
+    current trusted extern is green.)
+  - So `resultAgreesIfClean` is NOT vacuous: it demands `agreeValueUnder … qt o₀ o₁`. The
+    ONLY constructor applicable to a (poison=true, guard-tag, R(k)=true) NON-function
+    NON-ref int is `withPred_true_eq` (FaultRobustness.lean:607-614), whose payload is
+    `hagree : v₁ = v₂` — i.e. the two runs' returned ints must be EQUAL. There is no
+    poisoned-vacuous constructor for a non-fun non-ref value.
+  - This is DISCHARGEABLE, not an obstruction: externs in this model are deterministic
+    `compute : VarEnv → Int → Int` (PureUnaryCleanIntSpec.success_num), so agreeing inputs
+    ⟹ equal outputs. THE cross-run trust obligation is therefore the SAME `clean_agree`
+    shape the clean spec already carries (PureUnaryCleanIntSpec:271-282) — `compute env₀ n₀
+    = compute env₁ n₁` given `BodyEntryInputsAgree` + agreeing int arg — NOT
+    predicate-satisfaction. The §4.4 "equal-across-runs is too strong because non-det" worry
+    is a NON-ISSUE here: the model has no non-determinism.
+  - Predicate-satisfaction (`qtypPredHolds`) is still needed, but for a DIFFERENT, easier
+    StepFRPost component: `valueConsistentWithRegime.inRegimeTrue` (the hvalc₀/hvalc₁ fields
+    of stepFRPost_of_parts). So Phase D needs BOTH trust fields: (1) `clean_agree`-style
+    output equality [for resultAgreesIfClean/withPred_true_eq — the one I'd missed], and
+    (2) qtypPredHolds [for inRegimeTrue value consistency].
+  - SCOPE caveat that makes it sound: de-poisoning a regime output is sound only when the
+    extern's INPUTS agree across runs (else compute n₀ ≠ compute n₁ and withPred_true_eq is
+    unprovable — correctly so). The acceptance example `openf 0` has a literal arg → inputs
+    agree trivially → provable.
+CONCLUSION: Phase D is provable-mechanical (grind, not dead-end). Start the construction
+build-first in an isolated file, mirroring `PureUnaryCleanIntSpec` but with retSpec
+`.simple .int true <v≥0>`, the two trust fields above, the `collectAndAllocExternTags_pred`
++ inserted-regime result-shape lemmas from (a)/(b), and `withPred_true_eq` /
+`valueConsistentWithRegime.inRegimeTrue` discharging the per-run components.
