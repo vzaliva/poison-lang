@@ -248,6 +248,8 @@ theorem to_maskedRegParamPost
     (hreg : regimeConsistentWithCtxMasked masked ctx)
     (hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none)
     (hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx)
+    (hmasked_bounded : ∀ k, masked k → k < ctx.nextTag)
+    (hbnd : TagBoundedCtx ctx)
     (hctxCons :
       consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (a : Address) (pm : Bool)
@@ -259,7 +261,7 @@ theorem to_maskedRegParamPost
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       ctx res (registry := registry) μ ρ θ cf o
-      hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg := by
+      hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg := by
   rcases h with ⟨_tm', _htag, θ', hθext, hvtyp, hric', hcwr', hvalc', hpres, hfresh⟩
   exact
     ⟨θ', hθext, hvtyp, hric', consistentWithRegime_to_masked hcwr',
@@ -340,6 +342,8 @@ def ExternDeclBoundarySingleMaskedContract
     (hreg : regimeConsistentWithCtxMasked masked ctx) →
     (hmasked_none : ∀ k, masked k → ctx.regime.lookup? k = none) →
     (hmasked_absent : MaskedTagsAbsentFromTrueTagEnv masked ctx) →
+    (hmasked_bounded : ∀ k, masked k → k < ctx.nextTag) →
+    (hbnd : TagBoundedCtx ctx) →
     (hctxCons : consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ) →
     ∀ (a : Address) (pm : Bool),
       (hwfcfg :
@@ -354,7 +358,7 @@ def ExternDeclBoundarySingleMaskedContract
         (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
         (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
         ctx res (registry := registry) μ ρ θ cf o
-        hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg
+        hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg
 
 theorem ExternDeclBoundarySingleMaskedContract.of_spec
     {masked : Tag → Prop} {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
@@ -364,7 +368,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_spec
     ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm registry
       d impl := by
   intro hpredlaws _hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-    hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
+    hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
   have hregOrd : regimeConsistentWithCtx ctx :=
     regimeConsistentWithCtxMasked_unmask hreg hmasked_absent
   have hctxConsOrd :
@@ -379,7 +383,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_spec
       (masked := masked) (ctx := ctx) (res := res) (predSat := predSat)
       (tm := tm) (θ := θ) (μ := μ) (ρ := ρ) (cf := cf) (o := o)
       (registry := registry)
-      hθwf hwf hric hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hsingle
+      hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hsingle
 
 /-- Registry-parametric two-run declaration-boundary adapter used by the step
     proof. -/

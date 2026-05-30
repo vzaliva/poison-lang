@@ -178,6 +178,103 @@ def monotoneStep (R R' : Regime) : Prop :=
   (∀ k b, R.lookup? k = some b → (R'.lookup? k = some b ∨ R'.lookup? k = none)) ∧
   (∀ k, R'.lookup? k ≠ none → R.lookup? k ≠ none)
 
+/-- Regime evolution that is monotone for old tags but may add fresh tags
+    satisfying `newTags` (doc/extern-regime.md §4.2, "monotone modulo fresh selected
+    extern outputs").  The first conjunct (old-entry preservation) is IDENTICAL to
+    `monotoneStep`; the second conjunct is weakened to allow result entries whose tag
+    is in `newTags`.  Instantiated with `newTags = fun k => bound ≤ k` for the
+    freshly-allocated selected extern-output tags of a typing step. -/
+def monotoneStepExt (R R' : Regime) (newTags : Tag → Prop) : Prop :=
+  (∀ k b, ¬ newTags k → R.lookup? k = some b → (R'.lookup? k = some b ∨ R'.lookup? k = none)) ∧
+  (∀ k, R'.lookup? k ≠ none → R.lookup? k ≠ none ∨ newTags k)
+
+/-- `monotoneStep` is the `newTags = ∅` special case of `monotoneStepExt`; the strong
+    relation can always be weakened to the extended one for any `newTags`. -/
+theorem monotoneStep_toExt {R R' : Regime} (h : monotoneStep R R')
+    (newTags : Tag → Prop) : monotoneStepExt R R' newTags :=
+  ⟨fun k b _ hR => h.1 k b hR, fun k hk => Or.inl (h.2 k hk)⟩
+
+/-- Backward transport for an old tag: if `k` is not a fresh tag, a result entry for
+    `k` was already present in `R` with the same value. -/
+theorem monotoneStepExt_lookup_back {R R' : Regime} {newTags : Tag → Prop}
+    (h : monotoneStepExt R R' newTags) {k : Tag} {b : Bool}
+    (hknew : ¬ newTags k) (hkR' : R'.lookup? k = some b) :
+    R.lookup? k = some b := by
+  have hRdef : R.lookup? k ≠ none := by
+    rcases h.2 k (by simp [hkR']) with hne | hnew
+    · exact hne
+    · exact absurd hnew hknew
+  cases hkR : R.lookup? k with
+  | none => exact absurd hkR hRdef
+  | some b0 =>
+      rcases h.1 k b0 hknew hkR with hkR'' | hkR''
+      · have : b0 = b := Option.some.inj (hkR''.symm.trans hkR'); subst this; rfl
+      · simp [hkR''] at hkR'
+
+/-- Reflexivity of the extended-regime relation. -/
+theorem monotoneStepExt_refl (R : Regime) (newTags : Tag → Prop) :
+    monotoneStepExt R R newTags :=
+  ⟨fun _ _ _ h => Or.inl h, fun _ h => Or.inl h⟩
+
+/-- Weaken the fresh-tag set of an extended-regime step.  (Larger `newTags` ⇒ weaker relation:
+    the forward part is restricted to fewer tags, the backward part allows more.) -/
+theorem monotoneStepExt_weaken {R R' : Regime} {nt nt' : Tag → Prop}
+    (h : monotoneStepExt R R' nt) (hsub : ∀ k, nt k → nt' k) :
+    monotoneStepExt R R' nt' :=
+  ⟨fun k b hnt' hR => h.1 k b (fun hnt => hnt' (hsub k hnt)) hR,
+   fun k hk => (h.2 k hk).imp id (hsub k)⟩
+
+/-- Transitivity of the extended-regime relation.  With the forward conjunct restricted to
+    non-fresh tags, NO disjointness side condition is needed (doc/extern-regime.md §4.2). -/
+theorem monotoneStepExt_trans {R1 R2 R3 : Regime} {nt1 nt2 : Tag → Prop}
+    (h12 : monotoneStepExt R1 R2 nt1) (h23 : monotoneStepExt R2 R3 nt2) :
+    monotoneStepExt R1 R3 (fun k => nt1 k ∨ nt2 k) := by
+  refine ⟨?_, ?_⟩
+  · intro k b hnt hR1
+    have hn1 : ¬ nt1 k := fun h => hnt (Or.inl h)
+    have hn2 : ¬ nt2 k := fun h => hnt (Or.inr h)
+    rcases h12.1 k b hn1 hR1 with hR2 | hR2
+    · rcases h23.1 k b hn2 hR2 with hR3 | hR3
+      · exact Or.inl hR3
+      · exact Or.inr hR3
+    · refine Or.inr ?_
+      by_contra hR3ne
+      rcases h23.2 k hR3ne with hR2ne | hnt2
+      · exact hR2ne hR2
+      · exact hn2 hnt2
+  · intro k hR3
+    rcases h23.2 k hR3 with hR2ne | hnt2
+    · rcases h12.2 k hR2ne with hR1ne | hnt1
+      · exact Or.inl hR1ne
+      · exact Or.inr (Or.inl hnt1)
+    · exact Or.inr (Or.inr hnt2)
+
+/-- Packaged transitivity for the `≥`-bound fresh-tag sets used by the typechecker regime chain:
+    compose `R1→R2` (fresh `≥ b1`) with `R2→R3` (fresh `≥ b2`), where `b1 ≤ b2` (nextTag-mono),
+    and weaken back to `≥ b1`.  doc/extern-regime.md §4.2. -/
+theorem monotoneStepExt_trans_le {R1 R2 R3 : Regime} {b1 b2 : Tag}
+    (h12 : monotoneStepExt R1 R2 (fun k => b1 ≤ k))
+    (h23 : monotoneStepExt R2 R3 (fun k => b2 ≤ k)) (hb : b1 ≤ b2) :
+    monotoneStepExt R1 R3 (fun k => b1 ≤ k) :=
+  monotoneStepExt_weaken (monotoneStepExt_trans h12 h23)
+    (fun _ hk => hk.elim id (fun h => _root_.le_trans hb h))
+
+/-- Compose an extended-regime step with a following strong (`monotoneStep`) step: the strong
+    step adds no tags, so the fresh-tag set is unchanged.  Used where a typing step ends with a
+    regime invalidation (e.g. assignment). -/
+theorem monotoneStepExt_trans_monotoneStep {R1 R2 R3 : Regime} {nt : Tag → Prop}
+    (h12 : monotoneStepExt R1 R2 nt) (h23 : monotoneStep R2 R3) :
+    monotoneStepExt R1 R3 nt := by
+  refine ⟨?_, ?_⟩
+  · intro k b hknt hR1
+    rcases h12.1 k b hknt hR1 with hR2 | hR2
+    · exact h23.1 k b hR2
+    · refine Or.inr ?_
+      by_contra hR3
+      exact (h23.2 k hR3) hR2
+  · intro k hR3
+    exact h12.2 k (h23.2 k hR3)
+
 end Regime
 
 /-- Type checking context containing all environments -/
@@ -190,6 +287,12 @@ structure TypeContext where
   nextLoc : Loc  -- for fresh logical location generation
   nextTag : Tag  -- for fresh location generation
   pureCtx : Bool -- whether we are inside a pure function body typing
+  -- Extern-regime policy (doc/extern-regime.md §4.1): for a selected extern id and
+  -- a freshly-allocated output guard tag, the scenario chooses `some b` (insert
+  -- `tag ↦ b` into `regime'`) or `none` (leave the tag out → conservative path).
+  -- Default `fun _ _ => none` recovers the pre-extern-regime behaviour and threads
+  -- unchanged through every `{ ctx with … }` update.
+  externRegime : ExternId → Tag → Option Bool := fun _ _ => none
 
 /-- Type checking result: qualified type and updated memory environment -/
 structure TypeResult where
@@ -1306,6 +1409,21 @@ def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
           | _ => throw s!"Effect target {v} must be a reference type"
       | none => throw s!"Effect target {v} not found in environment"
 
+/-- Extern-regime insertion (doc/extern-regime.md §4.1, §4.3): for each freshly-allocated
+    output guard tag `k` of a selected extern id, query the scenario policy
+    `policy id k`; when it returns `some b`, insert `k ↦ b` into the active regime.  Tags
+    with `none` are left out (conservative path).  All tags in `tagMapping` are fresh
+    (allocated `≥ ctx.nextTag`), so this only ever ADDS tags above the incoming `nextTag`. -/
+def applyExternRegimePolicy (R : Regime) (id : ExternId)
+    (policy : ExternId → Tag → Option Bool) (tagMapping : TagMapping) : Regime :=
+  tagMapping.toList.foldl
+    (fun R (p : TagIndex × Tag) =>
+      match policy id p.2 with
+      | some b => match R.lookup? p.2 with
+                  | none => R.insert p.2 b
+                  | some _ => R
+      | none => R) R
+
 /-- Helper: Apply a single FnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single closure alternative.
 -/
@@ -1339,7 +1457,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
         let taintedQt := { result3.qualType with poison := taintedPoison }
         return { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
 
-    | FnTClosure.extern _id x retSpec effects capturedEnv =>
+    | FnTClosure.extern id x retSpec effects capturedEnv =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
         let effectPc := joinPoison p (joinPoison p1 ctx.pc)
@@ -1361,7 +1479,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := result2.regime' }
+                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
@@ -1411,7 +1529,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         let taintedQt := { result3.qualType with poison := taintedPoison }
         return { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
 
-    | FnTClosure.extern _id x retSpec effects capturedEnv =>
+    | FnTClosure.extern id x retSpec effects capturedEnv =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
         let effectPc := joinPoison p (joinPoison p1 ctx.pc)
@@ -1433,7 +1551,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := result2.regime' }
+                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
@@ -1485,7 +1603,7 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
         let taintedQt := { result3.qualType with poison := taintedPoison }
         return { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
 
-    | PFnTClosure.extern _id x retSpec capturedEnv =>
+    | PFnTClosure.extern id x retSpec capturedEnv =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
 
@@ -1501,7 +1619,7 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := result2.regime' }
+                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)
@@ -1554,7 +1672,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         let taintedQt := { result3.qualType with poison := taintedPoison }
         return { result3 with qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt }
 
-    | PFnTClosure.extern _id x retSpec capturedEnv =>
+    | PFnTClosure.extern id x retSpec capturedEnv =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
 
@@ -1570,7 +1688,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := result2.regime' }
+                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerRet innerEffects =>
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv)

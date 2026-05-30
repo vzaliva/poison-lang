@@ -27,6 +27,20 @@ lemma agreeValueUnder_clean_monotoneRegime
       (fun h => memberCvcrEvidence_monotone h_mono h)
       hclean hagree
 
+/-- Extended-regime (`monotoneStepExt`) variant of `agreeValueUnder_clean_monotoneRegime`.
+    The fresh-tag freshness is discharged from the closure-tag bound on `qt`. -/
+lemma agreeValueUnder_clean_monotoneRegime_ext
+    {predSat : PredSat} {R R' : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
+    {qt : QTyp} {v₀ v₁ : Value} {newTags : Tag → Prop} {B : Tag}
+    (h_mono : Regime.monotoneStepExt R R' newTags)
+    (hnewB : ∀ k, newTags k → B ≤ k)
+    (hbound : etypClosuresFullBounded qt.etyp B) :
+    qtypCleanUnder R' qt →
+      agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
+        agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
+  intro hclean hagree
+  exact agreeValueUnder_clean_transport_by_cleanBack_ext h_mono hnewB hbound hclean hagree
+
 private lemma qtypCleanUnder_lookup_true_back
     {R R' : Regime}
     (hlookup_true_back : ∀ (k : Tag), R'.lookup? k = some true → R.lookup? k = some true)

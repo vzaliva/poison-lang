@@ -75,7 +75,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
     ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl := by
   intro hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-    hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrun hpc
+    hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
   have hlookupRun := ExternDeclBoundaryRun.lookup hrun
   have hlookupRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? d.id = some impl := hlookupRun
@@ -96,7 +96,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
       hpredlaws hExtTyping hwfTm hTmBounded htypedEntry μ ρ θ cf o hθwf hwf hric
-      hreg hmasked_none hmasked_absent hctxCons a pm hwfcfg hrunEntry hpc
+      hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrunEntry hpc
 
 theorem ExternDeclBoundaryFRContract.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -1598,6 +1598,7 @@ private def fnExternFinishAtCursor
     (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
     (p p1 : Poison) (unifiedEnv : VarTypeEnv)
     (tagMapping : ExtTreeMap TagIndex Tag compare) (nextTag' : Tag)
+    (id : ExternId)
     (retSpec : ExternReturn) (memEnv : MemoryTypeEnv) : TypecheckM TypeResult :=
   match retSpec with
   | ExternReturn.simple typ poison pred =>
@@ -1618,7 +1619,7 @@ private def fnExternFinishAtCursor
                   tagEnv' := result2.tagEnv',
                   nextLoc' := v_2.2,
                   nextTag' := nextTag',
-                  regime' := result2.regime' }
+                  regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
   | ExternReturn.nestedFn innerId innerArg innerArgTyp innerRet innerEffects =>
       Except.ok
         { qualType :=
@@ -1790,7 +1791,7 @@ private theorem of_applyFnTClosureAtCursor
                       | Except.ok v => Except.ok (ForInStep.yield v)
                   let finish : MemoryTypeEnv → TypecheckM TypeResult :=
                     fnExternFinishAtCursor ctx result1 cursor p p1 unifiedEnv tagMapping
-                      nextTag' retSpec
+                      nextTag' id retSpec
                   have hwholeOk :
                       (match effectRun with
                       | Except.error err => Except.error err
@@ -2575,7 +2576,8 @@ theorem of_typecheck
                     varEnv := ctx.varEnv,
                     tagEnv := ctx.tagEnv.insert k { value := false, deps := deps },
                     nextLoc := res2.nextLoc', nextTag := res2.nextTag',
-                    pureCtx := ctx.pureCtx }
+                    pureCtx := ctx.pureCtx,
+                    externRegime := ctx.externRegime }
                 have hctxFalse : ContextReachableFrom root ctxRoot ctxFalse := by
                   intro x qt hlookup
                   exact hctx (by simpa [ctxFalse] using hlookup)
@@ -2611,7 +2613,8 @@ theorem of_typecheck
                   { pc := ctx.pc, regime := res1.regime', memEnv := res1.memEnv',
                     varEnv := ctx.varEnv, tagEnv := res1.tagEnv',
                     nextLoc := res1.nextLoc', nextTag := res1.nextTag',
-                    pureCtx := ctx.pureCtx }
+                    pureCtx := ctx.pureCtx,
+                    externRegime := ctx.externRegime }
                 let ctx'' : TypeContext :=
                   { ctx' with pc := joinPoison ctx.pc res1.qualType.poison }
                 have hctx'' : ContextReachableFrom root ctxRoot ctx'' := by

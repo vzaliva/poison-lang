@@ -3563,12 +3563,32 @@ private lemma stepFR_ite_standard
     simpa [resJoin] using hetyp.symm
   have hresJoin_poison : resJoin.qualType.poison = res.qualType.poison := by
     simp [resJoin, pc', hpoison, joinPoison, Bool.or_assoc]
-  have hmono1 : Regime.monotoneStep ctxᵢ.regime res1.regime' := by
-    simpa [ctxAfter] using regime_monotone ctxᵢ e1 fuel' res1 htc1'
-  have hmono2 : Regime.monotoneStep res1.regime' res2.regime' := by
-    simpa [ctxAfter, ctx'', ctx', pc'] using regime_monotone ctx'' e2 fuel' res2 htc2'
-  have hmono3 : Regime.monotoneStep res1.regime' res3.regime' := by
-    simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using regime_monotone ctxForE3 e3 fuel' res3 htc3'
+  have hmono2 : Regime.monotoneStepExt res1.regime' res2.regime' (fun k => res1.nextTag' ≤ k) := by
+    simpa [ctxAfter, ctx'', ctx', pc'] using regime_monotoneExt ctx'' e2 fuel' res2 htc2'
+  -- Compose with the conservative branch-join: the join keeps every `res2` entry, so the
+  -- left-self-join is `monotoneStep`-monotone, and composing with `hmono2` yields the final
+  -- extended-regime step `res1 → res.regime'` with fresh-tag floor `res1.nextTag'`.
+  have hmono_join :
+      Regime.monotoneStep res2.regime' (joinRegimes res2.regime' res3.regime') := by
+    refine ⟨?_, ?_⟩
+    · intro k b hk2
+      cases hj : (joinRegimes res2.regime' res3.regime').lookup? k with
+      | none => exact Or.inr rfl
+      | some b' =>
+          have hleft := joinRegimes_lookup_some_left res2.regime' res3.regime' k b' hj
+          have hbb : b' = b := Option.some.inj (hleft.symm.trans hk2)
+          subst hbb
+          exact Or.inl rfl
+    · intro k hk
+      cases hj : (joinRegimes res2.regime' res3.regime').lookup? k with
+      | none => exact absurd hj hk
+      | some b' =>
+          have hleft := joinRegimes_lookup_some_left res2.regime' res3.regime' k b' hj
+          rw [hleft]; exact Option.some_ne_none b'
+  have h_mono_final :
+      Regime.monotoneStepExt res1.regime' res.regime' (fun k => res1.nextTag' ≤ k) := by
+    rw [hregime']
+    exact Regime.monotoneStepExt_trans_monotoneStep hmono2 hmono_join
   have hwf_ctx'' : wfTypeContext ctx'' := by
     simpa [ctx'', ctx', pc', ctxAfter, wfTypeContext] using hwf1
   have hwfTm_ctx'' : wfTagMeaningCtx tm1 ctx'' := by
@@ -4112,70 +4132,6 @@ private lemma stepFR_ite_standard
             with ⟨θ₁3, hθext₁3, hvtyp₁3, hric₁3, hcwr₁3, hvalc₁3, hpres₃, _hfresh₃⟩
           have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
           have hθext₁ : wfExtendsMap θ₁ θ₁3 := wfExtendsMap_trans hθext₁1 hθext₁3
-          have hlookup_back_final_to_res1 :
-              ∀ k b,
-                (ctxAfter ctxᵢ res).regime.lookup? k = some b →
-                res1.regime'.lookup? k = some b := by
-            intro k b hk
-            have hk_join : (joinRegimes res2.regime' res3.regime').lookup? k = some b := by
-              simpa [ctxAfter, hregime'] using hk
-            have hk2 : res2.regime'.lookup? k = some b :=
-              joinRegimes_lookup_some_left res2.regime' res3.regime' k b hk_join
-            exact monotoneStep_lookup_back hmono2 k b hk2
-          have hclean_final_to_res1 :
-              ∀ qt,
-                qtypCleanUnder (ctxAfter ctxᵢ res).regime qt →
-                qtypCleanUnder res1.regime' qt := by
-            intro qt hclean
-            cases hclean with
-            | clean hpoison =>
-                exact qtypCleanUnder.clean hpoison
-            | guard k htag hk hnotfun =>
-                exact qtypCleanUnder.guard k htag (hlookup_back_final_to_res1 k true hk) hnotfun
-          have hmemberVars₀_transport :
-              ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-                MemberVarsRegimeEvidence predSat res1.regime' cf₀.memory σcap ρcap →
-                  MemberVarsRegimeEvidence predSat res.regime' cf₀.memory σcap ρcap := by
-            intro σcap ρcap h
-            exact
-              memberVarsRegimeEvidence_transport_lookup_back
-                (predSat := predSat)
-                (R := res1.regime') (R' := res.regime')
-                (μ := cf₀.memory)
-                hlookup_back_final_to_res1 h
-          have hmemberCvcr₀_transport :
-              ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-                MemberCvcrEvidence predSat res1.regime' cf₀.memory θ₀2 σcap ρcap →
-                  MemberCvcrEvidence predSat res.regime' cf₀.memory θ₀2 σcap ρcap := by
-            intro σcap ρcap h
-            exact
-              memberCvcrEvidence_transport_lookup_back
-                (predSat := predSat)
-                (R := res1.regime') (R' := res.regime')
-                (μ := cf₀.memory)
-                hlookup_back_final_to_res1 h
-          have hmemberVars₁_transport :
-              ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-                MemberVarsRegimeEvidence predSat res1.regime' cf₁.memory σcap ρcap →
-                  MemberVarsRegimeEvidence predSat res.regime' cf₁.memory σcap ρcap := by
-            intro σcap ρcap h
-            exact
-              memberVarsRegimeEvidence_transport_lookup_back
-                (predSat := predSat)
-                (R := res1.regime') (R' := res.regime')
-                (μ := cf₁.memory)
-                hlookup_back_final_to_res1 h
-          have hmemberCvcr₁_transport :
-              ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-                MemberCvcrEvidence predSat res1.regime' cf₁.memory θ₁3 σcap ρcap →
-                  MemberCvcrEvidence predSat res.regime' cf₁.memory θ₁3 σcap ρcap := by
-            intro σcap ρcap h
-            exact
-              memberCvcrEvidence_transport_lookup_back
-                (predSat := predSat)
-                (R := res1.regime') (R' := res.regime')
-                (μ := cf₁.memory)
-                hlookup_back_final_to_res1 h
           have hric₁3_src :
               runtimeInstantiatesCtx (ctxAfter ctx'' res3) cf₁.memory cf₁.varEnv θ₁3 := by
             simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using hric₁3
@@ -4368,7 +4324,7 @@ private lemma stepFR_ite_standard
                         exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                   rcases
                       typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
-                        ctx'' e2 fuel' res2 htc2' hwf_ctx'' hpc''
+                        ctx'' e2 fuel' res2 htc2' hwf_ctx'' htagBounded_ctx'' hpc''
                         l qt2 hlookup2 hcontains_ctx'' hclean2
                     with ⟨qt_in, hlookup_in, hclean_in⟩
                   have heq_qt : qt_mid = qt_in := by
@@ -4628,8 +4584,21 @@ private lemma stepFR_ite_standard
                       (by simpa [ctxAfter] using hc3)
                 exact agreeLocUnder.both_unrealized l qt hθ₀2_none hθ₁3_none
             · intro x qt hlookup hclean
+              -- ite leaves varEnv untouched, so `qt`'s tags are bounded by `ctxᵢ.nextTag`
+              -- and hence by `res1.nextTag'` (nextTag monotone).  This discharges freshness
+              -- for the extended-regime backward clean/value transports below.
+              have hlookup_ctxᵢ : ctxᵢ.varEnv.lookup x = some qt := by
+                simpa [ctxAfter] using hlookup
+              have hbge1 : ctxᵢ.nextTag ≤ res1.nextTag' :=
+                typecheck_nextTag_mono ctxᵢ e1 fuel' res1 htc1'
+              have hqt_pred1 : qtypPredTagBounded qt res1.nextTag' :=
+                qtypPredTagBounded_mono
+                  (TagBoundedCtx_varEnv_predTagBounded htagBounded hlookup_ctxᵢ) hbge1
+              have hqt_bound1 : etypClosuresFullBounded qt.etyp res1.nextTag' :=
+                etypClosuresFullBounded_mono
+                  (TagBoundedCtx_varEnv_etypClosures htagBounded hlookup_ctxᵢ) hbge1
               have hclean_mid : qtypCleanUnder res1.regime' qt :=
-                hclean_final_to_res1 qt hclean
+                cleanUnder_of_monotoneExt h_mono_final (fun _ hk => hk) hqt_pred1 hclean
               have hagree_mid :
                   agreeVarUnder predSat res1.regime'
                     cfg₀1.memory cfg₀1.varEnv cfg₁1.memory cfg₁1.varEnv θ₀1 θ₁1 (x, qt) :=
@@ -4652,16 +4621,8 @@ private lemma stepFR_ite_standard
                   have hagreeV_final :
                       agreeValueUnder predSat res.regime'
                         cf₀.memory cf₁.memory θ₀2 θ₁3 qt v₀ v₁ :=
-                    agreeValueUnder_clean_transport_by_cleanBack
-                      (predSat := predSat)
-                      (R := res1.regime') (R' := res.regime')
-                      (μ₀ := cf₀.memory) (μ₁ := cf₁.memory)
-                      (θ₀ := θ₀2) (θ₁ := θ₁3)
-                      (qt := qt) (v₀ := v₀) (v₁ := v₁)
-                      hclean_final_to_res1
-                      hmemberVars₀_transport hmemberCvcr₀_transport
-                      hmemberVars₁_transport hmemberCvcr₁_transport
-                      hclean hagreeV_ext
+                    agreeValueUnder_clean_transport_by_cleanBack_ext
+                      h_mono_final (fun _ hk => hk) hqt_bound1 hclean hagreeV_ext
                   exact
                     agreeVarUnder.agree_values x qt v₀ v₁
                       (by simpa [hvar_cf₀] using hlookup₀)
@@ -4826,70 +4787,6 @@ private lemma stepFR_ite_standard
             with ⟨θ₁2, hθext₁2, hvtyp₁2, hric₁2, hcwr₁2, hvalc₁2, hpres₂, _hfresh₂⟩
           have hθext₀ : wfExtendsMap θ₀ θ₀3 := wfExtendsMap_trans hθext₀1 hθext₀3
           have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
-          have hlookup_back_final_to_res1 :
-              ∀ k b,
-                (ctxAfter ctxᵢ res).regime.lookup? k = some b →
-                res1.regime'.lookup? k = some b := by
-            intro k b hk
-            have hk_join : (joinRegimes res2.regime' res3.regime').lookup? k = some b := by
-              simpa [ctxAfter, hregime'] using hk
-            have hk2 : res2.regime'.lookup? k = some b :=
-              joinRegimes_lookup_some_left res2.regime' res3.regime' k b hk_join
-            exact monotoneStep_lookup_back hmono2 k b hk2
-          have hclean_final_to_res1 :
-              ∀ qt,
-                qtypCleanUnder (ctxAfter ctxᵢ res).regime qt →
-                qtypCleanUnder res1.regime' qt := by
-            intro qt hclean
-            cases hclean with
-            | clean hpoison =>
-                exact qtypCleanUnder.clean hpoison
-            | guard k htag hk hnotfun =>
-                exact qtypCleanUnder.guard k htag (hlookup_back_final_to_res1 k true hk) hnotfun
-          have hmemberVars₀_transport :
-              ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-                MemberVarsRegimeEvidence predSat res1.regime' cf₀.memory σcap ρcap →
-                  MemberVarsRegimeEvidence predSat res.regime' cf₀.memory σcap ρcap := by
-            intro σcap ρcap h
-            exact
-              memberVarsRegimeEvidence_transport_lookup_back
-                (predSat := predSat)
-                (R := res1.regime') (R' := res.regime')
-                (μ := cf₀.memory)
-                hlookup_back_final_to_res1 h
-          have hmemberCvcr₀_transport :
-              ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-                MemberCvcrEvidence predSat res1.regime' cf₀.memory θ₀3 σcap ρcap →
-                  MemberCvcrEvidence predSat res.regime' cf₀.memory θ₀3 σcap ρcap := by
-            intro σcap ρcap h
-            exact
-              memberCvcrEvidence_transport_lookup_back
-                (predSat := predSat)
-                (R := res1.regime') (R' := res.regime')
-                (μ := cf₀.memory)
-                hlookup_back_final_to_res1 h
-          have hmemberVars₁_transport :
-              ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-                MemberVarsRegimeEvidence predSat res1.regime' cf₁.memory σcap ρcap →
-                  MemberVarsRegimeEvidence predSat res.regime' cf₁.memory σcap ρcap := by
-            intro σcap ρcap h
-            exact
-              memberVarsRegimeEvidence_transport_lookup_back
-                (predSat := predSat)
-                (R := res1.regime') (R' := res.regime')
-                (μ := cf₁.memory)
-                hlookup_back_final_to_res1 h
-          have hmemberCvcr₁_transport :
-              ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-                MemberCvcrEvidence predSat res1.regime' cf₁.memory θ₁2 σcap ρcap →
-                  MemberCvcrEvidence predSat res.regime' cf₁.memory θ₁2 σcap ρcap := by
-            intro σcap ρcap h
-            exact
-              memberCvcrEvidence_transport_lookup_back
-                (predSat := predSat)
-                (R := res1.regime') (R' := res.regime')
-                (μ := cf₁.memory)
-                hlookup_back_final_to_res1 h
           have hric₀3_src :
               runtimeInstantiatesCtx (ctxAfter ctx'' res3) cf₀.memory cf₀.varEnv θ₀3 := by
             simpa [ctxAfter, ctxForE3, ctx'', ctx', pc'] using hric₀3
@@ -5080,7 +4977,7 @@ private lemma stepFR_ite_standard
                         exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                   rcases
                       typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
-                        ctxForE3 e3 fuel' res3 htc3' hwf_ctxForE3 hpcForE3
+                        ctxForE3 e3 fuel' res3 htc3' hwf_ctxForE3 htagBounded_ctxForE3 hpcForE3
                         l qt3 hlookup3 hcontains_ctxForE3 hclean3
                     with ⟨qt_in, hlookup_in, hclean_in⟩
                   have heq_qt : qt_mid = qt_in := by
@@ -5339,8 +5236,21 @@ private lemma stepFR_ite_standard
                       hric₁2 (by simpa [ctxAfter] using hc2)
                 exact agreeLocUnder.both_unrealized l qt hθ₀3_none hθ₁2_none
             · intro x qt hlookup hclean
+              -- ite leaves varEnv untouched, so `qt`'s tags are bounded by `ctxᵢ.nextTag`
+              -- and hence by `res1.nextTag'` (nextTag monotone).  This discharges freshness
+              -- for the extended-regime backward clean/value transports below.
+              have hlookup_ctxᵢ : ctxᵢ.varEnv.lookup x = some qt := by
+                simpa [ctxAfter] using hlookup
+              have hbge1 : ctxᵢ.nextTag ≤ res1.nextTag' :=
+                typecheck_nextTag_mono ctxᵢ e1 fuel' res1 htc1'
+              have hqt_pred1 : qtypPredTagBounded qt res1.nextTag' :=
+                qtypPredTagBounded_mono
+                  (TagBoundedCtx_varEnv_predTagBounded htagBounded hlookup_ctxᵢ) hbge1
+              have hqt_bound1 : etypClosuresFullBounded qt.etyp res1.nextTag' :=
+                etypClosuresFullBounded_mono
+                  (TagBoundedCtx_varEnv_etypClosures htagBounded hlookup_ctxᵢ) hbge1
               have hclean_mid : qtypCleanUnder res1.regime' qt :=
-                hclean_final_to_res1 qt hclean
+                cleanUnder_of_monotoneExt h_mono_final (fun _ hk => hk) hqt_pred1 hclean
               have hagree_mid :
                   agreeVarUnder predSat res1.regime'
                     cfg₀1.memory cfg₀1.varEnv cfg₁1.memory cfg₁1.varEnv θ₀1 θ₁1 (x, qt) :=
@@ -5363,16 +5273,8 @@ private lemma stepFR_ite_standard
                   have hagreeV_final :
                       agreeValueUnder predSat res.regime'
                         cf₀.memory cf₁.memory θ₀3 θ₁2 qt v₀ v₁ :=
-                    agreeValueUnder_clean_transport_by_cleanBack
-                      (predSat := predSat)
-                      (R := res1.regime') (R' := res.regime')
-                      (μ₀ := cf₀.memory) (μ₁ := cf₁.memory)
-                      (θ₀ := θ₀3) (θ₁ := θ₁2)
-                      (qt := qt) (v₀ := v₀) (v₁ := v₁)
-                      hclean_final_to_res1
-                      hmemberVars₀_transport hmemberCvcr₀_transport
-                      hmemberVars₁_transport hmemberCvcr₁_transport
-                      hclean hagreeV_ext
+                    agreeValueUnder_clean_transport_by_cleanBack_ext
+                      h_mono_final (fun _ hk => hk) hqt_bound1 hclean hagreeV_ext
                   exact
                     agreeVarUnder.agree_values x qt v₀ v₁
                       (by simpa [hvar_cf₀] using hlookup₀)

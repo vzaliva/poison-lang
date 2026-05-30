@@ -47,7 +47,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg_with_expr_proof
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctx
         (Expr.unaryop op e) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
   have hIH := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e ctx hctxCurrent hcan hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_unaryop_inv' op e
@@ -55,7 +55,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg_with_expr_proof
   rcases hstruct with ⟨cfg', v', ht_e, h_evalop, hmem, hvar, _hnext, _hpure⟩
   rcases
     (hIH hpredlaws hExtTyping hwfTm hTmBounded).2 μ ρ θ cfg' v'
-      hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e hpc
+      hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e hpc
     with ⟨θ', hθext, hvtyp, hric', hcwr', hvalc', hpres', _hfresh'⟩
   have hctxAfter : ctxAfter ctx res = ctxAfter ctx res1 := by
     simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime]
@@ -155,9 +155,6 @@ lemma stepFR_op_with_expr_proof
   have htagR1' : regimeConsistentWithCtx ctx' := by
     -- Comes directly from IH1; `ctx'` is exactly `ctxAfter ctxᵢ res1`.
     simpa [ctx', ctxAfter] using htagR1
-  -- Regime monotonicity (typing can only drop entries).
-  have h_mono : Regime.monotoneStep ctxᵢ.regime res1.regime' :=
-    regime_monotone ctxᵢ e1 fuel' res1 htc1'
   -- agreeOnClean from IH1 directly applies since ctx' = ctxAfter ctxᵢ res1
   have hctx'_eq : ctx' = ctxAfter ctxᵢ res1 := by simp [ctx', ctxAfter]
   have hagree_clean1' :
@@ -546,7 +543,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctx
         (Expr.op e1 op e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
   have hstruct := terminatesTo_op_inv' e1 op e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg1, v1, v2, ht_e1, ht_e2, h_evalop, hpm1, hpm2⟩
@@ -564,7 +561,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
     exact (wfConfig_preserved e1 _ cfg1 v1 hOp ht_e1 hwfcfg).1
   rcases
     hIH1Inst.2 μ ρ θ cfg1 v1
-      hθwf hwf hric hregCtx hmasked_none hmasked_absent hcwr a pm hwfcfg ht_e1 hpc
+      hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm1 ctx' := by
@@ -584,20 +581,23 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
   have hpc1 : ctx'.pc = true := by
     simp [ctx']
     exact hpc
-  have hmono1 : Regime.monotoneStep ctx.regime res1.regime' :=
-    regime_monotone ctx e1 fuel' res1 htc1'
+  have hmono1 := regime_monotoneExt ctx e1 fuel' res1 htc1'
   have hmasked_none1 : ∀ k, masked k → (ctxAfter ctx res1).regime.lookup? k = none := by
     intro k hk
-    simpa [ctxAfter] using
-      masked_lookup_none_of_monotoneStep
-        (R := ctx.regime) (R' := res1.regime')
-        hmasked_none hmono1 k hk
+    exact masked_lookup_none_of_monotoneStepExt
+      hmasked_none (fun t ht => Nat.not_le.2 (hmasked_bounded t ht)) hmono1 k hk
   have hmasked_none1' : ∀ k, masked k → ctx'.regime.lookup? k = none := by
     intro k hk
     simpa [ctx', ctxAfter] using hmasked_none1 k hk
+  have hbnd1 : TagBoundedCtx (ctxAfter ctx res1) :=
+    typecheckExpr_preserves_TagBoundedCtx ctx e1 fuel' res1 (by simpa [typecheck] using htc1') hbnd
+  have hbnd1' : TagBoundedCtx ctx' := by simpa [ctx', ctxAfter] using hbnd1
+  have hmasked_bounded1' : ∀ k, masked k → k < ctx'.nextTag := by
+    have hb : ctx.nextTag ≤ res1.nextTag' := typecheck_nextTag_mono ctx e1 fuel' res1 htc1'
+    exact fun k hk => by simpa [ctx'] using Nat.lt_of_lt_of_le (hmasked_bounded k hk) hb
   have hmasked_absent1 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx res1) :=
     typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
-      masked ctx e1 fuel' res1 hmasked_absent hmasked_none htc1'
+      masked ctx e1 fuel' res1 hmasked_absent hmasked_none hmasked_bounded htc1'
   have hmasked_absent1' : MaskedTagsAbsentFromTrueTagEnv masked ctx' := by
     simpa [ctx', ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hmasked_absent1
   have hIH2 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
@@ -614,7 +614,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
     rw [← hcfg1_eq]; exact ht_e2
   rcases
     (hIH2 hpredlaws1 hExtTyping hwfTm' hTmBounded').2 cfg1.memory cfg1.varEnv θ1 cf v2
-      hθ1wf hwf1' hric1' hreg1' hmasked_none1' hmasked_absent1' hcwr1'
+      hθ1wf hwf1' hric1' hreg1' hmasked_none1' hmasked_absent1' hmasked_bounded1' hbnd1' hcwr1'
       cfg1.nextAddr cfg1.pureMode hwfcfg1' ht_e2' hpc1
     with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
@@ -634,7 +634,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
       typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res2)
         (by simpa [ctx', ctxAfter] using htc2')
-        hwf1
+        hwf1 hbnd1
         (by simpa [ctxAfter] using hpc)
         l qt_out
         (by simpa using hlookup_out)
@@ -684,7 +684,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
         typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
           (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res2)
           (by simpa [ctx', ctxAfter] using htc2')
-          hwf1
+          hwf1 hbnd1
           (by simpa [ctxAfter] using hpc)
           l qt hlookup2 hcontains_mid hclean2
       have hθ1_none := _hfresh1 l qt_mid hnotIn

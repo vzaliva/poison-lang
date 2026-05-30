@@ -2177,7 +2177,8 @@ lemma stepFR_assign_with_expr_proof
     simpa [ctx', ctxAfter] using hcwr₁1
   have hagree1' : agreeOnClean predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctx', ctxAfter] using hagree1
-  have hmono1 : Regime.monotoneStep ctxᵢ.regime res1.regime' := regime_monotone ctxᵢ e1 fuel' res1 htc1'
+  have hmono1 : Regime.monotoneStepExt ctxᵢ.regime res1.regime' (fun k => ctxᵢ.nextTag ≤ k) := by
+    simpa [ctxAfter] using regime_monotoneExt ctxᵢ e1 fuel' res1 htc1'
   have hpm₀1 : cfg₀1.pureMode = pm := by
     simpa using
       (terminatesTo_preserves_pureMode e1
@@ -2280,11 +2281,11 @@ lemma stepFR_assign_with_expr_proof
     simpa using hmem_assign.symm
   have htag_res : res.tagEnv' = invalidateTagDeps res2.tagEnv' ls := by
     simpa using htag_assign.symm
-  have hmono2_ctx : Regime.monotoneStep ctx'.regime (ctxAfter ctx' res2).regime := by
-    exact regime_monotone ctx' e2 fuel' res2 htc2'
-  have hmono2 : Regime.monotoneStep res1.regime' res2.regime' := by
-    simpa [ctx', ctxAfter] using hmono2_ctx
-  have hmono12 : Regime.monotoneStep ctxᵢ.regime res2.regime' := regimeMonotone_trans hmono1 hmono2
+  have hmono2 : Regime.monotoneStepExt res1.regime' res2.regime' (fun k => res1.nextTag' ≤ k) := by
+    simpa [ctx', ctxAfter] using regime_monotoneExt ctx' e2 fuel' res2 htc2'
+  have hb12 : ctxᵢ.nextTag ≤ res1.nextTag' := typecheck_nextTag_mono ctxᵢ e1 fuel' res1 htc1'
+  have hmono12 : Regime.monotoneStepExt ctxᵢ.regime res2.regime' (fun k => ctxᵢ.nextTag ≤ k) :=
+    Regime.monotoneStepExt_trans_le hmono1 hmono2 hb12
   -- Assignment-specific transport from IH2 post-state to final updated states/context.
   have hpost_transport :
       wfTagMeaningCtx tm2 (ctxAfter ctxᵢ res) ∧
@@ -2478,14 +2479,6 @@ lemma stepFR_assign_with_expr_proof
             l hcontains_formula
         have hkR_res : res.regime'.lookup? k ≠ none := by
           simpa [ctxAfter] using hkR
-        have hkR_ctxi : ctxᵢ.regime.lookup? k ≠ none := by
-          have hkR_res' :
-              (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k ≠ none := by
-            simpa [hRegime] using hkR_res
-          have hkR_res2 : res2.regime'.lookup? k ≠ none :=
-            invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
-              res2.regime' res2.tagEnv' ls k hkR_res'
-          exact hmono12.2 k hkR_res2
         cases hsplit with
         | inl hOld =>
             by_cases hIn : l ∈ ls
@@ -2601,23 +2594,6 @@ lemma stepFR_assign_with_expr_proof
                     exact Option.some.inj this
                   have hreg_res2 : res2.regime'.lookup? k = some b := by
                     simpa [ctxAfter, ctx', hk_eq] using hreg
-                  have hk_ctxi : ctxᵢ.regime.lookup? k = some b := by
-                    have hk_ctxi_not_none : ctxᵢ.regime.lookup? k ≠ none := by
-                      exact hmono12.2 k (by simp [hreg_res2])
-                    cases hk0 : ctxᵢ.regime.lookup? k with
-                    | none =>
-                        exact (hk_ctxi_not_none hk0).elim
-                    | some b0 =>
-                        have hmono_keep : res2.regime'.lookup? k = some b0 ∨ res2.regime'.lookup? k = none :=
-                          hmono12.1 k b0 hk0
-                        cases hmono_keep with
-                        | inl hk_keep =>
-                            have hb : b0 = b := by
-                              have : some b0 = some b := hk_keep.symm.trans hreg_res2
-                              exact Option.some.inj this
-                            simp [hb] at hk0 ⊢
-                        | inr hk_none =>
-                            simp [hk_none] at hreg_res2
                   have hkeep : (invalidateTagDeps res2.tagEnv' ls).contains k = true :=
                     invalidateRegimeDeps_survives_of_lookup_ne_none res2.regime' res2.tagEnv' ls k
                       (by simpa [hRegime] using hkR_res)
@@ -2747,6 +2723,8 @@ lemma stepFR_assign_with_expr_proof
             simpa [ctxAfter] using hlookup
           have hkR_res : res.regime'.lookup? k ≠ none := by
             simpa [ctxAfter] using hkR
+          have hknew : ¬ (ctxᵢ.nextTag ≤ k) :=
+            Nat.not_le.2 (TagBoundedCtx_varEnv_guardTag_lt htagBounded hlookup_ctxi hguard)
           have hkR_ctxi : ctxᵢ.regime.lookup? k ≠ none := by
             have hkR_res' :
                 (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k ≠ none := by
@@ -2754,7 +2732,9 @@ lemma stepFR_assign_with_expr_proof
             have hkR_res2 : res2.regime'.lookup? k ≠ none :=
               invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
                 res2.regime' res2.tagEnv' ls k hkR_res'
-            exact hmono12.2 k hkR_res2
+            rcases hmono12.2 k hkR_res2 with hRne | hnew
+            · exact hRne
+            · exact absurd hnew hknew
           have hvars := hcwr₀.2.1 x qt k hlookup_ctxi hguard hkR_ctxi
           have hPredSat_mem :
               ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
@@ -2811,7 +2791,7 @@ lemma stepFR_assign_with_expr_proof
                   res2.regime' res2.tagEnv' ls k hkR_res'
               have hreg_res2 : res2.regime'.lookup? k = some b := by
                 have hmono_keep : res2.regime'.lookup? k = some b ∨ res2.regime'.lookup? k = none :=
-                  hmono12.1 k b hreg
+                  hmono12.1 k b hknew hreg
                 cases hmono_keep with
                 | inl hk_keep =>
                     exact hk_keep
@@ -2866,14 +2846,6 @@ lemma stepFR_assign_with_expr_proof
       · intro l qt k hlookup hguard hkR
         have hkR_res : res.regime'.lookup? k ≠ none := by
           simpa [ctxAfter] using hkR
-        have hkR_ctxi : ctxᵢ.regime.lookup? k ≠ none := by
-          have hkR_res' :
-              (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k ≠ none := by
-            simpa [hRegime] using hkR_res
-          have hkR_res2 : res2.regime'.lookup? k ≠ none :=
-            invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
-              res2.regime' res2.tagEnv' ls k hkR_res'
-          exact hmono12.2 k hkR_res2
         have hlookup_res : res.memEnv'.lookup l = some qt := by
           simpa [ctxAfter] using hlookup
         have hcontains_res : res.memEnv'.contains l = true := by
@@ -3143,6 +3115,8 @@ lemma stepFR_assign_with_expr_proof
             simpa [ctxAfter] using hlookup
           have hkR_res : res.regime'.lookup? k ≠ none := by
             simpa [ctxAfter] using hkR
+          have hknew : ¬ (ctxᵢ.nextTag ≤ k) :=
+            Nat.not_le.2 (TagBoundedCtx_varEnv_guardTag_lt htagBounded hlookup_ctxi hguard)
           have hkR_ctxi : ctxᵢ.regime.lookup? k ≠ none := by
             have hkR_res' :
                 (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k ≠ none := by
@@ -3150,7 +3124,9 @@ lemma stepFR_assign_with_expr_proof
             have hkR_res2 : res2.regime'.lookup? k ≠ none :=
               invalidateRegimeDeps_lookup_ne_none_implies_original_ne_none
                 res2.regime' res2.tagEnv' ls k hkR_res'
-            exact hmono12.2 k hkR_res2
+            rcases hmono12.2 k hkR_res2 with hRne | hnew
+            · exact hRne
+            · exact absurd hnew hknew
           have hvars := hcwr₁.2.1 x qt k hlookup_ctxi hguard hkR_ctxi
           have hPredSat_mem :
               ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
@@ -3207,7 +3183,7 @@ lemma stepFR_assign_with_expr_proof
                   res2.regime' res2.tagEnv' ls k hkR_res'
               have hreg_res2 : res2.regime'.lookup? k = some b := by
                 have hmono_keep : res2.regime'.lookup? k = some b ∨ res2.regime'.lookup? k = none :=
-                  hmono12.1 k b hreg
+                  hmono12.1 k b hknew hreg
                 cases hmono_keep with
                 | inl hk_keep =>
                     exact hk_keep
@@ -3257,16 +3233,7 @@ lemma stepFR_assign_with_expr_proof
                   qtypPredHolds predSat qt' cf₁.memory v' :=
             qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ₁2 cfg₁2.memory cf₁.memory
           exact closureCapturedVarsRegime_transport_μ hpred_compat hcap_final_regime
-    · have hclean_ctxi :
-          ∀ qt, qtypCleanUnder (ctxAfter ctxᵢ res).regime qt → qtypCleanUnder ctxᵢ.regime qt := by
-        intro qt hclean
-        have hclean_inv :
-            qtypCleanUnder (invalidateRegimeDeps res2.regime' res2.tagEnv' ls) qt := by
-          simpa [ctxAfter, hRegime] using hclean
-        have hclean_res2 : qtypCleanUnder res2.regime' qt :=
-          qtypCleanUnder_of_invalidateRegimeDeps res2.regime' res2.tagEnv' ls hclean_inv
-        exact qtypCleanUnder_of_monotone hmono12 hclean_res2
-      have hmem_split_final :
+    · have hmem_split_final :
           ∀ l qt,
             (ctxAfter ctxᵢ res).memEnv.lookup l = some qt →
             res2.memEnv'.contains l = true ∨ l ∈ ls := by
@@ -4551,6 +4518,7 @@ private lemma assign_final_clean_preservation
   (htc1_expr : typecheckExpr ctx e1 fuel' = .ok result1)
   (htc2_expr : typecheckExpr (ctxAfter ctx result1) e2 fuel' = .ok result2)
   (hwf1 : wfTypeContext (ctxAfter ctx result1))
+  (hbnd1 : TagBoundedCtx (ctxAfter ctx result1))
   (hmem_res :
     res.memEnv' =
       match Std.ExtTreeSet.toList ls with
@@ -4591,7 +4559,7 @@ private lemma assign_final_clean_preservation
   rcases
     typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
       (ctx := ctxAfter ctx result1) (e := e2) (fuel := fuel') (res := result2)
-      htc2_expr hwf1 hpc_mid l qt_mid hlookup_mid
+      htc2_expr hwf1 hbnd1 hpc_mid l qt_mid hlookup_mid
       (by
         have hcontains_in : ctx.memEnv.contains l :=
           memEnv_contains_of_lookup_some ctx.memEnv l qt_in hlookup_in
@@ -5125,7 +5093,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctx
         (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hctxCons a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg ht hpc
   have hinv := terminatesTo_assign_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hinv with ⟨cfg1, cfg2, aw, n, ht_e1, ht_e2, ho, hmem, hvar, _hnext, _hpm⟩
@@ -5144,20 +5112,23 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
     exact (wfConfig_preserved e1 _ cfg1 (Value.loc aw) hOp ht_e1 hwfcfg).1
   rcases
     hIH1Inst.2 μ ρ θ cfg1 (Value.loc aw)
-      hθwf hwf hric hregCtx hmasked_none hmasked_absent hctxCons a pm hwfcfg ht_e1 hpc
+      hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg ht_e1 hpc
     with ⟨θ1, hθext1, hvloc1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
-  have hmono1 : Regime.monotoneStep ctx.regime result1.regime' :=
-    regime_monotone ctx e1 fuel' result1 htc1'
+  have hmono1 := regime_monotoneExt ctx e1 fuel' result1 htc1'
   have hmasked_none1 : ∀ k, masked k → (ctxAfter ctx result1).regime.lookup? k = none := by
     intro k hk
     simpa [ctxAfter] using
-      masked_lookup_none_of_monotoneStep
-        (R := ctx.regime) (R' := result1.regime')
-        hmasked_none hmono1 k hk
+      masked_lookup_none_of_monotoneStepExt
+        hmasked_none (fun t ht => Nat.not_le.2 (hmasked_bounded t ht)) hmono1 k hk
   have hmasked_absent1 : MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx result1) :=
     typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
-      masked ctx e1 fuel' result1 hmasked_absent hmasked_none htc1'
+      masked ctx e1 fuel' result1 hmasked_absent hmasked_none hmasked_bounded htc1'
+  have hbnd1 : TagBoundedCtx (ctxAfter ctx result1) :=
+    typecheckExpr_preserves_TagBoundedCtx ctx e1 fuel' result1 (by simpa [typecheck] using htc1') hbnd
+  have hmasked_bounded1 : ∀ k, masked k → k < (ctxAfter ctx result1).nextTag := by
+    have hb : ctx.nextTag ≤ result1.nextTag' := typecheck_nextTag_mono ctx e1 fuel' result1 htc1'
+    exact fun k hk => by simpa [ctxAfter] using Nat.lt_of_lt_of_le (hmasked_bounded k hk) hb
   have hpc1 : (ctxAfter ctx result1).pc = true := by
     simpa [ctxAfter] using hpc
   have hTmBounded1 : TagMeaningBounded tm1 (ctxAfter ctx result1).nextTag := by
@@ -5175,7 +5146,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
     rw [← hcfg1_eq]; exact ht_e2
   rcases
     (hIH2 hpredlaws1 hExtTyping hTm1 hTmBounded1).2 cfg1.memory cfg1.varEnv θ1 cfg2 (Value.num n)
-      hθ1wf hwf1 hric1 hreg1 hmasked_none1 hmasked_absent1 hctxCons1
+      hθ1wf hwf1 hric1 hreg1 hmasked_none1 hmasked_absent1 hmasked_bounded1 hbnd1 hctxCons1
       cfg1.nextAddr cfg1.pureMode hwfcfg1' ht_e2' hpc1
     with ⟨θ2, hθext2, hvnum2, hric2, hctxCons2, _hvalc2, hpres2, _hfresh2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
@@ -5266,6 +5237,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
         htc1_expr
         (by simpa [ctxAfter] using htc2_expr_raw)
         hwf1
+        hbnd1
         hmem_res hRegime hpc hvloc1 hθext2 hθ2wf hric2 hmem hpres1 hpres2
   have hwfcfg_final : wfConfig cf := by
     exact (wfConfig_preserved (Expr.assign e1 e2) _ cf o hOp ht hwfcfg).1
@@ -5355,6 +5327,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
           (ctx := ctxAfter ctx result1) (e := e2) (fuel := fuel') (res := result2)
           htc2'
           hwf1
+          hbnd1
           hpc1
           l qt hlookup2 hcontains_mid hclean2
       have hθ1_none := _hfresh1 l qt_mid hnotIn
