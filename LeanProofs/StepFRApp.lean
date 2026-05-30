@@ -8119,7 +8119,9 @@ private lemma appAgreeOnClean_out_from_body_member
     (hsrc_mem : src ∈ first :: rest)
     (hbody_memEnv_eq : bodyFinalCtx.memEnv = (ctxAfter ctx src).memEnv)
     (hbody_regime_eq : bodyFinalCtx.regime = (ctxAfter ctx src).regime)
-    (hpre_to_src_mono : Regime.monotoneStep preCtx.regime (ctxAfter ctx src).regime)
+    (hpre_to_src_mono : Regime.monotoneStepExt preCtx.regime (ctxAfter ctx src).regime
+      (fun k => preCtx.nextTag ≤ k))
+    (hbnd_pre : TagBoundedCtx preCtx)
     (hvar_lookup_src_to_pre :
       ∀ x qt, (ctxAfter ctx src).varEnv.lookup x = some qt →
         preCtx.varEnv.lookup x = some qt)
@@ -8174,10 +8176,11 @@ private lemma appAgreeOnClean_out_from_body_member
             agreeLocUnder.agree_values l qt a₀' a₁' n₀ n₁
               hreal₀ hreal₁ hlookup₀' hlookup₁' hagree_val'
     · intro x qt hlookup hclean
-      have hclean_pre : qtypCleanUnder preCtx.regime qt :=
-        cleanUnder_of_monotone hpre_to_src_mono hclean
       have hlookup_pre : preCtx.varEnv.lookup x = some qt :=
         hvar_lookup_src_to_pre x qt hlookup
+      have hclean_pre : qtypCleanUnder preCtx.regime qt :=
+        cleanUnder_of_monotoneExt hpre_to_src_mono (fun _ hk => hk)
+          (TagBoundedCtx_varEnv_predTagBounded hbnd_pre hlookup_pre) hclean
       have hvar_agree_pre := hagree_pre.2 x qt hlookup_pre hclean_pre
       cases hvar_agree_pre with
       | both_none _ _ hnone₀ hnone₁ =>
@@ -8194,7 +8197,8 @@ private lemma appAgreeOnClean_out_from_body_member
           have hagree_src_regime :
               agreeValueUnder predSat (ctxAfter ctx src).regime
                 preCfg₀.memory preCfg₁.memory θpre₀ θpre₁ qt v₀ v₁ :=
-            agreeValueUnder_clean_monotoneRegime hpre_to_src_mono hclean hagree_val_pre
+            agreeValueUnder_clean_monotoneRegime_ext hpre_to_src_mono (fun _ hk => hk)
+              (TagBoundedCtx_varEnv_etypClosures hbnd_pre hlookup_pre) hclean hagree_val_pre
           have hagree_src_final :
               agreeValueUnder predSat (ctxAfter ctx src).regime
                 cf₀.memory cf₁.memory θbody₀ θbody₁ qt v₀ v₁ :=
@@ -10627,6 +10631,54 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           simpa [ctxAfter] using IsCanonicalExtension.bounded hcanon1
         have hTmBoundedBody : TagMeaningBounded tm1 bodyCtx.nextTag := by
           simpa [bodyCtx] using hTmBounded1.mono hcursorTagA
+        have htagBoundedBody : TagBoundedCtx bodyCtx := by
+          obtain ⟨hb_tag1, ⟨hb_predV1, hb_predM1⟩, hb_clos1⟩ := hbnd1
+          have hb_predCtx2 := (hbnd2 : TagBoundedCtx (ctxAfter ctxᵢ result2)).2.1
+          have hb_closCtx2 := (hbnd2 : TagBoundedCtx (ctxAfter ctxᵢ result2)).2.2
+          have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+            (ctxAfter ctxᵢ result2) e1 fuel' result1
+            (by simpa [typecheck] using htc1') hb_predCtx2 hb_closCtx2
+          rw [hetyp1] at hClosFull
+          have hCapBoundBase : CapturedEnvFullBounded σcap result1.nextTag' := hClosFull _ hσcap_mem
+          have hCapBound : CapturedEnvFullBounded σcap cursorA.1 :=
+            CapturedEnvFullBounded_mono hCapBoundBase hcursorTagA
+          have hCapPred := capturedPredTagsBounded_of_fullBounded hCapBound
+          have hmono_r2_r1 : result2.nextTag' ≤ result1.nextTag' :=
+            typecheck_normal_nextTag_mono (ctxAfter ctxᵢ result2) e1 fuel' result1
+              (by simpa [typecheck] using htc1')
+          have hArgPredBase : qtypPredTagBounded ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ result1.nextTag' := by
+            have := (typecheckExpr_preserves_predTagsBounded ctxᵢ e2 fuel' result2
+              (by simpa [typecheck] using htc2') hbnd.2.1 hbnd.2.2).2
+            rw [hqt2] at this
+            exact qtypPredTagBounded_mono this hmono_r2_r1
+          have hArgPred :
+              qtypPredTagBounded ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ cursorA.1 :=
+            qtypPredTagBounded_mono hArgPredBase hcursorTagA
+          have hArgClosBase : etypClosuresFullBounded (⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ : QTyp).etyp result1.nextTag' := by
+            have := typecheckExpr_preserves_closureCapturedBounded ctxᵢ e2 fuel' result2
+              (by simpa [typecheck] using htc2') hbnd.2.1 hbnd.2.2
+            rw [hqt2] at this; exact etypClosuresFullBounded_mono this hmono_r2_r1
+          have hArgClos :
+              etypClosuresFullBounded (⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ : QTyp).etyp
+                cursorA.1 :=
+            etypClosuresFullBounded_mono hArgClosBase hcursorTagA
+          refine ⟨?_,
+            ⟨predTagsBoundedInVarEnv_update
+              (predTagsBoundedInVarEnv_ofCaptured hCapPred) hArgPred,
+             ?_⟩,
+            varEnvClosuresCapturedBounded_update
+              (varEnvClosuresCapturedBounded_ofCaptured hCapBound) hArgClos⟩
+          · simpa [bodyCtx, ctxAfter] using
+              tagEnvBounded_mono result1.tagEnv' result1.nextTag' cursorA.1
+                (by simpa [ctxAfter] using hb_tag1) hcursorTagA
+          · simpa [bodyCtx, ctxAfter] using
+              predTagsBoundedInMemEnv_mono
+                (by simpa [ctxAfter] using hb_predM1) hcursorTagA
+        have hmasked_bounded_body : ∀ k, masked k → k < bodyCtx.nextTag := by
+          intro k hk
+          have : k < result1.nextTag' := by
+            simpa [ctxAfter] using hmasked_bounded1 k hk
+          exact Nat.lt_of_lt_of_le this hcursorTagA
         have hSingle_body :=
           singleIH fuelBody hfuel_lt body bodyCtx
             (hctxPfnBody happTyped (by change result2.qualType = ⟨etyp2, p2, pred2⟩; exact hqt2) hσcap_mem
@@ -10639,7 +10691,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           (hSingle_body hpredlaws1 hExtTyping hTmBody hTmBoundedBody).2
             cf.memory (env.update x v₂) θ1 evalCfg o
             hθ1wf hwfBody hric_body htagR_body hmasked_none_body
-            hmasked_absent_body hcwr_body
+            hmasked_absent_body hmasked_bounded_body htagBoundedBody hcwr_body
             cf.nextAddr true hwfcfg_body_init ht_body' hpc_body
           with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body⟩
         have hθext : wfExtendsMap θ θ_body :=
@@ -10648,17 +10700,17 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           rw [hfirstA_eq]
           unfold normalizeAppResultByProvenance
           split <;> rfl
-        have h_mono_body : Regime.monotoneStep bodyCtx.regime result3.regime' :=
-          regime_monotone bodyCtx (PExpr.toExpr pbody) fuelBody result3 htcBody'
+        have h_mono_body :
+            Regime.monotoneStepExt bodyCtx.regime (ctxAfter bodyCtx result3).regime
+              (fun k => bodyCtx.nextTag ≤ k) :=
+          regime_monotoneExt bodyCtx (PExpr.toExpr pbody) fuelBody result3 htcBody'
         have hres1_to_firstA_mono :
-            Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-              (ctxAfter ctxᵢ firstA).regime := by
-          simpa [bodyCtx, ctxAfter, hfirstA_eq] using h_mono_body
-        have hlookup_back_res1_to_A :
-            ∀ k b,
-              (ctxAfter ctxᵢ firstA).regime.lookup? k = some b →
-              (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
-          regime_lookup_back_of_monotone hres1_to_firstA_mono
+            Regime.monotoneStepExt (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+              (ctxAfter ctxᵢ firstA).regime
+              (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+          have h := Regime.monotoneStepExt_weaken h_mono_body
+            (fun k hk => Nat.le_trans (by simpa [bodyCtx] using hcursorTagA) hk)
+          simpa [bodyCtx, ctxAfter, hfirstA_eq] using h
         have hmem_eq : cf.memory = evalCfg.memory := by
           obtain ⟨fuel_b, verbose_b, hbeval_b⟩ := ht_body'
           exact (beval_pure_memory_eq body fuel_b _ evalCfg o verbose_b
@@ -10698,7 +10750,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
                   poison := joinPoison p1 (joinPoison p result3.qualType.poison) })
               cf evalCfg cf θ1 θ_body
               hpred_compat hfirstA_eq hmem_eq rfl
-              hlookup_back_res1_to_A hθext_body
+              hres1_to_firstA_mono hbnd1 hθext_body
               (by simpa [hcf] using hcwr1) hcwr_body_final
         have hcwr_final :
             CtxCons (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ_body := by
@@ -10758,7 +10810,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             exact
               typecheckExpr_lookup_clean_back_of_pc_true hExtTyping
                 (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
+                (by simpa [typecheck] using htcBody_body) hwfBody htagBoundedBody hpc_body l qt1 qt3
                 (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
           have hclean2 : qtypCleanUnder result2.regime' qt2 := by
             exact
@@ -10819,7 +10871,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
                 have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                   typecheckExpr_lookup_clean_back_of_pc_true hExtTyping
                     (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                    (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
+                    (by simpa [typecheck] using htcBody_body) hwfBody htagBoundedBody hpc_body l qt1 qt3
                     (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
                 have hclean2 : qtypCleanUnder result2.regime' qt2 :=
                   typecheckExpr_lookup_clean_back_of_pc_true hExtTyping
@@ -10865,7 +10917,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
                 have hclean1 : qtypCleanUnder result1.regime' qt1 :=
                   typecheckExpr_lookup_clean_back_of_pc_true hExtTyping
                     (ctx := bodyCtx) (e := body) (fuel := fuelBody) (res := result3)
-                    (by simpa [typecheck] using htcBody_body) hwfBody hpc_body l qt1 qt3
+                    (by simpa [typecheck] using htcBody_body) hwfBody htagBoundedBody hpc_body l qt1 qt3
                     (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
                 have hθ1_none := _hfresh1 l qt1 (by simpa [ctxAfter] using hc2) hlookup1 hclean1
                 have hpres_lbody_loc :=
@@ -10916,7 +10968,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             (μ := μ) (ρ := ρ) (θ := θ) (θpre := θ1) (θbody := θ_body)
             (cf := cf) (evalCfg := evalCfg) (preCfg := cf)
             (o := o) (p := p) (p1 := p1)
-            h_join hfirstA_mem' hfirstA_eq hlookup_back_res1_to_A
+            h_join hfirstA_mem' hfirstA_eq hres1_to_firstA_mono hbnd1
             (fun y qt hlookup => by
               simpa [ctxAfter] using hlookup)
             (fun _ _ => Iff.rfl) hmem_eq rfl
@@ -11225,7 +11277,10 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       cases hcleanA with
       | clean hpoison => exact qtypCleanUnder.clean hpoison
       | guard k htag hkA hnotfun =>
-          exact qtypCleanUnder.guard k htag (hlookupBackA k true hkA) hnotfun
+          have hk_lt : k < result1.nextTag' :=
+            TagBoundedCtx_memEnv_guardTag_lt hbnd1 (by simpa [ctxAfter] using hlookup1) htag
+          exact qtypCleanUnder.guard k htag
+            (Regime.monotoneStepExt_lookup_back hlookupBackA (Nat.not_le.2 hk_lt) hkA) hnotfun
     have hmem_eq : cf.memory = evalCfg.memory := by
       simp [evalCfg, ExternCallEntry.bodyOutputConfig]
     have hvar_eq : cf.varEnv = c₁.varEnv := by
@@ -11347,7 +11402,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
               have hclean2 : qtypCleanUnder result2.regime' qt2 :=
                 typecheckExpr_lookup_clean_back_of_pc_true hExtTyping
                   (ctx := ctxAfter ctxᵢ result2) (e := e1) (fuel := fuel') (res := result1)
-                  (by simpa [typecheck] using htc1') hwf2 hpc2 l qt2 qtA
+                  (by simpa [typecheck] using htc1') hwf2 hbnd2 hpc2 l qt2 qtA
                   (by simpa [ctxAfter] using hlookup2) hlookup1_fromA hclean1
               have hθ2_none := hfresh2 l qt2 hnotIn hlookup2 hclean2
               have hpres_l1' :=
@@ -15589,18 +15644,34 @@ lemma stepFR_app_with_expr_proof
                   (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁).1
                   hbodyRunPostU₁
               have h_mono_bodyU₁ :
-                  Regime.monotoneStep bodyCtxU₁.regime result3U₁.regime' :=
-                regime_monotone bodyCtxU₁ body₁ fuelBodyU₁ result3U₁ htcBodyU₁'
+                  Regime.monotoneStepExt bodyCtxU₁.regime (ctxAfter bodyCtxU₁ result3U₁).regime
+                    (fun k => bodyCtxU₁.nextTag ≤ k) :=
+                regime_monotoneExt bodyCtxU₁ body₁ fuelBodyU₁ result3U₁ htcBodyU₁'
               have hres1_to_firstU₁_mono :
-                  Regime.monotoneStep
+                  Regime.monotoneStepExt
                     (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                    (ctxAfter ctxᵢ firstU₁).regime := by
-                simpa [bodyCtxU₁, ctxAfter, hfirstU₁_eq] using h_mono_bodyU₁
-              have hlookup_back_res1_to_U₁ :
-                  ∀ k b,
-                    (ctxAfter ctxᵢ firstU₁).regime.lookup? k = some b →
-                    (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
-                regime_lookup_back_of_monotone hres1_to_firstU₁_mono
+                    (ctxAfter ctxᵢ firstU₁).regime
+                    (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+                have h := Regime.monotoneStepExt_weaken h_mono_bodyU₁
+                  (fun k hk => Nat.le_trans (by simpa [bodyCtxU₁] using hcursorTagU₁) hk)
+                simpa [bodyCtxU₁, ctxAfter, hfirstU₁_eq] using h
+              have htagBoundedBodyE₀ : TagBoundedCtx bodyCtxE₀ := by
+                have hCapBoundBase : CapturedEnvFullBounded σcap₀ result1.nextTag' := by
+                  have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                    (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                  rw [hetyp1] at hClosFull
+                  cases hsource₀ with
+                  | externMember _harg hmem => exact hClosFull _ hmem
+                  | regularExternBody hmem => exact hClosFull _ hmem
+                exact tagBoundedCtx_closure_body
+                  (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                  (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₀)
+                  (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                  (pcBody := joinPoison p (joinPoison p1 ctxᵢ.pc))
+                  (pureCtxBody := ctxᵢ.pureCtx)
+                  (cursor := cursorE₀) (x := x₀)
+                  htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagE₀
               have hclean_back₀ :
                   ∀ l qt_pre qt_src,
                     (ctxAfter (ctxAfter ctxᵢ result2) result1).memEnv.lookup l =
@@ -15615,9 +15686,13 @@ lemma stepFR_app_with_expr_proof
                     hExtTyping ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel'
                     id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀ σcap₀ cursorE₀ firstE₀ bodyCtxE₀
                     hselectedE₀ h_p1p hlookupBackE₀
+                    (fun l qt k hlk htag => by
+                      simpa [ctxAfter] using
+                        TagBoundedCtx_memEnv_guardTag_lt _htagBounded1
+                          (by simpa [ctxAfter] using hlk) htag)
                     (by simp [bodyCtxE₀])
                     (by simp [bodyCtxE₀])
-                    hpc_bodyE₀ hwfBodyCtxE₀
+                    hpc_bodyE₀ htagBoundedBodyE₀ hwfBodyCtxE₀
                     l qt_pre qt_src (by simpa [ctxAfter] using hlookup_pre)
                     hlookup_src hclean_src
               have hpred_compat₀ :
@@ -15667,9 +15742,9 @@ lemma stepFR_app_with_expr_proof
                         (res := result3U₁) htc_bodyU₁ l
                         (by simpa [bodyCtxU₁, ctxAfter] using hcontains)
                     simpa [hfirstU₁_eq] using hcontains3)
-                  (fun k b hk => by
-                    simpa [ctxAfter] using hlookupBackE₀ k b (by simpa [ctxAfter] using hk))
-                  hlookup_back_res1_to_U₁
+                  (by simpa [ctxAfter] using hlookupBackE₀)
+                  hres1_to_firstU₁_mono
+                  _htagBounded1
                   (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                   (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                   (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
@@ -16206,6 +16281,23 @@ lemma stepFR_app_with_expr_proof
                 simpa [heq_results] using hfirstA₀_mem
               have hfirstA₁_mem' : firstA₁ ∈ first :: rest := by
                 simpa [heq_results] using hfirstA₁_mem
+              have htagBoundedBody₀ : TagBoundedCtx bodyCtx₀ := by
+                have hCapBoundBase : CapturedEnvFullBounded σcap₀ result1.nextTag' := by
+                  have hClosFull := typecheckExpr_preserves_closureCapturedBounded
+                    (ctxAfter ctxᵢ result2) e1 fuel' result1
+                    (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
+                  rw [hetyp1] at hClosFull
+                  cases hsource₀ with
+                  | externMember _harg hmem => exact hClosFull _ hmem
+                  | regularExternBody hmem => exact hClosFull _ hmem
+                exact tagBoundedCtx_closure_body
+                  (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
+                  (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₀)
+                  (etyp2 := etyp2) (p2 := p2) (pred2 := pred2)
+                  (pcBody := joinPoison p (joinPoison p1 ctxᵢ.pc))
+                  (pureCtxBody := ctxᵢ.pureCtx)
+                  (cursor := cursorA₀) (x := x₀)
+                  htc1' htc2' hqt2 hCapBoundBase htagBounded _htagBounded1 hcursorTagA₀
               have hclean_back₀ :
                   ∀ l qt_pre qt_src,
                     (ctxAfter (ctxAfter ctxᵢ result2) result1).memEnv.lookup l =
@@ -16220,9 +16312,13 @@ lemma stepFR_app_with_expr_proof
                     hExtTyping ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel'
                     id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀ σcap₀ cursorA₀ firstA₀ bodyCtx₀
                     hselectedA₀ h_p1p hlookupBackA₀
+                    (fun l qt k hlk htag => by
+                      simpa [ctxAfter] using
+                        TagBoundedCtx_memEnv_guardTag_lt _htagBounded1
+                          (by simpa [ctxAfter] using hlk) htag)
                     (by simp [bodyCtx₀])
                     (by simp [bodyCtx₀])
-                    hpc_body₀ hwfBodyCtx₀
+                    hpc_body₀ htagBoundedBody₀ hwfBodyCtx₀
                     l qt_pre qt_src (by simpa [ctxAfter] using hlookup_pre)
                     hlookup_src hclean_src
               have hpred_compat₀ :
@@ -16267,10 +16363,9 @@ lemma stepFR_app_with_expr_proof
                       simpa [ctxAfter] using hmemPreserveA₀ l (by simpa [ctxAfter] using hcontains))
                     (fun l hcontains => by
                       simpa [ctxAfter] using hmemPreserveA₁ l (by simpa [ctxAfter] using hcontains))
-                    (fun k b hk => by
-                      simpa [ctxAfter] using hlookupBackA₀ k b (by simpa [ctxAfter] using hk))
-                    (fun k b hk => by
-                      simpa [ctxAfter] using hlookupBackA₁ k b (by simpa [ctxAfter] using hk))
+                    (by simpa [ctxAfter] using hlookupBackA₀)
+                    (by simpa [ctxAfter] using hlookupBackA₁)
+                    _htagBounded1
                     (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                     (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                     (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
@@ -16925,34 +17020,35 @@ lemma stepFR_app_with_expr_proof
                   have hfirstA_mem' : firstA ∈ first :: rest := by
                     simpa [heq_results] using _hfirstA_mem
                   have hres1_to_firstA_mono :
-                      Regime.monotoneStep
+                      Regime.monotoneStepExt
                         (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                        (ctxAfter ctxᵢ firstA).regime := by
+                        (ctxAfter ctxᵢ firstA).regime
+                        (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
                     cases hselectedA with
                     | inl happlyExtern =>
-                        have hmono :
-                            Regime.monotoneStep result1.regime' firstA.regime' :=
+                        have hmonoCursor :
+                            Regime.monotoneStepExt result1.regime' firstA.regime'
+                              (fun k => cursorA.1 ≤ k) :=
                           applyFnTClosureAtCursor_regime_mono
                             (FnTClosure.extern id₀ x₀ retSpec₀ eff₀ σcap)
                             ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 firstA cursorA fuel'
                             (fun m _hlt e ctx' res' htc =>
                               by simpa [ctxAfter] using regime_monotoneExt ctx' e m res' htc)
                             happlyExtern
+                        have hmono := Regime.monotoneStepExt_weaken hmonoCursor
+                          (fun k hk => Nat.le_trans _hcursorTagA hk)
                         simpa [ctxAfter] using hmono
                     | inr hregular =>
                         rcases hregular with ⟨fuelBody, result3, _hfuelA, htcBody, hfirstA_eq⟩
                         have hmono :
-                            Regime.monotoneStep bodyCtx.regime result3.regime' :=
-                          regime_monotone bodyCtx
+                            Regime.monotoneStepExt bodyCtx.regime
+                              (ctxAfter bodyCtx result3).regime (fun k => bodyCtx.nextTag ≤ k) :=
+                          regime_monotoneExt bodyCtx
                             (Expr.externFn id₀ y₀ argTyp₀ retSpec₀ eff₀) fuelBody
                             result3 (by simpa [bodyCtx] using htcBody)
-                        simpa [bodyCtx, ctxAfter, hfirstA_eq] using hmono
-                  have hlookup_back_res1_to_firstA :
-                      ∀ k b,
-                        (ctxAfter ctxᵢ firstA).regime.lookup? k = some b →
-                        (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-                    intro k b hk
-                    simpa [ctxAfter] using _hlookupBackA k b (by simpa [ctxAfter] using hk)
+                        have hmono' := Regime.monotoneStepExt_weaken hmono
+                          (fun k hk => Nat.le_trans (by simpa [bodyCtx] using _hcursorTagA) hk)
+                        simpa [bodyCtx, ctxAfter, hfirstA_eq] using hmono'
                   have hpred_compat₀ :
                       ∀ (qt' : QTyp) (v' : Value),
                         qtypPredHolds predSat qt' c₁₀.memory v' ↔
@@ -17000,6 +17096,7 @@ lemma stepFR_app_with_expr_proof
                         (by simp [ctxAfter])
                         (by simp [ctxAfter])
                         hres1_to_firstA_mono
+                        htagBounded1
                         (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                         hpred_compat₀ hpred_compat₁
                         (by simp [evalCfg₀, ExternCallEntry.bodyOutputConfig])
@@ -17031,7 +17128,7 @@ lemma stepFR_app_with_expr_proof
                         (by simpa [callEntry₀] using hTmBoundedBody)
                         (by simpa [callEntry₀, callEntry₁] using hinputs)
                         rfl rfl h_join hfirstA_mem'
-                        hlookup_back_res1_to_firstA
+                        hres1_to_firstA_mono htagBounded1
                         (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                         hpred_compat₀ hpred_compat₁
                         (by simp [evalCfg₀, ExternCallEntry.bodyOutputConfig])
@@ -18285,29 +18382,28 @@ lemma stepFR_app_with_expr_proof
             have hfirstA₁_etyp : firstA₁.qualType.etyp = result3A₁.qualType.etyp := by
               rw [hfirstA₁_eq]; unfold normalizeAppResultByProvenance; split <;> rfl
             -- regime monotonicity from result1 to body results
-            have h_mono_bodyA₀ : Regime.monotoneStep bodyCtxA₀.regime result3A₀.regime' :=
-              regime_monotone bodyCtxA₀ (PExpr.toExpr pbodyA₀) fuelBodyA₀ result3A₀ htcBodyA₀'
-            have h_mono_bodyA₁ : Regime.monotoneStep bodyCtxA₁.regime result3A₁.regime' :=
-              regime_monotone bodyCtxA₁ (PExpr.toExpr pbodyA₁) fuelBodyA₁ result3A₁ htcBodyA₁'
+            have h_mono_bodyA₀ :
+                Regime.monotoneStepExt bodyCtxA₀.regime (ctxAfter bodyCtxA₀ result3A₀).regime
+                  (fun k => bodyCtxA₀.nextTag ≤ k) :=
+              regime_monotoneExt bodyCtxA₀ (PExpr.toExpr pbodyA₀) fuelBodyA₀ result3A₀ htcBodyA₀'
+            have h_mono_bodyA₁ :
+                Regime.monotoneStepExt bodyCtxA₁.regime (ctxAfter bodyCtxA₁ result3A₁).regime
+                  (fun k => bodyCtxA₁.nextTag ≤ k) :=
+              regime_monotoneExt bodyCtxA₁ (PExpr.toExpr pbodyA₁) fuelBodyA₁ result3A₁ htcBodyA₁'
             have hres1_to_firstA₀_mono :
-                Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                  (ctxAfter ctxᵢ firstA₀).regime := by
-              simpa [bodyCtxA₀, ctxAfter, hfirstA₀_eq] using h_mono_bodyA₀
+                Regime.monotoneStepExt (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                  (ctxAfter ctxᵢ firstA₀).regime
+                  (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+              have h := Regime.monotoneStepExt_weaken h_mono_bodyA₀
+                (fun k hk => Nat.le_trans (by simpa [bodyCtxA₀] using hcursorTagA₀) hk)
+              simpa [bodyCtxA₀, ctxAfter, hfirstA₀_eq] using h
             have hres1_to_firstA₁_mono :
-                Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                  (ctxAfter ctxᵢ firstA₁).regime := by
-              simpa [bodyCtxA₁, ctxAfter, hfirstA₁_eq] using h_mono_bodyA₁
-            -- lookup-back for regime: firstA₀.regime' -> result1.regime'
-            have hlookup_back_res1_to_A₀ :
-                ∀ k b,
-                  (ctxAfter ctxᵢ firstA₀).regime.lookup? k = some b →
-                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
-              regime_lookup_back_of_monotone hres1_to_firstA₀_mono
-            have hlookup_back_res1_to_A₁ :
-                ∀ k b,
-                  (ctxAfter ctxᵢ firstA₁).regime.lookup? k = some b →
-                  (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
-              regime_lookup_back_of_monotone hres1_to_firstA₁_mono
+                Regime.monotoneStepExt (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                  (ctxAfter ctxᵢ firstA₁).regime
+                  (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+              have h := Regime.monotoneStepExt_weaken h_mono_bodyA₁
+                (fun k hk => Nat.le_trans (by simpa [bodyCtxA₁] using hcursorTagA₁) hk)
+              simpa [bodyCtxA₁, ctxAfter, hfirstA₁_eq] using h
             -- Memory/varEnv equalities (pure closure: cf = c₁ after subst, body memory preserved in pure mode)
             -- In pure mode, the body cannot allocate or modify memory, so evalCfg.memory = bodyInit.memory = cf.memory
             have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by
@@ -18422,7 +18518,7 @@ lemma stepFR_app_with_expr_proof
                       simpa [ctxAfter, hfirstA₀_eq] using hk_body)
                     (fun x qt hlookup => by
                       simpa [ctxAfter] using hlookup)
-                    hlookup_back_res1_to_A₀ hpred_compat₀ hmem₀_eq rfl hθext₀_body,
+                    hres1_to_firstA₀_mono _htagBounded1 hpred_compat₀ hmem₀_eq rfl hθext₀_body,
               -- consistentWithRegime run 1
               by
                 exact
@@ -18443,37 +18539,22 @@ lemma stepFR_app_with_expr_proof
                       simpa [ctxAfter, hfirstA₁_eq] using hk_body)
                     (fun x qt hlookup => by
                       simpa [ctxAfter] using hlookup)
-                    hlookup_back_res1_to_A₁ hpred_compat₁ hmem₁_eq rfl hθext₁_body,
+                    hres1_to_firstA₁_mono _htagBounded1 hpred_compat₁ hmem₁_eq rfl hθext₁_body,
               -- agreeOnClean for ¬qtypCleanUnder (p1=true, parrow, different closure bodies)
               by
                 -- Regime monotonicity: result1.regime' → res.regime' (through the join)
-                have h_all_members_mono :
-                    ∀ x ∈ (first :: rest), Regime.monotoneStep result1.regime' x.regime' := by
-                  intro x hx
-                  have hxResults : x ∈ results := by
-                    simpa [heq_results] using hx
-                  rcases applyClosuresThreaded_ok_mem_output_exists_input
-                      (applyOne := fun tcl cursor =>
-                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
-                          ctxᵢ result1 cursor fuel')
-                      (xs := tcls) (cursor := (result1.nextTag', result1.nextLoc'))
-                      (results := results) (y := x) hmap hxResults with
-                    ⟨tcl, _htcl_mem, cursor, happly⟩
-                  exact applyPFnTClosureAtCursor_regime_mono tcl ctxᵢ st1 st2 p p1
-                      etyp2 p2 pred2 result1 x cursor fuel'
-                      (fun m _hlt e ctx' res' htc =>
-                        by simpa [ctxAfter] using regime_monotoneExt ctx' e m res' htc)
-                      happly
-                have h_mono_res : Regime.monotoneStep result1.regime' res.regime' :=
-                  joinTypeResults_regime_monotone ctxᵢ first rest res result1.regime'
-                    (h_all_members_mono first (by simp))
-                    (fun x hx => h_all_members_mono x (List.mem_cons_of_mem _ hx))
-                    h_join
-                -- Clean transfer: qtypCleanUnder res → qtypCleanUnder result1
+                have h_mono_res :
+                    Regime.monotoneStepExt result1.regime' res.regime'
+                      (fun k => result1.nextTag' ≤ k) :=
+                  applyPFnClosuresThreaded_join_regime_mono ctxᵢ st1 st2 p p1 etyp2 p2 pred2
+                    result1 fuel' tcls results first rest res hmap heq_results h_join
+                -- Clean transfer: qtypCleanUnder res → qtypCleanUnder result1 (bounded qt)
                 have h_clean_res_to_pre :
-                    ∀ qt, qtypCleanUnder res.regime' qt →
+                    ∀ qt, qtypPredTagBounded qt result1.nextTag' →
+                      qtypCleanUnder res.regime' qt →
                       qtypCleanUnder result1.regime' qt :=
-                  fun qt hc => cleanUnder_of_monotone h_mono_res hc
+                  fun qt hqtbound hc =>
+                    cleanUnder_of_monotoneExt h_mono_res (fun _ hk => hk) hqtbound hc
                 constructor
                 · -- Locations conjunct
                   intro l qt hlookup hclean
@@ -18555,7 +18636,9 @@ lemma stepFR_app_with_expr_proof
                     -- joinTypeResults_lookup_member_clean_compat gives cleanness at
                     -- firstA₀.regime', and backward monotonicity gives result1.regime'.
                     have hclean_pre' : qtypCleanUnder result1.regime' qt' := by
-                      exact cleanUnder_of_monotone hres1_to_firstA₀_mono hclean_member
+                      exact cleanUnder_of_monotoneExt hres1_to_firstA₀_mono (fun _ hk => hk)
+                        (TagBoundedCtx_memEnv_predTagBounded _htagBounded1
+                          (by simpa [ctxAfter] using hlookup_body)) hclean_member
                     have hfirstA₁_lookup :=
                       applyPFnTClosure_preserves_memEnv_lookup ctxᵢ st1 st2 p p1
                         etyp2 p2 pred2 result1CursorA₁ fuel'
@@ -18666,7 +18749,9 @@ lemma stepFR_app_with_expr_proof
                       (ctxAfter (ctxAfter ctxᵢ result2) result1).varEnv.lookup x = some qt := by
                     simpa [ctxAfter] using hlookup
                   have hclean_pre : qtypCleanUnder result1.regime' qt :=
-                    h_clean_res_to_pre qt (by simpa [ctxAfter] using hclean)
+                    h_clean_res_to_pre qt
+                      (TagBoundedCtx_varEnv_predTagBounded _htagBounded1 hlookup_pre)
+                      (by simpa [ctxAfter] using hclean)
                   cases hagree1.2 x qt hlookup_pre hclean_pre with
                   | agree_values x qt v₀ v₁ hv₀_pre hv₁_pre hagree_val =>
                     refine agreeVarUnder.agree_values x qt v₀ v₁
@@ -18678,7 +18763,8 @@ lemma stepFR_app_with_expr_proof
                         hpred_compat₀ hpred_compat₁ hclean_pre hθext₀_body.1 hθext₁_body.1
                         hagree_val
                     -- 2. Change regime (result1 → res)
-                    exact agreeValueUnder_clean_monotoneRegime h_mono_res
+                    exact agreeValueUnder_clean_monotoneRegime_ext h_mono_res (fun _ hk => hk)
+                      (TagBoundedCtx_varEnv_etypClosures _htagBounded1 hlookup_pre)
                       (by simpa [ctxAfter] using hclean) hagree_ext
                   | both_none x qt hv₀_pre hv₁_pre =>
                     exact agreeVarUnder.both_none x qt
@@ -19378,12 +19464,17 @@ lemma stepFR_app_with_expr_proof
                 have hagree_src :
                     agreeOnClean predSat (ctxAfter ctxᵢ firstShared).regime (ctxAfter ctxᵢ firstShared)
                       cf₀.memory cf₀.varEnv θ₀_body cf₁.memory cf₁.varEnv θ₁_body := by
-                  have h_mono_body : Regime.monotoneStep bodyCtx.regime result3Shared.regime' :=
-                    regime_monotone bodyCtx (PExpr.toExpr pbody) fuelBody result3Shared htcBody'
+                  have h_mono_body :
+                      Regime.monotoneStepExt bodyCtx.regime (ctxAfter bodyCtx result3Shared).regime
+                        (fun k => bodyCtx.nextTag ≤ k) :=
+                    regime_monotoneExt bodyCtx (PExpr.toExpr pbody) fuelBody result3Shared htcBody'
                   have hres1_to_src_mono :
-                      Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                        (ctxAfter ctxᵢ firstShared).regime := by
-                    simpa [bodyCtx, ctxAfter, hfirstShared] using h_mono_body
+                      Regime.monotoneStepExt (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                        (ctxAfter ctxᵢ firstShared).regime
+                        (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+                    have h := Regime.monotoneStepExt_weaken h_mono_body
+                      (fun k hk => Nat.le_trans (by simpa [bodyCtx] using hcursorSharedTag) hk)
+                    simpa [bodyCtx, ctxAfter, hfirstShared] using h
                   have hmem₀_eq : cf₀.memory = evalCfg₀.memory := hmem₀_eq
                   have hmem₁_eq : cf₁.memory = evalCfg₁.memory := hmem₁_eq
                   have hvar₀_eq : cf₀.varEnv = cf₀.varEnv := rfl
@@ -19416,7 +19507,8 @@ lemma stepFR_app_with_expr_proof
                   · intro x qt hlookup hclean
                     have hclean_res1 :
                         qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime qt :=
-                      cleanUnder_of_monotone hres1_to_src_mono hclean
+                      cleanUnder_of_monotoneExt hres1_to_src_mono (fun _ hk => hk)
+                        (TagBoundedCtx_varEnv_predTagBounded _htagBounded1 hlookup) hclean
                     have hvar_agree1 := hagree1.2 x qt hlookup hclean_res1
                     cases hvar_agree1 with
                     | both_none _ _ hnone₀ hnone₁ =>
@@ -19433,7 +19525,8 @@ lemma stepFR_app_with_expr_proof
                         have hagree_src_regime :
                             agreeValueUnder predSat (ctxAfter ctxᵢ firstShared).regime
                               cf₀.memory cf₁.memory θ₀1 θ₁1 qt v₀ v₁ :=
-                          agreeValueUnder_clean_monotoneRegime hres1_to_src_mono hclean hagree_val1
+                          agreeValueUnder_clean_monotoneRegime_ext hres1_to_src_mono (fun _ hk => hk)
+                            (TagBoundedCtx_varEnv_etypClosures _htagBounded1 hlookup) hclean hagree_val1
                         have hagree_src_final :
                             agreeValueUnder predSat (ctxAfter ctxᵢ firstShared).regime
                               cf₀.memory cf₁.memory θ₀_body θ₁_body qt v₀ v₁ :=
@@ -19608,16 +19701,16 @@ lemma stepFR_app_with_expr_proof
                 have hfirstShared_etyp : firstShared.qualType.etyp = result3Shared.qualType.etyp := by
                   rw [hfirstShared, normalizeAppResultByProvenance_etyp]
                 have hres1_to_src_mono :
-                    Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                      (ctxAfter ctxᵢ firstShared).regime := by
-                  have h_mono_body : Regime.monotoneStep bodyCtx.regime result3Shared.regime' :=
-                    regime_monotone bodyCtx (PExpr.toExpr pbody) fuelBody result3Shared htcBody'
-                  simpa [bodyCtx, ctxAfter, hfirstShared] using h_mono_body
-                have hlookup_back_res1_to_src :
-                    ∀ k b,
-                      (ctxAfter ctxᵢ firstShared).regime.lookup? k = some b →
-                      (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
-                  regime_lookup_back_of_monotone hres1_to_src_mono
+                    Regime.monotoneStepExt (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                      (ctxAfter ctxᵢ firstShared).regime
+                      (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+                  have h_mono_body :
+                      Regime.monotoneStepExt bodyCtx.regime (ctxAfter bodyCtx result3Shared).regime
+                        (fun k => bodyCtx.nextTag ≤ k) :=
+                    regime_monotoneExt bodyCtx (PExpr.toExpr pbody) fuelBody result3Shared htcBody'
+                  have h := Regime.monotoneStepExt_weaken h_mono_body
+                    (fun k hk => Nat.le_trans (by simpa [bodyCtx] using hcursorSharedTag) hk)
+                  simpa [bodyCtx, ctxAfter, hfirstShared] using h
                 refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
                   hAgree_out_body θ₀_body θ₁_body _hθext₀_body _hθext₁_body
                     _hric_body_final₀ _hric_body_final₁ hagree_body_after, ?_, ?_, ?_, ?_⟩
@@ -19725,7 +19818,7 @@ lemma stepFR_app_with_expr_proof
                         simpa [ctxAfter, hfirstShared] using hk_body)
                       (fun x qt hlookup => by
                         simpa [ctxAfter] using hlookup)
-                      hlookup_back_res1_to_src hpred_compat₀ hmem₀_eq hvar₀_eq _hθext₀_body
+                      hres1_to_src_mono _htagBounded1 hpred_compat₀ hmem₀_eq hvar₀_eq _hθext₀_body
                 · -- shared-member consistentWithRegime -> joined consistentWithRegime (run 1).
                   have hmem₁_eq : cf₁.memory = evalCfg₁.memory := hmem₁_eq
                   have hvar₁_eq : cf₁.varEnv = cf₁.varEnv := rfl
@@ -19754,7 +19847,7 @@ lemma stepFR_app_with_expr_proof
                         simpa [ctxAfter, hfirstShared] using hk_body)
                       (fun x qt hlookup => by
                         simpa [ctxAfter] using hlookup)
-                      hlookup_back_res1_to_src hpred_compat₁ hmem₁_eq hvar₁_eq _hθext₁_body
+                      hres1_to_src_mono _htagBounded1 hpred_compat₁ hmem₁_eq hvar₁_eq _hθext₁_body
                 · -- shared-member valueConsistentWithRegime -> joined result qualType (run 0).
                   have hmem₀_eq : cf₀.memory = evalCfg₀.memory := hmem₀_eq
                   exact
@@ -19818,16 +19911,16 @@ lemma stepFR_app_with_expr_proof
                 have hsrc_mem' : firstShared ∈ first :: rest := by
                   simpa [heq_results] using hfirstSharedMem
                 have hres1_to_src_mono :
-                    Regime.monotoneStep (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                      (ctxAfter ctxᵢ firstShared).regime := by
-                  have h_mono_body : Regime.monotoneStep bodyCtx.regime result3Shared.regime' :=
-                    regime_monotone bodyCtx (PExpr.toExpr pbody) fuelBody result3Shared htcBody'
-                  simpa [bodyCtx, ctxAfter, hfirstShared] using h_mono_body
-                have hlookup_back_res1_to_src :
-                    ∀ k b,
-                      (ctxAfter ctxᵢ firstShared).regime.lookup? k = some b →
-                      (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
-                  regime_lookup_back_of_monotone hres1_to_src_mono
+                    Regime.monotoneStepExt (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
+                      (ctxAfter ctxᵢ firstShared).regime
+                      (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+                  have h_mono_body :
+                      Regime.monotoneStepExt bodyCtx.regime (ctxAfter bodyCtx result3Shared).regime
+                        (fun k => bodyCtx.nextTag ≤ k) :=
+                    regime_monotoneExt bodyCtx (PExpr.toExpr pbody) fuelBody result3Shared htcBody'
+                  have h := Regime.monotoneStepExt_weaken h_mono_body
+                    (fun k hk => Nat.le_trans (by simpa [bodyCtx] using hcursorSharedTag) hk)
+                  simpa [bodyCtx, ctxAfter, hfirstShared] using h
                 have hpred_compat₀ :
                     ∀ (qt' : QTyp) (v' : Value),
                       qtypPredHolds predSat qt' cf₀.memory v' ↔
@@ -19852,7 +19945,7 @@ lemma stepFR_app_with_expr_proof
                     (preCfg₀ := cf₀) (preCfg₁ := cf₁)
                     (θpre₀ := θ₀1) (θpre₁ := θ₁1)
                     (o₀ := o₀) (o₁ := o₁) (p := p) (p1 := p1)
-                    h_join hsrc_mem' hfirstShared hlookup_back_res1_to_src
+                    h_join hsrc_mem' hfirstShared hres1_to_src_mono _htagBounded1
                     (fun x qt hlookup => by
                       simpa [ctxAfter] using hlookup)
                     hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq rfl rfl
@@ -20464,7 +20557,7 @@ lemma stepFR_app_with_expr_proof
                     (ctxAfter ctxᵢ result2) e1 fuel' result1
                     (by simpa [typecheck] using htc1') _htagBounded2.2.1 _htagBounded2.2.2
                   rw [hetyp1] at hClosFull
-                  exact hClosFull _ hσcap₀_mem
+                  exact hClosFull _ hsource₀
                 exact tagBoundedCtx_closure_body
                   (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
                   (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₀)
@@ -21101,18 +21194,17 @@ lemma stepFR_app_with_expr_proof
                   (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁).1
                   hbodyRunPostU₁
               have h_mono_bodyU₁ :
-                  Regime.monotoneStep bodyCtxU₁.regime result3U₁.regime' :=
-                regime_monotone bodyCtxU₁ (PExpr.toExpr pbody₁) fuelBodyU₁ result3U₁ htcBodyU₁'
+                  Regime.monotoneStepExt bodyCtxU₁.regime (ctxAfter bodyCtxU₁ result3U₁).regime
+                    (fun k => bodyCtxU₁.nextTag ≤ k) :=
+                regime_monotoneExt bodyCtxU₁ (PExpr.toExpr pbody₁) fuelBodyU₁ result3U₁ htcBodyU₁'
               have hres1_to_firstU₁_mono :
-                  Regime.monotoneStep
+                  Regime.monotoneStepExt
                     (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                    (ctxAfter ctxᵢ firstU₁).regime := by
-                simpa [bodyCtxU₁, ctxAfter, hfirstU₁_eq] using h_mono_bodyU₁
-              have hlookup_back_res1_to_U₁ :
-                  ∀ k b,
-                    (ctxAfter ctxᵢ firstU₁).regime.lookup? k = some b →
-                    (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b :=
-                regime_lookup_back_of_monotone hres1_to_firstU₁_mono
+                    (ctxAfter ctxᵢ firstU₁).regime
+                    (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+                have h := Regime.monotoneStepExt_weaken h_mono_bodyU₁
+                  (fun k hk => Nat.le_trans (by simpa [bodyCtxU₁] using hcursorTagU₁) hk)
+                simpa [bodyCtxU₁, ctxAfter, hfirstU₁_eq] using h
               have hclean_back₀ :
                   ∀ l qt_pre qt_src,
                     (ctxAfter (ctxAfter ctxᵢ result2) result1).memEnv.lookup l =
@@ -21134,7 +21226,12 @@ lemma stepFR_app_with_expr_proof
                 | clean hpoison =>
                     exact qtypCleanUnder.clean hpoison
                 | guard k htag hkA hnotfun =>
-                    exact qtypCleanUnder.guard k htag (hlookupBackE₀ k true hkA) hnotfun
+                    have hk_lt : k < result1.nextTag' :=
+                      TagBoundedCtx_memEnv_guardTag_lt _htagBounded1
+                        (by simpa [ctxAfter] using hlookup_pre') htag
+                    exact qtypCleanUnder.guard k htag
+                      (Regime.monotoneStepExt_lookup_back hlookupBackE₀ (Nat.not_le.2 hk_lt) hkA)
+                      hnotfun
               have hpred_compat₀ :
                   ∀ (qt' : QTyp) (v' : Value),
                     qtypPredHolds predSat qt' c₁₀.memory v' ↔
@@ -21191,9 +21288,9 @@ lemma stepFR_app_with_expr_proof
                         (res := result3U₁) htc_bodyU₁ l
                         (by simpa [bodyCtxU₁, ctxAfter] using hcontains)
                     simpa [hfirstU₁_eq] using hcontains3)
-                  (fun k b hk => by
-                    simpa [ctxAfter] using hlookupBackE₀ k b (by simpa [ctxAfter] using hk))
-                  hlookup_back_res1_to_U₁
+                  (by simpa [ctxAfter] using hlookupBackE₀)
+                  hres1_to_firstU₁_mono
+                  _htagBounded1
                   (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                   (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                   (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
@@ -21752,7 +21849,12 @@ lemma stepFR_app_with_expr_proof
                 | clean hpoison =>
                     exact qtypCleanUnder.clean hpoison
                 | guard k htag hkA hnotfun =>
-                    exact qtypCleanUnder.guard k htag (hlookupBackA₀ k true hkA) hnotfun
+                    have hk_lt : k < result1.nextTag' :=
+                      TagBoundedCtx_memEnv_guardTag_lt _htagBounded1
+                        (by simpa [ctxAfter] using hlookup_pre') htag
+                    exact qtypCleanUnder.guard k htag
+                      (Regime.monotoneStepExt_lookup_back hlookupBackA₀ (Nat.not_le.2 hk_lt) hkA)
+                      hnotfun
               have hpred_compat₀ :
                   ∀ (qt' : QTyp) (v' : Value),
                     qtypPredHolds predSat qt' c₁₀.memory v' ↔
@@ -21805,10 +21907,9 @@ lemma stepFR_app_with_expr_proof
                       exact
                         memEnv_contains_of_lookup_some firstA₁.memEnv' l qt
                           (by rw [hmemLookupA₁ l]; exact hlookup))
-                    (fun k b hk => by
-                      simpa [ctxAfter] using hlookupBackA₀ k b (by simpa [ctxAfter] using hk))
-                    (fun k b hk => by
-                      simpa [ctxAfter] using hlookupBackA₁ k b (by simpa [ctxAfter] using hk))
+                    (by simpa [ctxAfter] using hlookupBackA₀)
+                    (by simpa [ctxAfter] using hlookupBackA₁)
+                    _htagBounded1
                     (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                     (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                     (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
@@ -22458,24 +22559,22 @@ lemma stepFR_app_with_expr_proof
                   have hfirstA_mem' : firstA ∈ first :: rest := by
                     simpa [heq_results] using _hfirstA_mem
                   have hres1_to_firstA_mono :
-                      Regime.monotoneStep
+                      Regime.monotoneStepExt
                         (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                        (ctxAfter ctxᵢ firstA).regime := by
-                    have hmono :
-                        Regime.monotoneStep result1.regime' firstA.regime' :=
+                        (ctxAfter ctxᵢ firstA).regime
+                        (fun k => (ctxAfter (ctxAfter ctxᵢ result2) result1).nextTag ≤ k) := by
+                    have hmonoCursor :
+                        Regime.monotoneStepExt result1.regime' firstA.regime'
+                          (fun k => cursorA.1 ≤ k) :=
                       applyPFnTClosureAtCursor_regime_mono
                         (PFnTClosure.extern id₀ x₀ retSpec₀ σcap)
                         ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 firstA cursorA fuel'
                         (fun m _hlt e ctx' res' htc =>
                           by simpa [ctxAfter] using regime_monotoneExt ctx' e m res' htc)
                         _happlyA
+                    have hmono := Regime.monotoneStepExt_weaken hmonoCursor
+                      (fun k hk => Nat.le_trans _hcursorTagA hk)
                     simpa [ctxAfter] using hmono
-                  have hlookup_back_res1_to_firstA :
-                      ∀ k b,
-                        (ctxAfter ctxᵢ firstA).regime.lookup? k = some b →
-                        (ctxAfter (ctxAfter ctxᵢ result2) result1).regime.lookup? k = some b := by
-                    intro k b hk
-                    simpa [ctxAfter] using _hlookupBackA k b (by simpa [ctxAfter] using hk)
                   have hric₀1_cf :
                       runtimeInstantiatesCtx (ctxAfter (ctxAfter ctxᵢ result2) result1)
                         cf₀.memory cf₀.varEnv θ₀1 := by
@@ -22534,6 +22633,7 @@ lemma stepFR_app_with_expr_proof
                         (by simp [ctxAfter])
                         (by simp [ctxAfter])
                         hres1_to_firstA_mono
+                        htagBounded1
                         (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                         (fun _ _ => Iff.rfl) (fun _ _ => Iff.rfl)
                         (by simp [evalCfg₀, ExternCallEntry.bodyOutputConfig])
@@ -22565,7 +22665,7 @@ lemma stepFR_app_with_expr_proof
                         (by simpa [callEntry₀] using hTmBoundedBody)
                         (by simpa [callEntry₀, callEntry₁] using hinputs)
                         rfl rfl h_join hfirstA_mem'
-                        hlookup_back_res1_to_firstA
+                        hres1_to_firstA_mono htagBounded1
                         (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
                         (fun _ _ => Iff.rfl) (fun _ _ => Iff.rfl)
                         (by simp [evalCfg₀, ExternCallEntry.bodyOutputConfig])
