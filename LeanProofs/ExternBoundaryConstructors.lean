@@ -250,11 +250,7 @@ private theorem resultAgreesIfClean_int_noPred_of_eq
         simp [qtypGuardTag, hpred]
       simp [hnone] at htag
 
-/-- Compact behavior contract for pure unary integer extern implementations.
-
-    The remaining `pureUnaryCleanInt` constructor proof needs result-shape
-    projections from `ExternDeclBoundaryRun` / `ExternCallBoundaryRun`; see
-    Stage 2's plan note before adding the public constructor theorem. -/
+/-- Compact behavior contract for pure unary integer extern implementations. -/
 structure PureUnaryCleanIntSpec (d : ExternDeclaration) (impl : ExternImpl) where
   argName : Name
   implPfn : VarEnv → Value → Memory → Except ExternError Value

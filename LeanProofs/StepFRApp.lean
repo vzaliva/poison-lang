@@ -3015,9 +3015,9 @@ private lemma applyPFnClosuresThreaded_join_regime_mono
       (fun x hx => h_all_members_mono x (List.mem_cons_of_mem _ hx))
       h_join
 
--- Synchronization helper for app/arrow clean branch.
--- Shape only for now: from clean output agreement on closure values, recover either
--- a shared regular-closure witness (with shared x/body) or explicit dirty-internal fallback.
+-- Synchronization helper for app/arrow clean branch: from clean output agreement on
+-- closure values, recover either a shared regular-closure witness (with shared x/body)
+-- or an explicit dirty-internal fallback.
 private lemma stepFR_app_arrow_sync_from_clean_with_extern
   (predSat : PredSat) (ctx : TypeContext) (res1 : TypeResult)
   (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
@@ -18865,7 +18865,7 @@ lemma stepFR_app_with_expr_proof
               resultAgreesIfClean_of_poison_noPred hres_pack.1 hres_pack.2⟩
           by_cases hclean1_e1 :
               qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType
-          · -- Clean case: shared pure-body IH (TODO: fill later)
+          · -- Clean case: shared pure-body IH
             rcases _sync_extract_of_clean hclean1_e1 with hshared | hdirty
             · rcases hshared with
                 ⟨x, pbody, σcap, cursorShared, fuelBody, firstShared, result3Shared,

@@ -85,8 +85,8 @@ lemma memEnv_get_eq_of_lookup (env : MemoryTypeEnv) (l : Loc) (qt : QTyp) (h : e
     have hpred : e.pred = qt.pred := congr_arg QTyp.pred heq
     rw [← hp, ← hpred]
 
-/-- Captured variable env from the type context has no duplicate names.
-    Should follow from ExtTreeMap key uniqueness; admitted for now. -/
+/-- Captured variable env from the type context has no duplicate names
+    (follows from ExtTreeMap key uniqueness). -/
 lemma VarTypeEnv_toCaptured_nodup_fst (σ : VarTypeEnv) :
   List.Nodup ((VarTypeEnv.toCaptured σ).map Prod.fst) := by
   unfold VarTypeEnv.toCaptured
@@ -17554,9 +17554,9 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
 
 
 -- ================================================================
--- Probe Lemmas (Phase G of FFI Boundary Probe Plan)
+-- Probe Lemmas
 -- ================================================================
--- These lemmas validate that the new `closure_extern` and
+-- These lemmas validate that the `closure_extern` and
 -- `peClosure_extern` constructors of `valueHasETyp` admit concrete
 -- extern closures.  They exercise constructor wiring + membership
 -- reasoning + the empty-`tenv` path that production extern emit

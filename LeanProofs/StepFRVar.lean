@@ -1447,6 +1447,3 @@ lemma stepFR_var
                             cases this
                         | guard k_guard htag_guard hreg_guard _ =>
                             simp [qtypGuardTag, hres] at htag_guard
-
--- World-free version of stepFRW_op
--- TODO: Needs refactoring - StepFR structure changed and terminatesTo lemmas need adjusting

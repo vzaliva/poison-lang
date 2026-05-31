@@ -550,7 +550,6 @@ mutual
           let guardNumOpt := tag.trim.toNat?
           match guardNumOpt with
           | some n =>
-              -- Here we would parse the pexprContents into a Pexpr, but for now we use a placeholder
               let (name,pexpr) <- parsePExpr (pexprContents)
               return SyntaxPredicate.guardClosure ⟨n⟩ name pexpr
           | none => .error s!"Invalid guard : {tag}"

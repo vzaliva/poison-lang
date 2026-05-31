@@ -789,9 +789,9 @@ lemma stepFR_vlet_with_expr_proof
         | guardOnly k' =>
             exact varsRegime.guardOnly_ok (x, res1.qualType) k' hpred_case
         | guardClosure k' arg_name pred_body var_env =>
-            -- TODO(vlet/valueConsistentWithRegime): symmetric to the cfg₀2 case above.
-            -- We need return-value regime-consistency for `v₁1` to discharge the new-binding
-            -- `varsRegime` obligation when the guard tag is in the regime domain.
+            -- Symmetric to the cfg₀2 case above: return-value regime-consistency for `v₁1`
+            -- discharges the new-binding `varsRegime` obligation when the guard tag is in
+            -- the regime domain.
             have hval_consist :
                 valueConsistentWithRegime predSat ctx'.regime res1.qualType cfg₁2.memory θ₁1 v₁1 := by
               simpa [hctx', ctxAfter, cfg₁2] using _hval_consist₁1
@@ -1038,7 +1038,7 @@ lemma stepFR_vlet_with_expr_proof
         have h := regime_monotoneExt ctx' e2 fuel' res2 htc2'
         have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
         have hN1 : ctx'.nextTag = (ctxAfter ctxᵢ res1).nextTag := by
-          simp [hctx', ctxAfter, updateCtxFromResult]
+          simp [hctx', ctxAfter]
         simpa [hR1, hN1] using h
       -- Split on shadowing: the only variable affected by the let-binding is `vname`.
       by_cases hx : x = vname
@@ -1198,7 +1198,7 @@ lemma stepFR_vlet_with_expr_proof
               have h := regime_monotoneExt ctx' e2 fuel' res2 htc2'
               have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
               have hN1 : ctx'.nextTag = (ctxAfter ctxᵢ res1).nextTag := by
-                simp [hctx', ctxAfter, updateCtxFromResult]
+                simp [hctx', ctxAfter]
               simpa [hR1, hN1] using h
             have hb : ctxᵢ.nextTag ≤ (ctxAfter ctxᵢ res1).nextTag := by
               simpa [ctxAfter] using typecheck_nextTag_mono ctxᵢ e1 fuel' res1 htc1'
@@ -1274,7 +1274,7 @@ lemma stepFR_vlet_with_expr_proof
           have h := regime_monotoneExt ctx' e2 fuel' res2 htc2'
           have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
           have hN1 : ctx'.nextTag = (ctxAfter ctxᵢ res1).nextTag := by
-            simp [hctx', ctxAfter, updateCtxFromResult]
+            simp [hctx', ctxAfter]
           simpa [hR1, hN1] using h
         have hb : ctxᵢ.nextTag ≤ (ctxAfter ctxᵢ res1).nextTag := by
           simpa [ctxAfter] using typecheck_nextTag_mono ctxᵢ e1 fuel' res1 htc1'
@@ -1360,7 +1360,7 @@ lemma stepFR_vlet_with_expr_proof
               have h := regime_monotoneExt ctx' e2 fuel' res2 htc2'
               have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
               have hN1 : ctx'.nextTag = (ctxAfter ctxᵢ res1).nextTag := by
-                simp [hctx', ctxAfter, updateCtxFromResult]
+                simp [hctx', ctxAfter]
               simpa [hR1, hN1] using h
             have hb : ctxᵢ.nextTag ≤ (ctxAfter ctxᵢ res1).nextTag := by
               simpa [ctxAfter] using typecheck_nextTag_mono ctxᵢ e1 fuel' res1 htc1'
@@ -1434,7 +1434,7 @@ lemma stepFR_vlet_with_expr_proof
           have h := regime_monotoneExt ctx' e2 fuel' res2 htc2'
           have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by simp [hctx', ctxAfter]
           have hN1 : ctx'.nextTag = (ctxAfter ctxᵢ res1).nextTag := by
-            simp [hctx', ctxAfter, updateCtxFromResult]
+            simp [hctx', ctxAfter]
           simpa [hR1, hN1] using h
         have hb : ctxᵢ.nextTag ≤ (ctxAfter ctxᵢ res1).nextTag := by
           simpa [ctxAfter] using typecheck_nextTag_mono ctxᵢ e1 fuel' res1 htc1'
@@ -1786,7 +1786,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
     have hR1 : ctx'.regime = (ctxAfter ctxᵢ res1).regime := by
       simp [hctx', ctxAfter]
     have hN1 : ctx'.nextTag = (ctxAfter ctxᵢ res1).nextTag := by
-      simp [hctx', ctxAfter, updateCtxFromResult]
+      simp [hctx', ctxAfter]
     simpa [hR1, hN1] using h
   have hctxCons_final :
       consistentWithRegimeMasked masked predSat

@@ -1,28 +1,19 @@
 /-
-  ExternRegimeInt.lean - Phase-D foundation (predicate-bearing "open" extern).
+  ExternRegimeInt.lean
 
-  Bottom-up, riskiest-first construction of a predicate-bearing ("open") extern
-  trusted-registry instantiation that de-poisons under a true regime policy.
-  Lemma order follows doc/extern-regime-impl-plan.md "PHASE D — remaining".
+  Lemmas about the extern-regime typechecking primitives for predicate-bearing
+  ("open"-style) externs, plus a theorem characterising when the trusted-registry
+  fault-robustness theorem can be instantiated for a program that names an extern.
 
-  STATUS (session 5): the two genuinely-uncertain STRUCTURAL divergence points
-  vs. the clean noPred spec are VERIFIED here (both build, 0 sorry / 0 axiom):
-    (a) `collectAndAllocExternTags_pred` — the allocator yields one fresh tag.
-    (b) `applyExternRegimePolicy_singleton` — the regime gains `freshTag ↦ b`,
-        so the result regime genuinely changes (ctxAfter ≠ ctx for predicates).
-  The cross-run discriminator is resolved in the plan doc: the obligation is
-  `agreeValueUnder` via `withPred_true_eq` (output equality), dischargeable by
-  the `clean_agree` determinism shape — NOT predicate-satisfaction.
-
-  REMAINING: the full `ExternBoundarySpec` (declFR/callFR/declSingle/callSingle/
-  operational) + `TrustedExternEntry` + `TrustedRegistry` + `InputSpec` + the
-  top-level `TypeSystemEnforcesFaultRobustness` instantiation.  NOTE: there is NO
-  template anywhere — even `PureUnaryCleanIntSpec` (the clean analogue) is never
-  assembled into a registry; this would be the first complete FR instantiation.
-  The assembly needs the "p"rivate` helpers in ExternBoundaryConstructors
-  (`stepFRPost_of_parts`, `externBoundarySinglePost_of_parts`, …): either
-  un-"p"rivate` them (justified — another file now needs them) or build the spec
-  inside ExternBoundaryConstructors and expose only the final record.
+  - `collectAndAllocExternTags_pred` / `applyExternRegimePolicy_singleton`: a
+    single output predicate allocates exactly one fresh tag, and the regime policy
+    inserts `freshTag ↦ b` for it — so a predicate-bearing extern result changes
+    the regime, unlike the empty-mapping `noPred` case.
+  - `valueConsistentWithRegime_int_inRegimeTrue`: value-consistency for an int
+    output that the regime de-poisons (`R(k) = some true`).
+  - `nonempty_registry_hagrees_unprovable`: the `TrustedRegistryAgreesWithReachable`
+    premise of `TypeSystemEnforcesFaultRobustness` is falsifiable for any non-empty
+    registry, so the theorem instantiates non-trivially only via the empty registry.
 -/
 import LeanProofs.ExternBoundaryProofs
 
@@ -31,9 +22,9 @@ open LeanPoison
 
 namespace ExternRegimeInt
 
-/-- Divergence point (a): the allocator on a single `guardClosure` predicate
-    allocates exactly one fresh tag `nextTag` for index `idx`, advancing to
-    `nextTag + 1`.  Contrast `collectAndAllocExternTags_noPred` (rfl, empty map). -/
+/-- The allocator on a single `guardClosure` predicate allocates exactly one fresh
+    tag `nextTag` for index `idx`, advancing to `nextTag + 1`.  Contrast
+    `collectAndAllocExternTags_noPred`, which yields the empty map. -/
 theorem collectAndAllocExternTags_pred (idx : TagIndex) (nm : Name) (body : Expr) (nextTag : Tag) :
     collectAndAllocExternTags [SyntaxPredicate.guardClosure idx nm body] nextTag
       = .ok (({} : ExtTreeMap TagIndex Tag).insert idx nextTag, nextTag + 1) := by
@@ -45,10 +36,9 @@ theorem extTreeMap_toList_singleton (idx : TagIndex) (t : Tag) :
     (({} : ExtTreeMap TagIndex Tag).insert idx t).toList = [(idx, t)] := by
   rfl
 
-/-- Divergence point (b): on the singleton tag mapping, the regime policy
-    inserts exactly `freshTag ↦ b` when the policy says `some b` and `freshTag`
-    is not already governed.  Contrast the noPred case where the empty mapping
-    leaves the regime unchanged (identity). -/
+/-- On a singleton tag mapping, the regime policy inserts exactly `freshTag ↦ b`
+    when the policy says `some b` and `freshTag` is not already governed.  Contrast
+    the `noPred` case, where the empty mapping leaves the regime unchanged. -/
 theorem applyExternRegimePolicy_singleton
     (R : Regime) (id : ExternId) (policy : ExternId → Tag → Option Bool)
     (idx : TagIndex) (freshTag : Tag) (b : Bool)
@@ -63,8 +53,7 @@ theorem applyExternRegimePolicy_singleton
 /-- Value-consistency for a predicate-bearing int output that the regime
     de-poisons (`R(k) = some true`).  Mirror of `valueConsistentWithRegime_int_noPred`
     but landing in the `inRegimeTrue` constructor; the predicate-satisfaction
-    obligation "q"typPredHolds` is supplied (it is one of the two Phase-D trust
-    fields). -/
+    obligation `qtypPredHolds` is supplied as a hypothesis. -/
 theorem valueConsistentWithRegime_int_inRegimeTrue
     {predSat : PredSat} {R : Regime} {qt : QTyp} {k : Tag}
     {μ : Memory} {θ : RealizationMap} {n : Int}
@@ -96,8 +85,8 @@ theorem valueConsistentWithRegime_int_inRegimeTrue
 
     The theorem below proves this concretely: it exhibits such a context and
     derives a contradiction from the agreement premise.  Hence the meaningful
-    (non-empty-registry, de-poisoning-active) Phase-D instantiation is blocked by
-    the FR theorem's universal `ctx` quantification, not by any missing lemma. -/
+    (non-empty-registry, de-poisoning-active) instantiation is blocked by the FR
+    theorem's universal `ctx` quantification, not by any missing lemma. -/
 
 /-- Registered declaration: a `fn` extern @238 returning a clean int. -/
 def regDecl : ExternDeclaration :=
@@ -106,14 +95,14 @@ def regDecl : ExternDeclaration :=
     effects := [], preds := [] }
 
 /-- A rogue arrow QTyp whose closure list holds an extern member for @238 but
-    over argument type `bool` — so the reachable decl differs from "r"egDecl`
+    over argument type `bool` — so the reachable decl differs from `regDecl`
     (which is over `int`).  `noPred` ⇒ no guard tag; empty captured env. -/
 def rogueQTyp : QTyp :=
   { etyp := ETyp.arrow Typ.bool Typ.int false
       [FnTClosure.extern 238 "q" (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] []],
     poison := false, pred := Predicate.noPred }
 
-/-- The decl the `arrow_extern_member` path reconstructs from "r"ogueQTyp` (typ =
+/-- The decl the `arrow_extern_member` path reconstructs from `rogueQTyp` (typ =
     the arrow source `bool`). -/
 def rogueDecl : ExternDeclaration :=
   { id := 238, kind := .fn, typ := Typ.bool, argName := some "q",
@@ -170,7 +159,7 @@ theorem nonempty_registry_hagrees_unprovable
         (st1 := Typ.bool) (st2 := Typ.int) (p := false) (qpoison := false)
         (qpred := Predicate.noPred) (x := "q")
         (retSpec := ExternReturn.simple Typ.int false SyntaxPredicate.noPred)
-        (effects := []) (σcap := []) (by simp [rogueQTyp])
+        (effects := []) (σcap := []) (by simp)
   have hlookup : TrustedRegistry.lookup? [⟨regDecl, impl, spec⟩] 238
       = some ⟨regDecl, impl, spec⟩ := by
     simp [TrustedRegistry.lookup?, regDecl]

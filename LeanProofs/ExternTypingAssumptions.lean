@@ -560,30 +560,26 @@ theorem ExternBatchTagMeaningExtension.canonical_general
       buildBatchTm_fold_lookup_of_guard_mem tm mapping preds env h_cons h_inj
         hmap hmem hbody
 
-/-- Generic typing-side assumptions about the extern typechecking machinery.
-    Currently a single contract: preservation of `PredSatLaws` across one
-    structural extern allocation batch.
+/-- Generic typing-side assumptions about the extern typechecking machinery:
+    a single contract, preservation of `PredSatLaws` across one structural
+    extern allocation batch.
 
-    The fault-robustness theorem is relative to this assumption: callers
-    must supply (or postulate) an `ExternTypingAssumptions` to instantiate
-    it.  See `doc/ffi-axioms.md` for the longer-term plan to discharge it
-    structurally from the extern-boundary contract.
+    The fault-robustness theorem is relative to this assumption: callers must
+    supply (or postulate) an `ExternTypingAssumptions` to instantiate it.  See
+    `doc/ffi-axioms.md` for the extern-boundary design.
 
-    A previous `guardProvenance` field has been removed: the typechecker
-    now erases predicates on extern effect writes under poisoned `pc`
-    (mirroring assignment), making the guard-origin trace structurally
-    provable via `applyFnTClosure_extern_ok_memEnv_guard_origin`. -/
+    The typechecker erases predicates on extern effect writes under poisoned `pc`
+    (mirroring assignment), making the guard-origin trace structurally provable
+    via `applyFnTClosure_extern_ok_memEnv_guard_origin`. -/
 structure ExternTypingAssumptions where
-  /-- **Contract B (staging): PredSat extension across one extern allocation
-      batch.**  When `tm` extends to `tm'` via a single extern batch (the
-      structural `ExternBatchTagMeaningExtension` predicate) and `predSat`
-      already satisfies `PredSatLaws` against `tm`, those laws survive in
-      the extended table.
+  /-- **Contract B: PredSat extension across one extern allocation batch.**
+      When `tm` extends to `tm'` via a single extern batch (the structural
+      `ExternBatchTagMeaningExtension` predicate) and `predSat` already satisfies
+      `PredSatLaws` against `tm`, those laws survive in the extended table.
 
-      This is a temporary broad trust input.  The intended replacement is
-      per-extern registry evidence (see `doc/ffi-axioms.md`); until then,
-      the field ranges over all extern batches rather than over only the
-      trusted extern declarations a program names. -/
+      This is a broad trust input: the field ranges over all extern batches
+      rather than over only the trusted extern declarations a program names.  See
+      `doc/ffi-axioms.md` for the extern-boundary design. -/
   externPredSatDelta :
     ∀ (predSat : PredSat)
       {tm tm' : TagMeaning}
