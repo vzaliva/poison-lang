@@ -532,31 +532,70 @@ is never dynamically exercised.
 This obstruction is machine-checked in `LeanProofs/ExternRegimeInt.lean`
 (`nonempty_registry_hagrees_unprovable`, relying only on `propext` /
 `Classical.choice` / `Quot.sound`). Unblocking it needs a *stronger context
-hypothesis* on the FR theorem — e.g. restricting reachable externs to those
-syntactically in `e`, or quantifying over the program's canonical initial typing
-context instead of over all `ctxMatchesInputSpec`-matching contexts. That is a
-change to the proven `TypeSystemEnforcesFaultRobustness` statement and its
-`faultRobustnessSpec_of_step` plumbing — separate, larger work. It does not
-affect the soundness or the executable behavior of the de-poisoning, only the
-formal dynamic certification.
+hypothesis* on the FR theorem (see the direction below) — a change to the proven
+`TypeSystemEnforcesFaultRobustness` statement and its `faultRobustnessSpec_of_step`
+plumbing, i.e. separate, larger work. It does not affect the soundness or the
+executable behavior of the de-poisoning, only the formal dynamic certification.
 
-### Resolution of the earlier open questions
+### Unblocking direction (proposed; not yet implemented)
 
-- **Q1 (policy shape).** An id-keyed executable policy
-  `externRegime : ExternId → Tag → Option Bool` on `TypeContext`, fed by
-  `--extern-regime`; the per-tag granularity subsumes the id-only one.
-- **Q2 (evolution relation).** `Regime.monotoneStepExt` (§4.2).
-- **Q3 (active-domain bridge).** Derived from `monotoneStepExt` plus
-  `TagBoundedCtx`, threaded through the step proofs.
-- **Q4 (production-side obligation).** The existing `ExternBoundarySpec`
-  call-boundary fields suffice — no new regime-aware field is needed. The
-  cross-run obligation is the existing output-equality/determinism shape, with
-  predicate satisfaction handled by `valueConsistentWithRegime`'s `inRegimeTrue`.
-  The concrete instantiation is what the blocker above prevents.
-- **Q5 (masked lemmas).** Masked-preservation under fresh unmasked extern-tag
-  insertion is threaded via `TagBoundedCtx`; `masked` stays proof-only.
-- **Q6 (proof-surface scope).** The `monotoneStep → monotoneStepExt` refactor
-  touched the whole `StepFR*` stack; the concrete `StepFR` shape was otherwise
-  kept.
-- **Q7 (CLI multiplicity).** The v1 `--extern-regime` assigns one boolean to
-  every generated output tag of a listed extern id.
+The obstruction is a quantifier mismatch, so the fix belongs in the FR theorem's
+*shape*, not in the extern-regime mechanism.
+
+**Primary move — make registry agreement per-context.** Parameterize the theorem
+by the initial typing context and require agreement only for *that* context:
+
+```lean
+theorem TypeSystemEnforcesFaultRobustness_at
+  (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+  (ctx : TypeContext)
+  (hagrees : TrustedRegistryAgreesWithReachable e ctx tr) :
+  FaultRobustnessSpecForCtx (TrustedRegistry.toRuntimeRegistry tr) e s obs ctx
+```
+
+This matches the real obligation — agreement is about the *actual* initial
+context, not every adversarial extension of it — and the per-context statement is
+essentially what the universal theorem already proves internally
+(`FaultRobustnessPointwise … ctx`). The `open` validation then instantiates at the
+**canonical empty initial context** (`varEnv = {}`), where the rogue-variable
+branch cannot fire: the only reachable @238 is the program's own declaration,
+which matches the registry, so `hagrees` is provable and de-poisoning is exercised
+with the extern live. The current all-context theorem does *not* become usable for
+non-empty registries unchanged — it survives only as a corollary under the old
+global premise (exactly what is unprovable here) or under the admissibility
+premise below.
+
+**Secondary move — a public wrapper that derives the per-context premise.** For
+callers who should not prove reachability agreement by hand, a wrapper should
+*derive* the per-context `hagrees` from a checked **context-trust** condition.
+That condition must *anchor* context-reachable externs to the trusted source:
+id-consistency among context externs alone is **not** enough, because a rogue
+@238 can be self-consistent yet still disagree with the program/registry
+declaration. Two workable shapes:
+
+- *program-covered* — every context-reachable extern declaration also occurs in
+  the program, combined with registry/program agreement:
+
+  ```lean
+  (∀ {id d}, ContextExternReachable ctx id d → ExternDeclarationInProgram e id d)
+  ∧ TrustedRegistryAgreesWithProgram e tr
+  ```
+
+- *registry-covered* — agreement checked directly against the initial context
+  (this also supports extern closures supplied only by the context):
+
+  ```lean
+  TrustedRegistryAgreesWithInitialContext ctx tr
+  ```
+
+Either way this is an **explicit context-admissibility check**, not a byproduct of
+plain typechecking: `typecheck ctx e` ignores variables `e` never uses, so an
+unused rogue @238 still typechecks today. The check has to be added — as a premise
+of the wrapper, or as an extended gate.
+
+This is preferable to weakening `ctxMatchesInputSpec`, or to restricting
+reachability to syntactic externs only (which would drop support for
+context-supplied extern closures). Implementation note: when realizing the
+primary move, confirm the existing reachable-context plumbing carries the
+empty-initial agreement through the evolving context during the induction.
+
