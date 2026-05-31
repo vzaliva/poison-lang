@@ -558,9 +558,11 @@ context, not every adversarial extension of it — and the per-context statement
 essentially what the universal theorem already proves internally
 (`FaultRobustnessPointwise … ctx`). The `open` validation then instantiates at the
 **canonical empty initial context** (`varEnv = {}`), where the rogue-variable
-branch cannot fire: the only reachable @238 is the program's own declaration,
-which matches the registry, so `hagrees` is provable and de-poisoning is exercised
-with the extern live. The current all-context theorem does *not* become usable for
+branch cannot fire: reachability collapses to the program's own @238 declaration.
+Assuming the program declares @238 consistently (no two syntactic declarations
+with different shapes — otherwise `TrustedRegistryAgreesWithProgram` itself
+fails), that matches the registry, so `hagrees` is provable and de-poisoning is
+exercised with the extern live. The current all-context theorem does *not* become usable for
 non-empty registries unchanged — it survives only as a corollary under the old
 global premise (exactly what is unprovable here) or under the admissibility
 premise below.
@@ -587,6 +589,12 @@ declaration. Two workable shapes:
   ```lean
   TrustedRegistryAgreesWithInitialContext ctx tr
   ```
+
+Here `ContextExternReachable` and `TrustedRegistryAgreesWithInitialContext` are
+*proposed new* predicates. `ContextExternReachable` must capture **only** the
+context-variable/closure branch — unlike the existing
+`ExternDeclarationReachableFromContext`, which also folds in the program's AST
+declarations.
 
 Either way this is an **explicit context-admissibility check**, not a byproduct of
 plain typechecking: `typecheck ctx e` ignores variables `e` never uses, so an
