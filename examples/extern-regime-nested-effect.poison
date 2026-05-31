@@ -1,0 +1,26 @@
+--! poison-interpreter --extern-regime "109=true"
+-- Regression test for extern-regime call-site insertion on nested-return
+-- externs (doc/extern-regime.md sec 4.1 / 4.3).
+--
+-- An impure extern whose return is a NESTED function AND which writes an effect
+-- predicate must insert the freshly-generated OUTER EFFECT tag into the active
+-- regime when its id is selected, exactly like a simple-return extern.
+--
+-- @109 returns a nested extern fn (so the nested-return typing branch fires) and
+-- ALSO writes an effect predicate (u >= 0) to the captured cell `cap`. Listing id
+-- 109 as true via --extern-regime inserts the effect's freshly-generated tag into
+-- the active regime, so the later `c >= 0` guard de-poisons the value read from
+-- `cap` (final type poison=false). Without --extern-regime, or before this fix
+-- (which left the nested-return regime unchanged), the tag is absent from the
+-- regime and the value stays poisoned (poison=true).
+let cap = ref 0 in
+let h =
+  extern fn @109 i : (int) -> (
+    extern fn @110 r : (int) -> ((int :> poisoned { 3, v => (v >= 0) }))
+  ), effects: {
+    !cap :> (int :> poisoned { 5, u => (u >= 0) })
+  }
+in
+let g = h 10 in
+let c = !cap in
+if c >= 0 then c else 0

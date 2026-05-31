@@ -5208,10 +5208,12 @@ lemma applyPFnTClosure_extern_regime_preserve_some
 -- memEnv may differ due to the effects loop.
 -- ==========================================================================
 
-/-- Extern-regime shape (doc/extern-regime.md §4.2): the applied Fn extern's `regime'` is either
-    unchanged (nested returns) or the policy-extended `applyExternRegimePolicy` of `r1.regime'`
-    over a fresh tag mapping (tags `≥ r1.nextTag'`).  Feeds both the regime-monotonicity chain and
-    the consistency consumers. -/
+/-- Extern-regime shape (doc/extern-regime.md §4.1/§4.2): the applied Fn extern's `regime'` is the
+    policy-extended `applyExternRegimePolicy` of `r1.regime'` over a fresh tag mapping (tags
+    `≥ r1.nextTag'`) — for both simple returns and nested returns (the latter over the outer effect
+    tags).  The statement keeps the weaker `unchanged ∨ policy-extended` disjunction so downstream
+    consumers stay uniform with the PFn variant; for Fn externs the left disjunct is now vacuous.
+    Feeds both the regime-monotonicity chain and the consistency consumers. -/
 lemma applyFnTClosure_extern_regime_eq_or_policy
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -5246,10 +5248,16 @@ lemma applyFnTClosure_extern_regime_eq_or_policy
                 refine Or.inr ⟨tm, rfl, ?_⟩
                 intro idx j hj
                 exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
-          · -- ExternReturn.nestedFn
-            simp only [pure, Except.pure] at happly; cases happly; exact Or.inl rfl
-          · -- ExternReturn.nestedPfn
-            simp only [pure, Except.pure] at happly; cases happly; exact Or.inl rfl
+          · -- ExternReturn.nestedFn: outer effect tags are policy-extended (doc/extern-regime.md §4.1/§4.3)
+            simp only [pure, Except.pure] at happly; cases happly
+            refine Or.inr ⟨tm, rfl, ?_⟩
+            intro idx j hj
+            exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
+          · -- ExternReturn.nestedPfn: outer effect tags are policy-extended (doc/extern-regime.md §4.1/§4.3)
+            simp only [pure, Except.pure] at happly; cases happly
+            refine Or.inr ⟨tm, rfl, ?_⟩
+            intro idx j hj
+            exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
 
 /-- Exact regime preservation for an applied Fn extern (insert-if-absent policy). Unconditional. -/
 lemma applyFnTClosure_extern_regime_preserve_some
@@ -5335,7 +5343,8 @@ lemma applyFnTClosure_regime_mono
       specialize IH _ (lt_add_one _) _ _ _ htc
       simpa using IH
   | extern id x retSpec effects capturedEnv =>
-    -- Extern case: `regime'` is either unchanged (nested) or the fresh policy extension (simple).
+    -- Extern case: `regime'` is the fresh policy extension of `r1.regime'` for every return shape
+    -- (the disjunction's "unchanged" branch is still handled but is now vacuous for Fn externs).
     rcases applyFnTClosure_extern_regime_eq_or_policy ctx st1 st2 p p1 argEtyp argPoison argPred
         r1 r2 fuel id x retSpec effects capturedEnv happly with heq | ⟨tm, hr2, hfresh⟩
     · rw [heq]; exact Regime.monotoneStepExt_refl _ _

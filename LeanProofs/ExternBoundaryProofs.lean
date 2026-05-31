@@ -1594,6 +1594,15 @@ private theorem applyClosuresThreaded_forall_reachable_mem
                           cursor result happly)
                       hrest result htail
 
+/-- Mirrors the post-effects "finish" tail of the `FnTClosure.extern` branch of
+    `applyFnTClosureAtCursor`: the per-return-shape construction of the result
+    `TypeResult` once the effects loop has produced the updated memory.
+
+    IMPORTANT: this must stay definitionally in lockstep with that tail in
+    `LeanPoison/Typecheck.lean` — `of_applyFnTClosureAtCursor` discharges the
+    `convert` with `rfl`, so any change there must be mirrored here.  In
+    particular every return branch (simple and both nested returns) applies
+    `applyExternRegimePolicy` to `regime'` (doc/extern-regime.md §4.1/§4.3). -/
 private def fnExternFinishAtCursor
     (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
     (p p1 : Poison) (unifiedEnv : VarTypeEnv)
@@ -1634,7 +1643,7 @@ private def fnExternFinishAtCursor
           tagEnv' := result2.tagEnv',
           nextLoc' := cursor.2,
           nextTag' := nextTag',
-          regime' := result2.regime' }
+          regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
   | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerRet =>
       Except.ok
         { qualType :=
@@ -1649,7 +1658,7 @@ private def fnExternFinishAtCursor
           tagEnv' := result2.tagEnv',
           nextLoc' := cursor.2,
           nextTag' := nextTag',
-          regime' := result2.regime' }
+          regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
 private theorem of_applyFnTClosureAtCursor
     {root : Expr} {ctxRoot ctx : TypeContext}

@@ -488,7 +488,11 @@ and no custom axioms.
   extern-regime policy `externRegime : ExternId → Tag → Option Bool`. At the
   point where `collectAndAllocExternTags` / `resolveSyntaxPred` allocate fresh
   output tags, `applyExternRegimePolicy` inserts the selected tags into
-  `TypeResult.regime'`. (`LeanPoison/Typecheck.lean`.)
+  `TypeResult.regime'` — uniformly for simple extern returns and for the outer
+  effect predicates of nested-return externs (both `applyFnTClosure` and
+  `applyFnTClosureAtCursor` apply the policy in every `FnTClosure.extern` return
+  branch, over the predicates allocated at that call site).
+  (`LeanPoison/Typecheck.lean`.)
 - **§4.2 — regime evolution.** `Regime.monotoneStep` is generalized to
   `Regime.monotoneStepExt R R' newTags` ("monotone modulo fresh selected
   extern-output tags"). The fault-robustness proof stack threads
@@ -509,33 +513,9 @@ and no custom axioms.
 
 ### Open items
 
-A static review of the extern-regime branch found two cleanup items that are
+A static review of the extern-regime branch found one cleanup item that is
 separate from the top-level theorem blocker below:
 
-- **Fix nested-return outer effects.** This is an implementation bug, not only a
-  missing proof lemma. `collectExternPreds` includes outer effect predicates for
-  nested extern returns, and the typechecker applies those effects, but the
-  nested-return branches currently leave `regime'` unchanged. If an impure extern
-  returns a nested function and also writes an effect predicate, selected outer
-  effect tags must be inserted into the active regime just like simple-return
-  effect tags.
-
-  Minimal fix: in `LeanPoison/Typecheck.lean`, update the
-  `FnTClosure.extern` nested-return branches in both `applyFnTClosureAtCursor`
-  and `applyFnTClosure` so their result uses
-  `applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping`.
-  This is safe for nested returns because `collectExternPreds retSpec effects`
-  contains only the **outer** effect predicates in these cases; the nested
-  extern's own return/effect predicates remain symbolic and are still allocated
-  later, when the nested extern is applied under its own id.
-
-  Proof impact: update the structural lemmas that currently characterize nested
-  `FnTClosure.extern` returns as regime-unchanged (for example
-  `applyFnTClosure_extern_regime_eq_or_policy` and dependent
-  `monotoneStepExt`/tag-meaning plumbing) so nested impure returns with outer
-  effects are treated as policy-extended over the fresh effect-tag mapping. Pure
-  extern closures (`PFnTClosure.extern`) still have no outer effects, so their
-  nested-return branches can remain unchanged.
 - **Update the Ott rules for extern-regime insertion.** The Ott spec currently
   mentions selected extern regime extension in comments, but the extern
   application rules still conclude with the old regime (`R1`) and do not model
