@@ -570,6 +570,40 @@ premise below.
 **Secondary move — a public wrapper that derives the per-context premise.** For
 callers who should not prove reachability agreement by hand, a wrapper should
 *derive* the per-context `hagrees` from a checked **context-trust** condition.
+At the public theorem level the statement should be trusted-registry-facing: the
+user is certifying a pair `(e, tr)`, and the trusted registry supplies both the
+runtime registry used by evaluation and the extern boundary contracts used by
+the proof. The semantic two-run relation still runs the projected runtime
+registry `TrustedRegistry.toRuntimeRegistry tr`, but the top-level spec should
+quantify over trusted initial contexts explicitly:
+
+```lean
+def InitialContextTrusted
+  (tr : TrustedRegistry) (e : Expr) (ctx : TypeContext) : Prop :=
+  TrustedRegistryAgreesWithReachable e ctx tr
+
+def FaultRobustnessSpec
+  (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
+  wfInputSpec s →
+  wfObsSpec obs →
+  ∀ (ctx : TypeContext),
+    ctxMatchesInputSpec s ctx →
+    InitialContextTrusted tr e ctx →
+    wfTypeContext ctx →
+    -- remaining existing context, tag-meaning, regime, typecheck, and
+    -- two-run premises ...
+    FaultRobustnessPointwise (TrustedRegistry.toRuntimeRegistry tr) e s obs ctx ...
+
+theorem TypeSystemEnforcesFaultRobustness
+  (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+  FaultRobustnessSpec tr e s obs
+```
+
+In plain English, the recovered top-level statement says: for every initial
+context that matches the input spec and is trusted with respect to the registry,
+successful typechecking implies the same two-run fault-robustness conclusion as
+before.
+
 That condition must *anchor* context-reachable externs to the trusted source:
 id-consistency among context externs alone is **not** enough, because a rogue
 @238 can be self-consistent yet still disagree with the program/registry
@@ -606,4 +640,3 @@ reachability to syntactic externs only (which would drop support for
 context-supplied extern closures). Implementation note: when realizing the
 primary move, confirm the existing reachable-context plumbing carries the
 empty-initial agreement through the evolving context during the induction.
-
