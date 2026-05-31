@@ -176,12 +176,14 @@ it should extend the active regime at that call site. The existing local
 concrete tags. The new behavior is:
 
 - if the extern id is not listed in `regimeExterns`, no regime entry is added;
-- if the extern id is listed, every generated output tag that is actually
-  attached to the returned value or an effect-written memory cell is inserted
-  into `TypeResult.regime'` with the scenario's chosen `Bool`;
+- if the extern id is listed, every fresh generated output tag in the extern
+  call's allocation batch is inserted into `TypeResult.regime'` with the
+  scenario's chosen `Bool`;
 - if an effect predicate is erased by the existing poison/control-flow gate, no
-  active predicate tag is installed and no regime entry is needed for that
-  erased predicate.
+  active predicate tag is installed on the written memory cell. A regime entry
+  may still exist for the fresh generated tag, but it is inert: no live
+  value/memory predicate mentions it, so it cannot drive de-poisoning and imposes
+  no producer-side consistency obligation.
 
 The typechecker therefore needs a typechecker-visible extern-regime policy, not
 only a proof-side `InputSpec` field. There are two useful granularities:
@@ -280,9 +282,12 @@ Use the existing typechecker point where extern predicates are resolved:
 
 At that same point, the typechecker should query the extern-regime policy and
 extend `regime'` for selected extern-output tags. The proof should use the local
-facts from this typechecking step: the generated tags are fresh, they came from
-the current extern id, and they are attached to the produced value or written
-cell.
+facts from this typechecking step: the generated tags are fresh and came from
+the current extern id. When such a tag is actually carried by a produced value or
+written memory cell, the ordinary regime-consistency obligations relate the
+chosen regime bit to predicate satisfaction. If an effect predicate is erased
+before installation, the generated regime entry is dangling and observationally
+irrelevant.
 
 The mechanism should cover returns and effects uniformly:
 
@@ -291,7 +296,7 @@ The mechanism should cover returns and effects uniformly:
 - nested extern return/effect predicates when the nested extern is later
   applied.
 
-If a selected extern is listed but produces no active output predicate tag in a
+If a selected extern is listed but produces no generated output guard tag in a
 particular call, the regime is unchanged for that call.
 
 ### 4.4 Consistency And `masked`
@@ -338,24 +343,27 @@ regime, with side conditions such as `masked k → ctx.regime.lookup? k = none`
 and absence from true `tagEnv` facts. Unlisted extern-output tags may be handled
 this way because they cannot drive FR-level de-poisoning.
 
-Selected extern-output tags are different. Once inserted into the active regime,
-they should not be treated as masked at the point where their regime fact is
-used. The proof will need preservation lemmas saying that inserting a fresh
-unmasked extern tag preserves the masked invariants for the old masked set.
+Selected extern-output tags are different. Once inserted into the active regime
+and carried by a live predicate, they should not be treated as masked at the
+point where their regime fact is used. Dangling generated tags whose predicates
+were erased are harmless because no live predicate can use them. The proof will
+need preservation lemmas saying that inserting a fresh unmasked extern tag
+preserves the masked invariants for the old masked set.
 
 The remaining producer-side obligation is how the consistency invariant is
 established for a value created by an extern call. Unlike initial
 critical-input tags, selected extern tags have no initial runtime value. The
 proof must connect the extern-produced value or memory write to `R(k)` at the
-point where the predicate is installed.
+point where the predicate is installed. No such obligation is needed for a
+generated tag whose predicate was erased before installation.
 
 For the fault-robustness theorem this is a two-run obligation. The two runs
 share the same typechecking derivation and therefore the same concrete generated
-tag `k`. If the scenario inserts `R(k) = true`, both runs' extern results at
-that call site must satisfy the predicate for their returned value or
-effect-written cell. If it inserts `R(k) = false`, both runs must fail that
-predicate. This is separate from, and in addition to, any agreement obligation
-on clean values.
+tag `k` when that tag is attached to an extern-produced value or effect-written
+cell. If the scenario inserts `R(k) = true`, both runs' extern results at that
+call site must satisfy the predicate for that returned value or effect-written
+cell. If it inserts `R(k) = false`, both runs must fail that predicate. This is
+separate from, and in addition to, any agreement obligation on clean values.
 
 In the current proof stack, this belongs near the
 `ExternBoundarySpec.callFR` / call-boundary adapter layer, not in
@@ -372,8 +380,9 @@ The proof and implementation changes the design required (all in place — see �
   `TypeContext` or as an input threaded alongside it, with executable and proof
   granularities distinguished;
 - update extern value/function application typing so selected extern-output
-  tags are inserted into `TypeResult.regime'` when they are allocated and
-  attached;
+  tags are inserted into `TypeResult.regime'` when they are allocated; tags that
+  are also attached to a returned value or effect-written memory cell then carry
+  the ordinary producer-side consistency obligation;
 - replace uses of `Regime.monotoneStep` with a new regime-evolution relation
   that permits fresh selected extern-output additions, accounts for any
   branch-local regime refinements, and preserves old-tag monotonicity at rule
@@ -498,6 +507,46 @@ and no custom axioms.
   `examples/extern-regime-open.poison` types `poison = false` under
   `--extern-regime "238=true"` and `poison = true` without it.
 
+### Open items
+
+A static review of the extern-regime branch found two cleanup items that are
+separate from the top-level theorem blocker below:
+
+- **Fix nested-return outer effects.** This is an implementation bug, not only a
+  missing proof lemma. `collectExternPreds` includes outer effect predicates for
+  nested extern returns, and the typechecker applies those effects, but the
+  nested-return branches currently leave `regime'` unchanged. If an impure extern
+  returns a nested function and also writes an effect predicate, selected outer
+  effect tags must be inserted into the active regime just like simple-return
+  effect tags.
+
+  Minimal fix: in `LeanPoison/Typecheck.lean`, update the
+  `FnTClosure.extern` nested-return branches in both `applyFnTClosureAtCursor`
+  and `applyFnTClosure` so their result uses
+  `applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping`.
+  This is safe for nested returns because `collectExternPreds retSpec effects`
+  contains only the **outer** effect predicates in these cases; the nested
+  extern's own return/effect predicates remain symbolic and are still allocated
+  later, when the nested extern is applied under its own id.
+
+  Proof impact: update the structural lemmas that currently characterize nested
+  `FnTClosure.extern` returns as regime-unchanged (for example
+  `applyFnTClosure_extern_regime_eq_or_policy` and dependent
+  `monotoneStepExt`/tag-meaning plumbing) so nested impure returns with outer
+  effects are treated as policy-extended over the fresh effect-tag mapping. Pure
+  extern closures (`PFnTClosure.extern`) still have no outer effects, so their
+  nested-return branches can remain unchanged.
+- **Update the Ott rules for extern-regime insertion.** The Ott spec currently
+  mentions selected extern regime extension in comments, but the extern
+  application rules still conclude with the old regime (`R1`) and do not model
+  `applyExternRegimePolicy` / call-site regime extension. This means the formal
+  language specification is stale relative to the Lean typechecker. Add an Ott
+  meta-function such as `extendExternRegime eid TM R = R'` and thread the
+  resulting `R'` through the extern application conclusions. For nested impure
+  returns, the extension should use the `TM` produced by `allocEffectTags ESL`,
+  so only the outer effect predicates are inserted; the nested extern's own
+  return/effect predicates remain deferred until the nested extern is applied.
+
 ### The one blocked target
 
 §4.6 also asks for de-poisoning to be exercised *dynamically* inside the
@@ -582,12 +631,18 @@ def InitialContextTrusted
   (tr : TrustedRegistry) (e : Expr) (ctx : TypeContext) : Prop :=
   TrustedRegistryAgreesWithReachable e ctx tr
 
+def ExternRegimeMatchesInputSpec
+  (s : InputSpec) (ctx : TypeContext) : Prop :=
+  (∀ {id}, id ∉ s.regimeExterns → ∀ k, ctx.externRegime id k = none) ∧
+  (∀ {id}, id ∈ s.regimeExterns → ∀ k, ∃ b, ctx.externRegime id k = some b)
+
 def FaultRobustnessSpec
   (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
   wfInputSpec s →
   wfObsSpec obs →
   ∀ (ctx : TypeContext),
     ctxMatchesInputSpec s ctx →
+    ExternRegimeMatchesInputSpec s ctx →
     InitialContextTrusted tr e ctx →
     wfTypeContext ctx →
     -- remaining existing context, tag-meaning, regime, typecheck, and
@@ -599,8 +654,16 @@ theorem TypeSystemEnforcesFaultRobustness
   FaultRobustnessSpec tr e s obs
 ```
 
+`ExternRegimeMatchesInputSpec` is the bridge between the user-facing scenario and
+the typechecker-visible policy. The list `s.regimeExterns` fixes the **domain**:
+unlisted extern ids must return `none`, while listed extern ids must return
+`some b` for every concrete tag the typechecker may generate for that id. The
+chosen boolean may still depend on the generated concrete tag, which preserves
+the proof-side precision described in §4.1.
+
 In plain English, the recovered top-level statement says: for every initial
-context that matches the input spec and is trusted with respect to the registry,
+context that matches the input spec, uses an extern-regime policy whose domain is
+exactly the selected extern ids, and is trusted with respect to the registry,
 successful typechecking implies the same two-run fault-robustness conclusion as
 before.
 
