@@ -1,8 +1,17 @@
-# Extern Regime Handling — Working Notes
+# Extern Regime Handling
 
-Status: **analysis / planning**. This note isolates the regime
-issue for extern-produced predicates from the broader extern poison discussion
-in `doc/extern-poison.md`.
+Status: **implemented** — the mechanism described below is built and proven, and
+the whole Lean tree builds with no `sorry` and no custom axioms. The extern-id
+regime selector, call-site regime insertion, the regime-evolution relation, and
+the `--extern-regime` CLI are all in place. One end-to-end target — a
+fault-robustness instantiation that exercises de-poisoning with a *live* extern —
+is blocked by a specification-level limitation of the FR theorem, not by a
+missing lemma; see §5 (Implementation Status).
+
+This note isolates the regime issue for extern-produced predicates from the
+broader extern poison discussion in `doc/extern-poison.md`. Sections 1–3 give the
+motivation and background; §4 describes the design; §5 records what is
+implemented and the one blocked target.
 
 ## 1. Problem Description
 
@@ -116,10 +125,15 @@ This also keeps the original `TagIndex` scoping rule intact. Reusing the same
 local tag number inside different extern declarations has no FR-level meaning,
 because regime selection happens by extern id.
 
-## 4. Proposed Resolution
+## 4. Design
 
-Extend the user-facing `InputSpec` with extern ids that are treated as
-potentially faulty:
+This section describes the design as built. §5 gives the section-by-section
+status and code pointers; a few subsections below still discuss conditional
+variants (e.g. branch-local regime refinements) that are *not* part of the
+current typechecker, and those are called out where they appear.
+
+The user-facing `InputSpec` carries extern ids that are treated as potentially
+faulty:
 
 ```lean
 regimeExterns : List ExternId
@@ -351,7 +365,7 @@ parallel call-boundary contract consumed by the extern application proof.
 
 ### 4.5 Proof Impact
 
-Expected proof and implementation changes:
+The proof and implementation changes the design required (all in place — see §5):
 
 - extend `InputSpec` with `regimeExterns : List ExternId`;
 - add a typechecker-visible extern-regime policy, likely as a new field in
@@ -377,8 +391,8 @@ Expected proof and implementation changes:
   two-run `valueConsistentWithRegime` / `consistentWithRegime` facts for
   selected extern-produced predicates.
 
-The main proof churn is likely around lemmas that currently depend on global
-regime monotonicity. The conceptual replacement is narrower but still useful:
+The main proof churn was around lemmas that depended on global regime
+monotonicity. The conceptual replacement is narrower but still useful:
 old entries can only disappear, newly added entries are fresh selected extern
 outputs, and all surviving entries keep their original truth values.
 
@@ -403,6 +417,12 @@ produces the concrete tag attached to the written memory cell.
 If `open` is not listed in `regimeExterns`, no entry is inserted for `k`; the
 later guard check may still match syntactically, but `ctx.regime.lookup? k =
 none`, so the typechecker takes the conservative path.
+
+**Status.** The de-poisoning is demonstrated executably:
+`examples/extern-regime-open.poison` types `poison = false` under
+`--extern-regime "238=true"` and `poison = true` without it. Exercising the same
+de-poisoning *inside* the fault-robustness theorem — with the extern registered
+and run — is the one blocked target; see §5.
 
 ### 4.7 Runtime Typechecker Regime
 
@@ -447,41 +467,96 @@ CLI shorthand like `--extern-regime "238=true"` assigns one boolean to every
 generated output tag for that extern id, which is acceptable for a v1
 debugging/user interface.
 
-## 5. Open Questions
+## 5. Implementation Status
 
-- Q1. What is the exact Lean shape of the extern-regime policy? The working
-  intuition is an executable id-only policy plus a proof-side per-generated-tag
-  policy, but the implementation still needs to decide how those two surfaces
-  relate and whether the active typechecker hook belongs directly in
-  `TypeContext` or is threaded beside it.
-- Q2. What is the exact Lean shape of the regime-evolution relation replacing
-  or generalizing `Regime.monotoneStep`? It should preserve old-tag
-  monotonicity, permit only fresh selected extern-output additions at rule
-  boundaries, account for any branch-local guard refinements, and remain usable
-  by existing clean-under/agreement transport lemmas.
-- Q3. Should the dynamic active-regime domain bridge be an explicit invariant
-  threaded through proofs, or should it be derived from the regime-evolution
-  relation when needed? The bridge needs to justify that active tags are
-  surviving initial critical-input tags, surviving selected extern-output tags,
-  or local branch refinements.
-- Q4. What is the exact production-side obligation for extern-created predicates?
-  The current direction keeps `valueConsistentWithRegime` as the downstream
-  invariant and places production in the call-boundary layer. The remaining
-  choice is how to encode the two-run obligation: extend `ExternBoundarySpec`
-  with a regime-aware call field, or add a parallel call-boundary contract
-  consumed by the extern application proof.
-- Q5. What masked-invariant lemmas are needed when a selected extern call inserts a
-  fresh selected extern-output tag into the active regime? The intended story is
-  that `masked` remains proof-only and cannot drive typechecker de-poisoning,
-  but the proof plumbing still needs precise preservation lemmas.
-- Q6. Which proof surfaces must change, and can the changes be localized?
-  `regimeConsistentWithCtx` and `tagEnvConsistentWithRegime*` thread through
-  every `StepFR*` per-operator file. The current direction aims to keep concrete
-  `StepFR` mostly unchanged, but this needs a scoping pass before
-  implementation.
-- Q7. What should the extern-id executable interface do when one selected
-  extern id produces multiple output tags or is called multiple times? The
-  current v1 interface assigns the same boolean to every generated output tag
-  for that extern id. If the executable interface becomes part of an FR/CI
-  boundary rather than a debugging aid, it may need occurrence-specific names,
-  occurrence syntax, or a concrete-tag escape hatch.
+The design in §4 is implemented and the whole Lean tree builds with no `sorry`
+and no custom axioms.
+
+### What is built and proven
+
+- **§4 / §4.1 / §4.3 — extern-id selector and call-site insertion.** `InputSpec`
+  carries `regimeExterns : List ExternId`; `TypeContext` carries an
+  extern-regime policy `externRegime : ExternId → Tag → Option Bool`. At the
+  point where `collectAndAllocExternTags` / `resolveSyntaxPred` allocate fresh
+  output tags, `applyExternRegimePolicy` inserts the selected tags into
+  `TypeResult.regime'`. (`LeanPoison/Typecheck.lean`.)
+- **§4.2 — regime evolution.** `Regime.monotoneStep` is generalized to
+  `Regime.monotoneStepExt R R' newTags` ("monotone modulo fresh selected
+  extern-output tags"). The fault-robustness proof stack threads
+  `monotoneStepExt`; the old `monotoneStep` is retained and recovered as a
+  corollary (`monotoneStep_toExt`). Old-tag monotonicity, freshness of added
+  tags, and assignment/branch-join shrinkage all hold as described. (The
+  branch-local guard refinements discussed in §4.2 remain unimplemented — the
+  typechecker still takes the conservative standard path.)
+- **§4.4 — consistency / masked.** Selected extern-output tags reuse the
+  existing `valueConsistentWithRegime` / `consistentWithRegime` relations (no new
+  consumer-side relation); the proof-only `masked` machinery is preserved, with
+  the freshness side conditions threaded via `TagBoundedCtx`.
+- **§4.7 — CLI.** `--extern-regime "238=true"` is parsed by
+  `Main.parseExternRegimeSpec` into the id-keyed `externRegime` policy.
+- **§4.6 — validation (executable).** The `open`-shaped example de-poisons:
+  `examples/extern-regime-open.poison` types `poison = false` under
+  `--extern-regime "238=true"` and `poison = true` without it.
+
+### The one blocked target
+
+§4.6 also asks for de-poisoning to be exercised *dynamically* inside the
+fault-robustness theorem — with the extern actually registered and run, so its
+de-poisoned value materializes in the two-run comparison. That requires
+instantiating `TypeSystemEnforcesFaultRobustness` with a **non-empty**
+`TrustedRegistry` containing the extern, and that is **blocked by a
+specification-level limitation of the theorem**, not by a missing lemma.
+
+The theorem takes a premise
+
+```lean
+hagrees : ∀ {ctx}, ctxMatchesInputSpec s ctx →
+            TrustedRegistryAgreesWithReachable e ctx tr
+```
+
+asserting that the registry's declaration for each extern id equals *every*
+declaration for that id reachable from `ctx`. But `ctxMatchesInputSpec`
+constrains `ctx.varEnv` only one-way (`s.vars ⊆ ctx.varEnv`): it permits *extra*
+variables. So an adversarial `ctx` can bind a rogue variable to an arrow type
+whose closure list holds an extern member for the *same id* but with a
+*different* declaration (e.g. over a different argument type). Because that rogue
+arrow has `noPred` it has no guard tag, so it satisfies every
+`ctxMatchesInputSpec` conjunct — including the `deepVarEnvProperty` guard-tag
+check. The reachability path `var → arrow_extern_member` then reaches the id with
+a declaration `≠` the registry's, falsifying `TrustedRegistryAgreesWithReachable`.
+Hence `hagrees` is **unprovable for any non-empty registry**; only the empty
+registry makes it vacuously true, and with an empty runtime registry the extern
+is unregistered (it errors at runtime, matching the executable), so de-poisoning
+is never dynamically exercised.
+
+This obstruction is machine-checked in `LeanProofs/ExternRegimeInt.lean`
+(`nonempty_registry_hagrees_unprovable`, relying only on `propext` /
+`Classical.choice` / `Quot.sound`). Unblocking it needs a *stronger context
+hypothesis* on the FR theorem — e.g. restricting reachable externs to those
+syntactically in `e`, or quantifying over the program's canonical initial typing
+context instead of over all `ctxMatchesInputSpec`-matching contexts. That is a
+change to the proven `TypeSystemEnforcesFaultRobustness` statement and its
+`faultRobustnessSpec_of_step` plumbing — separate, larger work. It does not
+affect the soundness or the executable behavior of the de-poisoning, only the
+formal dynamic certification.
+
+### Resolution of the earlier open questions
+
+- **Q1 (policy shape).** An id-keyed executable policy
+  `externRegime : ExternId → Tag → Option Bool` on `TypeContext`, fed by
+  `--extern-regime`; the per-tag granularity subsumes the id-only one.
+- **Q2 (evolution relation).** `Regime.monotoneStepExt` (§4.2).
+- **Q3 (active-domain bridge).** Derived from `monotoneStepExt` plus
+  `TagBoundedCtx`, threaded through the step proofs.
+- **Q4 (production-side obligation).** The existing `ExternBoundarySpec`
+  call-boundary fields suffice — no new regime-aware field is needed. The
+  cross-run obligation is the existing output-equality/determinism shape, with
+  predicate satisfaction handled by `valueConsistentWithRegime`'s `inRegimeTrue`.
+  The concrete instantiation is what the blocker above prevents.
+- **Q5 (masked lemmas).** Masked-preservation under fresh unmasked extern-tag
+  insertion is threaded via `TagBoundedCtx`; `masked` stays proof-only.
+- **Q6 (proof-surface scope).** The `monotoneStep → monotoneStepExt` refactor
+  touched the whole `StepFR*` stack; the concrete `StepFR` shape was otherwise
+  kept.
+- **Q7 (CLI multiplicity).** The v1 `--extern-regime` assigns one boolean to
+  every generated output tag of a listed extern id.
