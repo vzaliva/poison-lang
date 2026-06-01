@@ -143,11 +143,11 @@ pcl :: 'PCL_' ::= {{ com predicate closure }}
 % Typing closures (separate for impure fn and pure pfn)
 tcl :: 'TCL_' ::= {{ com impure fn closure }}
   | ( x , e , S )           ::   :: fn_closure
-  | extern_tcl ( x , ER , ESL , S ) ::   :: extern_closure {{ com extern impure closure }} {{ tex \mathsf{extern}([[x]], [[ER]], [[ESL]], [[S]]) }}
+  | extern_tcl @ eid ( x , ER , ESL , S ) ::   :: extern_closure {{ com extern impure closure (carries the extern id eid for the extern-regime policy) }} {{ tex \mathsf{extern}@[[eid]]([[x]], [[ER]], [[ESL]], [[S]]) }}
 
 ptcl :: 'PTCL_' ::= {{ com pure fn closure }}
   | ( x , pe , S )          ::   :: pfn_closure
-  | extern_ptcl ( x , ER , S ) ::   :: extern_closure {{ com extern pure closure }} {{ tex \mathsf{extern}([[x]], [[ER]], [[S]]) }}
+  | extern_ptcl @ eid ( x , ER , S ) ::   :: extern_closure {{ com extern pure closure (carries the extern id eid for the extern-regime policy) }} {{ tex \mathsf{extern}@[[eid]]([[x]], [[ER]], [[S]]) }}
 
 % Merged typing closures (non-empty lists treated as sets)
 tcls :: 'TCLS_' ::= {{ com impure closure set }}
@@ -355,6 +355,7 @@ formula :: formula_ ::=
   | allocEffectTags ESL k = k' TM :: :: alloc_effect_tags {{ com allocate fresh tags for effect preds only }} {{ tex \mathrm{allocEffectTags}([[ESL]], [[k]]) = ([[k']], [[TM]]) }}
   | resolveEffects ESL TM S G = G' :: :: resolve_effects {{ com resolve effect preds via TM and apply memory updates; predicates are stored as resolved (used by clean effect-pc extern application rules, where the gate join pc (join p1 p) is clean) }} {{ tex \mathrm{resolveEffects}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
   | resolveEffectsPoisoned ESL TM S G = G' :: :: resolve_effects_poisoned {{ com resolve effect preds via TM and apply memory updates with predicate erasure (stored predicate forced to noPred); used by poisoned effect-pc extern application rules, where the gate join pc (join p1 p) is poisoned, mirroring assignment under poisoned pc }} {{ tex \mathrm{resolveEffectsPoisoned}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
+  | extendExternRegime eid TM R = R' :: :: extend_extern_regime {{ com call-site regime extension: insert into R the freshly generated output tags in the codomain of TM that the ambient extern-regime policy (the Ott analogue of the typechecker's ctx.externRegime, not shown in the judgment) selects for extern id eid; unselected extern ids leave R unchanged (see doc/extern-regime.md, sections 4.1 and 4.3) }} {{ tex [[R']] = \mathrm{extendExternRegime}([[eid]], [[TM]], [[R]]) }}
 
 
 defns
@@ -1269,7 +1270,7 @@ pm ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L ; R
 extern_spec_wf ER ESL
 returnType ER = ST2
 ----------------------------------------------------------------------  :: extern_fn
-pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x ST1 ER ESL : ST1 -> ST2 # pc tclosures extern_tcl ( x , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
+pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x ST1 ER ESL : ST1 -> ST2 # pc tclosures extern_tcl @ eid ( x , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
 
 % Extern pure function: extern pfn @ eid x : (ST1) -> ER
 % The function is wrapped in an extern pure typing closure.
@@ -1278,7 +1279,7 @@ pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x ST1 ER ESL : ST1 -> ST2 # pc tclosu
 extern_spec_wf ER empty
 returnType ER = ST2
 ----------------------------------------------------------------------  :: extern_pfn
-pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x ST1 ER : ST1 -> ST2 # pc tpclosures extern_ptcl ( x , ER , S ) :> pc { no_pred } -| G ; L ; R
+pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x ST1 ER : ST1 -> ST2 # pc tpclosures extern_ptcl @ eid ( x , ER , S ) :> pc { no_pred } -| G ; L ; R
 
 % Side condition (not a typing rule): within a program, the set of extern
 % identifiers @eid appearing in extern_val / extern_fn / extern_pfn forms
@@ -1298,6 +1299,39 @@ pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x ST1 ER : ST1 -> ST2 # pc tpclosure
 %
 % resolveEffects resolves each effect's predicate via TM and applies the resulting
 % memory updates to G.
+%
+% Call-site regime extension (doc/extern-regime.md, sections 4.1 and 4.3): each
+% extern typing closure carries the extern id eid that produced it. At application,
+% extendExternRegime eid TM R1 = R' inserts into the active regime R1 the freshly
+% generated output tags in the codomain of TM that the extern-regime policy selects
+% for eid; unselected extern ids leave R1 unchanged. The TM fed to extendExternRegime
+% is exactly the one already used to resolve this call's predicates, so the three
+% allocation forms feed the same metafunction: allocReturnEffectTags (simple impure
+% returns: return pred + effects), allocEffectTags (nested impure returns: outer
+% effects only — inner ER' tags stay deferred until the nested extern is applied),
+% and freshTags (simple pure returns: return pred only). An effect tag whose
+% predicate is erased under a poisoned effect-pc (resolveEffectsPoisoned) may still
+% receive a regime entry, but it is inert: no live value or memory predicate mentions
+% it, so it cannot drive de-poisoning.
+%
+% The per-id selection is governed by an *ambient* extern-regime policy — the Ott
+% analogue of the typechecker's `ctx.externRegime` field, keyed by eid. Like that
+% field, the policy is configuration of the typing run, not a component of the
+% judgment form `pm ; R ; pc ; G ; S ; L |- e : Q -| G1 ; L1 ; R1`; extendExternRegime
+% reads it implicitly, just as R itself is the only regime threaded syntactically.
+%
+% Two forms leave the regime unchanged, faithfully matching the Lean typechecker.
+% (1) The standalone extern_val rule does not invoke the policy: it still allocates a
+% TM for its own predicate (premise freshTags SP k = k' TM), but has no
+% extendExternRegime premise and concludes with the incoming R, mirroring
+% typecheckExternVal, which threads ctx.regime through unchanged and does not call
+% applyExternRegimePolicy. The user-facing design (sections 4.1, 4.3, 4.6) is framed
+% around extern *application* sites; immediate extern *values* are not covered by the
+% current implementation, and this spec encodes that implementation behavior rather
+% than asserting it as settled design. (2) The pure nested-return rules
+% (app_extern_pfn_nested_*) allocate no outer output tags at their own call site (no
+% freshTags / allocEffectTags premise), so there is nothing to insert and they too
+% conclude with the incoming R.
 
 % Extern impure function application - simple return, clean effect pc
 % allocReturnEffectTags produces one shared TM for both the return pred SP and effects.
@@ -1307,7 +1341,7 @@ pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x ST1 ER : ST1 -> ST2 # pc tpclosure
 % resolved only when the caller's pc, the function expression's outer poison
 % p1, and the arrow-internal poison p are all clean.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , simple ST2 p3 SP , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , simple ST2 p3 SP , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = clean
 ST1 <: T1
 base_extern_type ST2
@@ -1316,15 +1350,16 @@ allocReturnEffectTags SP ESL k = k' TM
 resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
 resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
 p6 = join p1 p
+extendExternRegime eid TM R1 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_simple_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L1 ; R1
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L1 ; R'
 
 % Extern impure function application - simple return, poisoned effect pc
 % When the gate `join pc (join p1 p)` is poisoned, effect-installed predicates
 % are erased to noPred (resolveEffectsPoisoned), mirroring assignment under
 % poisoned pc and the application-result provenance gate.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , simple ST2 p3 SP , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , simple ST2 p3 SP , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = poisoned
 ST1 <: T1
 base_extern_type ST2
@@ -1333,8 +1368,9 @@ allocReturnEffectTags SP ESL k = k' TM
 resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
 resolveEffectsPoisoned ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
 p6 = join p1 p
+extendExternRegime eid TM R1 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_simple_poisoned
-impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L1 ; R1
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L1 ; R'
 
 % Extern impure function application - nested impure fn return, clean effect pc
 % Only outer effect preds in ESL are allocated via allocEffectTags.
@@ -1342,83 +1378,88 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 {
 % with the updated captured environment (deferred inner resolution).
 % Predicates are stored as resolved only when `join pc (join p1 p)` is clean.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_fn @ eid1 x1 ST3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , nested_fn @ eid1 x1 ST3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = clean
 ST1 <: T1
 allocEffectTags ESL k = k' TM
 resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
 returnType ER' = ST4
+extendExternRegime eid TM R1 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_nested_fn_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl ( x1 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R1
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R'
 
 % Extern impure function application - nested impure fn return, poisoned effect pc
 % Effect-installed predicates erased; inner return spec deferred as before.
 % This rule fires when any of pc, p1, or p is poisoned.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_fn @ eid1 x1 ST3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , nested_fn @ eid1 x1 ST3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = poisoned
 ST1 <: T1
 allocEffectTags ESL k = k' TM
 resolveEffectsPoisoned ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
 returnType ER' = ST4
+extendExternRegime eid TM R1 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_nested_fn_poisoned
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl ( x1 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R1
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R'
 
 % Extern impure function application - nested pure fn return, clean effect pc
 % Same pattern: only outer ESL preds allocated; inner ER' deferred in extern_ptcl.
 % Predicates are stored as resolved only when `join pc (join p1 p)` is clean.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_pfn @ eid1 x1 ST3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , nested_pfn @ eid1 x1 ST3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = clean
 ST1 <: T1
 allocEffectTags ESL k = k' TM
 resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
 returnType ER' = ST4
+extendExternRegime eid TM R1 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_nested_pfn_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl ( x1 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R1
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R'
 
 % Extern impure function application - nested pure fn return, poisoned effect pc
 % Effect-installed predicates erased; inner pure return spec deferred as before.
 % This rule fires when any of pc, p1, or p is poisoned.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl ( x , nested_pfn @ eid1 x1 ST3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , nested_pfn @ eid1 x1 ST3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = poisoned
 ST1 <: T1
 allocEffectTags ESL k = k' TM
 resolveEffectsPoisoned ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
 returnType ER' = ST4
+extendExternRegime eid TM R1 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_nested_pfn_poisoned
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl ( x1 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R1
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R'
 
 % Extern pure function application - simple return
 % Pure extern closures have no effects. Fresh tags allocated for return pred only.
 % base_extern_type: extern functions cannot return ref or arrow types.
 % ST2 <: T2 converts the surface return type to enriched type (identity for base types).
 pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , simple ST2 p3 SP , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl @ eid ( x , simple ST2 p3 SP , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 base_extern_type ST2
 ST2 <: T2
 freshTags SP k = k' TM
 resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
 p6 = join p1 p
+extendExternRegime eid TM R1 = R'
 ----------------------------------------------------------------------  :: app_extern_pfn_simple
-pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1 ; L1 ; R1
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1 ; L1 ; R'
 
 % Extern pure function application - nested impure fn return
 % No effects to resolve (pure context). Inner spec ER' deferred in new extern_tcl.
 pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , nested_fn @ eid1 x1 ST3 ER' ESL' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl @ eid ( x , nested_fn @ eid1 x1 ST3 ER' ESL' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 returnType ER' = ST4
 ----------------------------------------------------------------------  :: app_extern_pfn_nested_fn
-pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl ( x1 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1 ; L1 ; R1
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1 ; L1 ; R1
 
 % Extern pure function application - nested pure fn return
 % No effects to resolve (pure context). Inner spec ER' deferred in new extern_ptcl.
 pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl ( x , nested_pfn @ eid1 x1 ST3 ER' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl @ eid ( x , nested_pfn @ eid1 x1 ST3 ER' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 returnType ER' = ST4
 ----------------------------------------------------------------------  :: app_extern_pfn_nested_pfn
-pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl ( x1 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1 ; L1 ; R1
+pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1 ; L1 ; R1

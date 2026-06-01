@@ -519,18 +519,45 @@ and no custom axioms.
 
 ### Open items
 
-A static review of the extern-regime branch found one cleanup item:
+None outstanding. The previously-listed Ott cleanup item is now done:
 
-- **Update the Ott rules for extern-regime insertion.** The Ott spec currently
-  mentions selected extern regime extension in comments, but the extern
-  application rules still conclude with the old regime (`R1`) and do not model
-  `applyExternRegimePolicy` / call-site regime extension. This means the formal
-  language specification is stale relative to the Lean typechecker. Add an Ott
-  meta-function such as `extendExternRegime eid TM R = R'` and thread the
-  resulting `R'` through the extern application conclusions. For nested impure
-  returns, the extension should use the `TM` produced by `allocEffectTags ESL`,
-  so only the outer effect predicates are inserted; the nested extern's own
-  return/effect predicates remain deferred until the nested extern is applied.
+- **Ott rules for extern-regime insertion (done).** `poison-lang-spec/poison-lang.ott`
+  now models call-site regime extension instead of always returning the old regime
+  `R1`. The typing closures `extern_tcl` / `extern_ptcl` carry the extern id
+  (`extern_tcl @ eid ( … )`), mirroring `FnTClosure.extern id …`, so the policy can
+  be keyed by id. A new `formula` metafunction `extendExternRegime eid TM R = R'`
+  inserts into `R` the freshly generated output tags in the codomain of `TM` that
+  the extern-regime policy selects for `eid` (unselected ids leave `R` unchanged) —
+  the Ott counterpart of `applyExternRegimePolicy`. The seven extern *application*
+  rules that extend the regime (`app_extern_fn_simple_clean/poisoned`,
+  `app_extern_fn_nested_{fn,pfn}_clean/poisoned`, `app_extern_pfn_simple`) add the
+  premise `extendExternRegime eid TM R1 = R'` and conclude with `R'`. They feed
+  `extendExternRegime` exactly the `TM` already used to resolve that call's
+  predicates: `allocReturnEffectTags` (simple impure returns: return pred +
+  effects), `allocEffectTags` (nested impure returns: outer effects only — the
+  nested extern's own return/effect predicates stay deferred until it is applied),
+  and `freshTags` (simple pure returns: return pred only). Under a poisoned
+  effect-pc the inserted effect tag is inert (its predicate was erased), exactly as
+  in §4.3. Three forms leave the regime unchanged, matching the Lean typechecker.
+  The standalone `extern_val` rule does *not* consult the policy: it allocates a
+  `TM` for its own predicate but has no `extendExternRegime` premise and concludes
+  with the incoming regime, because the selector keys on extern *application* sites
+  rather than immediate extern values (`typecheckExternVal` threads `ctx.regime`
+  through unchanged). The two pure nested-return rules
+  (`app_extern_pfn_nested_{fn,pfn}`) allocate no outer output tags at their own call
+  site at all, so there is nothing to insert. The spec compiles cleanly under `ott`
+  (`make -C poison-lang-spec`).
+
+  One asymmetry is worth flagging: the standalone `extern_val` form does not extend
+  the regime, because `typecheckExternVal` threads `ctx.regime` through unchanged and
+  never calls `applyExternRegimePolicy` (even though it does allocate a tag mapping
+  for its own predicate). The Ott `extern_val` rule now mirrors that exactly. The
+  selector and the user-facing design (§4.1, §4.3, §4.6) are framed around extern
+  *application* sites, so an immediate extern *value* carrying a poisoned predicate
+  stays outside the active regime and is handled by the conservative path. The Ott
+  spec encodes the *implementation's* behavior here; whether immediate extern values
+  should also be regime-selectable is a design question left to the implementation,
+  not decided by this spec alignment.
 
 ### Unblocking direction (implemented)
 
