@@ -1,8 +1,12 @@
 # Extern poison handling — design discussion
 
-Status: **analysis / brainstorming**. This document captures the problem,
-the design space we have explored, and the open questions. It is not yet
-an implementation plan. We update it as the discussion progresses.
+Status: **design note with partial implementation**. The extern-produced
+regime-tag mechanism is implemented and proven: extern ids can be selected
+in the fault-robustness scenario, selected extern return/effect tags are
+inserted into the active regime at call sites, the proof stack uses
+extended regime evolution, and the executable supports `--extern-regime`.
+The remaining open design work is the trusted-extern precondition model
+and the concrete validation of live extern boundary specs.
 
 ## 1. Background and motivation
 
@@ -273,9 +277,24 @@ should be stated relative to the same `R`: for every well-formed regime,
 inputs that are regime-consistent should produce outputs that honor the
 extern's declared `QTyp`.
 
-There is an important open issue around whether this regime can also
-cover tags allocated by extern return/effect predicates. That issue is
-tracked separately in [doc/extern-regime.md](extern-regime.md).
+The regime can also cover tags allocated by extern return/effect
+predicates. The implemented design selects externs by id in
+`InputSpec.regimeExterns`; when the typechecker allocates fresh output
+tags for a selected extern, `TypeContext.externRegime` and
+`applyExternRegimePolicy` insert those tags into the active regime with
+the scenario's chosen boolean. Unselected externs keep the conservative
+behavior: their generated tags are not in the regime, so downstream
+predicate matches do not de-poison for FR.
+
+This required replacing the old "drop-only" regime transport with
+extended regime evolution (`Regime.monotoneStepExt`): old tags are
+preserved or dropped as before, while selected extern calls may add fresh
+output tags. The public FR theorem is also shaped around a per-context
+registry-trust premise plus an `ExternRegimeMatchesInputSpec` bridge, so
+the theorem is instantiable for non-empty trusted registries. The
+executable counterpart is the `--extern-regime "id=bool"` CLI option;
+`examples/extern-regime-open.poison` demonstrates a selected
+extern-produced predicate de-poisoning under the executable typechecker.
 
 ## 6. Resolved positions and rejected alternatives
 
@@ -296,6 +315,10 @@ tracked separately in [doc/extern-regime.md](extern-regime.md).
   semantics.
 - A return-spec predicate is interpreted as a **latent depoisoning
   marker**.
+- Extern-produced return/effect tags are regime-visible when their extern
+  id is selected by the FR scenario. This is a domain statement, not a
+  trust statement: it lets downstream checks use the generated tags under
+  the regime, while boundary trust still comes from the trusted registry.
 
 ### 6.2 Rejected alternatives
 
@@ -357,26 +380,19 @@ precondition language for read-side memory must be analyzed alongside
 the argument/captured-env case so we do not commit to a precondition
 shape that cannot extend to memory.
 
-### 7.5 Extern-produced regime tags  *(from §5.9)*
-
-Resolve the regime-domain issue for extern-produced return/effect tags.
-The problem statement, current analysis, and planning placeholder live in
-[doc/extern-regime.md](extern-regime.md).
-
 ## 8. Next steps (analysis-level)
 
 1. Resolve §7.2 (precondition placement).
 2. Resolve §7.4 (read-side memory annotations).
 3. Resolve §7.1 (predicate language expressiveness).
-4. Resolve §7.5 in `doc/extern-regime.md`.
-5. Construct §7.3 (latent-marker example) to validate the
+4. Construct §7.3 (latent-marker example) to validate the
    interpretation against existing predicate machinery.
-6. Sketch the proof obligation in Lean terms once §7.2 is pinned.
-7. Identify or construct a concrete `sqrt`-style example in
+5. Sketch the proof obligation in Lean terms once §7.2 is pinned.
+6. Identify or construct a concrete `sqrt`-style example in
    `examples/` to drive the design.
-8. Decide what to do operationally with `abs` and `max`: leave declared
+7. Decide what to do operationally with `abs` and `max`: leave declared
    but untrusted (i.e., not added to the trusted registry), remove from
    examples, or rewrite.
-9. Update `doc/ffi-axioms.md` once the model is firm, replacing the
+8. Update `doc/ffi-axioms.md` once the model is firm, replacing the
    current §1/§2 roadmap items with a target consistent with this
    document.
