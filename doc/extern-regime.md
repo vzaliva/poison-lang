@@ -8,8 +8,8 @@ to a *per-context* registry-trust premise (see §5, "Unblocking direction"), so
 the agreement premise is now **provable for a non-empty registry** and the FR
 conclusion is instantiable there (witnessed at the canonical empty context).
 Materialising a de-poisoned value with a *live* extern — a concrete extern
-boundary spec run through the theorem — is separate, larger work this note does
-not cover.
+boundary spec run through the theorem — belongs to broader FFI validation rather
+than this extern-regime note.
 
 This note isolates the regime issue for extern-produced predicates from the
 broader extern poison discussion in `doc/extern-poison.md`. Sections 1–3 give the
@@ -349,16 +349,17 @@ this way because they cannot drive FR-level de-poisoning.
 Selected extern-output tags are different. Once inserted into the active regime
 and carried by a live predicate, they should not be treated as masked at the
 point where their regime fact is used. Dangling generated tags whose predicates
-were erased are harmless because no live predicate can use them. The proof will
-need preservation lemmas saying that inserting a fresh unmasked extern tag
-preserves the masked invariants for the old masked set.
+were erased are harmless because no live predicate can use them. The proof stack
+preserves the masked invariants for old masked tags while allowing fresh selected
+extern tags to enter the active regime as unmasked additions.
 
-The remaining producer-side obligation is how the consistency invariant is
-established for a value created by an extern call. Unlike initial
-critical-input tags, selected extern tags have no initial runtime value. The
-proof must connect the extern-produced value or memory write to `R(k)` at the
-point where the predicate is installed. No such obligation is needed for a
-generated tag whose predicate was erased before installation.
+At the proof boundary, a concrete extern boundary spec that installs a selected
+extern tag must supply the producer-side consistency fact for the value or
+memory write created by that call. Unlike initial critical-input tags, selected
+extern tags have no initial runtime value, so the boundary contract connects the
+extern-produced value or memory write to `R(k)` at the point where the predicate
+is installed. No such obligation is needed for a generated tag whose predicate
+was erased before installation.
 
 For the fault-robustness theorem this is a two-run obligation. The two runs
 share the same typechecking derivation and therefore the same concrete generated
@@ -370,9 +371,10 @@ separate from, and in addition to, any agreement obligation on clean values.
 
 In the current proof stack, this belongs near the
 `ExternBoundarySpec.callFR` / call-boundary adapter layer, not in
-`consistentRegimeSpec` and not in a new consumer-side value relation. The exact
-encoding could be a new regime-aware field on `ExternBoundarySpec` or a
-parallel call-boundary contract consumed by the extern application proof.
+`consistentRegimeSpec` and not in a new consumer-side value relation. Concrete
+live-extern demos instantiate that boundary-contract layer for a specific
+extern; they are part of the broader FFI validation work, not an additional
+extern-regime mechanism.
 
 ### 4.5 Proof Impact
 
@@ -435,8 +437,8 @@ none`, so the typechecker takes the conservative path.
 `--extern-regime "238=true"` and `poison = true` without it. The FR theorem has
 been reshaped so it is instantiable for a non-empty registry (§5); exercising the
 same de-poisoning *dynamically* inside the theorem — with the extern registered
-and run — needs a concrete extern boundary spec and is separate, larger work
-(§5).
+and run — is a concrete live-extern boundary-spec demo that belongs to broader
+FFI validation rather than this extern-regime mechanism.
 
 ### 4.7 Runtime Typechecker Regime
 
@@ -453,19 +455,18 @@ In implementation terms, `Main.parseRegimeSpec` parses the command-line map,
 `initialTypeContext` installs it into `TypeContext.regime`, and the typechecker
 threads that regime through `TypeResult.regime'`.
 
-To match the proposed user-facing proof design, the executable should eventually
-accept an extern-id-oriented regime as well, for example an interface shaped
-like:
+To match the user-facing proof design, the executable also accepts an
+extern-id-oriented regime:
 
 ```text
 --extern-regime "238=true"
 ```
 
-The frontend would parse this as an extern-regime policy. When the typechecker
-later allocates output tags for extern id `238`, it inserts those generated tags
-into the active concrete `Regime` with value `true`. Until that exists, raw
-`--regime` is a debugging-only escape hatch that still requires concrete tag
-numbers.
+`Main.parseExternRegimeSpec` parses this as an extern-regime policy. When the
+typechecker later allocates output tags for extern id `238`, it inserts those
+generated tags into the active concrete `Regime` with value `true`. Raw
+`--regime` remains the low-level concrete interface for debugging scenarios that
+need explicit tag numbers.
 
 This executable interface is a restricted fragment of the proof-side regime
 model. The executable policy is naturally id-only:
@@ -504,8 +505,8 @@ and no custom axioms.
   `monotoneStepExt`; the old `monotoneStep` is retained and recovered as a
   corollary (`monotoneStep_toExt`). Old-tag monotonicity, freshness of added
   tags, and assignment/branch-join shrinkage all hold as described. (The
-  branch-local guard refinements discussed in §4.2 remain unimplemented — the
-  typechecker still takes the conservative standard path.)
+  branch-local guard refinements discussed in §4.2 are not part of the current
+  Lean typechecker path; it takes the conservative standard path.)
 - **§4.4 — consistency / masked.** Selected extern-output tags reuse the
   existing `valueConsistentWithRegime` / `consistentWithRegime` relations (no new
   consumer-side relation); the proof-only `masked` machinery is preserved, with
@@ -588,10 +589,11 @@ with different shapes — otherwise `TrustedRegistryAgreesWithProgram` itself
 fails), that matches the registry, so the per-context `hagrees` is provable and
 the FR conclusion is *instantiable* for a non-empty registry (this is what is
 realized — theorem-shape only; live de-poisoning, i.e. the §4.6 dynamic
-materialization with a concrete extern boundary spec, remains separate). The
-current all-context theorem does *not* become usable for non-empty registries
-unchanged — it survives only as a corollary under the old global premise (exactly
-what is unprovable here) or under the admissibility premise below.
+materialization with a concrete extern boundary spec, belongs to broader FFI
+validation). The current all-context theorem does *not* become usable for
+non-empty registries unchanged — it survives only as a corollary under the old
+global premise (exactly what is unprovable here) or under the admissibility
+premise below.
 
 **Secondary move — a public wrapper that derives the per-context premise.** For
 callers who should not prove reachability agreement by hand, a wrapper should
