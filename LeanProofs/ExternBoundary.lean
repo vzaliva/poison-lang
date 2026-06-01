@@ -1099,6 +1099,39 @@ def TrustedRegistryAgreesWithReachable
     TrustedRegistry.lookup? tr id = some entry →
     entry.decl = d
 
+/-- The context-variable/closure branch of reachability in isolation: `d` is an
+    extern declaration reachable from a variable bound in `ctxRoot.varEnv`, via
+    that variable's qualified-type closures / captured environments.  Unlike
+    `ExternDeclarationReachableFromContext`, this does NOT fold in the program AST
+    declarations — it is exactly the `var` constructor's premise
+    (doc/extern-regime.md, "Unblocking direction"). -/
+def ContextExternReachable
+    (root : Expr) (ctxRoot : TypeContext) (id : ExternId) (d : ExternDeclaration) : Prop :=
+  ∃ (x : Name) (qt : QTyp),
+    ctxRoot.varEnv.lookup x = some qt ∧
+    ExternDeclarationReachableFromQTyp root ctxRoot qt id d
+
+/-- The per-context trust premise of the public FR theorem: the trusted registry
+    agrees with every extern declaration reachable from the *actual* initial
+    typed configuration `(e, ctx)` — not from every adversarial extension of it.
+    Definitionally `TrustedRegistryAgreesWithReachable e ctx tr`. -/
+def InitialContextTrusted
+    (tr : TrustedRegistry) (e : Expr) (ctx : TypeContext) : Prop :=
+  TrustedRegistryAgreesWithReachable e ctx tr
+
+/-- Registry-covered admissibility (doc/extern-regime.md, "Unblocking
+    direction"): the trusted registry agrees with every *context-reachable*
+    extern declaration.  Combined with `TrustedRegistryAgreesWithProgram` this
+    yields the full `TrustedRegistryAgreesWithReachable` (see
+    `TrustedRegistryAgreesWithReachable.of_registryCover`).  It also supports
+    extern closures supplied only by the context. -/
+def TrustedRegistryAgreesWithInitialContext
+    (e : Expr) (ctx : TypeContext) (tr : TrustedRegistry) : Prop :=
+  ∀ {id d entry},
+    ContextExternReachable e ctx id d →
+    TrustedRegistry.lookup? tr id = some entry →
+    entry.decl = d
+
 /-- Every syntactic extern declaration in `current` is covered by the initial
     reachable trust domain.  This keeps the proof spine's expression-indexed
     `CanUse` shape while allowing the public trust premise to be scoped to the

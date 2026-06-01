@@ -244,10 +244,11 @@ without inspecting Lean implementation code.
 ### Proof Status And Remaining Obligations
 
 The main FR proof obligation is discharged through a registry-aware theorem:
-`TypeSystemEnforcesFaultRobustness` now proves
-`FaultRobustnessSpec (TrustedRegistry.toRuntimeRegistry tr) ...`, assuming
-`TrustedRegistryAgreesWithReachable` for every initial context admitted by the
-input spec. The old
+`TypeSystemEnforcesFaultRobustness` proves the trusted-registry-facing
+`FaultRobustnessSpec tr ...`, requiring registry agreement
+(`InitialContextTrusted` / `TrustedRegistryAgreesWithReachable`) *per* initial
+context admitted by the input spec rather than over all of them at once; the old
+all-context form survives as `TypeSystemEnforcesFaultRobustness_allCtx`. The old
 `terminatesTo_extern_absurd` path has been replaced by declaration and call
 boundary consumption.
 

@@ -249,6 +249,21 @@ def ctxMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
     ∀ x qt k, env.lookup x = some qt → qtypGuardTag qt = some k →
       ¬ s.vars.hasKey x → k ∉ inputSpecTags s) ctx.varEnv
 
+/-- Bridge between the user-facing scenario (`s.regimeExterns`) and the
+    typechecker-visible extern-regime policy `ctx.externRegime`
+    (doc/extern-regime.md, "Unblocking direction").  The list fixes the *domain*:
+    unlisted extern ids return `none`, while listed ids return `some b` for every
+    concrete tag the typechecker may generate (the chosen `b` may depend on the
+    tag, preserving proof-side precision).
+
+    NOTE: this is a domain/intent bridge to the public contract; the FR proof
+    body is already sound for arbitrary `externRegime` policies (producer-side
+    obligations are discharged at the call boundary regardless of listing), so it
+    is threaded as a premise but not consumed by the proof. -/
+def ExternRegimeMatchesInputSpec (s : InputSpec) (ctx : TypeContext) : Prop :=
+  (∀ {id}, id ∉ s.regimeExterns → ∀ k, ctx.externRegime id k = none) ∧
+  (∀ {id}, id ∈ s.regimeExterns → ∀ k, ∃ b, ctx.externRegime id k = some b)
+
 private def inputsConformSpec (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   (∀ {l a}, s.locs.contains l → θ.lookup l = some a → μ.contains a) ∧
   (∀ {x qt v}, s.vars.lookup x = some qt → ρ.lookup x = some v → valueHasETyp θ v qt.etyp)
@@ -780,28 +795,36 @@ private def FaultRobustnessPointwise
       wfExtendsMap θ₂ θ₂' ∧
       observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
 
-/-- The public registry-parametric fault-robustness specification.
-
-    The type system enforces the pointwise two-run FR relation for every
-    initial type context admitted by the input spec, under the supplied runtime
-    extern registry. -/
-def FaultRobustnessSpec
-  (registry : ExternRegistry)
-  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
+/-- Per-context fault-robustness specification: the pointwise two-run FR
+    relation for one fixed initial type context `ctx` (rather than universally
+    over all spec-matching contexts).  This is the per-context core out of which
+    both the registry-parametric universal spec (`FaultRobustnessSpecForRegistry`)
+    and the trusted-registry-facing public spec are built. -/
+def FaultRobustnessSpecForCtx
+    (registry : ExternRegistry)
+    (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+    (ctx : TypeContext) : Prop :=
   wfInputSpec s →
   wfObsSpec obs →
-  ∀ (ctx : TypeContext),
-      ctxMatchesInputSpec s ctx →
-      wfTypeContext ctx →
-      ctx.pc = false →
-      ctx.tagEnv = {} →
-      TagBoundedCtx ctx →
-      ∀ (predSat : PredSat) (tm : TagMeaning),
-        wfTagMeaningCtx tm ctx →
-        TagMeaningBounded tm ctx.nextTag →
-        PredSatLaws predSat tm →
-        ExternTypingAssumptions →
-        ((∃ (fuel : Nat) (res : TypeResult),
-          typecheck ctx e fuel = .ok res ∧
-          ObsConstraints obs res) →
-          FaultRobustnessPointwise registry e s obs ctx predSat tm)
+  ctxMatchesInputSpec s ctx →
+  wfTypeContext ctx →
+  ctx.pc = false →
+  ctx.tagEnv = {} →
+  TagBoundedCtx ctx →
+  ∀ (predSat : PredSat) (tm : TagMeaning),
+    wfTagMeaningCtx tm ctx →
+    TagMeaningBounded tm ctx.nextTag →
+    PredSatLaws predSat tm →
+    ExternTypingAssumptions →
+    ((∃ (fuel : Nat) (res : TypeResult),
+      typecheck ctx e fuel = .ok res ∧
+      ObsConstraints obs res) →
+      FaultRobustnessPointwise registry e s obs ctx predSat tm)
+
+/-- The registry-parametric fault-robustness specification: the type system
+    enforces the per-context FR relation for every initial type context admitted
+    by the input spec, under the supplied runtime extern registry. -/
+def FaultRobustnessSpecForRegistry
+  (registry : ExternRegistry)
+  (e : Expr) (s : InputSpec) (obs : ObservableSpec) :=
+  ∀ (ctx : TypeContext), FaultRobustnessSpecForCtx registry e s obs ctx

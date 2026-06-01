@@ -578,18 +578,23 @@ def TrustedRegistryAgreesWithReachable
     entry.decl = d
 ```
 
-The top-level theorem is relative to both inputs:
+The top-level theorem is relative to both inputs.  It is now
+trusted-registry-facing and takes registry trust *per initial context*
+(`InitialContextTrusted tr e ctx`, which is `TrustedRegistryAgreesWithReachable e
+ctx tr`) as part of `FaultRobustnessSpec`, rather than as a single all-context
+premise:
 
 ```lean
 theorem TypeSystemEnforcesFaultRobustness
-    (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
-    (hTrust :
-      ∀ {ctx : TypeContext},
-        ctxMatchesInputSpec s ctx →
-        TrustedRegistryAgreesWithReachable e ctx tr) :
-  FaultRobustnessSpec
-    (TrustedRegistry.toRuntimeRegistry tr) e s obs := ...
+    (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+  FaultRobustnessSpec tr e s obs := ...
 ```
+
+The old all-context premise survives as the corollary
+`TypeSystemEnforcesFaultRobustness_allCtx`, concluding the renamed
+registry-parametric spec `FaultRobustnessSpecForRegistry
+(TrustedRegistry.toRuntimeRegistry tr) e s obs`; that all-context premise is
+unprovable for a non-empty registry (see `doc/extern-regime.md`).
 
 In the current runtime, `Config.registry` is the actual implementation map. The
 registry-relative FR spec fixes successful runs to use the implementation

@@ -3032,20 +3032,20 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
       hctxStart hcurrent
 
 -- Bridge from a registry-parametric step theorem for one expression to the
--- full registry-relative specification for that expression.
-private theorem faultRobustnessSpec_of_step
+-- per-context fault-robustness specification at a fixed initial context.
+private theorem faultRobustnessSpecForCtx_of_step
   (registry : ExternRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
-  (_hOp : RegistryOperationalSafe registry) :
-  (∀ ctxᵢ, ctxMatchesInputSpec s ctxᵢ → ∀ predSat tm,
-      TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm
-        (registry := registry)) →
-  FaultRobustnessSpec registry e s obs := by
-  intro hstep
-  rintro his _hos ctx hctx hwf _hpc hte htagBoundedInit predSat tm hwfTm hTmBounded
+  (ctx : TypeContext)
+  (_hOp : RegistryOperationalSafe registry)
+  (hstepctx : ctxMatchesInputSpec s ctx → ∀ predSat tm,
+      TypeSystemEnforcesFaultRobustness_step_spec e ctx predSat tm
+        (registry := registry)) :
+  FaultRobustnessSpecForCtx registry e s obs ctx := by
+  rintro his _hos hctx hwf _hpc hte htagBoundedInit predSat tm hwfTm hTmBounded
     hps hExtTyping ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
-  have hstep' := hstep ctx hctx predSat tm
+  have hstep' := hstepctx hctx predSat tm
   have hstep' := hstep' fuel res htc
   intro cf₁ cf₂ o₁ o₂ hWfRegime hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
   set R := ctx.regime with hRdef
@@ -3252,17 +3252,54 @@ private theorem faultRobustnessSpec_of_step
             exfalso
             simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hret_notfun_obs
 
--- Main trusted-registry fault-robustness theorem.  The operational safety
--- predicate is derived internally from the trusted registry via the bridge
--- `TrustedRegistry.operationalSafe`, so the public hypotheses are just the
--- trusted registry and the reachable-trust premise.
-theorem TypeSystemEnforcesFaultRobustness
+-- Recover the registry-parametric (all-context) specification from the
+-- per-context core: instantiate at every context and feed the per-context step
+-- hypothesis from the universal one.
+private theorem faultRobustnessSpec_of_step
+  (registry : ExternRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+  (hOp : RegistryOperationalSafe registry) :
+  (∀ ctxᵢ, ctxMatchesInputSpec s ctxᵢ → ∀ predSat tm,
+      TypeSystemEnforcesFaultRobustness_step_spec e ctxᵢ predSat tm
+        (registry := registry)) →
+  FaultRobustnessSpecForRegistry registry e s obs := by
+  intro hstep ctx
+  exact
+    faultRobustnessSpecForCtx_of_step registry e s obs ctx hOp
+      (fun hctx => hstep ctx hctx)
+
+-- Per-context trusted-registry fault-robustness theorem.  Registry agreement is
+-- required only for the actual initial context `ctx`, not every adversarial
+-- extension of it.  The operational safety predicate is derived internally from
+-- the trusted registry via `TrustedRegistry.operationalSafe`.
+theorem TypeSystemEnforcesFaultRobustness_at
+  (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+  (ctx : TypeContext)
+  (hagrees : TrustedRegistryAgreesWithReachable e ctx tr) :
+  FaultRobustnessSpecForCtx (TrustedRegistry.toRuntimeRegistry tr) e s obs ctx :=
+  let hOp := TrustedRegistry.operationalSafe tr
+  faultRobustnessSpecForCtx_of_step
+    (TrustedRegistry.toRuntimeRegistry tr) e s obs ctx hOp
+    (fun _hctx predSat tm =>
+      TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
+        (tr := tr) (root := e) (current := e) (ctxRoot := ctx)
+        hagrees
+        (ExternDeclarationReachableFromExpr.root e ctx)
+        ctx predSat tm hOp
+        (ContextReachableFrom.refl e ctx))
+
+-- All-context corollary, under the old global (universal) agreement premise.
+-- After the per-context reshape this survives only as a corollary: the global
+-- premise is unprovable for a non-empty registry (see
+-- `ExternRegimeInt.nonempty_registry_hagrees_unprovable`).  The global premise
+-- is gated on `ctxMatchesInputSpec`, so it is fed per-context inside
+-- `faultRobustnessSpec_of_step` where that hypothesis is in scope.
+theorem TypeSystemEnforcesFaultRobustness_allCtx
   (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
   (hagrees :
     ∀ {ctx : TypeContext},
       ctxMatchesInputSpec s ctx →
       TrustedRegistryAgreesWithReachable e ctx tr) :
-  FaultRobustnessSpec (TrustedRegistry.toRuntimeRegistry tr) e s obs :=
+  FaultRobustnessSpecForRegistry (TrustedRegistry.toRuntimeRegistry tr) e s obs :=
   let hOp := TrustedRegistry.operationalSafe tr
   faultRobustnessSpec_of_step
     (TrustedRegistry.toRuntimeRegistry tr) e s obs hOp
@@ -3273,3 +3310,45 @@ theorem TypeSystemEnforcesFaultRobustness
         (ExternDeclarationReachableFromExpr.root e ctxᵢ)
         ctxᵢ predSat tm hOp
         (ContextReachableFrom.refl e ctxᵢ))
+
+/-- The public trusted-registry-facing fault-robustness specification.  Registry
+    trust is required per initial context (`InitialContextTrusted`), matching the
+    real obligation rather than every adversarial extension of it.  The
+    extern-regime domain bridge `ExternRegimeMatchesInputSpec` is threaded as part
+    of the public contract (it is not consumed by the proof body — see its
+    definition). -/
+def FaultRobustnessSpec
+    (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec) : Prop :=
+  ∀ (ctx : TypeContext),
+    ExternRegimeMatchesInputSpec s ctx →
+    InitialContextTrusted tr e ctx →
+    FaultRobustnessSpecForCtx (TrustedRegistry.toRuntimeRegistry tr) e s obs ctx
+
+-- Main public fault-robustness theorem (trusted-registry-facing).  Registry
+-- agreement is required per initial context (`InitialContextTrusted`), so it is
+-- provable for a non-empty registry — e.g. at the canonical empty context, where
+-- it reduces to program agreement (see
+-- `ExternRegimeInt.open_empty_context_hagrees_provable`).  This is unlike the
+-- old all-context premise of `TypeSystemEnforcesFaultRobustness_allCtx`, which is
+-- unprovable for a non-empty registry.
+theorem TypeSystemEnforcesFaultRobustness
+    (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
+    FaultRobustnessSpec tr e s obs := by
+  intro ctx _hExternRegime hInitTrust
+  exact TypeSystemEnforcesFaultRobustness_at tr e s obs ctx hInitTrust
+
+/-- Public program-covered wrapper (doc/extern-regime.md, "Unblocking
+    direction"): derive the per-context trust premise from a checked
+    context-admissibility condition — every context-reachable extern declaration
+    occurs in the program — together with registry/program agreement.  Callers
+    that should not prove reachability agreement by hand can discharge the
+    `InitialContextTrusted` premise this way. -/
+theorem TypeSystemEnforcesFaultRobustness_programCovered
+    (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+    (hprog : TrustedRegistryAgreesWithProgram e tr) (ctx : TypeContext)
+    (_hExternRegime : ExternRegimeMatchesInputSpec s ctx)
+    (hcover : ∀ {id d}, ContextExternReachable e ctx id d →
+                ExternDeclarationInProgram e id d) :
+    FaultRobustnessSpecForCtx (TrustedRegistry.toRuntimeRegistry tr) e s obs ctx :=
+  TypeSystemEnforcesFaultRobustness_at tr e s obs ctx
+    (TrustedRegistryAgreesWithReachable.of_programCover hcover hprog)

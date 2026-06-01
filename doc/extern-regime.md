@@ -3,15 +3,18 @@
 Status: **implemented** — the mechanism described below is built and proven, and
 the whole Lean tree builds with no `sorry` and no custom axioms. The extern-id
 regime selector, call-site regime insertion, the regime-evolution relation, and
-the `--extern-regime` CLI are all in place. One end-to-end target — a
-fault-robustness instantiation that exercises de-poisoning with a *live* extern —
-is blocked by a specification-level limitation of the FR theorem, not by a
-missing lemma; see §5 (Implementation Status).
+the `--extern-regime` CLI are all in place. The FR theorem has also been reshaped
+to a *per-context* registry-trust premise (see §5, "Unblocking direction"), so
+the agreement premise is now **provable for a non-empty registry** and the FR
+conclusion is instantiable there (witnessed at the canonical empty context).
+Materialising a de-poisoned value with a *live* extern — a concrete extern
+boundary spec run through the theorem — is separate, larger work this note does
+not cover.
 
 This note isolates the regime issue for extern-produced predicates from the
 broader extern poison discussion in `doc/extern-poison.md`. Sections 1–3 give the
 motivation and background; §4 describes the design; §5 records what is
-implemented and the one blocked target.
+implemented.
 
 ## 1. Problem Description
 
@@ -429,9 +432,11 @@ none`, so the typechecker takes the conservative path.
 
 **Status.** The de-poisoning is demonstrated executably:
 `examples/extern-regime-open.poison` types `poison = false` under
-`--extern-regime "238=true"` and `poison = true` without it. Exercising the same
-de-poisoning *inside* the fault-robustness theorem — with the extern registered
-and run — is the one blocked target; see §5.
+`--extern-regime "238=true"` and `poison = true` without it. The FR theorem has
+been reshaped so it is instantiable for a non-empty registry (§5); exercising the
+same de-poisoning *dynamically* inside the theorem — with the extern registered
+and run — needs a concrete extern boundary spec and is separate, larger work
+(§5).
 
 ### 4.7 Runtime Typechecker Regime
 
@@ -513,8 +518,7 @@ and no custom axioms.
 
 ### Open items
 
-A static review of the extern-regime branch found one cleanup item that is
-separate from the top-level theorem blocker below:
+A static review of the extern-regime branch found one cleanup item:
 
 - **Update the Ott rules for extern-regime insertion.** The Ott spec currently
   mentions selected extern regime extension in comments, but the extern
@@ -527,46 +531,37 @@ separate from the top-level theorem blocker below:
   so only the outer effect predicates are inserted; the nested extern's own
   return/effect predicates remain deferred until the nested extern is applied.
 
-### The one blocked target
+### Unblocking direction (implemented)
 
-§4.6 also asks for de-poisoning to be exercised *dynamically* inside the
-fault-robustness theorem — with the extern actually registered and run, so its
-de-poisoned value materializes in the two-run comparison. That requires
-instantiating `TypeSystemEnforcesFaultRobustness` with a **non-empty**
-`TrustedRegistry` containing the extern, and that is **blocked by a
-specification-level limitation of the theorem**, not by a missing lemma.
+**Status: implemented (theorem-shape).** Both moves below are built and the whole
+tree compiles with no `sorry`, no custom axioms, and no warnings (the witness
+`open_empty_context_hagrees_provable` itself uses only `propext` /
+`Classical.choice` / `Quot.sound` — the same clean footprint as the obstruction it
+duals). Concretely:
 
-The theorem takes a premise
+- Primary move — `FaultRobustnessSpecForCtx` (per-context core, `FaultRobustness.lean`),
+  `faultRobustnessSpecForCtx_of_step` and `TypeSystemEnforcesFaultRobustness_at`
+  (`FaultRobustnessProofs.lean`). The old registry-parametric spec is renamed
+  `FaultRobustnessSpecForRegistry`; the old all-context theorem survives as
+  `TypeSystemEnforcesFaultRobustness_allCtx`.
+- Secondary move — the public trusted-registry-facing `FaultRobustnessSpec` and
+  `TypeSystemEnforcesFaultRobustness` (per-context `InitialContextTrusted`
+  premise; `ExternRegimeMatchesInputSpec` threaded as the domain bridge), plus the
+  program-covered wrapper `TypeSystemEnforcesFaultRobustness_programCovered`. New
+  predicates `ContextExternReachable`, `InitialContextTrusted`,
+  `TrustedRegistryAgreesWithInitialContext` (`ExternBoundary.lean`), and the
+  admissibility bridges `TrustedRegistryAgreesWithReachable.of_programCover` /
+  `.of_registryCover` / `agreesWithReachable_of_emptyVarEnv`
+  (`ExternBoundaryProofs.lean`).
+- Acceptance witness — `ExternRegimeInt.open_empty_context_hagrees_provable`
+  exhibits a non-empty registry for which the per-context premise holds at the
+  canonical empty context (the direct dual to
+  `nonempty_registry_hagrees_unprovable`).  `open_empty_context_FR_instantiable`
+  then composes it with `TypeSystemEnforcesFaultRobustness_at` to yield the FR
+  conclusion (`FaultRobustnessSpecForCtx`) itself — so the reshaped theorem is
+  *instantiable* for a non-empty registry, not merely premise-provable.
 
-```lean
-hagrees : ∀ {ctx}, ctxMatchesInputSpec s ctx →
-            TrustedRegistryAgreesWithReachable e ctx tr
-```
-
-asserting that the registry's declaration for each extern id equals *every*
-declaration for that id reachable from `ctx`. But `ctxMatchesInputSpec`
-constrains `ctx.varEnv` only one-way (`s.vars ⊆ ctx.varEnv`): it permits *extra*
-variables. So an adversarial `ctx` can bind a rogue variable to an arrow type
-whose closure list holds an extern member for the *same id* but with a
-*different* declaration (e.g. over a different argument type). Because that rogue
-arrow has `noPred` it has no guard tag, so it satisfies every
-`ctxMatchesInputSpec` conjunct — including the `deepVarEnvProperty` guard-tag
-check. The reachability path `var → arrow_extern_member` then reaches the id with
-a declaration `≠` the registry's, falsifying `TrustedRegistryAgreesWithReachable`.
-Hence `hagrees` is **unprovable for any non-empty registry**; only the empty
-registry makes it vacuously true, and with an empty runtime registry the extern
-is unregistered (it errors at runtime, matching the executable), so de-poisoning
-is never dynamically exercised.
-
-This obstruction is machine-checked in `LeanProofs/ExternRegimeInt.lean`
-(`nonempty_registry_hagrees_unprovable`, relying only on `propext` /
-`Classical.choice` / `Quot.sound`). Unblocking it needs a *stronger context
-hypothesis* on the FR theorem (see the direction below) — a change to the proven
-`TypeSystemEnforcesFaultRobustness` statement and its `faultRobustnessSpec_of_step`
-plumbing, i.e. separate, larger work. It does not affect the soundness or the
-executable behavior of the de-poisoning, only the formal dynamic certification.
-
-### Unblocking direction (proposed; not yet implemented)
+The design rationale below records *why* this shape was chosen.
 
 The obstruction is a quantifier mismatch, so the fix belongs in the FR theorem's
 *shape*, not in the extern-regime mechanism.
@@ -590,11 +585,13 @@ essentially what the universal theorem already proves internally
 branch cannot fire: reachability collapses to the program's own @238 declaration.
 Assuming the program declares @238 consistently (no two syntactic declarations
 with different shapes — otherwise `TrustedRegistryAgreesWithProgram` itself
-fails), that matches the registry, so `hagrees` is provable and de-poisoning is
-exercised with the extern live. The current all-context theorem does *not* become usable for
-non-empty registries unchanged — it survives only as a corollary under the old
-global premise (exactly what is unprovable here) or under the admissibility
-premise below.
+fails), that matches the registry, so the per-context `hagrees` is provable and
+the FR conclusion is *instantiable* for a non-empty registry (this is what is
+realized — theorem-shape only; live de-poisoning, i.e. the §4.6 dynamic
+materialization with a concrete extern boundary spec, remains separate). The
+current all-context theorem does *not* become usable for non-empty registries
+unchanged — it survives only as a corollary under the old global premise (exactly
+what is unprovable here) or under the admissibility premise below.
 
 **Secondary move — a public wrapper that derives the per-context premise.** For
 callers who should not prove reachability agreement by hand, a wrapper should
@@ -668,10 +665,12 @@ declaration. Two workable shapes:
   ```
 
 Here `ContextExternReachable` and `TrustedRegistryAgreesWithInitialContext` are
-*proposed new* predicates. `ContextExternReachable` must capture **only** the
-context-variable/closure branch — unlike the existing
-`ExternDeclarationReachableFromContext`, which also folds in the program's AST
-declarations.
+predicates now implemented in `LeanProofs/ExternBoundary.lean`.
+`ContextExternReachable` captures **only** the context-variable/closure branch —
+unlike `ExternDeclarationReachableFromContext`, which also folds in the program's
+AST declarations. The two admissibility shapes are discharged by
+`TrustedRegistryAgreesWithReachable.of_programCover` (program-covered) and
+`.of_registryCover` (registry-covered) in `LeanProofs/ExternBoundaryProofs.lean`.
 
 Either way this is an **explicit context-admissibility check**, not a byproduct of
 plain typechecking: `typecheck ctx e` ignores variables `e` never uses, so an

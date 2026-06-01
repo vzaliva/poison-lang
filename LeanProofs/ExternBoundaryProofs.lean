@@ -25,6 +25,53 @@ theorem TrustedRegistryAgreesWithReachable.resolveDeclaration
   rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
   exact ⟨entry, hlookup, himpl, hagrees hreachable hlookup⟩
 
+/-- Program-covered admissibility bridge (doc/extern-regime.md, "Unblocking
+    direction"): if every context-reachable extern declaration also occurs in the
+    program and the registry agrees with the program, then it agrees with
+    everything reachable from `(e, ctx)`.  The two reachability constructors
+    (`ast` / `var`) are discharged by `hprog` directly and by `hcover` then
+    `hprog` respectively. -/
+theorem TrustedRegistryAgreesWithReachable.of_programCover
+    {e : Expr} {ctx : TypeContext} {tr : TrustedRegistry}
+    (hcover : ∀ {id d}, ContextExternReachable e ctx id d →
+                ExternDeclarationInProgram e id d)
+    (hprog : TrustedRegistryAgreesWithProgram e tr) :
+    TrustedRegistryAgreesWithReachable e ctx tr := by
+  intro id d entry hreach hlookup
+  cases hreach with
+  | ast hp => exact hprog hp hlookup
+  | var hlk hqt => exact hprog (hcover ⟨_, _, hlk, hqt⟩) hlookup
+
+/-- Registry-covered admissibility bridge: agreement against the initial context
+    (covering context-supplied closures) plus agreement against the program AST
+    yields full reachable agreement. -/
+theorem TrustedRegistryAgreesWithReachable.of_registryCover
+    {e : Expr} {ctx : TypeContext} {tr : TrustedRegistry}
+    (hctx : TrustedRegistryAgreesWithInitialContext e ctx tr)
+    (hprog : TrustedRegistryAgreesWithProgram e tr) :
+    TrustedRegistryAgreesWithReachable e ctx tr := by
+  intro id d entry hreach hlookup
+  cases hreach with
+  | ast hp => exact hprog hp hlookup
+  | var hlk hqt => exact hctx ⟨_, _, hlk, hqt⟩ hlookup
+
+/-- At the canonical empty initial context (`ctx.varEnv = {}`), reachability
+    collapses to the program AST: the `var` constructor cannot fire (no variable
+    is bound), so registry agreement with the program implies agreement with
+    everything reachable.  This is the reduction that makes the per-context trust
+    premise *provable* for a non-empty registry — the positive dual to
+    `ExternRegimeInt.nonempty_registry_hagrees_unprovable`. -/
+theorem agreesWithReachable_of_emptyVarEnv
+    {e : Expr} {ctx : TypeContext} {tr : TrustedRegistry}
+    (hempty : ctx.varEnv = {})
+    (hprog : TrustedRegistryAgreesWithProgram e tr) :
+    TrustedRegistryAgreesWithReachable e ctx tr := by
+  refine TrustedRegistryAgreesWithReachable.of_programCover ?_ hprog
+  intro id d hctxreach
+  obtain ⟨x, _qt, hlk, _hqt⟩ := hctxreach
+  rw [hempty] at hlk
+  simp [VarTypeEnv.lookup] at hlk
+
 theorem TrustedRegistryAgreesWithReachable.resolveFnDeclaration
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
     {id : ExternId} {x : Name} {argTyp : Typ}

@@ -11,11 +11,25 @@
     the regime, unlike the empty-mapping `noPred` case.
   - `valueConsistentWithRegime_int_inRegimeTrue`: value-consistency for an int
     output that the regime de-poisons (`R(k) = some true`).
-  - `nonempty_registry_hagrees_unprovable`: the `TrustedRegistryAgreesWithReachable`
-    premise of `TypeSystemEnforcesFaultRobustness` is falsifiable for any non-empty
-    registry, so the theorem instantiates non-trivially only via the empty registry.
+  - `nonempty_registry_hagrees_unprovable`: the OLD all-context
+    `TrustedRegistryAgreesWithReachable` premise (now retained only via
+    `TypeSystemEnforcesFaultRobustness_allCtx`) is falsifiable for any non-empty
+    registry — so the all-context theorem instantiates non-trivially only via the
+    empty registry.
+  - `open_empty_context_hagrees_provable`: the positive dual.  After the
+    per-context reshape (`TypeSystemEnforcesFaultRobustness` /
+    `TypeSystemEnforcesFaultRobustness_at`), the per-context premise IS provable
+    for a NON-EMPTY registry at the canonical empty initial context, where
+    reachability collapses to the program AST.  This demonstrates the obstruction
+    is removed (theorem-shape only; the §4.6 dynamic materialisation of the
+    de-poisoned value is separate, larger work).
+  - `open_empty_context_FR_instantiable`: the capstone — composing the witness
+    with `TypeSystemEnforcesFaultRobustness_at` yields the FR conclusion itself
+    (`FaultRobustnessSpecForCtx`) for a NON-EMPTY registry at the empty context,
+    so the reshaped theorem is *instantiable* (still parameterised over
+    `impl`/`spec`; no concrete extern boundary spec is constructed).
 -/
-import LeanProofs.ExternBoundaryProofs
+import LeanProofs.FaultRobustnessProofs
 
 open Std
 open LeanPoison
@@ -67,26 +81,27 @@ theorem valueConsistentWithRegime_int_inRegimeTrue
       (by simpa [hetyp] using (valueHasETyp.num (θ := θ) n))
       (by rw [hetyp]; rfl))
 
-/-! ## The non-empty-registry instantiation obstruction
+/-! ## The non-empty-registry instantiation obstruction (old all-context premise)
 
-    `TypeSystemEnforcesFaultRobustness` takes a `hagrees` premise
+    The OLD all-context FR premise — now retained only as
+    `TypeSystemEnforcesFaultRobustness_allCtx` — took a `hagrees` premise
     `∀ {ctx}, ctxMatchesInputSpec s ctx → TrustedRegistryAgreesWithReachable e ctx tr`.
     With `tr = []` it is vacuous (lookup never succeeds), but then the runtime
-    registry is empty, the extern never runs, and the de-poisoned value never
-    materialises — the de-poisoning is not dynamically exercised.
+    registry is empty and the extern never runs.
 
-    For a non-empty registry (so the extern runs and de-poisoning is active),
-    `hagrees` is UNPROVABLE: `ctxMatchesInputSpec` constrains `ctx.varEnv` only
-    one-way (`s.vars ⊆ ctx.varEnv`), so an adversarial `ctx` may bind a rogue
-    variable to an arrow type whose closure list contains an extern member for
-    the registered id but with a different declaration.  The `var →
-    arrow_extern_member` reachability path then reaches that id with a decl `≠`
-    the registry's, falsifying `TrustedRegistryAgreesWithReachable`.
+    For a non-empty registry, that all-context `hagrees` is UNPROVABLE:
+    `ctxMatchesInputSpec` constrains `ctx.varEnv` only one-way
+    (`s.vars ⊆ ctx.varEnv`), so an adversarial `ctx` may bind a rogue variable to
+    an arrow type whose closure list contains an extern member for the registered
+    id but with a different declaration.  The `var → arrow_extern_member`
+    reachability path then reaches that id with a decl `≠` the registry's,
+    falsifying `TrustedRegistryAgreesWithReachable`.
 
-    The theorem below proves this concretely: it exhibits such a context and
-    derives a contradiction from the agreement premise.  Hence the meaningful
-    (non-empty-registry, de-poisoning-active) instantiation is blocked by the FR
-    theorem's universal `ctx` quantification, not by any missing lemma. -/
+    The theorem below proves this concretely.  The per-context reshape removed the
+    obstruction: the public `TypeSystemEnforcesFaultRobustness` now takes the
+    trust premise per initial context, which is provable for a non-empty registry
+    — see `open_empty_context_hagrees_provable` / `open_empty_context_FR_instantiable`
+    further down. -/
 
 /-- Registered declaration: a `fn` extern @238 returning a clean int. -/
 def regDecl : ExternDeclaration :=
@@ -166,5 +181,77 @@ theorem nonempty_registry_hagrees_unprovable
   have hdeclEq : (⟨regDecl, impl, spec⟩ : TrustedExternEntry).decl = rogueDecl :=
     hagrees hmatch hreach hlookup
   simp [regDecl, rogueDecl] at hdeclEq
+
+/-! ## Provability witness: the per-context premise IS provable at the empty context
+
+    The positive dual to `nonempty_registry_hagrees_unprovable`.  The reshaped FR
+    theorem (`TypeSystemEnforcesFaultRobustness`) requires registry agreement only
+    for the *actual* initial context (`InitialContextTrusted`/per-context
+    `TrustedRegistryAgreesWithReachable`).  At the canonical empty initial context
+    (`varEnv = {}`) reachability collapses to the program AST (the `var` branch
+    cannot fire), so the premise is provable for a NON-EMPTY registry — exactly
+    what the old all-context premise made impossible.  This demonstrates the
+    obstruction is removed (theorem-shape only; the §4.6 *dynamic* materialisation
+    of the de-poisoned value is separate, larger work). -/
+
+/-- A minimal program declaring extern `@238` (a `fn` over `int`). -/
+def openProg : Expr :=
+  Expr.externFn 238 "p" Typ.int (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
+
+/-- The declaration the `externFn` AST node exposes — matches the
+    `ExternDeclarationInProgram.externFn` shape exactly. -/
+def openDecl : ExternDeclaration :=
+  { id := 238, kind := .fn, typ := Typ.int, argName := some "p",
+    retSpec := some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred),
+    effects := [],
+    preds := collectExternPreds (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] }
+
+/-- Canonical empty initial typing context (no bound variables). -/
+def openEmptyCtx : TypeContext :=
+  { pc := false, regime := {}, memEnv := {}, varEnv := {},
+    tagEnv := {}, nextLoc := 0, nextTag := 0, pureCtx := false }
+
+/-- The single-extern program's only declaration is `openDecl`: invert
+    `ExternDeclarationInProgram` on the `externFn` node.  The `externFn_return`
+    branch is vacuous because `ExternReturn.simple` carries no nested extern. -/
+theorem openProg_agreesWithProgram (impl : ExternImpl)
+    (spec : ExternBoundarySpec openDecl impl) :
+    TrustedRegistryAgreesWithProgram openProg [⟨openDecl, impl, spec⟩] := by
+  intro id d entry hprog hlookup
+  unfold openProg at hprog
+  cases hprog with
+  | externFn =>
+      have hl : TrustedRegistry.lookup? ([⟨openDecl, impl, spec⟩] : TrustedRegistry) 238
+          = some ⟨openDecl, impl, spec⟩ := by simp [TrustedRegistry.lookup?, openDecl]
+      rw [hl] at hlookup
+      cases hlookup
+      rfl
+  | externFn_return hret => cases hret
+
+/-- Provability witness: for a NON-EMPTY registry containing `@238`, the
+    per-context trust premise `TrustedRegistryAgreesWithReachable` holds at the
+    canonical empty initial context.  The direct dual to
+    `nonempty_registry_hagrees_unprovable` (parameterised over `impl`/`spec`,
+    just like it), demonstrating the per-context reshape removes the obstruction. -/
+theorem open_empty_context_hagrees_provable (impl : ExternImpl)
+    (spec : ExternBoundarySpec openDecl impl) :
+    TrustedRegistryAgreesWithReachable openProg openEmptyCtx [⟨openDecl, impl, spec⟩] :=
+  agreesWithReachable_of_emptyVarEnv (by rfl) (openProg_agreesWithProgram impl spec)
+
+/-- Capstone: the reshaped FR theorem is *instantiable* for a NON-EMPTY registry.
+    Composing the witness with `TypeSystemEnforcesFaultRobustness_at` discharges
+    the per-context trust premise and yields the FR conclusion itself
+    (`FaultRobustnessSpecForCtx`) at the canonical empty context.  This is what the
+    old all-context premise made impossible.  Still parameterised over
+    `impl`/`spec`: no concrete extern boundary spec is built (that — the §4.6
+    *dynamic* materialisation of the de-poisoned value — is separate, larger
+    work). -/
+theorem open_empty_context_FR_instantiable (impl : ExternImpl)
+    (spec : ExternBoundarySpec openDecl impl) (s : InputSpec) (obs : ObservableSpec) :
+    FaultRobustnessSpecForCtx
+      (TrustedRegistry.toRuntimeRegistry [⟨openDecl, impl, spec⟩])
+      openProg s obs openEmptyCtx :=
+  TypeSystemEnforcesFaultRobustness_at [⟨openDecl, impl, spec⟩] openProg s obs openEmptyCtx
+    (open_empty_context_hagrees_provable impl spec)
 
 end ExternRegimeInt
