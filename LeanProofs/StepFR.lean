@@ -853,11 +853,11 @@ lemma PreservesInheritedCleanLocOneRun.trans
       | both_unrealized hnone₁' hnone₂ =>
           exact .both_unrealized hnone₀ hnone₂
       | preserve_value _ _ hsome₁ _ _ _ =>
-          exact False.elim (Option.noConfusion (hnone₁.symm.trans hsome₁))
+          exact nomatch (hnone₁.symm.trans hsome₁)
   | preserve_value a n hθ₀ hm₀ hθ₁ hm₁ =>
       cases h₁₂ with
       | both_unrealized hnone₁ _ =>
-          exact False.elim (Option.noConfusion (hθ₁.symm.trans hnone₁))
+          exact nomatch (hθ₁.symm.trans hnone₁)
       | preserve_value a' n' hθ₁' hm₁' hθ₂ hm₂ =>
           have ha : a' = a := Option.some.inj (hθ₁'.symm.trans hθ₁)
           have hn : n' = n := by
@@ -3630,7 +3630,7 @@ lemma typecheckDeref_qtypRespects
                 simp [typecheckDeref, htc1, hq1, h_etyp1, hls, bind, Except.bind] at htc_bad
           have hexists_l : ∃ l, l ∈ ls0 := by
             by_contra hno
-            push_neg at hno
+            push Not at hno
             exact hls_nonempty ((Std.ExtTreeSet.eq_empty_iff_forall_not_mem).2 hno)
           rcases hexists_l with ⟨l0, hl0⟩
           have htc' := htc
@@ -4001,7 +4001,7 @@ lemma theta_not_contains_if_not_in_memEnv
   θ.lookup l = none := by
   intro hric hnotContains
   by_contra h
-  push_neg at h
+  push Not at h
   obtain ⟨a, ha⟩ := Option.ne_none_iff_exists'.1 h
   have ⟨hcontains, _⟩ := hric.1 l a ha
   exact hnotContains hcontains
@@ -7459,19 +7459,19 @@ lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
   | succ n =>
     simp only [bind, Except.bind] at happly
     split at happly
-    · exact Except.noConfusion happly
+    · exact nomatch happly
     · rename_i allocRes hcollect
       split at happly
-      · exact Except.noConfusion happly
+      · exact nomatch happly
       · rename_i memEnv' _
         split at happly
         · -- ExternReturn.simple
           rename_i typ_ poison_ retpred_
           split at happly
-          · exact Except.noConfusion happly
+          · exact nomatch happly
           · rename_i resolvedPred hresolve
             split at happly
-            · exact Except.noConfusion happly
+            · exact nomatch happly
             · rename_i retQtPair hretQt
               simp only [pure, Except.pure, Except.ok.injEq] at happly
               rw [← happly] at hpred
@@ -7527,13 +7527,13 @@ lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
     · -- ExternReturn.simple
       rename_i typ_ poison_ retpred_
       split at happly
-      · exact Except.noConfusion happly
+      · exact nomatch happly
       · rename_i allocRes hcollect
         split at happly
-        · exact Except.noConfusion happly
+        · exact nomatch happly
         · rename_i resolvedPred hresolve
           split at happly
-          · exact Except.noConfusion happly
+          · exact nomatch happly
           · rename_i retQtPair hretQt
             simp only [pure, Except.pure, Except.ok.injEq] at happly
             rw [← happly] at hpred
@@ -9937,8 +9937,7 @@ lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
   | extern id x retSpec effects capturedEnv =>
     have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
         QTypRespectsTagMeaning tm qt := by
-      intro name qt hmem
-      intro qtDeep k d hinqDeep hqd
+      intro name qt hmem qtDeep k d hinqDeep hqd
       have hmemCap : (name, qt) ∈ fnCapturedEnv
           (FnTClosure.extern id x retSpec effects capturedEnv) :=
         by simpa [fnCapturedEnv] using hmem
@@ -10487,8 +10486,7 @@ private lemma applyFnTClosure_ok_tagMeaningPredSat_byIH
   | extern id x retSpec effects capturedEnv =>
     have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
         QTypRespectsTagMeaning tm qt := by
-      intro name qt hmem
-      intro qtDeep k d hinqDeep hqd
+      intro name qt hmem qtDeep k d hinqDeep hqd
       have hmemCap : (name, qt) ∈ fnCapturedEnv
           (FnTClosure.extern id x retSpec effects capturedEnv) :=
         by simpa [fnCapturedEnv] using hmem

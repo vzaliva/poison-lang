@@ -4434,22 +4434,22 @@ private lemma stepFR_ite_standard
                       | both_unrealized _ hnone_out =>
                           exact hnone_out
                       | preserve_value _ _ hsome_in _ _ _ =>
-                          exact False.elim (Option.noConfusion (hnone₀.symm.trans hsome_in))
+                          exact nomatch (hnone₀.symm.trans hsome_in)
                     have hnone₁' : θ₁3.lookup l = none := by
                       cases hpres_l₁ with
                       | both_unrealized _ hnone_out =>
                           exact hnone_out
                       | preserve_value _ _ hsome_in _ _ _ =>
-                          exact False.elim (Option.noConfusion (hnone₁.symm.trans hsome_in))
+                          exact nomatch (hnone₁.symm.trans hsome_in)
                     exact agreeLocUnder.both_unrealized l qt hnone₀' hnone₁'
                 | agree_values _ _ a₀m a₁m n₀ n₁ hreal₀m hreal₁m hmem₀m hmem₁m hagreeVmid =>
                     cases hpres_l₀ with
                     | both_unrealized hnone_in _ =>
-                        exact False.elim (Option.noConfusion (hreal₀m.symm.trans hnone_in))
+                        exact nomatch (hreal₀m.symm.trans hnone_in)
                     | preserve_value a₀' n₀' hθ₀in hμ₀in hθ₀out hμ₀out =>
                         cases hpres_l₁ with
                         | both_unrealized hnone_in _ =>
-                            exact False.elim (Option.noConfusion (hreal₁m.symm.trans hnone_in))
+                            exact nomatch (hreal₁m.symm.trans hnone_in)
                         | preserve_value a₁' n₁' hθ₁in hμ₁in hθ₁out hμ₁out =>
                             have ha₀ : a₀' = a₀m := by
                               exact Option.some.inj (hθ₀in.symm.trans hreal₀m)
@@ -5087,22 +5087,22 @@ private lemma stepFR_ite_standard
                       | both_unrealized _ hnone_out =>
                           exact hnone_out
                       | preserve_value _ _ hsome_in _ _ _ =>
-                          exact False.elim (Option.noConfusion (hnone₀.symm.trans hsome_in))
+                          exact nomatch (hnone₀.symm.trans hsome_in)
                     have hnone₁' : θ₁2.lookup l = none := by
                       cases hpres_l₁ with
                       | both_unrealized _ hnone_out =>
                           exact hnone_out
                       | preserve_value _ _ hsome_in _ _ _ =>
-                          exact False.elim (Option.noConfusion (hnone₁.symm.trans hsome_in))
+                          exact nomatch (hnone₁.symm.trans hsome_in)
                     exact agreeLocUnder.both_unrealized l qt hnone₀' hnone₁'
                 | agree_values _ _ a₀m a₁m n₀ n₁ hreal₀m hreal₁m hmem₀m hmem₁m hagreeVmid =>
                     cases hpres_l₀ with
                     | both_unrealized hnone_in _ =>
-                        exact False.elim (Option.noConfusion (hreal₀m.symm.trans hnone_in))
+                        exact nomatch (hreal₀m.symm.trans hnone_in)
                     | preserve_value a₀' n₀' hθ₀in hμ₀in hθ₀out hμ₀out =>
                         cases hpres_l₁ with
                         | both_unrealized hnone_in _ =>
-                            exact False.elim (Option.noConfusion (hreal₁m.symm.trans hnone_in))
+                            exact nomatch (hreal₁m.symm.trans hnone_in)
                         | preserve_value a₁' n₁' hθ₁in hμ₁in hθ₁out hμ₁out =>
                             have ha₀ : a₀' = a₀m := by
                               exact Option.some.inj (hθ₀in.symm.trans hreal₀m)

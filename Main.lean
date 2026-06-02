@@ -3,7 +3,7 @@ import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanPoison.Parser
 import LeanPoison.Typecheck
-import Lean.Data.Xml.Parser
+import LeanPoison.Xml.Parser
 import Init.System.IO
 import Lean
 import Std.Data.ExtTreeMap
@@ -186,14 +186,14 @@ def parseRegimeSpec (spec : String) : Except String Regime := do
   let mut map : ExtTreeMap Nat Bool := {}
   let mut hasEntry := false
   for entry in parts do
-    let trimmed := entry.trim
+    let trimmed := entry.trimAscii.toString
     if trimmed.isEmpty then
       throw "Invalid --regime entry: empty assignment"
     let kv := trimmed.splitOn "="
     match kv with
     | [tagStr, valStr] =>
-        let tagStr := tagStr.trim
-        let valStr := valStr.trim
+        let tagStr := tagStr.trimAscii.toString
+        let valStr := valStr.trimAscii.toString
         let tagOpt := tagStr.toNat?
         match tagOpt with
         | none => throw s!"Invalid --regime tag: {tagStr}"
@@ -220,14 +220,14 @@ def parseExternRegimeSpec (spec : String) :
   let mut map : ExtTreeMap ExternId Bool := {}
   let mut hasEntry := false
   for entry in parts do
-    let trimmed := entry.trim
+    let trimmed := entry.trimAscii.toString
     if trimmed.isEmpty then
       throw "Invalid --extern-regime entry: empty assignment"
     let kv := trimmed.splitOn "="
     match kv with
     | [idStr, valStr] =>
-        let idStr := idStr.trim
-        let valStr := valStr.trim
+        let idStr := idStr.trimAscii.toString
+        let valStr := valStr.trimAscii.toString
         match idStr.toNat? with
         | none => throw s!"Invalid --extern-regime id: {idStr}"
         | some id =>
@@ -333,7 +333,7 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime)
             handleEvalResult result verbose
         | .error errorMsg =>
             printDoc (formatTypecheckError errorMsg)
-            if errorMsg.trim == "Out of fuel" then
+            if errorMsg.trimAscii.toString == "Out of fuel" then
               return (4 : UInt32)  -- Exit code 4: Type checker out of fuel
             else
               return (0 : UInt32)  -- Exit code 0: Type error successfully found
@@ -347,7 +347,7 @@ def evalProgram (input : String) (verbose : Bool) (regime : Regime)
             handleEvalResult result verbose
         | .error errorMsg =>
             printDoc (formatTypecheckError errorMsg)
-            if errorMsg.trim == "Out of fuel" then
+            if errorMsg.trimAscii.toString == "Out of fuel" then
               return (4 : UInt32)
             else
               return (0 : UInt32)
@@ -376,8 +376,8 @@ partial def readMultiline (acc : String := "") : IO String := do
   let unline ← IO.getStdin
   let line <- unline.getLine
   let newAcc := acc ++ "\n" ++ line
-  if line.trim.isEmpty then
-    return newAcc.trim
+  if line.trimAscii.toString.isEmpty then
+    return newAcc.trimAscii.toString
   else
     readMultiline newAcc
   ----------------------------------------------------------------------------
@@ -462,7 +462,7 @@ def main (args : List String) : IO UInt32 := do
         IO.println "Type :quit to exit."
         IO.println "Enter a blank line after an expression to evaluate it."
         let tmp ← IO.Process.output { cmd := "mktemp", args := #["--tmpdir", "repl-XXXXXX.poison"] }
-        let tmpPath := tmp.stdout.trim
+        let tmpPath := tmp.stdout.trimAscii.toString
         let st := defaultInitialState
         let initialConfig := ⟨ st.memory, emptyVarEnv, st.nextAddr, false, st.registry ⟩
         replLoop initialConfig tmpPath
@@ -493,7 +493,7 @@ def main (args : List String) : IO UInt32 := do
                   | .error errorMsg =>
                       printDoc (formatTypecheckError errorMsg)
                       IO.println ""
-                      if errorMsg.trim == "Out of fuel" then
+                      if errorMsg.trimAscii.toString == "Out of fuel" then
                         return (4 : UInt32)
                       else
                         return (0 : UInt32)

@@ -324,7 +324,7 @@ lemma stepFR_vlet_with_expr_proof
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁
     hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm
     hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simp)
     e1 ctxᵢ hctxCurrent hcan1 hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for vlet
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
@@ -371,7 +371,7 @@ lemma stepFR_vlet_with_expr_proof
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
     rw [hctx']
     exact BoundaryTagMeaningPost.bounded hcanon1
-  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simp)
     e2 ctx' (hctxBody htc1' hctx' hctxCurrent) hcan2 hwfTm' htagBounded' res2 htc2'
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
@@ -1669,7 +1669,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
     rcases ht_e1 with ⟨fuel_w, verbose_w, h_beval_w⟩
     exact beval_preserves_varEnv e1 fuel_w verbose_w _ _ _ h_beval_w
   simp only [hvar_e1] at ht_e2 hcf_eq
-  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simp)
     e1 ctxᵢ hctxCurrent hcan1 hwfTm hTmBounded res1 htc1'
   have hIH1Inst := hIH1 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH1Inst.1 with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hTm1⟩
@@ -1747,7 +1747,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
       have hwfenv2 : wfVarEnv cfg1.nextAddr ((vname, v1) :: cfg1.varEnv) :=
         wfVarEnv.cons vname v1 cfg1.varEnv hv1_wf hwfenv1
       simpa [cfg2, VarEnv.update] using hwfenv2
-  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simp)
     e2 ctx' (hctxBody htc1' hctx' hctxCurrent) hcan2 hwfTm' hTmBounded' res2 htc2'
   -- Thread extern registry: cfg1 inherits default registry from initial config.
   have hreg_cfg1 : cfg1.registry = registry := by

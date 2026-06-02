@@ -99,7 +99,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
   have hstruct := terminatesTo_seq_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hstruct with ⟨cfg1, v1, ht_e1, ht_e2, _hpm1, _hpm2⟩
-  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simp)
     e1 ctx hctxCurrent hcan1 hwfTm hTmBounded res1 htc1'
   have hIH1Inst := hIH1 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH1Inst.1 with ⟨tm1, hcanon1, hpredlaws1, _hresTm1, hTm1⟩
@@ -153,7 +153,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
     simpa [hctx', updateCtxFromResult, ctxAfter] using hctxCons1
   have hwf1' : wfTypeContext ctx' := by
     simpa [hctx', ctxAfter] using hwf1
-  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simp)
     e2 ctx' (by simpa [hctx', updateCtxFromResult, ctxAfter] using hctxAfter hctxCurrent)
       hcan2 hwfTm' hTmBounded' res htc2'
   -- Thread extern registry: cfg1 has default registry (preserved by beval).
@@ -250,7 +250,7 @@ lemma stepFR_seq_with_expr_proof
   have htc2' : typecheck ctx' e2 fuel' = .ok res := by
     simpa [hctx', typecheck, Nat.succ_sub_one] using htc2
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simp)
     e1 ctxᵢ hctxCurrent hcan1 hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for seq
   have hstruct₀ := terminatesTo_seq_inv' e1 e2
@@ -271,7 +271,7 @@ lemma stepFR_seq_with_expr_proof
     simpa [hctx', ctxAfter] using _htagBounded1
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
     simpa [hctx', ctxAfter] using BoundaryTagMeaningPost.bounded hcanon1
-  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simp)
     e2 ctx' (by simpa [hctx', ctxAfter] using hctxAfter hctxCurrent)
       hcan2 hwfTm' htagBounded1' res htc2'
   -- Prepare for IH2

@@ -644,7 +644,7 @@ lemma list_fold_joinPredicates_guardOnly_implies_init_and_lookup_guardTag (env :
               have hget_qt := memEnv_get_eq_of_lookup env x qt hlookup_x
               rw [← ExtTreeMap.get?_eq_getElem?] at hget
               rw [hget_qt] at hget
-              exact Option.noConfusion hget
+              exact nomatch hget
           | inr hmem_tail =>
               exact ih'.2 l qt hmem_tail hlookup
       | some qtX =>
@@ -1105,7 +1105,7 @@ lemma freshLoc_not_realized (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ 
     θ.lookup l = none := by
   intro hwf hric hge
   by_contra hne
-  push_neg at hne
+  push Not at hne
   obtain ⟨a, ha⟩ := Option.ne_none_iff_exists'.mp hne
   have ⟨hmem, _⟩ := hric.1 l a ha
   have hlt := hwf.1 l hmem
@@ -3224,11 +3224,11 @@ private lemma applyPFnTClosure_extern_field_eq_aux
       split at happly
       · -- ExternReturn.simple: 3 monadic binds then pure return
         split at happly
-        · exact Except.noConfusion happly
+        · exact nomatch happly
         · split at happly
-          · exact Except.noConfusion happly
+          · exact nomatch happly
           · split at happly
-            · exact Except.noConfusion happly
+            · exact nomatch happly
             · simp only [pure, Except.pure] at happly; cases happly; exact ⟨rfl, rfl⟩
       · -- ExternReturn.nestedFn: pure return
         simp only [pure, Except.pure] at happly; cases happly; exact ⟨rfl, rfl⟩
@@ -3272,17 +3272,17 @@ private lemma applyFnTClosure_extern_field_eq_aux
       simp only [bind, Except.bind] at happly
       -- collectAndAllocExternTags
       split at happly
-      · exact Except.noConfusion happly
+      · exact nomatch happly
       · -- effects loop result
         split at happly
-        · exact Except.noConfusion happly
+        · exact nomatch happly
         · -- match retSpec
           split at happly
           · -- ExternReturn.simple: resolveSyntaxPred + returnSpecToQTyp
             split at happly
-            · exact Except.noConfusion happly
+            · exact nomatch happly
             · split at happly
-              · exact Except.noConfusion happly
+              · exact nomatch happly
               · simp only [pure, Except.pure] at happly; cases happly; exact rfl
           · -- ExternReturn.nestedFn
             simp only [pure, Except.pure] at happly; cases happly; exact rfl
@@ -3371,12 +3371,12 @@ lemma collectAndAllocExternTags_nextTag_ge (preds : List SyntaxPredicate) (t : T
   simp only [bind, Except.bind, pure, Except.pure] at h
   revert h
   split
-  · intro h; exact absurd h Except.noConfusion
+  · intro h; exact absurd h (by simp)
   · rename_i v _
     split
-    · intro h; exact absurd h Except.noConfusion
+    · intro h; exact absurd h (by simp)
     · split
-      · intro h; exact absurd h Except.noConfusion
+      · intro h; exact absurd h (by simp)
       · rename_i result hpass3
         intro h
         have heq := Except.ok.inj h
@@ -3421,12 +3421,12 @@ lemma collectAndAllocExternTags_mapping_values_ge (preds : List SyntaxPredicate)
   simp only [bind, Except.bind, pure, Except.pure] at htc
   revert htc
   split
-  · intro h; exact absurd h Except.noConfusion
+  · intro h; exact absurd h (by simp)
   · rename_i v _
     split
-    · intro h; exact absurd h Except.noConfusion
+    · intro h; exact absurd h (by simp)
     · split
-      · intro h; exact absurd h Except.noConfusion
+      · intro h; exact absurd h (by simp)
       · rename_i result hpass3
         intro htc
         have heq := Except.ok.inj htc
@@ -3474,12 +3474,12 @@ lemma collectAndAllocExternTags_mapping_values_lt (preds : List SyntaxPredicate)
   simp only [bind, Except.bind, pure, Except.pure] at htc
   revert htc
   split
-  · intro h; exact absurd h Except.noConfusion
+  · intro h; exact absurd h (by simp)
   · rename_i v _
     split
-    · intro h; exact absurd h Except.noConfusion
+    · intro h; exact absurd h (by simp)
     · split
-      · intro h; exact absurd h Except.noConfusion
+      · intro h; exact absurd h (by simp)
       · rename_i result hpass3
         intro htc
         have heq := Except.ok.inj htc
@@ -3540,12 +3540,12 @@ lemma collectAndAllocExternTags_mapping_values_injective (preds : List SyntaxPre
   simp only [bind, Except.bind, pure, Except.pure] at htc
   revert htc
   split
-  · intro h; exact absurd h Except.noConfusion
+  · intro h; exact absurd h (by simp)
   · rename_i v _
     split
-    · intro h; exact absurd h Except.noConfusion
+    · intro h; exact absurd h (by simp)
     · split
-      · intro h; exact absurd h Except.noConfusion
+      · intro h; exact absurd h (by simp)
       · rename_i result hpass3
         intro htc
         have heq := Except.ok.inj htc
@@ -3778,7 +3778,7 @@ theorem collectAndAllocExternTags_consistent_preds
   revert h_alloc
   split
   · intro h
-    exact absurd h Except.noConfusion
+    exact absurd h (by simp)
   · rename_i v hpass1
     intro h_alloc
     have hpass1' :
@@ -5118,7 +5118,7 @@ lemma applyExternRegimePolicy_lookup_preserve_some
             | some _ => exact h0
             | none =>
                 have hne : p.2 ≠ k := by
-                  intro heq; rw [heq, h0] at hlook; exact Option.noConfusion hlook
+                  intro heq; rw [heq, h0] at hlook; exact nomatch hlook
                 have hcmp : compare p.2 k ≠ Ordering.eq := fun hc => hne ((Nat.compare_eq_eq).1 hc)
                 show Regime.lookup? (R0.insert p.2 bb) k = some b
                 unfold Regime.lookup?
@@ -5169,13 +5169,13 @@ lemma applyPFnTClosure_extern_regime_eq_or_policy
       split at happly
       · -- ExternReturn.simple
         split at happly
-        · exact Except.noConfusion happly
+        · exact nomatch happly
         · next tmRes hcollect =>
           obtain ⟨tm, nt'⟩ := tmRes
           split at happly
-          · exact Except.noConfusion happly
+          · exact nomatch happly
           · split at happly
-            · exact Except.noConfusion happly
+            · exact nomatch happly
             · simp only [pure, Except.pure] at happly; cases happly
               refine Or.inr ⟨tm, rfl, ?_⟩
               intro idx j hj
@@ -5231,19 +5231,19 @@ lemma applyFnTClosure_extern_regime_eq_or_policy
       simp only [bind, Except.bind] at happly
       -- collectAndAllocExternTags
       split at happly
-      · exact Except.noConfusion happly
+      · exact nomatch happly
       · next tmRes hcollect =>
         obtain ⟨tm, nt'⟩ := tmRes
         -- effects loop result
         split at happly
-        · exact Except.noConfusion happly
+        · exact nomatch happly
         · -- match retSpec
           split at happly
           · -- ExternReturn.simple
             split at happly
-            · exact Except.noConfusion happly
+            · exact nomatch happly
             · split at happly
-              · exact Except.noConfusion happly
+              · exact nomatch happly
               · simp only [pure, Except.pure] at happly; cases happly
                 refine Or.inr ⟨tm, rfl, ?_⟩
                 intro idx j hj
@@ -7098,7 +7098,7 @@ lemma matchGuard_tag_bounded
     -- hmatch : (match foldlM ... with error => error | ok refMs => match (foldl ... ++ refMs) with ...) = ok (k, deps)
     -- Split on foldlM result for refMatches
     split at hmatch
-    · exact absurd hmatch (by intro h; exact Except.noConfusion h)
+    · exact absurd hmatch (by intro h; exact nomatch h)
     · rename_i refMatches _heqRefM
       -- Split on the match over allMatches = varMatches ++ refMatches
       split at hmatch
@@ -7147,7 +7147,7 @@ lemma matchGuard_tag_bounded
                   intro heq_check
                   cases etyp <;> simp only [] at heq_check
                   all_goals first
-                    | exact absurd heq_check (by simp)
+                    | contradiction
                     | (split at heq_check
                        · split at heq_check
                          · split at heq_check
@@ -7184,10 +7184,10 @@ lemma matchGuard_tag_bounded
                   · -- Non-empty locset: merge preds, match merged
                     -- After the two LocSet.foldM calls, match on merged predicate
                     split at hres
-                    · exact absurd hres (by intro h; exact Except.noConfusion h)  -- foldM error
+                    · exact absurd hres (by intro h; exact nomatch h)  -- foldM error
                     · rename_i merged_opt _
                       split at hres
-                      · exact absurd hres (by intro h; exact Except.noConfusion h)  -- foldM error
+                      · exact absurd hres (by intro h; exact nomatch h)  -- foldM error
                       · rename_i depsMerged _
                         -- Match on the merged predicate
                         split at hres
@@ -7234,14 +7234,14 @@ lemma matchGuard_tag_bounded
                                     · rename_i memQt hlookup_l
                                       have hqt_l := hmemG l memQt hlookup_l
                                       split at hstep
-                                      · exact absurd hstep (by intro h; exact Except.noConfusion h)
+                                      · exact absurd hstep (by intro h; exact nomatch h)
                                       · have h_eq := (@Except.ok.inj _ _ _ _ hstep).symm
                                         rw [h_eq] at hp
                                         have h_p := @Option.some.inj _ _ _ hp; subst h_p
                                         cases acc_opt with
                                         | none => exact hqt_l
                                         | some q => exact predTagBounded_joinPredicates (hPacc q rfl) hqt_l
-                                    · exact absurd hstep (by intro h; exact Except.noConfusion h)
+                                    · exact absurd hstep (by intro h; exact nomatch h)
                                 cases hmo : merged_opt with
                                 | none => simp [Option.getD, hmo] at heqMergedPred
                                 | some mergedPred =>
@@ -7266,8 +7266,8 @@ lemma matchGuard_tag_bounded
               · -- Non-ref etyp → pure acc
                 simp only [pure, Except.pure, Except.ok.injEq] at hres
                 subst hres; exact hacc kd hkd)
-      · exact absurd hmatch (by intro h; exact Except.noConfusion h)
-      · exact absurd hmatch (by intro h; exact Except.noConfusion h)
+      · exact absurd hmatch (by intro h; exact nomatch h)
+      · exact absurd hmatch (by intro h; exact nomatch h)
 
 private lemma typecheckIf_pred_noPred (ctx : TypeContext) (e1 e2 e3 : Expr)
     (fuel : Nat) (res : TypeResult)
@@ -10937,7 +10937,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       have hnl : v.2 = res1.nextLoc' := by
                         have h : returnSpecToQTyp _ _ _ res1.nextLoc' = Except.ok v := hret
                         exact returnSpecToQTyp_preserves_nextLoc _ _ _ _ _ h
-                      exact le_of_eq hnl.symm
+                      exact _root_.le_of_eq hnl.symm
               · simp only [pure, Except.pure] at happly_old
                 injection happly_old with happly_old
                 cases happly_old
@@ -12056,7 +12056,7 @@ private lemma joinMemEnvs_lookup_clean_left (env1 env2 : MemoryTypeEnv) (l : Loc
         have hempty : (({} : MemoryTypeEnv)[l]?) = none := rfl
         rw [hempty] at hgo
         rw [hjoin'] at hgo
-        exact Option.noConfusion hgo
+        exact nomatch hgo
 
 /-- Symmetric companion of `joinMemEnvs_lookup_clean_left` for the right input. -/
 private lemma joinMemEnvs_lookup_clean_right (env1 env2 : MemoryTypeEnv) (l : Loc) (qt : QTyp) :
@@ -12112,7 +12112,7 @@ private lemma joinMemEnvs_lookup_clean_right (env1 env2 : MemoryTypeEnv) (l : Lo
         have hempty : (({} : MemoryTypeEnv)[l]?) = none := rfl
         rw [hempty] at hgo
         rw [hjoin'] at hgo
-        exact Option.noConfusion hgo
+        exact nomatch hgo
 
 /-- wfTypeContext property is preserved under joinMemEnvs with max nextLoc. -/
 lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res : TypeResult) :
@@ -14313,7 +14313,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
                     · simp [hempty] at htc
                       by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                       · simp [hsub] at htc
-                      · push_neg at hsub
+                      · push Not at hsub
                         simp [hsub] at htc
                         cases tcls with
                         | nil =>
@@ -14399,7 +14399,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
                   · simp [hempty] at htc
                     by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                     · simp [hsub] at htc
-                    · push_neg at hsub; simp [hsub] at htc
+                    · push Not at hsub; simp [hsub] at htc
                       cases tcls_p with
                       | nil =>
                           exact False.elim (hempty rfl)
@@ -14834,7 +14834,7 @@ private lemma typecheckApp_mem_contains_preserved
                             · simp [hempty] at htc
                               by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                               · simp [hsub] at htc
-                              · push_neg at hsub
+                              · push Not at hsub
                                 simp [hsub] at htc
                                 cases tcls with
                                 | nil =>
@@ -14885,7 +14885,7 @@ private lemma typecheckApp_mem_contains_preserved
                             simp [pure, Except.pure] at htc
                             by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                             · simp [hsub] at htc
-                            · push_neg at hsub
+                            · push Not at hsub
                               simp [hsub] at htc
                               cases tcls_p with
                               | nil =>

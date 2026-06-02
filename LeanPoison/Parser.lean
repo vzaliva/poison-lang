@@ -1,6 +1,6 @@
 import LeanPoison.Syntax
-import Lean.Data.Xml.Basic
-import Lean.Data.Xml.Parser
+import LeanPoison.Xml.Basic
+import LeanPoison.Xml.Parser
 open Lean.Xml
 
 open System
@@ -26,7 +26,7 @@ partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except Strin
     match contents with
     -- Embedded only Base Types - int , bool , unit
     | #[Content.Element (Element.Element "base_type" _ #[Content.Character name])] =>
-          let typ <- strToBasicType (name.trim)
+          let typ <- strToBasicType (name.trimAscii.toString)
           return typ
 
     -- Type expression embedded in  ()
@@ -115,7 +115,7 @@ mutual
 
     match elems.toList with
       | [Element.Element "number" _ #[Content.Character nStr]] =>
-          match nStr.trim.toInt? with
+          match nStr.trimAscii.toString.toInt? with
           | some n => .ok (Expr.num n)
           | none => .error s!"Invalid number: {nStr}"
 
@@ -130,7 +130,7 @@ mutual
           | _ => false
         ) with
         | some (Content.Character s) =>
-            match s.trim with
+            match s.trimAscii.toString with
             | "true" => .ok (Expr.bool true)
             | "false" => .ok (Expr.bool false)
             | "unit" => .ok Expr.unit
@@ -146,7 +146,7 @@ mutual
       let validOps := ["+", "-", "*", "/", ">", ">=", "<", "<=", "==","&","!="]
       let ops := contents.filterMap fun
         | Content.Character s =>
-            let trimmed := s.trim
+            let trimmed := s.trimAscii.toString
             if trimmed ∈ validOps then some trimmed else none
         | _ => none
 
@@ -181,7 +181,7 @@ mutual
       let validOps := ["||","&&"]
       let ops := contents.filterMap fun
         | Content.Character s =>
-            let trimmed := s.trim
+            let trimmed := s.trimAscii.toString
             if trimmed ∈ validOps then some trimmed else none
         | _ => none
 
@@ -206,7 +206,7 @@ mutual
       let validOps := ["not"]
       let ops := contents.filterMap fun
         | Content.Character s =>
-            let trimmed := s.trim
+            let trimmed := s.trimAscii.toString
             if trimmed ∈ validOps then some trimmed else none
         | _ => none
       match (elems.toList,ops.toList) with
@@ -397,7 +397,7 @@ mutual
               | _ => none)
             match contsFiltered.toList with
             | [Element.Element "number" _ #[Content.Character idStr], e] =>
-                match idStr.trim.toNat? with
+                match idStr.trimAscii.toString.toNat? with
                 | some id =>
                     let (typ, poisonStatus, pred) ← xmlToQTyp e
                     return Expr.externVal id typ poisonStatus pred
@@ -426,12 +426,12 @@ mutual
               match contsFiltered.toList with
                 | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType] =>
                     let id <-
-                      match idStr.trim.toNat? with
+                      match idStr.trimAscii.toString.toNat? with
                       | some n => .ok n
                       | none => .error s!"Invalid extern_fn id: {idStr}"
                     let name <-
                       match e_name with
-                        | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
+                        | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
                         | _ => .error "Invalid extern_fn name"
 
                     let argTyp :=
@@ -446,12 +446,12 @@ mutual
 
                 | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType,e_effects] =>
                   let id <-
-                    match idStr.trim.toNat? with
+                    match idStr.trimAscii.toString.toNat? with
                     | some n => .ok n
                     | none => .error s!"Invalid extern_fn id: {idStr}"
                   let name <-
                     match e_name with
-                    | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
+                    | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
                     | _ =>  .error "Invalid extern_fn name"
                   let argTyp :=
                     match e_argTyp with
@@ -477,12 +477,12 @@ mutual
               match contsFiltered.toList with
                 | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType] =>
                   let id <-
-                    match idStr.trim.toNat? with
+                    match idStr.trimAscii.toString.toNat? with
                     | some n => .ok n
                     | none => .error s!"Invalid extern_pfn id: {idStr}"
                   let name <-
                     match e_name with
-                    | Element.Element "identifier" _ #[Content.Character n] => .ok n.trim
+                    | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
                     | _ => .error "Invalid extern_pfn name"
 
                   let argTyp :=
@@ -522,7 +522,7 @@ mutual
       | _ => none
     match contents.toList with
     | [(Element.Element "identifier" _ #[Content.Character name]),(Element.Element "expr" attr cont)] =>
-        let varName := name.trim
+        let varName := name.trimAscii.toString
         let expr <- xmlToExpr (Element.Element "expr" attr cont)
         return (varName, expr)
 
@@ -547,14 +547,14 @@ mutual
 
     match contents.toList with
       | [Element.Element "number" _ #[Content.Character tag], Element.Element "pexpr" _ pexprContents] =>
-          let guardNumOpt := tag.trim.toNat?
+          let guardNumOpt := tag.trimAscii.toString.toNat?
           match guardNumOpt with
           | some n =>
               let (name,pexpr) <- parsePExpr (pexprContents)
               return SyntaxPredicate.guardClosure ⟨n⟩ name pexpr
           | none => .error s!"Invalid guard : {tag}"
       | [Element.Element "number" _ #[Content.Character tag]] =>
-          let guardNumOpt := tag.trim.toNat?
+          let guardNumOpt := tag.trimAscii.toString.toNat?
           match guardNumOpt with
           | some n =>
               return SyntaxPredicate.guardOnly ⟨n⟩
@@ -577,7 +577,7 @@ mutual
           (Element.Element "predicate_clause" _ predContents)] =>
 
             let typ <- parseTypeExpr typeExprConts
-            let poisonStatus := if poison.trim == "poisoned" then true else false
+            let poisonStatus := if poison.trimAscii.toString == "poisoned" then true else false
             let pred <- parsePredicate predContents
             if poisonStatus = false && pred != SyntaxPredicate.noPred then
               .error "Clean types cannot have predicates"
@@ -606,25 +606,25 @@ mutual
           Element.Element "paren_type" _ argTypeContents,
           e_retType] =>
             let id <-
-              match idStr.trim.toNat? with
+              match idStr.trimAscii.toString.toNat? with
               | some n => .ok n
               | none => .error s!"Invalid nested extern_fn id: {idStr}"
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedFn id name.trim argType retType []
+            return ExternReturn.nestedFn id name.trimAscii.toString argType retType []
 
         | [Element.Element "number" _ #[Content.Character idStr],
           Element.Element "identifier" _ #[Content.Character name],
           Element.Element "paren_type" _ argTypeContents,
           e_retType,e_effects] =>
             let id <-
-              match idStr.trim.toNat? with
+              match idStr.trimAscii.toString.toNat? with
               | some n => .ok n
               | none => .error s!"Invalid nested extern_fn id: {idStr}"
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
             let effects <- xmlToEffects e_effects
-            return ExternReturn.nestedFn id name.trim argType retType effects
+            return ExternReturn.nestedFn id name.trimAscii.toString argType retType effects
 
         | _ => .error s!"Invalid extern_fn shape in RetType: {elems.toList}"
 
@@ -639,12 +639,12 @@ mutual
           Element.Element "paren_type" _ argTypeContents,
           e_retType] =>
             let id <-
-              match idStr.trim.toNat? with
+              match idStr.trimAscii.toString.toNat? with
               | some n => .ok n
               | none => .error s!"Invalid nested extern_pfn id: {idStr}"
             let argType <- parseTypeExpr argTypeContents
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedPfn id name.trim argType retType
+            return ExternReturn.nestedPfn id name.trimAscii.toString argType retType
         | _ => .error s!"Invalid extern_pfn shape in RetType: {contents}"
 
     | _ => .error s!"Invalid RetType element: {x}"
@@ -685,7 +685,7 @@ mutual
             Element.Element "qtyp" attr qtypContents] =>
 
             match xmlToQTyp (Element.Element "qtyp" attr qtypContents) with
-            | .ok (_,poison,pred) => acc := acc.append [Effect.mk (EffectTarget.namedVar name.trim) poison pred]
+            | .ok (_,poison,pred) => acc := acc.append [Effect.mk (EffectTarget.namedVar name.trimAscii.toString) poison pred]
             | .error e => throw e
 
           | _ => throw "Invalid effect"

@@ -159,7 +159,7 @@ theorem ExtTreeMap.IsSubmap_of_insert_fresh
   · have h_k_eq : k = k' := LawfulEqCmp.eq_of_compare h_eq
     subst h_k_eq
     rw [hlookup] at h_fresh
-    exact (Option.noConfusion h_fresh)
+    exact nomatch h_fresh
   · rw [ExtTreeMap.get?_eq_getElem?]
     simp only [ExtTreeMap.getElem?_insert, h_eq, if_false]
     rw [← ExtTreeMap.get?_eq_getElem?]

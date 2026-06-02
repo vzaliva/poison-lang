@@ -2145,7 +2145,7 @@ lemma stepFR_assign_with_expr_proof
   rcases hinv₀ with ⟨cfg₀1, cfg₀2, a₀w, n₀, ht₀_e1, ht₀_e2, ho₀, hmem₀, hvar₀, hnext₀, hpm₀⟩
   have hinv₁ := terminatesTo_assign_inv' e1 e2 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   rcases hinv₁ with ⟨cfg₁1, cfg₁2, a₁w, n₁, ht₁_e1, ht₁_e2, ho₁, hmem₁, hvar₁, hnext₁, hpm₁⟩
-  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simp)
     e1 ctxᵢ hctxCurrent hcan1 hwfTm htagBounded res1 htc1'
   have hstep_e1 :=
     hIH1 hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.loc a₀w) (Value.loc a₁w)
@@ -2158,7 +2158,7 @@ lemma stepFR_assign_with_expr_proof
     simpa [ctx', ctxAfter] using _htagBounded1
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
     simpa [ctx', ctxAfter] using BoundaryTagMeaningPost.bounded hcanon1
-  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simp)
     e2 ctx' (by simpa [ctx', ctxAfter] using hctxAfter hctxCurrent)
       hcan2 hwfTm' htagBounded' res2 htc2'
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
@@ -5097,7 +5097,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
   have hinv := terminatesTo_assign_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hinv with ⟨cfg1, cfg2, aw, n, ht_e1, ht_e2, ho, hmem, hvar, _hnext, _hpm⟩
-  have hIH1 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH1 := IH fuel' (by simp)
     e1 ctx hctxCurrent hcan1 hwfTm hTmBounded result1 htc1'
   have hIH1Inst := hIH1 hpredlaws hExtTyping hwfTm hTmBounded
   rcases hIH1Inst.1 with ⟨tm1, hcanon1, hpredlaws1, _hresTm1, hTm1⟩
@@ -5133,7 +5133,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
     simpa [ctxAfter] using hpc
   have hTmBounded1 : TagMeaningBounded tm1 (ctxAfter ctx result1).nextTag := by
     simpa [ctxAfter] using IsCanonicalExtension.bounded hcanon1
-  have hIH2 := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH2 := IH fuel' (by simp)
     e2 (ctxAfter ctx result1) (hctxAfter hctxCurrent) hcan2 hTm1 hTmBounded1 result2 htc2'
   -- Thread extern registry: cfg1 inherits default registry from initial config.
   have hreg_cfg1 : cfg1.registry = registry := by

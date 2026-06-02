@@ -388,7 +388,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
         (Expr.deref e) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
   intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
-  have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
@@ -458,7 +458,7 @@ lemma stepFR_deref_with_expr_proof
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
-  have hIH := IH fuel' (by simpa using Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
+  have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm htagBounded res1 htc1'
   -- Invert deref evaluation (world-free)
   have hstruct₀ := terminatesTo_deref_inv' e

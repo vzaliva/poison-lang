@@ -8595,17 +8595,17 @@ private lemma appTwoRunOutChoice_from_independent_single_posts_dirty
                   | both_unrealized _ hout₁ =>
                       exact agreeLocUnder.both_unrealized l qt hout₀ hout₁
                   | preserve_value _ _ hin _ _ _ =>
-                      exact False.elim (Option.noConfusion (hθ₁_none.symm.trans hin))
+                      exact nomatch (hθ₁_none.symm.trans hin)
               | preserve_value _ _ hin _ _ _ =>
-                  exact False.elim (Option.noConfusion (hθ₀_none.symm.trans hin))
+                  exact nomatch (hθ₀_none.symm.trans hin)
           | agree_values _ _ a₀ a₁ n₀ n₁ hθ₀_in hθ₁_in hm₀_in hm₁_in hagree_val =>
               cases hpres_l₀ with
               | both_unrealized hin₀ _ =>
-                  exact False.elim (Option.noConfusion (hin₀.symm.trans hθ₀_in))
+                  exact nomatch (hin₀.symm.trans hθ₀_in)
               | preserve_value a₀' n₀' hθ₀_in' hm₀_in' hθ₀_out hm₀_out =>
                   cases hpres_l₁ with
                   | both_unrealized hin₁ _ =>
-                      exact False.elim (Option.noConfusion (hin₁.symm.trans hθ₁_in))
+                      exact nomatch (hin₁.symm.trans hθ₁_in)
                   | preserve_value a₁' n₁' hθ₁_in' hm₁_in' hθ₁_out hm₁_out =>
                       have ha₀ : a₀' = a₀ :=
                         Option.some.inj (hθ₀_in'.symm.trans hθ₀_in)
@@ -12965,7 +12965,7 @@ lemma stepFR_app_with_expr_proof
                         intro habs
                         rcases memEnv_lookup_some_of_contains result1.memEnv' l habs with
                           ⟨_qt', hlookup'⟩
-                        rw [hlookup_body] at hlookup'; exact Option.noConfusion hlookup'
+                        rw [hlookup_body] at hlookup'; exact nomatch hlookup'
                       -- Run 0: prove θ₀_body.lookup l = none
                       have hθ₀_none : θ₀_body.lookup l = none := by
                         by_cases hc₀ : result3A₀.memEnv'.contains l
@@ -13114,18 +13114,18 @@ lemma stepFR_app_with_expr_proof
                           | both_unrealized _ hout₁ =>
                             exact agreeLocUnder.both_unrealized l qt hout₀ hout₁
                           | preserve_value a n hin _ _ _ =>
-                            exact absurd (hθ₁_none ▸ hin) (by exact Option.noConfusion)
+                            exact absurd (hθ₁_none ▸ hin) (by simp)
                         | preserve_value a n hin _ _ _ =>
-                          exact absurd (hθ₀_none ▸ hin) (by exact Option.noConfusion)
+                          exact absurd (hθ₀_none ▸ hin) (by simp)
                       | agree_values _ _ a₀ a₁ n₀ n₁ hθ₀_in hθ₁_in hm₀_in hm₁_in
                           hagree_val =>
                         cases hpres_l₀ with
                         | both_unrealized hin₀ _ =>
-                          exact absurd (hin₀ ▸ hθ₀_in) (by exact Option.noConfusion)
+                          exact absurd (hin₀ ▸ hθ₀_in) (by simp)
                         | preserve_value a₀' n₀' hθ₀_in' hm₀_in' hθ₀_out hm₀_out =>
                           cases hpres_l₁ with
                           | both_unrealized hin₁ _ =>
-                            exact absurd (hin₁ ▸ hθ₁_in) (by exact Option.noConfusion)
+                            exact absurd (hin₁ ▸ hθ₁_in) (by simp)
                           | preserve_value a₁' n₁' hθ₁_in' hm₁_in' hθ₁_out hm₁_out =>
                             -- Equate addresses via unique θ lookups
                             have ha₀ : a₀' = a₀ :=
@@ -18680,7 +18680,7 @@ lemma stepFR_app_with_expr_proof
                           pred2 result1Cursor fuel' tcl r happly l hrl
                     rcases memEnv_lookup_some_of_contains result1.memEnv' l hcontains_l
                       with ⟨_, hlookup'⟩
-                    exact Option.noConfusion (hlookup_body ▸ hlookup')
+                    exact nomatch (hlookup_body ▸ hlookup')
                   | some qt' =>
                     -- Inherited location: l is in result1.memEnv' with type qt'
                     have hetyp_qt : qt.etyp = ETyp.int :=
@@ -18747,17 +18747,17 @@ lemma stepFR_app_with_expr_proof
                         | both_unrealized _ hout₁ =>
                           exact agreeLocUnder.both_unrealized l qt hout₀ hout₁
                         | preserve_value a n hin _ _ _ =>
-                          exact absurd (hθ₁_none ▸ hin) (by exact Option.noConfusion)
+                          exact absurd (hθ₁_none ▸ hin) (by simp)
                       | preserve_value a n hin _ _ _ =>
-                        exact absurd (hθ₀_none ▸ hin) (by exact Option.noConfusion)
+                        exact absurd (hθ₀_none ▸ hin) (by simp)
                     | agree_values _ _ a₀ a₁ n₀ n₁ hθ₀_in hθ₁_in hm₀_in hm₁_in hagree_val =>
                       cases hpres_l₀ with
                       | both_unrealized hin₀ _ =>
-                        exact absurd (hin₀ ▸ hθ₀_in) (by exact Option.noConfusion)
+                        exact absurd (hin₀ ▸ hθ₀_in) (by simp)
                       | preserve_value a₀' n₀' hθ₀_in' hm₀_in' hθ₀_out hm₀_out =>
                         cases hpres_l₁ with
                         | both_unrealized hin₁ _ =>
-                          exact absurd (hin₁ ▸ hθ₁_in) (by exact Option.noConfusion)
+                          exact absurd (hin₁ ▸ hθ₁_in) (by simp)
                         | preserve_value a₁' n₁' hθ₁_in' hm₁_in' hθ₁_out hm₁_out =>
                           -- Equate addresses via unique θ lookups
                           have ha₀ : a₀' = a₀ :=

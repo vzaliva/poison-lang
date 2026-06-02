@@ -2736,7 +2736,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
                 have hlt' : addr < cfg₁1.nextAddr + 1 :=
                   Nat.lt_trans hlt (Nat.lt_succ_self _)
                 simp [hnext_eq]
-                exact hlt'
+                exact Nat.lt_succ_iff.mp hlt'
             · have hle : cfg₁1.nextAddr ≤ cfg₁.nextAddr := by
                 simp [hnext_eq]
               have hwfenv1' : wfVarEnv cfg₁.nextAddr cfg₁1.varEnv :=
