@@ -3,7 +3,7 @@
 -- closure is then applied to a POISONED argument. Because inner argument-condition
 -- resolution is deferred to application (cf. extern_nested_bare_guard), the
 -- rejection fires at the INNER application — proving the gate guards every curried
--- level, not just the top (doc/extern-argument-conditions.md).
+-- level, not just the top.
 let outer =
   extern fn @240 x : (int :> clean {}) -> (
     extern pfn @241 y : (int :> clean {}) -> ((int :> clean {}))

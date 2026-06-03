@@ -1,5 +1,5 @@
 --! poison-interpreter --extern-regime "12=true"
--- sqrt-style positive example (doc/extern-argument-conditions.md).
+-- sqrt-style positive example for extern argument conditions.
 -- The precondition `(int :> clean { v >= 0 })` is satisfied by a value that is
 -- clean UNDER THE REGIME because it still carries the `>= 0` provenance guard.
 -- The registered pure builtin @12 is declared here as producing a poisoned int

@@ -1,15 +1,17 @@
 # Extern poison handling — design note
 
-Status: **design note with partial implementation**. The extern-produced
-regime-tag mechanism is implemented and proven: extern ids can be selected
-in the fault-robustness scenario, selected extern return/effect tags are
-inserted into the active regime at call sites, the proof stack uses
-extended regime evolution, and the executable supports `--extern-regime`.
-The precondition syntax is also selected: extern arguments should use
-`QTyp`, so the declaration states the caller-side obligation directly
-(see [Extern argument conditions](extern-argument-conditions.md)).
-The remaining open design work is the proof-obligation shape, read-side
-memory treatment, and concrete validation of live extern boundary specs.
+Status: **regime and argument-condition implementation complete**. The
+extern-produced regime-tag mechanism is implemented and proven: extern ids can
+be selected in the fault-robustness scenario, selected extern return/effect tags
+are inserted into the active regime at call sites, the proof stack uses extended
+regime evolution, and the executable supports `--extern-regime`. Argument-side
+extern preconditions are also implemented: extern callable arguments accept
+qualified annotations, the typechecker rejects calls that do not satisfy the
+declared argument condition, curried extern levels are checked uniformly, and
+the proof stack threads the clean/poison part of the condition through trusted
+boundary reachability. The remaining design work is read-side memory treatment,
+predicate-language validation, latent-marker examples, and concrete validation
+of live trusted extern boundary specs.
 
 ## 1. Background and motivation
 
@@ -27,30 +29,37 @@ demanded by `ExternBoundarySpec` is unsatisfiable for this declaration:
 the implementation produces `1` from `-1` and `2` from `2`, which cannot
 satisfy clean integer agreement.
 
-The current annotation system cannot honestly express the conditions
-under which an extern's output is provably clean. This document records
-the selected shape for making that contract explicit.
+The old annotation system could not honestly express the conditions under which
+an extern's output was provably clean. Argument-side extern conditions now make
+that contract explicit; this document records the implemented shape and the
+remaining FFI design work around it.
 
-## 2. What the current annotation system actually allows
+## 2. What the current annotation system allows
 
 Per the tree-sitter grammar (`parser/tree-sitter-poison/grammar.js`) and
 the Ott application rules:
 
-- **Extern argument** is `paren_type` — a bare surface `Typ`. No `:>`, no
-  poison flag, no predicate. `(int)` is the only thing you can write.
+- **Extern argument** is a qualified type annotation. The surface syntax mirrors
+  native function arguments, e.g. `(int :> clean {})` or
+  `(int :> clean { 1, v => v >= 0 })`. The parser/AST keeps the surface pieces
+  (`Typ`, clean/poison flag, syntax predicate); typechecking resolves them to a
+  concrete `QTyp` stored on the extern closure summary used at application.
 - **Extern return** is `qtyp` — full qualified type. `(int :> clean {})`,
-  `(int :> poisoned { p(x) })`, etc. The predicate body can reference the
-  argument name.
+  `(int :> poisoned { p(x) })`, etc. Return semantics are unchanged: the
+  predicate body can reference the argument name and is a latent depoisoning
+  marker on the produced value.
 
-The Ott application rule `app_extern_fn_simple_*` computes the result
-poison as `join pc (join p1 (join p p3))` where `p3` is the **declared**
-return poison. The argument's poison `p2` is **not** joined into the
-result poison flag; it only enters the predicate-resolution context as
-the binding `x |-> T1 :> join pc p2 { P2 }`.
+At an extern call, the typechecker compares the actual argument `QTyp` with the
+declared extern argument condition. The v1 relation is deliberately structural:
+base/runtime types must match; a declared-clean argument requires the actual
+argument to be clean under the current regime; a declared `noPred` imposes no
+predicate check; and a declared predicate requires the actual argument to carry
+the same predicate shape. There is no general logical implication engine.
 
-Consequence: the declared return poison overrides the caller's argument
-poison in the type-level result. That is the exact source of the `abs`
-dishonesty.
+If the condition is not satisfied, the call is rejected at typecheck time. If it
+is satisfied, the declared return `QTyp` is used as the output contract. This
+keeps caller-side obligations on the argument and producer-side promises on the
+return.
 
 ## 3. Selected design
 
@@ -83,22 +92,26 @@ structurally from input cleanness alone.
 
 ## 4. Current-builtin status under this model
 
-- **`abs`** — untrusted as declared. It reads its argument value
-  directly, so the only precondition that yields clean output is "input
-  is clean," which is already handled by standard typing and adds no
-  value as a predicate annotation. There is no honest *interesting*
-  precondition. The declaration should be removed, rewritten, or marked
-  untrusted.
+- **`abs`** — executable examples now declare a clean argument and clean return,
+  which is an honest surface contract for successful calls. It is a natural
+  pure-unary clean-int trusted-spec candidate, but it still needs a concrete
+  trusted-registry instantiation before it contributes as a live trusted entry
+  in the public FR theorem.
 
-- **`max`** — same diagnosis. Output depends on both arguments.
+- **`max`** — executable examples now declare clean arguments at both curried
+  levels and a clean return. The output depends on both the captured outer
+  argument and the immediate inner argument, so a trusted instantiation must
+  validate the captured-env side of the boundary obligation as well as the
+  immediate argument.
 
 - **`sqrt`-style externs** — candidate for the unified model with input
   precondition `x >= 0`. Implementation `if x >= 0 then Lean.sqrt x else 0`
   has a defensive runtime branch, but the FR cleanness comes from the
   input precondition (which constrains the inputs across two runs to
-  agree by depoisoning), not from the runtime branch. This is the
-  motivating case for extending extern arguments from bare `Typ` to
-  `QTyp`.
+  agree by depoisoning), not from the runtime branch. The executable
+  `extern_arg_precond_sqrt` example validates the argument-condition mechanism;
+  a separate trusted spec would still be needed to make such an extern a live
+  trusted entry.
 
 ## 5. Analysis
 
@@ -130,12 +143,18 @@ infrastructure and keeps the typechecker uniform.
 
 ### 5.3 Argument-side precondition syntax
 
-Extern parameters should use full `QTyp`, mirroring native `fn` / `pfn`
-parameters. The argument `QTyp` is the extern's declared precondition:
-the trusted boundary proof applies only to calls whose argument typing
-satisfies that qualified type. The detailed proposed syntax and required
-parser/typechecker/spec/proof changes are summarized in
-[Extern argument conditions](extern-argument-conditions.md).
+Extern parameters use full qualified annotations, mirroring native `fn` / `pfn`
+parameters. The argument `QTyp` is the extern's declared precondition: the
+trusted boundary proof applies only to calls whose argument typing satisfies
+that qualified type.
+
+The implementation stores the source argument annotation as the surface triple
+`Typ + clean/poison flag + SyntaxPredicate`, resolves it to a concrete `QTyp` at
+typecheck time, and records that concrete condition on `FnTClosure.extern` /
+`PFnTClosure.extern`. Proof-side declarations faithfully carry the clean/poison
+flag used for the trusted-entry match; the surface predicate is intentionally
+not recovered at every proof reachability site, so predicate-shape checking
+remains an executable typechecker condition for v1.
 
 The key separation is that argument `QTyp` records what the caller must
 establish, while return `QTyp` remains the output contract. Return
@@ -270,16 +289,22 @@ extern-produced predicate de-poisoning under the executable typechecker.
 
 ### 6.1 Resolved
 
-- The current `abs` declaration is **dishonest** — formally proved by
-  `ExternProofs.builtinAbs_cleanPost_obstruction`.
+- The old bare-argument `abs` declaration was **dishonest** — recorded by
+  `ExternProofs.builtinAbs_cleanPost_obstruction`. With argument conditions,
+  `abs` can be declared honestly as accepting a clean integer and returning a
+  clean integer.
 - Extern trust uses a single proof shape with a possibly trivial
   precondition.
-- Extern preconditions live on argument-side `QTyp` annotations. Return
-  `QTyp` annotations remain output contracts.
+- Extern preconditions live on argument-side `QTyp` annotations. Return `QTyp`
+  annotations remain output contracts.
 - Externs without a statable precondition under which the output
   honors its declared `QTyp` are **not trusted** (i.e., absent from the
   trusted registry); their use does not block typechecking but does
   block FR.
+- Unsatisfied argument preconditions are rejected at typecheck time; there is no
+  conservative fallback typing rule for v1.
+- Nested/curried extern preconditions are enforced at every extern application
+  level.
 - The cleanness obligation matches existing FR semantics: clean-
   declared outputs must be FR-clean; poisoned-declared outputs carry
   the declared predicate as a depoisoning marker for downstream code.
@@ -316,19 +341,22 @@ precondition language for read-side memory must be analyzed alongside
 the argument/captured-env case so we do not commit to a precondition
 shape that cannot extend to memory.
 
-## 8. Next steps (analysis-level)
+### 7.4 Live trusted extern specs
+
+The proof stack has the boundary machinery and compact pure-unary clean-int
+spec shape needed for trusted extern entries, but concrete interpreter builtins
+still need explicit trusted-registry instantiations before they contribute to
+the public FR theorem as live trusted entries.
+
+## 8. Next steps
 
 1. Resolve §7.3 (read-side memory annotations).
-2. Resolve §7.1 (predicate language expressiveness).
-3. Construct §7.2 (latent-marker example) to validate the
+2. Instantiate a concrete live trusted extern spec, preferably the smallest
+   pure-unary clean-int candidate, to validate the trusted-registry path end to
+   end.
+3. Resolve §7.1 (predicate language expressiveness).
+4. Construct §7.2 (latent-marker example) to validate the
    interpretation against existing predicate machinery.
-4. Sketch the proof obligation in Lean terms for argument-side `QTyp`
-   preconditions.
-5. Identify or construct a concrete `sqrt`-style example in
-   `examples/` to drive the design.
-6. Decide what to do operationally with `abs` and `max`: leave declared
-   but untrusted (i.e., not added to the trusted registry), remove from
-   examples, or rewrite.
-7. Update `doc/ffi-axioms.md` once the model is firm, replacing the
-   current §1/§2 roadmap items with a target consistent with this
+5. Update `doc/ffi-axioms.md` once the remaining model points are firm,
+   replacing the current §1/§2 roadmap items with a target consistent with this
    document.

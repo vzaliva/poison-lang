@@ -1046,7 +1046,7 @@ def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : S
                nextLoc' := ctx'.nextLoc, nextTag' := nextTag', regime' := ctx.regime }
 
 -- ----------------------------------------------------------------------------
--- Extern argument conditions (doc/extern-argument-conditions.md)
+-- Extern argument conditions (see doc/extern-poison.md)
 --
 -- An extern callable's declared argument is a qualified type (precondition).
 -- The surface triple `(Typ, Bool, SyntaxPredicate)` is resolved here into a
@@ -1076,7 +1076,7 @@ def argTypToETyp (argTyp : Typ) : TypecheckM ETyp :=
     tag is never inserted into the regime or tag environment — it is only compared
     *modulo tag* by `predShapeMatches` — so we reuse the source `TagIndex` directly.
     (A possible future refactor mirrors the return-spec idiom of storing the surface
-    form and resolving at the application site; see doc/extern-argument-conditions-plan.md.) -/
+    form and resolving at the application site.) -/
 def resolveArgCondQTyp' (argTyp : Typ) (argPoison : Bool) (argPred : SyntaxPredicate)
     (varEnv : VarTypeEnv) : TypecheckM QTyp := do
   let resolvedPred ← (match argPred with
@@ -1117,7 +1117,7 @@ def predShapeMatches (declared actual : Predicate) (fuel : Nat) : Bool :=
   | Predicate.guardOnly _ =>
       -- A bare declared guard requires the actual to carry the SAME (bare) guard
       -- shape — not an arbitrary guard-closure (that would be implication, not
-      -- shape matching; doc/extern-argument-conditions.md).
+      -- shape matching.
       match actual with
       | Predicate.guardOnly _ => true
       | _ => false
@@ -1127,7 +1127,7 @@ def predShapeMatches (declared actual : Predicate) (fuel : Nat) : Bool :=
           PExpr.equalWithEnvs dBody dEnv aBody aEnv (some (dArg, PExpr.var aArg)) fuel
       | _ => false
 
-/-- Conservative argument-condition satisfaction (doc/extern-argument-conditions.md):
+/-- Conservative argument-condition satisfaction:
     (1) base/runtime types match; (2) a declared-clean condition requires the
     actual argument to be clean under the current regime `R`; (3) a declared
     no-predicate condition imposes no predicate match; (4) a declared predicate
@@ -1560,7 +1560,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
     | FnTClosure.extern id x retSpec effects capturedEnv declaredArgQt =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         -- Argument-condition gate: a trusted/declared result is available only when
-        -- the actual argument satisfies the declared precondition (doc/extern-argument-conditions.md).
+        -- the actual argument satisfies the declared precondition.
         if !argConditionSatisfied declaredArgQt argQt result2.regime' fuel then
           throw s!"extern @{id}: argument (runtime type {repr (QTyp.toTyp argQt)}, poison={argQt.poison}) does not satisfy the declared argument precondition ({repr (QTyp.toTyp declaredArgQt)}, declared poison={declaredArgQt.poison})"
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
@@ -1639,7 +1639,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
     | FnTClosure.extern id x retSpec effects capturedEnv declaredArgQt =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         -- Argument-condition gate: a trusted/declared result is available only when
-        -- the actual argument satisfies the declared precondition (doc/extern-argument-conditions.md).
+        -- the actual argument satisfies the declared precondition.
         if !argConditionSatisfied declaredArgQt argQt result2.regime' fuel then
           throw s!"extern @{id}: argument (runtime type {repr (QTyp.toTyp argQt)}, poison={argQt.poison}) does not satisfy the declared argument precondition ({repr (QTyp.toTyp declaredArgQt)}, declared poison={declaredArgQt.poison})"
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
@@ -1720,7 +1720,7 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
     | PFnTClosure.extern id x retSpec capturedEnv declaredArgQt =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         -- Argument-condition gate: a trusted/declared result is available only when
-        -- the actual argument satisfies the declared precondition (doc/extern-argument-conditions.md).
+        -- the actual argument satisfies the declared precondition.
         if !argConditionSatisfied declaredArgQt argQt result2.regime' fuel then
           throw s!"extern @{id}: argument (runtime type {repr (QTyp.toTyp argQt)}, poison={argQt.poison}) does not satisfy the declared argument precondition ({repr (QTyp.toTyp declaredArgQt)}, declared poison={declaredArgQt.poison})"
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt
@@ -1796,7 +1796,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
     | PFnTClosure.extern id x retSpec capturedEnv declaredArgQt =>
         let argQt := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         -- Argument-condition gate: a trusted/declared result is available only when
-        -- the actual argument satisfies the declared precondition (doc/extern-argument-conditions.md).
+        -- the actual argument satisfies the declared precondition.
         if !argConditionSatisfied declaredArgQt argQt result2.regime' fuel then
           throw s!"extern @{id}: argument (runtime type {repr (QTyp.toTyp argQt)}, poison={argQt.poison}) does not satisfy the declared argument precondition ({repr (QTyp.toTyp declaredArgQt)}, declared poison={declaredArgQt.poison})"
         let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x argQt

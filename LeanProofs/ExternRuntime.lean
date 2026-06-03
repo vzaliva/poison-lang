@@ -38,7 +38,7 @@ inductive ExternBoundaryKind where
 
     `typ`, `argPoison`, `argPred` are the surface form of the declared argument
     condition (precondition): base type, poison flag, and symbolic predicate
-    (doc/extern-argument-conditions.md).  `argPoison` (the clean/poisoned flag) is
+    (see doc/extern-poison.md).  `argPoison` (the clean/poisoned flag) is
     populated FAITHFULLY at every construction site — from the source AST at
     syntactic sites and from the applied closure's `argQTyp.poison` at the
     arrow-reachability site — so the reachable `entry.decl = d` agreement binds the
