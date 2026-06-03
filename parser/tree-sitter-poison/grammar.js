@@ -217,7 +217,7 @@ module.exports = grammar({
       field("id", $.number),
       field("name", $.identifier),
       ":",
-      field("arg_type", $.paren_type),
+      field("arg_type", $.qtyp),
       "->",
       field("return_type", seq("(", choice($.qtyp, $.extern_fn, $.extern_pfn), ")")),
 
@@ -232,7 +232,7 @@ module.exports = grammar({
       field("id", $.number),
       field("name", $.identifier),
       ":",
-      field("arg_type", $.paren_type),
+      field("arg_type", $.qtyp),
       "->",
       field("return_type", seq("(", choice($.qtyp, $.extern_fn, $.extern_pfn), ")"))
     )),

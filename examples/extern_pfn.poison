@@ -1,1 +1,1 @@
-let f = extern pfn @117 x : (int) -> ( (int :> clean {} )) in f 10
+let f = extern pfn @117 x : (int :> clean {}) -> ( (int :> clean {} )) in f 10

@@ -13,7 +13,7 @@
 -- BEFORE fix: !errno would show (true, guardClosure k 1 ...).
 -- AFTER  fix: !errno shows (true, {}) — predicate erased.
 let errno   = extern val @21 : (ref int :> clean {}) in
-let set_err = extern fn @22 n : (int) -> ((unit :> clean {})) ,
+let set_err = extern fn @22 n : (int :> poisoned {}) -> ((unit :> clean {})) ,
                 effects: { !errno :> (int :> poisoned { 1, v => v >= 0 }) } in
 let dirty   = extern val @5 : (bool :> poisoned { 1, v => v }) in
 let f = if dirty then

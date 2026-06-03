@@ -11,7 +11,7 @@
 -- provenance), predicate erased.
 
 let errno   = extern val @21 : (ref int :> clean {}) in
-let set_err = extern fn @22 n : (int) -> ((unit :> clean {})) ,
+let set_err = extern fn @22 n : (int :> poisoned {}) -> ((unit :> clean {})) ,
                 effects: { !errno :> (int :> poisoned { 1, v => v >= 0 }) } in
 let dirty   = extern val @5 : (bool :> poisoned { 1, v => v }) in
 -- Both branches return `set_err`; the merge gives `chosen` a poisoned outer

@@ -1,0 +1,6 @@
+-- Test: a predicated extern argument precondition `(int :> clean { v >= 0 })`
+-- requires the argument to be clean AND to carry the `>= 0` provenance guard.
+-- A bare clean literal carries no such guard, so the argument-condition check
+-- rejects the call (doc/extern-argument-conditions.md).
+let sqrtf = extern pfn @19 x : (int :> clean { 5, v => (v >= 0) }) -> ((int :> clean {}))
+in sqrtf 4

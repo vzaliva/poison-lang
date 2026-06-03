@@ -3,6 +3,6 @@
 -- effect pred, they should resolve to the same concrete tag (shared map).
 let s = ref 0 in
 let readSensor =
-  extern fn @121 x : (int) -> ( (int :> poisoned { 7, v => v >= 0 }) ) ,
+  extern fn @121 x : (int :> clean {}) -> ( (int :> poisoned { 7, v => v >= 0 }) ) ,
     effects: { !s :> (int :> poisoned { 7 }) }
 in readSensor 1

@@ -1,8 +1,8 @@
 -- extern-nested.poison
 let cap  = ref 0 in
 let h =
-  extern fn @109 i : (int) -> (
-    extern fn @110 r : (ref int) -> ((
+  extern fn @109 i : (int :> clean {}) -> (
+    extern fn @110 r : (ref int :> clean {}) -> ((
       int :> poisoned { 3, v => (v >= 0 && v <= i) }
     )),
     effects: {

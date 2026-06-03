@@ -184,10 +184,15 @@ structure Effect where
 -- Return specification for extern functions (simple or nested)
 -- Nested variants carry their own `ExternId`; `simple` does not (the id lives
 -- on the enclosing top-level extern AST node).
+-- The argument annotation of every callable extern level is a qualified type
+-- (precondition), encoded in surface/symbolic form as the triple
+-- `Typ → Bool → SyntaxPredicate` (base type, poison flag, symbolic predicate),
+-- mirroring how `simple` encodes the return qualified type. The typechecker
+-- resolves this triple to a concrete `QTyp` and stores it on the extern closure.
 inductive ExternReturn where
   | simple : Typ → Bool → SyntaxPredicate → ExternReturn
-  | nestedFn : ExternId → Name → Typ → ExternReturn → List Effect → ExternReturn
-  | nestedPfn : ExternId → Name → Typ → ExternReturn → ExternReturn
+  | nestedFn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Effect → ExternReturn
+  | nestedPfn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → ExternReturn
 
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
@@ -209,22 +214,26 @@ inductive Expr : Type where
   | fn : Name → Typ → Expr → Typ → Expr         -- fn x : ST1 => e : ST2
   | pfn : Name → Typ → Expr → Typ → Expr        -- pfn x : ST1 => pe : ST2
   | app : Expr → Expr → Expr                    -- e1 e2
-  /- extern declarations: each carries a mandatory `ExternId` identifier -/
+  /- extern declarations: each carries a mandatory `ExternId` identifier.
+     `externFn`/`externPfn` carry the argument precondition as the surface
+     triple `Typ → Bool → SyntaxPredicate` (after the argument name). -/
   | externVal : ExternId → Typ → Bool → SyntaxPredicate → Expr
-  | externFn : ExternId → Name → Typ → ExternReturn → List Effect → Expr
-  | externPfn : ExternId → Name → Typ → ExternReturn → Expr
+  | externFn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Effect → Expr
+  | externPfn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → Expr
 
 end
 
 /-- `e` is the impure callable wrapper `extern fn` AST node. -/
 inductive Expr.IsExternFnAst : Expr → Prop where
-  | mk {id : ExternId} {x : Name} {argTyp : Typ} {retSpec : ExternReturn} {eff : List Effect} :
-      Expr.IsExternFnAst (Expr.externFn id x argTyp retSpec eff)
+  | mk {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
+      {retSpec : ExternReturn} {eff : List Effect} :
+      Expr.IsExternFnAst (Expr.externFn id x argTyp argPoison argPred retSpec eff)
 
 /-- `e` is the pure callable wrapper `extern pfn` AST node. -/
 inductive Expr.IsExternPfnAst : Expr → Prop where
-  | mk {id : ExternId} {x : Name} {argTyp : Typ} {retSpec : ExternReturn} :
-      Expr.IsExternPfnAst (Expr.externPfn id x argTyp retSpec)
+  | mk {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
+      {retSpec : ExternReturn} :
+      Expr.IsExternPfnAst (Expr.externPfn id x argTyp argPoison argPred retSpec)
 
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
@@ -280,10 +289,12 @@ def beqExpr : Expr → Expr → Bool
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.externVal id1 t1 p1 pred1, Expr.externVal id2 t2 p2 pred2 =>
       id1 == id2 && t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
-  | Expr.externFn id1 x1 t1 ret1 eff1, Expr.externFn id2 x2 t2 ret2 eff2 =>
-      id1 == id2 && x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
-  | Expr.externPfn id1 x1 t1 ret1, Expr.externPfn id2 x2 t2 ret2 =>
-      id1 == id2 && x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
+  | Expr.externFn id1 x1 t1 ap1 apred1 ret1 eff1, Expr.externFn id2 x2 t2 ap2 apred2 ret2 eff2 =>
+      id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
+        && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
+  | Expr.externPfn id1 x1 t1 ap1 apred1 ret1, Expr.externPfn id2 x2 t2 ap2 apred2 ret2 =>
+      id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
+        && beqExternReturn ret1 ret2
   | _, _ => false
 termination_by structural e1 _ => e1
 
@@ -309,10 +320,12 @@ termination_by structural efs1 _=> efs1
 def beqExternReturn : ExternReturn → ExternReturn → Bool
   | ExternReturn.simple t1 p1 pred1, ExternReturn.simple t2 p2 pred2 =>
       t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
-  | ExternReturn.nestedFn id1 x1 t1 ret1 eff1, ExternReturn.nestedFn id2 x2 t2 ret2 eff2 =>
-      id1 == id2 && x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
-  | ExternReturn.nestedPfn id1 x1 t1 ret1, ExternReturn.nestedPfn id2 x2 t2 ret2 =>
-      id1 == id2 && x1 == x2 && t1 == t2 && beqExternReturn ret1 ret2
+  | ExternReturn.nestedFn id1 x1 t1 ap1 apred1 ret1 eff1, ExternReturn.nestedFn id2 x2 t2 ap2 apred2 ret2 eff2 =>
+      id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
+        && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
+  | ExternReturn.nestedPfn id1 x1 t1 ap1 apred1 ret1, ExternReturn.nestedPfn id2 x2 t2 ap2 apred2 ret2 =>
+      id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
+        && beqExternReturn ret1 ret2
   | _, _ => false
 termination_by structural r1 _ => r1
 
@@ -464,14 +477,17 @@ structure QTyp where
   poison : Poison
   pred : Predicate
 
--- Separate typing closures for impure and pure functions
+-- Separate typing closures for impure and pure functions.
+-- The trailing `QTyp` field on each `extern` constructor is the declared
+-- argument precondition (resolved from the AST surface triple at declaration
+-- time); it is consulted at the extern call site to gate the trusted result.
 inductive FnTClosure : Type where
   | regular : Name → Expr → List (Name × QTyp) → FnTClosure
-  | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp) → FnTClosure
+  | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp) → QTyp → FnTClosure
 
 inductive PFnTClosure : Type where
   | regular : Name → PExpr → List (Name × QTyp) → PFnTClosure
-  | extern : ExternId → Name → ExternReturn → List (Name × QTyp) → PFnTClosure
+  | extern : ExternId → Name → ExternReturn → List (Name × QTyp) → QTyp → PFnTClosure
 
 -- Enriched type (full type)
 -- Arrow types now carry non-empty lists of closures (merged typing closures)
@@ -587,15 +603,17 @@ def beqETyp : ETyp → ETyp → Bool
 def beqFnTClosure : FnTClosure → FnTClosure → Bool
   | FnTClosure.regular x1 e1 env1, FnTClosure.regular x2 e2 env2 =>
     x1 == x2 && e1 == e2 && beqVarEnv env1 env2
-  | FnTClosure.extern id1 x1 ret1 eff1 env1, FnTClosure.extern id2 x2 ret2 eff2 env2 =>
+  | FnTClosure.extern id1 x1 ret1 eff1 env1 argQt1, FnTClosure.extern id2 x2 ret2 eff2 env2 argQt2 =>
     id1 == id2 && x1 == x2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2 && beqVarEnv env1 env2
+      && beqQTyp argQt1 argQt2
   | _, _ => false
 
 def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
   | PFnTClosure.regular x1 e1 env1, PFnTClosure.regular x2 e2 env2 =>
     x1 == x2 && e1 == e2 && beqVarEnv env1 env2
-  | PFnTClosure.extern id1 x1 ret1 env1, PFnTClosure.extern id2 x2 ret2 env2 =>
+  | PFnTClosure.extern id1 x1 ret1 env1 argQt1, PFnTClosure.extern id2 x2 ret2 env2 argQt2 =>
     id1 == id2 && x1 == x2 && beqExternReturn ret1 ret2 && beqVarEnv env1 env2
+      && beqQTyp argQt1 argQt2
   | _, _ => false
 
 def beqVarEnv : CapturedVarEnv → CapturedVarEnv → Bool

@@ -3,8 +3,8 @@
 -- twice should allocate independent tags each time. We store both results
 -- into refs so both tags appear in the final MemoryTypeEnv.
 let outer =
-  extern fn @115 x : (int) -> (
-    extern pfn @116 y : (int) -> ( (int :> poisoned { 5, v => v >= 0 }) )
+  extern fn @115 x : (int :> clean {}) -> (
+    extern pfn @116 y : (int :> clean {}) -> ( (int :> poisoned { 5, v => v >= 0 }) )
   )
 in
 let inner = outer 1 in

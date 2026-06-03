@@ -209,7 +209,7 @@ mutual
           | .success config'' (Value.closure x body env) =>
             -- Extern impure dispatch: body is an extern AST node.
             match body with
-            | Expr.externFn id _ argTyp retSpec _ =>
+            | Expr.externFn id _ argTyp _ _ retSpec _ =>
               if config''.pureMode then
                 .runtimeError "Pure function cannot apply impure closure"
               else
@@ -238,7 +238,7 @@ mutual
           | .success config'' (Value.peClosure x body env) =>
             -- Extern pure dispatch: body is an extern AST node.
             match body with
-            | Expr.externPfn id _ argTyp retSpec =>
+            | Expr.externPfn id _ argTyp _ _ retSpec =>
               match config''.registry.get? id with
               | none => .runtimeError (ExternError.format (.missing id))
               | some (ExternImpl.pfn implFn) =>
@@ -275,21 +275,21 @@ mutual
             if valueMatchesTyp v typ then .success config v
             else .runtimeError (ExternError.format (.shapeMismatch id))
         | some _ => .runtimeError (ExternError.format (.kindMismatch id))
-      | Expr.externFn id argName argTyp retSpec effects =>
+      | Expr.externFn id argName argTyp argPoison argPred retSpec effects =>
         match config.registry.get? id with
         | none => .runtimeError (ExternError.format (.missing id))
         | some (ExternImpl.fn _) =>
             .success config
               (Value.closure argName
-                (Expr.externFn id argName argTyp retSpec effects) config.varEnv)
+                (Expr.externFn id argName argTyp argPoison argPred retSpec effects) config.varEnv)
         | some _ => .runtimeError (ExternError.format (.kindMismatch id))
-      | Expr.externPfn id argName argTyp retSpec =>
+      | Expr.externPfn id argName argTyp argPoison argPred retSpec =>
         match config.registry.get? id with
         | none => .runtimeError (ExternError.format (.missing id))
         | some (ExternImpl.pfn _) =>
             .success config
               (Value.peClosure argName
-                (Expr.externPfn id argName argTyp retSpec) config.varEnv)
+                (Expr.externPfn id argName argTyp argPoison argPred retSpec) config.varEnv)
         | some _ => .runtimeError (ExternError.format (.kindMismatch id))
 
   /-- Helper for evaluating function bodies (impure vs pure) -/

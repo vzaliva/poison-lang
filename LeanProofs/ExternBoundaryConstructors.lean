@@ -423,7 +423,7 @@ private theorem pureUnaryCleanInt_call_result_shape
       cases hbad
   | pfnExternMember hid hkind htyp harg hret hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
-        id x y argTyp retSpec tenv
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec tenv
       have hargTyp : argTyp = Typ.int :=
         htyp.symm.trans hspec.typ_int
       subst argTyp
@@ -442,6 +442,10 @@ private theorem pureUnaryCleanInt_call_result_shape
           have hcollect := collectAndAllocExternTags_noPred cursor.1
           simp [applyPFnTClosureAtCursor, hcollect, resolveSyntaxPred, returnSpecToQTyp,
             bind, Except.bind, pure, Except.pure] at happly
+          -- Leading argument-condition gate: throw branch is impossible on .ok.
+          split at happly
+          · simp at happly
+          simp only [Except.ok.injEq] at happly
           subst res
           refine ⟨?_, ?_, ?_⟩
           · by_cases hprov : joinPoison p1 p = true

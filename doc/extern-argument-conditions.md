@@ -93,8 +93,9 @@ The expected objectives are:
 - Keep return `QTyp` semantics unchanged: return predicates remain output
   markers, not preconditions.
 - Update executable examples and golden files. At minimum, add a `sqrt`-style
-  positive example and a failing or conservatively-typed call whose argument does
-  not meet the declared condition.
+  positive example and a failing call whose argument does not meet the declared
+  condition. (For the first version an unsatisfied precondition is **rejected** at
+  typecheck time — there is no conservatively-typed fallback rule.)
 - Revisit existing `abs` and `max` examples and builtins. They should either use
   honest argument conditions, remain explicitly untrusted, or be rewritten so the
   examples no longer imply unconditional FR-clean output from dirty inputs.

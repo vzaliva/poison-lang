@@ -15,8 +15,8 @@
 -- regime and the value stays poisoned (poison=true).
 let cap = ref 0 in
 let h =
-  extern fn @109 i : (int) -> (
-    extern fn @110 r : (int) -> ((int :> poisoned { 3, v => (v >= 0) }))
+  extern fn @109 i : (int :> clean {}) -> (
+    extern fn @110 r : (int :> clean {}) -> ((int :> poisoned { 3, v => (v >= 0) }))
   ), effects: {
     !cap :> (int :> poisoned { 5, u => (u >= 0) })
   }

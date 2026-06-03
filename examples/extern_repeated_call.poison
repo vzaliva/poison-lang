@@ -3,7 +3,7 @@
 -- fresh tags. We store both results into refs so both tags appear in the
 -- final MemoryTypeEnv, making them observable.
 let f =
-  extern fn @118 x : (int) -> ( (int :> poisoned { 1, v => v >= 0 }) )
+  extern fn @118 x : (int :> clean {}) -> ( (int :> poisoned { 1, v => v >= 0 }) )
 in
 let a = ref (f 1) in
 let b = ref (f 2) in

@@ -3,8 +3,8 @@ in
 let cap = ref 3 
 in 
 let h =
-  extern fn @105 i : (int) -> (
-     extern fn @106 s : (int) -> ( (int :> poisoned { 1, v => (v >= 0 && v <= 255) }) ) ,
+  extern fn @105 i : (int :> clean {}) -> (
+     extern fn @106 s : (int :> clean {}) -> ( (int :> poisoned { 1, v => (v >= 0 && v <= 255) }) ) ,
     effects: { !s :> (int :> poisoned { 2, u => (u >= 0 && u <= 255) }) , 
                !a :> (int :> clean {}) ,
                }

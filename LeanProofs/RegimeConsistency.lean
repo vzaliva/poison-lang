@@ -134,11 +134,11 @@ lemma qtypGuardDesc?_eq_some_pred_guardClosure
 /-- Extract captured typing env from closures. -/
 def fnCapturedEnv : FnTClosure → CapturedVarEnv
   | .regular _ _ ρ => ρ
-  | .extern _ _ _ _ ρ => ρ
+  | .extern _ _ _ _ ρ _ => ρ
 
 def pfnCapturedEnv : PFnTClosure → CapturedVarEnv
   | .regular _ _ ρ => ρ
-  | .extern _ _ _ ρ => ρ
+  | .extern _ _ _ ρ _ => ρ
 
 /-- Deep occurrence of a QTyp inside another QTyp. -/
 inductive QTypInQTyp : QTyp → QTyp → Prop where
@@ -869,23 +869,23 @@ lemma QTypRespectsTagMeaning_pfn_regular
     is either the function type itself or rooted in `ctx.varEnv`. -/
 lemma QTypInQTyp_fn_extern_root_or_self
     (ctx : TypeContext) (id : ExternId) (x : Name) (st₁ st₂ : Typ) (p : Poison)
-    (retSpec : ExternReturn) (effects : List Effect)
+    (retSpec : ExternReturn) (effects : List Effect) {argQt : QTyp}
     {qt target : QTyp}
     (h : QTypInQTyp qt target)
     (htarget : target =
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt],
         p, Predicate.noPred⟩) :
     qt =
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt],
         p, Predicate.noPred⟩
     ∨ ∃ y qtRoot, ctx.varEnv.lookup y = some qtRoot ∧ QTypInQTyp qt qtRoot := by
-  induction h generalizing ctx id x st₁ st₂ p retSpec effects with
+  induction h generalizing ctx id x st₁ st₂ p retSpec effects argQt with
   | self qt0 =>
       subst qt0; left; rfl
   | in_arrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
       subst qtOuter
       let tcl0 : FnTClosure :=
-        FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)
+        FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt
       have hEtyp : ETyp.arrow st1 st2 p0 tcls = ETyp.arrow st₁ st₂ p [tcl0] := by
         simpa [tcl0] using houterEtyp.symm
       have htcls : tcls = [tcl0] := by injection hEtyp with _ _ _ htcls
@@ -901,20 +901,20 @@ lemma QTypInQTyp_fn_extern_root_or_self
       subst qtOuter; simp at houterEtyp
   | trans qt1 qt2 qt3 h12 _ ih12 ih23 =>
       rcases ih23 (ctx := ctx) (id := id) (x := x) (st₁ := st₁) (st₂ := st₂) (p := p)
-               (retSpec := retSpec) (effects := effects) htarget with
+               (retSpec := retSpec) (effects := effects) (argQt := argQt) htarget with
         hEq | ⟨y, qtRoot, hlookup, hIn⟩
       · exact ih12 (ctx := ctx) (id := id) (x := x) (st₁ := st₁) (st₂ := st₂) (p := p)
-               (retSpec := retSpec) (effects := effects) hEq
+               (retSpec := retSpec) (effects := effects) (argQt := argQt) hEq
       · right; exact ⟨y, qtRoot, hlookup, QTypInQTyp.trans qt1 qt2 qtRoot h12 hIn⟩
 
 /-- Extern `fn` results preserve tag-meaning respect from the captured typing environment. -/
 lemma QTypRespectsTagMeaning_fn_extern
     (tm : TagMeaning) (ctx : TypeContext)
     (id : ExternId) (x : Name) (st₁ st₂ : Typ) (p : Poison)
-    (retSpec : ExternReturn) (effects : List Effect)
+    (retSpec : ExternReturn) (effects : List Effect) {argQt : QTyp}
     (h : wfTagMeaningCtx tm ctx) :
     QTypRespectsTagMeaning tm
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt],
         p, Predicate.noPred⟩ := by
   intro qt k d hinq hqd
   rcases QTypInQTyp_fn_extern_root_or_self ctx id x st₁ st₂ p retSpec effects hinq rfl with hEq | ⟨y, qtRoot, hlookup, hInRoot⟩
@@ -925,17 +925,17 @@ lemma QTypRespectsTagMeaning_fn_extern
     is either the function type itself or rooted in `ctx.varEnv`. -/
 lemma QTypInQTyp_pfn_extern_root_or_self
     (ctx : TypeContext) (id : ExternId) (x : Name) (st₁ st₂ : Typ) (p : Poison)
-    (retSpec : ExternReturn)
+    (retSpec : ExternReturn) {argQt : QTyp}
     {qt target : QTyp}
     (h : QTypInQTyp qt target)
     (htarget : target =
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt],
         p, Predicate.noPred⟩) :
     qt =
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt],
         p, Predicate.noPred⟩
     ∨ ∃ y qtRoot, ctx.varEnv.lookup y = some qtRoot ∧ QTypInQTyp qt qtRoot := by
-  induction h generalizing ctx id x st₁ st₂ p retSpec with
+  induction h generalizing ctx id x st₁ st₂ p retSpec argQt with
   | self qt0 =>
       subst qt0; left; rfl
   | in_arrow qtInner qtOuter _ _ _ _ _ _ houterEtyp _ _ =>
@@ -943,7 +943,7 @@ lemma QTypInQTyp_pfn_extern_root_or_self
   | in_parrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
       subst qtOuter
       let tcl0 : PFnTClosure :=
-        PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv)
+        PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt
       have hEtyp : ETyp.parrow st1 st2 p0 tcls = ETyp.parrow st₁ st₂ p [tcl0] := by
         simpa [tcl0] using houterEtyp.symm
       have htcls : tcls = [tcl0] := by injection hEtyp with _ _ _ htcls
@@ -957,19 +957,20 @@ lemma QTypInQTyp_pfn_extern_root_or_self
              QTypInQTyp.self qtInner⟩
   | trans qt1 qt2 qt3 h12 _ ih12 ih23 =>
       rcases ih23 (ctx := ctx) (id := id) (x := x) (st₁ := st₁) (st₂ := st₂) (p := p)
-               (retSpec := retSpec) htarget with
+               (retSpec := retSpec) (argQt := argQt) htarget with
         hEq | ⟨y, qtRoot, hlookup, hIn⟩
       · exact ih12 (ctx := ctx) (id := id) (x := x) (st₁ := st₁) (st₂ := st₂) (p := p)
-               (retSpec := retSpec) hEq
+               (retSpec := retSpec) (argQt := argQt) hEq
       · right; exact ⟨y, qtRoot, hlookup, QTypInQTyp.trans qt1 qt2 qtRoot h12 hIn⟩
 
 /-- Extern `pfn` results preserve tag-meaning respect from the captured typing environment. -/
 lemma QTypRespectsTagMeaning_pfn_extern
     (tm : TagMeaning) (ctx : TypeContext)
     (id : ExternId) (x : Name) (st₁ st₂ : Typ) (p : Poison) (retSpec : ExternReturn)
+    {argQt : QTyp}
     (h : wfTagMeaningCtx tm ctx) :
     QTypRespectsTagMeaning tm
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt],
         p, Predicate.noPred⟩ := by
   intro qt k d hinq hqd
   rcases QTypInQTyp_pfn_extern_root_or_self ctx id x st₁ st₂ p retSpec hinq rfl with hEq | ⟨y, qtRoot, hlookup, hInRoot⟩
@@ -1128,13 +1129,14 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
         deepValueQTypProperty P qt_x v_x) →
       deepValueQTypProperty P qt v
   | closure_extern {qt : QTyp} {v : Value}
+      {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp}
       (id : ExternId) (x_param y : Name) (argTyp : Typ)
       (retSpec : ExternReturn) (effects : List Effect)
       (ρcap : VarEnv) (σcap : CapturedVarEnv) (p : Poison)
       (tcls : List FnTClosure) :
-      v = Value.closure x_param (Expr.externFn id y argTyp retSpec effects) ρcap →
+      v = Value.closure x_param (Expr.externFn id y argTyp argPoison argPred retSpec effects) ρcap →
       qt.etyp = ETyp.arrow argTyp (parseReturnType retSpec) p tcls →
-      FnTClosure.extern id x_param retSpec effects σcap ∈ tcls →
+      FnTClosure.extern id x_param retSpec effects σcap argQt ∈ tcls →
       P σcap ρcap →
       (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
         σcap.lookup x = some qt_x →
@@ -1155,13 +1157,14 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
         deepValueQTypProperty P qt_x v_x) →
       deepValueQTypProperty P qt v
   | peClosure_extern {qt : QTyp} {v : Value}
+      {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp}
       (id : ExternId) (x_param y : Name) (argTyp : Typ)
       (retSpec : ExternReturn)
       (ρcap : VarEnv) (σcap : CapturedVarEnv) (p : Poison)
       (tcls : List PFnTClosure) :
-      v = Value.peClosure x_param (Expr.externPfn id y argTyp retSpec) ρcap →
+      v = Value.peClosure x_param (Expr.externPfn id y argTyp argPoison argPred retSpec) ρcap →
       qt.etyp = ETyp.parrow argTyp (parseReturnType retSpec) p tcls →
-      PFnTClosure.extern id x_param retSpec σcap ∈ tcls →
+      PFnTClosure.extern id x_param retSpec σcap argQt ∈ tcls →
       P σcap ρcap →
       (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
         σcap.lookup x = some qt_x →

@@ -1,0 +1,14 @@
+-- Test: nested (curried) extern argument-condition enforcement — "all curried
+-- levels". The INNER stage @241 declares a clean precondition; the returned inner
+-- closure is then applied to a POISONED argument. Because inner argument-condition
+-- resolution is deferred to application (cf. extern_nested_bare_guard), the
+-- rejection fires at the INNER application — proving the gate guards every curried
+-- level, not just the top (doc/extern-argument-conditions.md).
+let outer =
+  extern fn @240 x : (int :> clean {}) -> (
+    extern pfn @241 y : (int :> clean {}) -> ((int :> clean {}))
+  )
+in
+let dirty = extern val @242 : (int :> poisoned { 1, v => (v >= 0) }) in
+let inner = outer 0 in
+inner dirty

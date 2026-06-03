@@ -131,13 +131,13 @@ mutual
     (∃ st1 st2 p tcls, qt.etyp = ETyp.arrow st1 st2 p tcls ∧
      (∀ tcl ∈ tcls, match tcl with
      | FnTClosure.regular _ _ env => P (VarTypeEnv.ofCaptured env)
-     | FnTClosure.extern _ _ _ _ env => P (VarTypeEnv.ofCaptured env))) →
+     | FnTClosure.extern _ _ _ _ env _ => P (VarTypeEnv.ofCaptured env))) →
     deepQTypProperty P qt
   | parrow (P : VarTypeEnv → Prop) (qt : QTyp) :
     (∃ st1 st2 p tcls, qt.etyp = ETyp.parrow st1 st2 p tcls ∧
      (∀ tcl ∈ tcls, match tcl with
      | PFnTClosure.regular _ _ env => P (VarTypeEnv.ofCaptured env)
-     | PFnTClosure.extern _ _ _ env => P (VarTypeEnv.ofCaptured env))) →
+     | PFnTClosure.extern _ _ _ env _ => P (VarTypeEnv.ofCaptured env))) →
     deepQTypProperty P qt
   | other (P : VarTypeEnv → Prop) (qt : QTyp) :
     nonClosureQTyp qt →
@@ -171,15 +171,15 @@ mutual
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | FnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | FnTClosure.extern _ _ _ _ env₂ =>
+            | FnTClosure.extern _ _ _ _ env₂ _ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
-      | FnTClosure.extern _ _ _ _ env₁ =>
+      | FnTClosure.extern _ _ _ _ env₁ _ =>
           ∃ st1' st2' p' tcls₂,
             qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | FnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | FnTClosure.extern _ _ _ _ env₂ =>
+            | FnTClosure.extern _ _ _ _ env₂ _ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
@@ -192,15 +192,15 @@ mutual
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | PFnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | PFnTClosure.extern _ _ _ env₂ =>
+            | PFnTClosure.extern _ _ _ env₂ _ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
-      | PFnTClosure.extern _ _ _ env₁ =>
+      | PFnTClosure.extern _ _ _ env₁ _ =>
           ∃ st1' st2' p' tcls₂,
             qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | PFnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | PFnTClosure.extern _ _ _ env₂ =>
+            | PFnTClosure.extern _ _ _ env₂ _ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | other (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
@@ -539,14 +539,15 @@ mutual
         (hv₂ : v₂ = Value.closure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_internal_arrow_extern
-        {id : ExternId} {x y : Name} {argTyp : Typ} {retSpec : ExternReturn}
+        {id : ExternId} {x y : Name} {argTyp : Typ}
+        {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
         {effects : List Effect} {p : Poison} {tcls : List FnTClosure}
-        {qt : QTyp} {tcl : FnTClosure} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {qt : QTyp} {tcl : FnTClosure} {σcap : CapturedVarEnv} {argQt : QTyp} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
         (hclean_internal : internalPoisonClean qt)
         (hetyp : qt.etyp = ETyp.arrow argTyp (parseReturnType retSpec) p tcls)
         (htcl : tcl ∈ tcls)
-        (hmatch : tcl = FnTClosure.extern id x retSpec effects σcap)
+        (hmatch : tcl = FnTClosure.extern id x retSpec effects σcap argQt)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
         (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
@@ -554,8 +555,8 @@ mutual
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
-        (hv₁ : v₁ = Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap₁)
-        (hv₂ : v₂ = Value.closure x (Expr.externFn id y argTyp retSpec effects) ρcap₂) :
+        (hv₁ : v₁ = Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec effects) ρcap₁)
+        (hv₂ : v₂ = Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec effects) ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | dirty_internal_arrow
         {qt : QTyp} {v₁ v₂ : Value}
@@ -582,14 +583,15 @@ mutual
         (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_internal_parrow_extern
-        {id : ExternId} {x y : Name} {argTyp : Typ} {retSpec : ExternReturn}
+        {id : ExternId} {x y : Name} {argTyp : Typ}
+        {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
         {p : Poison} {tcls : List PFnTClosure}
-        {qt : QTyp} {tcl : PFnTClosure} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        {qt : QTyp} {tcl : PFnTClosure} {σcap : CapturedVarEnv} {argQt : QTyp} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
         (hclean_internal : internalPoisonClean qt)
         (hetyp : qt.etyp = ETyp.parrow argTyp (parseReturnType retSpec) p tcls)
         (htcl : tcl ∈ tcls)
-        (hmatch : tcl = PFnTClosure.extern id x retSpec σcap)
+        (hmatch : tcl = PFnTClosure.extern id x retSpec σcap argQt)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
         (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
@@ -597,8 +599,8 @@ mutual
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
-        (hv₁ : v₁ = Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap₁)
-        (hv₂ : v₂ = Value.peClosure x (Expr.externPfn id y argTyp retSpec) ρcap₂) :
+        (hv₁ : v₁ = Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) ρcap₁)
+        (hv₂ : v₂ = Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) ρcap₂) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | dirty_internal_parrow
         {qt : QTyp} {v₁ v₂ : Value}

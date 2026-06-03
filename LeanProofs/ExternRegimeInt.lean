@@ -114,7 +114,8 @@ def regDecl : ExternDeclaration :=
     (which is over `int`).  `noPred` ⇒ no guard tag; empty captured env. -/
 def rogueQTyp : QTyp :=
   { etyp := ETyp.arrow Typ.bool Typ.int false
-      [FnTClosure.extern 238 "q" (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] []],
+      [FnTClosure.extern 238 "q" (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
+        [] ⟨ETyp.bool, false, Predicate.noPred⟩],
     poison := false, pred := Predicate.noPred }
 
 /-- The decl the `arrow_extern_member` path reconstructs from `rogueQTyp` (typ =
@@ -174,7 +175,7 @@ theorem nonempty_registry_hagrees_unprovable
         (st1 := Typ.bool) (st2 := Typ.int) (p := false) (qpoison := false)
         (qpred := Predicate.noPred) (x := "q")
         (retSpec := ExternReturn.simple Typ.int false SyntaxPredicate.noPred)
-        (effects := []) (σcap := []) (by simp)
+        (effects := []) (σcap := []) (argQt := ⟨ETyp.bool, false, Predicate.noPred⟩) (by simp)
   have hlookup : TrustedRegistry.lookup? [⟨regDecl, impl, spec⟩] 238
       = some ⟨regDecl, impl, spec⟩ := by
     simp [TrustedRegistry.lookup?, regDecl]
@@ -196,7 +197,7 @@ theorem nonempty_registry_hagrees_unprovable
 
 /-- A minimal program declaring extern `@238` (a `fn` over `int`). -/
 def openProg : Expr :=
-  Expr.externFn 238 "p" Typ.int (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
+  Expr.externFn 238 "p" Typ.int false SyntaxPredicate.noPred (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
 
 /-- The declaration the `externFn` AST node exposes — matches the
     `ExternDeclarationInProgram.externFn` shape exactly. -/

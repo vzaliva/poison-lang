@@ -2093,14 +2093,14 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   (impl := impl) hcan ExternDeclarationInProgram.externVal
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
-          | externFn id n t r eff =>
+          | externFn id n t argPoison argPred r eff =>
               -- Extern declaration success is normalized to boundary-run
               -- evidence before the caller-supplied boundary provider consumes it.
               intro hpredlaws hExtTyping hwfTm hTmBounded
               refine ⟨?_, ?_⟩
               · exact
                   StepFRSingleRunTagMeaningPost.of_typecheck_preserves
-                    hExtTyping predSat tm ctxᵢ (Expr.externFn id n t r eff)
+                    hExtTyping predSat tm ctxᵢ (Expr.externFn id n t argPoison argPred r eff)
                     (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
               intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm
                     hwfcfg ht hpc
@@ -2112,25 +2112,25 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     { id := id, kind := .fn, typ := t, argName := some n,
                       retSpec := some r, effects := eff,
                       preds := collectExternPreds r eff }
-                    (Expr.externFn id n t r eff) ctxᵢ res :=
+                    (Expr.externFn id n t argPoison argPred r eff) ctxᵢ res :=
                 ExternBoundaryTyping.Decl.fn htc
               exact
                 hdeclSingle
-                  (e := Expr.externFn id n t r eff) (id := id)
+                  (e := Expr.externFn id n t argPoison argPred r eff) (id := id)
                   (d := { id := id, kind := .fn, typ := t, argName := some n,
                           retSpec := some r, effects := eff,
                           preds := collectExternPreds r eff })
                   (impl := impl) hcan ExternDeclarationInProgram.externFn
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
-          | externPfn id n t r =>
+          | externPfn id n t argPoison argPred r =>
               -- Extern declaration success is normalized to boundary-run
               -- evidence before the caller-supplied boundary provider consumes it.
               intro hpredlaws hExtTyping hwfTm hTmBounded
               refine ⟨?_, ?_⟩
               · exact
                   StepFRSingleRunTagMeaningPost.of_typecheck_preserves
-                    hExtTyping predSat tm ctxᵢ (Expr.externPfn id n t r)
+                    hExtTyping predSat tm ctxᵢ (Expr.externPfn id n t argPoison argPred r)
                     (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
               intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm
                     hwfcfg ht hpc
@@ -2142,11 +2142,11 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     { id := id, kind := .pfn, typ := t, argName := some n,
                       retSpec := some r, effects := [],
                       preds := collectExternPreds r [] }
-                    (Expr.externPfn id n t r) ctxᵢ res :=
+                    (Expr.externPfn id n t argPoison argPred r) ctxᵢ res :=
                 ExternBoundaryTyping.Decl.pfn htc
               exact
                 hdeclSingle
-                  (e := Expr.externPfn id n t r) (id := id)
+                  (e := Expr.externPfn id n t argPoison argPred r) (id := id)
                   (d := { id := id, kind := .pfn, typ := t, argName := some n,
                           retSpec := some r, effects := [],
                           preds := collectExternPreds r [] })
@@ -2804,7 +2804,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
                 hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
-        | externFn id n t r eff =>
+        | externFn id n t argPoison argPred r eff =>
             -- Extern declaration success is normalized to boundary-run evidence before the
             -- caller-supplied boundary provider consumes it.
             intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
@@ -2821,11 +2821,11 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                   { id := id, kind := .fn, typ := t, argName := some n,
                     retSpec := some r, effects := eff,
                     preds := collectExternPreds r eff }
-                  (Expr.externFn id n t r eff) ctxᵢ res :=
+                  (Expr.externFn id n t argPoison argPred r eff) ctxᵢ res :=
               ExternBoundaryTyping.Decl.fn htc
             exact
               hdeclFR
-                (e := Expr.externFn id n t r eff) (id := id)
+                (e := Expr.externFn id n t argPoison argPred r eff) (id := id)
                 (d := { id := id, kind := .fn, typ := t, argName := some n,
                         retSpec := some r, effects := eff,
                         preds := collectExternPreds r eff })
@@ -2835,7 +2835,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
                 hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
-        | externPfn id n t r =>
+        | externPfn id n t argPoison argPred r =>
             -- Extern declaration success is normalized to boundary-run evidence before the
             -- caller-supplied boundary provider consumes it.
             intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
@@ -2852,11 +2852,11 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                   { id := id, kind := .pfn, typ := t, argName := some n,
                     retSpec := some r, effects := [],
                     preds := collectExternPreds r [] }
-                  (Expr.externPfn id n t r) ctxᵢ res :=
+                  (Expr.externPfn id n t argPoison argPred r) ctxᵢ res :=
               ExternBoundaryTyping.Decl.pfn htc
             exact
               hdeclFR
-                (e := Expr.externPfn id n t r) (id := id)
+                (e := Expr.externPfn id n t argPoison argPred r) (id := id)
                 (d := { id := id, kind := .pfn, typ := t, argName := some n,
                         retSpec := some r, effects := [],
                         preds := collectExternPreds r [] })

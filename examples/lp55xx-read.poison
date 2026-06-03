@@ -7,7 +7,7 @@ let NOT_READY = extern val @236 : (int :> clean {}) in
 let READY = extern val @237 : (int :> clean {}) in
 
 let lp55xx_read =
-  extern fn @238 r : (ref int) -> ( (int :> poisoned { 100, ret => (ret >= 0) }) ) ,
+  extern fn @238 r : (ref int :> clean {}) -> ( (int :> poisoned { 100, ret => (ret >= 0) }) ) ,
     effects: { !r :> (int :> poisoned { 100 }) }
 in
 

@@ -6,8 +6,8 @@
 -- because inner tag resolution is deferred until application.
 let s = ref 0 in
 let f =
-  extern fn @111 x : (int) -> (
-    extern pfn @112 y : (int) -> ( (int :> poisoned { 7 }) )
+  extern fn @111 x : (int :> clean {}) -> (
+    extern pfn @112 y : (int :> clean {}) -> ( (int :> poisoned { 7 }) )
   ) ,
     effects: { !s :> (int :> poisoned { 7, v => v >= 0 }) }
 in

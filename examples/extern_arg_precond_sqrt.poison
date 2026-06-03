@@ -1,0 +1,14 @@
+--! poison-interpreter --extern-regime "12=true"
+-- sqrt-style positive example (doc/extern-argument-conditions.md).
+-- The precondition `(int :> clean { v >= 0 })` is satisfied by a value that is
+-- clean UNDER THE REGIME because it still carries the `>= 0` provenance guard.
+-- The registered pure builtin @12 is declared here as producing a poisoned int
+-- carrying that guard; selecting its id via --extern-regime activates the guard,
+-- so `produce 4` is clean-under-regime AND carries `v >= 0`, satisfying sqrt's
+-- predicated precondition. (Routing the value through an `if v >= 0` check would
+-- DEPOISON it to a bare clean value, stripping the guard and failing the
+-- precondition: the value must arrive with its provenance intact.)
+let produce = extern pfn @12 p : (int :> clean {}) -> ((int :> poisoned { 5, v => (v >= 0) }))
+in
+let sqrtf = extern pfn @19 x : (int :> clean { 5, v => (v >= 0) }) -> ((int :> clean {}))
+in sqrtf (produce 4)

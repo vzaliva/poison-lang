@@ -137,28 +137,28 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool)
                     have h := bevalFunctionBody_preserves_varEnv fuel' verbose
                       ({ configFn with varEnv := config₀.varEnv } : Config) config₁ env x vArg body true v hBody
                     simpa using h
-                | @externFn x y id argTyp retSpec eff env _he2 he1 _hp _impl _hGet _hArgTy _vRaw _mem' _addr'
+                | @externFn x y id argTyp argPoison argPred retSpec eff env _he2 he1 _hp _impl _hGet _hArgTy _vRaw _mem' _addr'
                     _hImpl _hValRet hcfg =>
                     have hFn : config₀.varEnv = configFn.varEnv := by
                       have h := ih' e₁ ({ configArg with varEnv := config₀.varEnv } : Config) configFn
-                        (Value.closure x (Expr.externFn id y argTyp retSpec eff) env) he1
+                        (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff) env) he1
                       simpa using h
                     rw [hcfg]; exact hFn
-                | @externPfn x y id argTyp retSpec env _he2 he1 _impl _hGet _hArgTy _vRaw _hImpl _hValRet hcfg =>
+                | @externPfn x y id argTyp argPoison argPred retSpec env _he2 he1 _impl _hGet _hArgTy _vRaw _hImpl _hValRet hcfg =>
                     have hFn : config₀.varEnv = configFn.varEnv := by
                       have h := ih' e₁ ({ configArg with varEnv := config₀.varEnv } : Config) configFn
-                        (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env) he1
+                        (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) env) he1
                       simpa using h
                     rw [hcfg]; exact hFn
             | externVal _id _typ _poison _pred =>
                 unfold LeanPoison.beval at hEval
                 simp at hEval
                 split at hEval <;> (try split at hEval) <;> simp_all
-            | externFn _id _arg _argTyp _retSpec _effects =>
+            | externFn _id _arg _argTyp _ _ _retSpec _effects =>
                 unfold LeanPoison.beval at hEval
                 simp at hEval
                 split at hEval <;> simp_all
-            | externPfn _id _arg _argTyp _retSpec =>
+            | externPfn _id _arg _argTyp _ _ _retSpec =>
                 unfold LeanPoison.beval at hEval
                 simp at hEval
                 split at hEval <;> simp_all
@@ -220,12 +220,12 @@ lemma terminatesTo_app_inv_full (e₁ e₂ : Expr) (c₀ cf : Config) (v : Value
           (hcfg := by simpa using hcfg_final)
           (hpure_e2 := hpure_cfg2)
           (hpure_final := by rw [hpfinal, hpure_cfg1, hpure_cfg2])
-  | @externFn x y id argTyp retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr'
+  | @externFn x y id argTyp argPoison argPred retSpec eff env he2 he1 hp impl hGet hArg vRaw mem' addr'
       hImpl hValRet hcfg =>
       rw [hfn_eq] at he1
       have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
         terminatesTo_preserves_pureMode e₁ cfg2 cfg1
-          (Value.closure x (Expr.externFn id y argTyp retSpec eff) env)
+          (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff) env)
           ⟨fuel - 1, verbose, he1⟩
       exact
         TerminatesToAppSuccess.externFn
@@ -258,11 +258,11 @@ lemma terminatesTo_app_inv_full (e₁ e₂ : Expr) (c₀ cf : Config) (v : Value
           (hcfg := by simpa using hcfg_final)
           (hpure_e2 := hpure_cfg2)
           (hpure_final := by rw [hpfinal, hpure_cfg1, hpure_cfg2])
-  | @externPfn x y id argTyp retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
+  | @externPfn x y id argTyp argPoison argPred retSpec env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
       rw [hfn_eq] at he1
       have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
         terminatesTo_preserves_pureMode e₁ cfg2 cfg1
-          (Value.peClosure x (Expr.externPfn id y argTyp retSpec) env)
+          (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) env)
           ⟨fuel - 1, verbose, he1⟩
       exact
         TerminatesToAppSuccess.externPfn

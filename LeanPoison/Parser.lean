@@ -434,14 +434,11 @@ mutual
                         | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
                         | _ => .error "Invalid extern_fn name"
 
-                    let argTyp :=
-                      match e_argTyp with
-                      | Element.Element "paren_type" _ contents => parseTypeExpr contents
-                      | _ => .error "Invalid extern_fn arg type"
+                    let (argT, argPoison, argPred) ← xmlToQTyp e_argTyp (allowCleanPred := true)
 
                     let retType <- xmlToRetType e_retType
 
-                    return Expr.externFn id name (← argTyp) retType []
+                    return Expr.externFn id name argT argPoison argPred retType []
 
 
                 | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType,e_effects] =>
@@ -453,10 +450,7 @@ mutual
                     match e_name with
                     | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
                     | _ =>  .error "Invalid extern_fn name"
-                  let argTyp :=
-                    match e_argTyp with
-                    | Element.Element "paren_type" _ contents => parseTypeExpr contents
-                    | _ => .error "Invalid extern_fn arg type"
+                  let (argT, argPoison, argPred) ← xmlToQTyp e_argTyp (allowCleanPred := true)
                   let retType <- xmlToRetType e_retType
                   let effectBlock :=
                     match e_effects with
@@ -464,7 +458,7 @@ mutual
                       (xmlToEffects ( Element.Element "effects_block" attr effectsContent))
                     | _ => .error ("Invalid effects : "++ toString e_effects)
 
-                  return Expr.externFn id name (← argTyp) retType (<- effectBlock)
+                  return Expr.externFn id name argT argPoison argPred retType (<- effectBlock)
 
                 | _ => .error "Invalid extern_fn content"
 
@@ -485,12 +479,9 @@ mutual
                     | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
                     | _ => .error "Invalid extern_pfn name"
 
-                  let argTyp :=
-                    match e_argTyp with
-                      | Element.Element "paren_type" _ contents => parseTypeExpr contents
-                      | _ => .error "Invalid extern_pfn arg type"
+                  let (argT, argPoison, argPred) ← xmlToQTyp e_argTyp (allowCleanPred := true)
 
-                  return Expr.externPfn id name (← argTyp) (<- xmlToRetType e_retType)
+                  return Expr.externPfn id name argT argPoison argPred (<- xmlToRetType e_retType)
                 | _ => .error "Invalid extern_pfn content"
 
 
@@ -563,7 +554,12 @@ mutual
           return SyntaxPredicate.noPred
       | _ => .error s!"Invalid predicate_clause shape: {predContents}"
 
-  partial def xmlToQTyp (x : Element) : Except String (Typ × Bool × SyntaxPredicate) :=
+  /-- Parse a `qtyp` XML node into the surface triple `(Typ × Bool × SyntaxPredicate)`.
+      `allowCleanPred := true` lifts the "clean types cannot have predicates"
+      restriction, which is required for extern ARGUMENT conditions (a clean
+      precondition may carry a guard predicate, e.g. `(int :> clean { 1, v => v >= 0 })`).
+      Return/value/effect positions keep the default `false`. -/
+  partial def xmlToQTyp (x : Element) (allowCleanPred : Bool := false) : Except String (Typ × Bool × SyntaxPredicate) :=
     match x with
     | Element.Element "qtyp" _ contents => do
         let elems := contents.filterMap fun
@@ -579,7 +575,7 @@ mutual
             let typ <- parseTypeExpr typeExprConts
             let poisonStatus := if poison.trimAscii.toString == "poisoned" then true else false
             let pred <- parsePredicate predContents
-            if poisonStatus = false && pred != SyntaxPredicate.noPred then
+            if poisonStatus = false && pred != SyntaxPredicate.noPred && !allowCleanPred then
               .error "Clean types cannot have predicates"
             return (typ, poisonStatus, pred)
         | _ => .error s!"Invalid qtyp shape: {contents}"
@@ -603,28 +599,28 @@ mutual
         match elems.toList with
         | [Element.Element "number" _ #[Content.Character idStr],
           Element.Element "identifier" _ #[Content.Character name],
-          Element.Element "paren_type" _ argTypeContents,
+          e_argQt@(Element.Element "qtyp" _ _),
           e_retType] =>
             let id <-
               match idStr.trimAscii.toString.toNat? with
               | some n => .ok n
               | none => .error s!"Invalid nested extern_fn id: {idStr}"
-            let argType <- parseTypeExpr argTypeContents
+            let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedFn id name.trimAscii.toString argType retType []
+            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType []
 
         | [Element.Element "number" _ #[Content.Character idStr],
           Element.Element "identifier" _ #[Content.Character name],
-          Element.Element "paren_type" _ argTypeContents,
+          e_argQt@(Element.Element "qtyp" _ _),
           e_retType,e_effects] =>
             let id <-
               match idStr.trimAscii.toString.toNat? with
               | some n => .ok n
               | none => .error s!"Invalid nested extern_fn id: {idStr}"
-            let argType <- parseTypeExpr argTypeContents
+            let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
             let retType <- xmlToRetType e_retType
             let effects <- xmlToEffects e_effects
-            return ExternReturn.nestedFn id name.trimAscii.toString argType retType effects
+            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType effects
 
         | _ => .error s!"Invalid extern_fn shape in RetType: {elems.toList}"
 
@@ -636,15 +632,15 @@ mutual
         match elems.toList with
         | [Element.Element "number" _ #[Content.Character idStr],
           Element.Element "identifier" _ #[Content.Character name],
-          Element.Element "paren_type" _ argTypeContents,
+          e_argQt@(Element.Element "qtyp" _ _),
           e_retType] =>
             let id <-
               match idStr.trimAscii.toString.toNat? with
               | some n => .ok n
               | none => .error s!"Invalid nested extern_pfn id: {idStr}"
-            let argType <- parseTypeExpr argTypeContents
+            let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedPfn id name.trimAscii.toString argType retType
+            return ExternReturn.nestedPfn id name.trimAscii.toString argType argPoison argPred retType
         | _ => .error s!"Invalid extern_pfn shape in RetType: {contents}"
 
     | _ => .error s!"Invalid RetType element: {x}"

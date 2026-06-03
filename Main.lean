@@ -60,7 +60,9 @@ private def outerMaxImpl
     : VarEnv → Value → Memory → Except ExternError Value
   | unifiedEnv, Value.num _a, _m =>
       let innerRet  : ExternReturn := .simple .int false .noPred
-      let innerNode : _root_.Expr := .externPfn 11 "b" .int innerRet
+      -- Inner `@11` argument condition must match the source declaration of
+      -- curried `max`'s inner stage: `(int :> clean {})` (honest clean precondition).
+      let innerNode : _root_.Expr := .externPfn 11 "b" .int false .noPred innerRet
       .ok (Value.peClosure "b" innerNode unifiedEnv)
   | _, _, _ => .error (.implFailure 10 "expected int argument")
 
@@ -76,6 +78,14 @@ private def absImpl
     : VarEnv → Value → Memory → Except ExternError Value
   | _, Value.num n, _ => .ok (Value.num (Int.ofNat n.natAbs))
   | _, _, _           => .error (.implFailure 12 "expected int argument")
+
+/-- Integer square root.  Used by the `sqrt`-style extern argument-condition
+    example (`examples/extern_arg_precond_sqrt.poison`): its honest clean output
+    relies on the caller-side precondition `x >= 0`, not on a runtime branch. -/
+private def sqrtImpl
+    : VarEnv → Value → Memory → Except ExternError Value
+  | _, Value.num n, _ => .ok (Value.num (Int.ofNat (Nat.sqrt n.toNat)))
+  | _, _, _           => .error (.implFailure 19 "expected int argument")
 
 /-- `set_err n` writes `n` into the `errno` cell and returns `unit`. No new
     allocation, so `nextAddr` is threaded through unchanged. -/
@@ -112,7 +122,8 @@ def defaultInitialState : DefaultInitialState :=
   let r4 := regInsert r3 20 (.val (Value.num 0))
   let r5 := regInsert r4 21 (.val (Value.loc errnoAddr))
   let r6 := regInsert r5 22 (.fn setErrImpl)
-  { memory := mem0, nextAddr := 0, registry := r6 }
+  let r7 := regInsert r6 19 (.pfn sqrtImpl)
+  { memory := mem0, nextAddr := 0, registry := r7 }
 
 /-- Back-compat alias: older call sites that just want the registry. -/
 def defaultRegistry : ExternRegistry := defaultInitialState.registry

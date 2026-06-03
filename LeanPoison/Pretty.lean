@@ -70,6 +70,17 @@ private partial def syntaxPredCore : SyntaxPredicate → Std.Format
 private partial def syntaxPredInline (pred : SyntaxPredicate) : Std.Format :=
   Std.Format.bracket "{" (syntaxPredCore pred) "}"
 
+/-- Render a surface qualified type `(T :> poisoned|clean { SP })`.
+    Shared by extern argument conditions and extern return specs. -/
+private partial def qtypSurfaceInline (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) : Std.Format :=
+  Std.Format.paren (
+    reprTyp typ 0 ++
+    Std.Format.text " :> " ++
+    Std.Format.text (if poison then "poisoned" else "clean") ++
+    Std.Format.text " " ++
+    syntaxPredInline pred
+  )
+
 private partial def effectInline : Effect → Std.Format
   | ⟨target, poison, pred⟩ =>
       let targetFmt :=
@@ -86,27 +97,21 @@ private partial def effectInline : Effect → Std.Format
 
 private partial def externReturnInline : ExternReturn → Std.Format
   | .simple typ poison pred =>
-      Std.Format.paren (
-        reprTyp typ 0 ++
-        Std.Format.text " :> " ++
-        Std.Format.text (if poison then "poisoned" else "clean") ++
-        Std.Format.text " " ++
-        syntaxPredInline pred
-      )
-  | .nestedFn id x typ ret eff =>
+      qtypSurfaceInline typ poison pred
+  | .nestedFn id x typ argPoison argPred ret eff =>
       Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
-      Std.Format.paren (reprTyp typ 0) ++
+      qtypSurfaceInline typ argPoison argPred ++
       Std.Format.text " -> " ++
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", effects: " ++
       formatBracedEntries (eff.map effectInline)
-  | .nestedPfn id x typ ret =>
+  | .nestedPfn id x typ argPoison argPred ret =>
       Std.Format.text s!"extern pfn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
-      Std.Format.paren (reprTyp typ 0) ++
+      qtypSurfaceInline typ argPoison argPred ++
       Std.Format.text " -> " ++
       Std.Format.paren (externReturnInline ret)
 
@@ -176,20 +181,20 @@ partial def reprExpr : Expr → Nat → Std.Format
       Std.Format.text " " ++
       syntaxPredInline pred ++
       Std.Format.text ")"
-    | Expr.externFn id x t ret eff =>
+    | Expr.externFn id x t argPoison argPred ret eff =>
       Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
-      Std.Format.paren (reprTyp t 0) ++
+      qtypSurfaceInline t argPoison argPred ++
       Std.Format.text " -> " ++
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", effects: " ++
       formatBracedEntries (eff.map effectInline)
-    | Expr.externPfn id x t ret =>
+    | Expr.externPfn id x t argPoison argPred ret =>
       Std.Format.text s!"extern pfn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
-      Std.Format.paren (reprTyp t 0) ++
+      qtypSurfaceInline t argPoison argPred ++
       Std.Format.text " -> " ++
       Std.Format.paren (externReturnInline ret)
 
@@ -273,11 +278,13 @@ partial def reprFnTClosure : FnTClosure → Nat → Std.Format
       Std.Format.text " " ++
       Std.Format.paren (reprExpr body 0) ++
       Std.Format.text " " ++ reprVarEnv env 0
-  | FnTClosure.extern id x ret eff env, _ =>
+  | FnTClosure.extern id x ret eff env argQt, _ =>
       Std.Format.text "extern @" ++
       Std.Format.text (toString id) ++
       Std.Format.text " " ++
       Std.Format.text x ++
+      Std.Format.text " : " ++
+      reprQTyp argQt 0 ++
       Std.Format.text " " ++
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text " effects: " ++
@@ -292,11 +299,13 @@ partial def reprPFnTClosure : PFnTClosure → Nat → Std.Format
       Std.Format.text " " ++
       Std.Format.paren (reprPExpr body 0) ++
       Std.Format.text " " ++ reprVarEnv env 0
-  | PFnTClosure.extern id x ret env, _ =>
+  | PFnTClosure.extern id x ret env argQt, _ =>
       Std.Format.text "extern @" ++
       Std.Format.text (toString id) ++
       Std.Format.text " " ++
       Std.Format.text x ++
+      Std.Format.text " : " ++
+      reprQTyp argQt 0 ++
       Std.Format.text " " ++
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", deps: " ++

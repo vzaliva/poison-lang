@@ -1,6 +1,6 @@
 -- Test: curried `max` with the first argument greater. (max 7) 2 = 7.
 let m =
-  extern pfn @10 a : (int) -> (
-    extern pfn @11 b : (int) -> ((int :> clean {}))
+  extern pfn @10 a : (int :> clean {}) -> (
+    extern pfn @11 b : (int :> clean {}) -> ((int :> clean {}))
   )
 in (m 7) 2

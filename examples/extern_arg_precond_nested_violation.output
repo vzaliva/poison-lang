@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_arg_precond_nested_violation.poison (verbose mode)
+
+Type checking error:
+  extern @241: argument (runtime type Typ.int, poison=true) does not satisfy the declared argument precondition (Typ.int, declared poison=false)
+

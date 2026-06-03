@@ -273,8 +273,8 @@ author-chosen natural-number identifier written \texttt{@N} immediately after
 the kind keyword:
 \begin{verbatim}
   extern val @7 : (int :> clean {})
-  extern fn  @5 x : (int) -> ((int :> poisoned { 1, v => v >= 0 }))
-  extern pfn @6 u : (unit) -> ((int :> clean {}))
+  extern fn  @5 x : (int :> clean {}) -> ((int :> poisoned { 1, v => v >= 0 }))
+  extern pfn @6 u : (unit :> clean {}) -> ((int :> clean {}))
 \end{verbatim}
 Nested callable return descriptors use the same \texttt{@N} syntax and carry
 their own identifier.  These identifiers are the runtime handles used for
@@ -292,15 +292,22 @@ curried \texttt{max} pair (\texttt{@10}/\texttt{@11}) and \texttt{abs}
 unit-test suite.  Multi-argument externs are expressed by nesting pure extern
 returns; the canonical example is \texttt{max}:
 \begin{verbatim}
-  let max = extern pfn @10 a : (int) -> (
-              extern pfn @11 b : (int) -> ((int :> clean {})))
+  let max = extern pfn @10 a : (int :> clean {}) -> (
+              extern pfn @11 b : (int :> clean {}) -> ((int :> clean {})))
   in (max 3) 5
 \end{verbatim}
 
-The executable input type of an extern callable is restricted to the
-first-order surface types \texttt{\{int, bool, unit, string, ref int\}};
-passing a function as an argument to an extern is rejected both by the type
-checker and by runtime dispatch.
+The argument annotation of an extern callable is a \emph{qualified type} that
+states the caller-side precondition under which the extern's trusted boundary
+contract applies (Section~\ref{sec:extern-arg-conditions}). Its underlying
+runtime base type is restricted to the first-order surface types
+\texttt{\{int, bool, unit, string, ref int\}}; passing a function as an argument
+to an extern is rejected both by the type checker and by runtime dispatch. An
+extern that needs only an ordinary clean input is written \texttt{(int :> clean
+\{\})}; one with no real precondition is written \texttt{(int :> poisoned
+\{\})}. The return qualified type is unchanged: it remains the extern's output
+contract, with return predicates serving as latent de-poisoning markers on
+produced values rather than caller obligations.
 
 Reaching an extern identifier that the driver has not registered yields a
 runtime error naming the missing identifier.  The type checker rejects
@@ -310,10 +317,66 @@ and explicit effect specifications on referenced locations.
 Extern specifications use \emph{symbolic tag indices} rather than globally
 meaningful concrete tags. Each extern definition has its own local symbolic tag
 namespace. At each extern use site, the type checker allocates fresh concrete
-tags from the current \texttt{nextTag} counter and resolves the symbolic
-predicates to concrete predicates for that use only. Nested returned externs
-remain symbolic until they are themselves applied, ensuring separate calls get
-independent tags.
+tags from the current \texttt{nextTag} counter and resolves the symbolic return
+and effect predicates to concrete predicates for that use only. Nested returned
+externs remain symbolic until they are themselves applied, ensuring separate
+calls get independent tags. The symbolic predicate in an argument-condition
+qualified type is run through the same tag-resolution machinery, but it is
+resolved once, when the declaration is typed, so the declared condition carries
+fixed concrete tags. Because the declared condition and the actual argument
+therefore carry independently allocated tags, the call-site satisfaction check
+compares predicate shapes modulo tag and binder rather than by tag identity
+(Section~\ref{sec:extern-arg-conditions}).
+
+\subsubsection*{Extern argument conditions}
+\label{sec:extern-arg-conditions}
+
+An extern callable's argument annotation is a qualified type
+\(\mathit{ST} \triangleright p \, \{ P \}\) that states the caller-side
+\emph{precondition}: the qualified type the actual argument must satisfy before
+the extern's trusted boundary contract applies. This is the counterpart of the
+return qualified type, which states what the extern promises to produce. The two
+obligations are kept separate: the argument qualified type is what the caller
+must establish, and the return qualified type is what the extern guarantees under
+that condition. Return semantics are unchanged --- return predicates remain
+output de-poisoning markers, never caller obligations.
+
+At each extern application, the type checker forms the actual argument's
+qualified type (the argument value's type joined with the caller's program
+counter) and checks it against the applied closure's declared argument condition
+under the regime \(\mathcal{R}\) in force after the function expression is typed.
+The check is the conservative, regime-aware structural relation
+\(Q_{\mathit{actual}} \vDash_{\mathcal{R}} Q_{\mathit{declared}}\):
+\begin{itemize}
+    \item the base runtime types match;
+    \item if the declared condition is \texttt{clean}, the actual argument must
+      be clean \emph{under the current regime} --- either literally clean, or its
+      guard tag is active in \(\mathcal{R}\);
+    \item if the declared condition carries no predicate, no predicate match is
+      required;
+    \item if the declared condition carries a predicate, the actual argument must
+      carry the same guard shape (guard body equal modulo tag, binder, and
+      captured environment, after the usual extern tag-resolution machinery).
+\end{itemize}
+This is a syntactic, regime-aware compatibility check, not theorem proving: it
+deliberately performs no general logical implication between predicates, so it
+may reject calls that a stronger implication relation would accept.
+
+Enforcement is by rejection. When the actual argument fails to satisfy the
+declared condition, the application does not typecheck; there is no conservative
+fallback typing rule. Every extern application that does typecheck has therefore
+discharged its declared precondition. The gate fires at every curried level: each
+application consumes one argument and is checked against the applied closure's
+declared argument condition, including the nested, closure-returning forms.
+
+Because the satisfaction relation distinguishes the cleanness clause from the
+predicate clause, an argument condition may be \emph{clean and predicated} at
+once. The form \texttt{(int :> clean \{ 1, v => v >= 0 \})} demands an argument
+that is clean under the regime \emph{and} carries a \texttt{v >= 0} guard, so the
+extern can require provenance from a depoisoned value (for instance, a square-root
+extern that is honest only on non-negative inputs). This clean-with-predicate
+shape is admissible only in argument position; return, value, and effect
+qualified types still forbid predicates on clean types.
 
 The active regime can be extended at extern call sites by an
 \emph{extern-regime policy}. When the type checker allocates the fresh concrete
@@ -442,7 +505,7 @@ faults). Any dataflow from a poisoned value is poisoned.
 -- A fault-injecting sensor can be modelled as an extern function returning a
 -- poisoned value.
 let get_sensor =
-  extern fn u : (unit) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
 in
 let reading = get_sensor unit in  -- poisoned
 let adjusted = reading + 10 in    -- poisoned (explicit flow)
@@ -542,7 +605,7 @@ introducing guard tags that could spuriously make locations clean under a regime
 -- We model a fault-injecting sensor as an extern function returning a poisoned
 -- integer together with a guard-closure predicate.
 let get_sensor =
-  extern fn u : (unit) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
 in
 let sensor_val = get_sensor unit in -- Type: int :> poisoned {guard 1, v => (v >= 0 && v <= 255)}
 if ((sensor_val >= 0) && (sensor_val <= 255)) then
@@ -558,7 +621,7 @@ In this example, if the runtime value of \texttt{sensor\_val} satisfies the rang
 \subsubsection*{Explicit flow} (data dependency)
 \begin{lstlisting}[language=poison]
 let get_sensor =
-  extern fn u : (unit) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
 in
 let faulty = get_sensor unit in    -- poisoned
 let result = faulty + 1 in         -- poisoned (explicit flow)
@@ -568,7 +631,7 @@ result
 \subsubsection*{Implicit flow} (control dependency)
 \begin{lstlisting}[language=poison]
 let get_sensor =
-  extern fn u : (unit) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
 in
 let faulty = get_sensor unit in    -- poisoned
 if faulty > 0 then
@@ -580,7 +643,7 @@ else
 \subsubsection*{Reference operations}
 \begin{lstlisting}[language=poison]
 let get_sensor =
-  extern fn u : (unit) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
 in
 let r = ref 0 in       -- Clean reference, clean data
 (r := get_sensor unit; -- Data becomes poisoned, reference stays clean
@@ -597,7 +660,7 @@ bad_ref := 42)  -- Poisons data at unknown location
 \subsubsection*{Function calls and poisoned function selection}
 \begin{lstlisting}[language=poison]
 let get_sensor =
-  extern fn u : (unit) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
 in
 let poisoned_cond = get_sensor unit in    -- poisoned
 let f = if poisoned_cond > 0 then         -- pc becomes poisoned
@@ -860,6 +923,17 @@ the surface parameter and return types are compatible with the actual argument
 and body types respectively. The Ott rules \textsc{app\_fn\_*} and
 \textsc{app\_pfn\_*} spell out the precise case split.
 
+Applying an extern callable adds one further premise to each application rule:
+the actual argument's qualified type must satisfy the closure's declared argument
+condition (\(Q_{\mathit{actual}} \vDash_{\mathcal{R}} Q_{\mathit{declared}}\),
+Section~\ref{sec:extern-arg-conditions}). This precondition gate is complementary
+to the surface-erasure check $ST_1 \!<:\! T_1$: the latter matches the runtime
+base type, while the former checks cleanness under the regime and predicate shape.
+An unsatisfied precondition makes the application ill-typed, so the gate is
+present (with the same declared-condition test) in all nine extern application
+rules \textsc{app\_extern\_fn\_*} and \textsc{app\_extern\_pfn\_*}, including the
+nested, closure-returning forms.
+
 Key aspects of function application:
 \begin{itemize}
     \item Each typing closure contains the parameter name, function body, and captured variable context
@@ -891,10 +965,10 @@ Example of predicate-based de-poisoning in functions:
 \begin{lstlisting}[language=poison]
 -- Two extern sensors returning poisoned readings with guard-closure predicates.
 let get_temp =
-  extern fn u : (unit) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned { 1, v => (v >= 0 && v <= 255) }))
 in
 let get_pressure =
-  extern fn u : (unit) -> ((int :> poisoned { 2, v => (v >= 0 && v <= 255) }))
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned { 2, v => (v >= 0 && v <= 255) }))
 in
 let sensor1 = get_temp unit in      -- Type: int :> poisoned {guard 1, v => (v >= 0 && v <= 255)}
 let sensor2 = get_pressure unit in  -- Type: int :> poisoned {guard 2, v => (v >= 0 && v <= 255)}
