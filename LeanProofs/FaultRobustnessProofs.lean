@@ -261,7 +261,7 @@ private theorem ExternCallSingleFnProviderReachableCtx_of_reachable
   intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hctx hcan htyped
   exact
     ExternCallBoundarySingleFnContract.of_trustedReachable hagrees
-      (fun {_argTyp} {_id} {_x} {_y} {_retSpec} {_effects}
+      (fun {_argTyp} {_argPoison} {_id} {_x} {_y} {_retSpec} {_effects}
           {_capturedEnv} hsource =>
         ExternCallBoundaryFnStaticSource.reachable_from_app_typecheck
           htyped (hqtOfApp hctx hcan htyped) hsource)
@@ -282,7 +282,7 @@ private theorem ExternCallSinglePfnProviderReachableCtx_of_reachable
   intro _masked _CtxCons _ValCons _ctx _res _e1 _e2 _tcls hctx hcan htyped
   exact
     ExternCallBoundarySinglePfnContract.of_trustedReachable hagrees
-      (fun {_argTyp} {_id} {_x} {_y} {_retSpec}
+      (fun {_argTyp} {_argPoison} {_id} {_x} {_y} {_retSpec}
           {_capturedEnv} hsource =>
         ExternCallBoundaryPfnStaticSource.reachable_from_app_typecheck
           htyped (hqtOfApp hctx hcan htyped) hsource)
@@ -304,7 +304,7 @@ private theorem ExternCallFRFnLocalProviderReachableCtx_of_reachable
   intro _ctx _predSat _tm _e1 _e2 _res _tcls hctx hcan htyped
   exact
     TrustedRegistryAgreesWithProgramLocal.of_trustedReachable hagrees
-      (fun {_argTyp} {_id} {_x} {_y} {_retSpec} {_effects}
+      (fun {_argTyp} {_argPoison} {_id} {_x} {_y} {_retSpec} {_effects}
           {_capturedEnv} hsource =>
         ExternCallBoundaryFnStaticSource.reachable_from_app_typecheck
           htyped (hqtOfApp hctx hcan htyped) hsource)
@@ -326,7 +326,7 @@ private theorem ExternCallFRPfnLocalProviderReachableCtx_of_reachable
   intro _ctx _predSat _tm _e1 _e2 _res _tcls hctx hcan htyped
   exact
     TrustedRegistryAgreesWithPfnProgramLocal.of_trustedReachable hagrees
-      (fun {_argTyp} {_id} {_x} {_y} {_retSpec}
+      (fun {_argTyp} {_argPoison} {_id} {_x} {_y} {_retSpec}
           {_capturedEnv} hsource =>
         ExternCallBoundaryPfnStaticSource.reachable_from_app_typecheck
           htyped (hqtOfApp hctx hcan htyped) hsource)
@@ -2082,14 +2082,14 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
               have htyped :
                   ExternBoundaryTyping.Decl
                     { id := id, kind := .val, typ := t, argName := none,
-                      retSpec := none, effects := [], preds := [pr] }
+                      retSpec := none, effects := [], preds := [pr], argPoison := false }
                     (Expr.externVal id t p pr) ctxᵢ res :=
                 ExternBoundaryTyping.Decl.val htc
               exact
                 hdeclSingle
                   (e := Expr.externVal id t p pr) (id := id)
                   (d := { id := id, kind := .val, typ := t, argName := none,
-                          retSpec := none, effects := [], preds := [pr] })
+                          retSpec := none, effects := [], preds := [pr], argPoison := false })
                   (impl := impl) hcan ExternDeclarationInProgram.externVal
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
@@ -2111,7 +2111,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   ExternBoundaryTyping.Decl
                     { id := id, kind := .fn, typ := t, argName := some n,
                       retSpec := some r, effects := eff,
-                      preds := collectExternPreds r eff }
+                      preds := collectExternPreds r eff, argPoison := argPoison }
                     (Expr.externFn id n t argPoison argPred r eff) ctxᵢ res :=
                 ExternBoundaryTyping.Decl.fn htc
               exact
@@ -2119,7 +2119,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   (e := Expr.externFn id n t argPoison argPred r eff) (id := id)
                   (d := { id := id, kind := .fn, typ := t, argName := some n,
                           retSpec := some r, effects := eff,
-                          preds := collectExternPreds r eff })
+                          preds := collectExternPreds r eff, argPoison := argPoison })
                   (impl := impl) hcan ExternDeclarationInProgram.externFn
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
@@ -2141,7 +2141,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   ExternBoundaryTyping.Decl
                     { id := id, kind := .pfn, typ := t, argName := some n,
                       retSpec := some r, effects := [],
-                      preds := collectExternPreds r [] }
+                      preds := collectExternPreds r [], argPoison := argPoison }
                     (Expr.externPfn id n t argPoison argPred r) ctxᵢ res :=
                 ExternBoundaryTyping.Decl.pfn htc
               exact
@@ -2149,7 +2149,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   (e := Expr.externPfn id n t argPoison argPred r) (id := id)
                   (d := { id := id, kind := .pfn, typ := t, argName := some n,
                           retSpec := some r, effects := [],
-                          preds := collectExternPreds r [] })
+                          preds := collectExternPreds r [], argPoison := argPoison })
                   (impl := impl) hcan ExternDeclarationInProgram.externPfn
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
@@ -2790,14 +2790,14 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
             have htyped :
                 ExternBoundaryTyping.Decl
                   { id := id, kind := .val, typ := t, argName := none,
-                    retSpec := none, effects := [], preds := [pr] }
+                    retSpec := none, effects := [], preds := [pr], argPoison := false }
                   (Expr.externVal id t p pr) ctxᵢ res :=
               ExternBoundaryTyping.Decl.val htc
             exact
               hdeclFR
                 (e := Expr.externVal id t p pr) (id := id)
                 (d := { id := id, kind := .val, typ := t, argName := none,
-                        retSpec := none, effects := [], preds := [pr] })
+                        retSpec := none, effects := [], preds := [pr], argPoison := false })
                 (impl₀ := impl₀) (impl₁ := impl₁)
                 hcan
                 ExternDeclarationInProgram.externVal
@@ -2820,7 +2820,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 ExternBoundaryTyping.Decl
                   { id := id, kind := .fn, typ := t, argName := some n,
                     retSpec := some r, effects := eff,
-                    preds := collectExternPreds r eff }
+                    preds := collectExternPreds r eff, argPoison := argPoison }
                   (Expr.externFn id n t argPoison argPred r eff) ctxᵢ res :=
               ExternBoundaryTyping.Decl.fn htc
             exact
@@ -2828,7 +2828,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 (e := Expr.externFn id n t argPoison argPred r eff) (id := id)
                 (d := { id := id, kind := .fn, typ := t, argName := some n,
                         retSpec := some r, effects := eff,
-                        preds := collectExternPreds r eff })
+                        preds := collectExternPreds r eff, argPoison := argPoison })
                 (impl₀ := impl₀) (impl₁ := impl₁)
                 hcan
                 ExternDeclarationInProgram.externFn
@@ -2851,7 +2851,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 ExternBoundaryTyping.Decl
                   { id := id, kind := .pfn, typ := t, argName := some n,
                     retSpec := some r, effects := [],
-                    preds := collectExternPreds r [] }
+                    preds := collectExternPreds r [], argPoison := argPoison }
                   (Expr.externPfn id n t argPoison argPred r) ctxᵢ res :=
               ExternBoundaryTyping.Decl.pfn htc
             exact
@@ -2859,7 +2859,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 (e := Expr.externPfn id n t argPoison argPred r) (id := id)
                 (d := { id := id, kind := .pfn, typ := t, argName := some n,
                         retSpec := some r, effects := [],
-                        preds := collectExternPreds r [] })
+                        preds := collectExternPreds r [], argPoison := argPoison })
                 (impl₀ := impl₀) (impl₁ := impl₁)
                 hcan
                 ExternDeclarationInProgram.externPfn

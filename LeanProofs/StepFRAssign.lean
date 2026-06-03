@@ -1636,14 +1636,14 @@ private lemma guardClosure_pred_implies_tag_absent
           exfalso
           have htc' : typecheckExternFn ctx _id arg argTyp argPoison argPred retSpec effects = .ok res := by
             simpa [typecheckExpr] using htc
-          obtain ⟨argQt, hres_eq⟩ := typecheckExternFn_ok_res_eq ctx _id arg argTyp argPoison argPred retSpec effects res htc'
+          obtain ⟨argQt, _, hres_eq⟩ := typecheckExternFn_ok_res_eq ctx _id arg argTyp argPoison argPred retSpec effects res htc'
           subst hres_eq
           simp at hpred
       | externPfn _id arg argTyp argPoison argPred retSpec =>
           exfalso
           have htc' : typecheckExternPfn ctx _id arg argTyp argPoison argPred retSpec = .ok res := by
             simpa [typecheckExpr] using htc
-          obtain ⟨argQt, hres_eq⟩ := typecheckExternPfn_ok_res_eq ctx _id arg argTyp argPoison argPred retSpec res htc'
+          obtain ⟨argQt, _, hres_eq⟩ := typecheckExternPfn_ok_res_eq ctx _id arg argTyp argPoison argPred retSpec res htc'
           subst hres_eq
           simp at hpred
 

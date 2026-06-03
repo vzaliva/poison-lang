@@ -2948,6 +2948,48 @@ private lemma resolveArgCondQTyp_snd
       simp only [bind, Except.bind, TypecheckM_pure_eq, Except.ok.injEq] at h
       rw [← h]
 
+/-- The poison flag of the resolved argument-condition `QTyp` is exactly the
+    declared `argPoison`: `resolveArgCondQTyp'` returns `⟨etyp, argPoison, _⟩`. -/
+private lemma resolveArgCondQTyp'_poison
+    {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
+    {varEnv : VarTypeEnv} {qt : QTyp} :
+    resolveArgCondQTyp' argTyp argPoison argPred varEnv = .ok qt → qt.poison = argPoison := by
+  intro h
+  unfold resolveArgCondQTyp' at h
+  cases argPred with
+  | guardClosure idx arg body =>
+      cases hpe : body.toPExpr with
+      | error e =>
+          simp [bind, Except.bind, hpe] at h
+      | ok pe =>
+          cases ha : argTypToETyp argTyp <;>
+            simp_all [bind, Except.bind, pure, Except.pure, argTypToETyp]
+          all_goals (subst qt; rfl)
+  | guardOnly idx =>
+      cases ha : argTypToETyp argTyp <;>
+        simp_all [bind, Except.bind, pure, Except.pure, argTypToETyp]
+      all_goals (subst qt; rfl)
+  | noPred =>
+      cases ha : argTypToETyp argTyp <;>
+        simp_all [bind, Except.bind, pure, Except.pure, argTypToETyp]
+      all_goals (subst qt; rfl)
+
+/-- The poison flag of the resolved argument-condition `QTyp` (the first
+    projection of `resolveArgCondQTyp`) is exactly the declared `argPoison`. -/
+lemma resolveArgCondQTyp_fst_poison
+    {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
+    {varEnv : VarTypeEnv} {nt0 : Tag} {r : QTyp × Tag} :
+    resolveArgCondQTyp argTyp argPoison argPred varEnv nt0 = .ok r → r.1.poison = argPoison := by
+  intro h
+  unfold resolveArgCondQTyp at h
+  cases hq : resolveArgCondQTyp' argTyp argPoison argPred varEnv with
+  | error e => rw [hq] at h; simp [bind, Except.bind] at h
+  | ok qt =>
+      rw [hq] at h
+      simp only [bind, Except.bind, TypecheckM_pure_eq, Except.ok.injEq] at h
+      rw [← h]
+      exact resolveArgCondQTyp'_poison hq
+
 /-- Helper: when `typecheckExternFn` accepts an extern, the result is
     structurally the success record (the two front-guards `checkExternInput…`
     have succeeded). We state this as an inversion lemma so downstream proofs
@@ -2960,6 +3002,7 @@ lemma typecheckExternFn_ok_res_eq
     (retSpec : ExternReturn) (effects : List Effect) (res : TypeResult) :
     typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects = .ok res →
     ∃ argQt,
+      argQt.poison = argPoison ∧
       res =
         { qualType :=
             ⟨ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
@@ -3004,9 +3047,10 @@ lemma typecheckExternFn_ok_res_eq
       simp [h1ok, h2ok, bind, Except.bind, hr] at h
   | ok p =>
       obtain ⟨argQt, nt⟩ := p
+      have hpoison : argQt.poison = argPoison := resolveArgCondQTyp_fst_poison hr
       have hnt : nt = ctx.nextTag := resolveArgCondQTyp_snd hr
       subst hnt
-      refine ⟨argQt, ?_⟩
+      refine ⟨argQt, hpoison, ?_⟩
       have hdef :
           typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects
             = .ok { qualType :=
@@ -3025,6 +3069,7 @@ lemma typecheckExternPfn_ok_res_eq
     (retSpec : ExternReturn) (res : TypeResult) :
     typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec = .ok res →
     ∃ argQt,
+      argQt.poison = argPoison ∧
       res =
         { qualType :=
             ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
@@ -3069,9 +3114,10 @@ lemma typecheckExternPfn_ok_res_eq
       simp [h1ok, h2ok, bind, Except.bind, hr] at h
   | ok p =>
       obtain ⟨argQt, nt⟩ := p
+      have hpoison : argQt.poison = argPoison := resolveArgCondQTyp_fst_poison hr
       have hnt : nt = ctx.nextTag := resolveArgCondQTyp_snd hr
       subst hnt
-      refine ⟨argQt, ?_⟩
+      refine ⟨argQt, hpoison, ?_⟩
       have hdef :
           typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec
             = .ok { qualType :=
@@ -3897,7 +3943,7 @@ private lemma typecheckExternFn_preserves_nextTag
     typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects = .ok res →
     res.nextTag' = ctx.nextTag := by
   intro htc
-  obtain ⟨argQt, hres⟩ :=
+  obtain ⟨argQt, _, hres⟩ :=
     typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
   rw [hres]
 
@@ -3908,7 +3954,7 @@ private lemma typecheckExternPfn_preserves_nextTag
     typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec = .ok res →
     res.nextTag' = ctx.nextTag := by
   intro htc
-  obtain ⟨argQt, hres⟩ :=
+  obtain ⟨argQt, _, hres⟩ :=
     typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
   rw [hres]
 
@@ -6142,12 +6188,12 @@ private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (f
               cases htc
               exact Regime.monotoneStepExt_refl ctx.regime _
           | externFn id arg argTyp argPoison argPred retSpec effects =>
-              obtain ⟨argQt, hres⟩ :=
+              obtain ⟨argQt, _, hres⟩ :=
                 typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
               rw [hres]
               exact Regime.monotoneStepExt_refl ctx.regime _
           | externPfn id arg argTyp argPoison argPred retSpec =>
-              obtain ⟨argQt, hres⟩ :=
+              obtain ⟨argQt, _, hres⟩ :=
                 typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
               rw [hres]
               exact Regime.monotoneStepExt_refl ctx.regime _
@@ -8598,7 +8644,7 @@ private lemma typecheckExpr_preserves_combined_main :
                   simp at hmem; subst hmem
                   exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
           | externFn _id _arg _argTyp _argPoison _argPred _retSpec _effects =>
-              obtain ⟨argQt, htc_res⟩ :=
+              obtain ⟨argQt, _, htc_res⟩ :=
                 typecheckExternFn_ok_res_eq ctx _id _arg _argTyp _argPoison _argPred _retSpec _effects res htc
               subst htc_res
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
@@ -8609,7 +8655,7 @@ private lemma typecheckExpr_preserves_combined_main :
               simp at hmem; subst hmem
               exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
           | externPfn _id _arg _argTyp _argPoison _argPred _retSpec =>
-              obtain ⟨argQt, htc_res⟩ :=
+              obtain ⟨argQt, _, htc_res⟩ :=
                 typecheckExternPfn_ok_res_eq ctx _id _arg _argTyp _argPoison _argPred _retSpec res htc
               subst htc_res
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
@@ -9942,14 +9988,14 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
           | externFn _id _arg _argTyp _argPoison _argPred _retSpec _effects =>
               have hpres := typecheckExternFn_preserves_nextTag ctx _id _arg _argTyp _argPoison _argPred _retSpec _effects res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv := by
-                obtain ⟨argQt, hres⟩ :=
+                obtain ⟨argQt, _, hres⟩ :=
                   typecheckExternFn_ok_res_eq ctx _id _arg _argTyp _argPoison _argPred _retSpec _effects res htc
                 rw [hres]
               rw [htagEnv, hpres]; exact hbound
           | externPfn _id _arg _argTyp _argPoison _argPred _retSpec =>
               have hpres := typecheckExternPfn_preserves_nextTag ctx _id _arg _argTyp _argPoison _argPred _retSpec res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv := by
-                obtain ⟨argQt, hres⟩ :=
+                obtain ⟨argQt, _, hres⟩ :=
                   typecheckExternPfn_ok_res_eq ctx _id _arg _argTyp _argPoison _argPred _retSpec res htc
                 rw [hres]
               rw [htagEnv, hpres]; exact hbound
@@ -11263,11 +11309,11 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
             rename_i _surf _heqSurf
             exact surfaceSpecToQTyp_nextLoc_mono _ _ _ _ _ _heqSurf
         | externFn id arg argTyp argPoison argPred retSpec effects =>
-            obtain ⟨argQt, hres⟩ :=
+            obtain ⟨argQt, _, hres⟩ :=
               typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
             rw [hres]
         | externPfn id arg argTyp argPoison argPred retSpec =>
-            obtain ⟨argQt, hres⟩ :=
+            obtain ⟨argQt, _, hres⟩ :=
               typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
             rw [hres]
         | op e1 op e2 =>
@@ -14245,7 +14291,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
 
       -- ────────────────── externFn: captures varEnv into closure ──────────────────
       | externFn id x argTyp argPoison argPred retSpec effects =>
-        obtain ⟨argQt, htc_res⟩ :=
+        obtain ⟨argQt, _, htc_res⟩ :=
           typecheckExternFn_ok_res_eq ctx id x argTyp argPoison argPred retSpec effects res htc
         subst htc_res
         refine ⟨hwfMem, trivial, ?_⟩
@@ -14255,7 +14301,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
 
       -- ────────────────── externPfn: captures varEnv into closure ──────────────────
       | externPfn id x argTyp argPoison argPred retSpec =>
-        obtain ⟨argQt, htc_res⟩ :=
+        obtain ⟨argQt, _, htc_res⟩ :=
           typecheckExternPfn_ok_res_eq ctx id x argTyp argPoison argPred retSpec res htc
         subst htc_res
         refine ⟨hwfMem, trivial, ?_⟩
@@ -15382,12 +15428,12 @@ private lemma typecheckExpr_mem_contains_preserved_main :
                   exact updateMemEnv_contains_of_contains ctx.memEnv ctx.nextLoc l _ hcontains
                 · simp at _hcond
           | externFn id arg argTyp argPoison argPred retSpec effects =>
-              obtain ⟨argQt, hres⟩ :=
+              obtain ⟨argQt, _, hres⟩ :=
                 typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
               rw [hres]
               exact hcontains
           | externPfn id arg argTyp argPoison argPred retSpec =>
-              obtain ⟨argQt, hres⟩ :=
+              obtain ⟨argQt, _, hres⟩ :=
                 typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
               rw [hres]
               exact hcontains

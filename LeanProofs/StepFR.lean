@@ -8480,12 +8480,12 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
             cases htc
             simpa [ctxAfter, regimeConsistentWithCtxMasked]
         | externFn id arg argTyp argPoison argPred retSpec effects =>
-            obtain ⟨argQt, hres⟩ :=
+            obtain ⟨argQt, _, hres⟩ :=
               typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
             rw [hres]
             simpa [ctxAfter, regimeConsistentWithCtxMasked]
         | externPfn id arg argTyp argPoison argPred retSpec =>
-            obtain ⟨argQt, hres⟩ :=
+            obtain ⟨argQt, _, hres⟩ :=
               typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
             rw [hres]
             simpa [ctxAfter, regimeConsistentWithCtxMasked]
@@ -9000,12 +9000,12 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
             cases htc
             simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
         | externFn id arg argTyp argPoison argPred retSpec effects =>
-            obtain ⟨argQt, hres⟩ :=
+            obtain ⟨argQt, _, hres⟩ :=
               typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
             rw [hres]
             simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
         | externPfn id arg argTyp argPoison argPred retSpec =>
-            obtain ⟨argQt, hres⟩ :=
+            obtain ⟨argQt, _, hres⟩ :=
               typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
             rw [hres]
             simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
@@ -11534,7 +11534,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
             h_bounded.mono
               (typecheck_nextTag_mono ctx (Expr.externFn id arg argTyp argPoison argPred retSpec effects)
                 (Nat.succ fuel') res htc_full)
-          obtain ⟨argQt, htc_res⟩ :=
+          obtain ⟨argQt, _, htc_res⟩ :=
             typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
           subst htc_res
           refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
@@ -11546,7 +11546,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
             h_bounded.mono
               (typecheck_nextTag_mono ctx (Expr.externPfn id arg argTyp argPoison argPred retSpec)
                 (Nat.succ fuel') res htc_full)
-          obtain ⟨argQt, htc_res⟩ :=
+          obtain ⟨argQt, _, htc_res⟩ :=
             typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
           subst htc_res
           refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
@@ -15084,14 +15084,14 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             l qt_out hpre hlookup_out
       | externFn id arg argTyp argPoison argPred retSpec effects =>
           unfold typecheckExpr at htc
-          obtain ⟨argQt, htc_res⟩ :=
+          obtain ⟨argQt, _, htc_res⟩ :=
             typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
           subst htc_res
           exact ⟨fun hp => ⟨qt_out, hlookup_out, hp⟩,
                  fun k hg hr hfn => ⟨qt_out, hlookup_out, hg, hr, hfn⟩⟩
       | externPfn id arg argTyp argPoison argPred retSpec =>
           unfold typecheckExpr at htc
-          obtain ⟨argQt, htc_res⟩ :=
+          obtain ⟨argQt, _, htc_res⟩ :=
             typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
           subst htc_res
           exact ⟨fun hp => ⟨qt_out, hlookup_out, hp⟩,

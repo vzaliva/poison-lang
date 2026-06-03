@@ -38,10 +38,15 @@ inductive ExternBoundaryKind where
 
     `typ`, `argPoison`, `argPred` are the surface form of the declared argument
     condition (precondition): base type, poison flag, and symbolic predicate
-    (doc/extern-argument-conditions.md).  `argPoison`/`argPred` default to the
-    permissive-but-clean `false`/`noPred`; the matching of a declaration against
-    a trusted registry entry is on the base `typ` only, so reachability sites that
-    cannot recover the surface predicate keep the defaults harmlessly. -/
+    (doc/extern-argument-conditions.md).  `argPoison` (the clean/poisoned flag) is
+    populated FAITHFULLY at every construction site — from the source AST at
+    syntactic sites and from the applied closure's `argQTyp.poison` at the
+    arrow-reachability site — so the reachable `entry.decl = d` agreement binds the
+    declared argument's poison flag: a clean-argument trusted proof only covers a
+    clean-argument program declaration.  `argPred` keeps a `noPred` default: a
+    stronger (predicated) program precondition is sound to differ from a trusted
+    no-predicate entry, and the surface predicate is not recoverable at the
+    arrow-reachability site (where only the resolved closure predicate is available). -/
 structure ExternDeclaration where
   id        : ExternId
   kind      : ExternDeclarationKind
@@ -50,7 +55,7 @@ structure ExternDeclaration where
   retSpec   : Option ExternReturn
   effects   : List Effect
   preds     : List SyntaxPredicate
-  argPoison : Bool := false
+  argPoison : Bool
   argPred   : SyntaxPredicate := .noPred
 
 /-- Runtime/typechecking facts for a successful `extern val` declaration step. -/
@@ -191,7 +196,7 @@ theorem of_terminatesTo_externVal
     ∃ impl,
       ExternDeclBoundaryRun
         { id := id, kind := .val, typ := typ, argName := none, retSpec := none,
-          effects := [], preds := [pred] }
+          effects := [], preds := [pred], argPoison := false }
         impl ctx res cᵢ cₒ v := by
   rcases ht with ⟨fuel, verbose, hbeval⟩
   cases fuel with
@@ -234,7 +239,7 @@ theorem of_terminatesTo_externFn
       ExternDeclBoundaryRun
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
+          preds := collectExternPreds retSpec effects, argPoison := argPoison }
         impl ctx res cᵢ cₒ v := by
   rcases ht with ⟨fuel, verbose, hbeval⟩
   cases fuel with
@@ -274,7 +279,7 @@ theorem of_terminatesTo_externPfn
       ExternDeclBoundaryRun
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [] }
+          preds := collectExternPreds retSpec [], argPoison := argPoison }
         impl ctx res cᵢ cₒ v := by
   rcases ht with ⟨fuel, verbose, hbeval⟩
   cases fuel with

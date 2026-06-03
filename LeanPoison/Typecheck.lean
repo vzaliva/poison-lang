@@ -1115,9 +1115,12 @@ def predShapeMatches (declared actual : Predicate) (fuel : Nat) : Bool :=
   match declared with
   | Predicate.noPred => true
   | Predicate.guardOnly _ =>
+      -- A bare declared guard requires the actual to carry the SAME (bare) guard
+      -- shape — not an arbitrary guard-closure (that would be implication, not
+      -- shape matching; doc/extern-argument-conditions.md).
       match actual with
-      | Predicate.noPred => false
-      | _ => true
+      | Predicate.guardOnly _ => true
+      | _ => false
   | Predicate.guardClosure _ dArg dBody dEnv =>
       match actual with
       | Predicate.guardClosure _ aArg aBody aEnv =>

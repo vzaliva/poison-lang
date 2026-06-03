@@ -28,7 +28,8 @@ def builtinAbsDecl : ExternDeclaration :=
     argName := some "x"
     retSpec := some builtinAbsRetSpec
     effects := []
-    preds := collectExternPreds builtinAbsRetSpec [] }
+    preds := collectExternPreds builtinAbsRetSpec []
+    argPoison := false }
 
 /-- Proof-side copy of the interpreter's built-in `abs` implementation. -/
 def builtinAbsPfn : VarEnv → Value → Memory → Except ExternError Value

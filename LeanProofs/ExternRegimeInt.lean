@@ -107,7 +107,7 @@ theorem valueConsistentWithRegime_int_inRegimeTrue
 def regDecl : ExternDeclaration :=
   { id := 238, kind := .fn, typ := Typ.int, argName := some "p",
     retSpec := some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred),
-    effects := [], preds := [] }
+    effects := [], preds := [], argPoison := false }
 
 /-- A rogue arrow QTyp whose closure list holds an extern member for @238 but
     over argument type `bool` — so the reachable decl differs from `regDecl`
@@ -124,7 +124,8 @@ def rogueDecl : ExternDeclaration :=
   { id := 238, kind := .fn, typ := Typ.bool, argName := some "q",
     retSpec := some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred),
     effects := [],
-    preds := collectExternPreds (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] }
+    preds := collectExternPreds (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [],
+    argPoison := false }
 
 /-- Adversarial typing context: everything empty except one rogue var. -/
 def rogueCtx : TypeContext :=
@@ -205,7 +206,8 @@ def openDecl : ExternDeclaration :=
   { id := 238, kind := .fn, typ := Typ.int, argName := some "p",
     retSpec := some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred),
     effects := [],
-    preds := collectExternPreds (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] }
+    preds := collectExternPreds (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [],
+    argPoison := false }
 
 /-- Canonical empty initial typing context (no bound variables). -/
 def openEmptyCtx : TypeContext :=

@@ -74,14 +74,14 @@ theorem agreesWithReachable_of_emptyVarEnv
 
 theorem TrustedRegistryAgreesWithReachable.resolveFnDeclaration
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
-    {id : ExternId} {x : Name} {argTyp : Typ}
+    {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool}
     {retSpec : ExternReturn} {effects : List Effect} {impl : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
     (hreachable :
       ExternDeclarationReachableFromContext root ctxRoot id
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects })
+          preds := collectExternPreds retSpec effects, argPoison := argPoison })
     (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
@@ -94,14 +94,14 @@ theorem TrustedRegistryAgreesWithReachable.resolveFnDeclaration
 
 theorem TrustedRegistryAgreesWithReachable.resolvePfnDeclaration
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
-    {id : ExternId} {x : Name} {argTyp : Typ}
+    {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool}
     {retSpec : ExternReturn} {impl : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
     (hreachable :
       ExternDeclarationReachableFromContext root ctxRoot id
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [] })
+          preds := collectExternPreds retSpec [], argPoison := argPoison })
     (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
@@ -192,13 +192,13 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
 theorem TrustedRegistryAgreesWithReachable.callBoundaryRunFn
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
-    {id : ExternId} {x : Name} {argTyp : Typ} {retSpec : ExternReturn}
+    {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {retSpec : ExternReturn}
     {effects : List Effect}
     (hreachable :
       ExternDeclarationReachableFromContext root ctxRoot id
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects })
+          preds := collectExternPreds retSpec effects, argPoison := argPoison })
     {implFn : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address)}
     {callEntry : ExternCallEntry} {res : TypeResult}
     {cf : Config} {v vRaw : Value} {mem' : Memory} {addr' : Address}
@@ -242,12 +242,12 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunFn
 theorem TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
-    {id : ExternId} {x : Name} {argTyp : Typ} {retSpec : ExternReturn}
+    {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {retSpec : ExternReturn}
     (hreachable :
       ExternDeclarationReachableFromContext root ctxRoot id
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [] })
+          preds := collectExternPreds retSpec [], argPoison := argPoison })
     {implFn : VarEnv → Value → Memory → Except ExternError Value}
     {callEntry : ExternCallEntry} {res : TypeResult}
     {cf : Config} {v vRaw : Value}
@@ -596,7 +596,7 @@ theorem fn_extern_member
     ExternDeclarationReachableFromContext root ctxRoot id
       { id := id, kind := .fn, typ := st1, argName := some x,
         retSpec := some retSpec, effects := effects,
-        preds := collectExternPreds retSpec effects } :=
+        preds := collectExternPreds retSpec effects, argPoison := argQt.poison } :=
   hqt (ExternDeclarationReachableFromQTyp.arrow_extern_member hmem)
 
 theorem fn_extern_return
@@ -640,7 +640,7 @@ theorem fn_regular_extern_body
     ExternDeclarationReachableFromContext root ctxRoot id
       { id := id, kind := .fn, typ := argTyp, argName := some x,
         retSpec := some retSpec, effects := effects,
-        preds := collectExternPreds retSpec effects } :=
+        preds := collectExternPreds retSpec effects, argPoison := argPoison } :=
   hqt (ExternDeclarationReachableFromQTyp.arrow_regular_extern_body hmem)
 
 theorem pfn_regular_body
@@ -679,7 +679,7 @@ theorem pfn_extern_member
     ExternDeclarationReachableFromContext root ctxRoot id
       { id := id, kind := .pfn, typ := st1, argName := some x,
         retSpec := some retSpec, effects := [],
-        preds := collectExternPreds retSpec [] } :=
+        preds := collectExternPreds retSpec [], argPoison := argQt.poison } :=
   hqt (ExternDeclarationReachableFromQTyp.parrow_extern_member hmem)
 
 theorem pfn_extern_return
@@ -784,6 +784,7 @@ theorem of_externFn_result
     {id : ExternId} {x : Name} {argTyp : Typ}
     {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp}
     {retSpec : ExternReturn} {effects : List Effect}
+    (hpoison : argQt.poison = argPoison)
     (hctx : ContextReachableFrom root ctxRoot ctx)
     (hcurrent :
       ExternDeclarationReachableFromExpr root ctxRoot
@@ -805,7 +806,7 @@ theorem of_externFn_result
       | tail _ htail => cases htail
   | arrow_extern_member hmem =>
       cases hmem with
-      | head => exact hcurrent ExternDeclarationInProgram.externFn
+      | head => exact hpoison ▸ hcurrent ExternDeclarationInProgram.externFn
       | tail _ htail => cases htail
   | arrow_extern_return hmem hret =>
       cases hmem with
@@ -824,6 +825,7 @@ theorem of_externPfn_result
     {id : ExternId} {x : Name} {argTyp : Typ}
     {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp}
     {retSpec : ExternReturn}
+    (hpoison : argQt.poison = argPoison)
     (hctx : ContextReachableFrom root ctxRoot ctx)
     (hcurrent :
       ExternDeclarationReachableFromExpr root ctxRoot
@@ -845,7 +847,7 @@ theorem of_externPfn_result
       | tail _ htail => cases htail
   | parrow_extern_member hmem =>
       cases hmem with
-      | head => exact hcurrent ExternDeclarationInProgram.externPfn
+      | head => exact hpoison ▸ hcurrent ExternDeclarationInProgram.externPfn
       | tail _ htail => cases htail
   | parrow_extern_return hmem hret =>
       cases hmem with
@@ -908,7 +910,7 @@ theorem of_typecheckExternFn
         (Expr.externFn id x argTyp argPoison argPred retSpec effects))
     (htc : typecheckExternFn ctx id x argTyp argPoison argPred retSpec effects = .ok res) :
     QTypReachableFrom root ctxRoot res.qualType := by
-  obtain ⟨argQt, hres⟩ :=
+  obtain ⟨argQt, hpoison, hres⟩ :=
     typecheckExternFn_ok_res_eq ctx id x argTyp argPoison argPred retSpec effects res htc
   subst res
   change ∀ {nestedId : ExternId} {d : ExternDeclaration},
@@ -918,7 +920,7 @@ theorem of_typecheckExternFn
             (VarTypeEnv.toCaptured ctx.varEnv) argQt],
         poison := ctx.pc, pred := Predicate.noPred } nestedId d →
     ExternDeclarationReachableFromContext root ctxRoot nestedId d
-  exact of_externFn_result hctx hcurrent
+  exact of_externFn_result hpoison hctx hcurrent
 
 theorem of_typecheckExternPfn
     {root : Expr} {ctxRoot ctx : TypeContext}
@@ -931,7 +933,7 @@ theorem of_typecheckExternPfn
         (Expr.externPfn id x argTyp argPoison argPred retSpec))
     (htc : typecheckExternPfn ctx id x argTyp argPoison argPred retSpec = .ok res) :
     QTypReachableFrom root ctxRoot res.qualType := by
-  obtain ⟨argQt, hres⟩ :=
+  obtain ⟨argQt, hpoison, hres⟩ :=
     typecheckExternPfn_ok_res_eq ctx id x argTyp argPoison argPred retSpec res htc
   subst res
   change ∀ {nestedId : ExternId} {d : ExternDeclaration},
@@ -941,7 +943,7 @@ theorem of_typecheckExternPfn
             (VarTypeEnv.toCaptured ctx.varEnv) argQt],
         poison := ctx.pc, pred := Predicate.noPred } nestedId d →
     ExternDeclarationReachableFromContext root ctxRoot nestedId d
-  exact of_externPfn_result hctx hcurrent
+  exact of_externPfn_result hpoison hctx hcurrent
 
 theorem of_non_function_etyp
     {root : Expr} {ctxRoot : TypeContext} {qt : QTyp}
@@ -1971,7 +1973,8 @@ private theorem of_applyFnTClosureAtCursor
                                     poison := ctx.pc,
                                     pred := Predicate.noPred } := by
                               intro nestedId d hreach
-                              exact (QTypReachableFrom.of_externFn_result hunifiedCtx hcurrent)
+                              exact (QTypReachableFrom.of_externFn_result
+                                  (resolveArgCondQTyp_fst_poison hresolve) hunifiedCtx hcurrent)
                                 (by simpa [unifiedEnv] using hreach)
                             intro nestedId d hreach
                             cases hgate : joinPoison p1 p
@@ -2011,7 +2014,8 @@ private theorem of_applyFnTClosureAtCursor
                                     poison := ctx.pc,
                                     pred := Predicate.noPred } := by
                               intro nestedId d hreach
-                              exact (QTypReachableFrom.of_externPfn_result hunifiedCtx hcurrent)
+                              exact (QTypReachableFrom.of_externPfn_result
+                                  (resolveArgCondQTyp_fst_poison hresolve) hunifiedCtx hcurrent)
                                 (by simpa [unifiedEnv] using hreach)
                             intro nestedId d hreach
                             cases hgate : joinPoison p1 p
@@ -2235,7 +2239,8 @@ private theorem of_applyPFnTClosureAtCursor
                         poison := ctx.pc,
                         pred := Predicate.noPred } := by
                   intro nestedId d hreach
-                  exact (QTypReachableFrom.of_externFn_result hunifiedCtx hcurrent)
+                  exact (QTypReachableFrom.of_externFn_result
+                      (resolveArgCondQTyp_fst_poison hresolve) hunifiedCtx hcurrent)
                     (by simpa [unifiedEnv] using hreach)
                 intro nestedId d hreach
                 cases hgate : joinPoison p1 p
@@ -2275,7 +2280,8 @@ private theorem of_applyPFnTClosureAtCursor
                         poison := ctx.pc,
                         pred := Predicate.noPred } := by
                   intro nestedId d hreach
-                  exact (QTypReachableFrom.of_externPfn_result hunifiedCtx hcurrent)
+                  exact (QTypReachableFrom.of_externPfn_result
+                      (resolveArgCondQTyp_fst_poison hresolve) hunifiedCtx hcurrent)
                     (by simpa [unifiedEnv] using hreach)
                 intro nestedId d hreach
                 cases hgate : joinPoison p1 p

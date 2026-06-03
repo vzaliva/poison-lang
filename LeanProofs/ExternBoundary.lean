@@ -52,7 +52,7 @@ inductive Decl : ExternDeclaration → Expr → TypeContext → TypeResult → P
       typecheck ctx (Expr.externVal id typ poison pred) fuel = .ok res →
       Decl
         { id := id, kind := .val, typ := typ, argName := none, retSpec := none,
-          effects := [], preds := [pred] }
+          effects := [], preds := [pred], argPoison := false }
         (Expr.externVal id typ poison pred) ctx res
   | fn {ctx : TypeContext} {fuel : Nat} {id : ExternId} {x : Name}
       {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
@@ -62,7 +62,7 @@ inductive Decl : ExternDeclaration → Expr → TypeContext → TypeResult → P
       Decl
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
+          preds := collectExternPreds retSpec effects, argPoison := argPoison }
         (Expr.externFn id x argTyp argPoison argPred retSpec effects) ctx res
   | pfn {ctx : TypeContext} {fuel : Nat} {id : ExternId} {x : Name}
       {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
@@ -70,7 +70,7 @@ inductive Decl : ExternDeclaration → Expr → TypeContext → TypeResult → P
       typecheck ctx (Expr.externPfn id x argTyp argPoison argPred retSpec) fuel = .ok res →
       Decl
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
-          retSpec := some retSpec, effects := [], preds := collectExternPreds retSpec [] }
+          retSpec := some retSpec, effects := [], preds := collectExternPreds retSpec [], argPoison := argPoison }
         (Expr.externPfn id x argTyp argPoison argPred retSpec) ctx res
 
 /-- Call-boundary typing origin: the selected extern call result is the result
@@ -556,7 +556,7 @@ inductive ExternDeclarationInReturn : ExternReturn → ExternId → ExternDeclar
         innerId
         { id := innerId, kind := .fn, typ := innerArgTyp, argName := some innerArg,
           retSpec := some innerRet, effects := innerEffects,
-          preds := collectExternPreds innerRet innerEffects }
+          preds := collectExternPreds innerRet innerEffects, argPoison := innerArgPoison }
   | nestedFn_inner {innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects id d} :
       ExternDeclarationInReturn innerRet id d →
       ExternDeclarationInReturn
@@ -566,7 +566,7 @@ inductive ExternDeclarationInReturn : ExternReturn → ExternId → ExternDeclar
         (ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet)
         innerId
         { id := innerId, kind := .pfn, typ := innerArgTyp, argName := some innerArg,
-          retSpec := some innerRet, effects := [], preds := collectExternPreds innerRet [] }
+          retSpec := some innerRet, effects := [], preds := collectExternPreds innerRet [], argPoison := innerArgPoison }
   | nestedPfn_inner {innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet id d} :
       ExternDeclarationInReturn innerRet id d →
       ExternDeclarationInReturn
@@ -577,18 +577,18 @@ inductive ExternDeclarationInProgram : Expr → ExternId → ExternDeclaration �
   | externVal {id typ poison pred} :
       ExternDeclarationInProgram (Expr.externVal id typ poison pred) id
         { id := id, kind := .val, typ := typ, argName := none, retSpec := none,
-          effects := [], preds := [pred] }
+          effects := [], preds := [pred], argPoison := false }
   | externFn {id x argTyp argPoison argPred retSpec eff} :
       ExternDeclarationInProgram (Expr.externFn id x argTyp argPoison argPred retSpec eff) id
         { id := id, kind := .fn, typ := argTyp, argName := some x, retSpec := some retSpec,
-          effects := eff, preds := collectExternPreds retSpec eff }
+          effects := eff, preds := collectExternPreds retSpec eff, argPoison := argPoison }
   | externFn_return {id x argTyp argPoison argPred retSpec eff nestedId d} :
       ExternDeclarationInReturn retSpec nestedId d →
       ExternDeclarationInProgram (Expr.externFn id x argTyp argPoison argPred retSpec eff) nestedId d
   | externPfn {id x argTyp argPoison argPred retSpec} :
       ExternDeclarationInProgram (Expr.externPfn id x argTyp argPoison argPred retSpec) id
         { id := id, kind := .pfn, typ := argTyp, argName := some x, retSpec := some retSpec,
-          effects := [], preds := collectExternPreds retSpec [] }
+          effects := [], preds := collectExternPreds retSpec [], argPoison := argPoison }
   | externPfn_return {id x argTyp argPoison argPred retSpec nestedId d} :
       ExternDeclarationInReturn retSpec nestedId d →
       ExternDeclarationInProgram (Expr.externPfn id x argTyp argPoison argPred retSpec) nestedId d
@@ -642,7 +642,7 @@ inductive ExternDeclarationInProgram : Expr → ExternId → ExternDeclaration �
         (Expr.fn x argTyp (Expr.externFn id y bodyArgTyp bodyArgPoison bodyArgPred retSpec effects) retTyp) id
         { id := id, kind := .fn, typ := bodyArgTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
+          preds := collectExternPreds retSpec effects, argPoison := bodyArgPoison }
   | pfn_body {x argTyp body retTyp id d} :
       ExternDeclarationInProgram body id d →
       ExternDeclarationInProgram (Expr.pfn x argTyp body retTyp) id d
@@ -730,14 +730,14 @@ def TrustedRegistryEntryMatchesPfn
 
 theorem TrustedRegistryAgreesWithProgram.resolveFnDeclaration
     {e : Expr} {tr : TrustedRegistry} {id : ExternId} {x : Name}
-    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
+    {argTyp : Typ} {argPoison : Bool} {retSpec : ExternReturn} {effects : List Effect}
     {impl : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithProgram e tr)
     (hprog :
       ExternDeclarationInProgram e id
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects })
+          preds := collectExternPreds retSpec effects, argPoison := argPoison })
     (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
@@ -750,13 +750,13 @@ theorem TrustedRegistryAgreesWithProgram.resolveFnDeclaration
 
 theorem TrustedRegistryAgreesWithProgram.resolvePfnDeclaration
     {e : Expr} {tr : TrustedRegistry} {id : ExternId} {x : Name}
-    {argTyp : Typ} {retSpec : ExternReturn} {impl : ExternImpl}
+    {argTyp : Typ} {argPoison : Bool} {retSpec : ExternReturn} {impl : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithProgram e tr)
     (hprog :
       ExternDeclarationInProgram e id
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [] })
+          preds := collectExternPreds retSpec [], argPoison := argPoison })
     (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
@@ -1013,7 +1013,7 @@ inductive ExternDeclarationReachableFromQTyp
         { etyp := ETyp.arrow st1 st2 p tcls, poison := qpoison, pred := qpred } id
         { id := id, kind := .fn, typ := st1, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
+          preds := collectExternPreds retSpec effects, argPoison := argQt.poison }
   | arrow_extern_return {st1 st2 : Typ} {p qpoison : Poison} {qpred : Predicate}
       {tcls : List FnTClosure} {outerId nestedId : ExternId} {x : Name}
       {retSpec : ExternReturn} {effects : List Effect} {σcap : CapturedVarEnv} {argQt : QTyp}
@@ -1040,7 +1040,7 @@ inductive ExternDeclarationReachableFromQTyp
         { etyp := ETyp.arrow st1 st2 p tcls, poison := qpoison, pred := qpred } id
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects }
+          preds := collectExternPreds retSpec effects, argPoison := argPoison }
   | parrow_regular_body {st1 st2 : Typ} {p qpoison : Poison} {qpred : Predicate}
       {tcls : List PFnTClosure} {x : Name} {body : PExpr} {σcap : CapturedVarEnv}
       {id : ExternId} {d : ExternDeclaration} :
@@ -1063,7 +1063,7 @@ inductive ExternDeclarationReachableFromQTyp
         { etyp := ETyp.parrow st1 st2 p tcls, poison := qpoison, pred := qpred } id
         { id := id, kind := .pfn, typ := st1, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [] }
+          preds := collectExternPreds retSpec [], argPoison := argQt.poison }
   | parrow_extern_return {st1 st2 : Typ} {p qpoison : Poison} {qpred : Predicate}
       {tcls : List PFnTClosure} {outerId nestedId : ExternId} {x : Name}
       {retSpec : ExternReturn} {σcap : CapturedVarEnv} {argQt : QTyp} {d : ExternDeclaration} :
