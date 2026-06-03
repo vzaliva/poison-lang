@@ -925,7 +925,14 @@ def TrustedRegistryAgreesWithFnTClosures
     FnTClosure.extern id x retSpec effects capturedEnv argQt ∈ tcls →
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
+      -- The trusted entry's declared-argument poison must agree with the closure
+      -- member's resolved argument condition.  `TrustedRegistryEntryMatchesFn` is a
+      -- deliberately lossy projection of `entry.decl = d` (it drops `argPoison`,
+      -- which the reachable path carries via the full declaration equality), so the
+      -- closure-list agreement pins `argPoison` explicitly here: this forbids a clean
+      -- trusted entry from being matched against a poison-permissive closure member.
+      entry.decl.argPoison = argQt.poison
 
 /-- Static pure closure-list members can be resolved to trusted entries. -/
 def TrustedRegistryAgreesWithPFnTClosures
@@ -934,7 +941,10 @@ def TrustedRegistryAgreesWithPFnTClosures
     PFnTClosure.extern id x retSpec capturedEnv argQt ∈ tcls →
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
+      -- See `TrustedRegistryAgreesWithFnTClosures`: pin the declared-argument poison
+      -- so a clean trusted entry cannot be matched against a permissive closure member.
+      entry.decl.argPoison = argQt.poison
 
 /-- Evidence that an impure app proof is using the function closure list
     produced by typechecking the app's function expression. -/

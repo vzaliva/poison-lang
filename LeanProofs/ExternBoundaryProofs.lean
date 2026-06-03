@@ -2785,7 +2785,10 @@ theorem TrustedRegistryAgreesWithFnTClosures.resolve
       TrustedRegistry.lookup? tr id = some entry ∧
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some entry.impl ∧
       TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects := by
-  rcases hagrees hmem with ⟨entry, hlookup, hmatch⟩
+  -- The agreement now also yields `entry.decl.argPoison = argQt.poison`; this
+  -- `resolve` adapter only needs the matcher, so the poison agreement is discharged
+  -- into `_hargPoison` (the binding is enforced at the agreement premise itself).
+  rcases hagrees hmem with ⟨entry, hlookup, hmatch, _hargPoison⟩
   exact ⟨entry, hlookup, TrustedRegistry.lookup_toRuntimeRegistry hlookup, hmatch⟩
 
 theorem TrustedRegistryAgreesWithPFnTClosures.resolve
@@ -2798,7 +2801,7 @@ theorem TrustedRegistryAgreesWithPFnTClosures.resolve
       TrustedRegistry.lookup? tr id = some entry ∧
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some entry.impl ∧
       TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec := by
-  rcases hagrees hmem with ⟨entry, hlookup, hmatch⟩
+  rcases hagrees hmem with ⟨entry, hlookup, hmatch, _hargPoison⟩
   exact ⟨entry, hlookup, TrustedRegistry.lookup_toRuntimeRegistry hlookup, hmatch⟩
 
 theorem TrustedRegistryAgreesWithFnTClosures.callBoundaryRun
