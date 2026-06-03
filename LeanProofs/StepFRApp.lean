@@ -3673,7 +3673,12 @@ theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
         FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects) capturedEnv ∈ tcls →
         ∃ entry,
           TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects)
+          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
+          -- Symmetry with the extern-member path (`TrustedRegistryAgreesWithFnTClosures`):
+          -- a regular closure's extern body carries `argPoison` in its AST, so pin it into
+          -- the trusted-entry match here too, so this off-public-path cluster is uniformly
+          -- faithful.  Defense-in-depth only; `argPred` is intentionally left default.
+          entry.decl.argPoison = argPoison)
     {id : ExternId} {x y : Name} {retSpec : ExternReturn}
     {effects : List Effect} {capturedEnv : CapturedVarEnv}
     (hstatic :
@@ -3707,7 +3712,7 @@ theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
         TrustedRegistryAgreesWithFnTClosures.callBoundaryRun
           hagreesExtern hmem hargName hregistry hpure hunified hGet hArg hImpl hValRet hcfg
   | regularExternBody hmem =>
-      rcases hregularExternBody hmem with ⟨entry, hlookup, hmatch⟩
+      rcases hregularExternBody hmem with ⟨entry, hlookup, hmatch, _hargPoison⟩
       have hmatch' :
           TrustedRegistryEntryMatchesFn entry id callEntry.argName argTyp retSpec effects := by
         simpa [hargName] using hmatch
@@ -4312,7 +4317,8 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
         FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects) capturedEnv ∈ tcls →
         ∃ entry,
           TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
+          entry.decl.argPoison = argPoison) :
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls sourceArgTyp
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
@@ -6730,7 +6736,8 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
         FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects) capturedEnv ∈ tcls →
         ∃ entry,
           TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
+          entry.decl.argPoison = argPoison) :
     ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
@@ -6930,7 +6937,8 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
         FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects) capturedEnv ∈ tcls →
         ∃ entry,
           TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
+          entry.decl.argPoison = argPoison) :
     ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
@@ -7905,7 +7913,8 @@ theorem TrustedRegistryAgreesWithProgramLocal.of_trustedRegistry
         FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects) capturedEnv ∈ tcls →
         ∃ entry,
           TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
+          entry.decl.argPoison = argPoison) :
     TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) :=
