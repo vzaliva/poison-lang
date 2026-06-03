@@ -327,7 +327,7 @@ formula :: formula_ ::=
   | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com remove from L entries whose deps intersect LS }}  {{ tex [[L1]] = [[L]] \mathbin{\restriction} \bigl(\mathrm{dom}([[L]]) \setminus [[LS]]\bigr) }}
   | invalidate_regime_deps R L LS = R1 :: :: invalidate_regime_deps {{ com remove from R tags whose deps in L intersect LS }}  {{ tex [[R1]] = \mathrm{invalidate\_regime}([[R]], [[L]], [[LS]]) }}
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
-  | base_of Q = ST         :: :: base_of      {{ com ST is the surface base type underlying the qualified type Q (drops the poison flag and predicate) }} {{ tex \mathrm{base\_of}([[Q]]) = [[ST]] }}
+  | base_of Q = ST         :: :: base_of      {{ com ST is the surface base type underlying the qualified type Q (drops the poison flag and predicate); rendered with the subtype glyph since it is the surface-erasure relation lifted to qualified types }} {{ tex [[ST]] <: [[Q]] }}
   | satisfiesArgCond R Q1 Q2 :: :: arg_cond_sat {{ com actual argument qualified type Q1 satisfies the declared extern argument precondition Q2 under regime R: base types match; a declared-clean Q2 forces Q1 clean under R (literally clean, or its guard tag is active in R); a declared no-predicate Q2 imposes no match; a declared predicate forces Q1 to carry the same guard shape modulo tag, binder, and captured environment (no logical implication) }} {{ tex [[Q1]] \vDash_{[[R]]} [[Q2]] }}
   | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 signature-compatible }} {{ tex [[T1]] \approx [[T2]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
