@@ -2,7 +2,7 @@
 
 Status: the registry-aware extern-boundary path is in place. The next proof
 work is concrete boundary validation for the built-in externs, starting with
-`abs` and then curried `max`.
+the clean-input/clean-output `abs` entry and then curried `max`.
 
 The public fault-robustness theorem is relative to trusted extern boundary
 evidence under a populated registry. The remaining work is to prove that the
@@ -699,22 +699,21 @@ public constructor first.
 The current examples declare `abs` as:
 
 ```poison
-extern pfn @12 x : (int) -> ((int :> clean {}))
+extern pfn @12 x : (int :> clean {}) -> ((int :> clean {}))
 ```
 
-That declaration is intentionally part of the spike. Under the no-shortcut
-discipline above, it may overclaim: a clean no-predicate output from a possibly
-dirty argument is sound only if the native analogue can justify the same clean
-result, or if the trusted extern proof supplies an equivalent declassification
-argument.
+That declaration is intentional: `abs` is a clean-input to clean-output
+builtin.  The trusted boundary proof should consume the declared argument
+precondition and show that two clean-agreeing integer arguments produce equal
+absolute values.  It should not weaken the result declaration and should not add
+a declassification-style obligation for `abs`.
 
 Before the proof, compare the current `abs` declaration with the native Poison
-analogue. The current typechecker treats regular function application by
-binding the argument with its qualified type and then typechecking the body; it
-does not blindly join the argument poison into the result. Therefore a clean
-extern result is acceptable only when the analogous native body could justify
-that clean result by the same dependency, guard, or input-insensitivity
-discipline.
+analogue. The current typechecker gates extern application through the declared
+argument precondition; once the argument is known clean under the call regime,
+the boundary has the same clean-agreement information an ordinary function body
+would consume. Therefore the proof obligation is to connect that clean argument
+agreement to the implementation equation for `Int.natAbs`.
 
 Done means one of two outcomes:
 
@@ -724,16 +723,14 @@ Done means one of two outcomes:
   records whether the fix is to tighten the `abs` declaration, tighten
   `ExternBoundarySpec`, or expose a missing boundary payload fact.
 
-Validation result: the direct `abs` check reaches the second outcome.  The
-current `@12` declaration overclaims a clean result.  `LeanProofs/ExternProofs.lean`
-records the proof-side declaration and implementation shape, plus
-`ExternProofs.builtinAbs_cleanPost_obstruction`: for a clean integer result,
-`StepFRPost` requires `resultAgreesIfClean`, but `abs` is input-sensitive and
-dirty integer inputs need not agree.  Concretely, the implementation can return
-`1` for `-1` and `2` for `2`, and those outputs cannot satisfy clean integer
-agreement.  The appropriate fix is to tighten the `abs` declaration (for
-example, stop promising `clean {}` for a possibly dirty argument) unless a
-future declassification-style proof obligation is added.
+Validation note: `LeanProofs/ExternProofs.lean` records
+`ExternProofs.builtinAbs_cleanPost_obstruction`, which shows that a dirty-input
+interpretation of `abs` cannot justify a clean result: `abs (-1) = 1` and
+`abs 2 = 2`, so disagreeing dirty inputs can produce disagreeing clean outputs.
+That obstruction is still useful as a guardrail, but it is not the intended
+`@12` contract. The next implementation step is to prove the direct
+`ExternBoundarySpec` for the actual clean-input declaration by deriving input
+equality from the boundary premises and transporting it through `natAbs`.
 
 This is the minimal boundary validation exercise. It checks that trusted
 boundary evidence can actually be packaged, looked up, and consumed by the

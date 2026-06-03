@@ -3,8 +3,8 @@
 Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof now has a populated-registry theorem
 that consumes trusted extern boundary evidence; remaining open work is proof
-constructor/API work for concrete extern drivers and the operational
-well-formedness projections.
+validation for concrete extern drivers, followed by helper/API extraction only
+where repeated proof shapes justify it.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
@@ -254,14 +254,17 @@ boundary consumption.
 
 The remaining concrete proof obligations are:
 
-- **Constructor API for trusted entries.** Directly proving
-  `ExternBoundarySpec` for every extern would require assembling large
-  `StepFRPost` and single-run conjunctions by hand. The next proof layer should
-  provide constructors such as `ExternBoundarySpec.pureUnaryCleanInt`,
-  `constCleanInt`, `nestedPfn`, `refValInitialized`, and `impureCellUpdate`.
-- **End-to-end driver examples.** Once constructors exist, prove trusted
-  entries for `abs`, then the curried `max` pair, then low-risk extern values
-  and errno-style impure updates.
+- **Direct builtin validation.** Prove trusted entries for `abs` first, then
+  the curried `max` pair, then low-risk extern values and errno-style impure
+  updates.  The `abs` declaration is intentionally clean-input to clean-output;
+  its proof should consume the argument precondition rather than weakening the
+  result declaration.
+- **Helper extraction after repetition.** Directly proving
+  `ExternBoundarySpec` assembles large `StepFRPost` and single-run
+  conjunctions, but public constructors should be introduced only after the
+  concrete builtin proofs show repeated proof shapes.  Likely future helpers
+  include shapes such as `pureUnaryCleanInt`, `constCleanInt`, `nestedPfn`,
+  `refValInitialized`, and `impureCellUpdate`.
 
 The operational-safety portion of the stack is already discharged through
 `ExternBoundarySpec.operational`: `TrustedRegistry.operationalSafe` derives
@@ -276,10 +279,10 @@ and an `operational : ExternOperationalSafe d impl` projection. This keeps the
 core theorem generic over extern implementations while giving app/declaration
 proof sites exactly the facts they need.
 
-Concrete drivers should not expose this large interface directly. They should
-prove small behavior lemmas that feed constructor lemmas, and those
-constructors should assemble the `ExternBoundarySpec` fields. That constructor
-layer is the main remaining API work.
+Concrete drivers should not expose this large interface directly in the long
+term. For the immediate builtin validation pass, prove small behavior lemmas
+near the concrete entries and assemble `ExternBoundarySpec` directly. Extract
+constructor lemmas only once `abs` and `max` demonstrate a repeated shape.
 
 ### High-Level Direction
 
@@ -298,8 +301,8 @@ layer is the main remaining API work.
 
 ### Success Criteria (Part II)
 
-- `S-1`: The proof layer discharges the remaining constructor obligations using
-  an id-indexed evidence interface that composes with
+- `S-1`: The proof layer discharges the remaining builtin boundary obligations
+  using an id-indexed evidence interface that composes with
   `ExternTypingAssumptions.lean`; operational preservation and monotonicity flow
   through `ExternBoundarySpec.operational` and `RegistryOperationalSafe`.
 - `S-2`: FR handles callable values returned by externs — including
