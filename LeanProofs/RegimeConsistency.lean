@@ -138,7 +138,7 @@ def fnCapturedEnv : FnTClosure → CapturedVarEnv
 
 def pfnCapturedEnv : PFnTClosure → CapturedVarEnv
   | .regular _ _ ρ => ρ
-  | .extern _ _ _ ρ _ => ρ
+  | .extern _ _ _ ρ _ _ => ρ
 
 /-- Deep occurrence of a QTyp inside another QTyp. -/
 inductive QTypInQTyp : QTyp → QTyp → Prop where
@@ -929,10 +929,10 @@ lemma QTypInQTyp_pfn_extern_root_or_self
     {qt target : QTyp}
     (h : QTypInQTyp qt target)
     (htarget : target =
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
         p, Predicate.noPred⟩) :
     qt =
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
         p, Predicate.noPred⟩
     ∨ ∃ y qtRoot, ctx.varEnv.lookup y = some qtRoot ∧ QTypInQTyp qt qtRoot := by
   induction h generalizing ctx id x st₁ st₂ p retSpec argQt with
@@ -943,7 +943,7 @@ lemma QTypInQTyp_pfn_extern_root_or_self
   | in_parrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
       subst qtOuter
       let tcl0 : PFnTClosure :=
-        PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt
+        PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []
       have hEtyp : ETyp.parrow st1 st2 p0 tcls = ETyp.parrow st₁ st₂ p [tcl0] := by
         simpa [tcl0] using houterEtyp.symm
       have htcls : tcls = [tcl0] := by injection hEtyp with _ _ _ htcls
@@ -970,7 +970,7 @@ lemma QTypRespectsTagMeaning_pfn_extern
     {argQt : QTyp}
     (h : wfTagMeaningCtx tm ctx) :
     QTypRespectsTagMeaning tm
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
         p, Predicate.noPred⟩ := by
   intro qt k d hinq hqd
   rcases QTypInQTyp_pfn_extern_root_or_self ctx id x st₁ st₂ p retSpec hinq rfl with hEq | ⟨y, qtRoot, hlookup, hInRoot⟩
@@ -1164,7 +1164,7 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
       (tcls : List PFnTClosure) :
       v = Value.peClosure x_param (Expr.externPfn id y argTyp argPoison argPred retSpec) ρcap →
       qt.etyp = ETyp.parrow argTyp (parseReturnType retSpec) p tcls →
-      PFnTClosure.extern id x_param retSpec σcap argQt ∈ tcls →
+      PFnTClosure.extern id x_param retSpec σcap argQt [] ∈ tcls →
       P σcap ρcap →
       (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
         σcap.lookup x = some qt_x →

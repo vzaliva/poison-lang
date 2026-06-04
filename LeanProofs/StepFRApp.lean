@@ -317,7 +317,7 @@ inductive ExternCallBoundaryPfnStaticSource
   | externMember {declaredArgQt : QTyp} :
       argTyp = sourceArgTyp →
       declaredArgQt.poison = argPoison →
-      PFnTClosure.extern id x retSpec tenv declaredArgQt ∈ tcls →
+      PFnTClosure.extern id x retSpec tenv declaredArgQt [] ∈ tcls →
       ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id x y argTyp argPoison retSpec tenv
 
 private lemma list_lookup_some_mem_local
@@ -534,7 +534,7 @@ private lemma QTypRespectsTagMeaning_of_parrow_static_source_captured_lookup
   | externMember _harg _ hmem =>
       have hroot : QTypInQTyp qtCap qtRes :=
         QTypInQTyp.in_parrow qtCap qtRes st1 st2 p tcls
-          (PFnTClosure.extern id x retSpec σcap _) z
+          (PFnTClosure.extern id x retSpec σcap _ _) z
           hetyp hmem (by simpa [pfnCapturedEnv] using hcapMem)
       exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
 
@@ -1805,7 +1805,7 @@ private lemma applyPFnTClosure_ok_wfTypeResult
   (tcl : PFnTClosure)
   (hcaptLocs : match tcl with
     | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-    | .extern _ _ _ env _ => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+    | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env result1.nextLoc')
   (hArgRL : etypRefLocsBounded argEtyp result1.nextLoc')
   (hArgCRL : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
   (r : TypeResult)
@@ -1947,7 +1947,7 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
           · simp [ctxAfter]
           · simp [ctxAfter]
           · exact hIH
-  | extern id x retSpec capturedEnv declaredArgQt =>
+  | extern id x retSpec capturedEnv declaredArgQt captures =>
     have htag := applyPFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred
       result1 r fuel id x retSpec capturedEnv declaredArgQt happly
     have hreg1' : tagEnvConsistentWithRegime result1.tagEnv' result1.regime' := by
@@ -1971,7 +1971,7 @@ private lemma applyPFnTClosureAtCursor_ok_wfTypeResult
     (tcl : PFnTClosure)
     (hcaptLocs : match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-      | .extern _ _ _ env _ => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env result1.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result1.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
     (r : TypeResult)
@@ -2038,7 +2038,7 @@ private lemma threaded_applyPFnTClosure_forall_wfTypeResult
     (tcls : List PFnTClosure) (results : List TypeResult)
     (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result1.nextLoc'
-      | .extern _ _ _ env _ => CapturedEnvRefLocsFullBounded env result1.nextLoc')
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env result1.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result1.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result1.nextLoc')
     (hthread :
@@ -3165,7 +3165,7 @@ private lemma stepFR_app_parrow_sync_from_clean_with_extern
     ∨
     (∃ id x y argTyp argPoison argPred retSpec σcap declaredArgQt,
       argTyp = st1 ∧
-      PFnTClosure.extern id x retSpec σcap declaredArgQt ∈ tcls ∧
+      PFnTClosure.extern id x retSpec σcap declaredArgQt [] ∈ tcls ∧
       x₀ = x ∧
       x₁ = x ∧
       body₀ = Expr.externPfn id y argTyp argPoison argPred retSpec ∧
@@ -3907,7 +3907,7 @@ theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   cases hstatic with
   | externMember harg _ hmem =>
@@ -3946,7 +3946,7 @@ theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_program
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   have hGetRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.pfn implFn) := by
@@ -3957,7 +3957,7 @@ theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_program
       hagrees hprog hGetRuntime with
     ⟨entry, hlookup, himpl, hmatch⟩
   have hmatch' :
-      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec := by
+      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec [] := by
     simpa [hargName] using hmatch
   have hlookupRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some entry.impl :=
@@ -4053,7 +4053,7 @@ theorem ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_reachable
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v :=
   TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
     hagrees hreachable hargName hregistry hunified hGet hArg hImpl hValRet hcfg
@@ -4130,7 +4130,7 @@ def ExternCallPfnTypingProvider
     (callEntry : ExternCallEntry) (res : TypeResult)
     (declaredArgPoison : Bool) : Prop :=
   ∀ entry,
-    TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec →
+    TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] →
     entry.decl.argPoison = declaredArgPoison →
     ∃ argPoisonAst argPredAst,
       ExternBoundaryTyping.Call entry.decl
@@ -4214,18 +4214,18 @@ private theorem externCallPfnTypingProvider_of_selected
           nextLoc := cursor.2
           regime := bodyState.regime' })
     (hselected :
-      ∃ declaredArgQt, applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt)
+      ∃ declaredArgQt, applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt [])
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res ∧
         declaredArgQt.poison = declaredArgPoison) :
     ExternCallPfnTypingProvider id x y argTyp retSpec callEntry res declaredArgPoison := by
   intro entry hmatch hentryPoison
-  rcases hmatch with ⟨hid, hkind, htyp, hargName, hretSpec⟩
+  rcases hmatch with ⟨hid, hkind, htyp, hargName, hretSpec, hcaptures⟩
   obtain ⟨declaredArgQt, happly, hpoisonEq⟩ := hselected
   exact
     ⟨false, SyntaxPredicate.noPred,
       ExternBoundaryTyping.Call.pfnExternMember
         (argPoisonAst := false) (argPredAst := SyntaxPredicate.noPred)
-        hid hkind htyp hargName hretSpec (hpoisonEq.trans hentryPoison.symm) hbodyCtx happly⟩
+        hid hkind htyp hargName hretSpec hcaptures (hpoisonEq.trans hentryPoison.symm) hbodyCtx happly⟩
 
 private theorem externCallBoundaryRun_singlePost
     {entry : TrustedExternEntry} {typedExpr : Expr} {result3 : TypeResult}
@@ -6188,12 +6188,12 @@ private lemma applyPFnTClosure_extern_of_threaded_mem
         applyPFnTClosureAtCursor tcl' st1 st2 p p1 argEtyp argPoison argPred
           ctx bodyState cursor fuel)
       tcls (bodyState.nextTag', bodyState.nextLoc') = .ok results)
-  (hmem : PFnTClosure.extern id x retSpec tenv declaredArgQt ∈ tcls) :
+  (hmem : PFnTClosure.extern id x retSpec tenv declaredArgQt captures ∈ tcls) :
   ∃ (cursor : Tag × Loc) (first : TypeResult),
     bodyState.nextTag' ≤ cursor.1 ∧
     bodyState.nextLoc' ≤ cursor.2 ∧
     first ∈ results ∧
-    applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt)
+    applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt captures)
       st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok first := by
   rcases applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bounds
       (applyOne := fun tcl' cursor =>
@@ -6546,7 +6546,7 @@ private lemma applyPFnTClosure_staticSource_of_threaded_mem
     Regime.monotoneStepExt bodyState.regime' first.regime'
       (fun k => bodyState.nextTag' ≤ k) ∧
     (∀ l, first.memEnv'.lookup l = bodyState.memEnv'.lookup l) ∧
-    ∃ declaredArgQt, applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt)
+    ∃ declaredArgQt, applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt [])
       st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok first ∧
       declaredArgQt.poison = declaredArgPoison := by
   cases hsource with
@@ -6558,14 +6558,14 @@ private lemma applyPFnTClosure_staticSource_of_threaded_mem
       have hmono : Regime.monotoneStepExt bodyState.regime' first.regime'
           (fun k => cursor.1 ≤ k) :=
         applyPFnTClosureAtCursor_regime_mono
-          (PFnTClosure.extern id x retSpec tenv declaredArgQt) ctx st1 st2 p p1
+          (PFnTClosure.extern id x retSpec tenv declaredArgQt []) ctx st1 st2 p p1
           argEtyp argPoison argPred bodyState first cursor fuel
           (fun m _hlt e ctx' res' htc =>
             by simpa [ctxAfter] using regime_monotoneExt ctx' e m res' htc)
           happly
       let rCursor : TypeResult := { bodyState with nextTag' := cursor.1, nextLoc' := cursor.2 }
       have happlyOld :
-          applyPFnTClosure (PFnTClosure.extern id x retSpec tenv declaredArgQt)
+          applyPFnTClosure (PFnTClosure.extern id x retSpec tenv declaredArgQt [])
             st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel = .ok first := by
         unfold applyPFnTClosure
         unfold applyPFnTClosureAtCursor at happly
@@ -22866,7 +22866,7 @@ lemma stepFR_app_with_expr_proof
                         Regime.monotoneStepExt result1.regime' firstA.regime'
                           (fun k => cursorA.1 ≤ k) :=
                       applyPFnTClosureAtCursor_regime_mono
-                        (PFnTClosure.extern id₀ x₀ retSpec₀ σcap declaredArgQtA)
+                        (PFnTClosure.extern id₀ x₀ retSpec₀ σcap declaredArgQtA [])
                         ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 firstA cursorA fuel'
                         (fun m _hlt e ctx' res' htc =>
                           by simpa [ctxAfter] using regime_monotoneExt ctx' e m res' htc)

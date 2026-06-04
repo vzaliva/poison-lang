@@ -159,6 +159,14 @@ inductive EffectTarget where
   | namedVar : Name → EffectTarget      -- !varname
   deriving Repr, BEq
 
+-- Capture target: an extern read dependency.  Either an environment variable
+-- (`a`, bare) or a memory location reached through a reference variable
+-- (`!r`, bang).  See `doc/extern-env-deps.md`.
+inductive CaptureTarget where
+  | bareVar : Name → CaptureTarget   -- `a`  : environment entry
+  | memVar  : Name → CaptureTarget   -- `!r` : memory entry via reference
+  deriving Repr, BEq
+
 /-- Extern identifier: author-chosen runtime handle assigned at each extern
     declaration site (both top-level and nested). See
     `doc/ffi-proposal.md`. -/
@@ -179,6 +187,16 @@ inductive SyntaxPredicate : Type where
 structure Effect where
   target : EffectTarget
   poison : Bool  -- true for "poisoned", false for "clean"
+  pred : SyntaxPredicate
+
+-- Read-dependency ("captures:") specification for extern callables.  Parallel to
+-- `Effect`, but a capture target may be bare (environment entry) or bang (memory
+-- entry), and carries an explicit base type used by the dependency check
+-- (`Qactual <:R Qdecl`).  See `doc/extern-env-deps.md`.
+structure Capture where
+  target : CaptureTarget
+  typ : Typ
+  poison : Bool  -- declared clean/poisoned requirement
   pred : SyntaxPredicate
 
 -- Return specification for extern functions (simple or nested)
@@ -316,6 +334,16 @@ def beqEffectList : List Effect → List Effect → Bool
   | e1 :: es1, e2 :: es2 => beqEffect e1 e2 && beqEffectList es1 es2
   | _, _ => false
 termination_by structural efs1 _=> efs1
+
+def beqCapture : Capture → Capture → Bool
+  | ⟨t1, ty1, p1, pred1⟩, ⟨t2, ty2, p2, pred2⟩ =>
+      t1 == t2 && ty1 == ty2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
+
+def beqCaptureList : List Capture → List Capture → Bool
+  | [], [] => true
+  | c1 :: cs1, c2 :: cs2 => beqCapture c1 c2 && beqCaptureList cs1 cs2
+  | _, _ => false
+termination_by structural cs1 _ => cs1
 
 def beqExternReturn : ExternReturn → ExternReturn → Bool
   | ExternReturn.simple t1 p1 pred1, ExternReturn.simple t2 p2 pred2 =>
@@ -487,7 +515,10 @@ inductive FnTClosure : Type where
 
 inductive PFnTClosure : Type where
   | regular : Name → PExpr → List (Name × QTyp) → PFnTClosure
-  | extern : ExternId → Name → ExternReturn → List (Name × QTyp) → QTyp → PFnTClosure
+  -- The trailing `List Capture` records the declared `captures:` read
+  -- dependencies (`doc/extern-env-deps.md`), resolved at the declaration /
+  -- nested-return site and re-checked when the closure is applied.
+  | extern : ExternId → Name → ExternReturn → List (Name × QTyp) → QTyp → List Capture → PFnTClosure
 
 -- Enriched type (full type)
 -- Arrow types now carry non-empty lists of closures (merged typing closures)
@@ -611,9 +642,9 @@ def beqFnTClosure : FnTClosure → FnTClosure → Bool
 def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
   | PFnTClosure.regular x1 e1 env1, PFnTClosure.regular x2 e2 env2 =>
     x1 == x2 && e1 == e2 && beqVarEnv env1 env2
-  | PFnTClosure.extern id1 x1 ret1 env1 argQt1, PFnTClosure.extern id2 x2 ret2 env2 argQt2 =>
+  | PFnTClosure.extern id1 x1 ret1 env1 argQt1 cap1, PFnTClosure.extern id2 x2 ret2 env2 argQt2 cap2 =>
     id1 == id2 && x1 == x2 && beqExternReturn ret1 ret2 && beqVarEnv env1 env2
-      && beqQTyp argQt1 argQt2
+      && beqQTyp argQt1 argQt2 && beqCaptureList cap1 cap2
   | _, _ => false
 
 def beqVarEnv : CapturedVarEnv → CapturedVarEnv → Bool

@@ -299,7 +299,7 @@ partial def reprPFnTClosure : PFnTClosure → Nat → Std.Format
       Std.Format.text " " ++
       Std.Format.paren (reprPExpr body 0) ++
       Std.Format.text " " ++ reprVarEnv env 0
-  | PFnTClosure.extern id x ret env argQt, _ =>
+  | PFnTClosure.extern id x ret env argQt _captures, _ =>
       Std.Format.text "extern @" ++
       Std.Format.text (toString id) ++
       Std.Format.text " " ++

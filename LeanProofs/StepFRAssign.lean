@@ -1130,7 +1130,7 @@ private lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
     (_hEtyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
     (hClosFull : ∀ tcl ∈ tcls, match tcl with
         | .regular _ _ env => CapturedEnvFullBounded env result1.nextTag'
-        | .extern _ _ _ env _ => CapturedEnvFullBounded env result1.nextTag')
+        | .extern _ _ _ env _ _ => CapturedEnvFullBounded env result1.nextTag')
     (hPredM1 : predTagsBoundedInMemEnv result1.memEnv' result1.nextTag')
     (hArgPred : qtypPredTagBounded ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ result1.nextTag')
     (hArgClos : etypClosuresFullBounded (⟨etyp2, joinPoison ctx.pc p2, pred2⟩ : QTyp).etyp result1.nextTag')
@@ -1389,9 +1389,9 @@ private lemma typecheckApp_parrow_branch_guardClosure_pred_implies_tag_absent
                                               regime := result1.regime' }
                                             (PExpr.toExpr pbody) result3 htcBody hbodyBounded (by simpa [hq3] using hpred3)
                                         simpa [hfirstEq] using hnone3
-                | extern id x retSpec capturedEnv declaredArgQt =>
+                | extern id x retSpec capturedEnv declaredArgQt captures =>
                     have happly_old :
-                        applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+                        applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                           etyp2 p2 pred2 ctx result1 fuel' = .ok first := by
                       unfold applyPFnTClosure
                       unfold applyPFnTClosureAtCursor at happly

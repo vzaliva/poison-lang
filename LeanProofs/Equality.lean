@@ -273,6 +273,21 @@ instance : LawfulBEq EffectTarget where
   eq_of_beq {a b} := EffectTarget_beq_sound a b
   rfl {a} := EffectTarget_beq_refl a
 
+private theorem CaptureTarget_beq_refl (t : CaptureTarget) : (t == t) = true := by
+  cases t with
+  | bareVar x => simp only [BEq.beq]; exact decide_eq_true rfl
+  | memVar x => simp only [BEq.beq]; exact decide_eq_true rfl
+
+private theorem CaptureTarget_beq_sound (a b : CaptureTarget) : (a == b) = true → a = b := by
+  intro h
+  cases a <;> cases b <;> simp only [BEq.beq] at h <;> try contradiction
+  case bareVar.bareVar x1 x2 => have : x1 = x2 := of_decide_eq_true h; subst this; rfl
+  case memVar.memVar x1 x2 => have : x1 = x2 := of_decide_eq_true h; subst this; rfl
+
+instance : LawfulBEq CaptureTarget where
+  eq_of_beq {a b} := CaptureTarget_beq_sound a b
+  rfl {a} := CaptureTarget_beq_refl a
+
 -- ============================================================================
 -- Expr, SyntaxPredicate, Effect, ExternReturn: Mutual recursion
 -- ============================================================================
@@ -350,6 +365,20 @@ mutual
     | e :: es' => by
         have heq : beqEffectList (e :: es') (e :: es') = (beqEffect e e && beqEffectList es' es') := rfl
         rw [heq, beqEffect_refl e, beqEffectList_refl es']
+        rfl
+
+  private theorem beqCapture_refl : ∀ (c : Capture), beqCapture c c = true
+    | ⟨target, typ, poison, pred⟩ => by
+        have heq : beqCapture ⟨target, typ, poison, pred⟩ ⟨target, typ, poison, pred⟩ =
+                   (target == target && typ == typ && poison == poison && beqSyntaxPredicate pred pred) := rfl
+        rw [heq, CaptureTarget_beq_refl target, Typ_beq_refl typ, beqSyntaxPredicate_refl pred]
+        simp
+
+  private theorem beqCaptureList_refl : ∀ (cs : List Capture), beqCaptureList cs cs = true
+    | [] => rfl
+    | c :: cs' => by
+        have heq : beqCaptureList (c :: cs') (c :: cs') = (beqCapture c c && beqCaptureList cs' cs') := rfl
+        rw [heq, beqCapture_refl c, beqCaptureList_refl cs']
         rfl
 
   private theorem beqExternReturn_refl : ∀ (r : ExternReturn), beqExternReturn r r = true
@@ -906,6 +935,30 @@ mutual
         have : es1 = es2 := beqEffectList_sound es1 es2 h_es
         subst_vars; rfl
 
+  private theorem beqCapture_sound : ∀ (a b : Capture), beqCapture a b = true → a = b
+    | ⟨target1, typ1, poison1, pred1⟩, ⟨target2, typ2, poison2, pred2⟩ => fun h => by
+        have heq : beqCapture ⟨target1, typ1, poison1, pred1⟩ ⟨target2, typ2, poison2, pred2⟩ =
+                   (target1 == target2 && typ1 == typ2 && poison1 == poison2 && beqSyntaxPredicate pred1 pred2) := rfl
+        rw [heq, Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h
+        obtain ⟨⟨⟨h_target, h_typ⟩, h_poison⟩, h_pred⟩ := h
+        have : target1 = target2 := CaptureTarget_beq_sound target1 target2 h_target
+        have : typ1 = typ2 := Typ_beq_sound typ1 typ2 h_typ
+        have : poison1 = poison2 := of_decide_eq_true h_poison
+        have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
+        subst_vars; rfl
+
+  private theorem beqCaptureList_sound : ∀ (a b : List Capture), beqCaptureList a b = true → a = b
+    | [], [] => fun _ => rfl
+    | [], _ :: _ => fun h => by have : false = true := h; contradiction
+    | _ :: _, [] => fun h => by have : false = true := h; contradiction
+    | c1 :: cs1, c2 :: cs2 => fun h => by
+        have heq : beqCaptureList (c1 :: cs1) (c2 :: cs2) = (beqCapture c1 c2 && beqCaptureList cs1 cs2) := rfl
+        rw [heq, Bool.and_eq_true] at h
+        obtain ⟨h_c, h_cs⟩ := h
+        have : c1 = c2 := beqCapture_sound c1 c2 h_c
+        have : cs1 = cs2 := beqCaptureList_sound cs1 cs2 h_cs
+        subst_vars; rfl
+
   private theorem beqExternReturn_sound : ∀ (a b : ExternReturn), (a == b) = true → a = b
     | .simple typ1 poison1 pred1, .simple typ2 poison2 pred2 => fun h => by
         have heq : beqExternReturn (.simple typ1 poison1 pred1) (.simple typ2 poison2 pred2) =
@@ -1122,8 +1175,9 @@ private theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl
   cases tcl with
   | regular x e env =>
       simp [beqPFnTClosure, beqVarEnv_refl env]
-  | extern id x retSpec env argQt =>
-      simp [beqPFnTClosure, beqExternReturn_refl retSpec, beqVarEnv_refl env, beqQTyp_refl argQt]
+  | extern id x retSpec env argQt captures =>
+      simp [beqPFnTClosure, beqExternReturn_refl retSpec, beqVarEnv_refl env, beqQTyp_refl argQt,
+        beqCaptureList_refl captures]
 
 end
 
@@ -1302,20 +1356,21 @@ private theorem beqPFnTClosure_sound (a b : PFnTClosure) : (a == b) = true → a
     | extern _ _ _ _ _ =>
       simp only [BEq.beq, beqPFnTClosure] at h
       contradiction
-  | extern id1 x1 retSpec1 env1 argQt1 =>
+  | extern id1 x1 retSpec1 env1 argQt1 cap1 =>
     cases b with
     | regular _ _ _ =>
       simp only [BEq.beq, beqPFnTClosure] at h
       contradiction
-    | extern id2 x2 retSpec2 env2 argQt2 =>
+    | extern id2 x2 retSpec2 env2 argQt2 cap2 =>
       simp only [BEq.beq, beqPFnTClosure] at h
       simp only [Bool.and_eq_true] at h
-      obtain ⟨⟨⟨⟨h_id, h_x⟩, h_ret⟩, h_env⟩, h_argQt⟩ := h
+      obtain ⟨⟨⟨⟨⟨h_id, h_x⟩, h_ret⟩, h_env⟩, h_argQt⟩, h_cap⟩ := h
       have : id1 = id2 := of_decide_eq_true h_id
       have : x1 = x2 := of_decide_eq_true h_x
       have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
       have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
       have : argQt1 = argQt2 := beqQTyp_sound argQt1 argQt2 h_argQt
+      have : cap1 = cap2 := beqCaptureList_sound cap1 cap2 h_cap
       subst_vars
       rfl
 

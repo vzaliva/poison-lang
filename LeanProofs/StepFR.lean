@@ -555,7 +555,7 @@ private lemma QTypRespectsTagMeaning_pfn_extern_ofCaptured
     QTypRespectsTagMeaning tm
       ⟨ETyp.parrow st₁ st₂ p
         [PFnTClosure.extern innerId innerArg retSpec
-          (VarTypeEnv.toCaptured ((VarTypeEnv.ofCaptured capturedEnv).update argName argQt)) declaredArgQt],
+          (VarTypeEnv.toCaptured ((VarTypeEnv.ofCaptured capturedEnv).update argName argQt)) declaredArgQt []],
         p, Predicate.noPred⟩ := by
   let ctx' : TypeContext :=
     { pc := true, regime := {}, memEnv := {},
@@ -6417,7 +6417,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
             (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
               ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩))
     (declaredArgQt : QTyp)
-    (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt)
+    (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures)
       st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
     QTypRespectsTagMeaning tm r.qualType := by
   cases fuel with
@@ -6505,7 +6505,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
                 [PFnTClosure.extern innerId innerArg innerRet
                   (VarTypeEnv.toCaptured
                     (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
-                      ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)) v.1],
+                      ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)) v.1 []],
                 ctx.pc, Predicate.noPred⟩ :=
             QTypRespectsTagMeaning_pfn_extern_ofCaptured tm capturedEnv x
               ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
@@ -6530,7 +6530,7 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
     (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
     (declaredArgQt : QTyp)
     (happly : applyPFnTClosure
-      (PFnTClosure.extern id x (ExternReturn.simple typ poison spred) capturedEnv declaredArgQt)
+      (PFnTClosure.extern id x (ExternReturn.simple typ poison spred) capturedEnv declaredArgQt captures)
       st1 st2 p p1 argEtyp argPoison argPred ctx result2 fuel = .ok r) :
     ∃ (tm' : TagMeaning) (tagMapping : TagMapping) (nextTag' : Tag),
       let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
@@ -6589,7 +6589,8 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
               wfTagMeaningCtx_mono (ExternBatchTagMeaningExtension.extends_tm hbatch) hwf
             have hmem := applyPFnTClosure_extern_memEnv_eq ctx st1 st2 p p1
               argEtyp argPoison argPred result2 outRes
-              (Nat.succ n) id x (ExternReturn.simple typ poison spred) capturedEnv declaredArgQt (by
+              (Nat.succ n) id x (ExternReturn.simple typ poison spred) capturedEnv declaredArgQt
+              (captures := captures) (by
                 unfold applyPFnTClosure
                 simp [hgate, halloc, hresolved, hret, outRes, outQt, bind, Except.bind,
                   pure, Except.pure])
@@ -6601,7 +6602,7 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
                 (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
                 (result2 := result2) (fuel := Nat.succ n) (id := id) (x := x)
                 (retSpec := ExternReturn.simple typ poison spred) (capturedEnv := capturedEnv)
-                (declaredArgQt := declaredArgQt) (r := outRes)
+                (declaredArgQt := declaredArgQt) (captures := captures) (r := outRes)
                 (wfTagMeaningCtx_mono (ExternBatchTagMeaningExtension.extends_tm hbatch) hwf)
                 (fun name qt hmem =>
                   QTypRespectsTagMeaning_mono
@@ -7601,7 +7602,7 @@ lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
   (r : TypeResult)
   (hbound : tagEnvBounded result2.tagEnv' result2.nextTag')
   (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
     argEtyp argPoison argPred ctx result2 fuel = .ok r)
   (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
   (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
@@ -8812,11 +8813,11 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                     · simp [ctxAfter]
                                     · simp [ctxAfter]
                                     · exact hIH_body
-                  | extern id x retSpec capturedEnv declaredArgQt =>
+                  | extern id x retSpec capturedEnv declaredArgQt captures =>
                       let rCursor : TypeResult :=
                         { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
                       have happly_old :
-                          applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+                          applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                             etyp2 p2 pred2 ctx rCursor fuel'' = .ok r := by
                         unfold applyPFnTClosure
                         unfold applyPFnTClosureAtCursor at happly
@@ -9488,11 +9489,11 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                                       (PExpr.toExpr body) result3
                                       habsent_body hmasked_none_body hmasked_bounded_body htcBody'
                                     simpa [bodyCtx, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hIH_body
-                  | extern id x retSpec capturedEnv declaredArgQt =>
+                  | extern id x retSpec capturedEnv declaredArgQt captures =>
                       let rCursor : TypeResult :=
                         { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
                       have happly_old :
-                          applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+                          applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                             etyp2 p2 pred2 ctx rCursor fuel'' = .ok r := by
                         unfold applyPFnTClosure
                         unfold applyPFnTClosureAtCursor at happly
@@ -10157,14 +10158,14 @@ lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
             · intro q' k' d' hinq hgd
               exact QTypRespectsTagMeaning_transport_etyp_pred tmBody ⟨etyp3, p3, pred3⟩
                 ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
-  | extern id x retSpec capturedEnv declaredArgQt =>
+  | extern id x retSpec capturedEnv declaredArgQt captures =>
     have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
         QTypRespectsTagMeaning tm qt := by
       intro name qt hmem qt' k d hinq' hqd'
       exact hresTm1
         (QTypInQTyp.trans qt' qt result1.qualType hinq'
           (QTypInQTyp.in_parrow qt result1.qualType st1 st2 p tcls
-            (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) name hetyp1 hmem_tcl hmem))
+            (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) name hetyp1 hmem_tcl hmem))
         hqd'
     have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
       QTypRespectsTagMeaning_transport_etyp_pred tm
@@ -10732,14 +10733,14 @@ private lemma applyPFnTClosure_ok_tagMeaningPredSat_byIH
             · intro q' k' d' hinq hgd
               exact QTypRespectsTagMeaning_transport_etyp_pred tmBody ⟨etyp3, p3, pred3⟩
                 ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
-  | extern id x retSpec capturedEnv declaredArgQt =>
+  | extern id x retSpec capturedEnv declaredArgQt captures =>
     have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
         QTypRespectsTagMeaning tm qt := by
       intro name qt hmem qt' k d hinq' hqd'
       exact hresTm1
         (QTypInQTyp.trans qt' qt result1.qualType hinq'
           (QTypInQTyp.in_parrow qt result1.qualType st1 st2 p tcls
-            (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) name hetyp1 hmem_tcl hmem))
+            (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) name hetyp1 hmem_tcl hmem))
         hqd'
     have hargTm' : QTypRespectsTagMeaning tm ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
       QTypRespectsTagMeaning_transport_etyp_pred tm
@@ -13680,7 +13681,7 @@ lemma applyPFnTClosure_mem_subset
               (hpe := by simpa using toExpr_toPExpr? body)
               (htc := by simpa [bodyCtx] using htcBody)
           simpa [bodyCtx] using hsub_body l hcontains
-      | extern id x retSpec capturedEnv declaredArgQt =>
+      | extern id x retSpec capturedEnv declaredArgQt captures =>
           have hmem_eq := applyPFnTClosure_extern_memEnv_eq
             ctx st1 st2 p p1 argEtyp argPoison argPred result2 r (fuelBody + 1)
             id x retSpec capturedEnv declaredArgQt happly
@@ -13722,7 +13723,7 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
               (hpe := by simpa using toExpr_toPExpr? body)
               (htc := by simpa [bodyCtx] using htcBody)
           simpa [bodyCtx] using hpres_body l qt hlookup
-      | extern id x retSpec capturedEnv declaredArgQt =>
+      | extern id x retSpec capturedEnv declaredArgQt captures =>
           have hmem_eq := applyPFnTClosure_extern_memEnv_eq
             ctx st1 st2 p p1 argEtyp argPoison argPred result2 r (fuelBody + 1)
             id x retSpec capturedEnv declaredArgQt happly
@@ -14711,11 +14712,11 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                             rw [hlookup_src] at hlookup_preserved
                             exact Option.some.inj hlookup_preserved
                           exact hbackToCtx_poison qt_mid hlookup_mid (by simpa [hqt_mid] using hpoison_src)
-                      | extern id x retSpec capturedEnv declaredArgQt =>
+                      | extern id x retSpec capturedEnv declaredArgQt captures =>
                           let rCursor : TypeResult :=
                             { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
                           have happly_old :
-                              applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+                              applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                                 etyp2 p2 pred2 ctx rCursor fuelApp = .ok srcRes := by
                             unfold applyPFnTClosure
                             unfold applyPFnTClosureAtCursor at happly_src
@@ -15041,11 +15042,11 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                           have hnotfun_mid : qt_mid.etyp.isFunctionType = false := by
                             simpa [hqt_mid] using hnotfun_src
                           exact hbackToCtx_guard qt_mid k hlookup_mid htag_mid hreg_mid hnotfun_mid
-                      | extern id x retSpec capturedEnv declaredArgQt =>
+                      | extern id x retSpec capturedEnv declaredArgQt captures =>
                           let rCursor : TypeResult :=
                             { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
                           have happly_old :
-                              applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+                              applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                                 etyp2 p2 pred2 ctx rCursor fuelApp = .ok srcRes := by
                             unfold applyPFnTClosure
                             unfold applyPFnTClosureAtCursor at happly_src

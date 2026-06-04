@@ -2655,7 +2655,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
                     valueHasETyp θ₀
                       (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) ρcap₀)
                       (ETyp.parrow argTyp (parseReturnType retSpec) p tcls) := by
-                  have htcl_match : PFnTClosure.extern id x retSpec σcap argQTyp ∈ tcls := by
+                  have htcl_match : PFnTClosure.extern id x retSpec σcap argQTyp [] ∈ tcls := by
                     simpa [hmatch] using htcl
                   refine valueHasETyp.peClosure_extern (htcl := htcl_match) (henv := ?_) (hcover := ?_)
                   · intro y' qt_y v_y hlookup_σ hlookup_ρ
@@ -2681,7 +2681,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
                     valueHasETyp θ₁
                       (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) ρcap₁)
                       (ETyp.parrow argTyp (parseReturnType retSpec) p tcls) := by
-                  have htcl_match : PFnTClosure.extern id x retSpec σcap argQTyp ∈ tcls := by
+                  have htcl_match : PFnTClosure.extern id x retSpec σcap argQTyp [] ∈ tcls := by
                     simpa [hmatch] using htcl
                   refine valueHasETyp.peClosure_extern (htcl := htcl_match) (henv := ?_) (hcover := ?_)
                   · intro y' qt_y v_y hlookup_σ hlookup_ρ

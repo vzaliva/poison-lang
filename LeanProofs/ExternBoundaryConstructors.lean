@@ -421,9 +421,9 @@ private theorem pureUnaryCleanInt_call_result_shape
       have hbad : ExternDeclarationKind.pfn = ExternDeclarationKind.fn :=
         hspec.kind_pfn.symm.trans hkind
       cases hbad
-  | pfnExternMember hid hkind htyp harg hret _hpin hbody happly =>
+  | pfnExternMember hid hkind htyp harg hret _hcap _hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
-        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec tenv
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures tenv
       have hargTyp : argTyp = Typ.int :=
         htyp.symm.trans hspec.typ_int
       subst argTyp

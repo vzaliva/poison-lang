@@ -137,7 +137,7 @@ mutual
     (∃ st1 st2 p tcls, qt.etyp = ETyp.parrow st1 st2 p tcls ∧
      (∀ tcl ∈ tcls, match tcl with
      | PFnTClosure.regular _ _ env => P (VarTypeEnv.ofCaptured env)
-     | PFnTClosure.extern _ _ _ env _ => P (VarTypeEnv.ofCaptured env))) →
+     | PFnTClosure.extern _ _ _ env _ _ => P (VarTypeEnv.ofCaptured env))) →
     deepQTypProperty P qt
   | other (P : VarTypeEnv → Prop) (qt : QTyp) :
     nonClosureQTyp qt →
@@ -192,15 +192,15 @@ mutual
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | PFnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | PFnTClosure.extern _ _ _ env₂ _ =>
+            | PFnTClosure.extern _ _ _ env₂ _ _ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
-      | PFnTClosure.extern _ _ _ env₁ _ =>
+      | PFnTClosure.extern _ _ _ env₁ _ _ =>
           ∃ st1' st2' p' tcls₂,
             qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | PFnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | PFnTClosure.extern _ _ _ env₂ _ =>
+            | PFnTClosure.extern _ _ _ env₂ _ _ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | other (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
@@ -586,12 +586,16 @@ mutual
         {id : ExternId} {x y : Name} {argTyp : Typ}
         {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
         {p : Poison} {tcls : List PFnTClosure}
-        {qt : QTyp} {tcl : PFnTClosure} {σcap : CapturedVarEnv} {argQt : QTyp} {ρcap₁ ρcap₂ : VarEnv}
+        {qt : QTyp} {tcl : PFnTClosure} {σcap : CapturedVarEnv} {argQt : QTyp}
+        {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
         (hclean_internal : internalPoisonClean qt)
         (hetyp : qt.etyp = ETyp.parrow argTyp (parseReturnType retSpec) p tcls)
         (htcl : tcl ∈ tcls)
-        (hmatch : tcl = PFnTClosure.extern id x retSpec σcap argQt)
+        -- Phase 2-3: extern closure-value agreement is restricted to closures with
+        -- no `captures:` dependencies (`[]`); general (non-empty) capture closures
+        -- are deferred (doc/extern-env-deps-plan.md).
+        (hmatch : tcl = PFnTClosure.extern id x retSpec σcap argQt [])
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
         (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)

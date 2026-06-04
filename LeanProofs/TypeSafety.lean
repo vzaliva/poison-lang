@@ -943,7 +943,7 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
       {retSpec : ExternReturn}
       {env : VarEnv} {tcl : List PFnTClosure} {p : Bool}
       {tenv : CapturedVarEnv}
-      (htcl : PFnTClosure.extern id x retSpec tenv argQTyp ∈ tcl)
+      (htcl : PFnTClosure.extern id x retSpec tenv argQTyp [] ∈ tcl)
       (henv : ∀ n qt v, tenv.lookup n = some qt →
         env.lookup n = some v → valueHasETyp θ v qt.etyp)
       (hcover : ∀ n qt, tenv.lookup n = some qt → ∃ v, env.lookup n = some v) :
@@ -1065,7 +1065,7 @@ private def CapturedEnvRefLocsBoundedN : Nat → List (Name × QTyp) → Loc →
           | .extern _ _ _ _ env' _ => CapturedEnvRefLocsBoundedN n env' nl
       | .parrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
           | .regular _ _ env' => CapturedEnvRefLocsBoundedN n env' nl
-          | .extern _ _ _ env' _ => CapturedEnvRefLocsBoundedN n env' nl
+          | .extern _ _ _ env' _ _ => CapturedEnvRefLocsBoundedN n env' nl
       | _ => True
 
 /-- Recursive captured-env ref-location boundedness: the property holds at all depths. -/
@@ -1081,7 +1081,7 @@ def etypClosuresCapturedRefLocsBounded (etyp : ETyp) (nl : Loc) : Prop :=
       | .extern _ _ _ _ env _ => CapturedEnvRefLocsFullBounded env nl
   | .parrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env nl
-      | .extern _ _ _ env _ => CapturedEnvRefLocsFullBounded env nl
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env nl
   | _ => True
 
 /-- All ETyp closures in a VarTypeEnv have fully bounded captured env ref-locations. -/
@@ -3073,7 +3073,7 @@ lemma typecheckExternPfn_ok_res_eq
       res =
         { qualType :=
             ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
-              [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+              [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
              ctx.pc, Predicate.noPred⟩,
           memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
           nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
@@ -3122,7 +3122,7 @@ lemma typecheckExternPfn_ok_res_eq
           typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec
             = .ok { qualType :=
                       ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
-                        [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+                        [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
                         ctx.pc, Predicate.noPred⟩,
                     memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
                     nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
@@ -3303,7 +3303,7 @@ private lemma applyPFnTClosure_extern_field_eq_aux
   (r1 r2 : TypeResult) (fuel : Nat)
   (id : ExternId) (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
     argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
   r2.memEnv' = r1.memEnv' ∧ r2.tagEnv' = r1.tagEnv' := by
   unfold applyPFnTClosure at happly
@@ -3326,7 +3326,7 @@ lemma applyPFnTClosure_extern_memEnv_eq
   (r1 r2 : TypeResult) (fuel : Nat)
   (id : ExternId) (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
     argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
   r2.memEnv' = r1.memEnv' :=
   (applyPFnTClosure_extern_field_eq_aux ctx st1 st2 p p1 argEtyp argPoison argPred r1 r2
@@ -3338,7 +3338,7 @@ lemma applyPFnTClosure_extern_tagEnv_eq
   (r1 r2 : TypeResult) (fuel : Nat)
   (id : ExternId) (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
     argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
   r2.tagEnv' = r1.tagEnv' :=
   (applyPFnTClosure_extern_field_eq_aux ctx st1 st2 p p1 argEtyp argPoison argPred r1 r2
@@ -4079,7 +4079,7 @@ private lemma applyPFnTClosure_nextTag_mono_normal
                 simpa [typecheck, hctx'] using htc
               have hmono := IH fuel' (Nat.lt_succ_self fuel') body.toExpr ctx' r htc'
               simpa [hctx'] using hmono
-      | extern id x retSpec capturedEnv declaredArgQt =>
+      | extern id x retSpec capturedEnv declaredArgQt captures =>
           simp [bind, Except.bind] at happly
           -- Leading argument-condition gate: throw branch is impossible on .ok.
           split at happly
@@ -5269,7 +5269,7 @@ lemma applyPFnTClosure_extern_regime_eq_or_policy
   (r1 r2 : TypeResult) (fuel : Nat)
   (id : ExternId) (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
     argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
   r2.regime' = r1.regime' ∨
     ∃ tm : TagMapping, r2.regime' = applyExternRegimePolicy r1.regime' id ctx.externRegime tm ∧
@@ -5314,7 +5314,7 @@ lemma applyPFnTClosure_extern_regime_preserve_some
   (r1 r2 : TypeResult) (fuel : Nat)
   (id : ExternId) (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
     argEtyp argPoison argPred ctx r1 fuel = .ok r2)
   (k : Tag) (b : Bool) (hk : r1.regime'.lookup? k = some b) :
   r2.regime'.lookup? k = some b := by
@@ -5434,7 +5434,7 @@ lemma applyPFnTClosure_extern_regime_preserve_some_back
   (r1 r2 : TypeResult) (fuel : Nat)
   (id : ExternId) (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
   (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
     argEtyp argPoison argPred ctx r1 fuel = .ok r2)
   (k : Tag) (b : Bool) (hk : k < r1.nextTag') (h : r2.regime'.lookup? k = some b) :
   r1.regime'.lookup? k = some b := by
@@ -5518,7 +5518,7 @@ lemma applyPFnTClosure_regime_mono
           subst r2
           specialize IH _ (lt_add_one _) _ _ _ htc_body
           simpa using IH
-  | extern id x retSpec capturedEnv declaredArgQt =>
+  | extern id x retSpec capturedEnv declaredArgQt captures =>
       rcases applyPFnTClosure_extern_regime_eq_or_policy ctx st1 st2 p p1 argEtyp argPoison argPred
           r1 r2 fuel id x retSpec capturedEnv declaredArgQt happly with heq | ⟨tm, hr2, hfresh⟩
       · rw [heq]; exact Regime.monotoneStepExt_refl _ _
@@ -6523,7 +6523,7 @@ private def capturedEnvBoundedN : Nat → List (Name × QTyp) → Tag → Prop
           | .extern _ _ _ _ env' _ => capturedEnvBoundedN n env' nt
       | .parrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
           | .regular _ _ env' => capturedEnvBoundedN n env' nt
-          | .extern _ _ _ env' _ => capturedEnvBoundedN n env' nt
+          | .extern _ _ _ env' _ _ => capturedEnvBoundedN n env' nt
       | _ => True
 
 /-- Recursive closure-env boundedness: the property holds at all depths. -/
@@ -6538,7 +6538,7 @@ def etypClosuresFullBounded (etyp : ETyp) (nt : Tag) : Prop :=
       | .extern _ _ _ _ env _ => CapturedEnvFullBounded env nt
   | .parrow _ _ _ tcls => ∀ tcl ∈ tcls, match tcl with
       | .regular _ _ env => CapturedEnvFullBounded env nt
-      | .extern _ _ _ env _ => CapturedEnvFullBounded env nt
+      | .extern _ _ _ env _ _ => CapturedEnvFullBounded env nt
   | _ => True
 
 /-- Monotonicity for capturedEnvBoundedN. -/
@@ -7713,7 +7713,7 @@ private lemma applyPFnTClosure_extern_predTagsBounded
     (hpred_argPred : predTagBounded r1.nextTag' argPred)
     (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag')
     (declaredArgQt : QTyp)
-    (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+    (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
       argEtyp argPoison argPred ctx r1 fuel = .ok r2) :
     predTagsBoundedInMemEnv r2.memEnv' r2.nextTag' ∧
     qtypPredTagBounded r2.qualType r2.nextTag' ∧
@@ -7920,7 +7920,7 @@ private lemma applyPFnTClosure_predTagsBounded
     (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
     (henv_captured : match tcl with
       | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
-      | .extern _ _ _ env _ => CapturedEnvFullBounded env r1.nextTag')
+      | .extern _ _ _ env _ _ => CapturedEnvFullBounded env r1.nextTag')
     (hpred_argPred : predTagBounded r1.nextTag' argPred)
     (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
     applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
@@ -7975,8 +7975,8 @@ private lemma applyPFnTClosure_predTagsBounded
         split
         · exact ⟨hIH_body.1, trivial, hClosBody⟩
         · exact ⟨hIH_body.1, hpredBody, hClosBody⟩
-    | extern id x retSpec capturedEnv declaredArgQt =>
-      have happly' : applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1
+    | extern id x retSpec capturedEnv declaredArgQt captures =>
+      have happly' : applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
           argEtyp argPoison argPred ctx r1 (fuel' + 1) = .ok r2 := by
         unfold applyPFnTClosure; exact happly
       exact applyPFnTClosure_extern_predTagsBounded ctx st1 st2 p p1
@@ -8084,7 +8084,7 @@ private lemma applyPFnTClosureAtCursor_predTagsBounded
     (hpred_r1_mem : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
     (henv_captured : match tcl with
       | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
-      | .extern _ _ _ env _ => CapturedEnvFullBounded env r1.nextTag')
+      | .extern _ _ _ env _ _ => CapturedEnvFullBounded env r1.nextTag')
     (hpred_argPred : predTagBounded r1.nextTag' argPred)
     (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
     applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
@@ -8206,7 +8206,7 @@ private lemma applyPFnClosuresThreaded_forall_predTagsBounded
     (hpred_fn_mem : predTagsBoundedInMemEnv result_fn.memEnv' result_fn.nextTag')
     (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
       | .regular _ _ env => CapturedEnvFullBounded env result_fn.nextTag'
-      | .extern _ _ _ env _ => CapturedEnvFullBounded env result_fn.nextTag')
+      | .extern _ _ _ env _ _ => CapturedEnvFullBounded env result_fn.nextTag')
     (hargPred : predTagBounded result_fn.nextTag' argPred)
     (hargClos : etypClosuresFullBounded argEtyp result_fn.nextTag')
     (results : List TypeResult)
@@ -8660,7 +8660,7 @@ private lemma typecheckExpr_preserves_combined_main :
               subst htc_res
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
               show etypClosuresFullBounded
-                (ETyp.parrow _argTyp (parseReturnType _retSpec) false [PFnTClosure.extern _id _arg _retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt]) ctx.nextTag
+                (ETyp.parrow _argTyp (parseReturnType _retSpec) false [PFnTClosure.extern _id _arg _retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []]) ctx.nextTag
               intro tcl hmem
               simp at hmem; subst hmem
               exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
@@ -9606,7 +9606,7 @@ private lemma applyPFnTClosure_tagEnvBounded_normal
   (hpred_r1 : predTagsBoundedInMemEnv r1.memEnv' r1.nextTag')
   (henv_captured : match tcl with
     | .regular _ _ env => CapturedEnvFullBounded env r1.nextTag'
-    | .extern _ _ _ env _ => CapturedEnvFullBounded env r1.nextTag')
+    | .extern _ _ _ env _ _ => CapturedEnvFullBounded env r1.nextTag')
   (hpred_argPred : predTagBounded r1.nextTag' argPred)
   (hclosure_arg : etypClosuresFullBounded argEtyp r1.nextTag') :
   applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
@@ -9657,7 +9657,7 @@ private lemma applyPFnTClosure_tagEnvBounded_normal
               (by simp only [closureEnvBoundedInCtx, hctx'']
                   exact varEnvClosuresCapturedBounded_update
                     (varEnvClosuresCapturedBounded_ofCaptured henv_captured) hclosure_arg)
-    | extern id x retSpec capturedEnv declaredArgQt =>
+    | extern id x retSpec capturedEnv declaredArgQt captures =>
         simp [bind, Except.bind] at happly
         -- Leading argument-condition gate: throw branch is impossible on .ok.
         split at happly
@@ -11134,7 +11134,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                       have IH_body := IH' fuel'' (Nat.lt_succ_self fuel'') body.toExpr ctx'' r3 htc_body'
                       cases happly_old
                       simpa using IH_body
-          | extern id x retSpec capturedEnv declaredArgQt =>
+          | extern id x retSpec capturedEnv declaredArgQt captures =>
               simp [bind, Except.bind] at happly_old
               -- Leading argument-condition gate: throw branch is impossible on .ok.
               split at happly_old
@@ -11640,8 +11640,7 @@ lemma valueHasETyp_joinETyps_left
             (valueHasETyp.peClosure_extern (θ := θ) (htcl := htcl) (henv := henv) (hcover := hcover))
       | parrow st1' st2' p' tcls2 =>
           by_cases hshape : argTyp == st1' && parseReturnType retSpec == st2'
-          · have htcl_join :
-              PFnTClosure.extern id x retSpec tenv argQTyp ∈ mergePFnTClosures tcl tcls2 :=
+          · have htcl_join :=
               mem_mergePFnTClosures_left tcl tcls2 _ htcl
             have hpclo_join :
                 valueHasETyp θ (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) env)
@@ -13388,7 +13387,7 @@ private lemma applyPFnTClosure_wfTypeResult
     (hwf_fn : wfTypeResult result_fn)
     (hcaptLocs : match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
-      | .extern _ _ _ env _ => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
     (htc : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call = .ok res) :
@@ -13433,7 +13432,7 @@ private lemma applyPFnTClosure_wfTypeResult
           | true =>
             simp [hsub, pure, Except.pure] at htc
             cases htc; exact hwf3
-    | extern id x retSpec capturedEnv declaredArgQt =>
+    | extern id x retSpec capturedEnv declaredArgQt captures =>
       unfold applyPFnTClosure at htc
       simp only [bind, Except.bind] at htc
       -- Leading argument-condition gate: throw branch is impossible on .ok.
@@ -13818,7 +13817,7 @@ private lemma applyPFnTClosure_refLocsResultOutputs
     (hwf_fn : wfTypeResult result_fn)
     (hcaptLocs : match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
-      | .extern _ _ _ env _ => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
     (htc : applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call = .ok res) :
@@ -13870,7 +13869,7 @@ private lemma applyPFnTClosure_refLocsResultOutputs
           · simp at htc  -- isSubtype false → error
           · simp [pure, Except.pure] at htc
             split at htc <;> (subst htc; exact ⟨hrl3, hcl3⟩)
-    | extern id x retSpec capturedEnv declaredArgQt =>
+    | extern id x retSpec capturedEnv declaredArgQt captures =>
       have hcapt : CapturedEnvRefLocsFullBounded capturedEnv result_fn.nextLoc' := hcaptLocs
       unfold applyPFnTClosure at htc
       simp only [bind, Except.bind] at htc
@@ -13990,7 +13989,7 @@ private lemma applyPFnTClosureAtCursor_refLocsResultOutputs
     (hcursorLoc : result_fn.nextLoc' ≤ cursor.2)
     (hcaptLocs : match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
-      | .extern _ _ _ env _ => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
     (htc : applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
@@ -14103,7 +14102,7 @@ private lemma applyPFnClosuresThreaded_forall_refLocs
     (tcls : List PFnTClosure) (results : List TypeResult)
     (hcaptLocs : ∀ tcl ∈ tcls, match tcl with
       | .regular _ _ env => CapturedEnvRefLocsFullBounded env result_fn.nextLoc'
-      | .extern _ _ _ env _ => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env result_fn.nextLoc')
     (hargLocs : etypRefLocsBounded argEtyp result_fn.nextLoc')
     (hargClosLocs : etypClosuresCapturedRefLocsBounded argEtyp result_fn.nextLoc')
     (hthread : applyClosuresThreaded
@@ -14691,7 +14690,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
                                 ∀ tcl ∈ firstClosure :: restClosures, match tcl with
                                   | .regular _ _ env =>
                                       CapturedEnvRefLocsFullBounded env result1.nextLoc'
-                                  | .extern _ _ _ env _ =>
+                                  | .extern _ _ _ env _ _ =>
                                       CapturedEnvRefLocsFullBounded env result1.nextLoc' :=
                               fun tcl htcl => hClosRefLocsP tcl htcl
                             have hArgClosRefLocsP :
@@ -15025,7 +15024,7 @@ private lemma applyPFnTClosure_mem_contains_preserved
                       cases htc
                       intro l hcontains
                       exact hpres3 l (by simpa [ctx''] using hcontains)
-      | extern id x retSpec capturedEnv declaredArgQt =>
+      | extern id x retSpec capturedEnv declaredArgQt captures =>
           unfold applyPFnTClosure at htc
           simp only [bind, Except.bind] at htc
           -- Leading argument-condition gate: throw branch is impossible on .ok.
@@ -16300,11 +16299,11 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                                           have hl1 : result1.memEnv'.contains l := by
                                                             simpa [ctxBody] using hctxBody
                                                           exact hsub_fun l hl1
-                                          | extern id x retSpec capturedEnv declaredArgQt =>
+                                          | extern id x retSpec capturedEnv declaredArgQt captures =>
                                               let rCursor : TypeResult :=
                                                 { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
                                               have happly_old :
-                                                  applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1r
+                                                  applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1r
                                                     etyp2 p2 pred2 { ctx with pureCtx := true } rCursor fuelApp = .ok r := by
                                                 unfold applyPFnTClosure
                                                 unfold applyPFnTClosureAtCursor at happly
@@ -16756,11 +16755,11 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                                                   simpa [hq3] using happly.symm
                                                                 simp [hrEq]
                                                           simpa [hrReg] using hregBody
-                                          | extern id x retSpec capturedEnv declaredArgQt =>
+                                          | extern id x retSpec capturedEnv declaredArgQt captures =>
                                               let rCursor : TypeResult :=
                                                 { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
                                               have happly_old :
-                                                  applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1r
+                                                  applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1r
                                                     etyp2 p2 pred2 { ctx with pureCtx := true } rCursor fuelApp = .ok r := by
                                                 unfold applyPFnTClosure
                                                 unfold applyPFnTClosureAtCursor at happly
@@ -17186,11 +17185,11 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                                                   simpa [hq3] using happly.symm
                                                                 simp [hrEq]
                                                           simpa [hrMem] using hlookupBody
-                                          | extern id x retSpec capturedEnv declaredArgQt =>
+                                          | extern id x retSpec capturedEnv declaredArgQt captures =>
                                               let rCursor : TypeResult :=
                                                 { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
                                               have happly_old :
-                                                  applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1r
+                                                  applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1r
                                                     etyp2 p2 pred2 { ctx with pureCtx := true } rCursor fuelApp = .ok r := by
                                                 unfold applyPFnTClosure
                                                 unfold applyPFnTClosureAtCursor at happly
@@ -17671,11 +17670,11 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                                                   simpa [hq3] using happly.symm
                                                                 simp [hrEq]
                                                           simpa [hrMem] using hlookupBody
-                                          | extern id x retSpec capturedEnv declaredArgQt =>
+                                          | extern id x retSpec capturedEnv declaredArgQt captures =>
                                               let rCursor : TypeResult :=
                                                 { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
                                               have happly_old :
-                                                  applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt) st1 st2 p p1r
+                                                  applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1r
                                                     etyp2 p2 pred2 { ctx with pureCtx := true } rCursor fuelApp = .ok r := by
                                                 unfold applyPFnTClosure
                                                 unfold applyPFnTClosureAtCursor at happly
@@ -17853,7 +17852,7 @@ example (θ : RealizationMap) :
       (ETyp.parrow Typ.int Typ.int false
         [PFnTClosure.extern 42 "x"
           (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
-          ⟨ETyp.int, false, Predicate.noPred⟩]) := by
+          ⟨ETyp.int, false, Predicate.noPred⟩ []]) := by
   refine valueHasETyp.peClosure_extern (tenv := []) (argQTyp := ⟨ETyp.int, false, Predicate.noPred⟩) ?_ ?_ ?_
   · exact List.mem_singleton.mpr rfl
   · intro y qt v hlk _; cases hlk

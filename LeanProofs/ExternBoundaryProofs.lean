@@ -106,7 +106,7 @@ theorem TrustedRegistryAgreesWithReachable.resolvePfnDeclaration
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
       entry.impl = impl ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec := by
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] := by
   rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
   have hdecl := hagrees hreachable hlookup
   refine ⟨entry, hlookup, himpl, ?_⟩
@@ -265,7 +265,7 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   have hGetRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.pfn implFn) := by
@@ -275,7 +275,7 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
         hagrees hreachable hGetRuntime with
     ⟨entry, hlookup, himpl, hmatch⟩
   have hmatch' :
-      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec := by
+      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec [] := by
     simpa [hargName] using hmatch
   have hlookupCall : callEntry.callConfig.registry.get? entry.decl.id = some entry.impl := by
     rw [hregistry]
@@ -675,7 +675,7 @@ theorem pfn_extern_member
       QTypReachableFrom root ctxRoot
         { etyp := ETyp.parrow st1 st2 p tcls, poison := qpoison, pred := qpred })
     {id : ExternId} {x : Name} {retSpec : ExternReturn} {σcap : CapturedVarEnv} {argQt : QTyp}
-    (hmem : PFnTClosure.extern id x retSpec σcap argQt ∈ tcls) :
+    (hmem : PFnTClosure.extern id x retSpec σcap argQt captures ∈ tcls) :
     ExternDeclarationReachableFromContext root ctxRoot id
       { id := id, kind := .pfn, typ := st1, argName := some x,
         retSpec := some retSpec, effects := [],
@@ -690,7 +690,7 @@ theorem pfn_extern_return
         { etyp := ETyp.parrow st1 st2 p tcls, poison := qpoison, pred := qpred })
     {outerId nestedId : ExternId} {x : Name} {retSpec : ExternReturn}
     {σcap : CapturedVarEnv} {argQt : QTyp}
-    (hmem : PFnTClosure.extern outerId x retSpec σcap argQt ∈ tcls)
+    (hmem : PFnTClosure.extern outerId x retSpec σcap argQt captures ∈ tcls)
     {d : ExternDeclaration}
     (hret : ExternDeclarationInReturn retSpec nestedId d) :
     ExternDeclarationReachableFromContext root ctxRoot nestedId d :=
@@ -704,7 +704,7 @@ theorem pfn_extern_captured
         { etyp := ETyp.parrow st1 st2 p tcls, poison := qpoison, pred := qpred })
     {outerId : ExternId} {x : Name} {retSpec : ExternReturn}
     {σcap : CapturedVarEnv} {argQt : QTyp}
-    (hmem : PFnTClosure.extern outerId x retSpec σcap argQt ∈ tcls) :
+    (hmem : PFnTClosure.extern outerId x retSpec σcap argQt captures ∈ tcls) :
     CapturedEnvReachableFrom root ctxRoot σcap := by
   intro _id _d hcap
   exact hqt (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmem hcap)
@@ -834,7 +834,7 @@ theorem of_externPfn_result
       { etyp :=
           ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
             [PFnTClosure.extern id x retSpec
-              (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+              (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
         poison := ctx.pc,
         pred := Predicate.noPred } := by
   intro _nestedId _d hreach
@@ -940,7 +940,7 @@ theorem of_typecheckExternPfn
     ExternDeclarationReachableFromQTyp root ctxRoot
       { etyp := ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
           [PFnTClosure.extern id x retSpec
-            (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+            (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
         poison := ctx.pc, pred := Predicate.noPred } nestedId d →
     ExternDeclarationReachableFromContext root ctxRoot nestedId d
   exact of_externPfn_result hpoison hctx hcurrent
@@ -1711,7 +1711,7 @@ private def fnExternFinishAtCursor
                   { etyp :=
                       ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                         [PFnTClosure.extern innerId innerArg innerRet
-                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt],
+                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []],
                     poison := joinPoison p1 (joinPoison p ctx.pc),
                     pred := Predicate.noPred },
               memEnv' := memEnv,
@@ -2010,7 +2010,7 @@ private theorem of_applyFnTClosureAtCursor
                                   { etyp :=
                                       ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                                         [PFnTClosure.extern innerId innerArg innerRet
-                                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt],
+                                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []],
                                     poison := ctx.pc,
                                     pred := Predicate.noPred } := by
                               intro nestedId d hreach
@@ -2276,7 +2276,7 @@ private theorem of_applyPFnTClosureAtCursor
                       { etyp :=
                           ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                             [PFnTClosure.extern innerId innerArg innerRet
-                              (VarTypeEnv.toCaptured unifiedEnv) v.1],
+                              (VarTypeEnv.toCaptured unifiedEnv) v.1 []],
                         poison := ctx.pc,
                         pred := Predicate.noPred } := by
                   intro nestedId d hreach
@@ -2796,11 +2796,11 @@ theorem TrustedRegistryAgreesWithPFnTClosures.resolve
     (hagrees : TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls)
     {id : ExternId} {x : Name} {retSpec : ExternReturn}
     {capturedEnv : CapturedVarEnv} {argQt : QTyp}
-    (hmem : PFnTClosure.extern id x retSpec capturedEnv argQt ∈ tcls) :
+    (hmem : PFnTClosure.extern id x retSpec capturedEnv argQt captures ∈ tcls) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some entry.impl ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec := by
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec captures := by
   rcases hagrees hmem with ⟨entry, hlookup, hmatch, _hargPoison⟩
   exact ⟨entry, hlookup, TrustedRegistry.lookup_toRuntimeRegistry hlookup, hmatch⟩
 
@@ -2854,7 +2854,7 @@ theorem TrustedRegistryAgreesWithPFnTClosures.callBoundaryRun
     (hagrees : TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls)
     {id : ExternId} {x : Name} {retSpec : ExternReturn}
     {capturedEnv : CapturedVarEnv} {argQt : QTyp}
-    (hmem : PFnTClosure.extern id x retSpec capturedEnv argQt ∈ tcls)
+    (hmem : PFnTClosure.extern id x retSpec capturedEnv argQt captures ∈ tcls)
     {implFn : VarEnv → Value → Memory → Except ExternError Value}
     {callEntry : ExternCallEntry} {res : TypeResult}
     {cf : Config} {v vRaw : Value}
@@ -2872,12 +2872,12 @@ theorem TrustedRegistryAgreesWithPFnTClosures.callBoundaryRun
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec captures ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   rcases TrustedRegistryAgreesWithPFnTClosures.resolve hagrees hmem with
     ⟨entry, hlookup, hlookupRuntime, hmatch⟩
   have hmatch' :
-      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec := by
+      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec captures := by
     simpa [hargName] using hmatch
   have hlookupCall : callEntry.callConfig.registry.get? entry.decl.id = some entry.impl := by
     rw [hregistry]
