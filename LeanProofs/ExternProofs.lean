@@ -971,4 +971,395 @@ theorem builtinMax11Impl_operationalSafe :
   · intro v himpl _ _
     simp [builtinMax11Impl] at himpl
 
+/-! ### `@11` declaration-boundary fields (reuse of the abs machinery)
+
+`@11` has the same clean-int `pfn` declaration shape as `abs`, so its
+declaration-boundary fields are a verbatim adaptation of `builtinAbs_decl*`
+(every underlying extern-closure lemma is `retSpec`-generic). -/
+
+private def builtinMax11ExternClosure (ctx : TypeContext) (argQt : QTyp) : PFnTClosure :=
+  PFnTClosure.extern 11 "b" builtinMax11RetSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt
+
+private def builtinMax11DeclResult (ctx : TypeContext) (argQt : QTyp) : TypeResult := {
+  qualType :=
+    ⟨ETyp.parrow Typ.int (parseReturnType builtinMax11RetSpec) ctx.pc
+        [builtinMax11ExternClosure ctx argQt],
+      ctx.pc, Predicate.noPred⟩
+  memEnv' := ctx.memEnv
+  tagEnv' := ctx.tagEnv
+  nextLoc' := ctx.nextLoc
+  nextTag' := ctx.nextTag
+  regime' := ctx.regime
+}
+
+private theorem builtinMax11_decl_shape
+    {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Decl builtinMax11Decl postExpr ctx res) :
+    ∃ argQt : QTyp, res = builtinMax11DeclResult ctx argQt := by
+  cases htyped with
+  | pfn htc =>
+      rename_i fuel argPred
+      cases fuel with
+      | zero => simp [typecheck, typecheckExpr] at htc
+      | succ fuel' =>
+          have htcPfn :
+              typecheckExternPfn ctx 11 "b" Typ.int false argPred builtinMax11RetSpec = .ok res := by
+            have h := htc
+            simp only [typecheck, typecheckExpr] at h
+            exact h
+          obtain ⟨argQt, _hpoison, hres⟩ :=
+            typecheckExternPfn_ok_res_eq ctx 11 "b" Typ.int false argPred builtinMax11RetSpec res htcPfn
+          exact ⟨argQt, hres⟩
+
+private theorem builtinMax11_decl_postExpr
+    {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Decl builtinMax11Decl postExpr ctx res) :
+    ∃ argPred : SyntaxPredicate,
+      postExpr = Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec := by
+  cases htyped with
+  | pfn _htc => exact ⟨_, rfl⟩
+
+private theorem builtinMax11_decl_valueHasETyp
+    {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+    {argPred : SyntaxPredicate} {argQt : QTyp}
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
+    valueHasETyp θ
+      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) ρ)
+      (builtinMax11DeclResult ctx argQt).qualType.etyp := by
+  show valueHasETyp θ
+      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) ρ)
+      (ETyp.parrow Typ.int (parseReturnType builtinMax11RetSpec) ctx.pc
+        [builtinMax11ExternClosure ctx argQt])
+  refine valueHasETyp.peClosure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
+      (argQTyp := argQt) (htcl := by simp [builtinMax11ExternClosure])
+      (henv := ?_) (hcover := ?_)
+  · intro n qt v hlookupσ hlookupρ
+    have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv n qt hlookupσ
+    obtain ⟨v', hvlookup, hvtyp⟩ := hric.2 hlookup_ctx
+    have hvEq : v' = v := by
+      have : some v' = some v := by rw [← hvlookup, hlookupρ]
+      exact Option.some.inj this
+    subst hvEq; exact hvtyp
+  · intro n qt hlookupσ
+    have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv n qt hlookupσ
+    obtain ⟨v', hvlookup, _⟩ := hric.2 hlookup_ctx
+    exact ⟨v', hvlookup⟩
+
+private theorem builtinMax11_decl_valueConsistent
+    {predSat : PredSat} {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+    {argPred : SyntaxPredicate} {argQt : QTyp}
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+    (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ) :
+    valueConsistentWithRegime predSat ctx.regime (builtinMax11DeclResult ctx argQt).qualType μ θ
+      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) ρ) := by
+  refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinMax11DeclResult]) (.intro ?_)
+  apply deepValueQTypProperty.peClosure_extern (argQt := argQt) 11 "b" "b" Typ.int builtinMax11RetSpec ρ
+      (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinMax11ExternClosure ctx argQt]
+  · rfl
+  · rfl
+  · simp [builtinMax11ExternClosure]
+  · refine ⟨?_, ?_⟩
+    · intro y qt_y k_y hlookupσ hguard hkR
+      exact hcwr.2.1 y qt_y k_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookupσ) hguard hkR
+    · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctx.varEnv,
+        fun y qt hlookupσ =>
+          let ⟨v, hv, _⟩ := hric.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookupσ)
+          ⟨v, hv⟩,
+        fun y qt v hlookupσ hlookupρ =>
+          let ⟨v', hv', htyp⟩ := hric.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookupσ)
+          by rw [hlookupρ] at hv'; cases hv'; exact htyp⟩
+  · intro y qt_y v_y hlookupσ hlookupρ
+    cases hcwr.2.2 y qt_y v_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookupσ) hlookupρ with
+    | intro h => exact h
+
+private theorem builtinMax11_declRun_shape
+    {ctx : TypeContext} {res : TypeResult} {cᵢ cf : Config} {o : Value}
+    (hrun : ExternDeclBoundaryRun builtinMax11Decl builtinMax11Impl ctx res cᵢ cf o) :
+    cf = cᵢ ∧ ∃ argPred : SyntaxPredicate,
+      o = Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) cᵢ.varEnv := by
+  cases hrun with
+  | val hfacts => have h := hfacts.kind_val; simp [builtinMax11Decl] at h
+  | fn hfacts => have h := hfacts.kind_fn; simp [builtinMax11Decl] at h
+  | pfn hfacts =>
+      refine ⟨hfacts.output_config, ?_⟩
+      obtain ⟨x, argPred, retSpec, hargName, hretSpec, hval⟩ := hfacts.value_shape
+      have hx : x = "b" := by
+        have h := hargName; simp [builtinMax11Decl] at h; exact h.symm
+      have hretSpec' : retSpec = builtinMax11RetSpec := by
+        have h := hretSpec; simp [builtinMax11Decl] at h; exact h.symm
+      subst hx; subst hretSpec'
+      exact ⟨argPred, by simpa [builtinMax11Decl] using hval⟩
+
+theorem builtinMax11_declSingle : ExternDeclBoundarySingle builtinMax11Decl builtinMax11Impl := by
+  intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
+    μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg hrun _hpc
+  obtain ⟨argQt, hres⟩ := builtinMax11_decl_shape htyped
+  obtain ⟨hcf, argPred, ho⟩ := builtinMax11_declRun_shape hrun
+  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinMax11DeclResult]
+  have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    rw [hres]
+    exact QTypRespectsTagMeaning_pfn_extern tm ctx 11 "b" Typ.int (parseReturnType builtinMax11RetSpec)
+      ctx.pc builtinMax11RetSpec (argQt := argQt) hwfTm
+  have hcfmem : cf.memory = μ := by rw [hcf]
+  have hcfvar : cf.varEnv = ρ := by rw [hcf]
+  have ho' : o = Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) ρ := by
+    rw [ho]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, θ,
+    ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter]; exact hwfTm
+  · rw [ho', hres]; exact builtinMax11_decl_valueHasETyp hric
+  · rw [hctxAfter, hcfmem, hcfvar]; exact hric
+  · rw [hctxAfter, hcfmem, hcfvar]; exact hcons
+  · rw [hctxAfter, hcfmem, hres, ho']; exact builtinMax11_decl_valueConsistent hric hcons
+  · rw [hcfmem]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+
+theorem builtinMax11_declFR : ExternDeclBoundaryFR builtinMax11Decl builtinMax11Impl := by
+  intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
+    μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
+    hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+  obtain ⟨argQt, hres⟩ := builtinMax11_decl_shape htyped
+  obtain ⟨argPredT, hpostExpr⟩ := builtinMax11_decl_postExpr htyped
+  obtain ⟨hcf₀, _⟩ := builtinMax11_declRun_shape hrun₀.run
+  obtain ⟨hcf₁, _⟩ := builtinMax11_declRun_shape hrun₁.run
+  have ho₀ : o₀ = Value.peClosure "b"
+      (Expr.externPfn 11 "b" Typ.int false argPredT builtinMax11RetSpec) ρ₀ := by
+    have hfe := hrun₀.forExpr; rw [hpostExpr] at hfe
+    simpa [declRunOutputMatchesExpr] using hfe
+  have ho₁ : o₁ = Value.peClosure "b"
+      (Expr.externPfn 11 "b" Typ.int false argPredT builtinMax11RetSpec) ρ₁ := by
+    have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
+    simpa [declRunOutputMatchesExpr] using hfe
+  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinMax11DeclResult]
+  have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    rw [hres]
+    exact QTypRespectsTagMeaning_pfn_extern tm ctx 11 "b" Typ.int (parseReturnType builtinMax11RetSpec)
+      ctx.pc builtinMax11RetSpec (argQt := argQt) hwfTm
+  have hcf₀mem : cf₀.memory = μ₀ := by rw [hcf₀]
+  have hcf₀var : cf₀.varEnv = ρ₀ := by rw [hcf₀]
+  have hcf₁mem : cf₁.memory = μ₁ := by rw [hcf₁]
+  have hcf₁var : cf₁.varEnv = ρ₁ := by rw [hcf₁]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, hpredlaws, hresTm,
+    θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter]; exact hwfTm
+  · rw [ho₀, hres]; exact builtinMax11_decl_valueHasETyp hric₀
+  · rw [ho₁, hres]; exact builtinMax11_decl_valueHasETyp hric₁
+  · rw [hctxAfter]; exact hwfTm
+  · rw [hctxAfter]; exact hwf
+  · rw [hctxAfter]; exact htagBounded
+  · rw [hcf₀]; exact hwfcfg₀
+  · rw [hcf₁]; exact hwfcfg₁
+  · rw [hctxAfter, hcf₀mem, hcf₀var]; exact hric₀
+  · rw [hctxAfter, hcf₁mem, hcf₁var]; exact hric₁
+  · rw [hctxAfter]; exact hreg
+  · rw [hctxAfter, hcf₀mem, hcf₀var]; exact hcwr₀
+  · rw [hctxAfter, hcf₁mem, hcf₁var]; exact hcwr₁
+  · rw [hctxAfter, hcf₀mem, hcf₀var, hcf₁mem, hcf₁var]; exact hagree
+  · rw [hctxAfter, hcf₀mem, hres, ho₀]; exact builtinMax11_decl_valueConsistent hric₀ hcwr₀
+  · rw [hctxAfter, hcf₁mem, hres, ho₁]; exact builtinMax11_decl_valueConsistent hric₁ hcwr₁
+  · rw [hctxAfter, hcf₀mem, hcf₁mem, hres]
+    intro hclean
+    cases hclean with
+    | clean hpoison =>
+        have hetyp : (builtinMax11DeclResult ctx argQt).qualType.etyp =
+            ETyp.parrow Typ.int (parseReturnType builtinMax11RetSpec) ctx.pc
+              [builtinMax11ExternClosure ctx argQt] := rfl
+        have htcl : builtinMax11ExternClosure ctx argQt ∈ [builtinMax11ExternClosure ctx argQt] := by simp
+        have hpc_clean : ctx.pc = false := by
+          have hpoison' : (builtinMax11DeclResult ctx argQt).qualType.poison = false := hpoison
+          simpa [builtinMax11DeclResult] using hpoison'
+        have hclean_internal : internalPoisonClean (builtinMax11DeclResult ctx argQt).qualType := by
+          simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
+        have hcap : agreeCapturedEnv predSat ctx.regime μ₀ μ₁ θ₀ θ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ ρ₁ :=
+          agreeCapturedEnv_of_agreeOnClean predSat ctx.regime ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime μ₀
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
+        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime μ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
+        have hmemberCvcr₀ : MemberCvcrEvidence predSat ctx.regime μ₀ θ₀
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          memberCvcrEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
+        have hmemberCvcr₁ : MemberCvcrEvidence predSat ctx.regime μ₁ θ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          memberCvcrEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
+        have htyping₀ : capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          capturedVarsTypingProperty_of_toCaptured ctx μ₀ ρ₀ θ₀ hric₀
+        have htyping₁ : capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          capturedVarsTypingProperty_of_toCaptured ctx μ₁ ρ₁ θ₁ hric₁
+        exact agreeValueUnder.clean_internal_parrow_extern
+          (σcap := VarTypeEnv.toCaptured ctx.varEnv) (argQt := argQt)
+          (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+          hclean_internal hetyp htcl rfl hcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
+          htyping₀ htyping₁ ho₀ ho₁
+    | guard k htag _hregime _hnotfun =>
+        have hnone : qtypGuardTag (builtinMax11DeclResult ctx argQt).qualType = none := by
+          simp [qtypGuardTag, builtinMax11DeclResult]
+        simp [hnone] at htag
+
+/-! ### `@11` call-boundary fields
+
+`@11`'s call output is `Value.num (max a b)`, reading the captured `a`.  The
+clean-int result shape and clean argument binding mirror `abs`; the relational
+`callFR` additionally needs the captured `a` to agree.  That dependency is not
+expressible by the current extern summary alone; the precise model should add an
+explicit captured-dependency contract rather than tainting by the whole captured
+environment. -/
+
+/-- The output of a successful `@11` call: `Value.num (max a b)` for the integer
+    argument `b` and the captured integer `a`.  A pure dispatch leaves the config
+    unchanged. -/
+private theorem builtinMax11_call_output
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hfacts : ExternCallPfnFacts builtinMax11Decl builtinMax11Impl entry res cf o) :
+    ∃ a b : Int, entry.argValue = Value.num b ∧
+      VarEnv.lookup entry.unifiedEnv "a" = some (Value.num a) ∧
+      o = Value.num (max a b) ∧ cf = entry.callConfig := by
+  rcases hfacts.impl_success with
+    ⟨implPfn, retSpec, vRaw, himpl, hretSpec, _hargMatch, hrun, hvalRet⟩
+  simp only [builtinMax11Impl, ExternImpl.pfn.injEq] at himpl
+  subst himpl
+  have hret : retSpec = builtinMax11RetSpec := by
+    simp only [builtinMax11Decl] at hretSpec
+    exact (Option.some.inj hretSpec).symm
+  subst hret
+  obtain ⟨a, b, harg, ha, hraw⟩ := builtinMax11Pfn_ok_shape hrun
+  refine ⟨a, b, harg, ha, ?_, hfacts.output_config⟩
+  rw [hraw] at hvalRet
+  simp only [builtinMax11RetSpec, validateExternReturn, valueMatchesTyp,
+    if_true, Except.ok.injEq] at hvalRet
+  exact hvalRet.symm
+
+/-- A successful `@11` call returns `Value.num (max a b)`; the impure branch is
+    impossible (`kind = .pfn`). -/
+private theorem builtinMax11_callRun_output
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hrun : ExternCallBoundaryRun builtinMax11Decl builtinMax11Impl entry res cf o) :
+    ∃ a b : Int, entry.argValue = Value.num b ∧
+      VarEnv.lookup entry.unifiedEnv "a" = some (Value.num a) ∧
+      o = Value.num (max a b) ∧ cf = entry.callConfig := by
+  cases hrun with
+  | fn hfacts => have h := hfacts.kind_fn; simp [builtinMax11Decl] at h
+  | pfn hfacts => exact builtinMax11_call_output hfacts
+
+/-- The body-entry environment of a successful `@11` call binds `"b"` to the
+    runtime argument value. -/
+private theorem builtinMax11_callRun_bodyVar
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hrun : ExternCallBoundaryRun builtinMax11Decl builtinMax11Impl entry res cf o) :
+    entry.bodyConfig.varEnv.lookup "b" = some entry.argValue := by
+  cases hrun with
+  | fn hfacts => have h := hfacts.kind_fn; simp [builtinMax11Decl] at h
+  | pfn hfacts =>
+      have hargName : entry.argName = "b" := by
+        have h := hfacts.argName
+        simp only [builtinMax11Decl] at h
+        exact (Option.some.inj h).symm
+      have hbc : entry.bodyConfig.varEnv = entry.unifiedEnv := by
+        simp [ExternCallEntry.bodyConfig]
+      rw [hbc, hfacts.unifiedEnv_eq, hargName]
+      simp [VarEnv.update, VarEnv.lookup]
+
+/-- Shared structure from a `@11` call typing witness: clean integer result, post
+    context equals body context, and the argument `"b"` is bound clean (gate
+    passed against the clean precondition).  Identical to the `abs` inversion up to
+    the argument name and declaration. -/
+private theorem builtinMax11_call_clean_shape
+    {typedExpr : Expr} {entry : ExternCallEntry} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Call builtinMax11Decl typedExpr entry res) :
+    res.qualType.etyp = ETyp.int ∧
+      res.qualType.pred = Predicate.noPred ∧
+      ctxAfter entry.bodyCtx res = entry.bodyCtx ∧
+      ∃ argQt : QTyp,
+        entry.bodyCtx.varEnv.lookup "b" = some argQt ∧
+        qtypCleanUnderRegime argQt entry.bodyCtx.regime = true := by
+  cases htyped with
+  | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinMax11Decl] at hkind
+  | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMax11Decl] at hkind
+  | pfnExternMember hid hkind htyp harg hret hpin hbody happly =>
+      rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec tenv
+      have hx : x = "b" := by
+        have : some x = some "b" := by simpa [builtinMax11Decl] using harg.symm
+        exact Option.some.inj this
+      subst hx
+      have hretSpec : retSpec = ExternReturn.simple Typ.int false SyntaxPredicate.noPred := by
+        have : some retSpec = some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) := by
+          simpa [builtinMax11Decl, builtinMax11RetSpec] using hret.symm
+        exact Option.some.inj this
+      subst retSpec
+      have hpin' : declaredArgQt.poison = false := by simpa [builtinMax11Decl] using hpin
+      cases fuel with
+      | zero => simp [applyPFnTClosureAtCursor] at happly
+      | succ fuel' =>
+          have hcollect := collectAndAllocExternTags_noPred cursor.1
+          simp only [applyPFnTClosureAtCursor, hcollect, resolveSyntaxPred, returnSpecToQTyp,
+            bind, Except.bind, pure, Except.pure] at happly
+          split at happly
+          · simp at happly
+          rename_i hgate
+          have hcond :
+              argConditionSatisfied declaredArgQt
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ bodyState.regime' fuel' = true := by
+            simpa using hgate
+          simp only [Except.ok.injEq] at happly
+          subst res
+          refine ⟨?_, ?_, ?_, ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩, ?_, ?_⟩
+          · by_cases hprov : joinPoison p1 p = true <;>
+              simp [normalizeAppResultByProvenance, hprov]
+          · by_cases hprov : joinPoison p1 p = true <;>
+              simp [normalizeAppResultByProvenance, hprov]
+          · rw [hbody]; simp only [ctxAfter, applyExternRegimePolicy]; rfl
+          · rw [hbody]; exact VarTypeEnv_lookup_update_eq _ "b" _
+          · rw [hbody]
+            exact argConditionSatisfied_cleanRegime_of_declClean hcond hpin'
+
+/-- The `@11` single-run call-boundary field.  Mirrors `abs`'s `callSingle`: the
+    output is a clean integer (`Value.num (max a b)`), so every
+    `ExternBoundarySinglePost` conjunct is a single-run hypothesis or
+    reflexive/vacuous.  No relational agreement, so the captured `a` is irrelevant. -/
+theorem builtinMax11_callSingle : ExternCallBoundarySingle builtinMax11Decl builtinMax11Impl := by
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws hwfTm hTmBounded
+    θ cf o _hθwf _hwfCtx hric _hreg hcons _hwfcfg hrun _hpc
+  obtain ⟨hetyp, hpred, hctxAfter, _argQt, _hbind, _hcleanB⟩ := builtinMax11_call_clean_shape htyped
+  obtain ⟨a, b, _harg, _ha, ho, hcf⟩ := builtinMax11_callRun_output hrun
+  have hboc : entry.bodyOutputConfig cf = entry.bodyConfig := by
+    rw [hcf]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
+  have hctxAfter' : ctxAfter ctx res = ctx := hctxAfter
+  have hnt : res.nextTag' = ctx.nextTag := by
+    have h := congrArg TypeContext.nextTag hctxAfter'; simpa [ctxAfter] using h
+  have hnotfun : res.qualType.etyp.isFunctionType = false := by rw [hetyp]; rfl
+  have hrespects : QTypRespectsTagMeaning tm res.qualType :=
+    QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun
+      (by simp [qtypGuardDesc?, hpred])
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws⟩, θ,
+    ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter']; exact hwfTm
+  · rw [ho, hetyp]; exact valueHasETyp.num _
+  · rw [hctxAfter', hboc]; exact hric
+  · rw [hctxAfter', hboc]; exact hcons
+  · rw [hboc, ho]
+    refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred]) ?_
+    exact closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+      (by rw [hetyp]; exact valueHasETyp.num _) (by rw [hetyp]; rfl)
+  · rw [hboc]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter'
+
 end ExternProofs
