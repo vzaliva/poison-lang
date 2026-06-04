@@ -133,6 +133,8 @@ The split puts runtime extern event predicates and `RegistryOperationalSafe` *be
 
 **Narrative docs** (`doc/`): Describe the **current** language. Avoid changelog-style phrasing (for example, "we now support …").
 
+**Markdown** (usually working notes under `doc/`): After editing, validate with `npx markdownlint-cli` (pass the file path or `doc/` as needed).
+
 **Builds:** Use the targets in **Build Commands** above (`make poison-lang-spec`, `make doc`, `make parser`, etc.).
 
 ## Working with Implementation (LeanPoison/)

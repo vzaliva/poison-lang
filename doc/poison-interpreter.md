@@ -1,7 +1,11 @@
+# poison-interpreter
+
 ## NAME
+
 poison-interpreter - typecheck and evaluate Poison programs
 
 ## SYNOPSIS
+
 `poison-interpreter --repl`
 
 `poison-interpreter [--verbose] [--regime "100=true,101=false"] <file>`
@@ -9,12 +13,14 @@ poison-interpreter - typecheck and evaluate Poison programs
 `poison-interpreter --help`
 
 ## DESCRIPTION
+
 `poison-interpreter` parses a `.poison` file, typechecks it, and (if typechecking
 passes) evaluates it with a pure interpreter. In verbose mode it prints the full
 typing result. Extern placeholders may typecheck, but execution stops with a
 runtime error if evaluation reaches one.
 
 ## OPTIONS
+
 `--verbose`
 Typecheck and evaluate with verbose output.
 
@@ -29,6 +35,7 @@ Start a REPL.
 Print usage.
 
 ## EXIT CODES
+
 `0` Success (including successful detection of type errors)  
 `1` Usage error  
 `2` Parse error  
@@ -39,6 +46,7 @@ Print usage.
 `7` Evaluation out of fuel
 
 ## EXAMPLES
+
 Typecheck and run:
 `poison-interpreter examples/arithmetic.poison`
 

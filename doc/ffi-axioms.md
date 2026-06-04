@@ -381,14 +381,16 @@ contracts; they are not required by the core Poison theorem.
 
 ### Declaration runs are coupled to the declared expression
 
-The declaration contract consumes `ExternDeclBoundaryRunForExpr postExpr …`, not a
-bare `ExternDeclBoundaryRun`. The wrapper (in `LeanProofs/ExternRuntime.lean`) is a
-plain run plus one extra fact, `declRunOutputMatchesExpr postExpr cᵢ v`, which pins
+The declaration contract consumes `ExternDeclBoundaryRunForExpr postExpr …`,
+not a bare `ExternDeclBoundaryRun`. The wrapper (in
+`LeanProofs/ExternRuntime.lean`) is a plain run plus one extra fact,
+`declRunOutputMatchesExpr postExpr cᵢ v`, which pins
 the run's output to the closure of the *declared expression* `postExpr` capturing
 the input environment:
 
 ```lean
-def declRunOutputMatchesExpr (postExpr : Expr) (cᵢ : Config) (v : Value) : Prop :=
+def declRunOutputMatchesExpr (postExpr : Expr) (cᵢ : Config) (v : Value) :
+  Prop :=
   match postExpr with
   | Expr.externPfn _ x _ _ _ _ => v = Value.peClosure x postExpr cᵢ.varEnv
   | Expr.externFn  _ x _ _ _ _ _ => v = Value.closure x postExpr cᵢ.varEnv
@@ -402,26 +404,28 @@ structure ExternDeclBoundaryRunForExpr
 ```
 
 This restores **same-expression closure identity** across the two runs. A
-declaration's output is an extern closure whose body carries the syntactic argument
-predicate, and the relational obligation in `StepFRPost` (`resultAgreesIfClean` on a
-clean `parrow`) needs the two outputs to agree via
-`agreeValueUnder.clean_internal_parrow_extern`, whose closure-shape witnesses bind a
-*single* argument predicate for both sides. A bare `ExternDeclBoundaryRun` leaves
-that predicate as a free existential per run (it is absent from `d`, `res`, and
-`impl`), so the two runs could carry distinct closure expressions and the field is
-false as stated. Because both runs of `ExternDeclBoundaryFR` are now runs of the one
+declaration's output is an extern closure whose body carries the syntactic
+argument predicate, and the relational obligation in `StepFRPost`
+(`resultAgreesIfClean` on a clean `parrow`) needs the two outputs to agree via
+`agreeValueUnder.clean_internal_parrow_extern`, whose closure-shape witnesses
+bind a *single* argument predicate for both sides. A bare
+`ExternDeclBoundaryRun` leaves that predicate as a free existential per run (it
+is absent from `d`, `res`, and `impl`), so the two runs could carry distinct
+closure expressions and the field is false as stated. Because both runs of
+`ExternDeclBoundaryFR` are now runs of the one
 shared `postExpr`, their outputs are provably the same closure (up to the captured
 environment), and the agreement goes through without weakening `agreeValueUnder`
 (part of fault-robustness's conclusion) or widening the trusted-registry match
 predicates.
 
-The producers `ExternDeclBoundaryRun.of_terminatesTo_extern{Val,Fn,Pfn}` return the
-wrapper directly: the same `terminatesTo postExpr` evaluation that builds the run
-also discharges `forExpr` (the executable semantics evaluates `externFn`/`externPfn`
-to exactly `peClosure`/`closure` of the declared expression). The single-run field
-`ExternDeclBoundarySingle` keeps consuming a bare `ExternDeclBoundaryRun` — it has no
-relational obligation, so the coupling is unnecessary there; orchestration sites that
-feed it project `.run`.
+The producers
+`ExternDeclBoundaryRun.of_terminatesTo_extern{Val,Fn,Pfn}` return the wrapper
+directly: the same `terminatesTo postExpr` evaluation that builds the run also
+discharges `forExpr` (the executable semantics evaluates `externFn`/`externPfn`
+to exactly `peClosure`/`closure` of the declared expression). The single-run
+field `ExternDeclBoundarySingle` keeps consuming a bare `ExternDeclBoundaryRun`
+— it has no relational obligation, so the coupling is unnecessary there;
+orchestration sites that feed it project `.run`.
 
 ## Single-Run Boundary Contract
 
@@ -634,8 +638,9 @@ def TrustedRegistryAgreesWithReachable
 
 The top-level theorem is relative to both inputs.  It is now
 trusted-registry-facing and takes registry trust *per initial context*
-(`InitialContextTrusted tr e ctx`, which is `TrustedRegistryAgreesWithReachable e
-ctx tr`) as part of `FaultRobustnessSpec`, rather than as a single all-context
+(`InitialContextTrusted tr e ctx`, which is
+`TrustedRegistryAgreesWithReachable e ctx tr`) as part of `FaultRobustnessSpec`,
+rather than as a single all-context
 premise:
 
 ```lean

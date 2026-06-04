@@ -15,8 +15,8 @@ This document has two parts:
 1. **Part I — Runtime baseline (implemented).** A short, factual summary of
    what the runtime already does, with the source of truth being the code in
    `LeanPoison/Runtime.lean`, `LeanPoison/BigStep.lean`, and (on the typing
-   side) `LeanProofs/ExternTypingAssumptions.lean`. Detailed operational rules are not
-   duplicated here.
+   side) `LeanProofs/ExternTypingAssumptions.lean`. Detailed operational rules
+   are not duplicated here.
 2. **Part II — Proofs / reasoning.** The live design work: what evidence the
    proof layer needs about trusted externs, how it is indexed, and how it
    connects to the existing typing-side axioms. This is where the remaining

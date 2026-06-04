@@ -18,7 +18,7 @@ of live trusted extern boundary specs.
 The FR roadmap (`doc/ffi-axioms.md`) reached a wall on its first concrete
 builtin: `abs` (`@12`). The example declaration is
 
-```
+```poison
 extern pfn @12 x : (int) -> ((int :> clean {}))
 ```
 
