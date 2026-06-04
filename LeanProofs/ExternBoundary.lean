@@ -91,6 +91,7 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
       d.argName = some x →
       d.retSpec = some retSpec →
       d.effects = effects →
+      declaredArgQt.poison = d.argPoison →
       entry.bodyCtx =
         { ctx with
           pc := joinPoison p (joinPoison p1 ctx.pc)

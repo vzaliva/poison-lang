@@ -413,7 +413,7 @@ private theorem pureUnaryCleanInt_call_result_shape
       res.qualType.pred = Predicate.noPred ∧
       ctxAfter entry.bodyCtx res = entry.bodyCtx := by
   cases htyped with
-  | fnExternMember hid hkind htyp harg hret heff hbody happly =>
+  | fnExternMember hid hkind htyp harg hret heff _hpin hbody happly =>
       have hbad : ExternDeclarationKind.pfn = ExternDeclarationKind.fn :=
         hspec.kind_pfn.symm.trans hkind
       cases hbad

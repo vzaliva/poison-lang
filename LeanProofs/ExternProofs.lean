@@ -350,7 +350,7 @@ private theorem builtinAbs_call_clean_shape
         entry.bodyCtx.varEnv.lookup "x" = some argQt ∧
         qtypCleanUnderRegime argQt entry.bodyCtx.regime = true := by
   cases htyped with
-  | fnExternMember _ hkind _ _ _ _ _ _ => simp [builtinAbsDecl] at hkind
+  | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinAbsDecl] at hkind
   | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinAbsDecl] at hkind
   | pfnExternMember hid hkind htyp harg hret hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
@@ -894,5 +894,81 @@ theorem builtinAbsSpec : ExternBoundarySpec builtinAbsDecl builtinAbsImpl where
   declSingle := builtinAbs_declSingle
   callSingle := builtinAbs_callSingle
   operational := builtinAbsImpl_operationalSafe
+
+/-! ## The inner curried-`max` extern (`@11`)
+
+`@11` is the inner stage of curried `max`: `extern pfn @11 b : (int :> clean {}) ->
+((int :> clean {}))`.  It has the *same declared shape* as `abs` (`@12`), so its
+declaration-boundary fields reuse the abs machinery (`retSpec` is generic).  The
+difference is the implementation: `@11` reads the captured outer argument `a` from
+its environment and returns `Value.num (max a b)`.  The call-boundary clean
+agreement therefore rests on both the argument `b` (agreeing via the gate) and the
+captured `a` (agreeing via the body-entry `agreeOnClean`). -/
+
+/-- The return descriptor for inner `max` (`@11`) — a clean integer, as for `abs`. -/
+def builtinMax11RetSpec : ExternReturn :=
+  .simple .int false .noPred
+
+/-- Proof-side declaration for the inner curried-`max` extern (`@11`). -/
+def builtinMax11Decl : ExternDeclaration :=
+  { id := 11
+    kind := .pfn
+    typ := .int
+    argName := some "b"
+    retSpec := some builtinMax11RetSpec
+    effects := []
+    preds := collectExternPreds builtinMax11RetSpec []
+    argPoison := false }
+
+/-- Proof-side copy of the interpreter's inner-`max` implementation (`Main.innerMaxImpl`):
+    read the captured outer argument `a`, return `max a b`. -/
+def builtinMax11Pfn : VarEnv → Value → Memory → Except ExternError Value
+  | unifiedEnv, Value.num b, _m =>
+      match VarEnv.lookup unifiedEnv "a" with
+      | some (Value.num a) => .ok (Value.num (max a b))
+      | _ => .error (.implFailure 11 "captured `a` missing or not an int")
+  | _, _, _ => .error (.implFailure 11 "expected int argument")
+
+/-- Runtime implementation shape for the inner-`max` extern (`@11`). -/
+def builtinMax11Impl : ExternImpl :=
+  .pfn builtinMax11Pfn
+
+/-- `builtinMax11Pfn` succeeds only on an integer argument `b` with a captured
+    integer `a`, returning the clean `Value.num (max a b)`. -/
+private theorem builtinMax11Pfn_ok_shape
+    {env : VarEnv} {vArg : Value} {mem : Memory} {vRaw : Value}
+    (h : builtinMax11Pfn env vArg mem = .ok vRaw) :
+    ∃ a b : Int, vArg = Value.num b ∧ VarEnv.lookup env "a" = some (Value.num a) ∧
+      vRaw = Value.num (max a b) := by
+  cases vArg with
+  | num b =>
+      simp only [builtinMax11Pfn] at h
+      cases ha : VarEnv.lookup env "a" with
+      | none => rw [ha] at h; simp at h
+      | some va =>
+          cases va with
+          | num a =>
+              rw [ha] at h
+              simp only [Except.ok.injEq] at h
+              exact ⟨a, b, rfl, rfl, h.symm⟩
+          | _ => rw [ha] at h; simp at h
+  | _ => simp [builtinMax11Pfn] at h
+
+/-- The inner-`max` extern (`@11`) satisfies the operational-safety contract: the
+    pure branch returns a well-formed `Value.num`; the impure and value branches are
+    impossible by `ExternImpl` constructor discrimination. -/
+theorem builtinMax11Impl_operationalSafe :
+    ExternOperationalSafe builtinMax11Decl builtinMax11Impl := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro implFn himpl _ _ _ _ _ _ _ _
+    simp [builtinMax11Impl] at himpl
+  · intro implPfn himpl env vArg mem addr vRaw hrun _hmem _henv _harg
+    simp only [builtinMax11Impl, ExternImpl.pfn.injEq] at himpl
+    subst himpl
+    obtain ⟨a, b, _harg, _ha, hraw⟩ := builtinMax11Pfn_ok_shape hrun
+    rw [hraw]
+    exact wfValue.num _
+  · intro v himpl _ _
+    simp [builtinMax11Impl] at himpl
 
 end ExternProofs
