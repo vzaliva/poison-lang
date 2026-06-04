@@ -111,6 +111,33 @@ inductive ExternDeclBoundaryRun
       ExternDeclPfnFacts d impl ctx res cᵢ cₒ v →
       ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v
 
+/-- The output value of a successful declaration boundary run is the closure of
+    the *declared expression* `postExpr`, capturing the input environment.  For
+    `externFn`/`externPfn` this pins the closure's body to `postExpr` itself; for
+    `externVal` (no closure body) the coupling is vacuous.
+
+    This is the fact that two boundary runs of the **same** declaration expression
+    produce closures with an identical body — hence an identical argument
+    predicate — which the relational declaration-boundary field needs to relate
+    the two outputs.  The plain `ExternDeclBoundaryRun` abstracts it away (the
+    closure's `argPred` is a free existential in `value_shape`). -/
+def declRunOutputMatchesExpr (postExpr : Expr) (cᵢ : Config) (v : Value) : Prop :=
+  match postExpr with
+  | Expr.externPfn _ x _ _ _ _ => v = Value.peClosure x postExpr cᵢ.varEnv
+  | Expr.externFn _ x _ _ _ _ _ => v = Value.closure x postExpr cᵢ.varEnv
+  | _ => True
+
+/-- An `ExternDeclBoundaryRun` additionally coupled to the declaration expression
+    `postExpr` that produced it (`run`), exposing that its output is the closure of
+    `postExpr` (`forExpr`).  Consumed by the relational declaration-boundary field
+    so its two runs are known to be runs of one shared declaration expression. -/
+structure ExternDeclBoundaryRunForExpr
+    (postExpr : Expr) (d : ExternDeclaration) (impl : ExternImpl)
+    (ctx : TypeContext) (res : TypeResult)
+    (cᵢ cₒ : Config) (v : Value) : Prop where
+  run : ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v
+  forExpr : declRunOutputMatchesExpr postExpr cᵢ v
+
 namespace ExternDeclBoundaryRun
 
 private theorem val_of_runtime
@@ -194,7 +221,7 @@ theorem of_terminatesTo_externVal
     {cᵢ cₒ : Config} {v : Value}
     (ht : terminatesTo (Expr.externVal id typ poison pred) cᵢ cₒ v) :
     ∃ impl,
-      ExternDeclBoundaryRun
+      ExternDeclBoundaryRunForExpr (Expr.externVal id typ poison pred)
         { id := id, kind := .val, typ := typ, argName := none, retSpec := none,
           effects := [], preds := [pred], argPoison := false }
         impl ctx res cᵢ cₒ v := by
@@ -218,8 +245,9 @@ theorem of_terminatesTo_externVal
                 rcases hbeval with ⟨hcfg, hv⟩
                 exact
                   ⟨ExternImpl.val vImpl,
-                    ExternDeclBoundaryRun.val_of_runtime rfl hlookup
-                      (by simp [hv]) hcfg.symm⟩
+                    { run := ExternDeclBoundaryRun.val_of_runtime rfl hlookup
+                        (by simp [hv]) hcfg.symm,
+                      forExpr := trivial }⟩
               · rw [hlookup] at hbeval
                 simp [hmatch] at hbeval
           | pfn implPfn =>
@@ -236,7 +264,7 @@ theorem of_terminatesTo_externFn
     {cᵢ cₒ : Config} {v : Value}
     (ht : terminatesTo (Expr.externFn id x argTyp argPoison argPred retSpec effects) cᵢ cₒ v) :
     ∃ impl,
-      ExternDeclBoundaryRun
+      ExternDeclBoundaryRunForExpr (Expr.externFn id x argTyp argPoison argPred retSpec effects)
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
           preds := collectExternPreds retSpec effects, argPoison := argPoison }
@@ -266,8 +294,9 @@ theorem of_terminatesTo_externFn
               rcases hbeval with ⟨hcfg, hv⟩
               exact
                 ⟨ExternImpl.fn implFn,
-                  ExternDeclBoundaryRun.fn_of_runtime rfl hlookup rfl rfl
-                    ⟨implFn, rfl⟩ hcfg.symm (by simpa using hv.symm)⟩
+                  { run := ExternDeclBoundaryRun.fn_of_runtime rfl hlookup rfl rfl
+                      ⟨implFn, rfl⟩ hcfg.symm (by simpa using hv.symm),
+                    forExpr := by simp only [declRunOutputMatchesExpr]; simpa using hv.symm }⟩
 
 theorem of_terminatesTo_externPfn
     {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
@@ -276,7 +305,7 @@ theorem of_terminatesTo_externPfn
     {cᵢ cₒ : Config} {v : Value}
     (ht : terminatesTo (Expr.externPfn id x argTyp argPoison argPred retSpec) cᵢ cₒ v) :
     ∃ impl,
-      ExternDeclBoundaryRun
+      ExternDeclBoundaryRunForExpr (Expr.externPfn id x argTyp argPoison argPred retSpec)
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
           preds := collectExternPreds retSpec [], argPoison := argPoison }
@@ -303,8 +332,9 @@ theorem of_terminatesTo_externPfn
               rcases hbeval with ⟨hcfg, hv⟩
               exact
                 ⟨ExternImpl.pfn implPfn,
-                  ExternDeclBoundaryRun.pfn_of_runtime rfl hlookup rfl rfl
-                    ⟨implPfn, rfl⟩ hcfg.symm (by simpa using hv.symm)⟩
+                  { run := ExternDeclBoundaryRun.pfn_of_runtime rfl hlookup rfl rfl
+                      ⟨implPfn, rfl⟩ hcfg.symm (by simpa using hv.symm),
+                    forExpr := by simp only [declRunOutputMatchesExpr]; simpa using hv.symm }⟩
           | fn implFn =>
               rw [hlookup] at hbeval
               simp at hbeval

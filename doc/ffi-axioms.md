@@ -1,8 +1,11 @@
 # FFI Axioms: Externs as FR-Preserving Boundary Steps
 
-Status: the registry-aware extern-boundary path is in place. The next proof
-work is concrete boundary validation for the built-in externs, starting with
-the clean-input/clean-output `abs` entry and then curried `max`.
+Status: the registry-aware extern-boundary path is in place, and the
+clean-input/clean-output `abs` entry (`@12`) is now a complete trusted entry
+(`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields). Proving
+its relational declaration field tightened the declaration boundary to consume
+expression-coupled runs (`ExternDeclBoundaryRunForExpr`; see *The High-Level
+Contract*). The next proof work is the curried `max` entries.
 
 The public fault-robustness theorem is relative to trusted extern boundary
 evidence under a populated registry. The remaining work is to prove that the
@@ -238,7 +241,14 @@ inductive ExternDeclBoundaryRun
   | pfn :
       ExternDeclPfnFacts d impl ctx res cᵢ cₒ v →
       ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v
+```
 
+The relational declaration field wraps this in `ExternDeclBoundaryRunForExpr`,
+which adds the declared expression `postExpr` and the coupling
+`declRunOutputMatchesExpr postExpr cᵢ v`; see *The High-Level Contract* below for
+why the paired contract needs it.
+
+```lean
 /-- The body-entry state for an extern call. This is the context/state that
     `StepFRApp` constructs after evaluating the function and argument and
     combining the closure's captured environment with the argument binding. -/
@@ -321,11 +331,11 @@ def ExternDeclBoundaryFR
                    pureMode := pm, registry := registry } →
         wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁,
                    pureMode := pm, registry := registry } →
-        ExternDeclBoundaryRun d impl ctx res
+        ExternDeclBoundaryRunForExpr postExpr d impl ctx res
           { memory := μ₀, varEnv := ρ₀, nextAddr := a₀,
             pureMode := pm, registry := registry }
           cf₀ o₀ →
-        ExternDeclBoundaryRun d impl ctx res
+        ExternDeclBoundaryRunForExpr postExpr d impl ctx res
           { memory := μ₁, varEnv := ρ₁, nextAddr := a₁,
             pureMode := pm, registry := registry }
           cf₁ o₁ →
@@ -368,6 +378,50 @@ witness for the tags allocated while typechecking the extern closure member.
 Any low-level facts about effects, address allocation, memory domain, predicate
 satisfaction, or return-value non-leakage are internal ways to justify these
 contracts; they are not required by the core Poison theorem.
+
+### Declaration runs are coupled to the declared expression
+
+The declaration contract consumes `ExternDeclBoundaryRunForExpr postExpr …`, not a
+bare `ExternDeclBoundaryRun`. The wrapper (in `LeanProofs/ExternRuntime.lean`) is a
+plain run plus one extra fact, `declRunOutputMatchesExpr postExpr cᵢ v`, which pins
+the run's output to the closure of the *declared expression* `postExpr` capturing
+the input environment:
+
+```lean
+def declRunOutputMatchesExpr (postExpr : Expr) (cᵢ : Config) (v : Value) : Prop :=
+  match postExpr with
+  | Expr.externPfn _ x _ _ _ _ => v = Value.peClosure x postExpr cᵢ.varEnv
+  | Expr.externFn  _ x _ _ _ _ _ => v = Value.closure x postExpr cᵢ.varEnv
+  | _ => True  -- `externVal` has no closure body; the coupling is vacuous
+
+structure ExternDeclBoundaryRunForExpr
+    (postExpr : Expr) (d : ExternDeclaration) (impl : ExternImpl)
+    (ctx : TypeContext) (res : TypeResult) (cᵢ cₒ : Config) (v : Value) : Prop where
+  run     : ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v
+  forExpr : declRunOutputMatchesExpr postExpr cᵢ v
+```
+
+This restores **same-expression closure identity** across the two runs. A
+declaration's output is an extern closure whose body carries the syntactic argument
+predicate, and the relational obligation in `StepFRPost` (`resultAgreesIfClean` on a
+clean `parrow`) needs the two outputs to agree via
+`agreeValueUnder.clean_internal_parrow_extern`, whose closure-shape witnesses bind a
+*single* argument predicate for both sides. A bare `ExternDeclBoundaryRun` leaves
+that predicate as a free existential per run (it is absent from `d`, `res`, and
+`impl`), so the two runs could carry distinct closure expressions and the field is
+false as stated. Because both runs of `ExternDeclBoundaryFR` are now runs of the one
+shared `postExpr`, their outputs are provably the same closure (up to the captured
+environment), and the agreement goes through without weakening `agreeValueUnder`
+(part of fault-robustness's conclusion) or widening the trusted-registry match
+predicates.
+
+The producers `ExternDeclBoundaryRun.of_terminatesTo_extern{Val,Fn,Pfn}` return the
+wrapper directly: the same `terminatesTo postExpr` evaluation that builds the run
+also discharges `forExpr` (the executable semantics evaluates `externFn`/`externPfn`
+to exactly `peClosure`/`closure` of the declared expression). The single-run field
+`ExternDeclBoundarySingle` keeps consuming a bare `ExternDeclBoundaryRun` — it has no
+relational obligation, so the coupling is unnecessary there; orchestration sites that
+feed it project `.run`.
 
 ## Single-Run Boundary Contract
 
@@ -715,22 +769,32 @@ the boundary has the same clean-agreement information an ordinary function body
 would consume. Therefore the proof obligation is to connect that clean argument
 agreement to the implementation equation for `Int.natAbs`.
 
-Done means one of two outcomes:
+**Status: done.** `ExternProofs.builtinAbsSpec : ExternBoundarySpec
+builtinAbsDecl builtinAbsImpl` is complete — all five fields
+(`operational`, `callFR`, `callSingle`, `declSingle`, `declFR`) compile with no
+`sorry` or `axiom` (the full `make lean-build` is green and the entry depends
+only on `propext`, `Classical.choice`, `Quot.sound`). The call fields derive
+argument equality from the boundary premises and transport it through `natAbs`,
+exactly as anticipated.
 
-- `TrustedExternEntry` / `ExternBoundarySpec` for `@12` compiles without new
-  `sorry` or `axiom`; or
-- the proof reaches a concrete false or missing obligation, and the document
-  records whether the fix is to tighten the `abs` declaration, tighten
-  `ExternBoundarySpec`, or expose a missing boundary payload fact.
+Proving the relational declaration field `declFR` surfaced — and fixed — one
+concrete boundary gap of the "missing obligation" kind. As originally stated,
+`ExternDeclBoundaryFR` related its two runs only through the shared `res`, which
+does not pin the declared closure's argument predicate; the two outputs could
+then be distinct clean extern closures that `agreeValueUnder` cannot relate
+(`ExternProofs` first recorded this as a bounded falsification). The fix was the
+`ExternDeclBoundaryRunForExpr` coupling described under *Declaration runs are
+coupled to the declared expression* above: it preserves same-expression closure
+identity across the two runs without weakening `agreeValueUnder` or the
+trusted-registry match predicates. This is the "tighten `ExternBoundarySpec`"
+outcome, localized to the run/field boundary.
 
-Validation note: `LeanProofs/ExternProofs.lean` records
+Validation note: `LeanProofs/ExternProofs.lean` also records
 `ExternProofs.builtinAbs_cleanPost_obstruction`, which shows that a dirty-input
 interpretation of `abs` cannot justify a clean result: `abs (-1) = 1` and
 `abs 2 = 2`, so disagreeing dirty inputs can produce disagreeing clean outputs.
-That obstruction is still useful as a guardrail, but it is not the intended
-`@12` contract. The next implementation step is to prove the direct
-`ExternBoundarySpec` for the actual clean-input declaration by deriving input
-equality from the boundary premises and transporting it through `natAbs`.
+That obstruction remains as a guardrail; it is not the intended `@12` contract,
+and the clean-input contract proved above does not weaken the declaration.
 
 This is the minimal boundary validation exercise. It checks that trusted
 boundary evidence can actually be packaged, looked up, and consumed by the

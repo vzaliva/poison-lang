@@ -143,6 +143,7 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
       d.typ = argTyp →
       d.argName = some x →
       d.retSpec = some retSpec →
+      declaredArgQt.poison = d.argPoison →
       entry.bodyCtx =
         { ctx with
           pc := joinPoison p (joinPoison ctx.pc p1)
@@ -192,10 +193,10 @@ def ExternDeclBoundaryFR
                    registry := registry } →
         wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
                    registry := registry } →
-        ExternDeclBoundaryRun d impl ctx res
+        ExternDeclBoundaryRunForExpr postExpr d impl ctx res
           { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
             registry := registry } cf₀ o₀ →
-        ExternDeclBoundaryRun d impl ctx res
+        ExternDeclBoundaryRunForExpr postExpr d impl ctx res
           { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
             registry := registry } cf₁ o₁ →
         StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
@@ -418,10 +419,10 @@ def ExternDeclBoundaryFRContract
                  registry := registry } →
       wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
                  registry := registry } →
-      ExternDeclBoundaryRun d impl₀ ctx res
+      ExternDeclBoundaryRunForExpr postExpr d impl₀ ctx res
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
           registry := registry } cf₀ o₀ →
-      ExternDeclBoundaryRun d impl₁ ctx res
+      ExternDeclBoundaryRunForExpr postExpr d impl₁ ctx res
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
           registry := registry } cf₁ o₁ →
       StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁

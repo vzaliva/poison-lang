@@ -2092,7 +2092,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           retSpec := none, effects := [], preds := [pr], argPoison := false })
                   (impl := impl) hcan ExternDeclarationInProgram.externVal
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
+                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun.run hpc
           | externFn id n t argPoison argPred r eff =>
               -- Extern declaration success is normalized to boundary-run
               -- evidence before the caller-supplied boundary provider consumes it.
@@ -2122,7 +2122,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           preds := collectExternPreds r eff, argPoison := argPoison })
                   (impl := impl) hcan ExternDeclarationInProgram.externFn
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
+                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun.run hpc
           | externPfn id n t argPoison argPred r =>
               -- Extern declaration success is normalized to boundary-run
               -- evidence before the caller-supplied boundary provider consumes it.
@@ -2152,7 +2152,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           preds := collectExternPreds r [], argPoison := argPoison })
                   (impl := impl) hcan ExternDeclarationInProgram.externPfn
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
+                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun.run hpc
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse_ctxReach
   (registry : ExternRegistry)

@@ -157,8 +157,8 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
   intro hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
     a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
-  have hlookupRun₀ := ExternDeclBoundaryRun.lookup hrun₀
-  have hlookupRun₁ := ExternDeclBoundaryRun.lookup hrun₁
+  have hlookupRun₀ := ExternDeclBoundaryRun.lookup hrun₀.run
+  have hlookupRun₁ := ExternDeclBoundaryRun.lookup hrun₁.run
   have hlookupRuntime₀ :
       (TrustedRegistry.toRuntimeRegistry tr).get? d.id = some impl₀ := hlookupRun₀
   have hlookupRuntime₁ :
@@ -169,12 +169,12 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
       TrustedRegistryAgreesWithReachable.resolveDeclaration hagrees hreachable hlookupRuntime₀
     with ⟨entry, _hlookupEntry, himpl₀, hdecl⟩
   have hrunEntry₀ :
-      ExternDeclBoundaryRun entry.decl entry.impl ctx res
+      ExternDeclBoundaryRunForExpr postExpr entry.decl entry.impl ctx res
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
           registry := TrustedRegistry.toRuntimeRegistry tr } cf₀ o₀ := by
     simpa [hdecl, himpl₀] using hrun₀
   have hrunEntry₁ :
-      ExternDeclBoundaryRun entry.decl entry.impl ctx res
+      ExternDeclBoundaryRunForExpr postExpr entry.decl entry.impl ctx res
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
           registry := TrustedRegistry.toRuntimeRegistry tr } cf₁ o₁ := by
     simpa [hdecl, himpl₀, himpl₁₀] using hrun₁
