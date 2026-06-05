@@ -1,0 +1,9 @@
+-- The `captures:` read-dependency clause (doc/extern-env-deps.md) parses,
+-- type-checks, and runs end-to-end.  Here the built-in `@12` (`abs`) declares
+-- that it reads the in-scope environment variable `y`; the clause is accepted
+-- by the full pipeline (parser -> type checker -> interpreter).
+let y = 3 in
+let f =
+  extern pfn @12 x : (int :> clean {}) -> ((int :> clean {})),
+    captures: { y :> (int :> clean {}) }
+in f 7
