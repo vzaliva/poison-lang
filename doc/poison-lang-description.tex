@@ -427,6 +427,40 @@ pattern used elsewhere in the spec for binary distinctions (e.g.,
 \texttt{assign\_singleton} /
 \texttt{assign\_singleton\_poisoned\_ref}).
 
+\subsubsection*{Extern read dependencies (\texttt{captures:})}
+\label{sec:extern-captures}
+
+An extern callable may additionally declare a \texttt{captures:} clause: a list
+of \emph{read} dependencies on the surrounding state, the read-only counterpart
+of the write-oriented \texttt{effects:} clause. Each entry pairs a target with
+the qualified type the callable expects to read there. A bare-variable target
+\texttt{x :> Q} names an environment variable; a bang target \texttt{!x :> Q}
+names a memory location reached through a captured reference. Whereas effects
+record what an impure extern \emph{writes}, captures record what a (pure or
+impure) extern \emph{reads} from its captured environment in order to justify
+its trusted boundary contract. The motivating case is curried \texttt{max}: the
+inner stage \(@11\) reads the outer argument \texttt{a} captured by the outer
+stage \(@10\), so \(@11\) declares \texttt{captures: \{ a :> (int :> clean
+\{\}) \}}.
+
+Like the argument precondition, a \texttt{captures:} clause is a call-site gate:
+the trusted clean result is available only when every declared dependency
+resolves --- in the callable environment for bare targets, in the memory typing
+for bang targets --- to a qualified type that satisfies the declared one under
+the current regime. The argument-condition gate and the captures gate are fused
+into a single guard at application, so a trusted result requires both. The
+\(\mathrm{capturesSat}(R, \mathit{CSL}, S, G)\) judgement in the specification
+states this contravariant satisfaction relation, mirroring
+\(\mathit{satisfiesArgCond}\) for the argument precondition.
+
+The \texttt{captures:} clause is part of the surface syntax of extern
+declarations (and of nested-return descriptors), accepted by the parser and the
+type checker. Populating the captured-dependency list onto the produced typing
+closure --- so that the gate is non-trivial for a closure obtained by
+typechecking source --- is a separate concern from the surface annotation; the
+\(\mathrm{capturesSat}\) judgement specifies the intended gate for
+capture-bearing trusted declarations.
+
 \subsection{Pure Expressions}
 
 The language includes a syntactic subset called \emph{pure expressions} (\texttt{pe}) that exclude side-effecting operations. Pure expressions cannot:

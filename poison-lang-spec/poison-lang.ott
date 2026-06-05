@@ -93,8 +93,8 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
   | extern_val @ eid ST p SP      ::   :: extern_val {{ com extern value with mandatory identifier }} {{ tex \mathsf{extern}\,\mathsf{val}\,@[[eid]]\,[[ST]]\,[[p]]\,[[SP]] }}
-  | extern_fn @ eid x Q ER ESL   ::   :: extern_fn {{ com extern impure function with mandatory identifier; the argument qualified type Q is the caller precondition }} {{ tex \mathsf{extern}\,\mathsf{fn}\,@[[eid]]\,[[x]]:[[Q]] \to [[ER]]\,;\,[[ESL]] }}
-  | extern_pfn @ eid x Q ER      ::   :: extern_pfn {{ com extern pure function with mandatory identifier; the argument qualified type Q is the caller precondition }} {{ tex \mathsf{extern}\,\mathsf{pfn}\,@[[eid]]\,[[x]]:[[Q]] \Rightarrow [[ER]] }}
+  | extern_fn @ eid x Q ER ESL CSL   ::   :: extern_fn {{ com extern impure function with mandatory identifier; the argument qualified type Q is the caller precondition; CSL lists declared environment/memory read dependencies }} {{ tex \mathsf{extern}\,\mathsf{fn}\,@[[eid]]\,[[x]]:[[Q]] \to [[ER]]\,;\,[[ESL]]\,,\,\mathsf{captures}:[[CSL]] }}
+  | extern_pfn @ eid x Q ER CSL      ::   :: extern_pfn {{ com extern pure function with mandatory identifier; the argument qualified type Q is the caller precondition; CSL lists declared environment/memory read dependencies }} {{ tex \mathsf{extern}\,\mathsf{pfn}\,@[[eid]]\,[[x]]:[[Q]] \Rightarrow [[ER]]\,,\,\mathsf{captures}:[[CSL]] }}
 
 
 pe :: 'PE_' ::=            {{ com pure expressions }}
@@ -243,13 +243,26 @@ effect_list, ESL :: 'ESL_' ::= {{ com effect list }}
   | empty                    ::   :: empty
   | ES , ESL                 ::   :: cons
 
+% Capture (read-dependency) specification: a declared environment variable `x`
+% or bang memory target `! x` reached through a captured reference, together with
+% the qualified type the callable expects to read there.  Parallel to the effect
+% list ESL, but read-only (doc/extern-env-deps.md).
+capture_spec, CS :: 'CS_' ::= {{ com capture (read-dependency) specification }}
+  | x :> Q                   ::   :: bareVar {{ tex [[x]] \triangleright [[Q]] }}
+  | ! x :> Q                 ::   :: memVar  {{ tex ![[x]] \triangleright [[Q]] }}
+
+% Capture list
+capture_list, CSL :: 'CSL_' ::= {{ com capture (read-dependency) list }}
+  | empty                    ::   :: empty
+  | CS , CSL                 ::   :: cons
+
 % Extern return specification.  Nested callable return forms carry their own
 % extern identifier (@eid); `simple` returns do not (the id lives on the
 % enclosing top-level extern).
 extern_return, ER :: 'ER_' ::= {{ com extern return spec }}
   | simple ST p SP                ::   :: simple {{ com simple return }} {{ tex ([[ST]] \triangleright [[p]]\, \{ [[SP]] \}) }}
-  | nested_fn @ eid x Q ER ESL   ::   :: nested_fn {{ com nested impure fn return with identifier; the argument qualified type Q is the caller precondition for the next application }} {{ tex \mathsf{fn}\,@[[eid]]\,[[x]]:[[Q]] \to [[ER]]\,;\,[[ESL]] }}
-  | nested_pfn @ eid x Q ER      ::   :: nested_pfn {{ com nested pure fn return with identifier; the argument qualified type Q is the caller precondition for the next application }} {{ tex \mathsf{pfn}\,@[[eid]]\,[[x]]:[[Q]] \Rightarrow [[ER]] }}
+  | nested_fn @ eid x Q ER ESL CSL   ::   :: nested_fn {{ com nested impure fn return with identifier; the argument qualified type Q is the caller precondition for the next application; CSL lists declared read dependencies }} {{ tex \mathsf{fn}\,@[[eid]]\,[[x]]:[[Q]] \to [[ER]]\,;\,[[ESL]]\,,\,\mathsf{captures}:[[CSL]] }}
+  | nested_pfn @ eid x Q ER CSL      ::   :: nested_pfn {{ com nested pure fn return with identifier; the argument qualified type Q is the caller precondition for the next application; CSL lists declared read dependencies }} {{ tex \mathsf{pfn}\,@[[eid]]\,[[x]]:[[Q]] \Rightarrow [[ER]]\,,\,\mathsf{captures}:[[CSL]] }}
 
 % Tag resolution map (symbolic index -> concrete tag)
 tag_map, TM :: 'TM_' ::= {{ com tag resolution map }}
@@ -329,6 +342,7 @@ formula :: formula_ ::=
   | ST <: T                :: :: subtype      {{ com ST is a subtype of T (surface type erasure) }} {{ tex [[ST]] <: [[T]] }}
   | base_of Q = ST         :: :: base_of      {{ com ST is the surface base type underlying the qualified type Q (drops the poison flag and predicate); rendered with the subtype glyph since it is the surface-erasure relation lifted to qualified types }} {{ tex [[ST]] <: [[Q]] }}
   | satisfiesArgCond R Q1 Q2 :: :: arg_cond_sat {{ com actual argument qualified type Q1 satisfies the declared extern argument precondition Q2 under regime R: base types match; a declared-clean Q2 forces Q1 clean under R (literally clean, or its guard tag is active in R); a declared no-predicate Q2 imposes no match; a declared predicate forces Q1 to carry the same guard shape modulo tag, binder, and captured environment (no logical implication) }} {{ tex [[Q1]] \vDash_{[[R]]} [[Q2]] }}
+  | capturesSatisfied R CSL S G :: :: captures_sat {{ com the call-site read-dependency gate: every declared capture target in CSL resolves in the callable environment S (bare-variable targets) or memory typing G (bang targets) to a qualified type that satisfies the declared one under regime R, exactly as satisfiesArgCond gates the argument precondition.  A trusted clean result is available only when both the argument condition and all captures hold; the two are fused into a single gate at the call site (doc/extern-env-deps.md) }} {{ tex \mathrm{capturesSat}([[R]], [[CSL]], [[S]], [[G]]) }}
   | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 signature-compatible }} {{ tex [[T1]] \approx [[T2]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
   | tcl in tcls            :: :: tcl_member  {{ com tcl member of tcls }} {{ tex [[tcl]] \in [[tcls]] }}
@@ -1272,6 +1286,15 @@ pm ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L ; R
 % Q1, the unresolved return spec ER, effect list ESL, and captured environment S.
 % Tag resolution for the return is deferred to application time (each call gets
 % fresh tags); the argument precondition Q1 is resolved once here, at declaration.
+% The optional captures: clause CSL lists declared read dependencies on the caller
+% environment (bare-variable targets x :> Q) and memory (bang targets ! x :> Q).
+% Like Q1, CSL is a call-site gate: a trusted clean result is available only when
+% capturesSatisfied R CSL S G holds, fused with satisfiesArgCond into one guard at
+% application. The surface declaration carries CSL, but this typing rule does not
+% thread CSL into the closure extern_tcl (capture population onto the closure is
+% deferred), so a closure produced by typechecking gates only on Q1; the
+% capturesSatisfied judgment specifies the intended gate for capture-bearing
+% trusted declarations.
 % returnType extracts the surface return type from ER (recursively for nested specs).
 % base_of Q1 = ST1 extracts the surface base type of the precondition; the arrow
 % domain stays the bare surface type ST1 (shared with native fn), so the runtime
@@ -1284,7 +1307,7 @@ extern_spec_wf ER ESL
 base_of Q1 = ST1
 returnType ER = ST2
 ----------------------------------------------------------------------  :: extern_fn
-pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x Q1 ER ESL : ST1 -> ST2 # pc tclosures extern_tcl @ eid ( x , Q1 , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
+pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x Q1 ER ESL CSL : ST1 -> ST2 # pc tclosures extern_tcl @ eid ( x , Q1 , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
 
 % Extern pure function: extern pfn @ eid x : Q1 -> ER
 % The argument qualified type Q1 is the caller-side precondition (as for extern_fn).
@@ -1300,7 +1323,7 @@ extern_spec_wf ER empty
 base_of Q1 = ST1
 returnType ER = ST2
 ----------------------------------------------------------------------  :: extern_pfn
-pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER : ST1 -> ST2 # pc tpclosures extern_ptcl @ eid ( x , Q1 , ER , S ) :> pc { no_pred } -| G ; L ; R
+pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tpclosures extern_ptcl @ eid ( x , Q1 , ER , S ) :> pc { no_pred } -| G ; L ; R
 
 % Side condition (not a typing rule): within a program, the set of extern
 % identifiers @eid appearing in extern_val / extern_fn / extern_pfn forms
@@ -1416,7 +1439,7 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 {
 % with the updated captured environment (deferred inner resolution).
 % Predicates are stored as resolved only when `join pc (join p1 p)` is clean.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , Q1 , nested_fn @ eid1 x1 Q3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , Q1 , nested_fn @ eid1 x1 Q3 ER' ESL' CSL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = clean
 ST1 <: T1
 base_of Q3 = ST3
@@ -1432,7 +1455,7 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ ei
 % Effect-installed predicates erased; inner return spec deferred as before.
 % This rule fires when any of pc, p1, or p is poisoned.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , Q1 , nested_fn @ eid1 x1 Q3 ER' ESL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , Q1 , nested_fn @ eid1 x1 Q3 ER' ESL' CSL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = poisoned
 ST1 <: T1
 base_of Q3 = ST3
@@ -1448,7 +1471,7 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ ei
 % Same pattern: only outer ESL preds allocated; inner ER' deferred in extern_ptcl.
 % Predicates are stored as resolved only when `join pc (join p1 p)` is clean.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , Q1 , nested_pfn @ eid1 x1 Q3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , Q1 , nested_pfn @ eid1 x1 Q3 ER' CSL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = clean
 ST1 <: T1
 base_of Q3 = ST3
@@ -1464,7 +1487,7 @@ impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ 
 % Effect-installed predicates erased; inner pure return spec deferred as before.
 % This rule fires when any of pc, p1, or p is poisoned.
 impure ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , Q1 , nested_pfn @ eid1 x1 Q3 ER' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+impure ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tclosures extern_tcl @ eid ( x , Q1 , nested_pfn @ eid1 x1 Q3 ER' CSL' , ESL , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 join pc join p1 p = poisoned
 ST1 <: T1
 base_of Q3 = ST3
@@ -1496,7 +1519,7 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { App
 % Extern pure function application - nested impure fn return
 % No effects to resolve (pure context). Inner spec ER' deferred in new extern_tcl.
 pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl @ eid ( x , Q1 , nested_fn @ eid1 x1 Q3 ER' ESL' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl @ eid ( x , Q1 , nested_fn @ eid1 x1 Q3 ER' ESL' CSL' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 base_of Q3 = ST3
 returnType ER' = ST4
@@ -1507,7 +1530,7 @@ pm ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 (
 % Extern pure function application - nested pure fn return
 % No effects to resolve (pure context). Inner spec ER' deferred in new extern_ptcl.
 pm ; R ; pc ; G ; S ; L |- e2 : T1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl @ eid ( x , Q1 , nested_pfn @ eid1 x1 Q3 ER' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
+pm ; R2 ; pc ; G2 ; S ; L2 |- e1 : ST1 -> ST2 # p tpclosures extern_ptcl @ eid ( x , Q1 , nested_pfn @ eid1 x1 Q3 ER' CSL' , S1 ) :> p1 { P1 } -| G1 ; L1 ; R1
 ST1 <: T1
 base_of Q3 = ST3
 returnType ER' = ST4
