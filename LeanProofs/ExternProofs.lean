@@ -637,12 +637,12 @@ private theorem builtinAbs_decl_shape
     ∃ argQt : QTyp, res = builtinAbsDeclResult ctx argQt := by
   cases htyped with
   | pfn htc =>
-      rename_i fuel argPred captures
+      rename_i fuel argPred
       cases fuel with
       | zero => simp [typecheck, typecheckExpr] at htc
       | succ fuel' =>
           have htcPfn :
-              typecheckExternPfn ctx 12 "x" Typ.int false argPred builtinAbsRetSpec captures = .ok res := by
+              typecheckExternPfn ctx 12 "x" Typ.int false argPred builtinAbsRetSpec [] = .ok res := by
             have h := htc
             simp only [typecheck, typecheckExpr] at h
             exact h
@@ -1019,12 +1019,12 @@ private theorem builtinMax11_decl_shape
     ∃ argQt : QTyp, res = builtinMax11DeclResult ctx argQt := by
   cases htyped with
   | pfn htc =>
-      rename_i fuel argPred captures
+      rename_i fuel argPred
       cases fuel with
       | zero => simp [typecheck, typecheckExpr] at htc
       | succ fuel' =>
           have htcPfn :
-              typecheckExternPfn ctx 11 "b" Typ.int false argPred builtinMax11RetSpec captures = .ok res := by
+              typecheckExternPfn ctx 11 "b" Typ.int false argPred builtinMax11RetSpec [] = .ok res := by
             have h := htc
             simp only [typecheck, typecheckExpr] at h
             exact h
@@ -1735,12 +1735,12 @@ private theorem builtinMax10_decl_shape
     ∃ argQt : QTyp, res = builtinMax10DeclResult ctx argQt := by
   cases htyped with
   | pfn htc =>
-      rename_i fuel argPred captures
+      rename_i fuel argPred
       cases fuel with
       | zero => simp [typecheck, typecheckExpr] at htc
       | succ fuel' =>
           have htcPfn :
-              typecheckExternPfn ctx 10 "a" Typ.int false argPred builtinMax10RetSpec captures = .ok res := by
+              typecheckExternPfn ctx 10 "a" Typ.int false argPred builtinMax10RetSpec [] = .ok res := by
             have h := htc
             simp only [typecheck, typecheckExpr] at h
             exact h

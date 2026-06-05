@@ -6505,11 +6505,11 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
                 [PFnTClosure.extern innerId innerArg innerRet
                   (VarTypeEnv.toCaptured
                     (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
-                      ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)) v.1 []],
+                      ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)) v.1 innerCaptures],
                 ctx.pc, Predicate.noPred⟩ :=
             QTypRespectsTagMeaning_pfn_extern_ofCaptured tm capturedEnv x
               ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-              innerId innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet v.1 []
+              innerId innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet v.1 innerCaptures
               hcapTm hargTm
           exact (QTypRespectsTagMeaning_noPred_poison_transport tm _ ctx.pc _ hpfnTm) hinq hqd }
 
@@ -7334,7 +7334,7 @@ lemma applyFnTClosure_extern_ok_qualTypeRespects_of_respects
               exact (QTypRespectsTagMeaning_noPred_poison_transport tm _ ctx.pc _
                 (QTypRespectsTagMeaning_pfn_extern_ofCaptured tm capturedEnv x
                   ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-                  innerId innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet v.1 []
+                  innerId innerArg innerArgTyp (parseReturnType innerRet) ctx.pc innerRet v.1 innerCaptures
                   hcapTm hargTm)) hinq hqd }
 
 /-- Canonical tag-meaning extension for a successful impure extern closure

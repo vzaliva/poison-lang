@@ -3078,7 +3078,7 @@ lemma typecheckExternPfn_ok_res_eq
       res =
         { qualType :=
             ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
-              [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
+              [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
              ctx.pc, Predicate.noPred⟩,
           memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
           nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
@@ -3127,7 +3127,7 @@ lemma typecheckExternPfn_ok_res_eq
           typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures
             = .ok { qualType :=
                       ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
-                        [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
+                        [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
                         ctx.pc, Predicate.noPred⟩,
                     memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
                     nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
@@ -8665,7 +8665,7 @@ private lemma typecheckExpr_preserves_combined_main :
               subst htc_res
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
               show etypClosuresFullBounded
-                (ETyp.parrow _argTyp (parseReturnType _retSpec) false [PFnTClosure.extern _id _arg _retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []]) ctx.nextTag
+                (ETyp.parrow _argTyp (parseReturnType _retSpec) false [PFnTClosure.extern _id _arg _retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt _captures]) ctx.nextTag
               intro tcl hmem
               simp at hmem; subst hmem
               exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure

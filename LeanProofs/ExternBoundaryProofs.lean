@@ -838,7 +838,7 @@ theorem of_externPfn_result
       { etyp :=
           ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
             [PFnTClosure.extern id x retSpec
-              (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
+              (VarTypeEnv.toCaptured ctx.varEnv) argQt cap],
         poison := ctx.pc,
         pred := Predicate.noPred } := by
   intro _nestedId _d hreach
@@ -944,7 +944,7 @@ theorem of_typecheckExternPfn
     ExternDeclarationReachableFromQTyp root ctxRoot
       { etyp := ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
           [PFnTClosure.extern id x retSpec
-            (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
+            (VarTypeEnv.toCaptured ctx.varEnv) argQt cap],
         poison := ctx.pc, pred := Predicate.noPred } nestedId d →
     ExternDeclarationReachableFromContext root ctxRoot nestedId d
   exact of_externPfn_result hpoison hctx hcurrent
@@ -1705,7 +1705,7 @@ private def fnExternFinishAtCursor
               nextLoc' := cursor.2,
               nextTag' := nextTag'',
               regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
-  | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
+  | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
       | Except.ok (innerArgQt, nextTag'') =>
@@ -1715,7 +1715,7 @@ private def fnExternFinishAtCursor
                   { etyp :=
                       ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                         [PFnTClosure.extern innerId innerArg innerRet
-                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []],
+                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
                     poison := joinPoison p1 (joinPoison p ctx.pc),
                     pred := Predicate.noPred },
               memEnv' := memEnv,
@@ -2014,7 +2014,7 @@ private theorem of_applyFnTClosureAtCursor
                                   { etyp :=
                                       ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                                         [PFnTClosure.extern innerId innerArg innerRet
-                                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []],
+                                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
                                     poison := ctx.pc,
                                     pred := Predicate.noPred } := by
                               intro nestedId d hreach
@@ -2280,7 +2280,7 @@ private theorem of_applyPFnTClosureAtCursor
                       { etyp :=
                           ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                             [PFnTClosure.extern innerId innerArg innerRet
-                              (VarTypeEnv.toCaptured unifiedEnv) v.1 []],
+                              (VarTypeEnv.toCaptured unifiedEnv) v.1 innerCaptures],
                         poison := ctx.pc,
                         pred := Predicate.noPred } := by
                   intro nestedId d hreach

@@ -2141,7 +2141,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   ExternBoundaryTyping.Decl
                     { id := id, kind := .pfn, typ := t, argName := some n,
                       retSpec := some r, effects := [],
-                      preds := collectExternPreds r [], argPoison := argPoison }
+                      preds := collectExternPreds r [], argPoison := argPoison, captures := caps }
                     (Expr.externPfn id n t argPoison argPred r caps) ctxᵢ res :=
                 ExternBoundaryTyping.Decl.pfn htc
               exact
@@ -2149,7 +2149,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   (e := Expr.externPfn id n t argPoison argPred r caps) (id := id)
                   (d := { id := id, kind := .pfn, typ := t, argName := some n,
                           retSpec := some r, effects := [],
-                          preds := collectExternPreds r [], argPoison := argPoison })
+                          preds := collectExternPreds r [], argPoison := argPoison, captures := caps })
                   (impl := impl) hcan ExternDeclarationInProgram.externPfn
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
                   hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun.run hpc
@@ -2851,7 +2851,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 ExternBoundaryTyping.Decl
                   { id := id, kind := .pfn, typ := t, argName := some n,
                     retSpec := some r, effects := [],
-                    preds := collectExternPreds r [], argPoison := argPoison }
+                    preds := collectExternPreds r [], argPoison := argPoison, captures := caps }
                   (Expr.externPfn id n t argPoison argPred r caps) ctxᵢ res :=
               ExternBoundaryTyping.Decl.pfn htc
             exact
@@ -2859,7 +2859,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 (e := Expr.externPfn id n t argPoison argPred r caps) (id := id)
                 (d := { id := id, kind := .pfn, typ := t, argName := some n,
                         retSpec := some r, effects := [],
-                        preds := collectExternPreds r [], argPoison := argPoison })
+                        preds := collectExternPreds r [], argPoison := argPoison, captures := caps })
                 (impl₀ := impl₀) (impl₁ := impl₁)
                 hcan
                 ExternDeclarationInProgram.externPfn

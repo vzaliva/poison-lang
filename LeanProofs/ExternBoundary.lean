@@ -71,7 +71,7 @@ inductive Decl : ExternDeclaration → Expr → TypeContext → TypeResult → P
       Decl
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [], preds := collectExternPreds retSpec [],
-          argPoison := argPoison }
+          argPoison := argPoison, captures := captures }
         (Expr.externPfn id x argTyp argPoison argPred retSpec captures) ctx res
 
 /-- Call-boundary typing origin: the selected extern call result is the result
@@ -575,7 +575,8 @@ inductive ExternDeclarationInReturn : ExternReturn → ExternId → ExternDeclar
         (ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures)
         innerId
         { id := innerId, kind := .pfn, typ := innerArgTyp, argName := some innerArg,
-          retSpec := some innerRet, effects := [], preds := collectExternPreds innerRet [], argPoison := innerArgPoison }
+          retSpec := some innerRet, effects := [], preds := collectExternPreds innerRet [],
+          argPoison := innerArgPoison, captures := innerCaptures }
   | nestedPfn_inner {innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet id d} :
       ExternDeclarationInReturn innerRet id d →
       ExternDeclarationInReturn
@@ -597,7 +598,8 @@ inductive ExternDeclarationInProgram : Expr → ExternId → ExternDeclaration �
   | externPfn {id x argTyp argPoison argPred retSpec} :
       ExternDeclarationInProgram (Expr.externPfn id x argTyp argPoison argPred retSpec cap) id
         { id := id, kind := .pfn, typ := argTyp, argName := some x, retSpec := some retSpec,
-          effects := [], preds := collectExternPreds retSpec [], argPoison := argPoison }
+          effects := [], preds := collectExternPreds retSpec [], argPoison := argPoison,
+          captures := cap }
   | externPfn_return {id x argTyp argPoison argPred retSpec nestedId d} :
       ExternDeclarationInReturn retSpec nestedId d →
       ExternDeclarationInProgram (Expr.externPfn id x argTyp argPoison argPred retSpec cap) nestedId d

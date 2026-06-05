@@ -1243,14 +1243,15 @@ def typecheckExternFn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp :
     `typecheckExternFn`. -/
 def typecheckExternPfn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) (_captures : List Capture) : TypecheckM TypeResult := do
+    (retSpec : ExternReturn) (captures : List Capture) : TypecheckM TypeResult := do
   checkExternInputFirstOrder argTyp
   checkExternReturnInputsFirstOrder retSpec
   -- Resolve the declared argument condition (precondition) into a concrete QTyp.
   let (argQt, nextTag') ← resolveArgCondQTyp argTyp argPoison argPred ctx.varEnv ctx.nextTag
   -- Create extern closure with captured varEnv (singleton list), the precondition,
-  -- and the declared `captures:` read dependencies (checked at the call boundary).
-  let tcl := PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []
+  -- and the declared `captures:` read dependencies (the trusted contract, checked
+  -- at the call boundary via `capturesSatisfied`).
+  let tcl := PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt captures
 
   let retTyp := parseReturnType retSpec
   -- Create arrow type with ambient pc
@@ -1648,9 +1649,12 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag'', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
-        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
+        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
-            let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []
+            -- Propagate the nested-return `captures:` contract onto the produced
+            -- inner closure's type member (the call-site gate); the body AST shape
+            -- is recorded separately (two-track discipline).
+            let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
@@ -1727,9 +1731,12 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag'', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
-        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
+        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
-            let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []
+            -- Propagate the nested-return `captures:` contract onto the produced
+            -- inner closure's type member (the call-site gate); the body AST shape
+            -- is recorded separately (two-track discipline).
+            let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
@@ -1810,9 +1817,12 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag'', regime' := result2.regime' }
 
-        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
+        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
-            let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []
+            -- Propagate the nested-return `captures:` contract onto the produced
+            -- inner closure's type member (the call-site gate); the body AST shape
+            -- is recorded separately (two-track discipline).
+            let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             -- Issue #111: taint app result by function poison (p, p1)
             -- Issue #113: provenance gate
@@ -1892,9 +1902,12 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag'', regime' := result2.regime' }
 
-        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
+        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
-            let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []
+            -- Propagate the nested-return `captures:` contract onto the produced
+            -- inner closure's type member (the call-site gate); the body AST shape
+            -- is recorded separately (two-track discipline).
+            let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
             -- Issue #111: taint app result by function poison (p, p1)
             -- Issue #113: provenance gate
