@@ -136,19 +136,71 @@ currently discharge: `@11` returns `max a b` reading captured `a`, but inverting
   - `abs @12` / `max @11` decl-spec helpers (`builtin{Abs,Max11}_decl_*`) thread
     the free value-body `captures`; their `…DeclResult`/`…ExternClosure`
     PFnTClosures stay `[]`.
-  - Parser still emits `[]` stubs (real `captures:` parsing not yet wired); top-level
-    FR theorem + `builtinMax11_callFR` remain `sorryAx`-free.
+  - top-level FR theorem + `builtinMax11_callFR` remain `sorryAx`-free.
+- **Phase 3 — parser DONE (green, 102/102 tests).** Real `captures:` parsing wired:
+  grammar (`captures_block` / `capture` rules, bare `a` → `env_name` and bang `!x`
+  → `mem_name` targets) on both `extern_fn` and `extern_pfn`; `Parser.lean`
+  `xmlToCaptures` (reads the `field` attr to pick `CaptureTarget.bareVar`/`.memVar`)
+  and a `findExternBlock` tag-scan refactor that collapses the per-clause positional
+  cases (so `effects`/`captures` are found by tag in any order, across
+  fn/pfn/nestedFn/nestedPfn); `Pretty.lean` emits a `, captures: { … }` suffix
+  (non-empty only). Verified by a parse→`Repr` round-trip of a program with both
+  `!r1` and `a` capture targets. **Captures are still inert at typecheck** (stored
+  `[]`), so they parse into the AST but do not yet affect typechecking or runtime;
+  meaningful runnable examples need `@10` (the runtime nested-return validation
+  currently `beqExpr`-compares captures, coupling a program's declared nested
+  captures to the impl's — its relaxation/population is `@10` work).
+
+## Findings from the `@10` / population investigation (spike, reverted green)
+
+A controlled spike (flip `typecheckExternPfn` to *store* captures, rebuild, read
+first errors) established two things that re-scope `@10`:
+
+- **Typecheck population is unnecessary AND costly — do NOT populate.** The crux
+  `builtinMax11_callFR` reads `[a]` off the hand-built trusted decl
+  `builtinMax11CapturesDecl`, and the registry bridge matches it to the reachable
+  closure *without comparing captures* (`TrustedRegistryEntryMatchesPfn` does not
+  pin captures). So captures live on the **trusted-decl / Call track**, never
+  on a
+  typecheck-produced `PFnTClosure`. Populating forces generalizing the three
+  value-track inductives (`valueHasETyp`/`deepValueQTypProperty`/`agreeValueUnder`
+  member `[]`→`cap` — cheap, a 1-line ripple) AND re-tying the `value_shape`
+  captures that was deliberately *freed* (to keep `of_terminatesTo` at `[]`), which
+  breaks the abs/max11 spec unification. Population and freed-`value_shape` are
+  mutually exclusive; freed-`value_shape` is load-bearing for green. Verdict:
+  captures realize via trusted decls, typecheck stays `[]`.
+- **`@10`'s own captures is `[]`.** Per the doc worked example, `a` is captured
+  by
+  the inner `@11` (from `@10`'s argument); `@10` merely *returns* the `@11`
+  closure. So `@10` is a closure-returning decl, not a captures-bearing one;
+  `@10.callFR`'s job is to produce an `@11` closure whose trusted decl carries
+  `[a]`. The `@11` closure body itself is `[]`-captures (from `outerMaxImpl`), so
+  `@10.callFR`'s closure-agreement is at `[]` and likely does **not** force
+  `agreeValueUnder` generalization (only the `@11` *call* uses `[a]`, already
+  proved).
 
 ## Remaining (deferred to Phases 3-4)
 
 - `@10` decl/impl + five spec fields; `@10.callFR` returning the capture-bearing
-  `@11` closure; assemble program-level FR for `max_curried`.
-- AST `captures` on `Expr.externFn/Pfn` + `ExternReturn.nested{Fn,Pfn}`; `parser/`
-  grammar + `Parser.lean`; `Typecheck.lean` enforcement populating closure
-  `captures` from the AST (so a real program's reachable decl carries `captures=[a]`
-  and the bridge matches it to the registry entry); `FnTClosure.extern` captures;
-  general (non-`[]`) closure-value agreement; `JoinMemberTransport` conjunction-merge;
-  `examples/`; `poison-lang.ott`; `poison-lang-description.tex`.
+  `@11` closure; assemble program-level FR for `max_curried`. **This is
+  from-scratch crux work**: `@10` is the first *nested-returning* extern spec
+  (abs/max11 are simple-returning), so its `decl_shape`/`valueHasETyp`/`declFR`
+  (a `parrow → parrow` closure type) and `callFR` (closure-result agreement via
+  `agreeValueUnder`) have no existing template; budget accordingly.
+- `examples/` runnable captures tests — coupled to `@10`: the runtime nested-return
+  validation (`validateExternReturn`) `beqExpr`-compares the declared nested
+  captures against the impl's, so a nested-captures program only runs once that
+  validation ignores captures (it is `unfold`ed in `SemanticsProperties` /
+  `ExternBoundaryConstructors` / `ExternProofs`, so relaxing it is `@10`-scoped,
+  not a quick win). The AST/parser already accept the syntax.
+- `poison-lang.ott` + `poison-lang-description.tex`: add the `captures:` clause
+  to
+  `extern_fn`/`extern_pfn`/nested-return grammar and the contravariant capture
+  satisfaction rule (mirrors the `ESL`/effect-spec machinery).
+- `JoinMemberTransport` conjunction-merge; guarded-capture regime
+  reconciliation in
+  `TrustedRegistryAgreesWithReachable` (needed only by the `@10` program-FR assembly).
+- (Typecheck population is NOT required — see Findings above.)
 - Guarded-capture regime reconciliation in `TrustedRegistryAgreesWithReachable`.
 
 ## Constraints

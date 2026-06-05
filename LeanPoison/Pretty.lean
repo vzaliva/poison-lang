@@ -95,10 +95,26 @@ private partial def effectInline : Effect → Std.Format
         syntaxPredInline pred
       )
 
+private partial def captureInline : Capture → Std.Format
+  | ⟨target, typ, poison, pred⟩ =>
+      let targetFmt :=
+        match target with
+        | .bareVar x => Std.Format.text x
+        | .memVar x => Std.Format.text "!" ++ Std.Format.text x
+      targetFmt ++
+      Std.Format.text " :> " ++
+      qtypSurfaceInline typ poison pred
+
+/-- A `, captures: { … }` suffix, emitted only for a non-empty dependency list
+    so that the common (empty) case prints exactly as before. -/
+private partial def capturesSuffix (caps : List Capture) : Std.Format :=
+  if caps.isEmpty then Std.Format.text ""
+  else Std.Format.text ", captures: " ++ formatBracedEntries (caps.map captureInline)
+
 private partial def externReturnInline : ExternReturn → Std.Format
   | .simple typ poison pred =>
       qtypSurfaceInline typ poison pred
-  | .nestedFn id x typ argPoison argPred ret eff _cap =>
+  | .nestedFn id x typ argPoison argPred ret eff cap =>
       Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
@@ -106,14 +122,16 @@ private partial def externReturnInline : ExternReturn → Std.Format
       Std.Format.text " -> " ++
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", effects: " ++
-      formatBracedEntries (eff.map effectInline)
-  | .nestedPfn id x typ argPoison argPred ret _cap =>
+      formatBracedEntries (eff.map effectInline) ++
+      capturesSuffix cap
+  | .nestedPfn id x typ argPoison argPred ret cap =>
       Std.Format.text s!"extern pfn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
       qtypSurfaceInline typ argPoison argPred ++
       Std.Format.text " -> " ++
-      Std.Format.paren (externReturnInline ret)
+      Std.Format.paren (externReturnInline ret) ++
+      capturesSuffix cap
 
 partial def reprValue : Value → Nat → Std.Format
   | Value.num n, _ => repr n
@@ -181,7 +199,7 @@ partial def reprExpr : Expr → Nat → Std.Format
       Std.Format.text " " ++
       syntaxPredInline pred ++
       Std.Format.text ")"
-    | Expr.externFn id x t argPoison argPred ret eff _cap =>
+    | Expr.externFn id x t argPoison argPred ret eff cap =>
       Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
@@ -189,14 +207,16 @@ partial def reprExpr : Expr → Nat → Std.Format
       Std.Format.text " -> " ++
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", effects: " ++
-      formatBracedEntries (eff.map effectInline)
-    | Expr.externPfn id x t argPoison argPred ret _cap =>
+      formatBracedEntries (eff.map effectInline) ++
+      capturesSuffix cap
+    | Expr.externPfn id x t argPoison argPred ret cap =>
       Std.Format.text s!"extern pfn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
       qtypSurfaceInline t argPoison argPred ++
       Std.Format.text " -> " ++
-      Std.Format.paren (externReturnInline ret)
+      Std.Format.paren (externReturnInline ret) ++
+      capturesSuffix cap
 
 end
 

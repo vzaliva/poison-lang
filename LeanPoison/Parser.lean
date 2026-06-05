@@ -87,6 +87,12 @@ def runTreeSitterXml (file : String) : IO String := do
     throw <| IO.userError s!"Parsing failed: {output.stderr}"
   return output.stdout
 
+/-- Find the first child element with the given tag (used to locate the optional
+    `effects_block` / `captures_block` sibling clauses among an extern's
+    trailing children, independent of their relative order). -/
+private def findExternBlock (tag : String) (els : List Element) : Option Element :=
+  els.find? fun | Element.Element t _ _ => t == tag
+
 mutual
 -- Recursively convert parsed XML to Expr
 
@@ -424,7 +430,7 @@ mutual
               | Content.Element e => some e
               | _ => none)
               match contsFiltered.toList with
-                | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType] =>
+                | (Element.Element "number" _ #[Content.Character idStr]) :: e_name :: e_argTyp :: e_retType :: rest =>
                     let id <-
                       match idStr.trimAscii.toString.toNat? with
                       | some n => .ok n
@@ -433,32 +439,17 @@ mutual
                       match e_name with
                         | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
                         | _ => .error "Invalid extern_fn name"
-
                     let (argT, argPoison, argPred) ← xmlToQTyp e_argTyp (allowCleanPred := true)
-
                     let retType <- xmlToRetType e_retType
-
-                    return Expr.externFn id name argT argPoison argPred retType [] []
-
-
-                | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType,e_effects] =>
-                  let id <-
-                    match idStr.trimAscii.toString.toNat? with
-                    | some n => .ok n
-                    | none => .error s!"Invalid extern_fn id: {idStr}"
-                  let name <-
-                    match e_name with
-                    | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
-                    | _ =>  .error "Invalid extern_fn name"
-                  let (argT, argPoison, argPred) ← xmlToQTyp e_argTyp (allowCleanPred := true)
-                  let retType <- xmlToRetType e_retType
-                  let effectBlock :=
-                    match e_effects with
-                    | Element.Element "effects_block" attr effectsContent =>
-                      (xmlToEffects ( Element.Element "effects_block" attr effectsContent))
-                    | _ => .error ("Invalid effects : "++ toString e_effects)
-
-                  return Expr.externFn id name argT argPoison argPred retType (<- effectBlock) []
+                    let effects <-
+                      match findExternBlock "effects_block" rest with
+                      | some eb => xmlToEffects eb
+                      | none => .ok []
+                    let captures <-
+                      match findExternBlock "captures_block" rest with
+                      | some cb => xmlToCaptures cb
+                      | none => .ok []
+                    return Expr.externFn id name argT argPoison argPred retType effects captures
 
                 | _ => .error "Invalid extern_fn content"
 
@@ -469,7 +460,7 @@ mutual
               | _ => none)
 
               match contsFiltered.toList with
-                | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType] =>
+                | (Element.Element "number" _ #[Content.Character idStr]) :: e_name :: e_argTyp :: e_retType :: rest =>
                   let id <-
                     match idStr.trimAscii.toString.toNat? with
                     | some n => .ok n
@@ -478,10 +469,13 @@ mutual
                     match e_name with
                     | Element.Element "identifier" _ #[Content.Character n] => .ok n.trimAscii.toString
                     | _ => .error "Invalid extern_pfn name"
-
                   let (argT, argPoison, argPred) ← xmlToQTyp e_argTyp (allowCleanPred := true)
-
-                  return Expr.externPfn id name argT argPoison argPred (<- xmlToRetType e_retType) []
+                  let retType <- xmlToRetType e_retType
+                  let captures <-
+                    match findExternBlock "captures_block" rest with
+                    | some cb => xmlToCaptures cb
+                    | none => .ok []
+                  return Expr.externPfn id name argT argPoison argPred retType captures
                 | _ => .error "Invalid extern_pfn content"
 
 
@@ -597,30 +591,25 @@ mutual
           | _ => none
 
         match elems.toList with
-        | [Element.Element "number" _ #[Content.Character idStr],
-          Element.Element "identifier" _ #[Content.Character name],
-          e_argQt@(Element.Element "qtyp" _ _),
-          e_retType] =>
+        | (Element.Element "number" _ #[Content.Character idStr]) ::
+          (Element.Element "identifier" _ #[Content.Character name]) ::
+          (e_argQt@(Element.Element "qtyp" _ _)) ::
+          e_retType :: rest =>
             let id <-
               match idStr.trimAscii.toString.toNat? with
               | some n => .ok n
               | none => .error s!"Invalid nested extern_fn id: {idStr}"
             let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType [] []
-
-        | [Element.Element "number" _ #[Content.Character idStr],
-          Element.Element "identifier" _ #[Content.Character name],
-          e_argQt@(Element.Element "qtyp" _ _),
-          e_retType,e_effects] =>
-            let id <-
-              match idStr.trimAscii.toString.toNat? with
-              | some n => .ok n
-              | none => .error s!"Invalid nested extern_fn id: {idStr}"
-            let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
-            let retType <- xmlToRetType e_retType
-            let effects <- xmlToEffects e_effects
-            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType effects []
+            let effects <-
+              match findExternBlock "effects_block" rest with
+              | some eb => xmlToEffects eb
+              | none => .ok []
+            let captures <-
+              match findExternBlock "captures_block" rest with
+              | some cb => xmlToCaptures cb
+              | none => .ok []
+            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType effects captures
 
         | _ => .error s!"Invalid extern_fn shape in RetType: {elems.toList}"
 
@@ -630,17 +619,21 @@ mutual
           | Content.Element el => some el
           | _ => none
         match elems.toList with
-        | [Element.Element "number" _ #[Content.Character idStr],
-          Element.Element "identifier" _ #[Content.Character name],
-          e_argQt@(Element.Element "qtyp" _ _),
-          e_retType] =>
+        | (Element.Element "number" _ #[Content.Character idStr]) ::
+          (Element.Element "identifier" _ #[Content.Character name]) ::
+          (e_argQt@(Element.Element "qtyp" _ _)) ::
+          e_retType :: rest =>
             let id <-
               match idStr.trimAscii.toString.toNat? with
               | some n => .ok n
               | none => .error s!"Invalid nested extern_pfn id: {idStr}"
             let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedPfn id name.trimAscii.toString argType argPoison argPred retType []
+            let captures <-
+              match findExternBlock "captures_block" rest with
+              | some cb => xmlToCaptures cb
+              | none => .ok []
+            return ExternReturn.nestedPfn id name.trimAscii.toString argType argPoison argPred retType captures
         | _ => .error s!"Invalid extern_pfn shape in RetType: {contents}"
 
     | _ => .error s!"Invalid RetType element: {x}"
@@ -688,6 +681,43 @@ mutual
         | _ => throw "Invalid effect"
       return acc
     | _ => throw s!"Invalid effects_block element: {x}"
+
+  -- Convert a `<captures_block>` element to `List Capture`.  A capture target is
+  -- either a bare environment variable (`<identifier field="env_name">` →
+  -- `CaptureTarget.bareVar`) or a bang memory target (`<identifier
+  -- field="mem_name">` → `CaptureTarget.memVar`); the trailing `<qtyp>` carries
+  -- the qualified-type contract `(typ :> poison pred)`.
+  partial def xmlToCaptures (x : Element) : Except String (List Capture) := do
+    match x with
+    | Element.Element "captures_block" _ captureblock =>
+      let elems := captureblock.filterMap fun
+        | Content.Element (Element.Element "comment" _ _) => none
+        | Content.Element (Element.Element "capture" attr cont) => some (Element.Element "capture" attr cont)
+        | _ => none
+      let mut acc : List Capture := []
+      for el in elems do
+        match el with
+        | Element.Element "capture" _ captureContents =>
+          let capElems := captureContents.filterMap fun
+            | Content.Element (Element.Element "comment" _ _) => none
+            | Content.Element e => some e
+            | _ => none
+          match capElems.toList with
+          | [Element.Element "identifier" idAttr #[Content.Character name],
+            Element.Element "qtyp" attr qtypContents] =>
+            let target ←
+              match idAttr.get? "field" with
+              | some "env_name" => .ok (CaptureTarget.bareVar name.trimAscii.toString)
+              | some "mem_name" => .ok (CaptureTarget.memVar name.trimAscii.toString)
+              | _ => .error s!"Invalid capture target (missing env_name/mem_name field)"
+            match xmlToQTyp (Element.Element "qtyp" attr qtypContents) with
+            | .ok (typ, poison, pred) =>
+              acc := acc.append [Capture.mk target typ poison pred]
+            | .error e => throw e
+          | _ => throw "Invalid capture"
+        | _ => throw "Invalid capture"
+      return acc
+    | _ => throw s!"Invalid captures_block element: {x}"
 
 end
 --------------------------------------------------------------------------------

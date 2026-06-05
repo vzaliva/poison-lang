@@ -222,6 +222,8 @@ module.exports = grammar({
       field("return_type", seq("(", choice($.qtyp, $.extern_fn, $.extern_pfn), ")")),
 
       optional(seq(",", field("effects", seq("effects", ":", $.effects_block)))
+      ),
+      optional(seq(",", field("captures", seq("captures", ":", $.captures_block)))
       )
     )),
 
@@ -234,7 +236,10 @@ module.exports = grammar({
       ":",
       field("arg_type", $.qtyp),
       "->",
-      field("return_type", seq("(", choice($.qtyp, $.extern_fn, $.extern_pfn), ")"))
+      field("return_type", seq("(", choice($.qtyp, $.extern_fn, $.extern_pfn), ")")),
+
+      optional(seq(",", field("captures", seq("captures", ":", $.captures_block)))
+      )
     )),
 
     effects_block: $ => seq(
@@ -252,6 +257,28 @@ module.exports = grammar({
     effect: $ => seq(
       "!",
       field("name", $.identifier),
+      ":>",
+      field("type", $.qtyp)
+    ),
+
+    captures_block: $ => seq(
+      "{",
+      repeat(
+        seq(
+          field("capture", $.capture),
+          optional(",")
+        )
+      ),
+      "}"
+    ),
+
+    // A capture target is either a bare environment variable (`a`) or a bang
+    // memory target (`!x`) reached through a captured reference / ref-typed arg.
+    capture: $ => seq(
+      choice(
+        field("env_name", $.identifier),
+        seq("!", field("mem_name", $.identifier))
+      ),
       ":>",
       field("type", $.qtyp)
     ),
