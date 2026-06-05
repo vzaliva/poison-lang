@@ -928,7 +928,7 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
       valueHasETyp θ (Value.peClosure x body env) (ETyp.parrow st1 st2 p tcl)
   | closure_extern {id : ExternId} {x y : Name} {argTyp : Typ}
       {argPoison : Bool} {argPred : SyntaxPredicate} {argQTyp : QTyp}
-      {retSpec : ExternReturn} {eff : List Effect}
+      {retSpec : ExternReturn} {eff : List Effect} {cap : List Capture}
       {env : VarEnv} {tcl : List FnTClosure} {p : Bool}
       {tenv : CapturedVarEnv}
       (htcl : FnTClosure.extern id x retSpec eff tenv argQTyp ∈ tcl)
@@ -936,11 +936,11 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
         env.lookup n = some v → valueHasETyp θ v qt.etyp)
       (hcover : ∀ n qt, tenv.lookup n = some qt → ∃ v, env.lookup n = some v) :
       valueHasETyp θ
-        (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff) env)
+        (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env)
         (ETyp.arrow argTyp (parseReturnType retSpec) p tcl)
   | peClosure_extern {id : ExternId} {x y : Name} {argTyp : Typ}
       {argPoison : Bool} {argPred : SyntaxPredicate} {argQTyp : QTyp}
-      {retSpec : ExternReturn}
+      {retSpec : ExternReturn} {cap : List Capture}
       {env : VarEnv} {tcl : List PFnTClosure} {p : Bool}
       {tenv : CapturedVarEnv}
       (htcl : PFnTClosure.extern id x retSpec tenv argQTyp [] ∈ tcl)
@@ -948,7 +948,7 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
         env.lookup n = some v → valueHasETyp θ v qt.etyp)
       (hcover : ∀ n qt, tenv.lookup n = some qt → ∃ v, env.lookup n = some v) :
       valueHasETyp θ
-        (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) env)
+        (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) env)
         (ETyp.parrow argTyp (parseReturnType retSpec) p tcl)
 
 -- ================================================================
@@ -3066,8 +3066,8 @@ lemma typecheckExternFn_ok_res_eq
 lemma typecheckExternPfn_ok_res_eq
   (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) (res : TypeResult) :
-    typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec = .ok res →
+    (retSpec : ExternReturn) {captures : List Capture} (res : TypeResult) :
+    typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures = .ok res →
     ∃ argQt,
       argQt.poison = argPoison ∧
       res =
@@ -3119,7 +3119,7 @@ lemma typecheckExternPfn_ok_res_eq
       subst hnt
       refine ⟨argQt, hpoison, ?_⟩
       have hdef :
-          typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec
+          typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures
             = .ok { qualType :=
                       ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
                         [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []],
@@ -3951,7 +3951,7 @@ private lemma typecheckExternPfn_preserves_nextTag
     (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
     (retSpec : ExternReturn) (res : TypeResult) :
-    typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec = .ok res →
+    typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures = .ok res →
     res.nextTag' = ctx.nextTag := by
   intro htc
   obtain ⟨argQt, _, hres⟩ :=
@@ -8654,7 +8654,7 @@ private lemma typecheckExpr_preserves_combined_main :
               intro tcl hmem
               simp at hmem; subst hmem
               exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
-          | externPfn _id _arg _argTyp _argPoison _argPred _retSpec =>
+          | externPfn _id _arg _argTyp _argPoison _argPred _retSpec _captures =>
               obtain ⟨argQt, _, htc_res⟩ :=
                 typecheckExternPfn_ok_res_eq ctx _id _arg _argTyp _argPoison _argPred _retSpec res htc
               subst htc_res
@@ -9992,7 +9992,7 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                   typecheckExternFn_ok_res_eq ctx _id _arg _argTyp _argPoison _argPred _retSpec _effects res htc
                 rw [hres]
               rw [htagEnv, hpres]; exact hbound
-          | externPfn _id _arg _argTyp _argPoison _argPred _retSpec =>
+          | externPfn _id _arg _argTyp _argPoison _argPred _retSpec _captures =>
               have hpres := typecheckExternPfn_preserves_nextTag ctx _id _arg _argTyp _argPoison _argPred _retSpec res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv := by
                 obtain ⟨argQt, _, hres⟩ :=
@@ -11558,7 +11558,7 @@ lemma valueHasETyp_joinETyps_left
       | parrow _st1 _st2 _p _tcls =>
           simpa [joinETyps] using (valueHasETyp.closure (θ := θ) (htcl := htcl) (henv := henv) (hcover := hcover))
   | closure_extern htcl henv hcover =>
-      rename_i id x y argTyp argPoison argPred argQTyp retSpec eff env tcl p tenv
+      rename_i id x y argTyp argPoison argPred argQTyp retSpec eff cap env tcl p tenv
       cases t2 with
       | int =>
           simpa [joinETyps] using
@@ -11581,7 +11581,7 @@ lemma valueHasETyp_joinETyps_left
               FnTClosure.extern id x retSpec eff tenv argQTyp ∈ mergeFnTClosures tcl tcls2 :=
               mem_mergeFnTClosures_left tcl tcls2 _ htcl
             have hclo_join :
-                valueHasETyp θ (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff) env)
+                valueHasETyp θ (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env)
                   (ETyp.arrow argTyp (parseReturnType retSpec) (joinPoison p p') (mergeFnTClosures tcl tcls2)) :=
               valueHasETyp.closure_extern (htcl := htcl_join) (henv := henv) (hcover := hcover)
             simpa [joinETyps, hshape] using hclo_join
@@ -11618,7 +11618,7 @@ lemma valueHasETyp_joinETyps_left
           · simpa [joinETyps, hshape] using
               (valueHasETyp.peClosure (θ := θ) (hpure := hpure) (htcl := htcl) (henv := henv) (hcover := hcover))
   | peClosure_extern htcl henv hcover =>
-      rename_i id x y argTyp argPoison argPred argQTyp retSpec env tcl p tenv
+      rename_i id x y argTyp argPoison argPred argQTyp retSpec cap env tcl p tenv
       cases t2 with
       | int =>
           simpa [joinETyps] using
@@ -11643,7 +11643,7 @@ lemma valueHasETyp_joinETyps_left
           · have htcl_join :=
               mem_mergePFnTClosures_left tcl tcls2 _ htcl
             have hpclo_join :
-                valueHasETyp θ (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) env)
+                valueHasETyp θ (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) env)
                   (ETyp.parrow argTyp (parseReturnType retSpec) (joinPoison p p') (mergePFnTClosures tcl tcls2)) :=
               valueHasETyp.peClosure_extern (htcl := htcl_join) (henv := henv) (hcover := hcover)
             simpa [joinETyps, hshape] using hpclo_join
@@ -17848,7 +17848,7 @@ example (θ : RealizationMap) :
     valueHasETyp θ
       (Value.peClosure "x"
         (Expr.externPfn 42 "x" Typ.int false SyntaxPredicate.noPred
-          (ExternReturn.simple Typ.int false SyntaxPredicate.noPred)) [])
+          (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []) [])
       (ETyp.parrow Typ.int Typ.int false
         [PFnTClosure.extern 42 "x"
           (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
@@ -17863,7 +17863,7 @@ example (θ : RealizationMap) :
     valueHasETyp θ
       (Value.closure "x"
         (Expr.externFn 13 "x" Typ.int false SyntaxPredicate.noPred
-          (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []) [])
+          (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] []) [])
       (ETyp.arrow Typ.int Typ.int false
         [FnTClosure.extern 13 "x"
           (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] []

@@ -142,7 +142,7 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
           (agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch hcap
             hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁))
       (clean_internal_arrow_extern := by
-        intro id x y argTyp _argPoison _argPred retSpec effects p tcls qt tcl σcap _argQTyp ρcap₀ ρcap₁ v₀ v₁
+        intro id x y argTyp _argPoison _argPred retSpec effects p tcls qt tcl σcap _argQTyp _cap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
           hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ _ihcap
           hclean
@@ -167,7 +167,7 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
           (agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch hcap
             hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁))
       (clean_internal_parrow_extern := by
-        intro id x y argTyp _argPoison _argPred retSpec p tcls qt tcl σcap _argQTyp ρcap₀ ρcap₁ v₀ v₁
+        intro id x y argTyp _argPoison _argPred retSpec p tcls qt tcl σcap _argQTyp _cap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
           hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ _ihcap
           hclean
@@ -2267,7 +2267,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               _ = true := hisFun_src
           rw [hisFun_res] at hnotfun_res
           cases hnotfun_res
-    | @clean_internal_arrow_extern id x y argTyp argPoison argPred retSpec effects p tcls _qt tcl σcap argQTyp ρcap₀ ρcap₁ _v₀ _v₁
+    | @clean_internal_arrow_extern id x y argTyp argPoison argPred retSpec effects p tcls _qt tcl σcap argQTyp capV ρcap₀ ρcap₁ _v₀ _v₁
         hclean_internal_src hetyp_src htcl hmatch hcap
         hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src
         htyping₀_src htyping₁_src hv₁ hv₂ =>
@@ -2345,7 +2345,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
             · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
                 have htyped_closure :
                     valueHasETyp θ₀
-                      (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec effects) ρcap₀)
+                      (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec effects capV) ρcap₀)
                       (ETyp.arrow argTyp (parseReturnType retSpec) p tcls) := by
                   have htcl_match : FnTClosure.extern id x retSpec effects σcap argQTyp ∈ tcls := by
                     simpa [hmatch] using htcl
@@ -2371,7 +2371,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               have htyp2_src : valueHasETyp θ₁ o₁ src.qualType.etyp := by
                 have htyped_closure :
                     valueHasETyp θ₁
-                      (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec effects) ρcap₁)
+                      (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec effects capV) ρcap₁)
                       (ETyp.arrow argTyp (parseReturnType retSpec) p tcls) := by
                   have htcl_match : FnTClosure.extern id x retSpec effects σcap argQTyp ∈ tcls := by
                     simpa [hmatch] using htcl
@@ -2575,7 +2575,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               _ = true := hisFun_src
           rw [hisFun_res] at hnotfun_res
           cases hnotfun_res
-    | @clean_internal_parrow_extern id x y argTyp argPoison argPred retSpec p tcls _qt tcl σcap argQTyp ρcap₀ ρcap₁ _v₀ _v₁
+    | @clean_internal_parrow_extern id x y argTyp argPoison argPred retSpec p tcls _qt tcl σcap argQTyp capV ρcap₀ ρcap₁ _v₀ _v₁
         hclean_internal_src hetyp_src htcl hmatch hcap
         hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src
         htyping₀_src htyping₁_src hv₁ hv₂ =>
@@ -2653,7 +2653,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
             · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
                 have htyped_closure :
                     valueHasETyp θ₀
-                      (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) ρcap₀)
+                      (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec capV) ρcap₀)
                       (ETyp.parrow argTyp (parseReturnType retSpec) p tcls) := by
                   have htcl_match : PFnTClosure.extern id x retSpec σcap argQTyp [] ∈ tcls := by
                     simpa [hmatch] using htcl
@@ -2679,7 +2679,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               have htyp2_src : valueHasETyp θ₁ o₁ src.qualType.etyp := by
                 have htyped_closure :
                     valueHasETyp θ₁
-                      (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec) ρcap₁)
+                      (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec capV) ρcap₁)
                       (ETyp.parrow argTyp (parseReturnType retSpec) p tcls) := by
                   have htcl_match : PFnTClosure.extern id x retSpec σcap argQTyp [] ∈ tcls := by
                     simpa [hmatch] using htcl

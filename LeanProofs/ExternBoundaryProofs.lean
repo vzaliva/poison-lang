@@ -636,7 +636,7 @@ theorem fn_regular_extern_body
     {argPoison : Bool} {argPred : SyntaxPredicate}
     {retSpec : ExternReturn} {effects : List Effect} {σcap : CapturedVarEnv}
     (hmem :
-      FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects) σcap ∈ tcls) :
+      FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) σcap ∈ tcls) :
     ExternDeclarationReachableFromContext root ctxRoot id
       { id := id, kind := .fn, typ := argTyp, argName := some x,
         retSpec := some retSpec, effects := effects,
@@ -788,7 +788,7 @@ theorem of_externFn_result
     (hctx : ContextReachableFrom root ctxRoot ctx)
     (hcurrent :
       ExternDeclarationReachableFromExpr root ctxRoot
-        (Expr.externFn id x argTyp argPoison argPred retSpec effects)) :
+        (Expr.externFn id x argTyp argPoison argPred retSpec effects cap)) :
     QTypReachableFrom root ctxRoot
       { etyp :=
           ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
@@ -829,7 +829,7 @@ theorem of_externPfn_result
     (hctx : ContextReachableFrom root ctxRoot ctx)
     (hcurrent :
       ExternDeclarationReachableFromExpr root ctxRoot
-        (Expr.externPfn id x argTyp argPoison argPred retSpec)) :
+        (Expr.externPfn id x argTyp argPoison argPred retSpec cap)) :
     QTypReachableFrom root ctxRoot
       { etyp :=
           ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
@@ -907,7 +907,7 @@ theorem of_typecheckExternFn
     (hctx : ContextReachableFrom root ctxRoot ctx)
     (hcurrent :
       ExternDeclarationReachableFromExpr root ctxRoot
-        (Expr.externFn id x argTyp argPoison argPred retSpec effects))
+        (Expr.externFn id x argTyp argPoison argPred retSpec effects cap))
     (htc : typecheckExternFn ctx id x argTyp argPoison argPred retSpec effects = .ok res) :
     QTypReachableFrom root ctxRoot res.qualType := by
   obtain ⟨argQt, hpoison, hres⟩ :=
@@ -930,8 +930,8 @@ theorem of_typecheckExternPfn
     (hctx : ContextReachableFrom root ctxRoot ctx)
     (hcurrent :
       ExternDeclarationReachableFromExpr root ctxRoot
-        (Expr.externPfn id x argTyp argPoison argPred retSpec))
-    (htc : typecheckExternPfn ctx id x argTyp argPoison argPred retSpec = .ok res) :
+        (Expr.externPfn id x argTyp argPoison argPred retSpec cap))
+    (htc : typecheckExternPfn ctx id x argTyp argPoison argPred retSpec cap = .ok res) :
     QTypReachableFrom root ctxRoot res.qualType := by
   obtain ⟨argQt, hpoison, hres⟩ :=
     typecheckExternPfn_ok_res_eq ctx id x argTyp argPoison argPred retSpec res htc
@@ -1683,7 +1683,7 @@ private def fnExternFinishAtCursor
                   nextLoc' := v_2.2,
                   nextTag' := nextTag',
                   regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
-  | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects =>
+  | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects _innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
       | Except.ok (innerArgQt, nextTag'') =>
@@ -1701,7 +1701,7 @@ private def fnExternFinishAtCursor
               nextLoc' := cursor.2,
               nextTag' := nextTag'',
               regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
-  | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet =>
+  | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
       | Except.ok (innerArgQt, nextTag'') =>
@@ -1880,9 +1880,9 @@ private theorem of_applyFnTClosureAtCursor
                         cases resolveSyntaxPred pred unifiedEnv tagMapping <;> simp
                         · rename_i resolvedPred
                           cases returnSpecToQTyp typ poison resolvedPred cursor.2 <;> rfl
-                      · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects
+                      · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures
                         cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' <;> rfl
-                      · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet
+                      · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures
                         cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' <;> rfl
                   cases hfor : effectRun with
                   | error _err =>
@@ -1946,7 +1946,7 @@ private theorem of_applyFnTClosureAtCursor
                                           simp [returnSpecToQTyp] at hret
                                           cases hret
                                           simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-                      | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects =>
+                      | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
                           simp only [finish, fnExternFinishAtCursor] at hfinishOk
                           split at hfinishOk
                           · simp at hfinishOk
@@ -1955,7 +1955,7 @@ private theorem of_applyFnTClosureAtCursor
                             cases hfinishOk
                             have hcurrent :
                                 ExternDeclarationReachableFromExpr root ctxRoot
-                                  (Expr.externFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects) := by
+                                  (Expr.externFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures) := by
                               intro nestedId d hprog
                               cases hprog with
                               | externFn =>
@@ -1987,7 +1987,7 @@ private theorem of_applyFnTClosureAtCursor
                                 (QTypReachableFrom.with_etyp
                                   (qpoison := true) (qpred := Predicate.noPred) hnestedBase)
                                   (by simpa [normalizeAppResultByProvenance, hgate] using hreach)
-                      | nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet =>
+                      | nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
                           simp only [finish, fnExternFinishAtCursor] at hfinishOk
                           split at hfinishOk
                           · simp at hfinishOk
@@ -1996,7 +1996,7 @@ private theorem of_applyFnTClosureAtCursor
                             cases hfinishOk
                             have hcurrent :
                                 ExternDeclarationReachableFromExpr root ctxRoot
-                                  (Expr.externPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet) := by
+                                  (Expr.externPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures) := by
                               intro nestedId d hprog
                               cases hprog with
                               | externPfn =>
@@ -2212,7 +2212,7 @@ private theorem of_applyPFnTClosureAtCursor
                                       simp [returnSpecToQTyp] at hret
                                       cases hret
                                       simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
-          | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects =>
+          | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
               simp only [] at happly
               split at happly
               · simp at happly
@@ -2221,7 +2221,7 @@ private theorem of_applyPFnTClosureAtCursor
                 cases happly
                 have hcurrent :
                     ExternDeclarationReachableFromExpr root ctxRoot
-                      (Expr.externFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects) := by
+                      (Expr.externFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures) := by
                   intro nestedId d hprog
                   cases hprog with
                   | externFn =>
@@ -2253,7 +2253,7 @@ private theorem of_applyPFnTClosureAtCursor
                     (QTypReachableFrom.with_etyp
                       (qpoison := true) (qpred := Predicate.noPred) hnestedBase)
                       (by simpa [normalizeAppResultByProvenance, hgate] using hreach)
-          | nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet =>
+          | nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
               simp only [] at happly
               split at happly
               · simp at happly
@@ -2262,7 +2262,7 @@ private theorem of_applyPFnTClosureAtCursor
                 cases happly
                 have hcurrent :
                     ExternDeclarationReachableFromExpr root ctxRoot
-                      (Expr.externPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet) := by
+                      (Expr.externPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures) := by
                   intro nestedId d hprog
                   cases hprog with
                   | externPfn =>

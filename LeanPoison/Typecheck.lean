@@ -965,8 +965,8 @@ def collectExternPreds (retSpec : ExternReturn) (effects : List Effect) : List S
   let effectPreds := effects.map (·.pred)
   match retSpec with
   | ExternReturn.simple _ _ pred => [pred] ++ effectPreds
-  | ExternReturn.nestedFn _ _ _ _ _ _ _ => effectPreds
-  | ExternReturn.nestedPfn _ _ _ _ _ _ => effectPreds
+  | ExternReturn.nestedFn _ _ _ _ _ _ _ _ => effectPreds
+  | ExternReturn.nestedPfn _ _ _ _ _ _ _ => effectPreds
 
 /-- Convert (Typ, Bool, Predicate) to QTyp for EXTERN VALUES.
     Used only for extern val declarations at definition time.
@@ -1191,8 +1191,8 @@ def capturesSatisfied (caps : List Capture) (unifiedEnv : VarTypeEnv)
 def parseReturnType (retType : ExternReturn):Typ :=
  match retType with
  | ExternReturn.simple typ _ _ => typ
- | ExternReturn.nestedFn _ _ typ _ _ extReturn _ => Typ.arrow typ (parseReturnType extReturn)
- | ExternReturn.nestedPfn _ _ typ _ _ extReturn => Typ.arrow typ (parseReturnType extReturn)
+ | ExternReturn.nestedFn _ _ typ _ _ extReturn _ _ => Typ.arrow typ (parseReturnType extReturn)
+ | ExternReturn.nestedPfn _ _ typ _ _ extReturn _ => Typ.arrow typ (parseReturnType extReturn)
 
 /-- Require that an executable extern's input type is first-order: one of
     `{int, bool, unit, string, ref int}`.  Function-typed inputs are rejected
@@ -1209,10 +1209,10 @@ def checkExternInputFirstOrder (argTyp : Typ) : TypecheckM Unit :=
     argument type in an `ExternReturn` chain. -/
 def checkExternReturnInputsFirstOrder : ExternReturn → TypecheckM Unit
   | ExternReturn.simple _ _ _ => return ()
-  | ExternReturn.nestedFn _ _ argTyp _ _ inner _ => do
+  | ExternReturn.nestedFn _ _ argTyp _ _ inner _ _ => do
       checkExternInputFirstOrder argTyp
       checkExternReturnInputsFirstOrder inner
-  | ExternReturn.nestedPfn _ _ argTyp _ _ inner => do
+  | ExternReturn.nestedPfn _ _ argTyp _ _ inner _ => do
       checkExternInputFirstOrder argTyp
       checkExternReturnInputsFirstOrder inner
 
@@ -1243,12 +1243,13 @@ def typecheckExternFn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp :
     `typecheckExternFn`. -/
 def typecheckExternPfn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) : TypecheckM TypeResult := do
+    (retSpec : ExternReturn) (_captures : List Capture) : TypecheckM TypeResult := do
   checkExternInputFirstOrder argTyp
   checkExternReturnInputsFirstOrder retSpec
   -- Resolve the declared argument condition (precondition) into a concrete QTyp.
   let (argQt, nextTag') ← resolveArgCondQTyp argTyp argPoison argPred ctx.varEnv ctx.nextTag
-  -- Create extern closure with captured varEnv (singleton list) and the precondition.
+  -- Create extern closure with captured varEnv (singleton list), the precondition,
+  -- and the declared `captures:` read dependencies (checked at the call boundary).
   let tcl := PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt []
 
   let retTyp := parseReturnType retSpec
@@ -1355,10 +1356,10 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
     | Expr.unaryop op e => typecheckUnaryOp ctx op e fuel
     | Expr.externVal _ typ poison pred => typecheckExternVal ctx typ poison pred
-    | Expr.externFn id arg argTyp argPoison argPred retSpec effects =>
+    | Expr.externFn id arg argTyp argPoison argPred retSpec effects _captures =>
         typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects
-    | Expr.externPfn id arg argTyp argPoison argPred retSpec =>
-        typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec
+    | Expr.externPfn id arg argTyp argPoison argPred retSpec captures =>
+        typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures
 termination_by fuel
 
 /- Function to typecheck expressions in a binary-operation Expression, ensuring
@@ -1637,7 +1638,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
-        | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects =>
+        | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects _innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv) innerArgQt
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
@@ -1647,7 +1648,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag'', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
-        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet =>
+        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
             let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
@@ -1716,7 +1717,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
-        | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects =>
+        | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects _innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv) innerArgQt
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
@@ -1726,7 +1727,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag'', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
-        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet =>
+        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
             let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
@@ -1797,7 +1798,7 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
-        | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects =>
+        | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects _innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv) innerArgQt
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
@@ -1809,7 +1810,7 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag'', regime' := result2.regime' }
 
-        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet =>
+        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
             let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
@@ -1879,7 +1880,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
-        | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects =>
+        | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects _innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv) innerArgQt
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
@@ -1891,7 +1892,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                      nextLoc' := nextLoc, nextTag' := nextTag'', regime' := result2.regime' }
 
-        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet =>
+        | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
             let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt []
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]

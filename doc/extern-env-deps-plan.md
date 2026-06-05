@@ -115,6 +115,30 @@ currently discharge: `@11` returns `max a b` reading captured `a`, but inverting
     top-level declFR is genuinely vacuous until the AST carries captures
     (Phase 4).
 
+- **Phase 3 — surface AST ripple DONE (green, 0 sorry, 0 warning, 102/102 tests).**
+  `captures` field added to all four AST nodes (`Expr.externFn`, `Expr.externPfn`,
+  `ExternReturn.nestedFn`, `ExternReturn.nestedPfn`) and threaded through the entire
+  proof stack. `typecheckExternPfn` accepts a `_captures` parameter that is
+  **currently unused** (the closure stores `captures=[]`); real population is
+  deferred to `@10`/program-level FR, since it is not separable from generalizing
+  the value track (storing non-`[]` captures breaks `valueHasETyp.peClosure_extern`).
+  Per the **two-track captures discipline**:
+  - **Value/typing track stays `[]`** — closure *values*, the `PFnTClosure.extern`
+    member produced by `typecheckExternPfn` (forced by `valueHasETyp.peClosure_extern`'s
+    `[]`-pinned `htcl`), `Decl.fn/pfn`, `ExternDeclarationInProgram`, and reachability
+    are all `captures=[]`. A closure value's *body* externPfn carries a free
+    existential `captures`, decoupled from the `[]` member.
+  - **Runtime/Call track threads a variable `captures`** — `ExternBoundaryTyping.Call`,
+    `ExternCall{Fn,Pfn}TypingProvider` (existential `captures` in the `Call`),
+    `of_terminatesTo_extern{Fn,Pfn}` (via the freed `value_shape`, whose closure-body
+    captures is now a free existential like `argPred`), and the `@externFn/@externPfn`
+    case binders.
+  - `abs @12` / `max @11` decl-spec helpers (`builtin{Abs,Max11}_decl_*`) thread
+    the free value-body `captures`; their `…DeclResult`/`…ExternClosure`
+    PFnTClosures stay `[]`.
+  - Parser still emits `[]` stubs (real `captures:` parsing not yet wired); top-level
+    FR theorem + `builtinMax11_callFR` remain `sorryAx`-free.
+
 ## Remaining (deferred to Phases 3-4)
 
 - `@10` decl/impl + five spec fields; `@10.callFR` returning the capture-bearing

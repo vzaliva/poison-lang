@@ -198,7 +198,7 @@ theorem nonempty_registry_hagrees_unprovable
 
 /-- A minimal program declaring extern `@238` (a `fn` over `int`). -/
 def openProg : Expr :=
-  Expr.externFn 238 "p" Typ.int false SyntaxPredicate.noPred (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
+  Expr.externFn 238 "p" Typ.int false SyntaxPredicate.noPred (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] []
 
 /-- The declaration the `externFn` AST node exposes — matches the
     `ExternDeclarationInProgram.externFn` shape exactly. -/

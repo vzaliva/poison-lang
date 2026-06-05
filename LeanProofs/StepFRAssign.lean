@@ -1632,16 +1632,16 @@ private lemma guardClosure_pred_implies_tag_absent
             simpa [typecheckExpr, typecheck] using htc
           exact typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded ctx typ poison pred res
             htc' hbounded.1 k arg_name pred_body var_env hpred
-      | externFn _id arg argTyp argPoison argPred retSpec effects =>
+      | externFn _id arg argTyp argPoison argPred retSpec effects _cap =>
           exfalso
           have htc' : typecheckExternFn ctx _id arg argTyp argPoison argPred retSpec effects = .ok res := by
             simpa [typecheckExpr] using htc
           obtain ⟨argQt, _, hres_eq⟩ := typecheckExternFn_ok_res_eq ctx _id arg argTyp argPoison argPred retSpec effects res htc'
           subst hres_eq
           simp at hpred
-      | externPfn _id arg argTyp argPoison argPred retSpec =>
+      | externPfn _id arg argTyp argPoison argPred retSpec captures =>
           exfalso
-          have htc' : typecheckExternPfn ctx _id arg argTyp argPoison argPred retSpec = .ok res := by
+          have htc' : typecheckExternPfn ctx _id arg argTyp argPoison argPred retSpec captures = .ok res := by
             simpa [typecheckExpr] using htc
           obtain ⟨argQt, _, hres_eq⟩ := typecheckExternPfn_ok_res_eq ctx _id arg argTyp argPoison argPred retSpec res htc'
           subst hres_eq

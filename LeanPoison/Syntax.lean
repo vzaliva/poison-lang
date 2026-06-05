@@ -209,8 +209,8 @@ structure Capture where
 -- resolves this triple to a concrete `QTyp` and stores it on the extern closure.
 inductive ExternReturn where
   | simple : Typ → Bool → SyntaxPredicate → ExternReturn
-  | nestedFn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Effect → ExternReturn
-  | nestedPfn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → ExternReturn
+  | nestedFn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Effect → List Capture → ExternReturn
+  | nestedPfn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Capture → ExternReturn
 
 -- Expressions (corresponds to e in Ott)
 inductive Expr : Type where
@@ -236,22 +236,22 @@ inductive Expr : Type where
      `externFn`/`externPfn` carry the argument precondition as the surface
      triple `Typ → Bool → SyntaxPredicate` (after the argument name). -/
   | externVal : ExternId → Typ → Bool → SyntaxPredicate → Expr
-  | externFn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Effect → Expr
-  | externPfn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → Expr
+  | externFn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Effect → List Capture → Expr
+  | externPfn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Capture → Expr
 
 end
 
 /-- `e` is the impure callable wrapper `extern fn` AST node. -/
 inductive Expr.IsExternFnAst : Expr → Prop where
   | mk {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
-      {retSpec : ExternReturn} {eff : List Effect} :
-      Expr.IsExternFnAst (Expr.externFn id x argTyp argPoison argPred retSpec eff)
+      {retSpec : ExternReturn} {eff : List Effect} {cap : List Capture} :
+      Expr.IsExternFnAst (Expr.externFn id x argTyp argPoison argPred retSpec eff cap)
 
 /-- `e` is the pure callable wrapper `extern pfn` AST node. -/
 inductive Expr.IsExternPfnAst : Expr → Prop where
   | mk {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
-      {retSpec : ExternReturn} :
-      Expr.IsExternPfnAst (Expr.externPfn id x argTyp argPoison argPred retSpec)
+      {retSpec : ExternReturn} {cap : List Capture} :
+      Expr.IsExternPfnAst (Expr.externPfn id x argTyp argPoison argPred retSpec cap)
 
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
@@ -307,12 +307,12 @@ def beqExpr : Expr → Expr → Bool
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.externVal id1 t1 p1 pred1, Expr.externVal id2 t2 p2 pred2 =>
       id1 == id2 && t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
-  | Expr.externFn id1 x1 t1 ap1 apred1 ret1 eff1, Expr.externFn id2 x2 t2 ap2 apred2 ret2 eff2 =>
+  | Expr.externFn id1 x1 t1 ap1 apred1 ret1 eff1 cap1, Expr.externFn id2 x2 t2 ap2 apred2 ret2 eff2 cap2 =>
       id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
-        && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
-  | Expr.externPfn id1 x1 t1 ap1 apred1 ret1, Expr.externPfn id2 x2 t2 ap2 apred2 ret2 =>
+        && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2 && beqCaptureList cap1 cap2
+  | Expr.externPfn id1 x1 t1 ap1 apred1 ret1 cap1, Expr.externPfn id2 x2 t2 ap2 apred2 ret2 cap2 =>
       id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
-        && beqExternReturn ret1 ret2
+        && beqExternReturn ret1 ret2 && beqCaptureList cap1 cap2
   | _, _ => false
 termination_by structural e1 _ => e1
 
@@ -348,12 +348,12 @@ termination_by structural cs1 _ => cs1
 def beqExternReturn : ExternReturn → ExternReturn → Bool
   | ExternReturn.simple t1 p1 pred1, ExternReturn.simple t2 p2 pred2 =>
       t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
-  | ExternReturn.nestedFn id1 x1 t1 ap1 apred1 ret1 eff1, ExternReturn.nestedFn id2 x2 t2 ap2 apred2 ret2 eff2 =>
+  | ExternReturn.nestedFn id1 x1 t1 ap1 apred1 ret1 eff1 cap1, ExternReturn.nestedFn id2 x2 t2 ap2 apred2 ret2 eff2 cap2 =>
       id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
-        && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2
-  | ExternReturn.nestedPfn id1 x1 t1 ap1 apred1 ret1, ExternReturn.nestedPfn id2 x2 t2 ap2 apred2 ret2 =>
+        && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2 && beqCaptureList cap1 cap2
+  | ExternReturn.nestedPfn id1 x1 t1 ap1 apred1 ret1 cap1, ExternReturn.nestedPfn id2 x2 t2 ap2 apred2 ret2 cap2 =>
       id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
-        && beqExternReturn ret1 ret2
+        && beqExternReturn ret1 ret2 && beqCaptureList cap1 cap2
   | _, _ => false
 termination_by structural r1 _ => r1
 

@@ -438,7 +438,7 @@ mutual
 
                     let retType <- xmlToRetType e_retType
 
-                    return Expr.externFn id name argT argPoison argPred retType []
+                    return Expr.externFn id name argT argPoison argPred retType [] []
 
 
                 | [Element.Element "number" _ #[Content.Character idStr], e_name ,e_argTyp,e_retType,e_effects] =>
@@ -458,7 +458,7 @@ mutual
                       (xmlToEffects ( Element.Element "effects_block" attr effectsContent))
                     | _ => .error ("Invalid effects : "++ toString e_effects)
 
-                  return Expr.externFn id name argT argPoison argPred retType (<- effectBlock)
+                  return Expr.externFn id name argT argPoison argPred retType (<- effectBlock) []
 
                 | _ => .error "Invalid extern_fn content"
 
@@ -481,7 +481,7 @@ mutual
 
                   let (argT, argPoison, argPred) ← xmlToQTyp e_argTyp (allowCleanPred := true)
 
-                  return Expr.externPfn id name argT argPoison argPred (<- xmlToRetType e_retType)
+                  return Expr.externPfn id name argT argPoison argPred (<- xmlToRetType e_retType) []
                 | _ => .error "Invalid extern_pfn content"
 
 
@@ -607,7 +607,7 @@ mutual
               | none => .error s!"Invalid nested extern_fn id: {idStr}"
             let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType []
+            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType [] []
 
         | [Element.Element "number" _ #[Content.Character idStr],
           Element.Element "identifier" _ #[Content.Character name],
@@ -620,7 +620,7 @@ mutual
             let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
             let retType <- xmlToRetType e_retType
             let effects <- xmlToEffects e_effects
-            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType effects
+            return ExternReturn.nestedFn id name.trimAscii.toString argType argPoison argPred retType effects []
 
         | _ => .error s!"Invalid extern_fn shape in RetType: {elems.toList}"
 
@@ -640,7 +640,7 @@ mutual
               | none => .error s!"Invalid nested extern_pfn id: {idStr}"
             let (argType, argPoison, argPred) <- xmlToQTyp e_argQt (allowCleanPred := true)
             let retType <- xmlToRetType e_retType
-            return ExternReturn.nestedPfn id name.trimAscii.toString argType argPoison argPred retType
+            return ExternReturn.nestedPfn id name.trimAscii.toString argType argPoison argPred retType []
         | _ => .error s!"Invalid extern_pfn shape in RetType: {contents}"
 
     | _ => .error s!"Invalid RetType element: {x}"

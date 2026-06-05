@@ -135,22 +135,22 @@ def validateExternReturn (id : ExternId) (retSpec : ExternReturn) (v : Value)
   | ExternReturn.simple typ _ _, _ =>
       if valueMatchesTyp v typ then .ok v
       else .error (.shapeMismatch id)
-  | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects,
+  | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures,
     Value.closure valArgName valBody _ =>
       if valArgName == innerArg &&
          beqExpr valBody
-           (Expr.externFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects)
+           (Expr.externFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures)
       then .ok v
       else .error (.nestedReturnMismatch id)
-  | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet,
+  | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures,
     Value.peClosure valArgName valBody _ =>
       if valArgName == innerArg &&
          beqExpr valBody
-           (Expr.externPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet)
+           (Expr.externPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures)
       then .ok v
       else .error (.nestedReturnMismatch id)
-  | ExternReturn.nestedFn _ _ _ _ _ _ _, _ => .error (.nestedReturnMismatch id)
-  | ExternReturn.nestedPfn _ _ _ _ _ _, _ => .error (.nestedReturnMismatch id)
+  | ExternReturn.nestedFn _ _ _ _ _ _ _ _, _ => .error (.nestedReturnMismatch id)
+  | ExternReturn.nestedPfn _ _ _ _ _ _ _, _ => .error (.nestedReturnMismatch id)
 
 -- ----------------------------------------------------------------------------
 

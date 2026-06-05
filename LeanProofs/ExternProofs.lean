@@ -637,12 +637,12 @@ private theorem builtinAbs_decl_shape
     ∃ argQt : QTyp, res = builtinAbsDeclResult ctx argQt := by
   cases htyped with
   | pfn htc =>
-      rename_i fuel argPred
+      rename_i fuel argPred captures
       cases fuel with
       | zero => simp [typecheck, typecheckExpr] at htc
       | succ fuel' =>
           have htcPfn :
-              typecheckExternPfn ctx 12 "x" Typ.int false argPred builtinAbsRetSpec = .ok res := by
+              typecheckExternPfn ctx 12 "x" Typ.int false argPred builtinAbsRetSpec captures = .ok res := by
             have h := htc
             simp only [typecheck, typecheckExpr] at h
             exact h
@@ -655,10 +655,10 @@ private theorem builtinAbs_decl_shape
 private theorem builtinAbs_decl_postExpr
     {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
     (htyped : ExternBoundaryTyping.Decl builtinAbsDecl postExpr ctx res) :
-    ∃ argPred : SyntaxPredicate,
-      postExpr = Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec := by
+    ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      postExpr = Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec captures := by
   cases htyped with
-  | pfn _htc => exact ⟨_, rfl⟩
+  | pfn _htc => exact ⟨_, _, rfl⟩
 
 /-- The `abs` declaration's extern closure value is well-typed at the declared
     `parrow` type.  The captured runtime environment `ρ` types against the
@@ -667,13 +667,13 @@ private theorem builtinAbs_decl_postExpr
     blocks, using the extern constructor which needs no `toPExpr`). -/
 private theorem builtinAbs_decl_valueHasETyp
     {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
-    {argPred : SyntaxPredicate} {argQt : QTyp}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
     (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
     valueHasETyp θ
-      (Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec) ρ)
+      (Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec captures) ρ)
       (builtinAbsDeclResult ctx argQt).qualType.etyp := by
   show valueHasETyp θ
-      (Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec) ρ)
+      (Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec captures) ρ)
       (ETyp.parrow Typ.int (parseReturnType builtinAbsRetSpec) ctx.pc
         [builtinAbsExternClosure ctx argQt])
   refine valueHasETyp.peClosure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
@@ -700,11 +700,11 @@ private theorem builtinAbs_decl_valueHasETyp
     + `deepValueQTypProperty` block, using the extern constructor). -/
 private theorem builtinAbs_decl_valueConsistent
     {predSat : PredSat} {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
-    {argPred : SyntaxPredicate} {argQt : QTyp}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
     (hric : runtimeInstantiatesCtx ctx μ ρ θ)
     (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ) :
     valueConsistentWithRegime predSat ctx.regime (builtinAbsDeclResult ctx argQt).qualType μ θ
-      (Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec) ρ) := by
+      (Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec captures) ρ) := by
   refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinAbsDeclResult]) (.intro ?_)
   apply deepValueQTypProperty.peClosure_extern (argQt := argQt) 12 "x" "x" Typ.int builtinAbsRetSpec ρ
       (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinAbsExternClosure ctx argQt]
@@ -732,20 +732,20 @@ private theorem builtinAbs_decl_valueConsistent
 private theorem builtinAbs_declRun_shape
     {ctx : TypeContext} {res : TypeResult} {cᵢ cf : Config} {o : Value}
     (hrun : ExternDeclBoundaryRun builtinAbsDecl builtinAbsImpl ctx res cᵢ cf o) :
-    cf = cᵢ ∧ ∃ argPred : SyntaxPredicate,
-      o = Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec) cᵢ.varEnv := by
+    cf = cᵢ ∧ ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      o = Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec captures) cᵢ.varEnv := by
   cases hrun with
   | val hfacts => have h := hfacts.kind_val; simp [builtinAbsDecl] at h
   | fn hfacts => have h := hfacts.kind_fn; simp [builtinAbsDecl] at h
   | pfn hfacts =>
       refine ⟨hfacts.output_config, ?_⟩
-      obtain ⟨x, argPred, retSpec, hargName, hretSpec, hval⟩ := hfacts.value_shape
+      obtain ⟨x, argPred, retSpec, captures, hargName, hretSpec, hval⟩ := hfacts.value_shape
       have hx : x = "x" := by
         have h := hargName; simp [builtinAbsDecl] at h; exact h.symm
       have hretSpec' : retSpec = builtinAbsRetSpec := by
         have h := hretSpec; simp [builtinAbsDecl] at h; exact h.symm
       subst hx; subst hretSpec'
-      exact ⟨argPred, by simpa [builtinAbsDecl] using hval⟩
+      exact ⟨argPred, captures, by simpa [builtinAbsDecl] using hval⟩
 
 /-- The `abs` single-run declaration-boundary field.  Mirrors `callSingle`'s
     `ExternBoundarySinglePost` assembly (`tm' = tm`, `θ' = θ`, `ctxAfter = ctx`,
@@ -757,7 +757,7 @@ theorem builtinAbs_declSingle : ExternDeclBoundarySingle builtinAbsDecl builtinA
   intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
     μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg hrun _hpc
   obtain ⟨argQt, hres⟩ := builtinAbs_decl_shape htyped
-  obtain ⟨hcf, argPred, ho⟩ := builtinAbs_declRun_shape hrun
+  obtain ⟨hcf, argPred, captures, ho⟩ := builtinAbs_declRun_shape hrun
   have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinAbsDeclResult]
   have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
@@ -766,7 +766,7 @@ theorem builtinAbs_declSingle : ExternDeclBoundarySingle builtinAbsDecl builtinA
       ctx.pc builtinAbsRetSpec (argQt := argQt) hwfTm
   have hcfmem : cf.memory = μ := by rw [hcf]
   have hcfvar : cf.varEnv = ρ := by rw [hcf]
-  have ho' : o = Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec) ρ := by
+  have ho' : o = Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec captures) ρ := by
     rw [ho]
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -797,16 +797,16 @@ theorem builtinAbs_declFR : ExternDeclBoundaryFR builtinAbsDecl builtinAbsImpl :
     μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
     hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
   obtain ⟨argQt, hres⟩ := builtinAbs_decl_shape htyped
-  obtain ⟨argPredT, hpostExpr⟩ := builtinAbs_decl_postExpr htyped
+  obtain ⟨argPredT, capturesT, hpostExpr⟩ := builtinAbs_decl_postExpr htyped
   obtain ⟨hcf₀, _⟩ := builtinAbs_declRun_shape hrun₀.run
   obtain ⟨hcf₁, _⟩ := builtinAbs_declRun_shape hrun₁.run
   -- Both outputs are the closure of the shared `postExpr`, hence share `argPredT`.
   have ho₀ : o₀ = Value.peClosure "x"
-      (Expr.externPfn 12 "x" Typ.int false argPredT builtinAbsRetSpec) ρ₀ := by
+      (Expr.externPfn 12 "x" Typ.int false argPredT builtinAbsRetSpec capturesT) ρ₀ := by
     have hfe := hrun₀.forExpr; rw [hpostExpr] at hfe
     simpa [declRunOutputMatchesExpr] using hfe
   have ho₁ : o₁ = Value.peClosure "x"
-      (Expr.externPfn 12 "x" Typ.int false argPredT builtinAbsRetSpec) ρ₁ := by
+      (Expr.externPfn 12 "x" Typ.int false argPredT builtinAbsRetSpec capturesT) ρ₁ := by
     have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
     simpa [declRunOutputMatchesExpr] using hfe
   have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinAbsDeclResult]
@@ -1019,12 +1019,12 @@ private theorem builtinMax11_decl_shape
     ∃ argQt : QTyp, res = builtinMax11DeclResult ctx argQt := by
   cases htyped with
   | pfn htc =>
-      rename_i fuel argPred
+      rename_i fuel argPred captures
       cases fuel with
       | zero => simp [typecheck, typecheckExpr] at htc
       | succ fuel' =>
           have htcPfn :
-              typecheckExternPfn ctx 11 "b" Typ.int false argPred builtinMax11RetSpec = .ok res := by
+              typecheckExternPfn ctx 11 "b" Typ.int false argPred builtinMax11RetSpec captures = .ok res := by
             have h := htc
             simp only [typecheck, typecheckExpr] at h
             exact h
@@ -1035,20 +1035,20 @@ private theorem builtinMax11_decl_shape
 private theorem builtinMax11_decl_postExpr
     {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
     (htyped : ExternBoundaryTyping.Decl builtinMax11Decl postExpr ctx res) :
-    ∃ argPred : SyntaxPredicate,
-      postExpr = Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec := by
+    ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      postExpr = Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec captures := by
   cases htyped with
-  | pfn _htc => exact ⟨_, rfl⟩
+  | pfn _htc => exact ⟨_, _, rfl⟩
 
 private theorem builtinMax11_decl_valueHasETyp
     {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
-    {argPred : SyntaxPredicate} {argQt : QTyp}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
     (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
     valueHasETyp θ
-      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) ρ)
+      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec captures) ρ)
       (builtinMax11DeclResult ctx argQt).qualType.etyp := by
   show valueHasETyp θ
-      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) ρ)
+      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec captures) ρ)
       (ETyp.parrow Typ.int (parseReturnType builtinMax11RetSpec) ctx.pc
         [builtinMax11ExternClosure ctx argQt])
   refine valueHasETyp.peClosure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
@@ -1070,11 +1070,11 @@ private theorem builtinMax11_decl_valueHasETyp
 
 private theorem builtinMax11_decl_valueConsistent
     {predSat : PredSat} {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
-    {argPred : SyntaxPredicate} {argQt : QTyp}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
     (hric : runtimeInstantiatesCtx ctx μ ρ θ)
     (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ) :
     valueConsistentWithRegime predSat ctx.regime (builtinMax11DeclResult ctx argQt).qualType μ θ
-      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) ρ) := by
+      (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec captures) ρ) := by
   refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinMax11DeclResult]) (.intro ?_)
   apply deepValueQTypProperty.peClosure_extern (argQt := argQt) 11 "b" "b" Typ.int builtinMax11RetSpec ρ
       (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinMax11ExternClosure ctx argQt]
@@ -1100,26 +1100,26 @@ private theorem builtinMax11_decl_valueConsistent
 private theorem builtinMax11_declRun_shape
     {ctx : TypeContext} {res : TypeResult} {cᵢ cf : Config} {o : Value}
     (hrun : ExternDeclBoundaryRun builtinMax11Decl builtinMax11Impl ctx res cᵢ cf o) :
-    cf = cᵢ ∧ ∃ argPred : SyntaxPredicate,
-      o = Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) cᵢ.varEnv := by
+    cf = cᵢ ∧ ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      o = Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec captures) cᵢ.varEnv := by
   cases hrun with
   | val hfacts => have h := hfacts.kind_val; simp [builtinMax11Decl] at h
   | fn hfacts => have h := hfacts.kind_fn; simp [builtinMax11Decl] at h
   | pfn hfacts =>
       refine ⟨hfacts.output_config, ?_⟩
-      obtain ⟨x, argPred, retSpec, hargName, hretSpec, hval⟩ := hfacts.value_shape
+      obtain ⟨x, argPred, retSpec, captures, hargName, hretSpec, hval⟩ := hfacts.value_shape
       have hx : x = "b" := by
         have h := hargName; simp [builtinMax11Decl] at h; exact h.symm
       have hretSpec' : retSpec = builtinMax11RetSpec := by
         have h := hretSpec; simp [builtinMax11Decl] at h; exact h.symm
       subst hx; subst hretSpec'
-      exact ⟨argPred, by simpa [builtinMax11Decl] using hval⟩
+      exact ⟨argPred, captures, by simpa [builtinMax11Decl] using hval⟩
 
 theorem builtinMax11_declSingle : ExternDeclBoundarySingle builtinMax11Decl builtinMax11Impl := by
   intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
     μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg hrun _hpc
   obtain ⟨argQt, hres⟩ := builtinMax11_decl_shape htyped
-  obtain ⟨hcf, argPred, ho⟩ := builtinMax11_declRun_shape hrun
+  obtain ⟨hcf, argPred, captures, ho⟩ := builtinMax11_declRun_shape hrun
   have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinMax11DeclResult]
   have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
@@ -1128,7 +1128,7 @@ theorem builtinMax11_declSingle : ExternDeclBoundarySingle builtinMax11Decl buil
       ctx.pc builtinMax11RetSpec (argQt := argQt) hwfTm
   have hcfmem : cf.memory = μ := by rw [hcf]
   have hcfvar : cf.varEnv = ρ := by rw [hcf]
-  have ho' : o = Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec) ρ := by
+  have ho' : o = Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec captures) ρ := by
     rw [ho]
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -1146,15 +1146,15 @@ theorem builtinMax11_declFR : ExternDeclBoundaryFR builtinMax11Decl builtinMax11
     μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
     hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
   obtain ⟨argQt, hres⟩ := builtinMax11_decl_shape htyped
-  obtain ⟨argPredT, hpostExpr⟩ := builtinMax11_decl_postExpr htyped
+  obtain ⟨argPredT, capturesT, hpostExpr⟩ := builtinMax11_decl_postExpr htyped
   obtain ⟨hcf₀, _⟩ := builtinMax11_declRun_shape hrun₀.run
   obtain ⟨hcf₁, _⟩ := builtinMax11_declRun_shape hrun₁.run
   have ho₀ : o₀ = Value.peClosure "b"
-      (Expr.externPfn 11 "b" Typ.int false argPredT builtinMax11RetSpec) ρ₀ := by
+      (Expr.externPfn 11 "b" Typ.int false argPredT builtinMax11RetSpec capturesT) ρ₀ := by
     have hfe := hrun₀.forExpr; rw [hpostExpr] at hfe
     simpa [declRunOutputMatchesExpr] using hfe
   have ho₁ : o₁ = Value.peClosure "b"
-      (Expr.externPfn 11 "b" Typ.int false argPredT builtinMax11RetSpec) ρ₁ := by
+      (Expr.externPfn 11 "b" Typ.int false argPredT builtinMax11RetSpec capturesT) ρ₁ := by
     have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
     simpa [declRunOutputMatchesExpr] using hfe
   have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinMax11DeclResult]

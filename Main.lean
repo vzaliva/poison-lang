@@ -62,7 +62,7 @@ private def outerMaxImpl
       let innerRet  : ExternReturn := .simple .int false .noPred
       -- Inner `@11` argument condition must match the source declaration of
       -- curried `max`'s inner stage: `(int :> clean {})` (honest clean precondition).
-      let innerNode : _root_.Expr := .externPfn 11 "b" .int false .noPred innerRet
+      let innerNode : _root_.Expr := .externPfn 11 "b" .int false .noPred innerRet []
       .ok (Value.peClosure "b" innerNode unifiedEnv)
   | _, _, _ => .error (.implFailure 10 "expected int argument")
 

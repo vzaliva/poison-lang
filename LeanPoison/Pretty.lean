@@ -98,7 +98,7 @@ private partial def effectInline : Effect → Std.Format
 private partial def externReturnInline : ExternReturn → Std.Format
   | .simple typ poison pred =>
       qtypSurfaceInline typ poison pred
-  | .nestedFn id x typ argPoison argPred ret eff =>
+  | .nestedFn id x typ argPoison argPred ret eff _cap =>
       Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
@@ -107,7 +107,7 @@ private partial def externReturnInline : ExternReturn → Std.Format
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", effects: " ++
       formatBracedEntries (eff.map effectInline)
-  | .nestedPfn id x typ argPoison argPred ret =>
+  | .nestedPfn id x typ argPoison argPred ret _cap =>
       Std.Format.text s!"extern pfn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
@@ -181,7 +181,7 @@ partial def reprExpr : Expr → Nat → Std.Format
       Std.Format.text " " ++
       syntaxPredInline pred ++
       Std.Format.text ")"
-    | Expr.externFn id x t argPoison argPred ret eff =>
+    | Expr.externFn id x t argPoison argPred ret eff _cap =>
       Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++
@@ -190,7 +190,7 @@ partial def reprExpr : Expr → Nat → Std.Format
       Std.Format.paren (externReturnInline ret) ++
       Std.Format.text ", effects: " ++
       formatBracedEntries (eff.map effectInline)
-    | Expr.externPfn id x t argPoison argPred ret =>
+    | Expr.externPfn id x t argPoison argPred ret _cap =>
       Std.Format.text s!"extern pfn @{id} " ++
       Std.Format.text x ++
       Std.Format.text " : " ++

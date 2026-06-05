@@ -83,8 +83,8 @@ structure ExternDeclFnFacts
   retSpec_some : ∃ retSpec, d.retSpec = some retSpec
   impl_fn : ∃ implFn, impl = ExternImpl.fn implFn
   output_config : cₒ = cᵢ
-  value_shape : ∃ x argPred retSpec, d.argName = some x ∧ d.retSpec = some retSpec ∧
-    v = Value.closure x (Expr.externFn d.id x d.typ d.argPoison argPred retSpec d.effects) cᵢ.varEnv
+  value_shape : ∃ x argPred retSpec captures, d.argName = some x ∧ d.retSpec = some retSpec ∧
+    v = Value.closure x (Expr.externFn d.id x d.typ d.argPoison argPred retSpec d.effects captures) cᵢ.varEnv
 
 /-- Runtime/typechecking facts for a successful `extern pfn` declaration step. -/
 structure ExternDeclPfnFacts
@@ -97,8 +97,8 @@ structure ExternDeclPfnFacts
   retSpec_some : ∃ retSpec, d.retSpec = some retSpec
   impl_pfn : ∃ implFn, impl = ExternImpl.pfn implFn
   output_config : cₒ = cᵢ
-  value_shape : ∃ x argPred retSpec, d.argName = some x ∧ d.retSpec = some retSpec ∧
-    v = Value.peClosure x (Expr.externPfn d.id x d.typ d.argPoison argPred retSpec) cᵢ.varEnv
+  value_shape : ∃ x argPred retSpec captures, d.argName = some x ∧ d.retSpec = some retSpec ∧
+    v = Value.peClosure x (Expr.externPfn d.id x d.typ d.argPoison argPred retSpec captures) cᵢ.varEnv
 
 /-- Runtime/typechecking evidence for a successful extern declaration step. -/
 inductive ExternDeclBoundaryRun
@@ -127,8 +127,8 @@ inductive ExternDeclBoundaryRun
     closure's `argPred` is a free existential in `value_shape`). -/
 def declRunOutputMatchesExpr (postExpr : Expr) (cᵢ : Config) (v : Value) : Prop :=
   match postExpr with
-  | Expr.externPfn _ x _ _ _ _ => v = Value.peClosure x postExpr cᵢ.varEnv
-  | Expr.externFn _ x _ _ _ _ _ => v = Value.closure x postExpr cᵢ.varEnv
+  | Expr.externPfn _ x _ _ _ _ _ => v = Value.peClosure x postExpr cᵢ.varEnv
+  | Expr.externFn _ x _ _ _ _ _ _ => v = Value.closure x postExpr cᵢ.varEnv
   | _ => True
 
 /-- An `ExternDeclBoundaryRun` additionally coupled to the declaration expression
@@ -172,7 +172,7 @@ private theorem fn_of_runtime
     (himpl : ∃ implFn, impl = ExternImpl.fn implFn)
     (hcfg : cₒ = cᵢ)
     (hval :
-      v = Value.closure x (Expr.externFn d.id x d.typ d.argPoison argPred retSpec d.effects) cᵢ.varEnv) :
+      v = Value.closure x (Expr.externFn d.id x d.typ d.argPoison argPred retSpec d.effects bodyCaptures) cᵢ.varEnv) :
     ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v := by
   refine ExternDeclBoundaryRun.fn ?_
   exact
@@ -182,7 +182,7 @@ private theorem fn_of_runtime
       retSpec_some := ⟨retSpec, hret⟩
       impl_fn := himpl
       output_config := hcfg
-      value_shape := ⟨x, argPred, retSpec, harg, hret, hval⟩ }
+      value_shape := ⟨x, argPred, retSpec, bodyCaptures, harg, hret, hval⟩ }
 
 private theorem pfn_of_runtime
     {d : ExternDeclaration} {impl : ExternImpl}
@@ -196,7 +196,7 @@ private theorem pfn_of_runtime
     (himpl : ∃ implFn, impl = ExternImpl.pfn implFn)
     (hcfg : cₒ = cᵢ)
     (hval :
-      v = Value.peClosure x (Expr.externPfn d.id x d.typ d.argPoison argPred retSpec) cᵢ.varEnv) :
+      v = Value.peClosure x (Expr.externPfn d.id x d.typ d.argPoison argPred retSpec bodyCaptures) cᵢ.varEnv) :
     ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v := by
   refine ExternDeclBoundaryRun.pfn ?_
   exact
@@ -206,7 +206,7 @@ private theorem pfn_of_runtime
       retSpec_some := ⟨retSpec, hret⟩
       impl_pfn := himpl
       output_config := hcfg
-      value_shape := ⟨x, argPred, retSpec, harg, hret, hval⟩ }
+      value_shape := ⟨x, argPred, retSpec, bodyCaptures, harg, hret, hval⟩ }
 
 theorem lookup
     {d : ExternDeclaration} {impl : ExternImpl}
@@ -266,9 +266,9 @@ theorem of_terminatesTo_externFn
     {retSpec : ExternReturn} {effects : List Effect}
     {ctx : TypeContext} {res : TypeResult}
     {cᵢ cₒ : Config} {v : Value}
-    (ht : terminatesTo (Expr.externFn id x argTyp argPoison argPred retSpec effects) cᵢ cₒ v) :
+    (ht : terminatesTo (Expr.externFn id x argTyp argPoison argPred retSpec effects captures) cᵢ cₒ v) :
     ∃ impl,
-      ExternDeclBoundaryRunForExpr (Expr.externFn id x argTyp argPoison argPred retSpec effects)
+      ExternDeclBoundaryRunForExpr (Expr.externFn id x argTyp argPoison argPred retSpec effects captures)
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
           preds := collectExternPreds retSpec effects, argPoison := argPoison }
@@ -307,9 +307,9 @@ theorem of_terminatesTo_externPfn
     {retSpec : ExternReturn}
     {ctx : TypeContext} {res : TypeResult}
     {cᵢ cₒ : Config} {v : Value}
-    (ht : terminatesTo (Expr.externPfn id x argTyp argPoison argPred retSpec) cᵢ cₒ v) :
+    (ht : terminatesTo (Expr.externPfn id x argTyp argPoison argPred retSpec captures) cᵢ cₒ v) :
     ∃ impl,
-      ExternDeclBoundaryRunForExpr (Expr.externPfn id x argTyp argPoison argPred retSpec)
+      ExternDeclBoundaryRunForExpr (Expr.externPfn id x argTyp argPoison argPred retSpec captures)
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
           preds := collectExternPreds retSpec [], argPoison := argPoison }
