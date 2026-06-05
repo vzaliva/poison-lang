@@ -1157,14 +1157,16 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
         deepValueQTypProperty P qt_x v_x) →
       deepValueQTypProperty P qt v
   | peClosure_extern {qt : QTyp} {v : Value}
-      {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp} {cap : List Capture}
+      {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp}
+      {cap memberCap : List Capture}
       (id : ExternId) (x_param y : Name) (argTyp : Typ)
       (retSpec : ExternReturn)
       (ρcap : VarEnv) (σcap : CapturedVarEnv) (p : Poison)
       (tcls : List PFnTClosure) :
       v = Value.peClosure x_param (Expr.externPfn id y argTyp argPoison argPred retSpec cap) ρcap →
       qt.etyp = ETyp.parrow argTyp (parseReturnType retSpec) p tcls →
-      PFnTClosure.extern id x_param retSpec σcap argQt [] ∈ tcls →
+      -- `memberCap` (member = call-site gate) is independent of body `cap`.
+      PFnTClosure.extern id x_param retSpec σcap argQt memberCap ∈ tcls →
       P σcap ρcap →
       (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
         σcap.lookup x = some qt_x →

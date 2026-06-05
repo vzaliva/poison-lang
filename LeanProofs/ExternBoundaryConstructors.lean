@@ -423,7 +423,7 @@ private theorem pureUnaryCleanInt_call_result_shape
       cases hbad
   | pfnExternMember hid hkind htyp harg hret _hcap _hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
-        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures tenv
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
       have hargTyp : argTyp = Typ.int :=
         htyp.symm.trans hspec.typ_int
       subst argTyp

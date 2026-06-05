@@ -95,18 +95,19 @@ theorem TrustedRegistryAgreesWithReachable.resolveFnDeclaration
 theorem TrustedRegistryAgreesWithReachable.resolvePfnDeclaration
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
     {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool}
-    {retSpec : ExternReturn} {impl : ExternImpl}
+    {retSpec : ExternReturn} {impl : ExternImpl} {memberCap : List Capture}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
     (hreachable :
       ExternDeclarationReachableFromContext root ctxRoot id
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [], argPoison := argPoison })
+          preds := collectExternPreds retSpec [], argPoison := argPoison,
+          captures := memberCap })
     (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
       entry.impl = impl ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] := by
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec memberCap := by
   rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
   have hdecl := hagrees hreachable hlookup
   refine ⟨entry, hlookup, himpl, ?_⟩
@@ -243,11 +244,13 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
     {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {retSpec : ExternReturn}
+    {memberCap : List Capture}
     (hreachable :
       ExternDeclarationReachableFromContext root ctxRoot id
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [], argPoison := argPoison })
+          preds := collectExternPreds retSpec [], argPoison := argPoison,
+          captures := memberCap })
     {implFn : VarEnv → Value → Memory → Except ExternError Value}
     {callEntry : ExternCallEntry} {res : TypeResult}
     {cf : Config} {v vRaw : Value}
@@ -265,7 +268,7 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
     (hcfg : cf = callEntry.callConfig) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] ∧
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec memberCap ∧
       ExternCallBoundaryRun entry.decl entry.impl callEntry res cf v := by
   have hGetRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? id = some (ExternImpl.pfn implFn) := by
@@ -275,7 +278,7 @@ theorem TrustedRegistryAgreesWithReachable.callBoundaryRunPfn
         hagrees hreachable hGetRuntime with
     ⟨entry, hlookup, himpl, hmatch⟩
   have hmatch' :
-      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec [] := by
+      TrustedRegistryEntryMatchesPfn entry id callEntry.argName argTyp retSpec memberCap := by
     simpa [hargName] using hmatch
   have hlookupCall : callEntry.callConfig.registry.get? entry.decl.id = some entry.impl := by
     rw [hregistry]
@@ -679,7 +682,8 @@ theorem pfn_extern_member
     ExternDeclarationReachableFromContext root ctxRoot id
       { id := id, kind := .pfn, typ := st1, argName := some x,
         retSpec := some retSpec, effects := [],
-        preds := collectExternPreds retSpec [], argPoison := argQt.poison } :=
+        preds := collectExternPreds retSpec [], argPoison := argQt.poison,
+        captures := captures } :=
   hqt (ExternDeclarationReachableFromQTyp.parrow_extern_member hmem)
 
 theorem pfn_extern_return

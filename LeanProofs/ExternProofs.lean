@@ -354,7 +354,7 @@ private theorem builtinAbs_call_clean_shape
   | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinAbsDecl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
-        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures tenv
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
       have hcap' : captures = [] := by simpa [builtinAbsDecl] using hcap.symm
       subst hcap'
       have hx : x = "x" := by
@@ -677,7 +677,7 @@ private theorem builtinAbs_decl_valueHasETyp
       (ETyp.parrow Typ.int (parseReturnType builtinAbsRetSpec) ctx.pc
         [builtinAbsExternClosure ctx argQt])
   refine valueHasETyp.peClosure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
-      (argQTyp := argQt) (htcl := by simp [builtinAbsExternClosure])
+      (argQTyp := argQt) (memberCap := []) (htcl := by simp [builtinAbsExternClosure])
       (henv := ?_) (hcover := ?_)
   · intro n qt v hlookupσ hlookupρ
     have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
@@ -706,7 +706,7 @@ private theorem builtinAbs_decl_valueConsistent
     valueConsistentWithRegime predSat ctx.regime (builtinAbsDeclResult ctx argQt).qualType μ θ
       (Value.peClosure "x" (Expr.externPfn 12 "x" Typ.int false argPred builtinAbsRetSpec captures) ρ) := by
   refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinAbsDeclResult]) (.intro ?_)
-  apply deepValueQTypProperty.peClosure_extern (argQt := argQt) 12 "x" "x" Typ.int builtinAbsRetSpec ρ
+  apply deepValueQTypProperty.peClosure_extern (argQt := argQt) (memberCap := []) 12 "x" "x" Typ.int builtinAbsRetSpec ρ
       (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinAbsExternClosure ctx argQt]
   · rfl
   · rfl
@@ -1052,7 +1052,7 @@ private theorem builtinMax11_decl_valueHasETyp
       (ETyp.parrow Typ.int (parseReturnType builtinMax11RetSpec) ctx.pc
         [builtinMax11ExternClosure ctx argQt])
   refine valueHasETyp.peClosure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
-      (argQTyp := argQt) (htcl := by simp [builtinMax11ExternClosure])
+      (argQTyp := argQt) (memberCap := []) (htcl := by simp [builtinMax11ExternClosure])
       (henv := ?_) (hcover := ?_)
   · intro n qt v hlookupσ hlookupρ
     have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
@@ -1076,7 +1076,7 @@ private theorem builtinMax11_decl_valueConsistent
     valueConsistentWithRegime predSat ctx.regime (builtinMax11DeclResult ctx argQt).qualType μ θ
       (Value.peClosure "b" (Expr.externPfn 11 "b" Typ.int false argPred builtinMax11RetSpec captures) ρ) := by
   refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinMax11DeclResult]) (.intro ?_)
-  apply deepValueQTypProperty.peClosure_extern (argQt := argQt) 11 "b" "b" Typ.int builtinMax11RetSpec ρ
+  apply deepValueQTypProperty.peClosure_extern (argQt := argQt) (memberCap := []) 11 "b" "b" Typ.int builtinMax11RetSpec ρ
       (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinMax11ExternClosure ctx argQt]
   · rfl
   · rfl
@@ -1315,7 +1315,7 @@ private theorem builtinMax11_call_clean_shape
   | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMax11Decl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
-        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures tenv
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
       have hcap' : captures = [] := by simpa [builtinMax11Decl] using hcap.symm
       subst hcap'
       have hx : x = "b" := by
@@ -1497,7 +1497,7 @@ private theorem builtinMax11Captures_call_clean_shape
   | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMax11CapturesDecl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
-        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures tenv
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
       have hcap' : captures =
           [⟨CaptureTarget.bareVar "a", Typ.int, false, SyntaxPredicate.noPred⟩] := by
         simpa [builtinMax11CapturesDecl] using hcap.symm
@@ -1768,7 +1768,7 @@ private theorem builtinMax10_decl_valueHasETyp
       (ETyp.parrow Typ.int (parseReturnType builtinMax10RetSpec) ctx.pc
         [builtinMax10ExternClosure ctx argQt])
   refine valueHasETyp.peClosure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
-      (argQTyp := argQt) (htcl := by simp [builtinMax10ExternClosure])
+      (argQTyp := argQt) (memberCap := []) (htcl := by simp [builtinMax10ExternClosure])
       (henv := ?_) (hcover := ?_)
   · intro n qt v hlookupσ hlookupρ
     have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
@@ -1792,7 +1792,7 @@ private theorem builtinMax10_decl_valueConsistent
     valueConsistentWithRegime predSat ctx.regime (builtinMax10DeclResult ctx argQt).qualType μ θ
       (Value.peClosure "a" (Expr.externPfn 10 "a" Typ.int false argPred builtinMax10RetSpec captures) ρ) := by
   refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinMax10DeclResult]) (.intro ?_)
-  apply deepValueQTypProperty.peClosure_extern (argQt := argQt) 10 "a" "a" Typ.int builtinMax10RetSpec ρ
+  apply deepValueQTypProperty.peClosure_extern (argQt := argQt) (memberCap := []) 10 "a" "a" Typ.int builtinMax10RetSpec ρ
       (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinMax10ExternClosure ctx argQt]
   · rfl
   · rfl
@@ -2022,7 +2022,7 @@ private theorem builtinMax10_call_clean_shape
   | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMax10Decl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
-        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures tenv
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
       have hx : x = "a" := by
         have : some x = some "a" := by simpa [builtinMax10Decl] using harg.symm
         exact Option.some.inj this
@@ -2136,7 +2136,7 @@ private theorem builtinMax10_call_valueHasETyp
         [PFnTClosure.extern 11 "b" builtinMax11RetSpec
           (VarTypeEnv.toCaptured entry.bodyCtx.varEnv) innerArgQt []]) := by
   refine valueHasETyp.peClosure_extern (tenv := VarTypeEnv.toCaptured entry.bodyCtx.varEnv)
-      (argQTyp := innerArgQt) (htcl := by simp) (henv := ?_) (hcover := ?_)
+      (argQTyp := innerArgQt) (memberCap := []) (htcl := by simp) (henv := ?_) (hcover := ?_)
   · intro n qt v hlookupσ hlookupρ
     have hlookup_ctx : entry.bodyCtx.varEnv.lookup n = some qt :=
       VarTypeEnv_lookup_of_toCaptured_lookup entry.bodyCtx.varEnv n qt hlookupσ
@@ -2169,7 +2169,7 @@ private theorem builtinMax10_call_valueConsistent
         (Expr.externPfn 11 "b" Typ.int false SyntaxPredicate.noPred builtinMax11RetSpec [])
         entry.unifiedEnv) := by
   refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag]) (.intro ?_)
-  apply deepValueQTypProperty.peClosure_extern (argQt := innerArgQt) 11 "b" "b" Typ.int
+  apply deepValueQTypProperty.peClosure_extern (argQt := innerArgQt) (memberCap := []) 11 "b" "b" Typ.int
       builtinMax11RetSpec entry.unifiedEnv (VarTypeEnv.toCaptured entry.bodyCtx.varEnv) pc
       [PFnTClosure.extern 11 "b" builtinMax11RetSpec
         (VarTypeEnv.toCaptured entry.bodyCtx.varEnv) innerArgQt []]

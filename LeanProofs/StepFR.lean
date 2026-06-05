@@ -798,7 +798,7 @@ private lemma agreeValueUnder_same_aux
       have htyping : capturedVarsTypingProperty θ σcap ρcap := ⟨hnd, hcover, hhenv⟩
       exact agreeValueUnder.clean_internal_parrow h_clean_int hetyp_eq hmem ⟨hpure_deep, rfl⟩
         hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr htyping htyping rfl rfl
-  | @peClosure_extern qt' _v' _argPoison _argPred _argQt _cap id xp y argTyp retSpec ρcap σcap p tcls
+  | @peClosure_extern qt' _v' _argPoison _argPred _argQt _cap _memberCap id xp y argTyp retSpec ρcap σcap p tcls
       hval hetyp_eq hmem hP hSub ih =>
     subst hval
     intro _hclean htyp
@@ -4277,7 +4277,7 @@ lemma agreeValueUnder_clean_extends
           (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂)
       (clean_internal_parrow_extern := by
-        intro id x y argTyp argPoison argPred retSpec p tcls qt tcl σcap argQt cap ρcap₁ ρcap₂ v₁ v₂
+        intro id x y argTyp argPoison argPred retSpec p tcls qt tcl σcap argQt cap memberCap ρcap₁ ρcap₂ v₁ v₂
           hclean_internal hetyp htcl hmatch hcap
           hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
           _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
@@ -5458,7 +5458,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
           htyping₀ htyping₁
           hv₀ hv₁)
       (clean_internal_parrow_extern := by
-        intro id x y argTyp argPoison argPred retSpec p tcls qt tcl σcap argQt cap ρcap₀ ρcap₁ v₀ v₁
+        intro id x y argTyp argPoison argPred retSpec p tcls qt tcl σcap argQt cap memberCap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
           hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ ihcap
           _hclean
@@ -12727,7 +12727,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack_ext
           htyping₀ htyping₁
           hv₀ hv₁)
       (clean_internal_parrow_extern := by
-        intro id x y argTyp argPoison argPred retSpec p tcls qt tcl σcap argQt cap ρcap₀ ρcap₁ v₀ v₁
+        intro id x y argTyp argPoison argPred retSpec p tcls qt tcl σcap argQt cap memberCap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
           hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ ihcap
           hqb _hclean

@@ -138,13 +138,16 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
       {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
       {argPred : Predicate} {id : ExternId} {x y : Name} {argTyp : Typ}
       {argPoisonAst : Bool} {argPredAst : SyntaxPredicate} {declaredArgQt : QTyp}
-      {retSpec : ExternReturn} {captures : List Capture} {tenv : CapturedVarEnv}
+      {retSpec : ExternReturn} {captures bodyCaptures : List Capture}
+      {tenv : CapturedVarEnv}
       {entry : ExternCallEntry} {res : TypeResult} :
       d.id = id →
       d.kind = .pfn →
       d.typ = argTyp →
       d.argName = some x →
       d.retSpec = some retSpec →
+      -- The trusted contract: the decl's captures equal the applied closure's
+      -- type-member captures (`captures`).  These drive `capturesSatisfied`.
       d.captures = captures →
       declaredArgQt.poison = d.argPoison →
       entry.bodyCtx =
@@ -160,9 +163,11 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
           regime := bodyState.regime' } →
       applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt captures)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res →
+      -- `bodyCaptures` records only the runtime closure body AST shape; it is
+      -- DECOUPLED from the trusted/member `captures` (two-track discipline).
       Call
         d
-        (Expr.externPfn id y argTyp argPoisonAst argPredAst retSpec captures) entry res
+        (Expr.externPfn id y argTyp argPoisonAst argPredAst retSpec bodyCaptures) entry res
 
 end ExternBoundaryTyping
 
@@ -756,17 +761,19 @@ theorem TrustedRegistryAgreesWithProgram.resolveFnDeclaration
 theorem TrustedRegistryAgreesWithProgram.resolvePfnDeclaration
     {e : Expr} {tr : TrustedRegistry} {id : ExternId} {x : Name}
     {argTyp : Typ} {argPoison : Bool} {retSpec : ExternReturn} {impl : ExternImpl}
+    {memberCap : List Capture}
     (hagrees : TrustedRegistryAgreesWithProgram e tr)
     (hprog :
       ExternDeclarationInProgram e id
         { id := id, kind := .pfn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [], argPoison := argPoison })
+          preds := collectExternPreds retSpec [], argPoison := argPoison,
+          captures := memberCap })
     (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
       entry.impl = impl ∧
-      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec [] := by
+      TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec memberCap := by
   rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
   have hdecl := hagrees hprog hlookup
   refine ⟨entry, hlookup, himpl, ?_⟩
@@ -1085,7 +1092,8 @@ inductive ExternDeclarationReachableFromQTyp
         { etyp := ETyp.parrow st1 st2 p tcls, poison := qpoison, pred := qpred } id
         { id := id, kind := .pfn, typ := st1, argName := some x,
           retSpec := some retSpec, effects := [],
-          preds := collectExternPreds retSpec [], argPoison := argQt.poison }
+          preds := collectExternPreds retSpec [], argPoison := argQt.poison,
+          captures := captures }
   | parrow_extern_return {st1 st2 : Typ} {p qpoison : Poison} {qpred : Predicate}
       {tcls : List PFnTClosure} {outerId nestedId : ExternId} {x : Name}
       {retSpec : ExternReturn} {σcap : CapturedVarEnv} {argQt : QTyp} {d : ExternDeclaration} :

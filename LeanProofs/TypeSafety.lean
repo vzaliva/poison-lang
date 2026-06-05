@@ -940,10 +940,15 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
         (ETyp.arrow argTyp (parseReturnType retSpec) p tcl)
   | peClosure_extern {id : ExternId} {x y : Name} {argTyp : Typ}
       {argPoison : Bool} {argPred : SyntaxPredicate} {argQTyp : QTyp}
-      {retSpec : ExternReturn} {cap : List Capture}
+      {retSpec : ExternReturn} {cap memberCap : List Capture}
       {env : VarEnv} {tcl : List PFnTClosure} {p : Bool}
       {tenv : CapturedVarEnv}
-      (htcl : PFnTClosure.extern id x retSpec tenv argQTyp [] ∈ tcl)
+      -- `memberCap` (the type member's captures = the call-site read-dependency
+      -- gate) is INDEPENDENT of `cap` (the closure body's AST captures).  This
+      -- preserves the freed `value_shape` decoupling: the body captures stays
+      -- free, while the member may carry a `captures:` gate (e.g. the inner `@11`
+      -- of curried `max` reads the captured `a`).
+      (htcl : PFnTClosure.extern id x retSpec tenv argQTyp memberCap ∈ tcl)
       (henv : ∀ n qt v, tenv.lookup n = some qt →
         env.lookup n = some v → valueHasETyp θ v qt.etyp)
       (hcover : ∀ n qt, tenv.lookup n = some qt → ∃ v, env.lookup n = some v) :
@@ -11618,7 +11623,7 @@ lemma valueHasETyp_joinETyps_left
           · simpa [joinETyps, hshape] using
               (valueHasETyp.peClosure (θ := θ) (hpure := hpure) (htcl := htcl) (henv := henv) (hcover := hcover))
   | peClosure_extern htcl henv hcover =>
-      rename_i id x y argTyp argPoison argPred argQTyp retSpec cap env tcl p tenv
+      rename_i id x y argTyp argPoison argPred argQTyp retSpec cap memberCap env tcl p tenv
       cases t2 with
       | int =>
           simpa [joinETyps] using
@@ -17853,7 +17858,7 @@ example (θ : RealizationMap) :
         [PFnTClosure.extern 42 "x"
           (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
           ⟨ETyp.int, false, Predicate.noPred⟩ []]) := by
-  refine valueHasETyp.peClosure_extern (tenv := []) (argQTyp := ⟨ETyp.int, false, Predicate.noPred⟩) ?_ ?_ ?_
+  refine valueHasETyp.peClosure_extern (tenv := []) (memberCap := []) (argQTyp := ⟨ETyp.int, false, Predicate.noPred⟩) ?_ ?_ ?_
   · exact List.mem_singleton.mpr rfl
   · intro y qt v hlk _; cases hlk
   · intro y qt hlk; cases hlk

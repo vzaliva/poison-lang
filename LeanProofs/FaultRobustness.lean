@@ -586,16 +586,18 @@ mutual
         {id : ExternId} {x y : Name} {argTyp : Typ}
         {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
         {p : Poison} {tcls : List PFnTClosure}
-        {qt : QTyp} {tcl : PFnTClosure} {σcap : CapturedVarEnv} {argQt : QTyp} {cap : List Capture}
+        {qt : QTyp} {tcl : PFnTClosure} {σcap : CapturedVarEnv} {argQt : QTyp}
+        {cap memberCap : List Capture}
         {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
         (hclean_internal : internalPoisonClean qt)
         (hetyp : qt.etyp = ETyp.parrow argTyp (parseReturnType retSpec) p tcls)
         (htcl : tcl ∈ tcls)
-        -- Phase 2-3: extern closure-value agreement is restricted to closures with
-        -- no `captures:` dependencies (`[]`); general (non-empty) capture closures
-        -- are deferred (doc/extern-env-deps-plan.md).
-        (hmatch : tcl = PFnTClosure.extern id x retSpec σcap argQt [])
+        -- `memberCap` (the type member's captures = call-site read-dependency gate)
+        -- is INDEPENDENT of the closure body's `cap`, preserving the freed
+        -- `value_shape` decoupling; the captured-env agreement (`hcap`,
+        -- `hmemberVars*`, `hmemberCvcr*`) carries the relational obligation.
+        (hmatch : tcl = PFnTClosure.extern id x retSpec σcap argQt memberCap)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
         (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)

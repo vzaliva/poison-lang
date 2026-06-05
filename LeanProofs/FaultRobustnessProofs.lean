@@ -283,7 +283,7 @@ private theorem ExternCallSinglePfnProviderReachableCtx_of_reachable
   exact
     ExternCallBoundarySinglePfnContract.of_trustedReachable hagrees
       (fun {_argTyp} {_argPoison} {_id} {_x} {_y} {_retSpec}
-          {_capturedEnv} hsource =>
+          {_capturedEnv} {_memberCap} hsource =>
         ExternCallBoundaryPfnStaticSource.reachable_from_app_typecheck
           htyped (hqtOfApp hctx hcan htyped) hsource)
 
@@ -327,7 +327,7 @@ private theorem ExternCallFRPfnLocalProviderReachableCtx_of_reachable
   exact
     TrustedRegistryAgreesWithPfnProgramLocal.of_trustedReachable hagrees
       (fun {_argTyp} {_argPoison} {_id} {_x} {_y} {_retSpec}
-          {_capturedEnv} hsource =>
+          {_capturedEnv} {_memberCap} hsource =>
         ExternCallBoundaryPfnStaticSource.reachable_from_app_typecheck
           htyped (hqtOfApp hctx hcan htyped) hsource)
 
