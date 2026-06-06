@@ -117,15 +117,25 @@ def valueMatchesTyp : Value → Typ → Bool
   | .loc _,   .ref .int => true
   | _, _                => false
 
+/-- Captures recorded on an extern closure body AST (`[]` if not an extern node).
+    Used by `validateExternReturn` to compare a produced closure's return shape
+    MODULO captures: captures is the contract track (enforced at the call boundary
+    via `capturesSatisfied`), not part of the runtime body shape (two-track). -/
+def exprBodyCaptures : Expr → List Capture
+  | Expr.externFn _ _ _ _ _ _ _ c => c
+  | Expr.externPfn _ _ _ _ _ _ c => c
+  | _ => []
+
 /-- Validate an extern call's returned value against the outermost return
     descriptor `retSpec`.
 
     * For `ExternReturn.simple typ _ _`, succeeds iff the value matches
       `typ` via `valueMatchesTyp`; otherwise `ExternError.shapeMismatch id`.
-    * For a nested return, accepts only the exact extern-closure wrapper
-      whose embedded AST matches the nested descriptor verbatim (argument
-      name, identifier, argument type, inner return, and — for `nestedFn`
-      — effects). Any mismatch produces `ExternError.nestedReturnMismatch id`.
+    * For a nested return, accepts an extern-closure wrapper whose embedded AST
+      matches the nested descriptor (argument name, identifier, argument type,
+      inner return, and — for `nestedFn` — effects) MODULO captures (the contract
+      track, enforced separately at the call boundary). Any mismatch produces
+      `ExternError.nestedReturnMismatch id`.
 
     `id` is the identifier of the extern whose return is being validated
     (used only for the error report). -/
@@ -135,18 +145,26 @@ def validateExternReturn (id : ExternId) (retSpec : ExternReturn) (v : Value)
   | ExternReturn.simple typ _ _, _ =>
       if valueMatchesTyp v typ then .ok v
       else .error (.shapeMismatch id)
-  | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures,
+  | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects _innerCaptures,
     Value.closure valArgName valBody _ =>
+      -- `captures` is the CONTRACT track (enforced at the call boundary via
+      -- `capturesSatisfied` on the declared captures), NOT the runtime body shape.
+      -- The return-shape check compares modulo captures (two-track discipline):
+      -- rebuild the target with the produced body's own captures so only the
+      -- closure's id/arg/types/return are matched.
       if valArgName == innerArg &&
          beqExpr valBody
-           (Expr.externFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures)
+           (Expr.externFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects
+             (exprBodyCaptures valBody))
       then .ok v
       else .error (.nestedReturnMismatch id)
-  | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures,
+  | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet _innerCaptures,
     Value.peClosure valArgName valBody _ =>
+      -- See `nestedFn`: compare the return shape modulo captures (contract track).
       if valArgName == innerArg &&
          beqExpr valBody
-           (Expr.externPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures)
+           (Expr.externPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet
+             (exprBodyCaptures valBody))
       then .ok v
       else .error (.nestedReturnMismatch id)
   | ExternReturn.nestedFn _ _ _ _ _ _ _ _, _ => .error (.nestedReturnMismatch id)

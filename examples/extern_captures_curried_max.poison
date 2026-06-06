@@ -1,0 +1,9 @@
+-- Curried `max` whose inner `@11` declares an explicit `captures:` read
+-- dependency on the outer argument `a`.  Under the two-track discipline the
+-- runtime return-shape check ignores captures (the contract is enforced at the
+-- call boundary), so this nested-captures program runs end-to-end.
+let m =
+  extern pfn @10 a : (int :> clean {}) -> (
+    extern pfn @11 b : (int :> clean {}) -> ((int :> clean {})), captures: { a :> (int :> clean {}) }
+  )
+in (m 7) 2
