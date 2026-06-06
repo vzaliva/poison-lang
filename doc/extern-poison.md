@@ -9,32 +9,51 @@ extern preconditions are also implemented: extern callable arguments accept
 qualified annotations, the typechecker rejects calls that do not satisfy the
 declared argument condition, curried extern levels are checked uniformly, and
 the proof stack threads the clean/poison part of the condition through trusted
-boundary reachability. The remaining design work is read-side memory treatment,
-predicate-language validation, latent-marker examples, and concrete validation
-of live trusted extern boundary specs.
+boundary reachability. Concrete trusted specs exist for `abs` and the curried
+`max` pair. The active read-dependency work lives on the
+`extern-env-deps` branch: it should finish guarded `captures:`, branch-join
+capture conjunctions, and memory-read `!r` captures before merging into `ffi`.
+The broader remaining design work is predicate-language validation,
+latent-marker examples, and concrete validation of the remaining live trusted
+extern specs.
 
-## 1. Background and motivation
+Related documents:
 
-The FR roadmap (`doc/ffi-axioms.md`) reached a wall on its first concrete
-builtin: `abs` (`@12`). The example declaration is
+- `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document.
+- `doc/ffi-axioms.md` is the proof-boundary reference for trusted extern
+  evidence and the FR theorem interface.
+- `doc/extern-env-deps.md` specifies `captures:` for environment and memory
+  read dependencies; this file treats that as the selected read-side dependency
+  model.
+- `doc/extern-env-deps-plan.md` tracks the active implementation branch for
+  `captures:` until it merges to `ffi`.
+
+## 1. Purpose and scope
+
+Extern declarations are FR contracts. A trusted extern that advertises a clean
+result must also state enough input conditions for the trusted proof to show
+clean agreement across paired runs. For example, this declaration is not a valid
+trusted clean-output contract:
 
 ```poison
 extern pfn @12 x : (int) -> ((int :> clean {}))
 ```
 
-which advertises a clean integer output for any integer input. The direct
-boundary validation attempt (`LeanProofs/ExternProofs.lean`) ended with
-`builtinAbs_cleanPost_obstruction` — a Lean proof that the post-shape
-demanded by `ExternBoundarySpec` is unsatisfiable for this declaration:
-the implementation produces `1` from `-1` and `2` from `2`, which cannot
-satisfy clean integer agreement.
+It advertises a clean integer output for any integer input. That is too strong:
+two dirty integer inputs need not agree, and `abs (-1) = 1` while `abs 2 = 2`.
+A trusted clean-output declaration for `abs` therefore uses a clean argument
+condition:
 
-The old annotation system could not honestly express the conditions under which
-an extern's output was provably clean. Argument-side extern conditions now make
-that contract explicit; this document records the implemented shape and the
-remaining FFI design work around it.
+```poison
+extern pfn @12 x : (int :> clean {}) -> ((int :> clean {}))
+```
 
-## 2. What the current annotation system allows
+This document describes the current source-language contract for extern
+argument conditions, return/effect poison meaning, regimes, and trust triage.
+The proof-boundary packaging lives in `doc/ffi-axioms.md`; read dependencies
+over captured environment and memory live in `doc/extern-env-deps.md`.
+
+## 2. Annotation surface
 
 Per the tree-sitter grammar (`parser/tree-sitter-poison/grammar.js`) and
 the Ott application rules:
@@ -50,7 +69,7 @@ the Ott application rules:
   marker on the produced value.
 
 At an extern call, the typechecker compares the actual argument `QTyp` with the
-declared extern argument condition. The v1 relation is deliberately structural:
+declared extern argument condition. The relation is deliberately structural:
 base/runtime types must match; a declared-clean argument requires the actual
 argument to be clean under the current regime; a declared `noPred` imposes no
 predicate check; and a declared predicate requires the actual argument to carry
@@ -61,7 +80,7 @@ is satisfied, the declared return `QTyp` is used as the output contract. This
 keeps caller-side obligations on the argument and producer-side promises on the
 return.
 
-## 3. Selected design
+## 3. Design
 
 ### 3.1 Trust model
 
@@ -92,17 +111,17 @@ structurally from input cleanness alone.
 
 ## 4. Current-builtin status under this model
 
-- **`abs`** — executable examples now declare a clean argument and clean return,
-  which is an honest surface contract for successful calls. It is a natural
-  pure-unary clean-int trusted-spec candidate, but it still needs a concrete
-  trusted-registry instantiation before it contributes as a live trusted entry
-  in the public FR theorem.
+- **`abs`** — executable examples declare a clean argument and clean return,
+  which is the trusted surface contract for successful calls. It has a concrete
+  trusted boundary spec (`builtinAbsSpec`) and validates the pure-unary clean-int
+  path.
 
-- **`max`** — executable examples now declare clean arguments at both curried
-  levels and a clean return. The output depends on both the captured outer
-  argument and the immediate inner argument, so a trusted instantiation must
-  validate the captured-env side of the boundary obligation as well as the
-  immediate argument.
+- **`max`** — executable examples declare clean arguments at both curried levels
+  and a clean return. The output depends on both the captured outer argument and
+  the immediate inner argument. The curried pair has concrete trusted specs and
+  program-level FR artifacts for the unguarded captured-env path. The remaining
+  `max`-adjacent work is general `captures:` coverage: guarded call-time
+  satisfaction, branch-join merging, and memory-read `!r` dependencies.
 
 - **`sqrt`-style externs** — candidate for the unified model with input
   precondition `x >= 0`. Implementation `if x >= 0 then Lean.sqrt x else 0`
@@ -110,8 +129,8 @@ structurally from input cleanness alone.
   input precondition (which constrains the inputs across two runs to
   agree by depoisoning), not from the runtime branch. The executable
   `extern_arg_precond_sqrt` example validates the argument-condition mechanism;
-  a separate trusted spec would still be needed to make such an extern a live
-  trusted entry.
+  a separate trusted spec would still be needed to make `@19` a live trusted
+  entry.
 
 ## 5. Analysis
 
@@ -154,7 +173,7 @@ typecheck time, and records that concrete condition on `FnTClosure.extern` /
 `PFnTClosure.extern`. Proof-side declarations faithfully carry the clean/poison
 flag used for the trusted-entry match; the surface predicate is intentionally
 not recovered at every proof reachability site, so predicate-shape checking
-remains an executable typechecker condition for v1.
+remains an executable typechecker condition.
 
 The key separation is that argument `QTyp` records what the caller must
 establish, while return `QTyp` remains the output contract. Return
@@ -194,19 +213,18 @@ language must therefore admit predicates over both captured values and
 the immediate argument; the proof obligation likewise quantifies over
 captured-env typings.
 
-This raises an adjacent question about **input memory**. Extern
-dispatch can also read memory: pure externs may dereference ref-typed
-arguments, and impure externs additionally read driver-allocated cells
-(`errno` and similar). There is currently no annotation that declares
-which memory cells an extern *reads* — only the ones it writes (via the
-effects block on impure externs). Read-side memory is therefore
-implicitly "any cell the extern chooses to look at," which an FR proof
-must cover by quantifying over the entire memory under the regime.
+This raises an adjacent question about **input memory**. Extern dispatch can
+also read memory: pure externs may dereference ref-typed arguments, and impure
+externs additionally read driver-allocated cells (`errno` and similar). The
+selected read-side annotation path is `captures:` with bang targets such as
+`!r :> QTyp`, not a separate `reads:` clause. `effects:` remains memory-write
+only.
 
-Adding read-side memory annotations (e.g., a `reads:` clause mirroring
-the effects clause) would let the extern's proof commit to a narrower
-read set, simplifying the obligation. But it is a substantial
-grammar/typechecker/proof extension.
+The call-time rule is intentional: a memory read dependency is checked when the
+extern is about to rely on it, because memory may have changed since the
+callable was created. The `extern-env-deps` branch must therefore finish
+memory-read `!r` captures end-to-end, including a trusted spec / program-FR
+artifact, before it merges to `ffi`.
 
 ### 5.7 Shape of the cleanness obligation
 
@@ -275,24 +293,19 @@ the scenario's chosen boolean. Unselected externs keep the conservative
 behavior: their generated tags are not in the regime, so downstream
 predicate matches do not de-poison for FR.
 
-This required replacing the old "drop-only" regime transport with
-extended regime evolution (`Regime.monotoneStepExt`): old tags are
-preserved or dropped as before, while selected extern calls may add fresh
-output tags. The public FR theorem is also shaped around a per-context
-registry-trust premise plus an `ExternRegimeMatchesInputSpec` bridge, so
-the theorem is instantiable for non-empty trusted registries. The
-executable counterpart is the `--extern-regime "id=bool"` CLI option;
-`examples/extern-regime-open.poison` demonstrates a selected
-extern-produced predicate de-poisoning under the executable typechecker.
+Regime evolution is extension-aware (`Regime.monotoneStepExt`): pre-existing
+tags are preserved or dropped as usual, while selected extern calls may add
+fresh output tags. The public FR theorem is shaped around a per-context
+registry-trust premise plus an `ExternRegimeMatchesInputSpec` bridge, so the
+theorem is instantiable for non-empty trusted registries. The executable
+counterpart is the `--extern-regime "id=bool"` CLI option;
+`examples/extern-regime-open.poison` demonstrates a selected extern-produced
+predicate de-poisoning under the executable typechecker.
 
-## 6. Resolved positions
+## 6. Current positions
 
-### 6.1 Resolved
-
-- The old bare-argument `abs` declaration was **dishonest** — recorded by
-  `ExternProofs.builtinAbs_cleanPost_obstruction`. With argument conditions,
-  `abs` can be declared honestly as accepting a clean integer and returning a
-  clean integer.
+- A clean-output `abs` declaration must require a clean argument. The concrete
+  trusted `abs` spec uses that contract.
 - Extern trust uses a single proof shape with a possibly trivial
   precondition.
 - Extern preconditions live on argument-side `QTyp` annotations. Return `QTyp`
@@ -302,7 +315,7 @@ extern-produced predicate de-poisoning under the executable typechecker.
   trusted registry); their use does not block typechecking but does
   block FR.
 - Unsatisfied argument preconditions are rejected at typecheck time; there is no
-  conservative fallback typing rule for v1.
+  conservative fallback typing rule.
 - Nested/curried extern preconditions are enforced at every extern application
   level.
 - The cleanness obligation matches existing FR semantics: clean-
@@ -316,6 +329,9 @@ extern-produced predicate de-poisoning under the executable typechecker.
   id is selected by the FR scenario. This is a domain statement, not a
   trust statement: it lets downstream checks use the generated tags under
   the regime, while boundary trust still comes from the trusted registry.
+- Read-side environment and memory dependencies are expressed with
+  `captures:`. They are checked at the extern call boundary under the active
+  regime, not at declaration time.
 
 ## 7. Open questions
 
@@ -333,30 +349,28 @@ example should pin down whether existing `Predicate` machinery is
 expressive enough, or expose the narrower-than-expected applicability
 of the latent-marker reading.
 
-### 7.3 Read-side memory annotations  *(from §5.6)*
+### 7.3 Read-side memory captures  *(from §5.6)*
 
-Do we postpone read-side memory annotations, or treat them as a
-parallel design strand to be specified now? At minimum, the
-precondition language for read-side memory must be analyzed alongside
-the argument/captured-env case so we do not commit to a precondition
-shape that cannot extend to memory.
+The syntax and model are selected: use bang targets in `captures:`. The open
+work is implementation/proof completion on `extern-env-deps`, including an
+end-to-end trusted example for memory reads and the corresponding accepted /
+rejected tests.
 
-### 7.4 Live trusted extern specs
+### 7.4 Remaining live trusted extern specs
 
-The proof stack has the boundary machinery and compact pure-unary clean-int
-spec shape needed for trusted extern entries, but concrete interpreter builtins
+The proof stack has concrete trusted specs for `abs` and the curried `max`
+entries. Remaining interpreter builtins such as `@19`, `@20`, `@21`, and `@22`
 still need explicit trusted-registry instantiations before they contribute to
 the public FR theorem as live trusted entries.
 
 ## 8. Next steps
 
-1. Resolve §7.3 (read-side memory annotations).
-2. Instantiate a concrete live trusted extern spec, preferably the smallest
-   pure-unary clean-int candidate, to validate the trusted-registry path end to
-   end.
+1. Finish `doc/extern-env-deps.md` on the `extern-env-deps` branch: guarded
+   captures, branch-join capture conjunctions, and memory-read `!r` captures.
+2. Merge `extern-env-deps` into `ffi` once the standard gates are green and no
+   new `sorry`/axioms are introduced.
 3. Resolve §7.1 (predicate language expressiveness).
-4. Construct §7.2 (latent-marker example) to validate the
-   interpretation against existing predicate machinery.
-5. Update `doc/ffi-axioms.md` once the remaining model points are firm,
-   replacing the current §1/§2 roadmap items with a target consistent with this
-   document.
+4. Construct §7.2 (latent-marker example) to validate the interpretation
+   against existing predicate machinery.
+5. Add trusted specs for remaining live builtins (`@19`, `@20`, `@21`, `@22`) as
+   separate FFI coverage work.

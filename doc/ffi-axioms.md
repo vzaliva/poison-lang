@@ -1,18 +1,33 @@
 # FFI Axioms: Externs as FR-Preserving Boundary Steps
 
-Status: the registry-aware extern-boundary path is in place, and the
-clean-input/clean-output `abs` entry (`@12`) is now a complete trusted entry
-(`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields). Proving
-its relational declaration field tightened the declaration boundary to consume
+Status: the registry-aware extern-boundary path is in place. The
+clean-input/clean-output `abs` entry (`@12`) is a complete trusted entry
+(`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields), and the
+curried-`max` entries now have concrete trusted specs and program-level FR
+artifacts. Proving these entries tightened the declaration boundary to consume
 expression-coupled runs (`ExternDeclBoundaryRunForExpr`; see *The High-Level
-Contract*). The next proof work is the curried `max` entries.
+Contract*) and validated nested returned extern callables.
 
 The public fault-robustness theorem is relative to trusted extern boundary
-evidence under a populated registry. The remaining work is to prove that the
-concrete builtins can supply that evidence, tightening the boundary or the
-builtin declarations if those direct proofs expose a mismatch. Reusable helper
-machinery is secondary and should be extracted only from proof patterns that
-actually repeat.
+evidence under a populated registry. The active `extern-env-deps` branch extends
+that boundary with explicit extern read dependencies (`captures:`) and should
+finish guarded captures, branch-join capture conjunctions, and memory-read `!r`
+captures before merging back to the FFI integration branch `ffi`. Reusable
+helper machinery is secondary and should be extracted only from proof patterns
+that actually repeat.
+
+Related documents:
+
+- `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document.
+  This file should point there instead of carrying an independent global
+  roadmap.
+- `doc/extern-poison.md` explains the source-language extern contract:
+  argument preconditions, return/effect poison meaning, regimes, and trust
+  triage.
+- `doc/extern-env-deps.md` specifies `captures:` read dependencies; proof
+  obligations here should use that document for read-dependency semantics.
+- `doc/extern-env-deps-plan.md` tracks the active `extern-env-deps` branch until
+  it merges to `ffi`.
 
 This document covers two pieces of the FFI trust story:
 
@@ -38,13 +53,13 @@ typechecking, while making the FFI trust boundary explicit.
 
 ## Current Goal and Non-Goals
 
-The immediate goal is to validate the extern boundary on the builtins that
-motivated it:
+The immediate goal is to keep the extern boundary stable while completing the
+current captures feature branch:
 
-- prove `ExternBoundarySpec` for the built-in `abs` extern, or identify the
-  exact declaration/boundary reason it cannot be proved;
-- prove `ExternBoundarySpec` for the two curried `max` extern entries, or
-  identify the exact nested-callable boundary gap;
+- preserve the completed trusted specs for `abs` and curried `max`;
+- finish pfn-side `captures:` support on `extern-env-deps`: guarded call-time
+  satisfaction, branch-join capture conjunctions, and memory-read `!r`
+  dependencies;
 - preserve the public fault-robustness theorem shape: no new public
   precondition should be added to `TypeSystemEnforcesFaultRobustness`;
 - keep executable semantics unchanged unless a concrete proof exposes that an
@@ -63,9 +78,10 @@ This is not a framework-building exercise. The non-goals are:
 
 Private local helpers are still useful when they reduce noise in the concrete
 proofs, but they should be extracted only when a second builtin proof needs
-the same shape. The likely lasting outcome of this exercise is either concrete
-`abs` / `max` trusted entries, or a tightened `ExternBoundarySpec` /
-declaration discipline discovered by trying to prove them.
+the same shape. The lasting outcome of this exercise is concrete trusted entries
+plus a tightened `ExternBoundarySpec` / declaration discipline discovered by
+trying to prove them. Later builtin coverage should reuse that discipline rather
+than reopen the public theorem surface.
 
 ## Core Idea
 
@@ -653,7 +669,7 @@ The old all-context premise survives as the corollary
 `TypeSystemEnforcesFaultRobustness_allCtx`, concluding the renamed
 registry-parametric spec `FaultRobustnessSpecForRegistry
 (TrustedRegistry.toRuntimeRegistry tr) e s obs`; that all-context premise is
-unprovable for a non-empty registry (see `doc/extern-regime.md`).
+unprovable for a non-empty registry (see §5.9 of `doc/extern-poison.md`).
 
 In the current runtime, `Config.registry` is the actual implementation map. The
 registry-relative FR spec fixes successful runs to use the implementation
@@ -745,8 +761,9 @@ details.
 
 ## Roadmap
 
-The remaining work is now concrete builtin boundary evidence, not
-registry-aware proof-spine plumbing and not a general constructor framework.
+The registry-aware proof spine and the first concrete trusted entries are done.
+The roadmap now separates completed validation, current branch blockers, and
+later builtin coverage.
 
 ### 1. Direct `abs` Boundary Validation
 
@@ -830,14 +847,36 @@ returned value is an extern closure that will be called later, so the witness
 must establish the closure typing, regime consistency, and clean-result
 agreement facts consumed by later application proofs.
 
-As with `abs`, do not introduce public constructors before trying the direct
-proof. If a helper from the `abs` proof is reused here, it can remain private
-until there is a third use.
+**Status: done.** The capture-bearing inner declaration and the outer
+nested-returning declaration are proved as concrete `ExternBoundarySpec`s, and
+the curried-`max` programs have program-level FR artifacts. This validates the
+nested returned callable path and the unguarded captured-environment dependency
+needed by `@11`.
 
-### 3. Boundary Tightening If Needed
+The remaining `max`-adjacent work is not the two-argument arithmetic behavior;
+that path is proved. The remaining work is to complete the general `captures:`
+feature around it: guarded dependencies, branch-join precondition merging, and
+memory-read `!r` dependencies.
 
-If the direct `abs` or `max` proofs fail for semantic rather than tactical
-reasons, tighten the boundary or declaration discipline at the smallest point:
+### 3. Captures Branch Completion
+
+The `extern-env-deps` branch should merge into `ffi` only after pfn-side
+`captures:` supports:
+
+- guarded dependencies checked against the call-site regime;
+- branch joins that combine capture preconditions by conjunction and reject or
+  avoid incompatible predicate shapes;
+- memory-read `!r` dependencies exercised end-to-end with a trusted spec /
+  program-FR artifact;
+- representative accepted and rejected examples for the dependency gate.
+
+These items belong with `doc/extern-env-deps.md`; they should not be split into
+unrelated later FFI branches unless the branch scope is deliberately reduced.
+
+### 4. Boundary Tightening If Needed
+
+If later trusted specs fail for semantic rather than tactical reasons, tighten
+the boundary or declaration discipline at the smallest point:
 
 - If a builtin declaration promises a clean result that the native analogue
   could not justify, revise that declaration or its proof-side trust
@@ -853,11 +892,11 @@ reasons, tighten the boundary or declaration discipline at the smallest point:
 Any such change must state its impact on soundness, precision, executable
 semantics, and the public fault-robustness theorem.
 
-### 4. Optional Helper Extraction
+### 5. Optional Helper Extraction
 
-Only after `abs` and `max` are proved, review the proof bodies for repeated
-shapes. Extract a public helper or constructor only if it removes real
-duplication across those concrete proofs.
+Only after `abs`, `max`, and at least one more distinct extern shape are proved,
+review the proof bodies for repeated shapes. Extract a public helper or
+constructor only if it removes real duplication across concrete proofs.
 
 Non-goal: expose a complete set of constructors for arbitrary externs.
 `LeanProofs/ExternProofs.lean` is the concrete home for the built-in `abs` and
@@ -868,6 +907,7 @@ proofs.
 
 If more coverage is desired later, the next checks are:
 
+- guarded-input pure pfn: `@19`, a sqrt-style extern;
 - low risk: `@20`, an extern integer value;
 - medium risk: `@21`, a reference-valued extern value backed by the driver-initialized
   `errno` cell;
@@ -876,7 +916,7 @@ If more coverage is desired later, the next checks are:
   the impure-`fn` boundary handles clean-memory agreement, not just returned
   values.
 
-### 5. Single-Run and Operational Facts
+### 6. Single-Run and Operational Facts
 
 The single-run fields overlap with the two-run postcondition, but they serve a
 different consumer: the existing `StepFRSingle...` lemmas. They should remain

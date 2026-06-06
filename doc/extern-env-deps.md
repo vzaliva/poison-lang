@@ -4,6 +4,16 @@ Status: design note. This records the dependency issue exposed by the
 curried `max` builtin and specifies explicit extern read dependencies via
 `captures:`.
 
+Related documents:
+
+- `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document.
+- `doc/extern-env-deps-plan.md` tracks implementation status for this design on
+  the active `extern-env-deps` branch.
+- `doc/extern-poison.md` explains the broader extern precondition, regime, and
+  trust model that `captures:` extends to read dependencies.
+- `doc/ffi-axioms.md` explains the proof-boundary structures that consume the
+  trusted read-dependency obligations.
+
 ## Problem
 
 Extern callable implementations receive a runtime environment and memory as
@@ -240,42 +250,53 @@ trusted FR registry for that clean-return contract.
 This preserves precision without requiring runtime closure environments or
 memory footprints to be exactly equal to the declared dependency list.
 
-## Implementation Impact
+## Implementation Status And Branch Boundary
 
-This requires a surface syntax extension so examples, the parser, and the Ott
-spec describe the current language directly.
+The `extern-env-deps` branch implements this design on top of the `ffi`
+integration branch. The curried-`max` environment-read path is implemented and
+proved end-to-end, but the branch should not merge back to `ffi` until the pfn
+read-dependency surface described here is complete.
 
-Expected implementation areas:
+Already implemented for the curried-`max` path:
 
-- `LeanPoison/Syntax.lean`: add read-dependency target lists to extern
-  callable declarations and nested extern return descriptors.
-- `parser/` and `LeanPoison/Parser.lean`: parse the optional
-  `captures: { ... }` clause.
-- `LeanPoison/Typecheck.lean`: store declared dependencies on extern typing
-  closures; at each extern call, resolve dependency targets in the callable
-  environment, check bare environment dependencies there, check bang
-  dependencies against current memory typing, and reject missing or incompatible
-  dependencies.
-- `examples/`: add unit tests covering accepted captured dependencies,
-  rejected missing/incompatible dependencies, nested-return dependencies such
-  as curried `max`, memory read dependencies through both captured reference
-  variables and reference-typed arguments, and extra unlisted environment or
-  memory entries that remain allowed when the trusted implementation does not
-  depend on them.
-- `LeanPoison/BigStep.lean` / `Runtime.lean`: keep runtime behavior unchanged.
-  The precise-dependency model does not restrict the runtime environment or
-  memory, but the trusted proof must show that unlisted entries do not matter.
-- `LeanProofs/ExternRuntime.lean` and `ExternBoundary.lean`: carry dependency
-  data through declarations, boundary typing, trusted registry agreement, and
-  call-boundary facts.
-- `LeanProofs/JoinMemberTransport.lean`: transport the new per-member
-  dependency evidence through joined extern closure members, using
-  conjunction-compatible capture merges rather than return/effect predicate
-  joins.
-- `LeanProofs/ExternProofs.lean`: prove `@11` call fields using the captured
-  `a` dependency.
-- `poison-lang-spec/poison-lang.ott` and `doc/poison-lang-description.tex`:
-  update the formal and narrative specs with the new syntax and typing rule.
+- `LeanPoison/Syntax.lean`, `parser/`, `LeanPoison/Parser.lean`, and
+  `Pretty.lean` carry and round-trip the optional `captures: { ... }` clause.
+- `LeanPoison/Typecheck.lean` stores declared pfn dependencies on extern typing
+  closures and checks them at the extern call boundary through
+  `capturesSatisfied`.
+- `LeanProofs/ExternRuntime.lean`, `ExternBoundary.lean`, and the reachability
+  stack carry dependency data through declarations, trusted registry agreement,
+  and pfn call-boundary facts.
+- `LeanProofs/ExternProofs.lean` proves the capture-bearing `@11` call fields
+  for the captured-`a` dependency, and the curried-`max` program-level FR
+  artifacts exercise the nested returned callable path.
+- `poison-lang-spec/poison-lang.ott` and `doc/poison-lang-description.tex`
+  describe the surface syntax and call-time satisfaction judgement.
+
+Required before merging this branch to `ffi`:
+
+- guarded captures must use the same call-site regime-sensitive satisfaction
+  model as extern argument conditions;
+- branch joins must merge capture preconditions by conjunction, rejecting or
+  avoiding incompatible predicate shapes rather than collapsing them to
+  `noPred`;
+- memory-read `!r` captures must be exercised end-to-end with a trusted spec /
+  program-FR artifact, not only parser/typechecker support;
+- examples should cover accepted guarded and memory-read dependencies, plus at
+  least one rejected missing or incompatible dependency.
+
+Still out of scope for this branch:
+
+- fn-side captures (`extern fn ... captures:`), unless explicitly promoted into
+  this effort later;
+- dynamic §4.6 de-poisoning materialisation;
+- trusted specs for default-registry builtins whose behavior is unrelated to
+  read dependencies.
+
+`LeanPoison/BigStep.lean` / `Runtime.lean` should continue to keep runtime
+behavior permissive: the precise-dependency model does not restrict the runtime
+environment or memory, but the trusted proof must show that unlisted entries do
+not matter.
 
 ## Settled Design Choices
 

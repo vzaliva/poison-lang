@@ -1,25 +1,38 @@
 # Implementation Plan: `captures:` extern read dependencies
 
-Implements `doc/extern-env-deps.md`. Branch: `extern-env-deps`.
+Implements `doc/extern-env-deps.md`. Branch: `extern-env-deps`, directly above
+the FFI integration branch `ffi`.
+
+Related documents:
+
+- `doc/extern-env-deps.md` is the design source of truth for `captures:`.
+- `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document.
+- `doc/extern-poison.md` explains the extern precondition, regime, and trust
+  model that `captures:` extends.
+- `doc/ffi-axioms.md` explains the proof-boundary structures used by the
+  trusted specs mentioned here.
 
 The driving case is curried `max`: the inner `@11` reads the captured outer
 argument `a`, which the abstract extern call-boundary proof could not previously
 justify as a clean dependency. That curried-`max` (all-clean) path is now
-**implemented and proved end-to-end**. The remaining goal-doc surface (guarded
-dependencies, memory-read dependencies, fn-side captures, branch-join merges, and
-the corresponding examples) is documented below as deferred / out of scope.
+**implemented and proved end-to-end**. The branch is not complete merely because
+that path is green: `extern-env-deps` should merge to `ffi` only after the pfn
+read-dependency model is complete enough to match the goal document, including
+guarded dependencies, branch-join capture conjunctions, and memory-read
+dependencies.
 
-## Status — curried-`max` path: DONE (end-to-end, fully proved)
+## Status — curried-`max` path: DONE; branch still in progress
 
-Final state: `lake build` green (11464 jobs), `make test` 104/104, repo-wide
-0 `sorry`, 0 warnings. Axiom status (precise): this work adds **no `sorry` and no
-new axioms**. The new boundary specs and the `defaultRegistry_lookup_*`
-interpreter-registry lemmas are axiom-clean (`propext`/`Classical.choice`/
-`Quot.sound` only). `maxCurried_FR` / `appliedMaxCurried_FR` /
-`TypeSystemEnforcesFaultRobustness` inherit the FR step stack's **pre-existing**
-`native_decide` axioms (from `StepFRIte.lean` / `StepFR.lean` /
-`FaultRobustnessProofs.lean`, untouched by this work) — eliminating those is a
-separate, opt-in task and is not part of the `captures:` effort.
+Last verified curried-`max` state: `lake build` green (11464 jobs), `make test`
+104/104, repo-wide 0 `sorry`, 0 warnings. Axiom status (precise): this work adds
+**no `sorry` and no new axioms**. The new boundary specs and the
+`defaultRegistry_lookup_*` interpreter-registry lemmas are axiom-clean
+(`propext`/`Classical.choice`/`Quot.sound` only). `maxCurried_FR` /
+`appliedMaxCurried_FR` / `TypeSystemEnforcesFaultRobustness` inherit the FR step
+stack's **pre-existing** `native_decide` axioms (from `StepFRIte.lean` /
+`StepFR.lean` / `FaultRobustnessProofs.lean`, untouched by this work) —
+eliminating those is a separate, opt-in task and is not part of the `captures:`
+effort.
 
 What is implemented and proved:
 
@@ -100,7 +113,7 @@ mutually exclusive with the freed `value_shape`. The conflict only arose for the
 of the closure body captures (and the runtime check modulo-captures) keeps
 `value_shape` free and population available.
 
-## Deferred (sound, not on the curried-`max` critical path)
+## Required before merging `extern-env-deps` to `ffi`
 
 - **Guarded dependencies + call-site regime evidence** (goal doc §"Guarded
   Dependencies"). The specified behavior is now call-time checking for both bare
@@ -115,27 +128,41 @@ of the closure body captures (and the runtime check modulo-captures) keeps
   preconditions must combine by **conjunction** across branches (reject
   incompatible predicate shapes), not by the return-side join that collapses to
   `noPred`. Not exercised by `max` (no branches over a capture-bearing closure).
+- **Memory-read (`!r`) dependencies, end-to-end** (the goal doc's `maxmem`
+  `@20`/`@21` example or an equivalent). Bang targets already belong to the
+  surface model and are checked at the extern call boundary against current
+  memory typing. The branch should include a trusted spec / program-FR artifact
+  exercising memory reads through captured reference variables and/or the
+  reference-typed explicit argument, rather than leaving `!r` as parser-only or
+  typechecker-only support.
+- **Representative examples and rejection coverage.** The branch should keep the
+  accepted curried-`max` examples and add coverage for the new guarded and
+  memory-read paths. At least one rejected missing/incompatible capture case
+  should exist so the call gate's negative path is not only implicit in proofs.
 
 ## Out of scope (this effort)
 
-- **Memory-read (`!r`) dependencies, end-to-end** (the goal doc's
-  `maxmem` `@20`/`@21` example). Bang targets parse into the AST and
-  `capturesSatisfied` has the bang case, but no trusted spec or
-  program-FR is built for a memory-read extern (memory deps are
-  checked at the call boundary against memory typing — call-time, so
-  no reconciliation needed, but the proof artifact is deliberately not
-  built at this time).
 - **fn-side captures** (`extern fn … captures:`). The `captures` field exists on
   the fn AST/closure for parity, but captures are threaded end-to-end through the
   **pfn** paths only; the `fn` reachability/`Decl`/`of_terminatesTo` variants are
   left at `[]`. No fn extern exercises captures.
-- **Additional examples from the goal doc**: rejection of missing/incompatible
-  captures, memory-read dependencies, and the "extra unlisted entry remains
-  allowed" case. Only accepted-capture examples are added.
+- **The "extra unlisted entry remains allowed" example.** This is useful
+  documentation for the trusted-footprint model, but it is not needed to finish
+  the core pfn read-dependency branch once the accepted/rejected dependency paths
+  above are covered.
 - **Dynamic §4.6 de-poisoning materialisation.** This concerns the
   guarded/poisoned scenario (materialising a de-poisoned value at runtime), not
-  curried `max`, which is all-clean. The curried-`max` applied FR is complete
-  without it.
+  the read-dependency mechanism itself. It remains a broader FFI/regime
+  validation item after this branch lands in `ffi`.
+
+## Branch merge rule
+
+Merge `extern-env-deps` into `ffi` only when the pfn-side `captures:` feature is
+complete for environment reads, guarded call-time satisfaction, branch-join
+capture conjunctions, and memory-read `!r` dependencies, with the standard gates
+green and no new `sorry`/axioms. Do not hold this branch for fn-side captures,
+default-registry specs unrelated to read dependencies, or dynamic §4.6
+materialisation.
 
 ## Constraints
 

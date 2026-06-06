@@ -1,10 +1,11 @@
 # Poison FFI: Runtime Baseline and Proof Roadmap
 
 Status: working document. The runtime side is implemented and is treated here
-as a baseline. The fault-robustness proof now has a populated-registry theorem
-that consumes trusted extern boundary evidence; remaining open work is proof
-validation for concrete extern drivers, followed by helper/API extraction only
-where repeated proof shapes justify it.
+as a baseline. The fault-robustness proof has a populated-registry theorem that
+consumes trusted extern boundary evidence. Concrete trusted specs now exist for
+`abs` and the curried-`max` pair; the active `extern-env-deps` branch completes
+the read-dependency/captures feature before merging back to the FFI integration
+branch `ffi`.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
@@ -19,8 +20,24 @@ This document has two parts:
    are not duplicated here.
 2. **Part II — Proofs / reasoning.** The live design work: what evidence the
    proof layer needs about trusted externs, how it is indexed, and how it
-   connects to the existing typing-side axioms. This is where the remaining
-   `sorry`s in `LeanProofs/` will be discharged.
+   connects to the existing typing-side assumptions. This is also where the
+   remaining concrete trusted-builtin coverage and any helper/API extraction are
+   tracked.
+
+Related documents:
+
+- `doc/ffi-proposal.md` is the status hub and roadmap for the FFI branch stack.
+- `doc/ffi-axioms.md` is the proof-boundary reference for
+  `ExternBoundarySpec`, `TrustedRegistry`, and FR-facing extern evidence.
+- `doc/extern-poison.md` is the source-language contract reference for argument
+  preconditions, return/effect poison meaning, regimes, and trust triage.
+- `doc/extern-env-deps.md` is the selected `captures:` design for extern read
+  dependencies.
+- `doc/extern-env-deps-plan.md` is the temporary implementation tracker for the
+  active `extern-env-deps` branch. Once that branch merges to `ffi`, either
+  archive it or reduce it to a completion note.
+- `doc/poison-interpreter.md` documents executable CLI behavior and the default
+  runtime extern registry.
 
 ## Scope
 
@@ -112,9 +129,9 @@ The proof layer treats "this runtime value is an extern callable" as a
 structural predicate on `Value`:
 
 - An impure extern callable is exactly a value of the form
-  `Value.closure argName (Expr.externFn id argTyp ret effects) env`.
+  `Value.closure argName (Expr.externFn id ... effects captures) env`.
 - A pure extern callable is exactly a value of the form
-  `Value.peClosure argName (Expr.externPfn id argTyp ret) env`.
+  `Value.peClosure argName (Expr.externPfn id ... ret captures) env`.
 - `extern fn` and `extern pfn` capture the surrounding runtime environment
   at the point where the extern expression is evaluated: their summaries
   may mention Poison variables in scope, so later calls must retain the
@@ -213,20 +230,30 @@ re-specified in this document:
   (`valueMatchesTyp` and the application branches in `BigStep.lean`);
 - error constructors and messages (`ExternError`);
 - fuel accounting for extern dispatch;
-- curried examples such as the built-in `max` externs (driver setup in
-  `Main.lean` and the extern tests under `examples/`).
+- curried examples such as the built-in `max` externs (shared driver setup in
+  `LeanPoison/ExternBuiltins.lean`, interpreter wiring in `Main.lean`, and the
+  extern tests under `examples/`).
 
 ## Part II: Proofs / Reasoning
 
-This is where the live work sits. The runtime baseline above is the input;
-the output is a proof interface that lets FR see through trusted externs
-without inspecting Lean implementation code.
+This is where the live work sits. The runtime baseline above is the input; the
+output is a proof interface that lets FR see through trusted externs without
+inspecting Lean implementation code.
+
+Branch structure:
+
+- `ffi` is the integration branch for the FFI effort.
+- `extern-env-deps` is a feature branch above `ffi`, corresponding to
+  `doc/extern-env-deps.md`.
+- `extern-env-deps` should merge to `ffi` only after pfn-side `captures:` covers
+  bare environment reads, guarded call-time satisfaction, branch-join capture
+  conjunctions, and memory-read `!r` dependencies.
 
 ### Topics To Settle
 
-- Whether current extern summaries (`ExternReturn`, `Effect`,
-  `SyntaxPredicate`) are sufficient for FR, or whether extra
-  proof-only metadata is needed.
+- Whether current extern summaries (`ExternReturn`, `Effect`, `Capture`,
+  `SyntaxPredicate`) are sufficient for FR, or whether extra proof-only metadata
+  is needed.
 - Which reusable constructor lemmas should be the driver-facing API for common
   extern shapes, and what small behavior facts each constructor should require.
 - Whether the current binary `TrustedRegistry` model is the intended long-term
@@ -252,19 +279,28 @@ all-context form survives as `TypeSystemEnforcesFaultRobustness_allCtx`. The old
 `terminatesTo_extern_absurd` path has been replaced by declaration and call
 boundary consumption.
 
+Completed concrete validation:
+
+- `abs` (`@12`) has a complete `ExternBoundarySpec`.
+- The curried-`max` pair has complete trusted specs for the relevant `@10` and
+  capture-bearing `@11` declarations, plus program-level FR for both the bare
+  declaration path and the applied `(m 7) 2` path.
+
 The remaining concrete proof obligations are:
 
-- **Direct builtin validation.** Prove trusted entries for `abs` first, then
-  the curried `max` pair, then low-risk extern values and errno-style impure
-  updates.  The `abs` declaration is intentionally clean-input to clean-output;
-  its proof should consume the argument precondition rather than weakening the
-  result declaration.
+- **Finish the captures branch.** `extern-env-deps` must finish guarded
+  call-time dependency checking, branch-join capture conjunctions, and
+  memory-read `!r` dependencies before merging into `ffi`.
+- **Cover the rest of the default registry.** After the captures branch lands,
+  prove trusted entries for the remaining builtins as needed: sqrt-style guarded
+  input (`@19`), constant extern values (`@20`), initialized ref-valued extern
+  values (`@21`), and errno-style impure updates (`@22`).
 - **Helper extraction after repetition.** Directly proving
   `ExternBoundarySpec` assembles large `StepFRPost` and single-run
-  conjunctions, but public constructors should be introduced only after the
-  concrete builtin proofs show repeated proof shapes.  Likely future helpers
-  include shapes such as `pureUnaryCleanInt`, `constCleanInt`, `nestedPfn`,
-  `refValInitialized`, and `impureCellUpdate`.
+  conjunctions, but public constructors should be introduced only after repeated
+  concrete proofs show a stable shape. Likely future helpers include shapes such
+  as `pureUnaryCleanInt`, `constCleanInt`, `nestedPfn`, `refValInitialized`, and
+  `impureCellUpdate`.
 
 The operational-safety portion of the stack is already discharged through
 `ExternBoundarySpec.operational`: `TrustedRegistry.operationalSafe` derives
@@ -280,9 +316,10 @@ core theorem generic over extern implementations while giving app/declaration
 proof sites exactly the facts they need.
 
 Concrete drivers should not expose this large interface directly in the long
-term. For the immediate builtin validation pass, prove small behavior lemmas
-near the concrete entries and assemble `ExternBoundarySpec` directly. Extract
-constructor lemmas only once `abs` and `max` demonstrate a repeated shape.
+term. For builtin validation, prove small behavior lemmas near the concrete
+entries and assemble `ExternBoundarySpec` directly. Extract constructor lemmas
+only once additional entries beyond `abs` and `max` demonstrate a repeated
+shape.
 
 ### High-Level Direction
 
@@ -301,8 +338,8 @@ constructor lemmas only once `abs` and `max` demonstrate a repeated shape.
 
 ### Success Criteria (Part II)
 
-- `S-1`: The proof layer discharges the remaining builtin boundary obligations
-  using an id-indexed evidence interface that composes with
+- `S-1`: The proof layer discharges concrete builtin boundary obligations using
+  an id-indexed evidence interface that composes with
   `ExternTypingAssumptions.lean`; operational preservation and monotonicity flow
   through `ExternBoundarySpec.operational` and `RegistryOperationalSafe`.
 - `S-2`: FR handles callable values returned by externs — including
@@ -323,6 +360,8 @@ Primarily on the proof side:
 
 - `LeanProofs/ExternBoundary.lean` — trusted registry, extern boundary runs,
   reachable-domain trust, and the future constructor API.
+- `LeanProofs/ExternProofs.lean` and `LeanProofs/MaxCurriedFR.lean` — concrete
+  builtin trusted specs and program-level validation artifacts.
 - `LeanProofs/ExternTypingAssumptions.lean` — possible future localization of
   `externPredSatDelta` into per-extern evidence.
 - `LeanProofs/SemanticsProperties.lean` — consumes `RegistryOperationalSafe`
@@ -333,22 +372,23 @@ Primarily on the proof side:
   definitions consumed by boundary constructors.
 
 Runtime-side artefacts (`LeanPoison/Syntax.lean`, `Runtime.lean`,
-`BigStep.lean`, `Typecheck.lean`) are expected to remain stable, though
-the proof work may surface small inconsistencies or annotations worth
-tightening.
+`BigStep.lean`, `Typecheck.lean`, `ExternBuiltins.lean`) are expected to remain
+stable, though the proof work may surface small inconsistencies or annotations
+worth tightening.
 
 Specification artefacts (`poison-lang-spec/poison-lang.ott`,
-`doc/poison-lang-description.tex`) already reflect the runtime baseline;
-no further changes are anticipated solely for Part II unless new
-proof-only annotations need a surface spec.
+`doc/poison-lang-description.tex`) already reflect the runtime baseline and the
+current captures syntax. Further changes are expected only if the remaining
+captures branch work or later trusted-builtin coverage changes the language
+surface.
 
 ## Open Questions
 
-All open questions are now on the proof side:
+Open questions are now narrower:
 
-- Are current extern annotations (`ExternReturn`, `Effect`,
+- Are current extern annotations (`ExternReturn`, `Effect`, `Capture`,
   `SyntaxPredicate`) sufficient for FR, or is extra proof-only metadata
-  unavoidable?
+  unavoidable for the remaining guarded/memory cases?
 - Beyond within-run determinism, what additional stability properties
   are needed for trusted externs?
 - Should the current binary `TrustedRegistry` model remain the only proof

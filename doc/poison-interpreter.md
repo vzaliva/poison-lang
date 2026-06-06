@@ -6,18 +6,21 @@ poison-interpreter - typecheck and evaluate Poison programs
 
 ## SYNOPSIS
 
-`poison-interpreter --repl`
-
-`poison-interpreter [--verbose] [--regime "100=true,101=false"] <file>`
-
-`poison-interpreter --help`
+```text
+poison-interpreter --repl
+poison-interpreter [--verbose] [--regime "100=true,101=false"]
+  [--extern-regime "238=true"] <file>
+poison-interpreter --help
+```
 
 ## DESCRIPTION
 
 `poison-interpreter` parses a `.poison` file, typechecks it, and (if typechecking
 passes) evaluates it with a pure interpreter. In verbose mode it prints the full
-typing result. Extern placeholders may typecheck, but execution stops with a
-runtime error if evaluation reaches one.
+typing result. The interpreter starts with the built-in extern registry from
+`LeanPoison/ExternBuiltins.lean`, so the documented builtins such as curried
+`max`, `abs`, `sqrt`, `ZERO`, `errno`, and `set_err` can execute. User-declared
+extern ids that are absent from the runtime registry still fail at dispatch.
 
 ## OPTIONS
 
@@ -27,6 +30,10 @@ Typecheck and evaluate with verbose output.
 `--regime "k=true,..."`  
 Seed the regime used for FR-aware typing. Each assignment maps a guard tag to a
 truth value. Duplicate tags use last-one-wins.
+
+`--extern-regime "id=true,..."`
+Seed the executable extern-regime policy by extern id. Every return/effect tag
+generated for a selected extern id receives the selected truth value.
 
 `--repl`
 Start a REPL.
@@ -55,3 +62,14 @@ Verbose mode:
 
 Typecheck with a regime:
 `poison-interpreter --verbose --regime "100=true" examples/lp55xx-read.poison`
+
+Typecheck with an extern-regime policy:
+`poison-interpreter --verbose --extern-regime "238=true" examples/extern-regime-open.poison`
+
+## RELATED DOCUMENTS
+
+- `doc/ffi-proposal.md` gives the FFI branch roadmap and status.
+- `doc/extern-poison.md` explains extern argument conditions, regimes, and
+  trusted/untrusted extern contracts.
+- `doc/extern-env-deps.md` explains `captures:` read dependencies for externs.
+- `doc/ffi-axioms.md` explains the proof-facing trusted extern boundary.
