@@ -11,10 +11,15 @@ the corresponding examples) is documented below as deferred / out of scope.
 
 ## Status — curried-`max` path: DONE (end-to-end, fully proved)
 
-Final state: `lake build` green (11462 jobs), `make test` 104/104, repo-wide
-0 `sorry`, 0 warnings; `TypeSystemEnforcesFaultRobustness` unchanged (no new
-axiom / no `sorryAx`); the curried-`max` artifacts are axiom-clean
-(`propext`/`Classical.choice`/`Quot.sound`).
+Final state: `lake build` green (11464 jobs), `make test` 104/104, repo-wide
+0 `sorry`, 0 warnings. Axiom status (precise): this work adds **no `sorry` and no
+new axioms**. The new boundary specs and the `defaultRegistry_lookup_*`
+interpreter-registry lemmas are axiom-clean (`propext`/`Classical.choice`/
+`Quot.sound` only). `maxCurried_FR` / `appliedMaxCurried_FR` /
+`TypeSystemEnforcesFaultRobustness` inherit the FR step stack's **pre-existing**
+`native_decide` axioms (from `StepFRIte.lean` / `StepFR.lean` /
+`FaultRobustnessProofs.lean`, untouched by this work) — eliminating those is a
+separate, opt-in task and is not part of the `captures:` effort.
 
 What is implemented and proved:
 
@@ -42,6 +47,19 @@ What is implemented and proved:
   forces `a₀ = a₁`, the argument gate forces `b₀ = b₁`, so `max a b` agrees).
   Full 5-field `ExternBoundarySpec`s: `builtinMax10Spec` (whose `callFR` returns
   the capture-bearing `@11` closure) and `builtinMax11CapturesSpec`.
+- **Shared runtime core (interpreter ↔ proof dedup).** The built-in extern
+  implementations and default initial state (`outerMaxImpl`, `innerMaxImpl`,
+  `absImpl`, `sqrtImpl`, `setErrImpl`, `errnoAddr`, `defaultInitialState`,
+  `defaultRegistry`) live in `LeanPoison/ExternBuiltins.lean`, imported by both
+  the interpreter (`Main.lean`) and the proof side (`ExternProofs.lean`), so
+  `builtinMax10Impl ≡ .pfn outerMaxImpl` *definitionally* — the running
+  interpreter and the trusted boundary specs reference the **same** runtime
+  functions, not textually-equal copies. The build-checked lemmas
+  `defaultRegistry_lookup_max10` / `_max11` / `_abs` confirm the interpreter's
+  assembled `defaultRegistry` resolves `@10`/`@11`/`@12` to exactly those trusted
+  impls. (This is *function-level* agreement: the 7-entry interpreter registry is
+  still a different object from the 2-entry proof `maxCurriedRegistry` — only the
+  shared `@10`/`@11`/`@12` impls coincide.)
 - **Program-level FR.** `MaxCurriedFR.maxCurried_FR` (the `@10` declaration; the
   registry `[@10, @11captures]` agrees with the reachable decls — `@10` `captures
   []`, `@11` `captures [a]` via `nestedPfn_here` — discharging
@@ -101,18 +119,19 @@ of the closure body captures (and the runtime check modulo-captures) keeps
   preconditions must combine by **conjunction** across branches (reject
   incompatible predicate shapes), not by the return-side join that collapses to
   `noPred`. Not exercised by `max` (no branches over a capture-bearing closure).
-
 ## Out of scope (this effort)
 
+- **Memory-read (`!r`) dependencies, end-to-end** (the goal doc's
+  `maxmem` `@20`/`@21` example). Bang targets parse into the AST and
+  `capturesSatisfied` has the bang case, but no trusted spec or
+  program-FR is built for a memory-read extern (memory deps are
+  checked at the call boundary against memory typing — call-time, so
+  no reconciliation needed, but the proof artifact is deliberately not
+  built at this time).
 - **fn-side captures** (`extern fn … captures:`). The `captures` field exists on
   the fn AST/closure for parity, but captures are threaded end-to-end through the
   **pfn** paths only; the `fn` reachability/`Decl`/`of_terminatesTo` variants are
   left at `[]`. No fn extern exercises captures.
-- **Memory-read (`!r`) dependencies, end-to-end** (the goal doc's `maxmem`
-  `@20`/`@21` example). Bang targets parse into the AST and `capturesSatisfied`
-  has the bang case, but no trusted spec or program-FR is built for a memory-read
-  extern (memory deps are checked at the call boundary against memory typing —
-  call-time, so no reconciliation needed, but the proof artifact is not built).
 - **Additional examples from the goal doc**: rejection of missing/incompatible
   captures, memory-read dependencies, and the "extra unlisted entry remains
   allowed" case. Only accepted-capture examples are added.
