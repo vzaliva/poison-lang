@@ -179,95 +179,67 @@ first errors) established two things that re-scope `@10`:
   `agreeValueUnder` generalization (only the `@11` *call* uses `[a]`, already
   proved).
 
-## `@10` ExternBoundarySpec DONE; program-FR connection is a design fork
+## DONE — program-level FR for `max_curried` with nested `captures:` (option (b))
 
-**`@10` `ExternBoundarySpec` is complete — all five fields green, 0 `sorry`,
-axiom-clean** (`propext`/`Classical.choice`/`Quot.sound` only; full build 11461
-jobs). In `LeanProofs/ExternProofs.lean`: `builtinMax10RetSpec`
-(`= nestedPfn 11 "b" int false noPred builtinMax11RetSpec []`),
-`builtinMax10Decl`/`Pfn`/`Impl`, `builtinMax10Pfn_ok_shape`,
-`builtinMax10Impl_operationalSafe`, the decl block (a verbatim mirror of `@11`'s,
-since every decl-boundary helper is `retSpec`/`Typ`-polymorphic — the closure
-*value* is unevaluated syntax, so `parseReturnType` yielding `arrow int int`
-vs `int` poses no obligation), the call block, and `builtinMax10Spec`.
+The program-FR connection that the earlier `@10`-spec session reported as a
+design fork has been **resolved and proved**. What was once "blocked on the
+two-track tension" is now `MaxCurriedFR.maxCurried_FR` (sorry-free,
+axiom-clean modulo the pre-existing `native_decide`). The chosen path was
+**option (b): decouple the two tracks** (the contract captures vs the runtime
+body-AST captures), plus **option B for the runtime check**. Resolution, in the
+order it was built (commits `dc43938`, `b631c0e`, `20a20c3`, `ed19340`,
+`5583bfb`):
 
-The `callFR` crux (closure result) went through as decl-boundary reuse: the
-`applyPFnTClosureAtCursor` nestedPfn branch makes the returned `@11` closure
-type `parrow int int pc [innerTcl]` with `innerTcl.tenv = toCaptured
-entry.bodyCtx.varEnv` and **captures `[]`**; result-agreement is
-`agreeValueUnder.clean_internal_parrow_extern` transported with
-`ctx := entry.bodyCtx`, `ρ := entry.unifiedEnv`, `hric := hbody.runtime`. No
-`agreeValueUnder` change, no `validateExternReturn` change.
+1. **Capture-generic FR/trust/reachability stack** (`dc43938`). The value-track
+   lemmas (`valueHasETyp`/`deepValueQTypProperty`/`agreeValueUnder`) gained an
+   **independent `memberCap`** parameter (the type member's captures, the gate),
+   decoupled from the closure body's `cap` — value\_shape-safe (the prior spike's
+   failure was the *coupled* form). `Call.pfnExternMember` gained a `bodyCaptures`
+   decoupled from the contract; `ExternCallBoundaryPfnStaticSource` /
+   `callBoundaryRun` / `ExternCallPfnTypingProvider` thread `memberCap`.
+2. **Captures population, one value per id = source contract** (`b631c0e`).
+   `typecheckExternPfn` now **stores** the source captures on the closure member,
+   `applyPFnTClosureAtCursor`'s nestedPfn branch **propagates** `innerCaptures`,
+   and every reachability/typing/runtime synthesis point carries it
+   (`ExternDeclarationInProgram.externPfn`, `ExternDeclarationInReturn.nestedPfn_here`,
+   `ExternBoundaryTyping.Decl.pfn`, `of_terminatesTo_externPfn`). So the typecheck
+   population that was thought "costly / mutually exclusive with value\_shape" is
+   in fact available *because* the value track is independent-member.
+3. **`@10` `[a]` path + runtime option B** (`20a20c3`). `builtinMax10RetSpec`
+   nests `@11` with `captures [a]`; the `@10` call produces the `@11` closure with
+   type member `[a]` (the gate). `validateExternReturn` now compares a nested
+   return's produced closure **modulo captures** (`exprBodyCaptures`): the body-AST
+   captures is the runtime shape, the contract is enforced separately at the call
+   gate — so the inner closure's body need not carry the declared captures. This
+   is gated to captures-bearing nested returns (`captures = []` ⇒ byte-identical;
+   no regression). The nested-captures example now runs.
+4. **`builtinMax11CapturesSpec`** (`ed19340`): the full 5-field
+   `ExternBoundarySpec` for the capture-bearing `@11` decl.
+5. **`MaxCurriedFR.maxCurried_FR`** (`5583bfb`): the registry
+   `[⟨builtinMax10Decl, …⟩, ⟨builtinMax11CapturesDecl, …⟩]` agrees with the
+   reachable decls (`@10` `captures []`, `@11` `captures [a]` via `nestedPfn_here`),
+   discharging `TrustedRegistryAgreesWithReachable`; composing with
+   `TypeSystemEnforcesFaultRobustness_at` yields program-level FR.
 
-**Program-level FR for `max_curried` is blocked on a design fork (the two-track
-captures tension surfacing at the registry/reachability layer).** It is *not*
-mechanical assembly:
+**Scope of `maxCurried_FR` (honest framing).** `maxCurriedProg` is the `@10`
+declaration node (mirroring the `openProg` template), not the applied
+`(m 7) 2`. So `maxCurried_FR` proves that the **registry-agreement obstruction is
+removed** — the capture-bearing `@11` decl is now both *reachable* and the
+*FR-capable* registry entry (the `rfl` matching `[a]` to `builtinMax11CapturesDecl`
+is the non-trivial content; swapping in the `[]` decl fails to compile). The
+captured-`a` cleanness (`builtinMax11_callFR`) is reachable but not *exercised*
+by this bare-declaration program — dynamic end-to-end materialisation is the
+separate, larger §4.6 work, exactly as the `open_empty_context_FR_instantiable`
+template notes for its own case.
 
-- `applyPFnTClosureAtCursor`'s nestedPfn branch
-  (`LeanPoison/Typecheck.lean:1813-1815`) binds `_innerCaptures` and **ignores
-  it**, hardcoding the returned closure's `innerTcl` captures to `[]`. So any
-  real curried-`max` program produces an `@11` closure typed with `[]`, and the
-  `@11` call from it uses `[]` — the strong captured-`a` gate
-  (`builtinMax11_callFR`, which reads `[a]` off the hand-built
-  `builtinMax11CapturesDecl`) can never fire from a typechecked program.
-- `TrustedRegistryAgreesWithReachable` requires `entry.decl = d` (full
-  structural equality) for every reachable decl. Reachability through `@10`'s
-  retSpec yields `@11` with `[]`, so a registry holding the `[a]` entry fails the
-  premise. Changing `builtinMax10RetSpec`/`outerMaxImpl` to carry `[a]` does
-  **not** help — line 1815 still emits `[]` at the call site, so the strong
-  callFR still never fires.
-- The only locus that unblocks this is **propagating `_innerCaptures` through
-  `applyPFnTClosureAtCursor`** — i.e. the typecheck-population ripple, which the
-  spike already proved costly and mutually exclusive with the freed
-  `value_shape`.
+## Known incompleteness (recorded so it isn't a surprise)
 
-The fork (user's call, per the "stop and report on design change" instruction):
-
-- **(a)** Propagate nested captures through `applyPFnTClosureAtCursor` + the
-  population ripple (value-track generalization + `value_shape` re-tie).
-- **(b)** Treat `builtinMax10Spec` + `builtinMax11_callFR` as verified standalone
-  trusted-decl artifacts; program-level connection is future work pending (a).
-
-A `[]`-path program-FR would discharge `TrustedRegistryAgreesWithReachable` and
-*look* done, but exercises none of the captures machinery — it would be hollow,
-so it is deliberately not built.
-
-## Done (this session, beyond the `@10` spec)
-
-- **Ott + LaTeX (Step 6) DONE.** `poison-lang-spec/poison-lang.ott`: added the
-  `capture_spec` / `capture_list` (`CSL`) grammar (bare `x :> Q` and bang
-  `!x :> Q` targets), threaded `CSL` into the `extern_fn` / `extern_pfn` /
-  `nested_fn` / `nested_pfn` surface declarations (the typed closures
-  `extern_tcl` / `extern_ptcl` deliberately drop `CSL`, reflecting the
-  `[]`-population), and added the `capturesSatisfied R CSL S G` satisfaction
-  judgement (the contravariant call-site gate, mirroring `satisfiesArgCond`),
-  with a comment documenting the gate and the deferred population. Ott parses
-  clean (112 rules, 0 bad); the spec PDF builds (39 pp). `doc/
-  poison-lang-description.tex`: added an "Extern read dependencies
-  (`captures:`)" subsection (read-only counterpart to `effects:`); the doc PDF
-  builds.
-- **Surface example (Step 5, partial) DONE.** `examples/extern_captures_clause.poison`
-  (+`.output`) shows a `captures:` clause parsing, type-checking, and running
-  end-to-end on a simple-return extern (`@12`); 103/103 tests pass. The
-  *meaningful nested* case (`captures` on the inner `@11` of curried `max`) still
-  errors at runtime (`validateExternReturn`: "nested return mismatch") — the
-  same `[a]`-vs-`[]` issue as the program-FR fork.
-
-## Remaining
-
-- **Program-level FR for `max_curried`** — blocked on the design fork above
-  (needs option (a)); also needs a full `builtinMax11CapturesSpec` (4 more
-  fields) and the guarded-capture reconciliation in
-  `TrustedRegistryAgreesWithReachable`.
-- **Runnable *nested* captures example** — coupled to the same fork: the runtime
-  `validateExternReturn` `beqExpr`-compares the declared nested captures against
-  the impl's, so a nested-captures program only runs once that validation ignores
-  captures (it is `unfold`ed in `SemanticsProperties` /
-  `ExternBoundaryConstructors` / `ExternProofs`, so relaxing it is `@10`-scoped).
-- `JoinMemberTransport` conjunction-merge (needed only by the `@10` program-FR
-  assembly).
-- (Typecheck population is NOT required for the `@10` spec — see Findings above;
-  it IS the unblocking lever for the program-FR fork, option (a).)
+- **fn-side asymmetry.** Captures are threaded through the **pfn** reachability,
+  `Decl`, and `of_terminatesTo` paths; the **fn** variants (`extern fn … captures:`)
+  are intentionally left at `[]` (the curried-`max` motivating case is pure).
+- The Ott `extern_tcl` / `extern_ptcl` closure forms **elide `CSL` for
+  presentation**; the implementation carries it on the closure member (see the
+  updated comment at the `extern_fn` typing rule and the description prose).
 
 ## Constraints
 

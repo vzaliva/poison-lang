@@ -1290,11 +1290,14 @@ pm ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L ; R
 % environment (bare-variable targets x :> Q) and memory (bang targets ! x :> Q).
 % Like Q1, CSL is a call-site gate: a trusted clean result is available only when
 % capturesSatisfied R CSL S G holds, fused with satisfiesArgCond into one guard at
-% application. The surface declaration carries CSL, but this typing rule does not
-% thread CSL into the closure extern_tcl (capture population onto the closure is
-% deferred), so a closure produced by typechecking gates only on Q1; the
-% capturesSatisfied judgment specifies the intended gate for capture-bearing
-% trusted declarations.
+% application. The declared CSL is the trusted CONTRACT: it is recorded on the
+% produced closure member (one captures value per extern id, equal to the source
+% contract, consistent across the typed closure, the reachable declaration, and
+% the runtime declaration), and capturesSatisfied enforces it at the call boundary.
+% The closure's runtime body-AST captures is a SEPARATE (two-track) field that the
+% runtime return-shape check validateExternReturn compares MODULO captures (the
+% body shape, not the contract). For presentation the extern_tcl form below elides
+% CSL on the closure; the implementation carries it on the closure member.
 % returnType extracts the surface return type from ER (recursively for nested specs).
 % base_of Q1 = ST1 extracts the surface base type of the precondition; the arrow
 % domain stays the bare surface type ST1 (shared with native fn), so the runtime

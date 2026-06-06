@@ -455,11 +455,22 @@ states this contravariant satisfaction relation, mirroring
 
 The \texttt{captures:} clause is part of the surface syntax of extern
 declarations (and of nested-return descriptors), accepted by the parser and the
-type checker. Populating the captured-dependency list onto the produced typing
-closure --- so that the gate is non-trivial for a closure obtained by
-typechecking source --- is a separate concern from the surface annotation; the
-\(\mathrm{capturesSat}\) judgement specifies the intended gate for
-capture-bearing trusted declarations.
+type checker. The declared dependencies are the trusted \emph{contract}: the type
+checker records them on the produced closure's type member, so there is one
+captures value per extern identifier --- equal to the source contract and
+consistent across the typed closure, the reachable declaration, and the runtime
+declaration --- and \(\mathrm{capturesSat}\) enforces it at the call boundary
+(non-vacuously for capture-bearing declarations).
+
+Independently, the closure's runtime body-AST captures annotation is treated as a
+\emph{second track}: the runtime return-shape check on a nested return compares
+the produced closure against the declared descriptor \emph{modulo} captures (the
+body shape, not the contract), since the contract is enforced separately at the
+call boundary. Consequently a closure value's body need not syntactically carry
+the captures the contract declares --- the gate reads the contract, not the body.
+This decoupling is what lets the inner stage of a curried extern (e.g.\ the
+\(@11\) returned by curried \texttt{max}) carry the captured-\(a\) contract on its
+type while its produced body remains a plain closure.
 
 \subsection{Pure Expressions}
 
