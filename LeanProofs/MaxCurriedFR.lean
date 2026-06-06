@@ -82,4 +82,76 @@ theorem maxCurried_FR (s : InputSpec) (obs : ObservableSpec) :
   TypeSystemEnforcesFaultRobustness_at maxCurriedRegistry maxCurriedProg s obs openEmptyCtx
     maxCurried_hagrees
 
+/-! ## Fully exercised: the applied program `let m = @10 in (m 7) 2`
+
+`maxCurried_FR` above is over the bare `@10` declaration node (it removes the
+registry-agreement obstruction).  The *applied* program below additionally
+applies `@10` (producing the `@11` closure) and applies that to `2` — so the
+generic FR theorem routes the `@11` application through the registry's
+`builtinMax11CapturesSpec.callFR`, the captured-`a` cleanness gate.  The reachable
+declarations are unchanged (`@10`, `@11`): the `let`-body `(m 7) 2` is
+applications of a variable and numerals, which carry no extern declarations. -/
+
+/-- Applied curried-`max`: `let m = (extern pfn @10 a … captures-bearing @11) in
+    (m 7) 2`. -/
+def appliedMaxCurriedProg : Expr :=
+  Expr.vlet "m"
+    (Expr.externPfn 10 "a" Typ.int false SyntaxPredicate.noPred builtinMax10RetSpec [])
+    (Expr.app (Expr.app (Expr.var "m") (Expr.num 7)) (Expr.num 2))
+
+/-- The reachable declarations of the applied program are exactly `@10` and `@11`,
+    each matched by its registry entry.  The `let`-bound declaration reaches them
+    (`@10` via `externPfn`, `@11` via the nested return `nestedPfn_here`); the
+    `let`-body `(m 7) 2` reaches none (applications of `var`/`num`). -/
+theorem appliedMaxCurried_agreesWithProgram :
+    TrustedRegistryAgreesWithProgram appliedMaxCurriedProg maxCurriedRegistry := by
+  intro id d entry hprog hlookup
+  unfold appliedMaxCurriedProg at hprog
+  cases hprog with
+  | vlet_bound hbound =>
+      cases hbound with
+      | externPfn =>
+          have hl : TrustedRegistry.lookup? maxCurriedRegistry 10
+              = some ⟨builtinMax10Decl, builtinMax10Impl, builtinMax10Spec⟩ := by
+            simp [maxCurriedRegistry, TrustedRegistry.lookup?, builtinMax10Decl]
+          rw [hl] at hlookup
+          cases hlookup
+          rfl
+      | externPfn_return hret =>
+          cases hret with
+          | nestedPfn_here =>
+              have hl : TrustedRegistry.lookup? maxCurriedRegistry 11
+                  = some ⟨builtinMax11CapturesDecl, builtinMax11Impl, builtinMax11CapturesSpec⟩ := by
+                simp [maxCurriedRegistry, TrustedRegistry.lookup?,
+                  builtinMax10Decl, builtinMax11CapturesDecl]
+              rw [hl] at hlookup
+              cases hlookup
+              rfl
+          | nestedPfn_inner hret' => cases hret'
+  | vlet_body hbody =>
+      -- `(m 7) 2` = `app (app (var m) (num 7)) (num 2)`: no extern declarations.
+      cases hbody with
+      | app_fun hb1 =>
+          cases hb1 with
+          | app_fun hb2 => cases hb2
+          | app_arg hb2 => cases hb2
+      | app_arg hb1 => cases hb1
+
+/-- Per-context trust premise for the applied program at the empty context. -/
+theorem appliedMaxCurried_hagrees :
+    TrustedRegistryAgreesWithReachable appliedMaxCurriedProg openEmptyCtx maxCurriedRegistry :=
+  agreesWithReachable_of_emptyVarEnv (by rfl) appliedMaxCurried_agreesWithProgram
+
+/-- **Fully-exercised program-level FR for applied curried `max`.** For the program
+    `let m = @10 in (m 7) 2`, the trusted registry agrees with the reachable decls,
+    so `TypeSystemEnforcesFaultRobustness_at` yields fault-robustness — and because
+    the program applies `@11`, the derivation routes that application through
+    `builtinMax11CapturesSpec.callFR` (the captured-`a` cleanness gate). -/
+theorem appliedMaxCurried_FR (s : InputSpec) (obs : ObservableSpec) :
+    FaultRobustnessSpecForCtx
+      (TrustedRegistry.toRuntimeRegistry maxCurriedRegistry)
+      appliedMaxCurriedProg s obs openEmptyCtx :=
+  TypeSystemEnforcesFaultRobustness_at maxCurriedRegistry appliedMaxCurriedProg s obs openEmptyCtx
+    appliedMaxCurried_hagrees
+
 end MaxCurriedFR
