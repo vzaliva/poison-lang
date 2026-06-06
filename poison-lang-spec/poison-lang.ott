@@ -1317,6 +1317,9 @@ pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x Q1 ER ESL CSL : ST1 -> ST2 # pc tcl
 % The function is wrapped in an extern pure typing closure carrying Q1.
 % Tag resolution for the return is deferred to application time (each call gets
 % fresh tags); the argument precondition Q1 is resolved once here, at declaration.
+% The optional captures: clause CSL has the same call-site meaning as in
+% extern_fn: it is recorded as the trusted read-dependency contract on the pure
+% closure member and enforced by capturesSatisfied at application.
 % base_of Q1 = ST1 extracts the surface base type; the arrow domain stays the bare
 % surface type ST1 so the runtime ST1 <: T1 match is unchanged. The return
 % qualified type is unchanged.

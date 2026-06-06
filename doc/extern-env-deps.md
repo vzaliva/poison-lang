@@ -175,25 +175,32 @@ depend on.
 ## Intended Typechecking Meaning
 
 Each declared read dependency must be resolvable and must satisfy the
-declared qualified type requirement. Bare environment dependencies are checked
-against the current type environment at the declaration or nested-return site.
-Bang memory dependencies are resolved through the callable environment, like
-`effects:` targets, and checked against the referenced memory entry's current
-qualified type at the extern call boundary. The callable environment is the
-captured environment plus the explicit argument binding, so `!name` may refer
-to either source when `name` has reference type.
+declared qualified type requirement at the extern call boundary. This is a
+call-site contract, matching the extern argument precondition: a trusted result
+is available only when the actual argument and every declared read dependency
+currently satisfy their declared requirements under the call-site regime.
+
+Bare environment dependencies are resolved in the callable environment, and
+bang memory dependencies are resolved through that same callable environment to
+the referenced memory entry, then checked against the memory entry's current
+qualified type. The callable environment is the captured environment plus the
+explicit argument binding, so a target may refer to either source:
+
+- `name :> Q` checks the current callable-environment type of `name`;
+- `!name :> Q` checks the current memory typing of the location reached through
+  callable-environment reference `name`.
 
 For the nested `@11` closure above:
 
 1. `@10` is applied to `a`.
 2. The `@10` argument precondition establishes that the actual `a` is clean.
 3. The nested `@11` `captures: { a :> (int :> clean {}) }` descriptor records
-   the environment dependency `a` in the extern typing closure with that clean
-   qualified type.
+   that every `@11` call must find `a` in the callable environment with a clean
+   integer qualified type.
 4. At an `@11` call, the call-boundary proof can use ordinary
    `agreeOnClean` at the body-entry context to conclude that captured `a`
    agrees across runs. This is the unguarded-clean path used by `max`; guarded
-   dependencies need the reconciliation described below.
+   dependencies need the call-site regime evidence described below.
 
 The explicit argument `b` continues to be handled by the existing extern
 argument-condition gate.
@@ -244,11 +251,11 @@ Expected implementation areas:
   callable declarations and nested extern return descriptors.
 - `parser/` and `LeanPoison/Parser.lean`: parse the optional
   `captures: { ... }` clause.
-- `LeanPoison/Typecheck.lean`: resolve dependency targets at
-  declaration/nested-return sites; check environment dependencies there; check
-  memory dependencies against current memory typing at the call boundary;
-  reject missing or incompatible dependencies; store the resolved dependencies
-  in extern typing closures.
+- `LeanPoison/Typecheck.lean`: store declared dependencies on extern typing
+  closures; at each extern call, resolve dependency targets in the callable
+  environment, check bare environment dependencies there, check bang
+  dependencies against current memory typing, and reject missing or incompatible
+  dependencies.
 - `examples/`: add unit tests covering accepted captured dependencies,
   rejected missing/incompatible dependencies, nested-return dependencies such
   as curried `max`, memory read dependencies through both captured reference
@@ -285,6 +292,10 @@ Expected implementation areas:
   an extern argument condition: the current qualified type must satisfy the
   declared requirement via `Qactual <:R Qdecl`, rather than requiring literal
   equality.
+- Dependency checks happen at the extern call boundary for both bare
+  environment targets and bang memory targets. This is the specified behavior,
+  not an implementation compromise: the extern is checked when it is about to
+  rely on the dependency.
 - Guarded predicates and extern-regime policy should use the same satisfaction
   relation as extern argument conditions. A declared-clean dependency requires
   the actual dependency target to be clean under the current regime: either
@@ -302,12 +313,12 @@ Expected implementation areas:
 
 ## Guarded Dependencies
 
-The argument check and capture check differ only in when the relation is
-applied. Extern arguments are checked at call time, because that is when the
-argument expression is evaluated. Captured environment dependencies are checked
-at the declaration or nested-return site, because that is when the closure
-captures its environment. Memory read dependencies are checked at the call
-boundary, because memory may have changed since the closure was created.
+The argument check and capture check are both call-site gates. Extern arguments
+are checked at call time because that is when the argument expression is
+evaluated. Captured environment dependencies are also checked at call time,
+because the extern implementation reads the callable environment when it is
+called. Memory read dependencies are checked at the same boundary, because memory
+may have changed since the closure was created.
 
 For example:
 
@@ -318,29 +329,19 @@ captures: {
 }
 ```
 
-means that the captured `a` must satisfy its qualified requirement under the
-current regime at the capture point, and the memory location selected by
-`!r` must satisfy its qualified requirement under the current regime at the
-call boundary. If guard `7` is active at the `a` capture point, `a` can be
-accepted as clean-under-regime in the same sense as an extern argument. The
-environment dependency fact and memory dependency requirement are then carried
-in the extern closure summary and used later by the trusted call-boundary
-proof.
+means that both targets must satisfy their qualified requirements under the
+current regime at the call boundary. If guard `7` is active in the call-site
+regime, `a` can be accepted as clean-under-regime in the same sense as an extern
+argument. If it is inactive at the call site, the gate rejects the trusted result
+even if the guard was active when the closure was created.
 
-For guarded environment dependencies, the call-boundary proof must not simply
-reuse the capture-time regime fact as if it were a call-time fact. A guard that
-is active when the closure is created need not be active when the closure is
-called. The trusted-boundary bridge must reconcile the recorded static `QTyp`
-with the transported runtime closure evidence under the call-time/body-entry
-regime. The integration point to audit is the
-`TrustedRegistryAgreesWithReachable` bridge, reusing the same kind of
-`closureCapturedVarsRegime` / `consistentWithRegime` transport that normal
-closure proofs use. If the bridge only reasserts the static capture-time fact
-at call time, guarded captures would be unsound.
-
-For guarded memory dependencies, the check is naturally call-time: the memory
-entry selected by the bang target must satisfy the declared requirement under
-the current call-boundary regime.
+This call-time rule is intentional. It avoids treating a stale capture-time
+guard fact as a call-time fact, and it gives environment and memory dependencies
+the same operational interpretation: the contract is checked when the extern is
+about to rely on the dependency. The proof obligation for guarded dependencies
+is therefore to expose enough callable-environment and regime evidence at the
+extern call boundary for `capturesSatisfied` and the trusted `callFR` proof to
+use; it is not to reconcile declaration-time and call-time regimes.
 
 Read-target resolution is also part of the trusted proof story. For a bang
 target, the location set used by the typechecker/proof must be the same

@@ -102,23 +102,20 @@ of the closure body captures (and the runtime check modulo-captures) keeps
 
 ## Deferred (sound, not on the curried-`max` critical path)
 
-- **Guarded dependencies + regime reconciliation** (goal doc §"Guarded
-  Dependencies"). A guard active at capture time need not be active at call time.
-  Supporting guarded captures needs the regime reconciliation in the
-  `TrustedRegistryAgreesWithReachable` bridge (reusing the
-  `closureCapturedVarsRegime`/`consistentWithRegime` transport), discharged
-  per-builtin-spec. Curried `max` is all-clean, so it is unaffected.
-- **Capture-check-timing divergence.** The implementation checks bare environment
-  captures at the **call boundary** (inside `applyPFnTClosure`), whereas the doc
-  checks them at the **declaration / nested-return site**. This is sound only for
-  the **unguarded-clean** path (clean is regime-insensitive, so capture-time vs
-  call-time regime cannot differ). Reconciling the two for guarded captures is the
-  same work as the item above.
+- **Guarded dependencies + call-site regime evidence** (goal doc §"Guarded
+  Dependencies"). The specified behavior is now call-time checking for both bare
+  environment captures and bang memory captures. A guarded dependency is accepted
+  only if its guard is active under the call-site regime when the extern is about
+  to rely on it. Supporting guarded captures therefore needs enough
+  callable-environment / regime evidence at the extern call boundary for
+  `capturesSatisfied` and the trusted `callFR` proof to use. Curried `max` is
+  all-clean, so it is unaffected.
 - **Branch-join conjunction merge for capture preconditions**
   (`JoinMemberTransport`; goal doc §"Contract Syntax and Variance"). Capture
   preconditions must combine by **conjunction** across branches (reject
   incompatible predicate shapes), not by the return-side join that collapses to
   `noPred`. Not exercised by `max` (no branches over a capture-bearing closure).
+
 ## Out of scope (this effort)
 
 - **Memory-read (`!r`) dependencies, end-to-end** (the goal doc's
