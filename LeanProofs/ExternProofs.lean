@@ -6,6 +6,7 @@
   declaration is too strong, the smallest failed FR obligation exposed by the
   direct validation attempt.
 -/
+import LeanPoison.ExternBuiltins
 import LeanProofs.ExternBoundary
 
 open Std
@@ -31,21 +32,18 @@ def builtinAbsDecl : ExternDeclaration :=
     preds := collectExternPreds builtinAbsRetSpec []
     argPoison := false }
 
-/-- Proof-side copy of the interpreter's built-in `abs` implementation. -/
-def builtinAbsPfn : VarEnv → Value → Memory → Except ExternError Value
-  | _, Value.num n, _ => .ok (Value.num (Int.ofNat n.natAbs))
-  | _, _, _ => .error (.implFailure 12 "expected int argument")
-
-/-- Runtime implementation shape for the built-in `abs` extern (`@12`). -/
+/-- Runtime implementation shape for the built-in `abs` extern (`@12`): the
+    interpreter's shared `absImpl` (`LeanPoison.ExternBuiltins`), so the running
+    interpreter and this proof-side spec reference the same function. -/
 def builtinAbsImpl : ExternImpl :=
-  .pfn builtinAbsPfn
+  .pfn absImpl
 
-theorem builtinAbsPfn_negOne :
-    builtinAbsPfn emptyVarEnv (Value.num (-1)) emptyMemory = .ok (Value.num 1) := by
+theorem absImpl_negOne :
+    absImpl emptyVarEnv (Value.num (-1)) emptyMemory = .ok (Value.num 1) := by
   rfl
 
-theorem builtinAbsPfn_two :
-    builtinAbsPfn emptyVarEnv (Value.num 2) emptyMemory = .ok (Value.num 2) := by
+theorem absImpl_two :
+    absImpl emptyVarEnv (Value.num 2) emptyMemory = .ok (Value.num 2) := by
   rfl
 
 private theorem not_agreeValueUnder_builtinAbsReturn_num_ne
@@ -129,26 +127,26 @@ argument, so two clean-agreeing integer arguments produce equal absolute values,
 which satisfies the clean-integer-return `resultAgreesIfClean`.
 -/
 
-/-- The exact computation performed by `builtinAbsPfn` on an integer argument. -/
-private theorem builtinAbsPfn_num (env : VarEnv) (n : Int) (mem : Memory) :
-    builtinAbsPfn env (Value.num n) mem = .ok (Value.num (Int.ofNat n.natAbs)) :=
+/-- The exact computation performed by `absImpl` on an integer argument. -/
+private theorem absImpl_num (env : VarEnv) (n : Int) (mem : Memory) :
+    absImpl env (Value.num n) mem = .ok (Value.num (Int.ofNat n.natAbs)) :=
   rfl
 
-/-- `builtinAbsPfn` succeeds only on integer arguments, returning the integer
+/-- `absImpl` succeeds only on integer arguments, returning the integer
     absolute value as a clean `Value.num`. -/
-private theorem builtinAbsPfn_ok_shape
+private theorem absImpl_ok_shape
     {env : VarEnv} {vArg : Value} {mem : Memory} {vRaw : Value}
-    (h : builtinAbsPfn env vArg mem = .ok vRaw) :
+    (h : absImpl env vArg mem = .ok vRaw) :
     ∃ n : Int, vArg = Value.num n ∧ vRaw = Value.num (Int.ofNat n.natAbs) := by
   cases vArg with
   | num n =>
-      simp only [builtinAbsPfn, Except.ok.injEq] at h
+      simp only [absImpl, Except.ok.injEq] at h
       exact ⟨n, rfl, h.symm⟩
-  | _ => simp [builtinAbsPfn] at h
+  | _ => simp [absImpl] at h
 
-/-- Helper 1: `builtinAbsPfn` is a function of its integer argument, so equal
+/-- Helper 1: `absImpl` is a function of its integer argument, so equal
     integer inputs produce equal outputs. -/
-private theorem builtinAbsPfn_output_eq_of_arg_eq
+private theorem absImpl_output_eq_of_arg_eq
     {n₀ n₁ : Int} (hn : n₀ = n₁) :
     Value.num (Int.ofNat n₀.natAbs) = Value.num (Int.ofNat n₁.natAbs) := by
   rw [hn]
@@ -183,7 +181,7 @@ theorem builtinAbsImpl_operationalSafe :
     intro implPfn himpl env vArg mem addr vRaw hrun _hmem _henv _harg
     simp only [builtinAbsImpl, ExternImpl.pfn.injEq] at himpl
     subst himpl
-    obtain ⟨n, _harg, hraw⟩ := builtinAbsPfn_ok_shape hrun
+    obtain ⟨n, _harg, hraw⟩ := absImpl_ok_shape hrun
     rw [hraw]
     exact wfValue.num _
   · -- `val` branch: impossible.
@@ -309,7 +307,7 @@ private theorem builtinAbs_call_output
     simp only [builtinAbsDecl] at hretSpec
     exact (Option.some.inj hretSpec).symm
   subst hret
-  obtain ⟨n, harg, hraw⟩ := builtinAbsPfn_ok_shape hrun
+  obtain ⟨n, harg, hraw⟩ := absImpl_ok_shape hrun
   refine ⟨n, harg, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinAbsRetSpec, validateExternReturn, valueMatchesTyp,
@@ -941,29 +939,21 @@ def builtinMax11CapturesDecl : ExternDeclaration :=
     argPoison := false
     captures := [⟨CaptureTarget.bareVar "a", Typ.int, false, SyntaxPredicate.noPred⟩] }
 
-/-- Proof-side copy of the interpreter's inner-`max` implementation (`Main.innerMaxImpl`):
-    read the captured outer argument `a`, return `max a b`. -/
-def builtinMax11Pfn : VarEnv → Value → Memory → Except ExternError Value
-  | unifiedEnv, Value.num b, _m =>
-      match VarEnv.lookup unifiedEnv "a" with
-      | some (Value.num a) => .ok (Value.num (max a b))
-      | _ => .error (.implFailure 11 "captured `a` missing or not an int")
-  | _, _, _ => .error (.implFailure 11 "expected int argument")
-
-/-- Runtime implementation shape for the inner-`max` extern (`@11`). -/
+/-- Runtime implementation shape for the inner-`max` extern (`@11`): the
+    interpreter's shared `innerMaxImpl` (`LeanPoison.ExternBuiltins`). -/
 def builtinMax11Impl : ExternImpl :=
-  .pfn builtinMax11Pfn
+  .pfn innerMaxImpl
 
-/-- `builtinMax11Pfn` succeeds only on an integer argument `b` with a captured
+/-- `innerMaxImpl` succeeds only on an integer argument `b` with a captured
     integer `a`, returning the clean `Value.num (max a b)`. -/
-private theorem builtinMax11Pfn_ok_shape
+private theorem innerMaxImpl_ok_shape
     {env : VarEnv} {vArg : Value} {mem : Memory} {vRaw : Value}
-    (h : builtinMax11Pfn env vArg mem = .ok vRaw) :
+    (h : innerMaxImpl env vArg mem = .ok vRaw) :
     ∃ a b : Int, vArg = Value.num b ∧ VarEnv.lookup env "a" = some (Value.num a) ∧
       vRaw = Value.num (max a b) := by
   cases vArg with
   | num b =>
-      simp only [builtinMax11Pfn] at h
+      simp only [innerMaxImpl] at h
       cases ha : VarEnv.lookup env "a" with
       | none => rw [ha] at h; simp at h
       | some va =>
@@ -973,7 +963,7 @@ private theorem builtinMax11Pfn_ok_shape
               simp only [Except.ok.injEq] at h
               exact ⟨a, b, rfl, rfl, h.symm⟩
           | _ => rw [ha] at h; simp at h
-  | _ => simp [builtinMax11Pfn] at h
+  | _ => simp [innerMaxImpl] at h
 
 /-- The inner-`max` extern (`@11`) satisfies the operational-safety contract: the
     pure branch returns a well-formed `Value.num`; the impure and value branches are
@@ -986,7 +976,7 @@ theorem builtinMax11Impl_operationalSafe :
   · intro implPfn himpl env vArg mem addr vRaw hrun _hmem _henv _harg
     simp only [builtinMax11Impl, ExternImpl.pfn.injEq] at himpl
     subst himpl
-    obtain ⟨a, b, _harg, _ha, hraw⟩ := builtinMax11Pfn_ok_shape hrun
+    obtain ⟨a, b, _harg, _ha, hraw⟩ := innerMaxImpl_ok_shape hrun
     rw [hraw]
     exact wfValue.num _
   · intro v himpl _ _
@@ -1260,7 +1250,7 @@ private theorem builtinMax11_call_output
     simp only [builtinMax11Decl] at hretSpec
     exact (Option.some.inj hretSpec).symm
   subst hret
-  obtain ⟨a, b, harg, ha, hraw⟩ := builtinMax11Pfn_ok_shape hrun
+  obtain ⟨a, b, harg, ha, hraw⟩ := innerMaxImpl_ok_shape hrun
   refine ⟨a, b, harg, ha, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinMax11RetSpec, validateExternReturn, valueMatchesTyp,
@@ -1414,7 +1404,7 @@ private theorem builtinMax11Captures_call_output
     simp only [builtinMax11CapturesDecl] at hretSpec
     exact (Option.some.inj hretSpec).symm
   subst hret
-  obtain ⟨a, b, harg, ha, hraw⟩ := builtinMax11Pfn_ok_shape hrun
+  obtain ⟨a, b, harg, ha, hraw⟩ := innerMaxImpl_ok_shape hrun
   refine ⟨a, b, harg, ha, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinMax11RetSpec, validateExternReturn, valueMatchesTyp,
@@ -1943,7 +1933,7 @@ theorem builtinMax11CapturesImpl_operationalSafe :
   · intro implPfn himpl env vArg mem addr vRaw hrun _hmem _henv _harg
     simp only [builtinMax11Impl, ExternImpl.pfn.injEq] at himpl
     subst himpl
-    obtain ⟨a, b, _harg, _ha, hraw⟩ := builtinMax11Pfn_ok_shape hrun
+    obtain ⟨a, b, _harg, _ha, hraw⟩ := innerMaxImpl_ok_shape hrun
     rw [hraw]
     exact wfValue.num _
   · intro v himpl _ _
@@ -1971,7 +1961,8 @@ declaration-boundary helper is `retSpec`-generic, so its fields mirror `@11`'s w
 nested return descriptor `builtinMax10RetSpec`. -/
 
 /-- The nested return descriptor for outer `max` (`@10`): returns the `@11` pure closure
-    (a clean integer `pfn`), matching the runtime `innerNode` of `Main.outerMaxImpl`. -/
+    (a clean integer `pfn`), matching the inner `@11` node produced by the shared
+    `outerMaxImpl` (`LeanPoison.ExternBuiltins`). -/
 def builtinMax10RetSpec : ExternReturn :=
   .nestedPfn 11 "b" .int false .noPred builtinMax11RetSpec
     [⟨CaptureTarget.bareVar "a", Typ.int, false, SyntaxPredicate.noPred⟩]
@@ -1987,33 +1978,25 @@ def builtinMax10Decl : ExternDeclaration :=
     preds := collectExternPreds builtinMax10RetSpec []
     argPoison := false }
 
-/-- Proof-side copy of the interpreter's outer-`max` implementation
-    (`Main.outerMaxImpl`): on a clean integer argument, return the `@11` pure closure
-    capturing the unified environment (which holds the outer argument `a`). -/
-def builtinMax10Pfn : VarEnv → Value → Memory → Except ExternError Value
-  | unifiedEnv, Value.num _a, _m =>
-      .ok (Value.peClosure "b"
-        (Expr.externPfn 11 "b" .int false .noPred builtinMax11RetSpec []) unifiedEnv)
-  | _, _, _ => .error (.implFailure 10 "expected int argument")
-
-/-- Runtime implementation shape for the outer-`max` extern (`@10`). -/
+/-- Runtime implementation shape for the outer-`max` extern (`@10`): the
+    interpreter's shared `outerMaxImpl` (`LeanPoison.ExternBuiltins`). -/
 def builtinMax10Impl : ExternImpl :=
-  .pfn builtinMax10Pfn
+  .pfn outerMaxImpl
 
-/-- `builtinMax10Pfn` succeeds only on an integer argument, returning the `@11` pure
+/-- `outerMaxImpl` succeeds only on an integer argument, returning the `@11` pure
     closure over the (unchanged) call environment. -/
-private theorem builtinMax10Pfn_ok_shape
+private theorem outerMaxImpl_ok_shape
     {env : VarEnv} {vArg : Value} {mem : Memory} {vRaw : Value}
-    (h : builtinMax10Pfn env vArg mem = .ok vRaw) :
+    (h : outerMaxImpl env vArg mem = .ok vRaw) :
     ∃ a : Int, vArg = Value.num a ∧
       vRaw = Value.peClosure "b"
         (Expr.externPfn 11 "b" .int false .noPred builtinMax11RetSpec []) env := by
   cases vArg with
   | num a =>
-      simp only [builtinMax10Pfn] at h
+      simp only [outerMaxImpl] at h
       simp only [Except.ok.injEq] at h
       exact ⟨a, rfl, h.symm⟩
-  | _ => simp [builtinMax10Pfn] at h
+  | _ => simp [outerMaxImpl] at h
 
 /-- The outer-`max` extern (`@10`) satisfies operational safety: the pure branch returns
     a well-formed closure — closure well-formedness reduces to the supplied
@@ -2027,7 +2010,7 @@ theorem builtinMax10Impl_operationalSafe :
   · intro implPfn himpl env vArg mem addr vRaw hrun _hmem henv _harg
     simp only [builtinMax10Impl, ExternImpl.pfn.injEq] at himpl
     subst himpl
-    obtain ⟨a, _harg, hraw⟩ := builtinMax10Pfn_ok_shape hrun
+    obtain ⟨a, _harg, hraw⟩ := outerMaxImpl_ok_shape hrun
     rw [hraw]
     exact wfValue.peClosure _ _ _ henv
   · intro v himpl _ _
@@ -2281,8 +2264,9 @@ integer equality used by `@11`/`abs`. -/
 
 /-- Output of a successful `@10` call: the `@11` pure closure over the unified
     environment.  This exercises `validateExternReturn`'s `nestedPfn` branch — the
-    runtime `innerNode` matches the decl-reconstructed `@11` node (`[]` captures,
-    `noPred`), so `beqExpr` closes and the validated output is the raw closure. -/
+    inner `@11` node produced by `outerMaxImpl` matches the decl-reconstructed `@11`
+    node (`[]` captures, `noPred`), so `beqExpr` closes and the validated output is
+    the raw closure. -/
 private theorem builtinMax10_call_output
     {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
     (hfacts : ExternCallPfnFacts builtinMax10Decl builtinMax10Impl entry res cf o) :
@@ -2298,7 +2282,7 @@ private theorem builtinMax10_call_output
     simp only [builtinMax10Decl] at hretSpec
     exact (Option.some.inj hretSpec).symm
   subst hret
-  obtain ⟨a, harg, hraw⟩ := builtinMax10Pfn_ok_shape hrun
+  obtain ⟨a, harg, hraw⟩ := outerMaxImpl_ok_shape hrun
   refine ⟨a, harg, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinMax10Decl, builtinMax10RetSpec, validateExternReturn] at hvalRet
@@ -2690,5 +2674,31 @@ theorem builtinMax10Spec : ExternBoundarySpec builtinMax10Decl builtinMax10Impl 
   declSingle := builtinMax10_declSingle
   callSingle := builtinMax10_callSingle
   operational := builtinMax10Impl_operationalSafe
+
+/-! ## Interpreter-registry agreement
+
+The interpreter ships `defaultRegistry` (`LeanPoison.ExternBuiltins`).  These
+build-checked lemmas confirm that it resolves `@10`/`@11`/`@12` to *exactly* the
+trusted impls (`builtinMax10Impl`, `builtinMax11Impl`, `builtinAbsImpl`) that the
+boundary specs above are proved about.  Together with the definitional identity
+`builtinMax10Impl = .pfn outerMaxImpl` (the interpreter's own `outerMaxImpl`),
+this closes the gap between "the running interpreter" and "the proof-side trusted
+entries": they reference the *same* runtime functions, not textually-equal
+copies. -/
+
+theorem defaultRegistry_lookup_max10 :
+    defaultRegistry.get? 10 = some builtinMax10Impl := by
+  simp [defaultRegistry, defaultInitialState, regInsert, register, builtinMax10Impl,
+    Std.HashMap.getElem_insert, Std.HashMap.contains_insert, Std.HashMap.contains_empty]
+
+theorem defaultRegistry_lookup_max11 :
+    defaultRegistry.get? 11 = some builtinMax11Impl := by
+  simp [defaultRegistry, defaultInitialState, regInsert, register, builtinMax11Impl,
+    Std.HashMap.getElem_insert, Std.HashMap.contains_insert, Std.HashMap.contains_empty]
+
+theorem defaultRegistry_lookup_abs :
+    defaultRegistry.get? 12 = some builtinAbsImpl := by
+  simp [defaultRegistry, defaultInitialState, regInsert, register, builtinAbsImpl,
+    Std.HashMap.getElem_insert, Std.HashMap.contains_insert, Std.HashMap.contains_empty]
 
 end ExternProofs

@@ -3,6 +3,7 @@ import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanPoison.Parser
 import LeanPoison.Typecheck
+import LeanPoison.ExternBuiltins
 import LeanPoison.Xml.Parser
 import Init.System.IO
 import Lean
@@ -38,95 +39,12 @@ def defaultFuel : Nat := 1000
 -- Language Version No
 def versionNo := "1.0"
 
--- ----------------------------------------------------------------------------
--- Built-in extern implementations.
--- The interpreter ships with a fixed, publicly documented set of externs that
--- unit tests may invoke by their well-known identifiers:
---   @10 : outer pure-fn stage of curried `max` (int -> ...)
---   @11 : inner pure-fn stage of curried `max`, expects captured `a` in env
---   @12 : pure `abs` (int -> int)
---   @20 : extern val ZERO  : int         (constant 0)
---   @21 : extern val errno : ref int     (driver-allocated cell, init 0)
---   @22 : extern fn  set_err n : (int) -> unit   (writes n into !errno)
--- See `doc/ffi-proposal.md` and `doc/poison-lang-description.tex`.
--- ----------------------------------------------------------------------------
-
-/-- Driver-chosen runtime address for the `errno` cell (`@21`). Placed high
-    so the driver-supplied cell is visually distinct from program-allocated
-    ones in test goldens; `Config.nextAddr` still starts at `0`. -/
-private def errnoAddr : Address := 1000000
-
-private def outerMaxImpl
-    : VarEnv → Value → Memory → Except ExternError Value
-  | unifiedEnv, Value.num _a, _m =>
-      let innerRet  : ExternReturn := .simple .int false .noPred
-      -- Inner `@11` argument condition must match the source declaration of
-      -- curried `max`'s inner stage: `(int :> clean {})` (honest clean precondition).
-      let innerNode : _root_.Expr := .externPfn 11 "b" .int false .noPred innerRet []
-      .ok (Value.peClosure "b" innerNode unifiedEnv)
-  | _, _, _ => .error (.implFailure 10 "expected int argument")
-
-private def innerMaxImpl
-    : VarEnv → Value → Memory → Except ExternError Value
-  | unifiedEnv, Value.num b, _m =>
-      match VarEnv.lookup unifiedEnv "a" with
-      | some (Value.num a) => .ok (Value.num (max a b))
-      | _ => .error (.implFailure 11 "captured `a` missing or not an int")
-  | _, _, _ => .error (.implFailure 11 "expected int argument")
-
-private def absImpl
-    : VarEnv → Value → Memory → Except ExternError Value
-  | _, Value.num n, _ => .ok (Value.num (Int.ofNat n.natAbs))
-  | _, _, _           => .error (.implFailure 12 "expected int argument")
-
-/-- Integer square root.  Used by the `sqrt`-style extern argument-condition
-    example (`examples/extern_arg_precond_sqrt.poison`): its honest clean output
-    relies on the caller-side precondition `x >= 0`, not on a runtime branch. -/
-private def sqrtImpl
-    : VarEnv → Value → Memory → Except ExternError Value
-  | _, Value.num n, _ => .ok (Value.num (Int.ofNat (Nat.sqrt n.toNat)))
-  | _, _, _           => .error (.implFailure 19 "expected int argument")
-
-/-- `set_err n` writes `n` into the `errno` cell and returns `unit`. No new
-    allocation, so `nextAddr` is threaded through unchanged. -/
-private def setErrImpl
-    : VarEnv → Value → Memory → Address →
-      Except ExternError (Value × Memory × Address)
-  | _, Value.num n, mem, next =>
-      .ok (Value.unit, Memory.update mem errnoAddr n, next)
-  | _, _, _, _ => .error (.implFailure 22 "expected int argument")
-
-/-- Bundled initial runtime state shipped with the interpreter: the registry,
-    pre-populated memory (the `errno` cell), and `nextAddr` (unchanged at `0`
-    since `errnoAddr` sits above the program-visible allocation range). -/
-structure DefaultInitialState where
-  memory   : Memory
-  nextAddr : Address
-  registry : ExternRegistry
-
-/-- Registry/insert helper. `register` failures are impossible here because
-    all ids are hard-coded literals; `panic!` is purely defensive. -/
-private def regInsert (reg : ExternRegistry) (id : ExternId) (impl : ExternImpl)
-    : ExternRegistry :=
-  match register reg id impl with
-  | .ok r => r
-  | .error e => panic! s!"defaultInitialState: {e}"
-
-/-- Build the default registry and driver-supplied initial memory/cursor. -/
-def defaultInitialState : DefaultInitialState :=
-  let mem0 : Memory := Memory.update emptyMemory errnoAddr 0
-  let r0 : ExternRegistry := ∅
-  let r1 := regInsert r0 10 (.pfn outerMaxImpl)
-  let r2 := regInsert r1 11 (.pfn innerMaxImpl)
-  let r3 := regInsert r2 12 (.pfn absImpl)
-  let r4 := regInsert r3 20 (.val (Value.num 0))
-  let r5 := regInsert r4 21 (.val (Value.loc errnoAddr))
-  let r6 := regInsert r5 22 (.fn setErrImpl)
-  let r7 := regInsert r6 19 (.pfn sqrtImpl)
-  { memory := mem0, nextAddr := 0, registry := r7 }
-
-/-- Back-compat alias: older call sites that just want the registry. -/
-def defaultRegistry : ExternRegistry := defaultInitialState.registry
+-- Built-in extern implementations and the default initial runtime state
+-- (`errnoAddr`, `outerMaxImpl`, `innerMaxImpl`, `absImpl`, `sqrtImpl`,
+-- `setErrImpl`, `DefaultInitialState`, `defaultInitialState`, `defaultRegistry`)
+-- live in `LeanPoison.ExternBuiltins`, a shared core module imported above so the
+-- interpreter and the proof-side trusted boundary specs reference the *same*
+-- runtime functions. See that module for the per-id documentation.
 
 private def initialTypeContext (regime : Regime)
     (externRegime : ExternId → Tag → Option Bool := fun _ _ => none) : TypeContext :=
