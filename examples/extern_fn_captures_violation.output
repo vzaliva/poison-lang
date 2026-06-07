@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_fn_captures_violation.poison (verbose mode)
+
+Type checking error:
+  extern @22: argument precondition or a captures: read dependency not satisfied (arg runtime type Typ.int, poison=false; declared poison=false)
+

@@ -312,10 +312,28 @@ The accepted/rejected example suite is in place: the guarded cases
 `extern_captures_join_guarded{,_incompatible}.poison`) cover both acceptance and
 the call-gate rejection path.
 
+fn-side captures (`extern fn ... captures:`) are supported at the
+operational/typechecking layer with parity to the pfn side: the parser accepts a
+`captures:` block on `extern fn` (alongside `effects:`), the typechecker stores
+the dependencies on the `FnTClosure.extern` member, and
+`applyFnTClosureAtCursor` enforces them at the call boundary via
+`capturesSatisfied` (at call entry, before the extern's own effects run). The
+example suite exercises both paths with the impure built-in `@22` (`set_err`):
+`extern_fn_captures_clause.poison` (accepted clean capture) and
+`extern_fn_captures_violation.poison` (call-gate rejection of a poisoned capture
+declared clean).
+
 Still out of scope for this branch:
 
-- fn-side captures (`extern fn ... captures:`), unless explicitly promoted into
-  this effort later;
+- the trusted fault-robustness *spec* for an `extern fn` (a `kind = .fn`
+  `ExternBoundarySpec`). The fn `Call` relation carries the
+  `fnRegularExternBody` route, present because `Value.closure` is shared
+  between regular `fn` lambdas and extern fns (whereas `Value.peClosure` is
+  extern-only). That route makes the universal `callFR`/`callSingle` fields
+  false as stated for any fn declaration: they would require `valueHasETyp`
+  of a return-typed output against an arrow type. Lifting this needs a
+  narrowing of the trusted call-boundary contract; see
+  `doc/extern-env-deps-plan.md` ("fn-side captures: status");
 - trusted guarded-value producer and applied-program routing for guarded
   de-poisoned values;
 - trusted specs for default-registry builtins whose behavior is unrelated to

@@ -217,12 +217,64 @@ reads, guarded call-time satisfaction, memory-read `!r` dependencies, and
 branch-join capture conjunction merging. Nothing remains as a pfn-side
 read-dependency blocker for this branch (subject to the standard gates).
 
+## fn-side captures (`extern fn … captures:`): status
+
+The operational/typechecking layer reaches **full parity** with the pfn side, but
+the fault-robustness *proof* layer is **structurally blocked**. These are
+independent, and the split is intrinsic — not an unfinished port.
+
+**Done (operational + typechecking + plumbing).** The `captures : List Capture`
+field now lives on `FnTClosure.extern`, and captures are threaded end-to-end
+through the fn paths: the fn `Decl`/`Call` (`fnExternMember`)/reachability
+(`arrow_extern_*`, `externFn`)/`of_terminatesTo_externFn` variants all carry
+captures, and `applyFnTClosureAtCursor`'s extern case gates on
+`capturesSatisfied` at call entry (pre-effects, `unifiedEnv` hoisted above the
+gate) exactly as the pfn path does. The parser accepts `captures:` on `extern fn`
+alongside `effects:`. Two end-to-end interpreter examples exercise this:
+`extern_fn_captures_clause.poison` (accept — `@22` `set_err` with both `effects:`
+and a clean `captures: { y … }`, runs and writes `errno`) and
+`extern_fn_captures_violation.poison` (negative call-gate — a poisoned captured
+`bad` declared `clean` is rejected by `capturesSatisfied` at the call boundary).
+
+**Blocked (trusted FR spec).** No trusted `kind = .fn` `ExternBoundarySpec` is
+assemblable. A spec needs all five fields, and two of them are *false as stated*
+for **any** fn declaration:
+
+- `callFR` (`ExternCallBoundaryFR`) and `callSingle` (`ExternCallBoundarySingle`)
+  quantify universally over `ExternBoundaryTyping.Call d _ entry res`. For a fn
+  decl, `Call` has the extra constructor `fnRegularExternBody` (re-typechecking
+  the `externFn` node), which forces `res.qualType.etyp = ETyp.arrow …` (a
+  function type). Paired — as the contract requires — with a `kind = .fn`
+  `ExternCallBoundaryRun`, the run forces the output `o` to the *return* type
+  (e.g. `Value.num`). Both post types (`StepFRPost`, `ExternBoundarySinglePost`)
+  then demand `valueHasETyp o res.qualType.etyp`, i.e. `valueHasETyp (num) (arrow
+  …)`, which is false. `ExternCallFnFacts` leaves `res` unused (`_res`), so the
+  two constructors constrain disjoint `entry`/`res` fields and are jointly
+  satisfiable — the post is a genuine falsehood reachable from true hypotheses,
+  not merely a hard proof.
+- Root cause / asymmetry with pfn: `Value.peClosure` is extern-only, so the pfn
+  `Call` has only `pfnExternMember` (result = return type) and the obstruction
+  never arises. `Value.closure` is overloaded (regular `fn` lambdas *and* extern
+  fns), so the fn `Call` must carry `fnRegularExternBody` to handle
+  `(fn x => extern fn …) arg` — whose application evaluates the body to a closure
+  *value* (arrow type) and performs **no** extern dispatch. The universal callFR
+  contract conflates this route with an actual extern dispatch.
+- `declFR`, `declSingle`, and `operational` are *not* blocked (the declaration
+  boundary's `Decl.fn` is a single constructor with no regular-body ambiguity,
+  and the impl is operationally safe), but a spec is all-or-nothing.
+
+**Remediation (design decision — touches the trusted boundary layer).** Narrow
+`ExternCallBoundaryFR`/`ExternCallBoundarySingle` (or add a discriminating
+premise to `Call.fnRegularExternBody`) so the spec author is not obligated on the
+regular-closure-extern-body route. Soundness rests on showing the consumer chain
+(`appTwoRunOutChoice_from_direct_call_boundaryFR` and below) never pairs
+`fnRegularExternBody` with a real `.fn` `ExternCallBoundaryRun` — which holds
+semantically (regular closures do not extern-dispatch) but must be proved when the
+contract is weakened. Because this changes a *trusted* contract, it is left as a
+deliberate follow-up rather than done unilaterally.
+
 ## Out of scope (this effort)
 
-- **fn-side captures** (`extern fn … captures:`). The `captures` field exists on
-  the fn AST/closure for parity, but captures are threaded end-to-end through the
-  **pfn** paths only; the `fn` reachability/`Decl`/`of_terminatesTo` variants are
-  left at `[]`. No fn extern exercises captures.
 - **The "extra unlisted entry remains allowed" example.** This is useful
   documentation for the trusted-footprint model, but it is not needed to finish
   the core pfn read-dependency branch once the accepted/rejected dependency paths
@@ -243,8 +295,10 @@ no new `sorry`/axioms: the pfn-side environment-read, guarded call-time
 satisfaction, representative memory-read `!r`, and branch-join capture
 conjunction paths are all implemented/proved.
 Do not hold this branch for the trusted guarded-value
-producer/applied-program routing work, fn-side captures, or default-registry
-specs unrelated to read dependencies.
+producer/applied-program routing work, the fn-side trusted FR spec (blocked by the
+`fnRegularExternBody` obstruction — see "fn-side captures: status" above; the
+fn-side operational/typechecking layer is complete), or default-registry specs
+unrelated to read dependencies.
 
 ## Constraints
 

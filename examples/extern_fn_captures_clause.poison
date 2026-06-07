@@ -1,0 +1,16 @@
+-- fn-side `captures:` read-dependency clause (doc/extern-env-deps.md).
+-- Mirrors `extern_captures_clause.poison` (which exercises the *pure* `pfn`
+-- path) for an *impure* `extern fn`: the built-in `@22` (`set_err`) carries both
+-- an `effects:` block (it writes the `errno` cell) and a `captures:` block
+-- declaring that it additionally reads the clean in-scope environment variable
+-- `y`.  The capture is checked at the call boundary (`capturesSatisfied`), at
+-- call entry — before the extern's own effects run — exactly as on the pfn side.
+-- Here `y` is a clean integer, so the gate accepts and the call runs: `@22`
+-- writes `42` into `errno`, and the subsequent deref observes it.
+let errno   = extern val @21 : (ref int :> clean {}) in
+let y       = 7 in
+let set_err = extern fn @22 n : (int :> clean {}) -> ((unit :> clean {})) ,
+                effects:  { !errno :> (int :> clean {}) } ,
+                captures: { y :> (int :> clean {}) } in
+let u = set_err 42 in
+!errno
