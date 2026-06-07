@@ -9,11 +9,12 @@ extern preconditions are also implemented: extern callable arguments accept
 qualified annotations, the typechecker rejects calls that do not satisfy the
 declared argument condition, curried extern levels are checked uniformly, and
 the proof stack threads the clean/poison part of the condition through trusted
-boundary reachability. Concrete trusted specs exist for `abs` and the curried
-`max` pair. The active read-dependency work lives on the
-`extern-env-deps` branch: guarded `captures:` are complete at the
-typecheck/trusted-call-boundary level, memory-read `!r` captures are complete
-for the representative explicit-reference-argument path, and branch-join capture
+boundary reachability. Concrete trusted specs exist for `abs`, the curried
+`max` pair, the memory-read `@23`, and the first impure (`extern fn`) entry
+`@13` (`builtinImpureIdSpec`). The `extern-env-deps` branch's read-dependency
+work is complete: guarded `captures:` are complete at the
+typecheck/trusted-call-boundary level, memory-read `!r` captures are complete for
+the representative explicit-reference-argument path, and branch-join capture
 conjunction merging is complete.
 The broader remaining design work is predicate-language validation,
 latent-marker examples, and concrete validation of the remaining live trusted
@@ -27,8 +28,6 @@ Related documents:
 - `doc/extern-env-deps.md` specifies `captures:` for environment and memory
   read dependencies; this file treats that as the selected read-side dependency
   model.
-- `doc/extern-env-deps-plan.md` tracks the active implementation branch for
-  `captures:` until it merges to `ffi`.
 
 ## 1. Purpose and scope
 
@@ -356,10 +355,10 @@ of the latent-marker reading.
 
 ### 7.3 Read-side memory captures  *(from §5.6)*
 
-The syntax and model are selected: use bang targets in `captures:`. The open
-work is implementation/proof completion on `extern-env-deps`, including an
-end-to-end trusted example for memory reads and the corresponding accepted /
-rejected tests.
+The syntax and model are selected: use bang targets in `captures:`. The
+representative explicit-reference-argument path is implemented/proved on
+`extern-env-deps`: `@23` has a trusted spec and program-FR artifact, and the
+accepted/rejected examples exercise the call gate.
 
 ### 7.4 Remaining live trusted extern specs
 
@@ -371,13 +370,11 @@ contribute to the public FR theorem as live trusted entries.
 
 ## 8. Next steps
 
-1. `doc/extern-env-deps.md` is complete on the `extern-env-deps` branch:
-   branch-join capture conjunction merging was the last pfn-side read-dependency
-   item, now implemented/proved.
-2. Merge `extern-env-deps` into `ffi` once the standard gates are green and no
+1. Merge the completed `extern-env-deps` branch into `ffi` once the standard
+   gates are green and no
    new `sorry`/axioms are introduced.
-3. Resolve §7.1 (predicate language expressiveness).
-4. Construct §7.2 (latent-marker example) to validate the interpretation
+2. Resolve §7.1 (predicate language expressiveness).
+3. Construct §7.2 (latent-marker example) to validate the interpretation
    against existing predicate machinery.
-5. Add trusted specs for remaining live builtins (`@19`, `@20`, `@21`, `@22`) as
+4. Add trusted specs for remaining live builtins (`@19`, `@20`, `@21`, `@22`) as
    separate FFI coverage work.

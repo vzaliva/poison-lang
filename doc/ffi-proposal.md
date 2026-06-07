@@ -4,10 +4,9 @@ Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof has a populated-registry theorem that
 consumes trusted extern boundary evidence. Concrete trusted specs now exist for
 `abs`, the curried-`max` pair, the explicit-argument memory-read extern `@23`,
-and the first impure (`extern fn`) entry `@13` (`builtinImpureIdSpec`); the
-active `extern-env-deps` branch completes the remaining
-read-dependency/captures work before merging back to the FFI integration branch
-`ffi`.
+and the first impure (`extern fn`) entry `@13` (`builtinImpureIdSpec`). The
+`extern-env-deps` branch completes the read-dependency/captures work and is ready
+to merge back to the FFI integration branch `ffi`.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
@@ -35,9 +34,6 @@ Related documents:
   preconditions, return/effect poison meaning, regimes, and trust triage.
 - `doc/extern-env-deps.md` is the selected `captures:` design for extern read
   dependencies.
-- `doc/extern-env-deps-plan.md` is the temporary implementation tracker for the
-  active `extern-env-deps` branch. Once that branch merges to `ffi`, either
-  archive it or reduce it to a completion note.
 - `doc/poison-interpreter.md` documents executable CLI behavior and the default
   runtime extern registry.
 
@@ -245,16 +241,12 @@ inspecting Lean implementation code.
 Branch structure:
 
 - `ffi` is the integration branch for the FFI effort.
-- `extern-env-deps` is a feature branch above `ffi`, corresponding to
-  `doc/extern-env-deps.md`.
-- `extern-env-deps` should merge to `ffi` once pfn-side `captures:` covers
-  bare environment reads, memory-read `!r` dependencies, and branch-join capture
-  conjunctions. Bare environment reads, the representative explicit-argument
-  memory-read path, and branch-join conjunction merging are all
-  implemented/proved. Guarded call-time satisfaction is complete at
-  the typecheck/trusted-call-boundary level. The trusted guarded-value producer
-  plus applied program-FR routing is broader FFI/regime validation work, not a
-  blocker for this branch.
+- `extern-env-deps` is the completed feature branch above `ffi`, corresponding to
+  the design in `doc/extern-env-deps.md`.
+- Its remaining branch action is integration: merge it to `ffi` after the
+  standard gates are green. The trusted guarded-value producer plus applied
+  program-FR routing is broader FFI/regime validation work, not a blocker for
+  this branch.
 
 ### Topics To Settle
 
@@ -304,13 +296,24 @@ Completed concrete validation:
   `ExternBoundarySpec`, accepted/rejected examples exercise the call gate, and
   `MemReadCapturesFR.appliedMemReadCaptures_FR` routes the applied `@23 (ref 3)`
   program through the trusted `callFR`.
+- Branch-join capture conjunction merging is proved in
+  `LeanProofs/CaptureJoinConjunction.lean`: branch capture contracts survive the
+  closure-member merge, and applying a merged capture-bearing `parrow` requires
+  every surviving capture gate.
+- The first impure (`extern fn`) trusted spec is complete: `@13`
+  (`ExternProofs.builtinImpureIdSpec`) proves all five `ExternBoundarySpec`
+  fields, and `LeanProofs/FnExternFR.lean` routes `(extern fn @13 ...) 7`
+  through the impure `callFR`.
 
-The remaining concrete proof obligations are:
+The remaining work is:
 
-- **The captures branch is complete.** `extern-env-deps`'s pfn-side `captures:`
-  surface — bare environment reads, guarded call-time satisfaction, memory-read
-  `!r`, and branch-join capture conjunction merging — is implemented/proved, so
-  the branch is ready to merge into `ffi`.
+- **Merge the completed captures branch.** `extern-env-deps`'s pfn-side
+  `captures:` surface — bare environment reads, guarded call-time satisfaction,
+  memory-read `!r`, and branch-join capture conjunction merging — is
+  implemented/proved, so the branch is ready to merge into `ffi`.
+- **Build a trusted guarded-value producer.** Applied guarded-value routing
+  requires a trusted producer extern that returns the guarded/de-poisoned value
+  consumed by the capturing extern.
 - **Cover the rest of the default registry.** After the captures branch lands,
   prove trusted entries for the remaining builtins as needed: sqrt-style guarded
   input (`@19`), constant extern values (`@20`), initialized ref-valued extern

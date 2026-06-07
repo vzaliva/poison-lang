@@ -11,8 +11,8 @@ expression-coupled runs (`ExternDeclBoundaryRunForExpr`; see *The High-Level
 Contract*) and validated nested returned extern callables.
 
 The public fault-robustness theorem is relative to trusted extern boundary
-evidence under a populated registry. The active `extern-env-deps` branch extends
-that boundary with explicit extern read dependencies (`captures:`). Bare
+evidence under a populated registry. The completed `extern-env-deps` branch
+extends that boundary with explicit extern read dependencies (`captures:`). Bare
 environment reads, guarded call-time satisfaction, the representative
 explicit-argument memory-read `!r` path, and branch-join capture conjunction
 merging are all implemented/proved, so `extern-env-deps` is ready to merge back
@@ -31,8 +31,6 @@ Related documents:
   triage.
 - `doc/extern-env-deps.md` specifies `captures:` read dependencies; proof
   obligations here should use that document for read-dependency semantics.
-- `doc/extern-env-deps-plan.md` tracks the active `extern-env-deps` branch until
-  it merges to `ffi`.
 
 This document covers two pieces of the FFI trust story:
 
@@ -58,12 +56,14 @@ typechecking, while making the FFI trust boundary explicit.
 
 ## Current Goal and Non-Goals
 
-The immediate goal is to keep the extern boundary stable while completing the
-current captures feature branch:
+The immediate goal is to keep the extern boundary stable after completing the
+captures feature branch:
 
 - preserve the completed trusted specs for `abs` and curried `max`;
 - keep pfn-side `captures:` support on `extern-env-deps` complete: branch-join
   capture conjunctions and memory-read `!r` dependencies are implemented/proved;
+- preserve the first trusted impure (`extern fn`) spec, `@13`
+  (`ExternProofs.builtinImpureIdSpec`), as the fn-boundary smoke test;
 - preserve the public fault-robustness theorem shape: no new public
   precondition should be added to `TypeSystemEnforcesFaultRobustness`;
 - keep executable semantics unchanged unless a concrete proof exposes that an
@@ -883,6 +883,12 @@ active and inactive examples exercise the regime gate, and the guarded `@11`
 trusted call boundary is proved. Applied routing remains later FFI/regime work
 because it requires a trusted producer extern that returns the guarded value for
 the consumer to capture.
+
+The first trusted impure (`extern fn`) spec is complete as `@13`
+(`ExternProofs.builtinImpureIdSpec`), with program-level routing through
+`FnExternFR.appliedFnExtern_FR`. It exercises the fn call boundary and kind
+dispatch without captures or memory effects; a memory-effecting fn spec remains
+future default-registry coverage.
 
 These items belong with `doc/extern-env-deps.md`; they should not be split into
 unrelated later FFI branches unless the branch scope is deliberately reduced.

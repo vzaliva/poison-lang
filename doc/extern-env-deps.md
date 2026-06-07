@@ -1,14 +1,13 @@
 # Extern Read Dependencies (`captures:`)
 
-Status: design note. This records the dependency issue exposed by the
-curried `max` builtin and specifies explicit extern read dependencies via
-`captures:`.
+Status: completed design/reference. This records the dependency issue exposed by
+the curried `max` builtin and specifies the implemented explicit extern read
+dependency model via `captures:`.
 
 Related documents:
 
-- `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document.
-- `doc/extern-env-deps-plan.md` tracks implementation status for this design on
-  the active `extern-env-deps` branch.
+- `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document,
+  including the remaining post-`extern-env-deps` work.
 - `doc/extern-poison.md` explains the broader extern precondition, regime, and
   trust model that `captures:` extends to read dependencies.
 - `doc/ffi-axioms.md` explains the proof-boundary structures that consume the
@@ -253,13 +252,14 @@ memory footprints to be exactly equal to the declared dependency list.
 ## Implementation Status And Branch Boundary
 
 The `extern-env-deps` branch implements this design on top of the `ffi`
-integration branch. The curried-`max` environment-read path is implemented and
-proved end-to-end. Guarded captures are implemented at the typecheck gate and
-proved at the trusted call boundary. Memory-read (`!r`) dependencies are
-implemented and proved end-to-end (the `maxmem` `!r2` explicit-argument form).
-Branch-join capture conjunction merging is implemented (structurally, via the
-existing closure-member set-merge) and proved. The pfn-side read-dependency
-surface described here is therefore complete.
+integration branch and is ready to merge back to `ffi` once the standard gates
+are green. The curried-`max` environment-read path is implemented and proved
+end-to-end. Guarded captures are implemented at the typecheck gate and proved at
+the trusted call boundary. Memory-read (`!r`) dependencies are implemented and
+proved end-to-end (the `maxmem` `!r2` explicit-argument form). Branch-join
+capture conjunction merging is implemented (structurally, via the existing
+closure-member set-merge) and proved. The pfn-side read-dependency surface
+described here is therefore complete.
 
 Already implemented for the curried-`max` path:
 
@@ -327,17 +327,18 @@ The trusted extern call contract is fn/pfn-symmetric. The fn `Call` relation
 (`ExternBoundaryTyping.Call`) has exactly two routes, `fnExternMember` and
 `pfnExternMember`, so the universal `callFR` / `callSingle` fields of an
 `ExternBoundarySpec` quantify only over real extern dispatch. There is no
-regular-`fn`-body route to discharge: a regular `fn` whose body is a bare
-`Expr.externFn` declaration is rejected by `typecheckFn`, and the value
-relations (`deepValueQTypProperty.closure`, `agreeValueUnder.clean_internal_arrow`)
-carry `¬ Expr.IsExternFnAst body`, so no well-typed value reaches the
-extern-dispatch boundary through the regular-closure route. This mirrors the
-structural restriction already present on the pure side (a regular *pure* closure
-body is restricted to `PExpr` via `toPExpr?`, which excludes extern
-declarations). The negative case is exercised by
-`examples/extern_fn_bare_extern_body_reject.poison`; see
-`doc/extern-env-deps-plan.md` ("Design sketch: narrowing the trusted extern call
-contract") for the boundary argument.
+regular-`fn`-body route to discharge. The problematic surface shape is a regular
+function whose body is itself a bare extern declaration, for example
+`fn x => extern fn @id ...`: typechecking would otherwise treat this as a regular
+closure while runtime application dispatches the body extern and returns the
+extern result. The implementation rejects a regular `fn` whose body is a bare
+`Expr.externFn`, and the value relations (`deepValueQTypProperty.closure`,
+`agreeValueUnder.clean_internal_arrow`) carry `¬ Expr.IsExternFnAst body`, so no
+well-typed value reaches the extern-dispatch boundary through the regular-closure
+route. This mirrors the structural restriction already present on the pure side
+(a regular *pure* closure body is restricted to `PExpr` via `toPExpr?`, which
+excludes extern declarations). The negative case is exercised by
+`examples/extern_fn_bare_extern_body_reject.poison`.
 
 A concrete trusted fault-robustness *spec instance* for an `extern fn` built-in
 is now provided: `ExternProofs.builtinImpureIdSpec` (the `@13` `impure_id` extern,

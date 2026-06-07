@@ -966,7 +966,7 @@ def builtinMax11Decl : ExternDeclaration :=
     *distinct* declaration from `builtinMax11Decl` (captures `[]`): the captures=`[]`
     declaration cannot close the relational call boundary (that was the gap), and a
     top-level declaration with this `captures` list is not produced by the current AST
-    (`doc/extern-env-deps-plan.md`), so only the call-boundary field is proved here. -/
+    (`doc/extern-env-deps.md`), so only the call-boundary field is proved here. -/
 def builtinMax11CapturesDecl : ExternDeclaration :=
   { id := 11
     kind := .pfn

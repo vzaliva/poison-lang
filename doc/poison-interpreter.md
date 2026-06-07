@@ -19,9 +19,9 @@ poison-interpreter --help
 passes) evaluates it with a pure interpreter. In verbose mode it prints the full
 typing result. The interpreter starts with the built-in extern registry from
 `LeanPoison/ExternBuiltins.lean`, so the documented builtins such as curried
-`max`, `abs`, `sqrt`, `ZERO`, `errno`, `set_err`, and `impure_id` can execute.
-User-declared
-extern ids that are absent from the runtime registry still fail at dispatch.
+`max`, `abs`, `impure_id`, `sqrt`, `ZERO`, `errno`, `set_err`, and `memDeref`
+can execute. User-declared extern ids that are absent from the runtime registry
+still fail at dispatch.
 
 ## OPTIONS
 

@@ -11,7 +11,7 @@ file routes it through the first trusted **`kind = .fn`** spec,
 `impure_id n : (int) -> int`).
 
 It is the program-level capstone of the fn-boundary narrowing
-(`doc/extern-env-deps-plan.md`): once `ExternBoundaryTyping.Call` covers only real
+(`doc/extern-env-deps.md`): once `ExternBoundaryTyping.Call` covers only real
 extern dispatch (`fnExternMember`/`pfnExternMember`), a `kind = .fn` spec's
 `callFR`/`callSingle` are provable, so a trusted fn entry can sit in a registry
 that *agrees with a program's reachable declarations* and discharge the
