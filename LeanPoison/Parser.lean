@@ -710,7 +710,11 @@ mutual
               | some "env_name" => .ok (CaptureTarget.bareVar name.trimAscii.toString)
               | some "mem_name" => .ok (CaptureTarget.memVar name.trimAscii.toString)
               | _ => .error s!"Invalid capture target (missing env_name/mem_name field)"
-            match xmlToQTyp (Element.Element "qtyp" attr qtypContents) with
+            -- `allowCleanPred := true`: a `captures:` requirement may be a guarded
+            -- dependency `(int :> clean { k, v => p })` — a clean requirement that
+            -- additionally constrains the guard shape — exactly as extern argument
+            -- conditions allow (`doc/extern-env-deps.md` §"Guarded Dependencies").
+            match xmlToQTyp (Element.Element "qtyp" attr qtypContents) (allowCleanPred := true) with
             | .ok (typ, poison, pred) =>
               acc := acc.append [Capture.mk target typ poison pred]
             | .error e => throw e

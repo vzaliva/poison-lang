@@ -11,8 +11,9 @@ declared argument condition, curried extern levels are checked uniformly, and
 the proof stack threads the clean/poison part of the condition through trusted
 boundary reachability. Concrete trusted specs exist for `abs` and the curried
 `max` pair. The active read-dependency work lives on the
-`extern-env-deps` branch: it should finish guarded `captures:`, branch-join
-capture conjunctions, and memory-read `!r` captures before merging into `ffi`.
+`extern-env-deps` branch: guarded `captures:` are complete at the
+typecheck/trusted-call-boundary level, and the remaining branch blockers are
+branch-join capture conjunctions and memory-read `!r` captures.
 The broader remaining design work is predicate-language validation,
 latent-marker examples, and concrete validation of the remaining live trusted
 extern specs.
@@ -119,9 +120,11 @@ structurally from input cleanness alone.
 - **`max`** — executable examples declare clean arguments at both curried levels
   and a clean return. The output depends on both the captured outer argument and
   the immediate inner argument. The curried pair has concrete trusted specs and
-  program-level FR artifacts for the unguarded captured-env path. The remaining
-  `max`-adjacent work is general `captures:` coverage: guarded call-time
-  satisfaction, branch-join merging, and memory-read `!r` dependencies.
+  program-level FR artifacts for the unguarded captured-env path. Guarded
+  captured dependencies are implemented at the typecheck gate and proved at the
+  trusted call boundary. The remaining `max`-adjacent work is general
+  `captures:` coverage for branch-join merging and memory-read `!r`
+  dependencies.
 
 - **`sqrt`-style externs** — candidate for the unified model with input
   precondition `x >= 0`. Implementation `if x >= 0 then Lean.sqrt x else 0`
@@ -365,8 +368,8 @@ the public FR theorem as live trusted entries.
 
 ## 8. Next steps
 
-1. Finish `doc/extern-env-deps.md` on the `extern-env-deps` branch: guarded
-   captures, branch-join capture conjunctions, and memory-read `!r` captures.
+1. Finish `doc/extern-env-deps.md` on the `extern-env-deps` branch: branch-join
+   capture conjunctions and memory-read `!r` captures.
 2. Merge `extern-env-deps` into `ffi` once the standard gates are green and no
    new `sorry`/axioms are introduced.
 3. Resolve §7.1 (predicate language expressiveness).

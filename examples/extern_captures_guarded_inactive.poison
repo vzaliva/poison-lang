@@ -1,0 +1,19 @@
+--! poison-interpreter --extern-regime "238=false"
+-- Non-vacuity counterpart to extern_captures_guarded.poison: the guarded capture
+-- check is *call-site live*.  Here the open extern's return tag is marked INACTIVE
+-- (`--extern-regime "238=false"`), so the captured `a` stays poisoned (not
+-- de-poisoned under the regime).  The guarded capture contract
+-- `captures: { a :> (int :> clean { 5, v => v >= 0 }) }` then fails at the `f 2`
+-- call boundary: a declared-clean dependency requires the actual to be clean under
+-- the call-site regime, which a guard inactive in the regime is not.  Type checking
+-- is therefore expected to FAIL — demonstrating that the regime gate genuinely
+-- governs guarded-capture acceptance, not that it passes for the wrong reason.
+let openf = extern fn @238 p : (int :> clean {}) -> ((int :> poisoned { 5, v => (v >= 0) }))
+in
+let a = openf 0
+in
+let f =
+  extern pfn @239 b : (int :> clean {}) -> ((int :> clean {})),
+    captures: { a :> (int :> clean { 5, v => (v >= 0) }) }
+in
+f 2

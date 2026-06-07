@@ -18,8 +18,10 @@ justify as a clean dependency. That curried-`max` (all-clean) path is now
 **implemented and proved end-to-end**. The branch is not complete merely because
 that path is green: `extern-env-deps` should merge to `ffi` only after the pfn
 read-dependency model is complete enough to match the goal document, including
-guarded dependencies, branch-join capture conjunctions, and memory-read
-dependencies.
+branch-join capture conjunctions and memory-read dependencies. Guarded
+dependencies are now implemented/proved to the same maturity level as extern
+argument guards: typecheck/examples are end-to-end and the trusted call boundary
+is proved, while applied guarded-value materialisation remains §4.6 work.
 
 ## Status — curried-`max` path: DONE; branch still in progress
 
@@ -82,6 +84,17 @@ What is implemented and proved:
   application through `builtinMax11CapturesSpec.callFR` — the captured-`a` gate
   fires). The `nestedPfn_here` `rfl` forces the `[a]` registry decl (the `[]` decl
   fails to compile), so the result is non-vacuous.
+- **Guarded captures.** `captures:` accepts guarded read dependencies at the
+  call boundary using the same regime-sensitive satisfaction relation as extern
+  argument conditions. `examples/extern_captures_guarded.poison` is accepted
+  when `@238` is selected true by `--extern-regime`, while
+  `examples/extern_captures_guarded_inactive.poison` is rejected when the guard
+  is inactive. The trusted guarded inner-`max` call boundary
+  `builtinMax11Guarded_callFR` and full 5-field `builtinMax11GuardedSpec` are
+  proved axiom-clean; `GuardedCapturesFR.guardedCaptures_FR` gives the
+  bare-declaration registry-agreement/program-FR artifact. Routing the guarded
+  `callFR` through an applied program that materialises a de-poisoned captured
+  value remains the separate §4.6 dynamic materialisation task.
 - **Spec + examples.** `poison-lang.ott`: `capture_spec`/`capture_list` grammar,
   `CSL` on the extern declarations, the `capturesSatisfied` satisfaction
   judgement; `doc/poison-lang-description.tex`: the "Extern read dependencies"
@@ -113,16 +126,20 @@ mutually exclusive with the freed `value_shape`. The conflict only arose for the
 of the closure body captures (and the runtime check modulo-captures) keeps
 `value_shape` free and population available.
 
-## Required before merging `extern-env-deps` to `ffi`
+## Completed since the curried-`max` capstone
 
 - **Guarded dependencies + call-site regime evidence** (goal doc §"Guarded
-  Dependencies"). The specified behavior is now call-time checking for both bare
-  environment captures and bang memory captures. A guarded dependency is accepted
-  only if its guard is active under the call-site regime when the extern is about
-  to rely on it. Supporting guarded captures therefore needs enough
-  callable-environment / regime evidence at the extern call boundary for
-  `capturesSatisfied` and the trusted `callFR` proof to use. Curried `max` is
-  all-clean, so it is unaffected.
+  Dependencies"). Implemented for pfn `captures:` at the typecheck gate and
+  proved at the trusted call boundary. The parser accepts guarded-clean capture
+  requirements; active and inactive regime examples cover acceptance/rejection;
+  `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec` prove the trusted
+  boundary; and `GuardedCapturesFR.guardedCaptures_FR` proves the bare-decl
+  registry-agreement shape. Applied guarded program routing remains §4.6-blocked
+  because it needs a trusted guarded-value producer that materialises the
+  de-poisoned captured value.
+
+## Required before merging `extern-env-deps` to `ffi`
+
 - **Branch-join conjunction merge for capture preconditions**
   (`JoinMemberTransport`; goal doc §"Contract Syntax and Variance"). Capture
   preconditions must combine by **conjunction** across branches (reject
@@ -136,8 +153,8 @@ of the closure body captures (and the runtime check modulo-captures) keeps
   reference-typed explicit argument, rather than leaving `!r` as parser-only or
   typechecker-only support.
 - **Representative examples and rejection coverage.** The branch should keep the
-  accepted curried-`max` examples and add coverage for the new guarded and
-  memory-read paths. At least one rejected missing/incompatible capture case
+  accepted curried-`max` and guarded examples and add coverage for the new
+  memory-read path. At least one rejected missing/incompatible capture case
   should exist so the call gate's negative path is not only implicit in proofs.
 
 ## Out of scope (this effort)
@@ -158,11 +175,12 @@ of the closure body captures (and the runtime check modulo-captures) keeps
 ## Branch merge rule
 
 Merge `extern-env-deps` into `ffi` only when the pfn-side `captures:` feature is
-complete for environment reads, guarded call-time satisfaction, branch-join
-capture conjunctions, and memory-read `!r` dependencies, with the standard gates
-green and no new `sorry`/axioms. Do not hold this branch for fn-side captures,
-default-registry specs unrelated to read dependencies, or dynamic §4.6
-materialisation.
+complete for environment reads, branch-join capture conjunctions, and memory-read
+`!r` dependencies, with the standard gates green and no new `sorry`/axioms.
+Guarded call-time satisfaction is already complete at the typecheck/trusted
+call-boundary level; do not hold this branch for applied guarded-value
+materialisation (§4.6), fn-side captures, or default-registry specs unrelated to
+read dependencies.
 
 ## Constraints
 

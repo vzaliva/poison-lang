@@ -453,6 +453,21 @@ into a single guard at application, so a trusted result requires both. The
 states this contravariant satisfaction relation, mirroring
 \(\mathit{satisfiesArgCond}\) for the argument precondition.
 
+Because the satisfaction relation is the same regime-based one used for argument
+conditions, a \texttt{captures:} dependency may be \emph{guarded}. A declared-clean
+requirement such as \texttt{captures: \{ a :> (int :> clean \{ 5, v => v >= 0 \})
+\}} accepts an actual that is poisoned but carries a guard whose tag is active in
+the call-site regime: the dependency is then \emph{clean under the regime}, exactly
+as a guarded extern argument is. As with arguments, this is a call-time decision
+--- the dependency is checked when the extern is about to rely on it --- so a guard
+that is inactive at the call site rejects the trusted result even if it was active
+when the closure was created. This avoids treating a stale capture-time guard fact
+as a call-time fact and gives environment and memory dependencies the same
+operational reading. A declared no-predicate requirement imposes no guard-shape
+obligation; a declared guard predicate additionally requires the actual to carry
+the same guard shape (modulo tag, binder, and captured environment), with no
+general logical implication.
+
 The \texttt{captures:} clause is part of the surface syntax of extern
 declarations (and of nested-return descriptors), accepted by the parser and the
 type checker. The declared dependencies are the trusted \emph{contract}: the type

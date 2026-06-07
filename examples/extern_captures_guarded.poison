@@ -1,0 +1,26 @@
+--! poison-interpreter --extern-regime "238=true"
+-- Guarded extern read dependency (doc/extern-env-deps.md sec "Guarded
+-- Dependencies").  A capture whose declared requirement is a *guarded* clean
+-- dependency `(int :> clean { 5, v => v >= 0 })` is accepted at the extern call
+-- boundary when the captured value is clean *under the call-site regime* — the
+-- same regime-based satisfaction relation used by extern argument conditions.
+--
+-- `@238` (open-style) returns a poisoned int carrying the guard `{ 5, v => v >= 0 }`.
+-- `--extern-regime "238=true"` activates the freshly generated return tag, so the
+-- captured `a` is de-poisoned under the regime.  `@239` captures `a` under the
+-- guarded contract; the call `f 2` is type checked against the capture under the
+-- active regime and accepted.  Type checking therefore passes.  This is a
+-- typecheck-level demonstration: none of these externs has a registered runtime
+-- implementation, so evaluation stops at the first extern it reaches — the
+-- producer `@238` (`openf 0`) — and reports the expected "extern id 238 not
+-- registered" error, before `@239` is ever invoked (mirroring
+-- extern-regime-open.poison).
+let openf = extern fn @238 p : (int :> clean {}) -> ((int :> poisoned { 5, v => (v >= 0) }))
+in
+let a = openf 0
+in
+let f =
+  extern pfn @239 b : (int :> clean {}) -> ((int :> clean {})),
+    captures: { a :> (int :> clean { 5, v => (v >= 0) }) }
+in
+f 2

@@ -11,10 +11,11 @@ Contract*) and validated nested returned extern callables.
 The public fault-robustness theorem is relative to trusted extern boundary
 evidence under a populated registry. The active `extern-env-deps` branch extends
 that boundary with explicit extern read dependencies (`captures:`) and should
-finish guarded captures, branch-join capture conjunctions, and memory-read `!r`
-captures before merging back to the FFI integration branch `ffi`. Reusable
-helper machinery is secondary and should be extracted only from proof patterns
-that actually repeat.
+finish branch-join capture conjunctions and memory-read `!r` captures before
+merging back to the FFI integration branch `ffi`. Guarded captures are complete
+at the typecheck/trusted-call-boundary level, with applied guarded-value routing
+left to §4.6 dynamic materialisation. Reusable helper machinery is secondary and
+should be extracted only from proof patterns that actually repeat.
 
 Related documents:
 
@@ -57,9 +58,8 @@ The immediate goal is to keep the extern boundary stable while completing the
 current captures feature branch:
 
 - preserve the completed trusted specs for `abs` and curried `max`;
-- finish pfn-side `captures:` support on `extern-env-deps`: guarded call-time
-  satisfaction, branch-join capture conjunctions, and memory-read `!r`
-  dependencies;
+- finish pfn-side `captures:` support on `extern-env-deps`: branch-join capture
+  conjunctions and memory-read `!r` dependencies;
 - preserve the public fault-robustness theorem shape: no new public
   precondition should be added to `TypeSystemEnforcesFaultRobustness`;
 - keep executable semantics unchanged unless a concrete proof exposes that an
@@ -854,21 +854,27 @@ nested returned callable path and the unguarded captured-environment dependency
 needed by `@11`.
 
 The remaining `max`-adjacent work is not the two-argument arithmetic behavior;
-that path is proved. The remaining work is to complete the general `captures:`
-feature around it: guarded dependencies, branch-join precondition merging, and
-memory-read `!r` dependencies.
+that path is proved. Guarded captures are also proved at the trusted call
+boundary through `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec`, with
+bare-decl program FR in `GuardedCapturesFR.guardedCaptures_FR`. The remaining
+work is to complete branch-join precondition merging and memory-read `!r`
+dependencies.
 
 ### 3. Captures Branch Completion
 
 The `extern-env-deps` branch should merge into `ffi` only after pfn-side
 `captures:` supports:
 
-- guarded dependencies checked against the call-site regime;
 - branch joins that combine capture preconditions by conjunction and reject or
   avoid incompatible predicate shapes;
 - memory-read `!r` dependencies exercised end-to-end with a trusted spec /
   program-FR artifact;
 - representative accepted and rejected examples for the dependency gate.
+
+Guarded dependencies are complete at the typecheck/trusted-call-boundary level:
+active and inactive examples exercise the regime gate, and the guarded `@11`
+trusted call boundary is proved. Applied routing remains separate §4.6 work
+because it requires materialising a guarded producer.
 
 These items belong with `doc/extern-env-deps.md`; they should not be split into
 unrelated later FFI branches unless the branch scope is deliberately reduced.

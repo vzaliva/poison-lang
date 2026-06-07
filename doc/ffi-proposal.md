@@ -246,8 +246,10 @@ Branch structure:
 - `extern-env-deps` is a feature branch above `ffi`, corresponding to
   `doc/extern-env-deps.md`.
 - `extern-env-deps` should merge to `ffi` only after pfn-side `captures:` covers
-  bare environment reads, guarded call-time satisfaction, branch-join capture
-  conjunctions, and memory-read `!r` dependencies.
+  bare environment reads, branch-join capture conjunctions, and memory-read
+  `!r` dependencies. Guarded call-time satisfaction is complete at the
+  typecheck/trusted-call-boundary level; applied guarded-value materialisation is
+  tracked separately as §4.6 work.
 
 ### Topics To Settle
 
@@ -285,12 +287,17 @@ Completed concrete validation:
 - The curried-`max` pair has complete trusted specs for the relevant `@10` and
   capture-bearing `@11` declarations, plus program-level FR for both the bare
   declaration path and the applied `(m 7) 2` path.
+- Guarded pfn captures are implemented at the typecheck gate, covered by active
+  and inactive regime examples, and proved at the trusted call boundary via
+  `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec`. The accompanying
+  program-FR artifact is the bare-declaration registry-agreement shape; applied
+  guarded-value routing remains §4.6 work.
 
 The remaining concrete proof obligations are:
 
-- **Finish the captures branch.** `extern-env-deps` must finish guarded
-  call-time dependency checking, branch-join capture conjunctions, and
-  memory-read `!r` dependencies before merging into `ffi`.
+- **Finish the captures branch.** `extern-env-deps` must finish branch-join
+  capture conjunctions and memory-read `!r` dependencies before merging into
+  `ffi`.
 - **Cover the rest of the default registry.** After the captures branch lands,
   prove trusted entries for the remaining builtins as needed: sqrt-style guarded
   input (`@19`), constant extern values (`@20`), initialized ref-valued extern
@@ -388,7 +395,7 @@ Open questions are now narrower:
 
 - Are current extern annotations (`ExternReturn`, `Effect`, `Capture`,
   `SyntaxPredicate`) sufficient for FR, or is extra proof-only metadata
-  unavoidable for the remaining guarded/memory cases?
+  unavoidable for the remaining memory-read and branch-join cases?
 - Beyond within-run determinism, what additional stability properties
   are needed for trusted externs?
 - Should the current binary `TrustedRegistry` model remain the only proof

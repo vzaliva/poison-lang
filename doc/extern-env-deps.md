@@ -254,8 +254,9 @@ memory footprints to be exactly equal to the declared dependency list.
 
 The `extern-env-deps` branch implements this design on top of the `ffi`
 integration branch. The curried-`max` environment-read path is implemented and
-proved end-to-end, but the branch should not merge back to `ffi` until the pfn
-read-dependency surface described here is complete.
+proved end-to-end. Guarded captures are implemented at the typecheck gate and
+proved at the trusted call boundary. The branch should not merge back to `ffi`
+until the remaining pfn read-dependency surface described here is complete.
 
 Already implemented for the curried-`max` path:
 
@@ -270,20 +271,23 @@ Already implemented for the curried-`max` path:
 - `LeanProofs/ExternProofs.lean` proves the capture-bearing `@11` call fields
   for the captured-`a` dependency, and the curried-`max` program-level FR
   artifacts exercise the nested returned callable path.
+- `LeanProofs/ExternProofs.lean` also proves
+  `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec` for a guarded
+  captured dependency; `LeanProofs/GuardedCapturesFR.lean` records the
+  bare-declaration program-FR artifact.
 - `poison-lang-spec/poison-lang.ott` and `doc/poison-lang-description.tex`
   describe the surface syntax and call-time satisfaction judgement.
 
 Required before merging this branch to `ffi`:
 
-- guarded captures must use the same call-site regime-sensitive satisfaction
-  model as extern argument conditions;
 - branch joins must merge capture preconditions by conjunction, rejecting or
   avoiding incompatible predicate shapes rather than collapsing them to
   `noPred`;
 - memory-read `!r` captures must be exercised end-to-end with a trusted spec /
   program-FR artifact, not only parser/typechecker support;
-- examples should cover accepted guarded and memory-read dependencies, plus at
-  least one rejected missing or incompatible dependency.
+- examples should keep the accepted/rejected guarded cases and add memory-read
+  dependency coverage, plus at least one rejected missing or incompatible
+  dependency.
 
 Still out of scope for this branch:
 
@@ -359,10 +363,12 @@ even if the guard was active when the closure was created.
 This call-time rule is intentional. It avoids treating a stale capture-time
 guard fact as a call-time fact, and it gives environment and memory dependencies
 the same operational interpretation: the contract is checked when the extern is
-about to rely on the dependency. The proof obligation for guarded dependencies
-is therefore to expose enough callable-environment and regime evidence at the
-extern call boundary for `capturesSatisfied` and the trusted `callFR` proof to
-use; it is not to reconcile declaration-time and call-time regimes.
+about to rely on the dependency. For pfn captures, this obligation is implemented
+at the typecheck gate and proved for the trusted guarded inner-`max` call
+boundary. Routing that guarded call boundary through an applied program that
+materialises a de-poisoned captured value remains the separate §4.6 dynamic
+materialisation task; it is not a declaration-time/call-time regime
+reconciliation issue.
 
 Read-target resolution is also part of the trusted proof story. For a bang
 target, the location set used by the typechecker/proof must be the same
