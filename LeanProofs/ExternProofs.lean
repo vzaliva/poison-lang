@@ -451,9 +451,11 @@ field, with `valueHasETyp` / `valueConsistentWithRegime` holding for the
 
 `builtinAbs_cleanPost_obstruction` (above) remains the guardrail for the
 *dirty*-input reading; the clean-input contract proved here does not weaken the
-declaration.  The impure mirror (`fnExternMember`) is the symmetric follow-up:
-its `regularExternBody` constructor and two-run FR fan-out need the same pin
-threaded through the `Fn` static source and providers. -/
+declaration.  The impure mirror runs through `Call.fnExternMember`, which already
+carries the arg-poison pin (`declaredArgQt.poison = d.argPoison`); the
+regular-closure-extern-body route no longer exists (rejected at `typecheckFn`),
+so the only remaining fn-side follow-up is a concrete trusted `kind = .fn` spec
+instance (Checkpoint B). -/
 
 /-- A successful `abs` call boundary returns `Value.num (Int.ofNat n.natAbs)` for
     an integer argument; the impure branch is impossible (`kind = .pfn`). -/

@@ -1128,7 +1128,10 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
         ρcap.lookup x = some v_x →
         deepValueQTypProperty P qt_x v_x) →
       -- A regular closure's body is never a bare `extern fn` node, keeping this
-      -- route disjoint from `closure_extern` (mirrors `valueHasETyp.closure`).
+      -- route disjoint from `closure_extern`. The guard is established by
+      -- `typecheckFn` rejecting bare extern bodies (Typecheck.lean); it is NOT
+      -- carried by `valueHasETyp.closure` (which instead receives it by inverting
+      -- the guarded `agreeValueUnder.clean_internal_arrow`).
       ¬ Expr.IsExternFnAst body →
       deepValueQTypProperty P qt v
   | closure_extern {qt : QTyp} {v : Value}

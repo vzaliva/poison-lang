@@ -286,9 +286,11 @@ private lemma join_transport_regimeConsistentWithCtx
 
 /-- Static provenance for a runtime impure extern dispatch from an arrow closure list.
 
-Runtime application dispatches by inspecting the closure body, so a successful
-`externFn` call may come either from a static `FnTClosure.extern` member or from a
-regular closure member whose body is the extern declaration expression. -/
+A successful `externFn` call comes only from a static `FnTClosure.extern` member.
+The regular-closure-with-bare-extern-body route is rejected at `typecheckFn` and
+unreachable for well-typed values (the value relations carry
+`¬ Expr.IsExternFnAst body`), mirroring the pure side (`ExternCallBoundaryPfnStaticSource`
+below), whose regular bodies are restricted to `PExpr` and so exclude externs. -/
 inductive ExternCallBoundaryFnStaticSource
     (tcls : List FnTClosure)
     (sourceArgTyp : Typ)
@@ -3601,17 +3603,6 @@ private theorem stepFRApp_joinValConsFromMember_masked
 theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
     {tr : TrustedRegistry} {sourceArgTyp argTyp : Typ} {tcls : List FnTClosure}
     (hagreesExtern : TrustedRegistryAgreesWithFnTClosures tr sourceArgTyp tcls)
-    -- The regular-`extern fn`-body route is unreachable for well-typed values
-    -- (`typecheckFn` rejects bare extern bodies), so `ExternCallBoundaryFnStaticSource`
-    -- has no such constructor; this hypothesis is retained (unused) for call-site
-    -- shape stability with the threaded `*_of_reachable` chain.
-    (_hregularExternBody :
-      ∀ {id x y argPoison argPred retSpec effects cap capturedEnv},
-        FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) capturedEnv ∈ tcls →
-        ∃ entry,
-          TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects cap ∧
-          entry.decl.argPoison = argPoison)
     {id : ExternId} {x y : Name} {retSpec : ExternReturn}
     {effects : List Effect} {capturedEnv : CapturedVarEnv} {memberCap : List Capture}
     (hstatic :
@@ -4008,15 +3999,6 @@ private lemma fnStaticSource_entry_argPoison
     {effects : List Effect} {tenv : CapturedVarEnv} {memberCap : List Capture}
     {entry : TrustedExternEntry}
     (hagrees : TrustedRegistryAgreesWithFnTClosures tr agreeArgTyp tcls)
-    -- Retained (unused) for call-site shape stability; the regular-`extern fn`-body
-    -- route is unreachable for well-typed values (no such static-source constructor).
-    (_hregularExternBody :
-      ∀ {id x y argPoison argPred retSpec effects cap capturedEnv},
-        FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) capturedEnv ∈ tcls →
-        ∃ entry,
-          TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects memberCap ∧
-          entry.decl.argPoison = argPoison)
     (hstatic :
       ExternCallBoundaryFnStaticSource tcls sourceArgTyp id x y argTyp declaredArgPoison retSpec effects tenv
         memberCap)
@@ -4265,17 +4247,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
     {ctxᵢ : TypeContext} {res : TypeResult}
     {e1 e2 : Expr} {tcls : List FnTClosure} {sourceArgTyp : Typ}
     (hagreesExtern :
-      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls)
-    (hregularExternBody :
-      ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
-        {argPoison : Bool} {argPred : SyntaxPredicate}
-        {retSpec : ExternReturn} {effects : List Effect} {cap : List Capture}
-        {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
-        FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) capturedEnv ∈ tcls →
-        ∃ entry,
-          TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects memberCap ∧
-          entry.decl.argPoison = argPoison) :
+      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls) :
     ExternCallBoundarySingleFnContract masked CtxCons ValCons ctxᵢ res e1 e2 tcls sourceArgTyp
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
@@ -4317,7 +4289,6 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
       (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp)
       (argPoison := declaredArgPoison) (tcls := tcls)
       (hagreesExtern (argTyp := sourceArgTyp))
-      (hregularExternBody (argTyp := argTyp))
       (id := id) (x := x) (y := y) (retSpec := retSpec)
       (effects := eff) (capturedEnv := tenv) (memberCap := memberCap)
       hstatic hargName hregistryCall hpureCall hunified hGetCall
@@ -4325,7 +4296,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
     ⟨entry, _hlookup, hmatch, hrun⟩
   have hentryPoison :=
     fnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp))
-      (hregularExternBody (argTyp := argTyp)) hstatic _hlookup
+      hstatic _hlookup
   obtain ⟨_apaFn, _aprFn, _capFn, htypedEntryCall⟩ := htypedCallProvider entry hmatch hentryPoison
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
@@ -6604,8 +6575,8 @@ theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
 /-- Provider-shaped adapter for the future registry lookup: a static
     static source of the arrow closure list produces the side-0 boundary
     contract.  The empty-registry instance below ignores the key, but populated
-    instances should use `FnTClosure.extern` membership or regular extern-body
-    program membership to look up the matching per-id boundary spec. -/
+    instances should use `FnTClosure.extern` membership to look up the matching
+    per-id boundary spec. -/
 def ExternCallBoundaryFRFnSide0Provider
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure)
@@ -6638,17 +6609,7 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
     {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
     {sourceArgTyp : Typ}
     (hagreesExtern :
-      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls)
-    (hregularExternBody :
-      ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
-        {argPoison : Bool} {argPred : SyntaxPredicate}
-        {retSpec : ExternReturn} {effects : List Effect} {cap : List Capture}
-        {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
-        FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) capturedEnv ∈ tcls →
-        ∃ entry,
-          TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects memberCap ∧
-          entry.decl.argPoison = argPoison) :
+      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls) :
     ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
@@ -6694,7 +6655,6 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
     ExternCallBoundaryFnStaticSource.callBoundaryRun
       (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₀) (tcls := tcls)
       (hagreesExtern (argTyp := sourceArgTyp))
-      (hregularExternBody (argTyp := argTyp₀))
       (id := id₀) (x := x₀) (y := y₀) (retSpec := retSpec₀)
       (effects := eff₀) (capturedEnv := tenv₀) (memberCap := memberCap₀)
       hstatic₀ hargName hregistryCall hpureCall hunified hGetCall
@@ -6704,7 +6664,7 @@ theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
     ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
       htypedCall₀ entry hmatch
         (fnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp))
-          (hregularExternBody (argTyp := argTyp₀)) hstatic₀ _hlookup), hrun⟩
+          hstatic₀ _hlookup), hrun⟩
 
 /-- Body-local boundary-run contract for the side-1 impure extern arm. -/
 def ExternCallBoundaryFRFnSide1Contract
@@ -6840,17 +6800,7 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
     {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
     {sourceArgTyp : Typ}
     (hagreesExtern :
-      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls)
-    (hregularExternBody :
-      ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
-        {argPoison : Bool} {argPred : SyntaxPredicate}
-        {retSpec : ExternReturn} {effects : List Effect} {cap : List Capture}
-        {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
-        FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) capturedEnv ∈ tcls →
-        ∃ entry,
-          TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects memberCap ∧
-          entry.decl.argPoison = argPoison) :
+      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls) :
     ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
@@ -6896,7 +6846,6 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
     ExternCallBoundaryFnStaticSource.callBoundaryRun
       (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₁) (tcls := tcls)
       (hagreesExtern (argTyp := sourceArgTyp))
-      (hregularExternBody (argTyp := argTyp₁))
       (id := id₁) (x := x₁) (y := y₁) (retSpec := retSpec₁)
       (effects := eff₁) (capturedEnv := tenv₁) (memberCap := memberCap₁)
       hstatic₁ hargName hregistryCall hpureCall hunified hGetCall
@@ -6906,7 +6855,7 @@ theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
     ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
       htypedCall₁ entry hmatch
         (fnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp))
-          (hregularExternBody (argTyp := argTyp₁)) hstatic₁ _hlookup), hrun⟩
+          hstatic₁ _hlookup), hrun⟩
 
 theorem ExternCallBoundaryFRFnSide0Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -7842,24 +7791,14 @@ theorem TrustedRegistryAgreesWithProgramLocal.of_trustedRegistry
     {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
     {sourceArgTyp : Typ}
     (hagreesExtern :
-      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls)
-    (hregularExternBody :
-      ∀ {argTyp : Typ} {id : ExternId} {x y : Name}
-        {argPoison : Bool} {argPred : SyntaxPredicate}
-        {retSpec : ExternReturn} {effects : List Effect} {cap : List Capture}
-        {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
-        FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) capturedEnv ∈ tcls →
-        ∃ entry,
-          TrustedRegistry.lookup? tr id = some entry ∧
-          TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects memberCap ∧
-          entry.decl.argPoison = argPoison) :
+      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls) :
     TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) :=
   ⟨ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
-      hagreesExtern hregularExternBody,
+      hagreesExtern,
    ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
-      hagreesExtern hregularExternBody⟩
+      hagreesExtern⟩
 
 theorem TrustedRegistryAgreesWithProgramLocal.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
