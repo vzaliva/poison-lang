@@ -4047,6 +4047,637 @@ theorem builtinMemDerefSpec :
 theorem defaultRegistry_lookup_memderef :
     defaultRegistry.get? 23 = some builtinMemDerefImpl := by
   simp [defaultRegistry, defaultInitialState, regInsert, register, builtinMemDerefImpl,
+    Std.HashMap.getElem_insert, Std.HashMap.contains_insert, Std.HashMap.contains_empty]
+
+/-! ## The impure identity extern (`@13`) — the first trusted `kind = .fn` spec
+
+`@13` is the minimal impure (`extern fn`) builtin: `impure_id n : (int) -> int`
+returns its integer argument and threads `mem`/`nextAddr` through unchanged
+(`LeanPoison.ExternBuiltins.impureIdImpl`).  Because it performs no memory effect
+and allocates nothing, the `fn` call boundary collapses exactly as the pure
+(`pfn`) `abs` boundary does (`cf = entry.callConfig`), so this is a careful
+`fn`-side mirror of the `abs` (`@12`) template: same clean-int signature, same
+post-assembly, with `.pfn` → `.fn` constructor/lemma substitutions and the extra
+`effects := []` / `capturesSatisfied []` reductions on the call path.
+
+This is the roadmap's first fully proven trusted `kind = .fn` entry
+(`builtinImpureIdSpec`). -/
+
+/-- The return type currently declared for the impure-id extern (`@13`). -/
+def builtinImpureIdReturnQTyp : QTyp :=
+  { etyp := ETyp.int, poison := false, pred := Predicate.noPred }
+
+/-- The return descriptor used by the impure-id (`@13`) declaration — a clean
+    integer, as for `abs`. -/
+def builtinImpureIdRetSpec : ExternReturn :=
+  .simple .int false .noPred
+
+/-- Proof-side declaration for the interpreter's impure-id extern (`@13`).  This
+    is the first trusted `kind = .fn` declaration. -/
+def builtinImpureIdDecl : ExternDeclaration :=
+  { id := 13
+    kind := .fn
+    typ := .int
+    argName := some "x"
+    retSpec := some builtinImpureIdRetSpec
+    effects := []
+    preds := collectExternPreds builtinImpureIdRetSpec []
+    argPoison := false }
+
+/-- Runtime implementation shape for the impure-id extern (`@13`): the
+    interpreter's shared `impureIdImpl` (`LeanPoison.ExternBuiltins`), so the
+    running interpreter and this proof-side spec reference the same function. -/
+def builtinImpureIdImpl : ExternImpl :=
+  .fn impureIdImpl
+
+/-- `impureIdImpl` succeeds only on an integer argument, returning that integer
+    unchanged and threading `mem`/`nextAddr` through unchanged. -/
+private theorem impureIdImpl_ok_shape
+    {env : VarEnv} {vArg : Value} {mem : Memory} {addr : Address}
+    {vRaw : Value} {mem' : Memory} {addr' : Address}
+    (h : impureIdImpl env vArg mem addr = .ok (vRaw, mem', addr')) :
+    ∃ n : Int, vArg = Value.num n ∧ vRaw = Value.num n ∧ mem' = mem ∧ addr' = addr := by
+  cases vArg with
+  | num n =>
+      simp only [impureIdImpl, Except.ok.injEq, Prod.mk.injEq] at h
+      exact ⟨n, rfl, h.1.symm, h.2.1.symm, h.2.2.symm⟩
+  | _ => simp [impureIdImpl] at h
+
+/-- The impure-id extern (`@13`) satisfies the operational-safety contract.  The
+    impure (`fn`) branch is now live: the implementation threads `mem`/`nextAddr`
+    unchanged, so `nextAddr` monotonicity is reflexive and the conditional wf
+    preservation reduces to `wfValue` of a `Value.num`.  The pure and value
+    branches are impossible by `ExternImpl` constructor discrimination. -/
+theorem builtinImpureIdImpl_operationalSafe :
+    ExternOperationalSafe builtinImpureIdDecl builtinImpureIdImpl := by
+  refine ⟨?_, ?_, ?_⟩
+  · -- impure `fn` branch (now live): unchanged `mem`/`nextAddr`, `wfValue` num.
+    intro implFn himpl env vArg mem addr vRaw mem' addr' hrun
+    simp only [builtinImpureIdImpl, ExternImpl.fn.injEq] at himpl
+    subst himpl
+    obtain ⟨n, _harg, hraw, hmem, haddr⟩ := impureIdImpl_ok_shape hrun
+    subst hmem; subst haddr; subst hraw
+    refine ⟨Nat.le_refl _, ?_⟩
+    intro hmem _henv _harg
+    exact ⟨hmem, wfValue.num _⟩
+  · -- pure `pfn` branch: impossible (`builtinImpureIdImpl` is a `fn`).
+    intro implPfn himpl _ _ _ _ _ _ _ _ _
+    simp [builtinImpureIdImpl] at himpl
+  · -- `val` branch: impossible.
+    intro v himpl _ _
+    simp [builtinImpureIdImpl] at himpl
+
+/-! ### Call-boundary output and inversion for impure-id (`@13`)
+
+A successful impure-id dispatch returns `Value.num n` for an integer argument
+`Value.num n`, with memory/config unchanged — the same collapse as the pure
+`abs` boundary (`cf = entry.callConfig`), because `impureIdImpl` threads
+`mem`/`nextAddr` through unchanged.  The output value is the argument itself, so
+the clean-result conjunct of `StepFRPost` follows from argument equality. -/
+
+/-- The output of a successful impure-id call boundary, computed through
+    `validateExternReturn`.  An impure-id dispatch leaves the configuration
+    unchanged (`cf = entry.callConfig`), because the implementation threads
+    `mem`/`nextAddr` through unchanged. -/
+private theorem builtinImpureId_call_output
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hfacts : ExternCallFnFacts builtinImpureIdDecl builtinImpureIdImpl entry res cf o) :
+    ∃ n : Int, entry.argValue = Value.num n ∧
+      o = Value.num n ∧ cf = entry.callConfig := by
+  rcases hfacts.impl_success with
+    ⟨implFn, retSpec, vRaw, himpl, hretSpec, _hargMatch, hrun, hvalRet⟩
+  simp only [builtinImpureIdImpl, ExternImpl.fn.injEq] at himpl
+  subst himpl
+  have hret : retSpec = builtinImpureIdRetSpec := by
+    simp only [builtinImpureIdDecl] at hretSpec
+    exact (Option.some.inj hretSpec).symm
+  subst hret
+  obtain ⟨n, harg, hraw, hmem, haddr⟩ := impureIdImpl_ok_shape hrun
+  have hcf : cf = entry.callConfig := by
+    have hoc := hfacts.output_config
+    rw [hmem, haddr] at hoc
+    rw [hoc]
+  refine ⟨n, harg, ?_, hcf⟩
+  rw [hraw] at hvalRet
+  simp only [builtinImpureIdRetSpec, validateExternReturn, valueMatchesTyp,
+    if_true, Except.ok.injEq] at hvalRet
+  exact hvalRet.symm
+
+/-- Shared structure extracted from an impure-id call boundary typing witness:
+    the result is a clean integer, the post context equals the body context, and
+    the body context binds the argument `x` to a type that is clean under the
+    body regime (because the argument-condition gate passed against the clean
+    declared precondition).  Mirrors `builtinAbs_call_clean_shape` on the
+    `fn`-side: the live branch is `fnExternMember`, with the extra `effects` /
+    `capturesSatisfied []` reductions on the call path. -/
+private theorem builtinImpureId_call_clean_shape
+    {typedExpr : Expr} {entry : ExternCallEntry} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Call builtinImpureIdDecl typedExpr entry res) :
+    res.qualType.etyp = ETyp.int ∧
+      res.qualType.pred = Predicate.noPred ∧
+      ctxAfter entry.bodyCtx res = entry.bodyCtx ∧
+      ∃ argQt : QTyp,
+        entry.bodyCtx.varEnv.lookup "x" = some argQt ∧
+        qtypCleanUnderRegime argQt entry.bodyCtx.regime = true := by
+  cases htyped with
+  | pfnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinImpureIdDecl] at hkind
+  | fnExternMember hid hkind htyp harg hret heff hcap hpin hbody happly =>
+      rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec effects captures tenv
+      have heff' : effects = [] := by simpa [builtinImpureIdDecl] using heff.symm
+      subst heff'
+      have hcap' : captures = [] := by simpa [builtinImpureIdDecl] using hcap.symm
+      subst hcap'
+      have hx : x = "x" := by
+        have : some x = some "x" := by simpa [builtinImpureIdDecl] using harg.symm
+        exact Option.some.inj this
+      subst hx
+      have hretSpec : retSpec = ExternReturn.simple Typ.int false SyntaxPredicate.noPred := by
+        have : some retSpec = some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) := by
+          simpa [builtinImpureIdDecl, builtinImpureIdRetSpec] using hret.symm
+        exact Option.some.inj this
+      subst retSpec
+      have hpin' : declaredArgQt.poison = false := by simpa [builtinImpureIdDecl] using hpin
+      cases fuel with
+      | zero => simp [applyFnTClosureAtCursor] at happly
+      | succ fuel' =>
+          have hcollect := collectAndAllocExternTags_noPred cursor.1
+          simp only [applyFnTClosureAtCursor, collectExternPreds, List.map_nil,
+            List.append_nil, hcollect, List.forIn_nil, resolveSyntaxPred, returnSpecToQTyp,
+            bind, Except.bind, pure, Except.pure] at happly
+          split at happly
+          · simp at happly
+          rename_i hgate
+          have hcond :
+              argConditionSatisfied declaredArgQt
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ bodyState.regime' fuel' = true := by
+            simpa [capturesSatisfied] using hgate
+          simp only [Except.ok.injEq] at happly
+          subst res
+          refine ⟨?_, ?_, ?_, ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩, ?_, ?_⟩
+          · by_cases hprov : joinPoison p1 p = true <;>
+              simp [normalizeAppResultByProvenance, hprov]
+          · by_cases hprov : joinPoison p1 p = true <;>
+              simp [normalizeAppResultByProvenance, hprov]
+          · rw [hbody]; simp only [ctxAfter, applyExternRegimePolicy]; rfl
+          · rw [hbody]; exact VarTypeEnv_lookup_update_eq _ "x" _
+          · rw [hbody]
+            exact argConditionSatisfied_cleanRegime_of_declClean hcond hpin'
+
+/-- A successful impure-id call boundary returns `Value.num n` for an integer
+    argument; the pure branch is impossible (`kind = .fn`). -/
+private theorem builtinImpureId_callRun_output
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hrun : ExternCallBoundaryRun builtinImpureIdDecl builtinImpureIdImpl entry res cf o) :
+    ∃ n : Int, entry.argValue = Value.num n ∧
+      o = Value.num n ∧ cf = entry.callConfig := by
+  cases hrun with
+  | fn hfacts => exact builtinImpureId_call_output hfacts
+  | pfn hfacts => have h := hfacts.kind_pfn; simp [builtinImpureIdDecl] at h
+
+/-- The body-entry environment of a successful impure-id call binds `"x"` to the
+    runtime argument value. -/
+private theorem builtinImpureId_callRun_bodyVar
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hrun : ExternCallBoundaryRun builtinImpureIdDecl builtinImpureIdImpl entry res cf o) :
+    entry.bodyConfig.varEnv.lookup "x" = some entry.argValue := by
+  cases hrun with
+  | fn hfacts =>
+      have hargName : entry.argName = "x" := by
+        have h := hfacts.argName
+        simp only [builtinImpureIdDecl] at h
+        exact (Option.some.inj h).symm
+      have hbc : entry.bodyConfig.varEnv = entry.unifiedEnv := by
+        simp [ExternCallEntry.bodyConfig]
+      rw [hbc, hfacts.unifiedEnv_eq, hargName]
+      simp [VarEnv.update, VarEnv.lookup]
+  | pfn hfacts => have h := hfacts.kind_pfn; simp [builtinImpureIdDecl] at h
+
+/-- Argument equality for impure-id: clean body agreement plus the clean argument
+    binding (gate passed against the clean precondition) force the two integer
+    arguments equal.  Mirrors `builtinAbs_callRun_argEq` exactly (the
+    argument-equality chain is `fn`/`pfn`-agnostic). -/
+private theorem builtinImpureId_callRun_argEq
+    {predSat : PredSat} {θ₀ θ₁ : RealizationMap}
+    {entry₀ entry₁ : ExternCallEntry} {res : TypeResult}
+    {cf₀ cf₁ : Config} {o₀ o₁ : Value} {typedExpr₀ : Expr}
+    (htyped₀ : ExternBoundaryTyping.Call builtinImpureIdDecl typedExpr₀ entry₀ res)
+    (hbody : BodyEntryInputsAgree predSat entry₀.bodyCtx entry₀ entry₁ θ₀ θ₁)
+    (hrun₀ : ExternCallBoundaryRun builtinImpureIdDecl builtinImpureIdImpl entry₀ res cf₀ o₀)
+    (hrun₁ : ExternCallBoundaryRun builtinImpureIdDecl builtinImpureIdImpl entry₁ res cf₁ o₁)
+    {m₀ m₁ : Int}
+    (hm₀ : entry₀.argValue = Value.num m₀) (hm₁ : entry₁.argValue = Value.num m₁) :
+    m₀ = m₁ := by
+  obtain ⟨_, _, _, argQt, hbind, hcleanB⟩ := builtinImpureId_call_clean_shape htyped₀
+  have hrv₀ : entry₀.bodyConfig.varEnv.lookup "x" = some (Value.num m₀) := by
+    rw [builtinImpureId_callRun_bodyVar hrun₀, hm₀]
+  have hrv₁ : entry₁.bodyConfig.varEnv.lookup "x" = some (Value.num m₁) := by
+    rw [builtinImpureId_callRun_bodyVar hrun₁, hm₁]
+  obtain ⟨v, hvlk, hvet⟩ := hbody.runtime₀.2 hbind
+  have hv : v = Value.num m₀ := by rw [hrv₀] at hvlk; exact (Option.some.inj hvlk).symm
+  have hInt : argQt.etyp = ETyp.int := by rw [hv] at hvet; exact valueHasETyp_num_etyp hvet
+  have hcleanP : qtypCleanUnder entry₀.bodyCtx.regime argQt :=
+    qtypCleanUnder_of_cleanUnderRegime hcleanB (by rw [hInt]; rfl)
+  exact builtinAbs_arg_eq_of_bodyAgree hbody hbind hcleanP hInt hrv₀ hrv₁
+
+/-! ## The impure-id `callFR` field
+
+`builtinImpureId_callFR` proves `ExternCallBoundaryFR builtinImpureIdDecl
+builtinImpureIdImpl` — the first relational `fn`-side call boundary.  The
+structure is identical to `builtinAbs_callFR`: most of `StepFRPost` is inherited
+from `BodyEntryInputsAgree` (an impure-id dispatch allocates nothing and threads
+memory unchanged, so `tm' = tm`, `θ' = θ`, `ctxAfter = ctx`, `cf = callConfig`);
+the only impure-id-specific conjunct is `resultAgreesIfClean`, split on the
+result poison (dirty is vacuous via the `noPred` return, clean runs the
+argument-equality chain — here the output *is* the argument). -/
+theorem builtinImpureId_callFR :
+    ExternCallBoundaryFR builtinImpureIdDecl builtinImpureIdImpl := by
+  intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
+    htyped₀ htyped₁ hpredlaws hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+  obtain ⟨hetyp, hpred, hctxAfter, _argQt, _hbind, _hcleanB⟩ :=
+    builtinImpureId_call_clean_shape htyped₀
+  obtain ⟨n₀, harg₀, ho₀, hcf₀⟩ := builtinImpureId_callRun_output hrun₀
+  obtain ⟨n₁, harg₁, ho₁, hcf₁⟩ := builtinImpureId_callRun_output hrun₁
+  have hboc₀ : entry₀.bodyOutputConfig cf₀ = entry₀.bodyConfig := by
+    rw [hcf₀]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
+  have hboc₁ : entry₁.bodyOutputConfig cf₁ = entry₁.bodyConfig := by
+    rw [hcf₁]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
+  have hctxAfter' : ctxAfter ctx res = ctx := hctxAfter
+  have hnt : res.nextTag' = ctx.nextTag := by
+    have h := congrArg TypeContext.nextTag hctxAfter'; simpa [ctxAfter] using h
+  have hnotfun : res.qualType.etyp.isFunctionType = false := by rw [hetyp]; rfl
+  have hrespects : QTypRespectsTagMeaning tm res.qualType :=
+    QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun
+      (by simp [qtypGuardDesc?, hpred])
+  have hvc : ∀ (μ : Memory) (θ : RealizationMap) (n : Int),
+      valueConsistentWithRegime predSat ctx.regime res.qualType μ θ (Value.num n) := by
+    intro μ θ n
+    refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred]) ?_
+    exact closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+      (by rw [hetyp]; exact valueHasETyp.num n) (by rw [hetyp]; rfl)
+  rw [hboc₀, hboc₁]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws⟩, hpredlaws, hrespects,
+    θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter']; exact hwfTm
+  · rw [ho₀, hetyp]; exact valueHasETyp.num _
+  · rw [ho₁, hetyp]; exact valueHasETyp.num _
+  · rw [hctxAfter']; exact hwfTm
+  · rw [hctxAfter']; exact hbody.wfCtx
+  · rw [hctxAfter']; exact hbody.tagBounded
+  · exact hbody.wfConfig₀
+  · exact hbody.wfConfig₁
+  · rw [hctxAfter']; exact hbody.runtime₀
+  · rw [hctxAfter']; exact hbody.runtime₁
+  · rw [hctxAfter']; exact hbody.regime
+  · rw [hctxAfter']; exact hbody.consistent₀
+  · rw [hctxAfter']; exact hbody.consistent₁
+  · rw [hctxAfter']; exact hbody.agree
+  · rw [hctxAfter', ho₀]; exact hvc _ _ _
+  · rw [hctxAfter', ho₁]; exact hvc _ _ _
+  · rw [hctxAfter', ho₀, ho₁]
+    exact resultAgreesIfClean_int_noPred_of_eq hetyp hpred
+      (by rw [builtinImpureId_callRun_argEq htyped₀ hbody hrun₀ hrun₁ harg₀ harg₁])
+
+/-! ## The impure-id `callSingle` field
+
+The single-run clean-pc call boundary post — same call shape as `callFR`, one
+run, no relational output-equality.  Mirrors `builtinAbs_callSingle`. -/
+theorem builtinImpureId_callSingle :
+    ExternCallBoundarySingle builtinImpureIdDecl builtinImpureIdImpl := by
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws hwfTm hTmBounded
+    θ cf o _hθwf _hwfCtx hric _hreg hcons _hwfcfg hrun _hpc
+  obtain ⟨hetyp, hpred, hctxAfter, _argQt, _hbind, _hcleanB⟩ :=
+    builtinImpureId_call_clean_shape htyped
+  obtain ⟨n, _harg, ho, hcf⟩ := builtinImpureId_callRun_output hrun
+  have hboc : entry.bodyOutputConfig cf = entry.bodyConfig := by
+    rw [hcf]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
+  have hctxAfter' : ctxAfter ctx res = ctx := hctxAfter
+  have hnt : res.nextTag' = ctx.nextTag := by
+    have h := congrArg TypeContext.nextTag hctxAfter'; simpa [ctxAfter] using h
+  have hnotfun : res.qualType.etyp.isFunctionType = false := by rw [hetyp]; rfl
+  have hrespects : QTypRespectsTagMeaning tm res.qualType :=
+    QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun
+      (by simp [qtypGuardDesc?, hpred])
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws⟩, θ,
+    ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter']; exact hwfTm
+  · rw [ho, hetyp]; exact valueHasETyp.num _
+  · rw [hctxAfter', hboc]; exact hric
+  · rw [hctxAfter', hboc]; exact hcons
+  · rw [hboc, ho]
+    refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred]) ?_
+    exact closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+      (by rw [hetyp]; exact valueHasETyp.num _) (by rw [hetyp]; rfl)
+  · rw [hboc]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter'
+
+/-! ## The impure-id declaration-boundary fields: `declSingle` and `declFR`
+
+The declaration `extern fn @13 …` typechecks (via `typecheckExternFn`) to an
+extern *closure* type: an `arrow` whose single `FnTClosure.extern` captures the
+declaration context's type environment.  `resolveArgCondQTyp` allocates no tags,
+so `ctxAfter ctx res = ctx` and the post collapses exactly as the `abs` (`@12`)
+declaration fields.  The closure obligations use the *fn-side* extern
+constructors (`valueHasETyp.closure_extern`,
+`deepValueQTypProperty.closure_extern`, `agreeValueUnder.clean_internal_arrow_extern`),
+which carry an extra `effects` field (`[]`) but otherwise mirror the `pfn`
+template line for line. -/
+
+/-- The extern closure stored in the impure-id declaration's `arrow` type: it
+    captures the declaration context's type environment together with the
+    argument precondition `argQt`.  `argQt` is abstract for the same reason as in
+    `builtinAbsExternClosure`; `effects = []`. -/
+private def builtinImpureIdExternClosure (ctx : TypeContext) (argQt : QTyp) : FnTClosure :=
+  FnTClosure.extern 13 "x" builtinImpureIdRetSpec [] (VarTypeEnv.toCaptured ctx.varEnv) argQt []
+
+/-- The exact `TypeResult` produced by typechecking `extern fn @13 …` in `ctx`
+    (with resolved argument precondition `argQt`).  The `arrow` return slot stays
+    `parseReturnType builtinImpureIdRetSpec` (folded); every context field is
+    inherited unchanged (no tags/locs allocated, `nextTag` threaded through). -/
+private def builtinImpureIdDeclResult (ctx : TypeContext) (argQt : QTyp) : TypeResult := {
+  qualType :=
+    ⟨ETyp.arrow Typ.int (parseReturnType builtinImpureIdRetSpec) ctx.pc
+        [builtinImpureIdExternClosure ctx argQt],
+      ctx.pc, Predicate.noPred⟩
+  memEnv' := ctx.memEnv
+  tagEnv' := ctx.tagEnv
+  nextLoc' := ctx.nextLoc
+  nextTag' := ctx.nextTag
+  regime' := ctx.regime
+}
+
+/-- Inverting an impure-id declaration typing witness pins the result to
+    `builtinImpureIdDeclResult ctx argQt` for some argument precondition `argQt`.
+    The `val`/`pfn` constructors are impossible by `kind` mismatch
+    (auto-eliminated); the `fn` constructor reduces through the existing
+    `typecheckExternFn_ok_res_eq` inversion. -/
+private theorem builtinImpureId_decl_shape
+    {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Decl builtinImpureIdDecl postExpr ctx res) :
+    ∃ argQt : QTyp, res = builtinImpureIdDeclResult ctx argQt := by
+  cases htyped with
+  | fn htc =>
+      rename_i fuel argPred
+      cases fuel with
+      | zero => simp [typecheck, typecheckExpr] at htc
+      | succ fuel' =>
+          have htcFn :
+              typecheckExternFn ctx 13 "x" Typ.int false argPred builtinImpureIdRetSpec [] [] = .ok res := by
+            have h := htc
+            simp only [typecheck, typecheckExpr] at h
+            exact h
+          obtain ⟨argQt, _hpoison, hres⟩ :=
+            typecheckExternFn_ok_res_eq ctx 13 "x" Typ.int false argPred builtinImpureIdRetSpec [] res htcFn
+          exact ⟨argQt, hres⟩
+
+/-- The declaration expression typed against `builtinImpureIdDecl` is `externFn
+    @13` with the clean integer signature; only its argument predicate is free. -/
+private theorem builtinImpureId_decl_postExpr
+    {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Decl builtinImpureIdDecl postExpr ctx res) :
+    ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      postExpr = Expr.externFn 13 "x" Typ.int false argPred builtinImpureIdRetSpec [] captures := by
+  cases htyped with
+  | fn _htc => exact ⟨_, _, rfl⟩
+
+/-- The impure-id declaration's extern closure value is well-typed at the
+    declared `arrow` type.  Mirrors `builtinAbs_decl_valueHasETyp` using the
+    `fn`-side extern constructor `valueHasETyp.closure_extern` (extra `eff := []`). -/
+private theorem builtinImpureId_decl_valueHasETyp
+    {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
+    valueHasETyp θ
+      (Value.closure "x" (Expr.externFn 13 "x" Typ.int false argPred builtinImpureIdRetSpec [] captures) ρ)
+      (builtinImpureIdDeclResult ctx argQt).qualType.etyp := by
+  show valueHasETyp θ
+      (Value.closure "x" (Expr.externFn 13 "x" Typ.int false argPred builtinImpureIdRetSpec [] captures) ρ)
+      (ETyp.arrow Typ.int (parseReturnType builtinImpureIdRetSpec) ctx.pc
+        [builtinImpureIdExternClosure ctx argQt])
+  refine valueHasETyp.closure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
+      (argQTyp := argQt) (memberCap := []) (htcl := by simp [builtinImpureIdExternClosure])
+      (henv := ?_) (hcover := ?_)
+  · intro n qt v hlookupσ hlookupρ
+    have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv n qt hlookupσ
+    obtain ⟨v', hvlookup, hvtyp⟩ := hric.2 hlookup_ctx
+    have hvEq : v' = v := by
+      have : some v' = some v := by rw [← hvlookup, hlookupρ]
+      exact Option.some.inj this
+    subst hvEq; exact hvtyp
+  · intro n qt hlookupσ
+    have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv n qt hlookupσ
+    obtain ⟨v', hvlookup, _⟩ := hric.2 hlookup_ctx
+    exact ⟨v', hvlookup⟩
+
+/-- The impure-id declaration's extern closure value is regime-consistent.
+    Mirrors `builtinAbs_decl_valueConsistent` using the `fn`-side
+    `deepValueQTypProperty.closure_extern` (extra `effects := []`). -/
+private theorem builtinImpureId_decl_valueConsistent
+    {predSat : PredSat} {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+    (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ) :
+    valueConsistentWithRegime predSat ctx.regime (builtinImpureIdDeclResult ctx argQt).qualType μ θ
+      (Value.closure "x" (Expr.externFn 13 "x" Typ.int false argPred builtinImpureIdRetSpec [] captures) ρ) := by
+  refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinImpureIdDeclResult]) (.intro ?_)
+  apply deepValueQTypProperty.closure_extern (argQt := argQt) (memberCap := []) 13 "x" "x" Typ.int builtinImpureIdRetSpec [] ρ
+      (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinImpureIdExternClosure ctx argQt]
+  · rfl
+  · rfl
+  · simp [builtinImpureIdExternClosure]
+  · refine ⟨?_, ?_⟩
+    · intro y qt_y k_y hlookupσ hguard hkR
+      exact hcwr.2.1 y qt_y k_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookupσ) hguard hkR
+    · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctx.varEnv,
+        fun y qt hlookupσ =>
+          let ⟨v, hv, _⟩ := hric.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookupσ)
+          ⟨v, hv⟩,
+        fun y qt v hlookupσ hlookupρ =>
+          let ⟨v', hv', htyp⟩ := hric.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookupσ)
+          by rw [hlookupρ] at hv'; cases hv'; exact htyp⟩
+  · intro y qt_y v_y hlookupσ hlookupρ
+    cases hcwr.2.2 y qt_y v_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookupσ) hlookupρ with
+    | intro h => exact h
+
+/-- A successful impure-id declaration boundary leaves the config unchanged and
+    emits the extern closure value.  The `val`/`pfn` branches are impossible
+    (`kind = .fn`). -/
+private theorem builtinImpureId_declRun_shape
+    {ctx : TypeContext} {res : TypeResult} {cᵢ cf : Config} {o : Value}
+    (hrun : ExternDeclBoundaryRun builtinImpureIdDecl builtinImpureIdImpl ctx res cᵢ cf o) :
+    cf = cᵢ ∧ ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      o = Value.closure "x" (Expr.externFn 13 "x" Typ.int false argPred builtinImpureIdRetSpec [] captures) cᵢ.varEnv := by
+  cases hrun with
+  | val hfacts => have h := hfacts.kind_val; simp [builtinImpureIdDecl] at h
+  | pfn hfacts => have h := hfacts.kind_pfn; simp [builtinImpureIdDecl] at h
+  | fn hfacts =>
+      refine ⟨hfacts.output_config, ?_⟩
+      obtain ⟨x, argPred, retSpec, captures, hargName, hretSpec, hval⟩ := hfacts.value_shape
+      have hx : x = "x" := by
+        have h := hargName; simp [builtinImpureIdDecl] at h; exact h.symm
+      have hretSpec' : retSpec = builtinImpureIdRetSpec := by
+        have h := hretSpec; simp [builtinImpureIdDecl] at h; exact h.symm
+      subst hx; subst hretSpec'
+      exact ⟨argPred, captures, by simpa [builtinImpureIdDecl] using hval⟩
+
+/-- The impure-id single-run declaration-boundary field.  Mirrors
+    `builtinAbs_declSingle`, discharged by `QTypRespectsTagMeaning_fn_extern` and
+    the two shared `fn`-side extern-closure helpers. -/
+theorem builtinImpureId_declSingle :
+    ExternDeclBoundarySingle builtinImpureIdDecl builtinImpureIdImpl := by
+  intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
+    μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg hrun _hpc
+  obtain ⟨argQt, hres⟩ := builtinImpureId_decl_shape htyped
+  obtain ⟨hcf, argPred, captures, ho⟩ := builtinImpureId_declRun_shape hrun
+  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinImpureIdDeclResult]
+  have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    rw [hres]
+    exact QTypRespectsTagMeaning_fn_extern tm ctx 13 "x" Typ.int (parseReturnType builtinImpureIdRetSpec)
+      ctx.pc builtinImpureIdRetSpec [] (argQt := argQt) hwfTm
+  have hcfmem : cf.memory = μ := by rw [hcf]
+  have hcfvar : cf.varEnv = ρ := by rw [hcf]
+  have ho' : o = Value.closure "x" (Expr.externFn 13 "x" Typ.int false argPred builtinImpureIdRetSpec [] captures) ρ := by
+    rw [ho]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, θ,
+    ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter]; exact hwfTm
+  · rw [ho', hres]; exact builtinImpureId_decl_valueHasETyp hric
+  · rw [hctxAfter, hcfmem, hcfvar]; exact hric
+  · rw [hctxAfter, hcfmem, hcfvar]; exact hcons
+  · rw [hctxAfter, hcfmem, hres, ho']; exact builtinImpureId_decl_valueConsistent hric hcons
+  · rw [hcfmem]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+
+/-! ## The impure-id paired declaration-boundary field `declFR`
+
+Both outputs are the closure of the same declaration expression `postExpr`,
+sharing the argument predicate `argPredT`.  The two clean extern arrows then
+agree via `agreeValueUnder.clean_internal_arrow_extern`.  Mirrors
+`builtinAbs_declFR` on the `fn`-side. -/
+theorem builtinImpureId_declFR :
+    ExternDeclBoundaryFR builtinImpureIdDecl builtinImpureIdImpl := by
+  intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
+    μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
+    hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+  obtain ⟨argQt, hres⟩ := builtinImpureId_decl_shape htyped
+  obtain ⟨argPredT, capturesT, hpostExpr⟩ := builtinImpureId_decl_postExpr htyped
+  obtain ⟨hcf₀, _⟩ := builtinImpureId_declRun_shape hrun₀.run
+  obtain ⟨hcf₁, _⟩ := builtinImpureId_declRun_shape hrun₁.run
+  -- Both outputs are the closure of the shared `postExpr`, hence share `argPredT`.
+  have ho₀ : o₀ = Value.closure "x"
+      (Expr.externFn 13 "x" Typ.int false argPredT builtinImpureIdRetSpec [] capturesT) ρ₀ := by
+    have hfe := hrun₀.forExpr; rw [hpostExpr] at hfe
+    simpa [declRunOutputMatchesExpr] using hfe
+  have ho₁ : o₁ = Value.closure "x"
+      (Expr.externFn 13 "x" Typ.int false argPredT builtinImpureIdRetSpec [] capturesT) ρ₁ := by
+    have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
+    simpa [declRunOutputMatchesExpr] using hfe
+  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinImpureIdDeclResult]
+  have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    rw [hres]
+    exact QTypRespectsTagMeaning_fn_extern tm ctx 13 "x" Typ.int (parseReturnType builtinImpureIdRetSpec)
+      ctx.pc builtinImpureIdRetSpec [] (argQt := argQt) hwfTm
+  have hcf₀mem : cf₀.memory = μ₀ := by rw [hcf₀]
+  have hcf₀var : cf₀.varEnv = ρ₀ := by rw [hcf₀]
+  have hcf₁mem : cf₁.memory = μ₁ := by rw [hcf₁]
+  have hcf₁var : cf₁.varEnv = ρ₁ := by rw [hcf₁]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, hpredlaws, hresTm,
+    θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter]; exact hwfTm
+  · rw [ho₀, hres]; exact builtinImpureId_decl_valueHasETyp hric₀
+  · rw [ho₁, hres]; exact builtinImpureId_decl_valueHasETyp hric₁
+  · rw [hctxAfter]; exact hwfTm
+  · rw [hctxAfter]; exact hwf
+  · rw [hctxAfter]; exact htagBounded
+  · rw [hcf₀]; exact hwfcfg₀
+  · rw [hcf₁]; exact hwfcfg₁
+  · rw [hctxAfter, hcf₀mem, hcf₀var]; exact hric₀
+  · rw [hctxAfter, hcf₁mem, hcf₁var]; exact hric₁
+  · rw [hctxAfter]; exact hreg
+  · rw [hctxAfter, hcf₀mem, hcf₀var]; exact hcwr₀
+  · rw [hctxAfter, hcf₁mem, hcf₁var]; exact hcwr₁
+  · rw [hctxAfter, hcf₀mem, hcf₀var, hcf₁mem, hcf₁var]; exact hagree
+  · rw [hctxAfter, hcf₀mem, hres, ho₀]; exact builtinImpureId_decl_valueConsistent hric₀ hcwr₀
+  · rw [hctxAfter, hcf₁mem, hres, ho₁]; exact builtinImpureId_decl_valueConsistent hric₁ hcwr₁
+  · -- resultAgreesIfClean: the two extern arrows agree (shared argPredT)
+    rw [hctxAfter, hcf₀mem, hcf₁mem, hres]
+    intro hclean
+    cases hclean with
+    | clean hpoison =>
+        have hetyp : (builtinImpureIdDeclResult ctx argQt).qualType.etyp =
+            ETyp.arrow Typ.int (parseReturnType builtinImpureIdRetSpec) ctx.pc
+              [builtinImpureIdExternClosure ctx argQt] := rfl
+        have htcl : builtinImpureIdExternClosure ctx argQt ∈ [builtinImpureIdExternClosure ctx argQt] := by simp
+        have hpc_clean : ctx.pc = false := by
+          have hpoison' : (builtinImpureIdDeclResult ctx argQt).qualType.poison = false := hpoison
+          simpa [builtinImpureIdDeclResult] using hpoison'
+        have hclean_internal : internalPoisonClean (builtinImpureIdDeclResult ctx argQt).qualType := by
+          simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
+        have hcap : agreeCapturedEnv predSat ctx.regime μ₀ μ₁ θ₀ θ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ ρ₁ :=
+          agreeCapturedEnv_of_agreeOnClean predSat ctx.regime ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime μ₀
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
+        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime μ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
+        have hmemberCvcr₀ : MemberCvcrEvidence predSat ctx.regime μ₀ θ₀
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          memberCvcrEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
+        have hmemberCvcr₁ : MemberCvcrEvidence predSat ctx.regime μ₁ θ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          memberCvcrEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
+        have htyping₀ : capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          capturedVarsTypingProperty_of_toCaptured ctx μ₀ ρ₀ θ₀ hric₀
+        have htyping₁ : capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          capturedVarsTypingProperty_of_toCaptured ctx μ₁ ρ₁ θ₁ hric₁
+        exact agreeValueUnder.clean_internal_arrow_extern
+          (σcap := VarTypeEnv.toCaptured ctx.varEnv) (argQt := argQt)
+          (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+          hclean_internal hetyp htcl rfl hcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
+          htyping₀ htyping₁ ho₀ ho₁
+    | guard k htag _hregime _hnotfun =>
+        have hnone : qtypGuardTag (builtinImpureIdDeclResult ctx argQt).qualType = none := by
+          simp [qtypGuardTag, builtinImpureIdDeclResult]
+        simp [hnone] at htag
+
+/-- The complete trusted-extern-entry boundary contract for the impure-id extern
+    (`@13`): all five `ExternBoundarySpec` fields.  This is the roadmap's first
+    fully proven trusted `kind = .fn` entry. -/
+theorem builtinImpureIdSpec :
+    ExternBoundarySpec builtinImpureIdDecl builtinImpureIdImpl where
+  declFR := builtinImpureId_declFR
+  callFR := builtinImpureId_callFR
+  declSingle := builtinImpureId_declSingle
+  callSingle := builtinImpureId_callSingle
+  operational := builtinImpureIdImpl_operationalSafe
+
+/-- The interpreter's assembled `defaultRegistry` resolves `@13` to exactly the
+    impure-id implementation `impureIdImpl` that the trusted boundary spec
+    `builtinImpureIdSpec` validates (`builtinImpureIdImpl ≡ .fn impureIdImpl`
+    definitionally).  Function-level interpreter↔proof agreement for the first
+    trusted `kind = .fn` extern. -/
+theorem defaultRegistry_lookup_impureId :
+    defaultRegistry.get? 13 = some builtinImpureIdImpl := by
+  simp [defaultRegistry, defaultInitialState, regInsert, register, builtinImpureIdImpl,
     Std.HashMap.contains_insert, Std.HashMap.contains_empty]
 
 end ExternProofs

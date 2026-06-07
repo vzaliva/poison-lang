@@ -3,8 +3,10 @@
 Status: the registry-aware extern-boundary path is in place. The
 clean-input/clean-output `abs` entry (`@12`) is a complete trusted entry
 (`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields), and the
-curried-`max` entries now have concrete trusted specs and program-level FR
-artifacts. Proving these entries tightened the declaration boundary to consume
+curried-`max` entries, the memory-read `@23`, and the first impure (`extern fn`)
+entry `@13` (`ExternProofs.builtinImpureIdSpec`) now have concrete trusted specs
+and program-level FR artifacts. Proving these entries tightened the declaration
+boundary to consume
 expression-coupled runs (`ExternDeclBoundaryRunForExpr`; see *The High-Level
 Contract*) and validated nested returned extern callables.
 

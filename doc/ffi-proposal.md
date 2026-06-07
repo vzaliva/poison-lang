@@ -3,8 +3,9 @@
 Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof has a populated-registry theorem that
 consumes trusted extern boundary evidence. Concrete trusted specs now exist for
-`abs`, the curried-`max` pair, and the explicit-argument memory-read extern
-`@23`; the active `extern-env-deps` branch completes the remaining
+`abs`, the curried-`max` pair, the explicit-argument memory-read extern `@23`,
+and the first impure (`extern fn`) entry `@13` (`builtinImpureIdSpec`); the
+active `extern-env-deps` branch completes the remaining
 read-dependency/captures work before merging back to the FFI integration branch
 `ffi`.
 

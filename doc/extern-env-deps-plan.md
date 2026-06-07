@@ -278,8 +278,9 @@ discharged by making that route unreachable for well-typed values rather than by
 a runtime consumer argument: a bare `extern fn` lambda body is rejected at
 `typecheckFn`, and the value relations carry `¬ Expr.IsExternFnAst body`, so no
 well-typed `Value.closure` reaches the boundary through the regular route. The
-contract is therefore narrowed to real dispatch only; assembling a concrete
-`kind = .fn` spec instance remains Checkpoint B and is not done here.
+contract is therefore narrowed to real dispatch only, and a concrete
+`kind = .fn` spec instance is now delivered (Checkpoint B — see "First trusted
+`kind = .fn` spec" below).
 
 ## Design sketch: narrowing the trusted extern call contract (implemented)
 
@@ -422,7 +423,46 @@ signature byte-identical.
   the `not_extern_fn` side condition on the Ott `fn_abs` rule, and the prose note;
   `make test` green (116/116). Ott and doc PDFs regenerated.
 - A concrete trusted `kind = .fn` spec instance plus a program-FR artifact are now
-  assemblable (Checkpoint B), but are not built here.
+  delivered (Checkpoint B — see "First trusted `kind = .fn` spec" below).
+
+### First trusted `kind = .fn` spec (Checkpoint B — delivered)
+
+With the contract narrowed, the first trusted `kind = .fn` `ExternBoundarySpec`
+is now built — the milestone that the obstruction above had blocked since the
+captures work.
+
+- **The extern.** `LeanPoison/ExternBuiltins.lean` adds `impureIdImpl` (`@13`,
+  `impure_id n : (int) -> int`), the minimal impure extern: it returns its
+  integer argument and threads memory/`nextAddr` **unchanged**. It is registered
+  in `defaultInitialState` alongside the existing built-ins.
+- **Why this extern first.** A no-memory-effect fn extern makes
+  `ExternCallFnFacts.output_config` collapse to `cf = callConfig` exactly as on
+  the pure side, so `callFR`/`callSingle` mirror `builtinAbs` modulo the
+  `fnExternMember`/`ExternCallFnFacts` inversion, and `operational`'s `fn` clause
+  is discharged by `nextAddr` reflexivity plus `wfValue` of the `num` result. The
+  memory-effecting fn built-in `set_err` (`@22`) writes a fixed `errnoAddr` *above*
+  the allocation cursor, so its `ExternOperationalSafe` is false as a universal
+  statement (the `errnoAddr ∉ mem ∧ addr ≤ errnoAddr` instantiation) — it is
+  therefore a deliberate follow-up, not the first spec.
+- **The spec.** `ExternProofs.builtinImpureIdSpec : ExternBoundarySpec
+  builtinImpureIdDecl builtinImpureIdImpl` proves all five fields
+  (`builtinImpureId_{declFR,callFR,declSingle,callSingle}` and
+  `builtinImpureIdImpl_operationalSafe`), mirroring the `builtinAbs*` pfn template
+  with the `fn`/arrow/`closure` constructors. It is axiom-clean (`propext`,
+  `Classical.choice`, `Quot.sound` only).
+- **Program-FR.** `LeanProofs/FnExternFR.lean` provides the bare-declaration
+  `fnExtern_FR` and the applied `appliedFnExtern_FR` (program
+  `(extern fn @13 …) 7`, whose derivation routes the application through
+  `builtinImpureIdSpec.callFR` — the first relational `fn` call boundary), via
+  `TypeSystemEnforcesFaultRobustness_at` and a registry-agreement witness.
+- **Example.** `examples/extern_fn_impure_id.poison` declares and applies `@13`
+  end-to-end (`impure_id 7` returns `7`, memory unchanged).
+- **Honest scope.** `@13` declares no `captures:` (`captures = []`) and has no
+  effects (`effects = []`), so it exercises the `fn` call boundary and kind
+  dispatch but **neither** read-dependencies **nor** memory effects. Two
+  follow-ups: a captures-bearing fn spec (the Checkpoint A fn-capture machinery
+  exists; mirror the pfn `builtinMax11CapturesSpec` chain) and a memory-effecting
+  fn spec (breaks the `cf = callConfig` collapse).
 
 ### Verification that the boundary is not weakened
 
@@ -506,13 +546,13 @@ trusted `Call` relation itself is cleanly narrowed (no vestigial disjunct).
 
 `extern-env-deps` is ready to merge into `ffi` with the standard gates green and
 no new `sorry`/axioms: the pfn-side environment-read, guarded call-time
-satisfaction, representative memory-read `!r`, and branch-join capture
-conjunction paths are all implemented/proved.
-Do not hold this branch for the trusted guarded-value
-producer/applied-program routing work, a concrete fn-side trusted FR spec
-*instance* (the contract obstruction is removed — see "fn-side captures: status"
-and the design sketch above — but building a `kind = .fn` `ExternBoundarySpec`
-value is Checkpoint B), or default-registry specs unrelated to read dependencies.
+satisfaction, representative memory-read `!r`, branch-join capture conjunction,
+and the first impure (`extern fn`) trusted spec + program-FR paths are all
+implemented/proved.
+Do not hold this branch for the trusted guarded-value producer/applied-program
+routing work, a memory-effecting fn trusted spec (the no-effect `@13` spec is
+delivered; an effectful one is a follow-up), or default-registry specs unrelated
+to read dependencies.
 
 ## Constraints
 

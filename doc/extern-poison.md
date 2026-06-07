@@ -363,10 +363,11 @@ rejected tests.
 
 ### 7.4 Remaining live trusted extern specs
 
-The proof stack has concrete trusted specs for `abs` and the curried `max`
-entries. Remaining interpreter builtins such as `@19`, `@20`, `@21`, and `@22`
-still need explicit trusted-registry instantiations before they contribute to
-the public FR theorem as live trusted entries.
+The proof stack has concrete trusted specs for `abs`, the curried `max` entries,
+the memory-read `@23`, and the impure-identity `@13` (`builtinImpureIdSpec`, the
+first `kind = .fn` entry). Remaining interpreter builtins such as `@19`, `@20`,
+`@21`, and `@22` still need explicit trusted-registry instantiations before they
+contribute to the public FR theorem as live trusted entries.
 
 ## 8. Next steps
 

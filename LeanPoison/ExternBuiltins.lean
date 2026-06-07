@@ -10,6 +10,8 @@ tests may invoke by their well-known identifiers:
   * `@10` : outer pure-fn stage of curried `max` (`int -> ...`)
   * `@11` : inner pure-fn stage of curried `max`, expects captured `a` in env
   * `@12` : pure `abs` (`int -> int`)
+  * `@13` : impure identity `impure_id n` : `(int) -> int` (the minimal `extern fn`:
+            returns its argument, threading memory/`nextAddr` unchanged)
   * `@19` : pure integer `sqrt`
   * `@20` : extern val `ZERO`  : `int`         (constant 0)
   * `@21` : extern val `errno` : `ref int`     (driver-allocated cell, init 0)
@@ -100,6 +102,18 @@ def setErrImpl
       .ok (Value.unit, Memory.update mem errnoAddr n, next)
   | _, _, _, _ => .error (.implFailure 22 "expected int argument")
 
+/-- `impure_id n` (`@13`) is the minimal impure (`extern fn`) builtin: it returns
+    its integer argument and threads `mem`/`nextAddr` through unchanged.  Because
+    it performs no memory effect, it exercises the `fn` call boundary and kind
+    dispatch without the allocation/effect reasoning a memory-mutating `fn` extern
+    (e.g. `set_err`) would require — making it the natural first trusted `fn`
+    spec (see `ExternProofs.builtinImpureIdSpec`). -/
+def impureIdImpl
+    : VarEnv → Value → Memory → Address →
+      Except ExternError (Value × Memory × Address)
+  | _, Value.num n, mem, next => .ok (Value.num n, mem, next)
+  | _, _, _, _ => .error (.implFailure 13 "impure_id: expected int argument")
+
 /-- Bundled initial runtime state shipped with the interpreter: the registry,
     pre-populated memory (the `errno` cell), and `nextAddr` (unchanged at `0`
     since `errnoAddr` sits above the program-visible allocation range). -/
@@ -128,7 +142,8 @@ def defaultInitialState : DefaultInitialState :=
   let r6 := regInsert r5 22 (.fn setErrImpl)
   let r7 := regInsert r6 19 (.pfn sqrtImpl)
   let r8 := regInsert r7 23 (.pfn memDerefImpl)
-  { memory := mem0, nextAddr := 0, registry := r8 }
+  let r9 := regInsert r8 13 (.fn impureIdImpl)
+  { memory := mem0, nextAddr := 0, registry := r9 }
 
 /-- Back-compat alias: older call sites that just want the registry. -/
 def defaultRegistry : ExternRegistry := defaultInitialState.registry

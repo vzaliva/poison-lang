@@ -339,13 +339,21 @@ declarations). The negative case is exercised by
 `doc/extern-env-deps-plan.md` ("Design sketch: narrowing the trusted extern call
 contract") for the boundary argument.
 
+A concrete trusted fault-robustness *spec instance* for an `extern fn` built-in
+is now provided: `ExternProofs.builtinImpureIdSpec` (the `@13` `impure_id` extern,
+a `kind = .fn` `ExternBoundarySpec` with all five fields proven) together with
+the program-level artifact `LeanProofs/FnExternFR.lean` (`appliedFnExtern_FR`
+routes a real `extern fn` application through the impure `callFR`). `@13` returns
+its argument with no `captures:` (`captures = []`) and no effects
+(`effects = []`), so it exercises the `fn` call boundary and kind dispatch but
+neither extern read-dependencies nor memory effects (both are follow-ups).
+
 Still out of scope for this branch:
 
-- a concrete trusted fault-robustness *spec instance* for a specific `extern fn`
-  built-in (a `kind = .fn` `ExternBoundarySpec` value). The identified obstruction
-  above (the `fnRegularExternBody` route making `callFR` / `callSingle` false as
-  stated) is removed; constructing such an instance is Checkpoint B and none is
-  asserted here;
+- a trusted fault-robustness spec for a *memory-effecting* `extern fn` built-in
+  (e.g. `set_err`): it would exercise the effect machinery but breaks the
+  `cf = callConfig` collapse the no-effect `@13` spec relies on, and `set_err`'s
+  fixed `errnoAddr`-above-cursor write is not universally operational-safe;
 - trusted guarded-value producer and applied-program routing for guarded
   de-poisoned values;
 - trusted specs for default-registry builtins whose behavior is unrelated to
