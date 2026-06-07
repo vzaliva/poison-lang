@@ -1171,8 +1171,9 @@ private theorem beqFnTClosure_refl (tcl : FnTClosure) : beqFnTClosure tcl tcl = 
   cases tcl with
   | regular x e env =>
       simp [beqFnTClosure, beqVarEnv_refl env]
-  | extern id x retSpec effects env argQt =>
-      simp [beqFnTClosure, beqExternReturn_refl retSpec, beqEffectList_refl effects, beqVarEnv_refl env, beqQTyp_refl argQt]
+  | extern id x retSpec effects env argQt captures =>
+      simp [beqFnTClosure, beqExternReturn_refl retSpec, beqEffectList_refl effects, beqVarEnv_refl env, beqQTyp_refl argQt,
+        beqCaptureList_refl captures]
 
 -- Prove reflexivity of beqPFnTClosure
 private theorem beqPFnTClosure_refl (tcl : PFnTClosure) : beqPFnTClosure tcl tcl = true := by
@@ -1315,24 +1316,25 @@ private theorem beqFnTClosure_sound (a b : FnTClosure) : (a == b) = true → a =
       have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
       subst_vars
       rfl
-    | extern _ _ _ _ _ _ =>
+    | extern _ _ _ _ _ _ _ =>
       simp only [BEq.beq, beqFnTClosure] at h
       contradiction
-  | extern id1 x1 retSpec1 eff1 env1 argQt1 =>
+  | extern id1 x1 retSpec1 eff1 env1 argQt1 cap1 =>
     cases b with
     | regular _ _ _ =>
       simp only [BEq.beq, beqFnTClosure] at h
       contradiction
-    | extern id2 x2 retSpec2 eff2 env2 argQt2 =>
+    | extern id2 x2 retSpec2 eff2 env2 argQt2 cap2 =>
       simp only [BEq.beq, beqFnTClosure] at h
       simp only [Bool.and_eq_true] at h
-      obtain ⟨⟨⟨⟨⟨h_id, h_x⟩, h_ret⟩, h_eff⟩, h_env⟩, h_argQt⟩ := h
+      obtain ⟨⟨⟨⟨⟨⟨h_id, h_x⟩, h_ret⟩, h_eff⟩, h_env⟩, h_argQt⟩, h_cap⟩ := h
       have : id1 = id2 := of_decide_eq_true h_id
       have : x1 = x2 := of_decide_eq_true h_x
       have : retSpec1 = retSpec2 := beqExternReturn_sound retSpec1 retSpec2 h_ret
       have : eff1 = eff2 := beqEffectList_sound eff1 eff2 h_eff
       have : env1 = env2 := beqVarEnv_sound env1 env2 h_env
       have : argQt1 = argQt2 := beqQTyp_sound argQt1 argQt2 h_argQt
+      have : cap1 = cap2 := beqCaptureList_sound cap1 cap2 h_cap
       subst_vars
       rfl
 

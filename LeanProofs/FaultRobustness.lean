@@ -131,7 +131,7 @@ mutual
     (∃ st1 st2 p tcls, qt.etyp = ETyp.arrow st1 st2 p tcls ∧
      (∀ tcl ∈ tcls, match tcl with
      | FnTClosure.regular _ _ env => P (VarTypeEnv.ofCaptured env)
-     | FnTClosure.extern _ _ _ _ env _ => P (VarTypeEnv.ofCaptured env))) →
+     | FnTClosure.extern _ _ _ _ env _ _ => P (VarTypeEnv.ofCaptured env))) →
     deepQTypProperty P qt
   | parrow (P : VarTypeEnv → Prop) (qt : QTyp) :
     (∃ st1 st2 p tcls, qt.etyp = ETyp.parrow st1 st2 p tcls ∧
@@ -171,15 +171,15 @@ mutual
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | FnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | FnTClosure.extern _ _ _ _ env₂ _ =>
+            | FnTClosure.extern _ _ _ _ env₂ _ _ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
-      | FnTClosure.extern _ _ _ _ env₁ _ =>
+      | FnTClosure.extern _ _ _ _ env₁ _ _ =>
           ∃ st1' st2' p' tcls₂,
             qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
             (∀ tcl₂ ∈ tcls₂, match tcl₂ with
             | FnTClosure.regular _ _ env₂ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | FnTClosure.extern _ _ _ _ env₂ _ =>
+            | FnTClosure.extern _ _ _ _ env₂ _ _ =>
                 P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
     deepQTypProperty₂ P qt₁ qt₂
   | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
@@ -542,12 +542,14 @@ mutual
         {id : ExternId} {x y : Name} {argTyp : Typ}
         {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
         {effects : List Effect} {p : Poison} {tcls : List FnTClosure}
-        {qt : QTyp} {tcl : FnTClosure} {σcap : CapturedVarEnv} {argQt : QTyp} {cap : List Capture} {ρcap₁ ρcap₂ : VarEnv}
+        {qt : QTyp} {tcl : FnTClosure} {σcap : CapturedVarEnv} {argQt : QTyp} {cap memberCap : List Capture} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
         (hclean_internal : internalPoisonClean qt)
         (hetyp : qt.etyp = ETyp.arrow argTyp (parseReturnType retSpec) p tcls)
         (htcl : tcl ∈ tcls)
-        (hmatch : tcl = FnTClosure.extern id x retSpec effects σcap argQt)
+        -- `memberCap` (the type member's captures = call-site read-dependency gate)
+        -- is independent of body `cap` (two-track discipline).
+        (hmatch : tcl = FnTClosure.extern id x retSpec effects σcap argQt memberCap)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
         (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)

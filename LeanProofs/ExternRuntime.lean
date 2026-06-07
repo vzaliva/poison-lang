@@ -271,7 +271,8 @@ theorem of_terminatesTo_externFn
       ExternDeclBoundaryRunForExpr (Expr.externFn id x argTyp argPoison argPred retSpec effects captures)
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects, argPoison := argPoison }
+          preds := collectExternPreds retSpec effects, argPoison := argPoison,
+          captures := captures }
         impl ctx res cᵢ cₒ v := by
   rcases ht with ⟨fuel, verbose, hbeval⟩
   cases fuel with

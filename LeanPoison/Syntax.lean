@@ -511,7 +511,11 @@ structure QTyp where
 -- time); it is consulted at the extern call site to gate the trusted result.
 inductive FnTClosure : Type where
   | regular : Name → Expr → List (Name × QTyp) → FnTClosure
-  | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp) → QTyp → FnTClosure
+  -- The trailing `List Capture` records the declared `captures:` read
+  -- dependencies (`doc/extern-env-deps.md`) for impure (`fn`) externs,
+  -- mirroring the `PFnTClosure.extern` field; resolved at the declaration /
+  -- nested-return site and re-checked when the closure is applied.
+  | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp) → QTyp → List Capture → FnTClosure
 
 inductive PFnTClosure : Type where
   | regular : Name → PExpr → List (Name × QTyp) → PFnTClosure
@@ -634,9 +638,9 @@ def beqETyp : ETyp → ETyp → Bool
 def beqFnTClosure : FnTClosure → FnTClosure → Bool
   | FnTClosure.regular x1 e1 env1, FnTClosure.regular x2 e2 env2 =>
     x1 == x2 && e1 == e2 && beqVarEnv env1 env2
-  | FnTClosure.extern id1 x1 ret1 eff1 env1 argQt1, FnTClosure.extern id2 x2 ret2 eff2 env2 argQt2 =>
+  | FnTClosure.extern id1 x1 ret1 eff1 env1 argQt1 cap1, FnTClosure.extern id2 x2 ret2 eff2 env2 argQt2 cap2 =>
     id1 == id2 && x1 == x2 && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2 && beqVarEnv env1 env2
-      && beqQTyp argQt1 argQt2
+      && beqQTyp argQt1 argQt2 && beqCaptureList cap1 cap2
   | _, _ => false
 
 def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool

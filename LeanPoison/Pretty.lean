@@ -298,7 +298,7 @@ partial def reprFnTClosure : FnTClosure → Nat → Std.Format
       Std.Format.text " " ++
       Std.Format.paren (reprExpr body 0) ++
       Std.Format.text " " ++ reprVarEnv env 0
-  | FnTClosure.extern id x ret eff env argQt, _ =>
+  | FnTClosure.extern id x ret eff env argQt _captures, _ =>
       Std.Format.text "extern @" ++
       Std.Format.text (toString id) ++
       Std.Format.text " " ++

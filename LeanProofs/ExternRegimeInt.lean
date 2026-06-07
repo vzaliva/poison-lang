@@ -115,7 +115,7 @@ def regDecl : ExternDeclaration :=
 def rogueQTyp : QTyp :=
   { etyp := ETyp.arrow Typ.bool Typ.int false
       [FnTClosure.extern 238 "q" (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
-        [] ⟨ETyp.bool, false, Predicate.noPred⟩],
+        [] ⟨ETyp.bool, false, Predicate.noPred⟩ []],
     poison := false, pred := Predicate.noPred }
 
 /-- The decl the `arrow_extern_member` path reconstructs from `rogueQTyp` (typ =
@@ -125,7 +125,7 @@ def rogueDecl : ExternDeclaration :=
     retSpec := some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred),
     effects := [],
     preds := collectExternPreds (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [],
-    argPoison := false }
+    argPoison := false, captures := [] }
 
 /-- Adversarial typing context: everything empty except one rogue var. -/
 def rogueCtx : TypeContext :=

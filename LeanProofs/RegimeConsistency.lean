@@ -134,7 +134,7 @@ lemma qtypGuardDesc?_eq_some_pred_guardClosure
 /-- Extract captured typing env from closures. -/
 def fnCapturedEnv : FnTClosure → CapturedVarEnv
   | .regular _ _ ρ => ρ
-  | .extern _ _ _ _ ρ _ => ρ
+  | .extern _ _ _ _ ρ _ _ => ρ
 
 def pfnCapturedEnv : PFnTClosure → CapturedVarEnv
   | .regular _ _ ρ => ρ
@@ -873,10 +873,10 @@ lemma QTypInQTyp_fn_extern_root_or_self
     {qt target : QTyp}
     (h : QTypInQTyp qt target)
     (htarget : target =
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
         p, Predicate.noPred⟩) :
     qt =
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
         p, Predicate.noPred⟩
     ∨ ∃ y qtRoot, ctx.varEnv.lookup y = some qtRoot ∧ QTypInQTyp qt qtRoot := by
   induction h generalizing ctx id x st₁ st₂ p retSpec effects argQt with
@@ -885,7 +885,7 @@ lemma QTypInQTyp_fn_extern_root_or_self
   | in_arrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
       subst qtOuter
       let tcl0 : FnTClosure :=
-        FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt
+        FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures
       have hEtyp : ETyp.arrow st1 st2 p0 tcls = ETyp.arrow st₁ st₂ p [tcl0] := by
         simpa [tcl0] using houterEtyp.symm
       have htcls : tcls = [tcl0] := by injection hEtyp with _ _ _ htcls
@@ -914,7 +914,7 @@ lemma QTypRespectsTagMeaning_fn_extern
     (retSpec : ExternReturn) (effects : List Effect) {argQt : QTyp}
     (h : wfTagMeaningCtx tm ctx) :
     QTypRespectsTagMeaning tm
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
         p, Predicate.noPred⟩ := by
   intro qt k d hinq hqd
   rcases QTypInQTyp_fn_extern_root_or_self ctx id x st₁ st₂ p retSpec effects hinq rfl with hEq | ⟨y, qtRoot, hlookup, hInRoot⟩
@@ -1129,14 +1129,15 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
         deepValueQTypProperty P qt_x v_x) →
       deepValueQTypProperty P qt v
   | closure_extern {qt : QTyp} {v : Value}
-      {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp} {cap : List Capture}
+      {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp} {cap memberCap : List Capture}
       (id : ExternId) (x_param y : Name) (argTyp : Typ)
       (retSpec : ExternReturn) (effects : List Effect)
       (ρcap : VarEnv) (σcap : CapturedVarEnv) (p : Poison)
       (tcls : List FnTClosure) :
       v = Value.closure x_param (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) ρcap →
       qt.etyp = ETyp.arrow argTyp (parseReturnType retSpec) p tcls →
-      FnTClosure.extern id x_param retSpec effects σcap argQt ∈ tcls →
+      -- `memberCap` (member = call-site gate) is independent of body `cap`.
+      FnTClosure.extern id x_param retSpec effects σcap argQt memberCap ∈ tcls →
       P σcap ρcap →
       (∀ (x : Name) (qt_x : QTyp) (v_x : Value),
         σcap.lookup x = some qt_x →

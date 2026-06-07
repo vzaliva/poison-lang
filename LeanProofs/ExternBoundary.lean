@@ -62,7 +62,8 @@ inductive Decl : ExternDeclaration → Expr → TypeContext → TypeResult → P
       Decl
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects, argPoison := argPoison }
+          preds := collectExternPreds retSpec effects, argPoison := argPoison,
+          captures := captures }
         (Expr.externFn id x argTyp argPoison argPred retSpec effects captures) ctx res
   | pfn {ctx : TypeContext} {fuel : Nat} {id : ExternId} {x : Name}
       {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
@@ -84,7 +85,8 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
       {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
       {argPred : Predicate} {id : ExternId} {x y : Name} {argTyp : Typ}
       {argPoisonAst : Bool} {argPredAst : SyntaxPredicate} {declaredArgQt : QTyp}
-      {retSpec : ExternReturn} {effects : List Effect} {tenv : CapturedVarEnv}
+      {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
+      {tenv : CapturedVarEnv}
       {entry : ExternCallEntry} {res : TypeResult} :
       d.id = id →
       d.kind = .fn →
@@ -92,6 +94,9 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
       d.argName = some x →
       d.retSpec = some retSpec →
       d.effects = effects →
+      -- The trusted contract: the decl's captures equal the applied closure's
+      -- type-member captures (`captures`), driving `capturesSatisfied` (mirrors pfn).
+      d.captures = captures →
       declaredArgQt.poison = d.argPoison →
       entry.bodyCtx =
         { ctx with
@@ -103,7 +108,7 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
           nextTag := cursor.1
           nextLoc := cursor.2
           regime := bodyState.regime' } →
-      applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv declaredArgQt)
+      applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv declaredArgQt captures)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res →
       Call
         d
@@ -565,7 +570,8 @@ inductive ExternDeclarationInReturn : ExternReturn → ExternId → ExternDeclar
         innerId
         { id := innerId, kind := .fn, typ := innerArgTyp, argName := some innerArg,
           retSpec := some innerRet, effects := innerEffects,
-          preds := collectExternPreds innerRet innerEffects, argPoison := innerArgPoison }
+          preds := collectExternPreds innerRet innerEffects, argPoison := innerArgPoison,
+          captures := innerCaptures }
   | nestedFn_inner {innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects id d} :
       ExternDeclarationInReturn innerRet id d →
       ExternDeclarationInReturn
@@ -591,7 +597,8 @@ inductive ExternDeclarationInProgram : Expr → ExternId → ExternDeclaration �
   | externFn {id x argTyp argPoison argPred retSpec eff} :
       ExternDeclarationInProgram (Expr.externFn id x argTyp argPoison argPred retSpec eff cap) id
         { id := id, kind := .fn, typ := argTyp, argName := some x, retSpec := some retSpec,
-          effects := eff, preds := collectExternPreds retSpec eff, argPoison := argPoison }
+          effects := eff, preds := collectExternPreds retSpec eff, argPoison := argPoison,
+          captures := cap }
   | externFn_return {id x argTyp argPoison argPred retSpec eff nestedId d} :
       ExternDeclarationInReturn retSpec nestedId d →
       ExternDeclarationInProgram (Expr.externFn id x argTyp argPoison argPred retSpec eff cap) nestedId d
@@ -653,7 +660,8 @@ inductive ExternDeclarationInProgram : Expr → ExternId → ExternDeclaration �
         (Expr.fn x argTyp (Expr.externFn id y bodyArgTyp bodyArgPoison bodyArgPred retSpec effects cap) retTyp) id
         { id := id, kind := .fn, typ := bodyArgTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects, argPoison := bodyArgPoison }
+          preds := collectExternPreds retSpec effects, argPoison := bodyArgPoison,
+          captures := cap }
   | pfn_body {x argTyp body retTyp id d} :
       ExternDeclarationInProgram body id d →
       ExternDeclarationInProgram (Expr.pfn x argTyp body retTyp) id d
@@ -722,13 +730,15 @@ def TrustedRegistryAgreesWithProgram (e : Expr) (tr : TrustedRegistry) : Prop :=
 
 def TrustedRegistryEntryMatchesFn
     (entry : TrustedExternEntry) (id : ExternId) (x : Name)
-    (argTyp : Typ) (retSpec : ExternReturn) (effects : List Effect) : Prop :=
+    (argTyp : Typ) (retSpec : ExternReturn) (effects : List Effect)
+    (captures : List Capture) : Prop :=
   entry.decl.id = id ∧
   entry.decl.kind = .fn ∧
   entry.decl.typ = argTyp ∧
   entry.decl.argName = some x ∧
   entry.decl.retSpec = some retSpec ∧
-  entry.decl.effects = effects
+  entry.decl.effects = effects ∧
+  entry.decl.captures = captures
 
 def TrustedRegistryEntryMatchesPfn
     (entry : TrustedExternEntry) (id : ExternId) (x : Name)
@@ -743,18 +753,19 @@ def TrustedRegistryEntryMatchesPfn
 theorem TrustedRegistryAgreesWithProgram.resolveFnDeclaration
     {e : Expr} {tr : TrustedRegistry} {id : ExternId} {x : Name}
     {argTyp : Typ} {argPoison : Bool} {retSpec : ExternReturn} {effects : List Effect}
-    {impl : ExternImpl}
+    {captures : List Capture} {impl : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithProgram e tr)
     (hprog :
       ExternDeclarationInProgram e id
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects, argPoison := argPoison })
+          preds := collectExternPreds retSpec effects, argPoison := argPoison,
+          captures := captures })
     (hlookupRuntime : (TrustedRegistry.toRuntimeRegistry tr).get? id = some impl) :
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
       entry.impl = impl ∧
-      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects := by
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures := by
   rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
   have hdecl := hagrees hprog hlookup
   refine ⟨entry, hlookup, himpl, ?_⟩
@@ -785,38 +796,45 @@ namespace TrustedRegistryEntryMatchesFn
 
 theorem id_eq
     {entry : TrustedExternEntry} {id : ExternId} {x : Name}
-    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
-    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
+    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures) :
     entry.decl.id = id :=
   h.1
 
 private theorem kind_eq
     {entry : TrustedExternEntry} {id : ExternId} {x : Name}
-    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
-    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
+    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures) :
     entry.decl.kind = .fn :=
   h.2.1
 
 private theorem typ_eq
     {entry : TrustedExternEntry} {id : ExternId} {x : Name}
-    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
-    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
+    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures) :
     entry.decl.typ = argTyp :=
   h.2.2.1
 
 private theorem argName_eq
     {entry : TrustedExternEntry} {id : ExternId} {x : Name}
-    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
-    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
+    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures) :
     entry.decl.argName = some x :=
   h.2.2.2.1
 
 private theorem retSpec_eq
     {entry : TrustedExternEntry} {id : ExternId} {x : Name}
-    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect}
-    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects) :
+    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
+    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures) :
     entry.decl.retSpec = some retSpec :=
   h.2.2.2.2.1
+
+theorem captures_eq
+    {entry : TrustedExternEntry} {id : ExternId} {x : Name}
+    {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
+    (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures) :
+    entry.decl.captures = captures :=
+  h.2.2.2.2.2.2
 
 end TrustedRegistryEntryMatchesFn
 
@@ -868,12 +886,12 @@ end TrustedRegistryEntryMatchesPfn
 
 theorem ExternCallBoundaryRun.fn_of_match
     {entry : TrustedExternEntry} {id : ExternId} {argTyp : Typ}
-    {retSpec : ExternReturn} {effects : List Effect}
+    {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
     {implFn : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address)}
     {callEntry : ExternCallEntry} {res : TypeResult}
     {cf : Config} {v vRaw : Value} {mem' : Memory} {addr' : Address}
     (hmatch :
-      TrustedRegistryEntryMatchesFn entry id callEntry.argName argTyp retSpec effects)
+      TrustedRegistryEntryMatchesFn entry id callEntry.argName argTyp retSpec effects captures)
     (hpure : callEntry.callConfig.pureMode = false)
     (hunified :
       callEntry.unifiedEnv =
@@ -942,11 +960,11 @@ theorem ExternCallBoundaryRun.pfn_of_match
 
 def TrustedRegistryAgreesWithFnTClosures
     (tr : TrustedRegistry) (argTyp : Typ) (tcls : List FnTClosure) : Prop :=
-  ∀ {id x retSpec effects capturedEnv argQt},
-    FnTClosure.extern id x retSpec effects capturedEnv argQt ∈ tcls →
+  ∀ {id x retSpec effects capturedEnv argQt captures},
+    FnTClosure.extern id x retSpec effects capturedEnv argQt captures ∈ tcls →
     ∃ entry,
       TrustedRegistry.lookup? tr id = some entry ∧
-      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects ∧
+      TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures ∧
       -- The trusted entry's declared-argument poison must agree with the closure
       -- member's resolved argument condition.  `TrustedRegistryEntryMatchesFn` is a
       -- deliberately lossy projection of `entry.decl = d` (it drops `argPoison`,
@@ -1039,17 +1057,18 @@ inductive ExternDeclarationReachableFromQTyp
   | arrow_extern_member {st1 st2 : Typ} {p qpoison : Poison} {qpred : Predicate}
       {tcls : List FnTClosure} {id : ExternId} {x : Name}
       {retSpec : ExternReturn} {effects : List Effect} {σcap : CapturedVarEnv} {argQt : QTyp} :
-      FnTClosure.extern id x retSpec effects σcap argQt ∈ tcls →
+      FnTClosure.extern id x retSpec effects σcap argQt captures ∈ tcls →
       ExternDeclarationReachableFromQTyp root ctxRoot
         { etyp := ETyp.arrow st1 st2 p tcls, poison := qpoison, pred := qpred } id
         { id := id, kind := .fn, typ := st1, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects, argPoison := argQt.poison }
+          preds := collectExternPreds retSpec effects, argPoison := argQt.poison,
+          captures := captures }
   | arrow_extern_return {st1 st2 : Typ} {p qpoison : Poison} {qpred : Predicate}
       {tcls : List FnTClosure} {outerId nestedId : ExternId} {x : Name}
       {retSpec : ExternReturn} {effects : List Effect} {σcap : CapturedVarEnv} {argQt : QTyp}
       {d : ExternDeclaration} :
-      FnTClosure.extern outerId x retSpec effects σcap argQt ∈ tcls →
+      FnTClosure.extern outerId x retSpec effects σcap argQt captures ∈ tcls →
       ExternDeclarationInReturn retSpec nestedId d →
       ExternDeclarationReachableFromQTyp root ctxRoot
         { etyp := ETyp.arrow st1 st2 p tcls, poison := qpoison, pred := qpred } nestedId d
@@ -1057,7 +1076,7 @@ inductive ExternDeclarationReachableFromQTyp
       {tcls : List FnTClosure} {outerId : ExternId} {x : Name}
       {retSpec : ExternReturn} {effects : List Effect} {σcap : CapturedVarEnv} {argQt : QTyp}
       {id : ExternId} {d : ExternDeclaration} :
-      FnTClosure.extern outerId x retSpec effects σcap argQt ∈ tcls →
+      FnTClosure.extern outerId x retSpec effects σcap argQt captures ∈ tcls →
       ExternDeclarationReachableFromCapturedEnv root ctxRoot σcap id d →
       ExternDeclarationReachableFromQTyp root ctxRoot
         { etyp := ETyp.arrow st1 st2 p tcls, poison := qpoison, pred := qpred } id d
@@ -1071,7 +1090,8 @@ inductive ExternDeclarationReachableFromQTyp
         { etyp := ETyp.arrow st1 st2 p tcls, poison := qpoison, pred := qpred } id
         { id := id, kind := .fn, typ := argTyp, argName := some x,
           retSpec := some retSpec, effects := effects,
-          preds := collectExternPreds retSpec effects, argPoison := argPoison }
+          preds := collectExternPreds retSpec effects, argPoison := argPoison,
+          captures := cap }
   | parrow_regular_body {st1 st2 : Typ} {p qpoison : Poison} {qpred : Predicate}
       {tcls : List PFnTClosure} {x : Name} {body : PExpr} {σcap : CapturedVarEnv}
       {id : ExternId} {d : ExternDeclaration} :
