@@ -252,13 +252,19 @@ for **any** fn declaration:
   two constructors constrain disjoint `entry`/`res` fields and are jointly
   satisfiable — the post is a genuine falsehood reachable from true hypotheses,
   not merely a hard proof.
-- Root cause / asymmetry with pfn: `Value.peClosure` is extern-only, so the pfn
-  `Call` has only `pfnExternMember` (result = return type) and the obstruction
-  never arises. `Value.closure` is overloaded (regular `fn` lambdas *and* extern
-  fns), so the fn `Call` must carry `fnRegularExternBody` to handle
-  `(fn x => extern fn …) arg` — whose application evaluates the body to a closure
-  *value* (arrow type) and performs **no** extern dispatch. The universal callFR
-  contract conflates this route with an actual extern dispatch.
+- Root cause / asymmetry with pfn: a regular *pure* closure restricts its body to
+  `PExpr` (the `Expr.toPExpr? body = some pbody` guard on `valueHasETyp.peClosure`,
+  TypeSafety.lean:922), and `toPExpr?` excludes extern declarations — so a regular
+  pfn closure can never carry a bare extern body, the pfn `Call` has only
+  `pfnExternMember` (result = return type), and the obstruction never arises. The
+  regular *impure* closure has no such restriction: `typecheckFn` records the body
+  verbatim, so a regular `fn` closure *can* carry a bare `Expr.externFn` body, and
+  the fn `Call` carries `fnRegularExternBody`. At runtime `(fn x => extern fn …)
+  arg` **does** extern-dispatch — `beval` matches on the closure body's shape
+  (BigStep.lean:212) and dispatches `@id`, returning its return value — while the
+  `fnRegularExternBody` typing re-checks the extern node to an *arrow*. The
+  universal callFR contract then conflates this type-vs-runtime-mismatched route
+  with an actual extern dispatch.
 - `declFR`, `declSingle`, and `operational` are *not* blocked (the declaration
   boundary's `Decl.fn` is a single constructor with no regular-body ambiguity,
   and the impl is operationally safe), but a spec is all-or-nothing.
@@ -272,6 +278,197 @@ regular-closure-extern-body route. Soundness rests on showing the consumer chain
 semantically (regular closures do not extern-dispatch) but must be proved when the
 contract is weakened. Because this changes a *trusted* contract, it is left as a
 deliberate follow-up rather than done unilaterally.
+
+## Design sketch: narrowing the trusted extern call contract (implemented)
+
+Status: **implemented.** This records the remediation named above, which touches
+the trusted boundary *and* the language's typing rules. The implementation
+follows the sketch below, with one refinement discovered during the work: the
+unreachability guard had to be placed on **two** value-relation inductives, not
+just one (see "Guard placement" at the end of this section).
+
+The realised end state:
+
+- `ExternBoundaryTyping.Call` no longer has the `fnRegularExternBody` constructor;
+  it has exactly `fnExternMember` and `pfnExternMember`. The trusted contracts
+  `ExternCallBoundaryFR` / `ExternCallBoundarySingle` (and hence
+  `ExternBoundarySpec.callFR` / `callSingle`) quantify over this narrowed `Call`,
+  so they now cover **only** real extern dispatch. Public top-level FR theorem
+  shapes are unchanged (they reference the contracts by name).
+- `typecheckFn` (`LeanPoison/Typecheck.lean`) rejects a `fn` whose body is a bare
+  `Expr.externFn`; `valueHasETyp`'s regular-closure route is kept disjoint from
+  the extern route via guards on the value relations below, so no well-typed
+  value takes the dropped route.
+- `examples/extern_fn_bare_extern_body_reject.poison` exercises the new
+  rejection; the Ott `fn_abs` rule carries the matching `not_extern_fn e` side
+  condition.
+
+### What the obstruction really is
+
+The blocker is not merely "`callFR` is false for the `fnRegularExternBody`
+route"; it traces to a typing/runtime disagreement the type system currently
+admits. A regular lambda whose body is a bare extern node — `fn x => extern fn
+@id …` — typechecks today: `typecheckFn` (LeanPoison/Typecheck.lean:882) records
+the body verbatim as `FnTClosure.regular x (Expr.externFn …) …`, giving the
+lambda an arrow whose result is the `@id` closure type. But `beval` applies *any*
+`Value.closure` whose body is an `externFn` node by **dispatching the extern**
+(LeanPoison/BigStep.lean:212), returning `@id`'s validated return value (a
+`Value.num`) — never a closure. Static type (arrow) and runtime result (return
+value) disagree for this program.
+
+The pfn side never hits this: `valueHasETyp.peClosure` (TypeSafety.lean:922)
+already carries `Expr.toPExpr? body = some pbody`, and `toPExpr?` rejects
+`externPfn` bodies — i.e. a regular pure closure may not have a bare extern body.
+The fn side simply lacks the analogous guard, which is why a trusted `kind = .fn`
+spec is unbuildable.
+
+### Correcting goal (b)
+
+The intended split's clause (b) — "regular function-body evaluation, including a
+body that produces an extern fn closure, stays covered by normal FR" — does not
+hold as phrased for `fn x => extern fn @id`: that program does **not** produce a
+closure at runtime; `beval` dispatches it. The achievable split:
+
+- bodies that are **not** a bare extern node (e.g.
+  `fn x => if c then extern fn @a else extern fn @b`) are genuine closures, run
+  through `bevalFunctionBody`, and stay covered by normal FR — whose runtime
+  witness `BevalAppSuccess.userFn` (SemanticsProperties.lean:380) **already**
+  carries `hNotExternAst : ¬ Expr.IsExternFnAst body`;
+- a bare extern body (`fn x => extern fn @id`) must be **rejected at typecheck**,
+  restoring the invariant (already true on the pfn side) that a regular closure's
+  body is never a bare extern node.
+
+So the design completes a pre-existing semantic symmetry — it makes the typing
+side agree with the runtime gate (`hNotExternAst`) that already exists — rather
+than inventing new machinery.
+
+### Proposed change: two coupled obligations
+
+Both are necessary; neither alone keeps the repo at 0 `sorry`.
+
+**Obligation 1 — narrow the trusted contract (makes `.fn` specs provable).** Add
+a member-only inductive `ExternDispatchCall` in LeanProofs/ExternBoundary.lean
+with exactly the two dispatch constructors `fnExternMember` and
+`pfnExternMember` copied from `ExternBoundaryTyping.Call` (i.e. `Call` minus
+`fnRegularExternBody`). Change the two trusted-contract **definitions** to
+quantify over it: in `ExternCallBoundaryFR` (~line 219) and
+`ExternCallBoundarySingle` (~line 315), replace the `ExternBoundaryTyping.Call …`
+hypotheses with `ExternDispatchCall …`. The `ExternBoundarySpec` structure
+(lines 337–343) is byte-identical: its fields are by-name references; only the
+contract definitions they point to change.
+
+**Obligation 2 — make the dropped route unreachable for well-typed values (makes
+the consumer sound).** Narrowing alone leaves the consumer at StepFRApp.lean:1077
+still building the now-unaccepted `regularExternBody` witness, owing
+`valueHasETyp (num) (arrow)` directly → a `sorry`. To collapse that branch to
+`False.elim`:
+
+- add `¬ Expr.IsExternFnAst e` to the regular-closure value-typing constructor
+  `valueHasETyp.closure` (TypeSafety.lean:916) and its masked mirror
+  `deepValueQTypProperty.closure` (RegimeConsistency.lean:1119);
+- make `typecheckFn` (Typecheck.lean:882) reject a lambda whose body is
+  `Expr.externFn` — the load-bearing step that makes the new value-typing premise
+  establishable by the typecheck→value-typing bridge.
+
+With these, the consumer's `closure` case (StepFRApp.lean:1015) closes by
+`False.elim`, mirroring the adjacent dead `peClosure` branches, and the only
+externFn-bodied closures reaching the boundary are genuine `FnTClosure.extern`
+dispatches via `closure_extern` → `ExternDispatchCall.fnExternMember`.
+
+### Public top-level FR theorem shapes: unchanged
+
+`TypeSystemEnforcesFaultRobustness` (FaultRobustnessProofs.lean:3335), `…_at`,
+`FaultRobustnessSpec`, `FaultRobustnessSpecForCtx`, and `ExternBoundarySpec`
+reference the contracts **by name** and never unfold `ExternCallBoundaryFR` or
+match on `Call`. Narrowing the contract *definitions* leaves every public
+signature byte-identical.
+
+### Expected theorem / file churn
+
+- ExternBoundary.lean — add `ExternDispatchCall`; rethread both contracts; remove
+  `fnRegularExternBody` from `Call` (single source of truth).
+- Typecheck.lean — `typecheckFn` rejects externFn-bodied lambdas
+  (language-surface change).
+- TypeSafety.lean — guard on `valueHasETyp.closure`; update the
+  typecheck→`valueHasETyp` canonical-forms bridge to discharge it.
+- RegimeConsistency.lean — mirror guard on `deepValueQTypProperty.closure`.
+- StepFRApp.lean — collapse the `regularExternBody` branch (~1077) to
+  `False.elim`; rewrite `externCallFnTypingProvider_of_selected` (~4153) to yield
+  `ExternDispatchCall`.
+- ExternProofs.lean — six pfn `_call_clean_shape` helpers drop the
+  `fnRegularExternBody` branch (mechanical; `fnExternMember` still dismissed by
+  kind).
+- ExternBoundaryConstructors.lean (~420) and ExternBoundaryProofs.lean — remove
+  now-dead `fnRegularExternBody` / `fn_regular_extern_body` plumbing.
+- examples/ + poison-lang-spec/poison-lang.ott + docs — a negative `.fail`
+  example (`fn x => extern fn @id` rejected), the `typecheckFn` rule, prose;
+  `make test` green.
+- Then a representative trusted `kind = .fn` spec (the original Checkpoint B goal)
+  plus a program-FR artifact become assemblable.
+
+### Verification that the boundary is not weakened
+
+Key soundness obligation: **`regularExternBody` is unreachable for well-typed
+values** — every `Value.closure x e env` admitted by the regular-member
+value-typing route carries `¬ Expr.IsExternFnAst e`. Once it holds, the coverage
+partition is exhaustive and disjoint:
+
+- genuine extern dispatch (closure typed via `FnTClosure.extern`) → trusted
+  boundary via `ExternDispatchCall.fnExternMember` / `pfnExternMember`;
+- application of a non-extern body → normal FR, whose witness
+  `BevalAppSuccess.userFn` already requires `¬ IsExternFnAst body`, so it never
+  overlaps the dispatch route;
+- `fn x => extern fn @id` → rejected at typecheck, so no such value exists.
+
+Every runtime extern dispatch (BigStep.lean:212) is then covered by exactly one
+FR path; none is dropped — proving the narrowing removes a *dead* obligation
+rather than hiding a *live* gap. Concrete check: confirm `userFn`'s
+`hNotExternAst` and the new `valueHasETyp.closure` guard use the *same*
+`Expr.IsExternFnAst` predicate (Syntax.lean:245), so the typing exclusion and the
+runtime exclusion coincide.
+
+### Risks and sequencing
+
+- The two obligations must be **co-delivered**: Obligation 1 alone introduces a
+  `sorry` at the consumer; Obligation 2 alone breaks existing proofs.
+- The `typecheckFn` restriction is an **observable language-surface change** —
+  programs of shape `fn x => extern fn @id` stop typechecking — which is the
+  reason this is a design decision, not a mechanical edit.
+- Highest-risk item first: prove the typecheck→`valueHasETyp` bridge still goes
+  through with the new guard before touching the contract. A low-friction
+  migration is to introduce the guard as a side-condition/implication so existing
+  proofs keep compiling during the transition.
+
+### Guard placement (refinement discovered during implementation)
+
+The sketch above proposed guarding `valueHasETyp.closure` and its masked mirror
+`deepValueQTypProperty.closure`. Implementation showed the minimal *and*
+sufficient surface is a different pair:
+
+- `deepValueQTypProperty.closure` (`LeanProofs/RegimeConsistency.lean`) — needed
+  to collapse the consumer that inverts `valueConsistentWithRegimeMasked` (the
+  StepFRApp application case for an `extern fn`-bodied closure value).
+- `agreeValueUnder.clean_internal_arrow` (`LeanProofs/FaultRobustness.lean`) —
+  needed to collapse the **paired-run** producer
+  (`stepFR_app_arrow_runtime_extern_source_from_internal_clean`), which routes
+  through the clean-agreement relation, *not* through `deepValueQTypProperty`.
+  Guarding only `deepValueQTypProperty.closure` leaves this producer unprovable.
+
+`valueHasETyp.closure` is **not** guarded: it *receives* the guard by inverting
+`agreeValueUnder.clean_internal_arrow` (the `JoinMemberTransport`
+reconstruction), so it need not *carry* it. Guarding it instead would cascade the
+new field across ~40 `agreeValueUnder` sites. The guard is appended as the last
+field of `clean_internal_arrow` so positional inversions auto-name it; only the
+~8 construction sites (all fed by a now-guarded `deepValueQTypProperty.closure`
+inversion or the `typecheckFn` bridge) needed editing. The pfn side needs no
+guard: `clean_internal_parrow` already carries `Expr.toPExpr? body = some pbody`,
+structurally excluding `externPfn` bodies.
+
+The dropped regular route is encoded downstream as `… ∨ False` in the three
+`private` static-source plumbing lemmas in `StepFRApp.lean`
+(`applyFnTClosure_staticSource_of_threaded_mem` and the two consumers), keeping
+their call sites type-stable while making the route provably uninhabited; the
+trusted `Call` relation itself is cleanly narrowed (no vestigial disjunct).
 
 ## Out of scope (this effort)
 

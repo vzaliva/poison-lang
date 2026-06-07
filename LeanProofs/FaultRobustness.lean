@@ -536,7 +536,11 @@ mutual
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.closure x body ρcap₁)
-        (hv₂ : v₂ = Value.closure x body ρcap₂) :
+        (hv₂ : v₂ = Value.closure x body ρcap₂)
+        -- A regular closure's body is never a bare `extern fn` node (`typecheckFn`
+        -- rejects such bodies); this keeps the regular agreement route disjoint
+        -- from the extern-dispatch route (`clean_internal_arrow_extern`).
+        (hbody : ¬ Expr.IsExternFnAst body) :
         agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_internal_arrow_extern
         {id : ExternId} {x y : Name} {argTyp : Typ}

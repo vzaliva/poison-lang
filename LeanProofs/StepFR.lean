@@ -730,7 +730,7 @@ private lemma agreeValueUnder_same_aux
         exact agreeValueUnder.withPred_true_ref k htag hregime hetyp hlookup hin rfl hlookup rfl
       | closure x body env => exact absurd rfl (hnclos x body env)
       | peClosure x body env => exact absurd rfl (hnclospe x body env)
-  | @closure qt' _v' xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hSub ih =>
+  | @closure qt' _v' xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hSub _hbody ih =>
     subst hval
     intro _hclean htyp
     obtain ⟨hRegime, hnd, hcover, hhenv⟩ := hP
@@ -751,7 +751,7 @@ private lemma agreeValueUnder_same_aux
           (list_lookup_of_ofCaptured_lookup σcap y qt_y hlookup_σ) hlookup_ρ)
       have htyping : capturedVarsTypingProperty θ σcap ρcap := ⟨hnd, hcover, hhenv⟩
       exact agreeValueUnder.clean_internal_arrow h_clean_int hetyp_eq hmem rfl
-        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr htyping htyping rfl rfl
+        hcap hmemberVars hmemberCvcr hmemberVars hmemberCvcr htyping htyping rfl rfl _hbody
   | @closure_extern qt' _v' _argPoison _argPred _argQt _cap _memberCap id xp y argTyp retSpec effects ρcap σcap p tcls
       hval hetyp_eq hmem hP hSub ih =>
     subst hval
@@ -1339,7 +1339,7 @@ private lemma deepValueQTypProperty_capturedVarsRegime_monotoneExt
         capturedVarsRegimeProperty predSat R' μ σcap ρcap ∧ capturedVarsTypingProperty θ σcap ρcap) qt v := by
   induction hdeep with
   | nonClosure hv hpe => intro _; exact .nonClosure hv hpe
-  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hPT _hrec ih =>
+  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hPT _hrec _hbody ih =>
       intro hbound
       have hσbound : CapturedEnvFullBounded σcap B := by
         have hb2 := hbound; rw [hetyp] at hb2
@@ -1349,6 +1349,7 @@ private lemma deepValueQTypProperty_capturedVarsRegime_monotoneExt
         ⟨capturedVarsRegimeProperty_monotoneExt h_mono ?_ hPT.1, hPT.2⟩
         (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr
           (CapturedEnvFullBounded_member_etypClosures hσbound (List_lookup_some_mem x qt_x σcap hs)))
+        _hbody
       intro x qt_x k_x hlook hg hnt
       exact absurd (hnewB k_x hnt) (Nat.not_le.2
         (CapturedEnvFullBounded_guardTag_lt hσbound (List_lookup_some_mem x qt_x σcap hlook) hg))
@@ -1522,8 +1523,8 @@ lemma closureCapturedVarsRegime_transport_etyp
       refine .intro ?_
       cases hdeep with
       | nonClosure hv hpe => exact .nonClosure hv hpe
-      | closure xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hrec =>
-          exact .closure xp body ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hmem hP hrec
+      | closure xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hrec hbody =>
+          exact .closure xp body ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hmem hP hrec hbody
       | closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls hval hetyp_eq hmem hP hrec =>
           exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls
             hval (hetyp ▸ hetyp_eq) hmem hP hrec
@@ -1548,10 +1549,10 @@ private lemma closureCapturedVarsRegime_weaken_fnTClosures
       refine .intro ?_
       cases hdeep with
       | nonClosure hv hpe => exact .nonClosure hv hpe
-      | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec =>
+      | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec hbody =>
           have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
           subst heq_tcls
-          exact .closure xp body ρcap σcap st1 st2 p tcls' hval rfl (hmem _ hmem_src) hP hrec
+          exact .closure xp body ρcap σcap st1 st2 p tcls' hval rfl (hmem _ hmem_src) hP hrec hbody
       | closure_extern id xp y argTyp retSpec effects ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
           have heq_arg : argTyp = st1 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.1).symm
           have heq_ret : parseReturnType retSpec = st2 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.1).symm
@@ -1578,10 +1579,10 @@ private lemma closureCapturedVarsRegime_weaken_fnTClosures'
       refine .intro ?_
       cases hdeep with
       | nonClosure hv hpe => exact .nonClosure hv hpe
-      | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec =>
+      | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec hbody =>
           have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
           subst heq_tcls
-          exact .closure xp body ρcap σcap st1 st2 p' tcls' hval rfl (hmem _ hmem_src) hP hrec
+          exact .closure xp body ρcap σcap st1 st2 p' tcls' hval rfl (hmem _ hmem_src) hP hrec hbody
       | closure_extern id xp y argTyp retSpec effects ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
           have heq_arg : argTyp = st1 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.1).symm
           have heq_ret : parseReturnType retSpec = st2 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.1).symm
@@ -1725,7 +1726,7 @@ lemma closureCapturedVarsRegime_joinETyps_step_right
       cases hdeep with
       | nonClosure hv hpe =>
           exact .intro (.nonClosure hv hpe)
-      | closure x body ρcap σcap st1r st2r pr tclr hval hetyp_r htcl hP hrec =>
+      | closure x body ρcap σcap st1r st2r pr tclr hval hetyp_r htcl hP hrec hbody =>
           have hetyp_r' : resEtyp = ETyp.arrow st1r st2r pr tclr := by
             simpa using hetyp_r
           subst resEtyp
@@ -1753,7 +1754,7 @@ lemma closureCapturedVarsRegime_joinETyps_step_right
                     ⟨ETyp.arrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v := by
                 simpa using (closureCapturedVarsRegime.intro
                   (deepValueQTypProperty.closure x body ρcap σcap st1l st2l pr tclr
-                    hval rfl htcl hP hrec))
+                    hval rfl htcl hP hrec hbody))
               have hcap_join :
                   closureCapturedVarsRegime predSat R
                     ⟨ETyp.arrow st1l st2l (joinPoison pl pr) (mergeFnTClosures tclsl tclr),
@@ -2099,8 +2100,8 @@ lemma closureCapturedVarsRegimeMasked_transport_etyp
   cases h with
   | nonClosure hv hpe =>
       exact .nonClosure hv hpe
-  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hrec =>
-      exact .closure xp body ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hmem hP hrec
+  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp_eq hmem hP hrec hbody =>
+      exact .closure xp body ρcap σcap st1 st2 p tcls hval (hetyp ▸ hetyp_eq) hmem hP hrec hbody
   | closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls hval hetyp_eq hmem hP hrec =>
       exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls
         hval (hetyp ▸ hetyp_eq) hmem hP hrec
@@ -3127,7 +3128,7 @@ lemma agreeValueUnder_transport_clean
             exact ⟨ls, by simpa [hetyp] using h⟩
           exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun' hnotref' hEq
       | clean_internal_arrow hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ hbody =>
           have hetyp' := hetyp.trans hetyp1
           -- Need to show internal poison is clean for qt
           -- qt.poison = false (from hpoison), qt.etyp = qt2.etyp (from hetyp)
@@ -3138,7 +3139,7 @@ lemma agreeValueUnder_transport_clean
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_arrow hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ hbody
       | clean_internal_arrow_extern hclean_int hetyp1 htcl hmatch hcap
           hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
@@ -3220,14 +3221,14 @@ lemma agreeValueUnder_transport_clean
             exact ⟨ls, by simpa [hetyp] using h⟩
           exact agreeValueUnder.withPred_true_eq k htag hreg hnotfun' hnotref' hEq
       | clean_internal_arrow hclean_int hetyp1 htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ hbody =>
           have hetyp' := hetyp.trans hetyp1
           have hclean_int_qt : internalPoisonClean qt := by
             simp only [internalPoisonClean]
             simp only [hetyp]
             exact hclean_int
           exact agreeValueUnder.clean_internal_arrow hclean_int_qt hetyp' htcl hmatch hcap
-            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂
+            hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ hbody
       | clean_internal_arrow_extern hclean_int hetyp1 htcl hmatch hcap
           hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ =>
           have hetyp' := hetyp.trans hetyp1
@@ -4234,7 +4235,7 @@ lemma agreeValueUnder_clean_extends
         exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref hagree)
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
+          hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ hbody ihCap
           _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch
           (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
@@ -4244,7 +4245,7 @@ lemma agreeValueUnder_clean_extends
           (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
           (capturedVarsTypingProperty_extends hθ₀ htyping₁)
           (capturedVarsTypingProperty_extends hθ₁ htyping₂)
-          hv₁ hv₂)
+          hv₁ hv₂ hbody)
       (clean_internal_arrow_extern := by
         intro id x y argTyp argPoison argPred retSpec effects p tcls qt tcl σcap argQt cap memberCap ρcap₁ ρcap₂ v₁ v₂
           hclean_internal hetyp htcl hmatch hcap
@@ -5033,7 +5034,7 @@ private lemma deepValueQTypProperty_mono_bounded
     etypClosuresFullBounded qt.etyp B → deepValueQTypProperty P' qt v := by
   induction hdeep with
   | nonClosure hv hpe => intro _; exact .nonClosure hv hpe
-  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hP _hrec ih =>
+  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hP _hrec _hbody ih =>
       intro hbound
       have hσbound : CapturedEnvFullBounded σcap B := by
         have hb2 := hbound; rw [hetyp] at hb2; simp only [etypClosuresFullBounded] at hb2
@@ -5041,6 +5042,7 @@ private lemma deepValueQTypProperty_mono_bounded
       exact .closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem (hPP σcap ρcap hσbound hP)
         (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr
           (CapturedEnvFullBounded_member_etypClosures hσbound (List_lookup_some_mem x qt_x σcap hs)))
+        _hbody
   | closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls hval hetyp hmem hP _hrec ih =>
       intro hbound
       have hσbound : CapturedEnvFullBounded σcap B := by
@@ -5422,7 +5424,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
         exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ ihcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ hbody ihcap
           _hclean
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch ihcap
           (hmemberVars₀_transport hmemberVars₀)
@@ -5430,7 +5432,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
           (hmemberVars₁_transport hmemberVars₁)
           (hmemberCvcr₁_transport hmemberCvcr₁)
           htyping₀ htyping₁
-          hv₀ hv₁)
+          hv₀ hv₁ hbody)
       (clean_internal_arrow_extern := by
         intro id x y argTyp argPoison argPred retSpec effects p tcls qt tcl σcap argQt cap memberCap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
@@ -8458,9 +8460,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                               cases val <;> intro htc <;> simp at htc <;> cases htc <;>
                                 simpa [ctxAfter, regimeConsistentWithCtxMasked]
         | fn _ _ _ _ =>
-            unfold typecheckFn at htc
-            simp [pure, Except.pure] at htc
-            cases htc
+            have hfn := typecheckFn_ok_eq htc
+            subst hfn
             simpa [ctxAfter, regimeConsistentWithCtxMasked]
         | pfn x st1 body st2 =>
             unfold typecheckPfn at htc
@@ -8978,9 +8979,8 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                               cases val <;> intro htc <;> simp at htc <;> cases htc <;>
                                 simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
         | fn _ _ _ _ =>
-            unfold typecheckFn at htc
-            simp [pure, Except.pure] at htc
-            cases htc
+            have hfn := typecheckFn_ok_eq htc
+            subst hfn
             simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
         | pfn x st1 body st2 =>
             unfold typecheckPfn at htc
@@ -11505,9 +11505,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
             h_bounded.mono
               (typecheck_nextTag_mono ctx (Expr.fn x st1 body st2) (Nat.succ fuel') res
                 htc_full)
-          unfold typecheckFn at htc
-          simp [pure, Except.pure] at htc
-          cases htc
+          have hfn := typecheckFn_ok_eq htc
+          subst hfn
           refine ⟨tm, IsCanonicalExtension.refl ?_ ?_ ?_, hP⟩
           · exact hb_res
           · simpa [wfTagMeaningCtx, ctxAfter]
@@ -12682,7 +12681,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack_ext
         exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq)
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ ihcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ hbody ihcap
           hqb _hclean
         have hcapbound : CapturedEnvFullBounded σcap B := by
           have hb := hqb; rw [hetyp] at hb
@@ -12693,7 +12692,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack_ext
           (memberVarsRegimeEvidence_monotoneExt h_mono hnewB hcapbound hmemberVars₁)
           (memberCvcrEvidence_monotoneExt h_mono hnewB hcapbound hmemberCvcr₁)
           htyping₀ htyping₁
-          hv₀ hv₁)
+          hv₀ hv₁ hbody)
       (clean_internal_arrow_extern := by
         intro id x y argTyp argPoison argPred retSpec effects p tcls qt tcl σcap argQt cap memberCap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
@@ -13802,8 +13801,9 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           · intro k htag hk hnotfun
             exact ⟨qt_out, by simpa [hmem] using hlookup_out, htag, by simpa [hreg] using hk, hnotfun⟩
       | fn x st1 body st2 =>
-          simp [typecheckExpr, typecheckFn] at htc
-          cases htc
+          simp only [typecheckExpr] at htc
+          have hfn := typecheckFn_ok_eq htc
+          subst hfn
           refine ⟨?_, ?_⟩
           · intro hpoison
             exact ⟨qt_out, hlookup_out, hpoison⟩

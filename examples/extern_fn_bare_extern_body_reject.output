@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_fn_bare_extern_body_reject.poison (verbose mode)
+
+Type checking error: fn body may not be a bare 'extern fn' declaration
+

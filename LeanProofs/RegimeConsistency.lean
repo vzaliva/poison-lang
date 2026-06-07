@@ -1127,6 +1127,9 @@ inductive deepValueQTypProperty (P : CapturedVarEnv → VarEnv → Prop) :
         σcap.lookup x = some qt_x →
         ρcap.lookup x = some v_x →
         deepValueQTypProperty P qt_x v_x) →
+      -- A regular closure's body is never a bare `extern fn` node, keeping this
+      -- route disjoint from `closure_extern` (mirrors `valueHasETyp.closure`).
+      ¬ Expr.IsExternFnAst body →
       deepValueQTypProperty P qt v
   | closure_extern {qt : QTyp} {v : Value}
       {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp} {cap memberCap : List Capture}
@@ -1184,9 +1187,9 @@ lemma deepValueQTypProperty_mono
     deepValueQTypProperty P' qt v := by
   induction h with
   | nonClosure hv hpe => exact .nonClosure hv hpe
-  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hP _hdeep ih =>
+  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hP _hdeep hbody ih =>
       exact .closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem
-        (hPP σcap ρcap hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr)
+        (hPP σcap ρcap hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr) hbody
   | closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls
       hval hetyp hmem hP _hdeep ih =>
       exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls

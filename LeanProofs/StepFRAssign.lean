@@ -1488,8 +1488,9 @@ private lemma guardClosure_pred_implies_tag_absent
           simp at hpred
       | fn _ _ _ _ =>
           exfalso
-          simp [typecheckExpr, typecheckFn] at htc
-          cases htc
+          simp only [typecheckExpr] at htc
+          have hres := typecheckFn_ok_eq htc
+          subst hres
           simp at hpred
       | pfn x t1 body t2 =>
           exfalso

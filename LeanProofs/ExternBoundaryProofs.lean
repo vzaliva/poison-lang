@@ -876,8 +876,13 @@ theorem of_typecheckFn
         (Expr.fn x st1 body st2))
     (htc : typecheckFn ctx x st1 body st2 = .ok res) :
     QTypReachableFrom root ctxRoot res.qualType := by
-  simp [typecheckFn, pure, Except.pure] at htc
-  cases htc
+  have hres := typecheckFn_ok_eq htc
+  subst hres
+  show QTypReachableFrom root ctxRoot
+    { etyp :=
+        ETyp.arrow st1 st2 ctx.pc
+          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+      poison := ctx.pc, pred := Predicate.noPred }
   exact of_fn_result hctx hcurrent
 
 theorem of_typecheckPfn

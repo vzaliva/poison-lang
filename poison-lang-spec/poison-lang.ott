@@ -359,6 +359,7 @@ formula :: formula_ ::=
   | JoinPoisons G LS = p    :: :: join_poisons {{ com join poisons for LS in G }} {{ tex [[p]] = \bigsqcup_{\,l \in [[LS]]} \mathrm{poison}([[G]](l)) }}
   | not_harmful_shadow x S R :: :: not_harmful_shadow {{ com no harmful shadow of x in S,R }} {{ tex \neg\mathrm{harmful\_shadow}([[x]], [[S]], [[R]]) }}
   | not_fun T :: :: not_fun {{ com T is not function type }} {{ tex [[T]] \neq \_ \rightarrow \_}}
+  | not_extern_fn e :: :: not_extern_fn {{ com e is not a bare extern fn declaration }} {{ tex [[e]] \neq \mathsf{extern}\,\mathsf{fn}\,@\_\,\ldots }}
   | freshTags SP k = k' TM  :: :: fresh_tags {{ com allocate fresh tags for symbolic indices in SP }} {{ tex \mathrm{freshTags}([[SP]], [[k]]) = ([[k']], [[TM]]) }}
   | resolve TM SP S = P     :: :: resolve_pred {{ com resolve symbolic predicate via tag map }} {{ tex \mathrm{resolve}([[TM]], [[SP]], [[S]]) = [[P]] }}
   | TM ( ki ) = k           :: :: tag_map_lookup {{ com tag map lookup }} {{ tex [[TM]]([[ki]]) = [[k]] }}
@@ -818,6 +819,13 @@ pm ; R ; pc ; G ; S ; L |- e1 ; e2  : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 % We simply record the body and return type without typechecking the body.
 % Body typechecking is deferred until application time.
 % The closure is stored as a singleton (just the closure, not a list).
+% The body e may not be a bare extern fn declaration: at runtime such a closure
+% is applied by *dispatching the extern* (returning a value, not a closure), so
+% the recorded arrow type would disagree with the runtime result.  Rejecting it
+% mirrors the structural restriction on pfn bodies (pe ranges over pure
+% expressions, which exclude extern declarations) and keeps the trusted extern
+% call contract quantifying only over real extern dispatch.
+not_extern_fn e
 ----------------------------------------------------------------------  :: fn_abs
 pm ; R ; pc ; G ; S ; L |- fn x : ST1 => e : ST2 : ST1 -> ST2 # pc tclosures ( x , e , S ) :> pc { no_pred } -| G ; L ; R
 

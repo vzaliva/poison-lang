@@ -1,0 +1,17 @@
+-- Negative example for the trusted fn-boundary narrowing
+-- (doc/extern-env-deps-plan.md).
+--
+-- A regular `fn` lambda whose body is a *bare* `extern fn` declaration is
+-- rejected by the type checker.  Such a lambda is observationally bogus: at
+-- runtime `beval` applies any `closure x (extern fn @id …) env` by *dispatching
+-- the extern* (BigStep.lean), returning `@id`'s validated return value — never a
+-- closure — so the static arrow type and the runtime result disagree.  Rejecting
+-- it restores the invariant (already enforced on the pure `pfn` side, whose
+-- bodies are restricted to `PExpr` and so cannot be a bare extern declaration)
+-- that a regular closure's body is never a bare extern node.  This is exactly
+-- what makes the trusted extern call contract (`ExternBoundarySpec.callFR`)
+-- quantify only over real extern dispatch.
+let f = fn x : int =>
+  extern fn @22 n : (int :> clean {}) -> ( (int :> clean {}) )
+  : int -> int
+in 0

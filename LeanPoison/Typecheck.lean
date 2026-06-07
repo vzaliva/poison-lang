@@ -879,15 +879,58 @@ end TypecheckPrimitives
 ----------------------------------------------------------------------  :: fn_abs
   pc ; G ; S ; L |- fn x : ST1 => e : ST1 -> ST2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
 -/
-def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) : TypecheckM TypeResult :=
+def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) : TypecheckM TypeResult := do
+  -- A regular `fn` may not wrap a bare `extern fn` declaration as its body.  Such
+  -- a closure would be applied by *extern dispatch* at runtime (`beval` matches on
+  -- the closure body shape and runs the registered impl, returning the extern's
+  -- result), which contradicts the arrow type this rule assigns it.  Reject it at
+  -- declaration time so well-typed regular closures never carry an extern body.
+  -- This mirrors the pure side, whose bodies are restricted to `PExpr` (via
+  -- `toPExpr?`), which already excludes extern declarations.
+  if body.isExternFnAstB then
+    throw "fn body may not be a bare 'extern fn' declaration"
   -- Simply record the body and return type without typechecking the body
-  -- Body typechecking is deferred until application time
-
+  -- (body typechecking is deferred until application time).
   -- Create arrow type ST1 -> ST2 with singleton closure list
   let arrowTyp : ETyp := ETyp.arrow st1 st2 ctx.pc [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)]
   -- Create qualified type ST1 -> ST2 # pc { no_pred }
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
-   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
+  return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag, regime' := ctx.regime }
+
+/-- A successful `typecheckFn` guarantees the recorded body is not a bare
+    `extern fn` AST node — the bridge fact threaded to the value-typing closure
+    constructors so that regular closures are provably non-extern. -/
+theorem typecheckFn_ok_not_externFnAst {ctx : TypeContext} {x : Name} {st1 : Typ}
+    {body : Expr} {st2 : Typ} {res : TypeResult}
+    (h : typecheckFn ctx x st1 body st2 = .ok res) : ¬ Expr.IsExternFnAst body := by
+  have hb : body.isExternFnAstB = false := by
+    cases hb' : body.isExternFnAstB with
+    | true =>
+        simp [typecheckFn, hb', Except.map, Functor.map, throw, throwThe,
+          MonadExceptOf.throw] at h
+    | false => rfl
+  exact Expr.not_isExternFnAst_of_isExternFnAstB_eq_false hb
+
+/-- The exact result of a successful `typecheckFn` (post-guard): the arrow type
+    with the single regular closure member, all context fields threaded.  Lets
+    callers recover the result shape without re-deriving past the body guard. -/
+theorem typecheckFn_ok_eq {ctx : TypeContext} {x : Name} {st1 : Typ} {body : Expr}
+    {st2 : Typ} {res : TypeResult} (htc : typecheckFn ctx x st1 body st2 = .ok res) :
+    res =
+      { qualType := ⟨ETyp.arrow st1 st2 ctx.pc
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+          ctx.pc, Predicate.noPred⟩,
+        memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc,
+        nextTag' := ctx.nextTag, regime' := ctx.regime } := by
+  have hb : body.isExternFnAstB = false := by
+    cases hb' : body.isExternFnAstB with
+    | true =>
+        simp [typecheckFn, hb', Except.map, Functor.map, throw, throwThe,
+          MonadExceptOf.throw] at htc
+    | false => rfl
+  simp only [typecheckFn, hb, Bool.false_eq_true, if_false, bind, Except.bind,
+    pure, Except.pure] at htc
+  exact (Except.ok.inj htc).symm
 
 /-- Rule: pfn_abs (Ott rule: pfn_abs)
 ----------------------------------------------------------------------  :: pfn_abs

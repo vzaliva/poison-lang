@@ -323,17 +323,29 @@ example suite exercises both paths with the impure built-in `@22` (`set_err`):
 `extern_fn_captures_violation.poison` (call-gate rejection of a poisoned capture
 declared clean).
 
+The trusted extern call contract is fn/pfn-symmetric. The fn `Call` relation
+(`ExternBoundaryTyping.Call`) has exactly two routes, `fnExternMember` and
+`pfnExternMember`, so the universal `callFR` / `callSingle` fields of an
+`ExternBoundarySpec` quantify only over real extern dispatch. There is no
+regular-`fn`-body route to discharge: a regular `fn` whose body is a bare
+`Expr.externFn` declaration is rejected by `typecheckFn`, and the value
+relations (`deepValueQTypProperty.closure`, `agreeValueUnder.clean_internal_arrow`)
+carry `¬ Expr.IsExternFnAst body`, so no well-typed value reaches the
+extern-dispatch boundary through the regular-closure route. This mirrors the
+structural restriction already present on the pure side (a regular *pure* closure
+body is restricted to `PExpr` via `toPExpr?`, which excludes extern
+declarations). The negative case is exercised by
+`examples/extern_fn_bare_extern_body_reject.poison`; see
+`doc/extern-env-deps-plan.md` ("Design sketch: narrowing the trusted extern call
+contract") for the boundary argument.
+
 Still out of scope for this branch:
 
-- the trusted fault-robustness *spec* for an `extern fn` (a `kind = .fn`
-  `ExternBoundarySpec`). The fn `Call` relation carries the
-  `fnRegularExternBody` route, present because `Value.closure` is shared
-  between regular `fn` lambdas and extern fns (whereas `Value.peClosure` is
-  extern-only). That route makes the universal `callFR`/`callSingle` fields
-  false as stated for any fn declaration: they would require `valueHasETyp`
-  of a return-typed output against an arrow type. Lifting this needs a
-  narrowing of the trusted call-boundary contract; see
-  `doc/extern-env-deps-plan.md` ("fn-side captures: status");
+- a concrete trusted fault-robustness *spec instance* for a specific `extern fn`
+  built-in (a `kind = .fn` `ExternBoundarySpec` value). The identified obstruction
+  above (the `fnRegularExternBody` route making `callFR` / `callSingle` false as
+  stated) is removed; constructing such an instance is Checkpoint B and none is
+  asserted here;
 - trusted guarded-value producer and applied-program routing for guarded
   de-poisoned values;
 - trusted specs for default-registry builtins whose behavior is unrelated to

@@ -1,0 +1,14 @@
+-- Positive counterpart to extern_fn_bare_extern_body_reject.poison: the
+-- trusted fn-boundary narrowing rejects ONLY a *bare* `extern fn` body (the AST
+-- root is `extern fn @id …`).  A `fn` whose body merely *contains* extern
+-- declarations under other syntax (here an `if`) is a genuine closure — it
+-- evaluates to a `closure` value, not an extern dispatch — so it typechecks and
+-- is covered by the normal (non-extern) fault-robustness machinery.  This pins
+-- the exact line the guard draws: root `extern fn` ==> rejected; extern nested
+-- under a non-extern root ==> accepted.
+let c = true in
+let f = fn x : int =>
+  (if c then extern fn @5 n : (int :> clean {}) -> ( (int :> clean {}) )
+        else extern fn @6 m : (int :> clean {}) -> ( (int :> clean {}) ))
+  : int -> int
+in 0

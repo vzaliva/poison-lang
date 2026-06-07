@@ -37,11 +37,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
     nextTag' := ctxᵢ.nextTag
     regime' := ctxᵢ.regime
   }
-  have hres : res = res_expected := by
-    have htc' := htcFn
-    simp [typecheckFn] at htc'
-    cases htc'
-    rfl
+  have hres : res = res_expected := typecheckFn_ok_eq htcFn
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
   intro hpredlaws hExtTyping hwfTm hTmBounded
@@ -111,6 +107,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
       exact hcwr.2.2 y qt_y v_y
         (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
         hlookup_ρ
+    · exact typecheckFn_ok_not_externFnAst htcFn
   exact
     singleRunFinalCleanWitness_of_same_state_maskedReg_param
       (masked := masked)
@@ -273,11 +270,7 @@ lemma stepFR_fn
     nextTag' := ctxᵢ.nextTag
     regime' := ctxᵢ.regime
   }
-  have hres : res = res_expected := by
-    have htc' := htcFn
-    simp [typecheckFn] at htc'
-    cases htc'
-    rfl
+  have hres : res = res_expected := typecheckFn_ok_eq htcFn
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
@@ -414,7 +407,8 @@ lemma stepFR_fn
           cases hcwr₀.2.2 y qt_y v_y
               (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
               hlookup_ρ with
-          | intro h => exact h))
+          | intro h => exact h
+        · exact typecheckFn_ok_not_externFnAst htcFn))
   · -- valueConsistentWithRegime for cf₁
     exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hres, res_expected])
       (.intro (by
@@ -441,7 +435,8 @@ lemma stepFR_fn
           cases hcwr₁.2.2 y qt_y v_y
               (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
               hlookup_ρ with
-          | intro h => exact h))
+          | intro h => exact h
+        · exact typecheckFn_ok_not_externFnAst htcFn))
   · -- resultAgreesIfClean
     intro hclean
     cases hclean with
@@ -503,7 +498,7 @@ lemma stepFR_fn
             hclean_internal hetyp (by simp) rfl hcap
             hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
             htyping₀ htyping₁
-            (by simp [ho₀]) (by simp [ho₁])
+            (by simp [ho₀]) (by simp [ho₁]) (typecheckFn_ok_not_externFnAst htcFn)
     | guard k htag _hregime _ =>
         have : False := by
           have hpred : qtypGuardTag res.qualType = none := by

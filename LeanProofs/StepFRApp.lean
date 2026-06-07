@@ -301,9 +301,6 @@ inductive ExternCallBoundaryFnStaticSource
       declaredArgQt.poison = argPoison →
       FnTClosure.extern id x retSpec eff tenv declaredArgQt memberCap ∈ tcls →
       ExternCallBoundaryFnStaticSource tcls sourceArgTyp id x y argTyp argPoison retSpec eff tenv memberCap
-  | regularExternBody {argPred : SyntaxPredicate} :
-      FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec eff memberCap) tenv ∈ tcls →
-      ExternCallBoundaryFnStaticSource tcls sourceArgTyp id x y argTyp argPoison retSpec eff tenv memberCap
 
 /-- Static provenance for runtime pure extern dispatch from a parrow closure list.
 
@@ -443,12 +440,6 @@ private lemma QTypRespectsTagMeaning_of_arrow_static_source_captured_lookup
       have hroot : QTypInQTyp qtCap qtRes :=
         QTypInQTyp.in_arrow qtCap qtRes st1 st2 p tcls
           (FnTClosure.extern id x retSpec effects σcap _ _) z
-          hetyp hmem (by simpa [fnCapturedEnv] using hcapMem)
-      exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
-  | regularExternBody hmem =>
-      have hroot : QTypInQTyp qtCap qtRes :=
-        QTypInQTyp.in_arrow qtCap qtRes st1 st2 p tcls
-          (FnTClosure.regular x (Expr.externFn id y argTyp _ _ retSpec effects _) σcap) z
           hetyp hmem (by simpa [fnCapturedEnv] using hcapMem)
       exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
 
@@ -1012,78 +1003,16 @@ private lemma consistentWithRegimeMasked_app_arrow_extern_body_start
   cases valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_fun with
   | nonClosure hnotclo _ =>
       exact absurd rfl (hnotclo x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) ρcap)
-  | closure xp bp rp σ s1 s2 pp tcl hval hteq hmem hP hrec =>
+  | closure xp bp rp σ s1 s2 pp tcl hval hteq hmem hP hrec hbodyG =>
+      -- The function value here is `Value.closure x (extern fn …) ρcap`, whose body
+      -- is a bare extern node. A well-typed regular closure carries the guard
+      -- `¬ Expr.IsExternFnAst body` (`typecheckFn` rejects such bodies), so this
+      -- regular-member route is unreachable: the value is dispatched through
+      -- `closure_extern` instead. Collapse via the guard contradiction.
       rw [Value.closure.injEq] at hval
-      obtain ⟨rfl, hbody, rfl⟩ := hval
-      cases hbody
-      have htcl_eq : ETyp.arrow s1 s2 pp tcl = ETyp.arrow st1 st2 p tcls :=
-        hteq.symm.trans hetyp1
-      rw [ETyp.arrow.injEq] at htcl_eq
-      obtain ⟨rfl, rfl, rfl, rfl⟩ := htcl_eq
-      have hvars_arg :
-          ∀ k,
-            qtypGuardTag ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ = some k →
-            result1.regime'.lookup? k ≠ none →
-            masked k ∨ varsRegime predSat result1.regime' μ
-              (ρcap.update x vArg) (x, ⟨etyp2, joinPoison ctx.pc p2, pred2⟩) := by
-        intro k hguard hRdef
-        have hval_arg_e2 :
-            valueConsistentWithRegimeMasked masked predSat (ctxAfter ctx result2).regime
-              ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ μ_arg θ_arg vArg :=
-          valueConsistentWithRegimeMasked_transport_pred
-            (masked := masked) (predSat := predSat) (R := (ctxAfter ctx result2).regime)
-            (qt := result2.qualType)
-            (qt' := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
-            (μ := μ_arg) (θ := θ_arg) (v := vArg)
-            (by simp [hqt2]) (hetyp := by simp [hqt2]) hval_arg
-        have hval_arg_e1 :=
-          valueConsistentWithRegimeMasked_monotoneExt hmono1 (fun _ hk => hk)
-            (by simpa [qtypPredTagBounded, hqt2] using hqt2bound)
-            (by simpa [hqt2] using hetyp2bound)
-            hval_arg_e2
-        have hvars_or :=
-          varsRegime_of_valueConsistentWithRegimeMasked_active
-            (masked := masked) (predSat := predSat) (R := result1.regime')
-            (μ := μ_arg) (θ := θ_arg) (ρ := ρcap.update x vArg)
-            (x := x) (qt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
-            (v := vArg) (k := k)
-            (by simp [VarEnv.update, VarEnv.lookup])
-            hguard hRdef hval_arg_e1
-        cases hvars_or with
-        | inl hmasked =>
-            exact Or.inl hmasked
-        | inr hvars =>
-            exact Or.inr <|
-              varsRegime_transport_predHolds
-                (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ μ_arg μ)
-                hvars
-      have harg_cvcr :
-          closureCapturedVarsRegimeMasked masked predSat result1.regime'
-            ⟨etyp2, joinPoison ctx.pc p2, pred2⟩ μ θ vArg :=
-        closureCapturedVarsRegimeMasked_transport_μ_θ
-          (qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ μ_arg μ)
-          hθext.1
-          (closureCapturedVarsRegimeMasked_monotoneExt hmono1 (fun _ hk => hk)
-            (by simpa [hqt2] using hetyp2bound)
-            (closureCapturedVarsRegimeMasked_transport_etyp (by simp [hqt2])
-              (valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_arg)))
-      have hσcap_rec :
-          ∀ z qt v,
-            σ.lookup z = some qt →
-            ρcap.lookup z = some v →
-            closureCapturedVarsRegimeMasked masked predSat result1.regime' qt μ θ v := by
-        intro z qt v hz hv
-        exact hrec z qt v hz hv
-      refine ⟨σ, _, _, ExternCallBoundaryFnStaticSource.regularExternBody hmem, hP.2, ?_⟩
-      intro cursor
-      simpa using
-        consistentWithRegimeMasked_app_closure_body_start
-          (masked := masked) (predSat := predSat)
-          (ctx := ctx) (result2 := result2) (result1 := result1)
-          (σcap := σ) (x := x)
-          (argQt := ⟨etyp2, joinPoison ctx.pc p2, pred2⟩)
-          (μ := μ) (θ := θ) (ρpre := ρpre) (ρcap := ρcap)
-          (vArg := vArg) (cursor := cursor) hcwr hP.1 hσcap_rec hvars_arg harg_cvcr
+      obtain ⟨rfl, hbeq, rfl⟩ := hval
+      cases hbeq
+      exact absurd Expr.IsExternFnAst.mk hbodyG
   | peClosure _ _ _ _ _ _ _ _ _ hveq _ _ _ _ _ =>
       exact absurd hveq (by simp)
   | closure_extern id' xp y' argTyp' retSpec' effects' rp σ pp tcl hval hteq hmem hP hrec =>
@@ -3062,6 +2991,7 @@ private lemma stepFR_app_arrow_sync_from_clean_with_extern
       (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)) :
   ((∃ σcap,
       FnTClosure.regular x₀ body₀ σcap ∈ tcls ∧
+      ¬ Expr.IsExternFnAst body₀ ∧
       x₀ = x₁ ∧
       body₀ = body₁ ∧
       agreeCapturedEnv predSat (ctxAfter ctx res1).regime μ₀ μ₁ θ₀ θ₁ σcap env₀ env₁ ∧
@@ -3090,7 +3020,7 @@ private lemma stepFR_app_arrow_sync_from_clean_with_extern
   have h := hagree hclean
   cases h with
   | clean_internal_arrow _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁
-      htyping₀ htyping₁ hv₀ hv₁ =>
+      htyping₀ htyping₁ hv₀ hv₁ hbodyG =>
     have hetyp_combined := hetyp'.symm.trans hetyp
     simp only [ETyp.arrow.injEq] at hetyp_combined
     obtain ⟨rfl, rfl, rfl, rfl⟩ := hetyp_combined
@@ -3099,7 +3029,7 @@ private lemma stepFR_app_arrow_sync_from_clean_with_extern
     subst hmatch
     left
     left
-    exact ⟨_, htcl, rfl, rfl, hcap, hmv₀, hmc₀, hmv₁, hmc₁, htyping₀, htyping₁⟩
+    exact ⟨_, htcl, hbodyG, rfl, rfl, hcap, hmv₀, hmc₀, hmv₁, hmc₁, htyping₀, htyping₁⟩
   | clean_internal_arrow_extern _ hetyp' htcl hmatch hcap hmv₀ hmc₀ hmv₁ hmc₁
       htyping₀ htyping₁ hv₀ hv₁ =>
     have hetyp_combined := hetyp'.symm.trans hetyp
@@ -3275,14 +3205,13 @@ private lemma stepFR_app_arrow_runtime_extern_source_from_internal_clean
       (Expr.externFn id₁ y₁ argTyp₁ argPoison₁ argPred₁ retSpec₁ effects₁ captures₁) env₀ env₁
       hetyp hclean hagree with hsync | hdirty
   · rcases hsync with hregular | hextern
-    · rcases hregular with
-        ⟨σcap, hmem, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁, htyping₀,
+    · -- Regular-member route: the function value's body is a bare `extern fn`
+      -- node, but a well-typed regular closure carries `¬ Expr.IsExternFnAst body`
+      -- (`typecheckFn` rejects such bodies). This route is therefore unreachable.
+      rcases hregular with
+        ⟨σcap, hmem, hbodyG, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁, htyping₀,
           htyping₁⟩
-      cases hbody
-      exact
-        ⟨σcap, _, _, ExternCallBoundaryFnStaticSource.regularExternBody hmem, rfl,
-          hx.symm, rfl, rfl, rfl, rfl, hcap, hmv₀, hmc₀, hmv₁, hmc₁,
-          htyping₀, htyping₁⟩
+      exact absurd Expr.IsExternFnAst.mk hbodyG
     · rcases hextern with
         ⟨id, x, y, argTyp, argPoison, argPred, retSpec, effects, σcap, declaredArgQt, captures, _memberCap,
           hargEq, hmem, hx₀, hx₁,
@@ -3672,16 +3601,16 @@ private theorem stepFRApp_joinValConsFromMember_masked
 theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
     {tr : TrustedRegistry} {sourceArgTyp argTyp : Typ} {tcls : List FnTClosure}
     (hagreesExtern : TrustedRegistryAgreesWithFnTClosures tr sourceArgTyp tcls)
-    (hregularExternBody :
+    -- The regular-`extern fn`-body route is unreachable for well-typed values
+    -- (`typecheckFn` rejects bare extern bodies), so `ExternCallBoundaryFnStaticSource`
+    -- has no such constructor; this hypothesis is retained (unused) for call-site
+    -- shape stability with the threaded `*_of_reachable` chain.
+    (_hregularExternBody :
       ∀ {id x y argPoison argPred retSpec effects cap capturedEnv},
         FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) capturedEnv ∈ tcls →
         ∃ entry,
           TrustedRegistry.lookup? tr id = some entry ∧
           TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects cap ∧
-          -- Symmetry with the extern-member path (`TrustedRegistryAgreesWithFnTClosures`):
-          -- a regular closure's extern body carries `argPoison` in its AST, so pin it into
-          -- the trusted-entry match here too, so this off-public-path cluster is uniformly
-          -- faithful.  Defense-in-depth only; `argPred` is intentionally left default.
           entry.decl.argPoison = argPoison)
     {id : ExternId} {x y : Name} {retSpec : ExternReturn}
     {effects : List Effect} {capturedEnv : CapturedVarEnv} {memberCap : List Capture}
@@ -3715,27 +3644,6 @@ theorem ExternCallBoundaryFnStaticSource.callBoundaryRun
       exact
         TrustedRegistryAgreesWithFnTClosures.callBoundaryRun
           hagreesExtern hmem hargName hregistry hpure hunified hGet hArg hImpl hValRet hcfg
-  | regularExternBody hmem =>
-      rcases hregularExternBody hmem with ⟨entry, hlookup, hmatch, _hargPoison⟩
-      have hmatch' :
-          TrustedRegistryEntryMatchesFn entry id callEntry.argName argTyp retSpec effects memberCap := by
-        simpa [hargName] using hmatch
-      have hlookupRuntime :
-          (TrustedRegistry.toRuntimeRegistry tr).get? id = some entry.impl :=
-        TrustedRegistry.lookup_toRuntimeRegistry hlookup
-      have hlookupCall : callEntry.callConfig.registry.get? entry.decl.id = some entry.impl := by
-        rw [hregistry]
-        simpa [TrustedRegistryEntryMatchesFn.id_eq hmatch] using hlookupRuntime
-      have hGetDecl :
-          callEntry.callConfig.registry.get? entry.decl.id =
-            some (ExternImpl.fn implFn) := by
-        simpa [TrustedRegistryEntryMatchesFn.id_eq hmatch] using hGet
-      have himpl : entry.impl = ExternImpl.fn implFn :=
-        Option.some.inj (hlookupCall.symm.trans hGetDecl)
-      exact
-        ⟨entry, hlookup, hmatch,
-          ExternCallBoundaryRun.fn_of_match hmatch' hpure hunified hlookupCall himpl
-            hArg hImpl hValRet hcfg⟩
 
 theorem ExternCallBoundaryFnStaticSource.callBoundaryRun_of_program
     {tr : TrustedRegistry} {root : Expr} {sourceArgTyp argTyp : Typ} {tcls : List FnTClosure}
@@ -3816,8 +3724,6 @@ theorem ExternCallBoundaryFnStaticSource.reachable_from_qtyp
       cases harg
       cases hpoison
       exact QTypReachableFrom.fn_extern_member hqt hmem
-  | regularExternBody hmem =>
-      exact QTypReachableFrom.fn_regular_extern_body hqt hmem
 
 theorem ExternCallBoundaryFnStaticSource.reachable_from_app_typecheck
     {root : Expr} {ctxRoot ctx : TypeContext} {e1 e2 : Expr}
@@ -4102,7 +4008,9 @@ private lemma fnStaticSource_entry_argPoison
     {effects : List Effect} {tenv : CapturedVarEnv} {memberCap : List Capture}
     {entry : TrustedExternEntry}
     (hagrees : TrustedRegistryAgreesWithFnTClosures tr agreeArgTyp tcls)
-    (hregularExternBody :
+    -- Retained (unused) for call-site shape stability; the regular-`extern fn`-body
+    -- route is unreachable for well-typed values (no such static-source constructor).
+    (_hregularExternBody :
       ∀ {id x y argPoison argPred retSpec effects cap capturedEnv},
         FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) capturedEnv ∈ tcls →
         ∃ entry,
@@ -4120,11 +4028,6 @@ private lemma fnStaticSource_entry_argPoison
       have hentry : entry' = entry := Option.some.inj (hlookup'.symm.trans hlookup)
       subst hentry
       exact hpoison'.trans hpoison
-  | regularExternBody hmem =>
-      obtain ⟨entry', hlookup', _hmatch', hpoison'⟩ := hregularExternBody hmem
-      have hentry : entry' = entry := Option.some.inj (hlookup'.symm.trans hlookup)
-      subst hentry
-      exact hpoison'
 
 def ExternCallFnTypingProvider
     (id : ExternId) (x y : Name) (argTyp : Typ)
@@ -4173,25 +4076,9 @@ private theorem externCallFnTypingProvider_of_selected
       (∃ declaredArgQt, applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv declaredArgQt captures)
           st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res ∧
           declaredArgQt.poison = declaredArgPoison) ∨
-        ∃ argPoisonAst argPredAst cap fuelBody result3,
-          fuel = Nat.succ fuelBody ∧
-          typecheckExpr
-            { ctx with
-              pc := joinPoison p (joinPoison p1 ctx.pc)
-              memEnv := bodyState.memEnv'
-              varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-              tagEnv := bodyState.tagEnv'
-              nextTag := cursor.1
-              nextLoc := cursor.2
-              regime := bodyState.regime' }
-            (Expr.externFn id y argTyp argPoisonAst argPredAst retSpec effects cap) fuelBody = .ok result3 ∧
-          res =
-            { result3 with
-              qualType :=
-                normalizeAppResultByProvenance (joinPoison p1 p)
-                  { result3.qualType with
-                    poison := joinPoison p1 (joinPoison p result3.qualType.poison) } }) :
+        -- The regular-`extern fn`-body route is unreachable for well-typed values
+        -- (`typecheckFn` rejects bare extern bodies); recorded as `False`.
+        False) :
     ExternCallFnTypingProvider id x y argTyp retSpec effects callEntry res declaredArgPoison captures := by
   intro entry hmatch hentryPoison
   rcases hmatch with ⟨hid, hkind, htyp, hargName, hretSpec, heffects, hcaptures⟩
@@ -4203,11 +4090,7 @@ private theorem externCallFnTypingProvider_of_selected
           ExternBoundaryTyping.Call.fnExternMember
             (argPoisonAst := false) (argPredAst := SyntaxPredicate.noPred)
             hid hkind htyp hargName hretSpec heffects hcaptures (hpoisonEq.trans hentryPoison.symm) hbodyCtx happly⟩
-  | inr hregular =>
-      rcases hregular with ⟨argPoisonAst, argPredAst, cap, fuelBody, result3, _hfuel, htcBody, hres⟩
-      exact
-        ⟨argPoisonAst, argPredAst, cap, ExternBoundaryTyping.Call.fnRegularExternBody
-          hid hkind htyp hargName hretSpec heffects hbodyCtx htcBody hres⟩
+  | inr hempty => exact hempty.elim
 
 private theorem externCallPfnTypingProvider_of_selected
     {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc}
@@ -6370,25 +6253,11 @@ private lemma applyFnTClosure_staticSource_of_threaded_mem
     ((∃ declaredArgQt, applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv declaredArgQt memberCap)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok first ∧
           declaredArgQt.poison = declaredArgPoison) ∨
-      ∃ argPoisonAst argPredAst cap fuelBody result3,
-        fuel = Nat.succ fuelBody ∧
-        typecheckExpr
-          { ctx with
-            pc := joinPoison p (joinPoison p1 ctx.pc)
-            memEnv := bodyState.memEnv'
-            varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-            tagEnv := bodyState.tagEnv'
-            nextTag := cursor.1
-            nextLoc := cursor.2
-            regime := bodyState.regime' }
-          (Expr.externFn id y argTyp argPoisonAst argPredAst retSpec effects cap) fuelBody = .ok result3 ∧
-        first =
-          { result3 with
-            qualType :=
-              normalizeAppResultByProvenance (joinPoison p1 p)
-                { result3.qualType with
-                  poison := joinPoison p1 (joinPoison p result3.qualType.poison) } }) := by
+      -- The regular-`extern fn`-body route is unreachable for well-typed values
+      -- (`typecheckFn` rejects bare extern bodies, so no such `FnTClosure.regular`
+      -- member exists); recorded as `False` so the shared disjunction shape stays
+      -- stable across the downstream plumbing.
+      False) := by
   cases hsource with
   | @externMember declaredArgQt _harg hpoison hmem =>
       rcases applyFnTClosure_extern_of_threaded_mem
@@ -6410,49 +6279,13 @@ private lemma applyFnTClosure_staticSource_of_threaded_mem
             ctx st1 st2 p p1 argEtyp argPoison argPred bodyState cursor fuel
             id x retSpec effects tenv declaredArgQt memberCap first happly,
           Or.inl ⟨declaredArgQt, happly, hpoison⟩⟩
-  | @regularExternBody argPredAst hmem =>
-      rcases applyFnTClosure_regular_inv_of_threaded_mem
-          ctx st1 st2 p p1 argEtyp argPoison argPred bodyState fuel
-          tcls results x (Expr.externFn id y argTyp declaredArgPoison argPredAst retSpec effects memberCap) tenv
-          hthread hmem with
-        ⟨cursor, fuelBody, first, result3, htag, hloc, hfirst, happly,
-          _hfuel, htcBody, _hsub, hfirstEq⟩
-      have hmono : Regime.monotoneStepExt bodyState.regime' first.regime'
-          (fun k => cursor.1 ≤ k) :=
-        applyFnTClosureAtCursor_regime_mono
-          (FnTClosure.regular x (Expr.externFn id y argTyp declaredArgPoison argPredAst retSpec effects memberCap) tenv)
-          ctx st1 st2 p p1 argEtyp argPoison argPred bodyState first cursor fuel
-          (fun m _hlt e ctx' res' htc =>
-            by simpa [ctxAfter] using regime_monotoneExt ctx' e m res' htc)
-          happly
-      have hmem_preserve : ∀ l, bodyState.memEnv'.contains l → first.memEnv'.contains l := by
-        intro l hcontains
-        have hcontains3 : result3.memEnv'.contains l :=
-          typecheckExpr_mem_contains_preserved
-            (ctx :=
-              { ctx with
-                pc := joinPoison p (joinPoison p1 ctx.pc)
-                memEnv := bodyState.memEnv'
-                varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-                  ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
-                tagEnv := bodyState.tagEnv'
-                nextTag := cursor.1
-                nextLoc := cursor.2
-                regime := bodyState.regime' })
-            (e := Expr.externFn id y argTyp declaredArgPoison argPredAst retSpec effects memberCap) (fuel := fuelBody)
-            (res := result3) htcBody l (by simpa using hcontains)
-        simpa [hfirstEq] using hcontains3
-      exact
-        ⟨cursor, first, htag, hloc, hfirst,
-          Regime.monotoneStepExt_weaken hmono (fun k hk => Nat.le_trans htag hk),
-          hmem_preserve, Or.inr ⟨declaredArgPoison, argPredAst, memberCap, fuelBody, result3, _hfuel, htcBody, hfirstEq⟩⟩
 
 private lemma applyFnTClosure_staticSource_clean_back_of_p1p_true
-  (hExtTyping : ExternTypingAssumptions)
+  (_hExtTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (bodyState : TypeResult) (fuel : Nat)
-  (id : ExternId) (x y : Name) (argTyp : Typ)
+  (id : ExternId) (x _y : Name) (_argTyp : Typ)
   (retSpec : ExternReturn) (effects : List Effect) (tenv : CapturedVarEnv) {memberCap : List Capture}
   (cursor : Tag × Loc) (first : TypeResult) (bodyCtx : TypeContext)
   {declaredArgPoison : Bool}
@@ -6460,15 +6293,9 @@ private lemma applyFnTClosure_staticSource_clean_back_of_p1p_true
     (∃ declaredArgQt, applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv declaredArgQt memberCap)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok first ∧
           declaredArgQt.poison = declaredArgPoison) ∨
-      ∃ argPoisonAst argPredAst cap fuelBody result3,
-        fuel = Nat.succ fuelBody ∧
-        typecheckExpr bodyCtx (Expr.externFn id y argTyp argPoisonAst argPredAst retSpec effects cap) fuelBody = .ok result3 ∧
-        first =
-          { result3 with
-            qualType :=
-              normalizeAppResultByProvenance (joinPoison p1 p)
-                { result3.qualType with
-                  poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+      -- The regular-`extern fn`-body route is unreachable for well-typed values
+      -- (`typecheckFn` rejects bare extern bodies); recorded as `False`.
+      False)
   (hp1p : joinPoison p1 p = true)
   (hlookupBack :
     Regime.monotoneStepExt bodyState.regime' first.regime'
@@ -6476,11 +6303,11 @@ private lemma applyFnTClosure_staticSource_clean_back_of_p1p_true
   (hmemGuardBnd :
     ∀ l qt k, bodyState.memEnv'.lookup l = some qt →
       qtypGuardTag qt = some k → k < bodyState.nextTag')
-  (hbodyCtx_mem : bodyCtx.memEnv = bodyState.memEnv')
-  (hbodyCtx_regime : bodyCtx.regime = bodyState.regime')
-  (hbodyCtx_pc : bodyCtx.pc = true)
-  (hbnd_body : TagBoundedCtx bodyCtx)
-  (hwfBody : wfTypeContext bodyCtx) :
+  (_hbodyCtx_mem : bodyCtx.memEnv = bodyState.memEnv')
+  (_hbodyCtx_regime : bodyCtx.regime = bodyState.regime')
+  (_hbodyCtx_pc : bodyCtx.pc = true)
+  (_hbnd_body : TagBoundedCtx bodyCtx)
+  (_hwfBody : wfTypeContext bodyCtx) :
   ∀ l qtPre qtFirst,
     bodyState.memEnv'.lookup l = some qtPre →
     first.memEnv'.lookup l = some qtFirst →
@@ -6530,18 +6357,7 @@ private lemma applyFnTClosure_staticSource_clean_back_of_p1p_true
           have hk_back : bodyState.regime'.lookup? k = some true :=
             Regime.monotoneStepExt_lookup_back hlookupBack (Nat.not_le.2 hk_lt) hkFirst
           exact qtypCleanUnder.guard k htag hk_back hnotfun
-  | inr hregular =>
-      rcases hregular with ⟨argPoisonAst, argPredAst, cap, fuelBody, result3, _hfuel, htcBody, hfirstEq⟩
-      have hlookup3 : result3.memEnv'.lookup l = some qtFirst := by
-        simpa [hfirstEq] using hlookupFirst
-      have hclean3 : qtypCleanUnder result3.regime' qtFirst := by
-        simpa [hfirstEq] using hcleanFirst
-      have hcleanBody : qtypCleanUnder bodyCtx.regime qtPre :=
-        typecheckExpr_lookup_clean_back_of_pc_true hExtTyping
-          (ctx := bodyCtx) (e := Expr.externFn id y argTyp argPoisonAst argPredAst retSpec effects cap)
-          (fuel := fuelBody) (res := result3) htcBody hwfBody hbnd_body hbodyCtx_pc
-          l qtPre qtFirst (by simpa [hbodyCtx_mem] using hlookupPre) hlookup3 hclean3
-      simpa [hbodyCtx_regime] using hcleanBody
+  | inr hempty => exact hempty.elim
 
 private lemma applyPFnTClosure_staticSource_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -9803,7 +9619,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         rw [hetyp1] at hClosFull
         cases hsource with
         | externMember _ _ hmem => exact hClosFull _ hmem
-        | regularExternBody hmem => exact hClosFull _ hmem
       exact tagBoundedCtx_closure_body
         (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
         (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap)
@@ -9849,7 +9664,6 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         rw [hetyp1] at hClosRL
         cases hsource with
         | externMember _harg _ hmem => exact hClosRL _ hmem
-        | regularExternBody hmem => exact hClosRL _ hmem
       exact ⟨(fun l hl =>
           Nat.lt_of_lt_of_le (hwf1.1 l hl) hcursorLocA),
           varEnvRefLocsBounded_update
@@ -10015,18 +9829,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
               have hk_back : result1.regime'.lookup? k = some true :=
                 Regime.monotoneStepExt_lookup_back hlookupBackA (Nat.not_le.2 hk_lt) hkA
               exact qtypCleanUnder.guard k htag hk_back hnotfun
-      | inr hregular =>
-          rcases hregular with ⟨_apaA, _aprA, _capA, fuelBody, result3, _hfuelA, htcBody, hfirstA_eq⟩
-          have hlookup3 : result3.memEnv'.lookup l = some qtA := by
-            simpa [hfirstA_eq] using hlookupA
-          have hclean3 : qtypCleanUnder result3.regime' qtA := by
-            simpa [hfirstA_eq] using hcleanA
-          exact
-            typecheckExpr_lookup_clean_back_of_pc_true hExtTyping
-              (ctx := bodyCtx) (e := Expr.externFn id y argTyp _apaA _aprA retSpec eff _)
-              (fuel := fuelBody) (res := result3)
-              (by simpa [bodyCtx] using htcBody) hwfBody htagBoundedBody hpc_body
-              l qt1 qtA (by simpa [bodyCtx] using hlookup1) hlookup3 hclean3
+      | inr hempty => exact hempty.elim
     have hmem_eq : cf.memory = evalCfg.memory := by
       simp [evalCfg, ExternCallEntry.bodyOutputConfig]
     have hvar_eq : cf.varEnv = c₁.varEnv := by
@@ -12108,7 +11911,7 @@ lemma stepFR_app_with_expr_proof
           envUser envExt hetyp1 hclean hres_agree1 with hsync | hdirty
       · rcases hsync with hregular | hextern
         · rcases hregular with
-            ⟨_, _, _, hbody, _, _, _, _, _, _, _⟩
+            ⟨_, _, _, _, hbody, _, _, _, _, _, _, _⟩
           exact (notExternFnAst_ne_externFn hNot id y argTyp argPoison argPred retSpec eff _) hbody
         · rcases hextern with
             ⟨id', _, y', argTyp', argPoison', argPred', retSpec', eff', _, _, _, _,
@@ -12145,7 +11948,7 @@ lemma stepFR_app_with_expr_proof
           envExt envUser hetyp1 hclean hres_agree1 with hsync | hdirty
       · rcases hsync with hregular | hextern
         · rcases hregular with
-            ⟨_, _, _, hbody, _, _, _, _, _, _, _⟩
+            ⟨_, _, _, _, hbody, _, _, _, _, _, _, _⟩
           exact (notExternFnAst_ne_externFn hNot id y argTyp argPoison argPred retSpec eff _) hbody.symm
         · rcases hextern with
             ⟨id', _, y', argTyp', argPoison', argPred', retSpec', eff', _, _, _, _,
@@ -12367,7 +12170,7 @@ lemma stepFR_app_with_expr_proof
               · rcases hsync with hregular | hextern
                 · left
                   rcases hregular with
-                    ⟨σcap, hmem, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁,
+                    ⟨σcap, hmem, _hbodyG, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁,
                       _htyping₀, _htyping₁⟩
                   exact ⟨σcap, hmem, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁⟩
                 · rcases hextern with
@@ -14834,7 +14637,6 @@ lemma stepFR_app_with_expr_proof
                   rw [hetyp1] at hClosRL
                   cases hsource₁ with
                   | externMember _harg _ hmem => exact hClosRL _ hmem
-                  | regularExternBody hmem => exact hClosRL _ hmem
                 exact
                   ⟨(fun l hl => Nat.lt_of_lt_of_le (hwf1.1 l hl) hcursorLocE₁),
                     varEnvRefLocsBounded_update
@@ -15513,7 +15315,6 @@ lemma stepFR_app_with_expr_proof
                   rw [hetyp1] at hClosRL
                   cases hsource₀ with
                   | externMember _harg _ hmem => exact hClosRL _ hmem
-                  | regularExternBody hmem => exact hClosRL _ hmem
                 exact
                   ⟨(fun l hl => Nat.lt_of_lt_of_le (hwf1.1 l hl) hcursorLocE₀),
                     varEnvRefLocsBounded_update
@@ -15906,7 +15707,6 @@ lemma stepFR_app_with_expr_proof
                   rw [hetyp1] at hClosFull
                   cases hsource₀ with
                   | externMember _harg _ hmem => exact hClosFull _ hmem
-                  | regularExternBody hmem => exact hClosFull _ hmem
                 exact tagBoundedCtx_closure_body
                   (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
                   (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₀)
@@ -16222,7 +16022,6 @@ lemma stepFR_app_with_expr_proof
                   rw [hetyp1] at hClosRL
                   cases hsource₀ with
                   | externMember _harg _ hmem => exact hClosRL _ hmem
-                  | regularExternBody hmem => exact hClosRL _ hmem
                 exact
                   ⟨(fun l hl => Nat.lt_of_lt_of_le (hwf1.1 l hl) hcursorLocA₀),
                     varEnvRefLocsBounded_update
@@ -16255,7 +16054,6 @@ lemma stepFR_app_with_expr_proof
                   rw [hetyp1] at hClosRL
                   cases hsource₁ with
                   | externMember _harg _ hmem => exact hClosRL _ hmem
-                  | regularExternBody hmem => exact hClosRL _ hmem
                 exact
                   ⟨(fun l hl => Nat.lt_of_lt_of_le (hwf1.1 l hl) hcursorLocA₁),
                     varEnvRefLocsBounded_update
@@ -16536,7 +16334,6 @@ lemma stepFR_app_with_expr_proof
                   rw [hetyp1] at hClosFull
                   cases hsource₀ with
                   | externMember _harg _ hmem => exact hClosFull _ hmem
-                  | regularExternBody hmem => exact hClosFull _ hmem
                 exact tagBoundedCtx_closure_body
                   (ctxᵢ := ctxᵢ) (result2 := result2) (result1 := result1)
                   (e1 := e1) (e2 := e2) (fuel' := fuel') (σcap := σcap₀)
@@ -16755,7 +16552,6 @@ lemma stepFR_app_with_expr_proof
                       rw [hetyp1] at hClosRL
                       cases hsource with
                       | externMember _harg _ hmem => exact hClosRL _ hmem
-                      | regularExternBody hmem => exact hClosRL _ hmem
                     exact
                       ⟨(fun l hl => Nat.lt_of_lt_of_le (hwf1.1 l hl) _hcursorLocA),
                         varEnvRefLocsBounded_update
@@ -16789,7 +16585,6 @@ lemma stepFR_app_with_expr_proof
                     have hCapBoundBase : CapturedEnvFullBounded σcap result1.nextTag' := by
                       cases hsource with
                       | externMember _harg _ hmem => exact hClosFull _ hmem
-                      | regularExternBody hmem => exact hClosFull _ hmem
                     have hCapBound : CapturedEnvFullBounded σcap cursorA.1 :=
                       CapturedEnvFullBounded_mono hCapBoundBase _hcursorTagA
                     have hCapPred := capturedPredTagsBounded_of_fullBounded hCapBound
@@ -17291,17 +17086,7 @@ lemma stepFR_app_with_expr_proof
                         have hmono := Regime.monotoneStepExt_weaken hmonoCursor
                           (fun k hk => Nat.le_trans _hcursorTagA hk)
                         simpa [ctxAfter] using hmono
-                    | inr hregular =>
-                        rcases hregular with ⟨_apaA, _aprA, _capA, fuelBody, result3, _hfuelA, htcBody, hfirstA_eq⟩
-                        have hmono :
-                            Regime.monotoneStepExt bodyCtx.regime
-                              (ctxAfter bodyCtx result3).regime (fun k => bodyCtx.nextTag ≤ k) :=
-                          regime_monotoneExt bodyCtx
-                            (Expr.externFn id₀ y₀ argTyp₀ _apaA _aprA retSpec₀ eff₀ _) fuelBody
-                            result3 (by simpa [bodyCtx] using htcBody)
-                        have hmono' := Regime.monotoneStepExt_weaken hmono
-                          (fun k hk => Nat.le_trans (by simpa [bodyCtx] using _hcursorTagA) hk)
-                        simpa [bodyCtx, ctxAfter, hfirstA_eq] using hmono'
+                    | inr hempty => exact hempty.elim
                   have hpred_compat₀ :
                       ∀ (qt' : QTyp) (v' : Value),
                         qtypPredHolds predSat qt' c₁₀.memory v' ↔

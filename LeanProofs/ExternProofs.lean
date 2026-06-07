@@ -387,7 +387,6 @@ private theorem builtinAbs_call_clean_shape
         qtypCleanUnderRegime argQt entry.bodyCtx.regime = true := by
   cases htyped with
   | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinAbsDecl] at hkind
-  | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinAbsDecl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
         id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
@@ -1340,7 +1339,6 @@ private theorem builtinMax11_call_clean_shape
         qtypCleanUnderRegime argQt entry.bodyCtx.regime = true := by
   cases htyped with
   | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinMax11Decl] at hkind
-  | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMax11Decl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
         id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
@@ -1522,7 +1520,6 @@ private theorem builtinMax11Captures_call_clean_shape
         qtypCleanUnderRegime aQt entry.bodyCtx.regime = true) := by
   cases htyped with
   | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinMax11CapturesDecl] at hkind
-  | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMax11CapturesDecl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
         id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
@@ -2390,7 +2387,6 @@ private theorem builtinMax11Guarded_call_clean_shape
         qtypCleanUnderRegime aQt entry.bodyCtx.regime = true) := by
   cases htyped with
   | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinMax11GuardedDecl] at hkind
-  | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMax11GuardedDecl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
         id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
@@ -2977,7 +2973,6 @@ private theorem builtinMax10_call_clean_shape
       (res.qualType.poison = false → pc = false) := by
   cases htyped with
   | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinMax10Decl] at hkind
-  | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMax10Decl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
         id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
@@ -3822,7 +3817,6 @@ private theorem builtinMemDeref_call_clean_shape
           qtypCleanUnderRegime cellQt entry.bodyCtx.regime = true) := by
   cases htyped with
   | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinMemDerefDecl] at hkind
-  | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMemDerefDecl] at hkind
   | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
         id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv

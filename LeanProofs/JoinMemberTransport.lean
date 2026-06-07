@@ -134,13 +134,13 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
           (agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref heq))
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₀ ρcap₁ v₀ v₁ hclean_internal hetyp htcl hmatch hcap
-          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ _ihcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ hbody _ihcap
           hclean
         exact agreeValueUnder_clean_transport_by_cleanBack h_clean_back
           hmemberVars₀_transport hmemberCvcr₀_transport
           hmemberVars₁_transport hmemberCvcr₁_transport hclean
           (agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch hcap
-            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁))
+            hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁ htyping₀ htyping₁ hv₀ hv₁ hbody))
       (clean_internal_arrow_extern := by
         intro id x y argTyp _argPoison _argPred retSpec effects p tcls qt tcl σcap _argQTyp _cap _memberCap ρcap₀ ρcap₁ v₀ v₁
           hclean_internal hetyp htcl hmatch hcap
@@ -2119,7 +2119,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
   | @clean_internal_arrow st1 st2 p tcls _qt tcl x body σcap ρcap₀ ρcap₁ _v₀ _v₁
       hclean_internal_src hetyp_src htcl hmatch hcap
       hmemberVars₀_src hmemberCvcr₀_src hmemberVars₁_src hmemberCvcr₁_src
-      htyping₀_src htyping₁_src hv₁ hv₂ =>
+      htyping₀_src htyping₁_src hv₁ hv₂ hbody =>
       cases hclean_res with
       | clean _hpoison_res =>
           have hlookup_back :
@@ -2190,7 +2190,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
           by_cases hclean_internal_res : internalPoisonClean res.qualType
           · exact agreeValueUnder.clean_internal_arrow hclean_internal_res hetyp_res htcl_res hmatch hcap_res
               hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
-              htyping₀_src htyping₁_src hv₁ hv₂
+              htyping₀_src htyping₁_src hv₁ hv₂ hbody
           · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
               have htyped_closure :
                   valueHasETyp θ₀ (Value.closure x body ρcap₀) (ETyp.arrow st1 st2 p tcls) := by
@@ -2857,10 +2857,10 @@ private lemma closureCapturedVarsRegimeMasked_weaken_fnTClosures'
   cases h with
   | nonClosure hv hpe =>
       exact .nonClosure hv hpe
-  | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec =>
+  | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec hbody =>
       have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
       subst heq_tcls
-      exact .closure xp body ρcap σcap st1 st2 p' tcls' hval rfl (hmem _ hmem_src) hP hrec
+      exact .closure xp body ρcap σcap st1 st2 p' tcls' hval rfl (hmem _ hmem_src) hP hrec hbody
   | closure_extern id xp y argTyp retSpec effects ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
       have heq_arg : argTyp = st1 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.1).symm
       have heq_ret : parseReturnType retSpec = st2 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.1).symm
@@ -2971,7 +2971,7 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
   cases hcap with
   | nonClosure hv hpe =>
       exact .nonClosure hv hpe
-  | closure x body ρcap σcap st1r st2r pr tclr hval hetyp_r htcl hP hrec =>
+  | closure x body ρcap σcap st1r st2r pr tclr hval hetyp_r htcl hP hrec hbody =>
       have hetyp_r' : resEtyp = ETyp.arrow st1r st2r pr tclr := by
         simpa using hetyp_r
       subst resEtyp
@@ -2987,7 +2987,7 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
           have hcap_src :
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.arrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v := by
-            simpa using (.closure x body ρcap σcap st1l st2l pr tclr hval rfl htcl hP hrec :
+            simpa using (.closure x body ρcap σcap st1l st2l pr tclr hval rfl htcl hP hrec hbody :
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.arrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v)
           have hcap_join :

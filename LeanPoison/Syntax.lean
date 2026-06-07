@@ -247,6 +247,25 @@ inductive Expr.IsExternFnAst : Expr → Prop where
       {retSpec : ExternReturn} {eff : List Effect} {cap : List Capture} :
       Expr.IsExternFnAst (Expr.externFn id x argTyp argPoison argPred retSpec eff cap)
 
+/-- Boolean decision procedure for `Expr.IsExternFnAst`, used by `typecheckFn` to
+    reject a regular `fn` whose body is a bare `extern fn` AST node. -/
+def Expr.isExternFnAstB : Expr → Bool
+  | Expr.externFn _ _ _ _ _ _ _ _ => true
+  | _ => false
+
+theorem Expr.isExternFnAstB_eq_true_iff {e : Expr} :
+    e.isExternFnAstB = true ↔ Expr.IsExternFnAst e := by
+  constructor
+  · intro h
+    cases e <;> first | exact Expr.IsExternFnAst.mk | simp [Expr.isExternFnAstB] at h
+  · intro h; cases h; rfl
+
+theorem Expr.not_isExternFnAst_of_isExternFnAstB_eq_false {e : Expr}
+    (h : e.isExternFnAstB = false) : ¬ Expr.IsExternFnAst e := by
+  intro hp
+  rw [← Expr.isExternFnAstB_eq_true_iff, h] at hp
+  exact Bool.noConfusion hp
+
 /-- `e` is the pure callable wrapper `extern pfn` AST node. -/
 inductive Expr.IsExternPfnAst : Expr → Prop where
   | mk {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}

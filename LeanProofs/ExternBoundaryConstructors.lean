@@ -417,10 +417,6 @@ private theorem pureUnaryCleanInt_call_result_shape
       have hbad : ExternDeclarationKind.pfn = ExternDeclarationKind.fn :=
         hspec.kind_pfn.symm.trans hkind
       cases hbad
-  | fnRegularExternBody hid hkind htyp harg hret heff hbody htc hres =>
-      have hbad : ExternDeclarationKind.pfn = ExternDeclarationKind.fn :=
-        hspec.kind_pfn.symm.trans hkind
-      cases hbad
   | pfnExternMember hid hkind htyp harg hret _hcap _hpin hbody happly =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
         id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv

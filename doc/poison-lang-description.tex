@@ -233,7 +233,7 @@ the scenes.
 \subsection{Key features}
 \begin{itemize}
     \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences. Memory stores only integers
-    \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures
+    \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures. The body \texttt{e} may not be a bare \texttt{extern fn} declaration (such a closure is applied at runtime by dispatching the extern, so its static arrow type would disagree with the runtime result); this mirrors the pure side, where a \texttt{pfn} body is restricted to a pure expression and so cannot be a bare extern declaration
     \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (no nested pure functions)
     \item \textbf{Strings}: literals of type \texttt{string}
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings.

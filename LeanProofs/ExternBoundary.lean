@@ -113,30 +113,6 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
       Call
         d
         (Expr.externFn id y argTyp argPoisonAst argPredAst retSpec effects captures) entry res
-  | fnRegularExternBody
-      {d : ExternDeclaration}
-      {bodyCtx : TypeContext} {result3 : TypeResult} {fuel : Nat}
-      {p p1 : Poison} {id : ExternId} {x y : Name} {argTyp : Typ}
-      {argPoisonAst : Bool} {argPredAst : SyntaxPredicate}
-      {retSpec : ExternReturn} {effects : List Effect}
-      {entry : ExternCallEntry} {res : TypeResult} :
-      d.id = id →
-      d.kind = .fn →
-      d.typ = argTyp →
-      d.argName = some x →
-      d.retSpec = some retSpec →
-      d.effects = effects →
-      entry.bodyCtx = bodyCtx →
-      typecheck bodyCtx (Expr.externFn id y argTyp argPoisonAst argPredAst retSpec effects captures) fuel = .ok result3 →
-      res =
-        { result3 with
-          qualType :=
-            normalizeAppResultByProvenance (joinPoison p1 p)
-              { result3.qualType with
-                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } →
-      Call
-        d
-        (Expr.externFn id y argTyp argPoisonAst argPredAst retSpec effects captures) entry res
   | pfnExternMember
       {d : ExternDeclaration}
       {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {fuel : Nat}

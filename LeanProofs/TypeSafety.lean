@@ -4992,10 +4992,7 @@ private lemma typecheck_nextTag_mono_normal_main : ∀ (ctx : TypeContext) (e : 
               have hpres := typecheckVar_preserves_nextTag ctx x res htc
               simp [hpres]
           | fn x st1 body st2 =>
-              unfold typecheckFn at htc
-              simp at htc
-              injection htc with h_eq
-              subst h_eq
+              have hfn := typecheckFn_ok_eq htc; subst hfn
               exact le_rfl
           | pfn x st1 body st2 =>
               unfold typecheckPfn at htc
@@ -6170,10 +6167,7 @@ private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (f
               simp at htc
               exact typecheckVar_regime_mono ctx x res htc
           | fn x st1 body st2 =>
-              unfold typecheckFn at htc
-              simp at htc
-              injection htc with h_eq
-              subst h_eq
+              have hfn := typecheckFn_ok_eq htc; subst hfn
               exact Regime.monotoneStepExt_refl ctx.regime _
           | pfn x st1 body st2 =>
               unfold typecheckPfn at htc
@@ -8632,10 +8626,10 @@ private lemma typecheckExpr_preserves_combined_main :
               simp [typecheckString] at htc; cases htc
               exact ⟨hpred.2, predTagBounded_noPred _, trivial⟩
           | fn _x _st1 _body _st2 =>
-              simp [typecheckFn] at htc; cases htc
+              have hfn := typecheckFn_ok_eq htc; subst hfn
               refine ⟨hpred.2, predTagBounded_noPred _, ?_⟩
               show etypClosuresFullBounded
-                (ETyp.arrow _st1 _st2 false [FnTClosure.regular _x _body (VarTypeEnv.toCaptured ctx.varEnv)]) ctx.nextTag
+                (ETyp.arrow _st1 _st2 ctx.pc [FnTClosure.regular _x _body (VarTypeEnv.toCaptured ctx.varEnv)]) ctx.nextTag
               intro tcl hmem
               simp at hmem; subst hmem
               exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
@@ -9962,7 +9956,7 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                 typecheckVar_preserves_tagEnv_aux ctx x res htc
               rw [htagEnv, hnext]; exact hbound
           | fn _x _st1 _body _st2 =>
-              simp [typecheckFn] at htc; cases htc; exact hbound
+              have hfn := typecheckFn_ok_eq htc; subst hfn; exact hbound
           | pfn _x _st1 _body _st2 =>
               simp [typecheckPfn, Bind.bind, Except.bind] at htc
               cases h_topexpr : _body.toPExpr with
@@ -11290,10 +11284,7 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
             simp at htc
             exact typecheckVar_nextLoc_mono ctx x res htc
         | fn x st1 body st2 =>
-            unfold typecheckFn at htc
-            simp at htc
-            injection htc with h_eq
-            subst h_eq
+            have hfn := typecheckFn_ok_eq htc; subst hfn
             exact le_rfl
         | pfn x st1 body st2 =>
             unfold typecheckPfn at htc
@@ -14274,7 +14265,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
 
       -- ────────────────── fn: captures varEnv into closure ──────────────────
       | fn x st1 body st2 =>
-        unfold typecheckFn at htc; simp [pure, Except.pure] at htc; cases htc
+        have hfn := typecheckFn_ok_eq htc; subst hfn
         -- Result etyp = arrow st1 st2 ctx.pc [FnTClosure.regular x body (toCaptured ctx.varEnv)]
         -- etypRefLocsBounded for arrow is True
         refine ⟨hwfMem, trivial, ?_⟩
@@ -15397,9 +15388,7 @@ private lemma typecheckExpr_mem_contains_preserved_main :
               have hmem : res.memEnv' = ctx.memEnv := typecheckVar_preserves_memEnv ctx x res htcVar
               simpa [hmem] using hcontains
           | fn x st1 body st2 =>
-              unfold typecheckFn at htc
-              simp [pure, Except.pure] at htc
-              cases htc
+              have hfn := typecheckFn_ok_eq htc; subst hfn
               simpa using hcontains
           | pfn x st1 body st2 =>
               unfold typecheckPfn at htc

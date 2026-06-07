@@ -1,0 +1,8 @@
+Evaluating file: examples/extern_fn_nonbare_body_accept.poison (verbose mode)
+
+Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
+
+Result: 0
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0)]
