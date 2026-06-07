@@ -11434,7 +11434,7 @@ lemma mem_mergeFnTClosures_right (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosu
   exact foldl_addUnique_mem_of_input tcls2 _ tcl hmem
 
 /-- mergePFnTClosures preserves membership from the left list. -/
-private lemma mem_mergePFnTClosures_left (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
+lemma mem_mergePFnTClosures_left (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
     tcl ∈ tcls1 → tcl ∈ mergePFnTClosures tcls1 tcls2 := by
   intro hmem
   simp only [mergePFnTClosures]

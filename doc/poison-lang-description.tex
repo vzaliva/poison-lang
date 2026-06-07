@@ -505,6 +505,21 @@ This decoupling is what lets the inner stage of a curried extern (e.g.\ the
 \(@11\) returned by curried \texttt{max}) carry the captured-\(a\) contract on its
 type while its produced body remains a plain closure.
 
+When branches over capture-bearing extern closures are joined (for example by an
+\texttt{if}), their \texttt{captures:} preconditions combine by
+\emph{conjunction}, not by the return-side join that may collapse distinct
+predicate shapes to \texttt{no\_pred}. A branch join merges the two branches'
+closure type-members as a set: members that differ only in their
+\texttt{captures:} contract are kept \emph{distinct} (the member equality used for
+deduplication compares the captures), and capture contracts never pass through the
+predicate join that produces \texttt{no\_pred}. Applying the joined closure then
+gates on \emph{every} member's contract, so a successful call requires the
+conjunction of both branches' dependencies. In particular, if two branches demand
+incompatible non-\texttt{no\_pred} predicate shapes for the same target (say a
+guard closure in one branch and a bare guard in the other), no single actual can
+satisfy both, and the call is rejected rather than silently weakened --- the join
+never drops a precondition the trusted implementation may depend on.
+
 \subsection{Pure Expressions}
 
 The language includes a syntactic subset called \emph{pure expressions} (\texttt{pe}) that exclude side-effecting operations. Pure expressions cannot:

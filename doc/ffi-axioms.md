@@ -11,10 +11,10 @@ Contract*) and validated nested returned extern callables.
 The public fault-robustness theorem is relative to trusted extern boundary
 evidence under a populated registry. The active `extern-env-deps` branch extends
 that boundary with explicit extern read dependencies (`captures:`). Bare
-environment reads, guarded call-time satisfaction, and the representative
-explicit-argument memory-read `!r` path are implemented/proved; branch-join
-capture conjunction merging remains before `extern-env-deps` merges back to the
-FFI integration branch `ffi`. The remaining guarded-value work is a trusted
+environment reads, guarded call-time satisfaction, the representative
+explicit-argument memory-read `!r` path, and branch-join capture conjunction
+merging are all implemented/proved, so `extern-env-deps` is ready to merge back
+to the FFI integration branch `ffi`. The remaining guarded-value work is a trusted
 producer extern plus applied program-FR routing from producer to capturing
 consumer; that is broader FFI/regime validation. Reusable helper machinery is
 secondary and should be extracted only from proof patterns that actually repeat.
@@ -60,8 +60,8 @@ The immediate goal is to keep the extern boundary stable while completing the
 current captures feature branch:
 
 - preserve the completed trusted specs for `abs` and curried `max`;
-- finish pfn-side `captures:` support on `extern-env-deps`: branch-join capture
-  conjunctions and memory-read `!r` dependencies;
+- keep pfn-side `captures:` support on `extern-env-deps` complete: branch-join
+  capture conjunctions and memory-read `!r` dependencies are implemented/proved;
 - preserve the public fault-robustness theorem shape: no new public
   precondition should be added to `TypeSystemEnforcesFaultRobustness`;
 - keep executable semantics unchanged unless a concrete proof exposes that an
@@ -764,7 +764,7 @@ details.
 ## Roadmap
 
 The registry-aware proof spine and the first concrete trusted entries are done.
-The roadmap now separates completed validation, current branch blockers, and
+The roadmap now separates completed validation, current branch status, and
 later builtin coverage.
 
 ### 1. Direct `abs` Boundary Validation
@@ -860,14 +860,17 @@ that path is proved. Guarded captures are also proved at the trusted call
 boundary through `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec`, with
 bare-decl program FR in `GuardedCapturesFR.guardedCaptures_FR`. Memory-read
 `!r` dependencies are proved for the representative explicit-argument path via
-`builtinMemDerefSpec` and `MemReadCapturesFR.appliedMemReadCaptures_FR`. The
-remaining `extern-env-deps` blocker is branch-join precondition merging.
+`builtinMemDerefSpec` and `MemReadCapturesFR.appliedMemReadCaptures_FR`.
+Branch-join precondition merging is proved in `CaptureJoinConjunction.lean`
+(structural `mem_mergePFnTClosures_extern_captures` and operational
+`mergedParrow_apply_captures_conjunction`), so no pfn-side read-dependency
+blocker remains.
 
 ### 3. Captures Branch Completion
 
-The `extern-env-deps` branch should merge into `ffi` only after pfn-side
-`captures:` supports branch joins that combine capture preconditions by
-conjunction and reject or avoid incompatible predicate shapes.
+The `extern-env-deps` branch's pfn-side `captures:` supports branch joins that
+combine capture preconditions by conjunction and reject incompatible predicate
+shapes, so the branch is ready to merge into `ffi`.
 
 Memory-read `!r` dependencies are exercised end-to-end with a trusted spec /
 program-FR artifact for the representative explicit-reference-argument path, and

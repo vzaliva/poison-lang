@@ -1,0 +1,19 @@
+-- Rejection counterpart to extern_captures_join_memread.poison, showing the
+-- joined `!r` capture is genuinely a CONJUNCT and is not dropped by the branch
+-- join.  The then-branch declares `captures: { !r :> (int :> clean {}) }` and
+-- the else-branch declares none; the join keeps both members.  Here `rr` points
+-- to a POISONED cell, so the then-branch member's `!r` read dependency is NOT
+-- satisfied at the `f rr` call boundary.  Because the merged contract is the
+-- conjunction of both branches' captures (not a collapse that would weaken the
+-- then-branch's `!r` away), type checking FAILS.
+let bad = extern val @244 : (int :> poisoned {})
+in
+let rr = ref bad
+in
+let f =
+  if true then
+    extern pfn @23 r : (ref int :> clean {}) -> ((int :> clean {})),
+      captures: { !r :> (int :> clean {}) }
+  else
+    extern pfn @23 r : (ref int :> clean {}) -> ((int :> clean {}))
+in f rr

@@ -1,0 +1,24 @@
+-- Branch-join capture conjunction, memory-read (`!r`) dimension, running
+-- end-to-end (doc/extern-env-deps.md sec "Contract Syntax and Variance").
+--
+-- The two branches of the `if` produce extern closures of the SAME signature
+-- `(ref int :> clean {}) -> (int :> clean {})` but DIFFERENT `captures:`
+-- contracts: the then-branch declares the bang read dependency
+-- `captures: { !r :> (int :> clean {}) }`, the else-branch declares none.
+-- Because `mergePFnTClosures` deduplicates by `beqPFnTClosure` (which compares
+-- the captures), the two members are kept DISTINCT in the joined `parrow`, so
+-- applying `f` fires BOTH members' capture gates: the contracts combine by
+-- conjunction, not by a return-side join that would drop one.
+--
+-- Here `rr` points to a clean cell (`ref 3`), so the `!r` dependency is
+-- satisfied; both gates pass, type checking succeeds, and the taken branch's
+-- `@23` runs and returns the dereferenced value `3`.
+let rr = ref 3
+in
+let f =
+  if true then
+    extern pfn @23 r : (ref int :> clean {}) -> ((int :> clean {})),
+      captures: { !r :> (int :> clean {}) }
+  else
+    extern pfn @23 r : (ref int :> clean {}) -> ((int :> clean {}))
+in f rr

@@ -246,11 +246,11 @@ Branch structure:
 - `ffi` is the integration branch for the FFI effort.
 - `extern-env-deps` is a feature branch above `ffi`, corresponding to
   `doc/extern-env-deps.md`.
-- `extern-env-deps` should merge to `ffi` only after pfn-side `captures:` covers
+- `extern-env-deps` should merge to `ffi` once pfn-side `captures:` covers
   bare environment reads, memory-read `!r` dependencies, and branch-join capture
-  conjunctions. Bare environment reads and the representative explicit-argument
-  memory-read path are implemented/proved; branch-join conjunction merging is
-  the remaining branch blocker. Guarded call-time satisfaction is complete at
+  conjunctions. Bare environment reads, the representative explicit-argument
+  memory-read path, and branch-join conjunction merging are all
+  implemented/proved. Guarded call-time satisfaction is complete at
   the typecheck/trusted-call-boundary level. The trusted guarded-value producer
   plus applied program-FR routing is broader FFI/regime validation work, not a
   blocker for this branch.
@@ -306,8 +306,10 @@ Completed concrete validation:
 
 The remaining concrete proof obligations are:
 
-- **Finish the captures branch.** `extern-env-deps` must finish branch-join
-  capture conjunction merging before merging into `ffi`.
+- **The captures branch is complete.** `extern-env-deps`'s pfn-side `captures:`
+  surface — bare environment reads, guarded call-time satisfaction, memory-read
+  `!r`, and branch-join capture conjunction merging — is implemented/proved, so
+  the branch is ready to merge into `ffi`.
 - **Cover the rest of the default registry.** After the captures branch lands,
   prove trusted entries for the remaining builtins as needed: sqrt-style guarded
   input (`@19`), constant extern values (`@20`), initialized ref-valued extern
@@ -405,7 +407,8 @@ Open questions are now narrower:
 
 - Are current extern annotations (`ExternReturn`, `Effect`, `Capture`,
   `SyntaxPredicate`) sufficient for FR, or is extra proof-only metadata
-  unavoidable for the remaining branch-join case?
+  unavoidable? (The branch-join capture conjunction case needed none — it is
+  handled by the existing closure-member set-merge.)
 - Beyond within-run determinism, what additional stability properties
   are needed for trusted externs?
 - Should the current binary `TrustedRegistry` model remain the only proof

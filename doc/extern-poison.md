@@ -13,8 +13,8 @@ boundary reachability. Concrete trusted specs exist for `abs` and the curried
 `max` pair. The active read-dependency work lives on the
 `extern-env-deps` branch: guarded `captures:` are complete at the
 typecheck/trusted-call-boundary level, memory-read `!r` captures are complete
-for the representative explicit-reference-argument path, and the remaining
-branch blocker is branch-join capture conjunction merging.
+for the representative explicit-reference-argument path, and branch-join capture
+conjunction merging is complete.
 The broader remaining design work is predicate-language validation,
 latent-marker examples, and concrete validation of the remaining live trusted
 extern specs.
@@ -124,8 +124,9 @@ structurally from input cleanness alone.
   program-level FR artifacts for the unguarded captured-env path. Guarded
   captured dependencies are implemented at the typecheck gate and proved at the
   trusted call boundary. Memory-read `!r` dependencies are implemented/proved
-  for the representative explicit-reference-argument path. The remaining
-  `max`-adjacent `captures:` work is branch-join merging.
+  for the representative explicit-reference-argument path. Branch-join capture
+  conjunction merging is also implemented/proved
+  (`LeanProofs/CaptureJoinConjunction.lean`).
 
 - **`sqrt`-style externs** — candidate for the unified model with input
   precondition `x >= 0`. Implementation `if x >= 0 then Lean.sqrt x else 0`
@@ -369,8 +370,9 @@ the public FR theorem as live trusted entries.
 
 ## 8. Next steps
 
-1. Finish `doc/extern-env-deps.md` on the `extern-env-deps` branch: branch-join
-   capture conjunction merging.
+1. `doc/extern-env-deps.md` is complete on the `extern-env-deps` branch:
+   branch-join capture conjunction merging was the last pfn-side read-dependency
+   item, now implemented/proved.
 2. Merge `extern-env-deps` into `ffi` once the standard gates are green and no
    new `sorry`/axioms are introduced.
 3. Resolve §7.1 (predicate language expressiveness).

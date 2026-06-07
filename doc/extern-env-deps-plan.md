@@ -22,8 +22,9 @@ dependencies are now implemented/proved to the same maturity level as extern
 argument guards: typecheck/examples are end-to-end and the trusted call boundary
 is proved. Memory-read (`!r`) dependencies are now implemented/proved end-to-end
 as well — including an applied/routed program-FR (`@23 (ref 3)`) and a runnable
-example — so the only pfn read-dependency item still required before merging is
-the branch-join capture conjunction merge. The remaining guarded-value work is a
+example. The final pfn read-dependency item, branch-join capture conjunction
+merging, is now implemented/proved as well, so every pfn read-dependency item
+required before merging is complete. The remaining guarded-value work is a
 trusted producer extern plus an applied program-FR proof that routes
 `producer -> captured value -> consumer`; that is broader FFI/regime validation,
 not a blocker for this branch.
@@ -170,20 +171,51 @@ of the closure body captures (and the runtime check modulo-captures) keeps
   (`propext`/`Classical.choice`/`Quot.sound`); the program-FR theorems inherit
   only the FR step stack's pre-existing `native_decide` axioms.
 
+- **Branch-join capture conjunction merge** (goal doc §"Contract Syntax and
+  Variance"). When branches over capture-bearing extern closures are joined,
+  their `captures:` preconditions combine by **conjunction**, not by the
+  return-side join that collapses distinct predicate shapes to `noPred`. This is
+  already enforced structurally by the existing closure-member set-merge:
+  `joinETyps` on `parrow`s merges members with `mergePFnTClosures`, whose dedup
+  (`beqPFnTClosure`, which compares `beqCaptureList`) keeps members that differ
+  in their captures *distinct*; capture contracts never flow through
+  `joinPredicates` (the `noPred`-collapse join); and applying a multi-member
+  `parrow` (`applyClosuresThreaded`) fires *every* member's `capturesSatisfied`
+  gate, so a successful application requires the conjunction of both branches'
+  captures and rejects incompatible predicate shapes (no single actual can
+  satisfy both a guard-closure and a guard-only requirement on the same target).
+  `LeanProofs/CaptureJoinConjunction.lean` records this: the structural
+  `mem_mergePFnTClosures_extern_captures` (every branch's capture contract
+  survives the merge verbatim) and the operational
+  `mergedParrow_apply_captures_conjunction` (applying the merged `parrow`
+  requires both branches' capture gates), both axiom-clean. FR-soundness of the
+  merged contract is *inherited* from the generic step theorem: `stepFR_app`
+  reads the applied member's captures directly from membership in the
+  function-position `parrow`'s (merged) member list
+  (`ExternCallBoundaryPfnStaticSource.externMember`), and
+  `TrustedRegistryAgreesWithReachable` covers it because
+  `ExternDeclarationInProgram` descends into both `ite` branches. Examples:
+  `extern_captures_join_memread{,_poisoned}.poison` (runnable memory-read
+  dimension, accept→`3` / poisoned-cell reject) and
+  `extern_captures_join_guarded{,_incompatible}.poison` (guarded non-`noPred`
+  predicate dimension, compatible accept / incompatible guard-closure-vs-guard-only
+  reject).
+
 - **Representative examples and rejection coverage.** The accepted curried-`max`,
-  guarded, and memory-read examples are in place, and the negative path is
-  covered by concrete rejections — `extern_captures_guarded_inactive.poison`
-  (inactive regime) and `extern_captures_memread_poisoned.poison` (poisoned
-  cell) — so the call gate's rejection is exercised in the example suite, not
-  only implicit in proofs.
+  guarded, memory-read, and branch-join examples are in place, and the negative
+  path is covered by concrete rejections — `extern_captures_guarded_inactive.poison`
+  (inactive regime), `extern_captures_memread_poisoned.poison` (poisoned cell),
+  `extern_captures_join_memread_poisoned.poison` (poisoned cell behind a joined
+  `!r`), and `extern_captures_join_guarded_incompatible.poison` (incompatible
+  joined predicate shapes) — so the call gate's rejection is exercised in the
+  example suite, not only implicit in proofs.
 
-## Required before merging `extern-env-deps` to `ffi`
+## Pre-merge status (`extern-env-deps` → `ffi`)
 
-- **Branch-join conjunction merge for capture preconditions**
-  (`JoinMemberTransport`; goal doc §"Contract Syntax and Variance"). Capture
-  preconditions must combine by **conjunction** across branches (reject
-  incompatible predicate shapes), not by the return-side join that collapses to
-  `noPred`. Not exercised by `max` (no branches over a capture-bearing closure).
+All pfn-side read-dependency items are implemented/proved: bare environment
+reads, guarded call-time satisfaction, memory-read `!r` dependencies, and
+branch-join capture conjunction merging. Nothing remains as a pfn-side
+read-dependency blocker for this branch (subject to the standard gates).
 
 ## Out of scope (this effort)
 
@@ -206,12 +238,11 @@ of the closure body captures (and the runtime check modulo-captures) keeps
 
 ## Branch merge rule
 
-Merge `extern-env-deps` into `ffi` once branch-join capture conjunction merging
-is complete, with the standard gates green and no new `sorry`/axioms. The
-pfn-side environment-read and representative memory-read `!r` paths are already
-implemented/proved.
-Guarded call-time satisfaction is already complete at the typecheck/trusted
-call-boundary level; do not hold this branch for the trusted guarded-value
+`extern-env-deps` is ready to merge into `ffi` with the standard gates green and
+no new `sorry`/axioms: the pfn-side environment-read, guarded call-time
+satisfaction, representative memory-read `!r`, and branch-join capture
+conjunction paths are all implemented/proved.
+Do not hold this branch for the trusted guarded-value
 producer/applied-program routing work, fn-side captures, or default-registry
 specs unrelated to read dependencies.
 

@@ -257,8 +257,9 @@ integration branch. The curried-`max` environment-read path is implemented and
 proved end-to-end. Guarded captures are implemented at the typecheck gate and
 proved at the trusted call boundary. Memory-read (`!r`) dependencies are
 implemented and proved end-to-end (the `maxmem` `!r2` explicit-argument form).
-The branch should not merge back to `ffi` until the remaining pfn
-read-dependency surface described here is complete.
+Branch-join capture conjunction merging is implemented (structurally, via the
+existing closure-member set-merge) and proved. The pfn-side read-dependency
+surface described here is therefore complete.
 
 Already implemented for the curried-`max` path:
 
@@ -284,20 +285,32 @@ Already implemented for the curried-`max` path:
   applied/routed (`@23 (ref 3)`) program-FR artifacts. `@23` is registered in the
   shared `defaultRegistry`, so `examples/extern_captures_memread.poison` runs
   end-to-end and `examples/extern_captures_memread_poisoned.poison` is rejected.
+- `LeanProofs/CaptureJoinConjunction.lean` records the branch-join capture
+  conjunction: branch joins keep distinct capture-bearing members separate
+  (`mergePFnTClosures` deduplicates by `beqPFnTClosure`, which compares the
+  captures), never route capture contracts through the `noPred`-collapsing
+  predicate join, and gate on every member when the merged closure is applied.
+  `mem_mergePFnTClosures_extern_captures` is the structural fact (every branch's
+  capture contract survives the merge verbatim) and
+  `mergedParrow_apply_captures_conjunction` the operational one (applying the
+  merged `parrow` requires both branches' capture gates). FR-soundness is
+  inherited from the generic step theorem, which reads the applied member's
+  captures directly from the merged function-position member list.
 - `poison-lang-spec/poison-lang.ott` and `doc/poison-lang-description.tex`
   describe the surface syntax and call-time satisfaction judgement (including the
-  memory-read two-cleanness-facts reading).
+  memory-read two-cleanness-facts reading and the branch-join conjunction of
+  capture preconditions).
 
-Required before merging this branch to `ffi`:
-
-- branch joins must merge capture preconditions by conjunction, rejecting or
-  avoiding incompatible predicate shapes rather than collapsing them to
-  `noPred`.
+All pfn-side read-dependency items required before merging this branch to `ffi`
+are complete: bare environment reads, guarded call-time satisfaction,
+memory-read `!r` dependencies, and branch-join capture conjunction merging.
 
 The accepted/rejected example suite is in place: the guarded cases
-(`extern_captures_guarded{,_inactive}.poison`) and the memory-read cases
-(`extern_captures_memread{,_poisoned}.poison`) cover both acceptance and the
-call-gate rejection path.
+(`extern_captures_guarded{,_inactive}.poison`), the memory-read cases
+(`extern_captures_memread{,_poisoned}.poison`), and the branch-join cases
+(`extern_captures_join_memread{,_poisoned}.poison` and
+`extern_captures_join_guarded{,_incompatible}.poison`) cover both acceptance and
+the call-gate rejection path.
 
 Still out of scope for this branch:
 
