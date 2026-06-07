@@ -216,6 +216,44 @@ private theorem agreeValueUnder_num_int_imp_eq
   | withPred_true_eq _k _htag _hregime _hnotfun _hnotref heq => simpa using heq
   | withPred_true_ref _k _htag _hregime hetyp _ _ _ _ _ => simp [hInt] at hetyp
 
+/-- Reference agreement forces a *common* logical location.  Given clean
+    agreement of two `Value.loc` runtime values at a reference type `ref ls`,
+    there is a single `l ∈ ls` that both realisation maps send to the respective
+    runtime addresses.  Both the literally-clean (`clean_ref`) and
+    guarded-active (`withPred_true_ref`) reference cases supply this shared `l`;
+    every other constructor contradicts `qt.etyp = ref ls`.  This is the linchpin
+    that makes a memory-read read-dependency fault-robust: the argument condition
+    on the reference forces both runs to read *the same* cell. -/
+private theorem agreeValueUnder_ref_common_loc
+    {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
+    {qt : QTyp} {ls : LocSet} {addr₀ addr₁ : Address}
+    (hetyp : qt.etyp = ETyp.ref ls)
+    (hval : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt (Value.loc addr₀) (Value.loc addr₁)) :
+    ∃ l, l ∈ ls ∧ θ₀.lookup l = some addr₀ ∧ θ₁.lookup l = some addr₁ := by
+  cases hval with
+  | clean_ref _hpoison hetyp' hlk1 hin hv1 hlk2 hv2 =>
+      rename_i ls' l a₁ a₂
+      have hls : ls' = ls := ETyp.ref.inj (hetyp'.symm.trans hetyp)
+      subst hls
+      have ha1 : a₁ = addr₀ := (Value.loc.inj hv1).symm
+      have ha2 : a₂ = addr₁ := (Value.loc.inj hv2).symm
+      exact ⟨l, hin, by rw [← ha1]; exact hlk1, by rw [← ha2]; exact hlk2⟩
+  | withPred_true_ref _k _htag _hreg hetyp' hlk1 hin hv1 hlk2 hv2 =>
+      rename_i ls' l a₁ a₂
+      have hls : ls' = ls := ETyp.ref.inj (hetyp'.symm.trans hetyp)
+      subst hls
+      have ha1 : a₁ = addr₀ := (Value.loc.inj hv1).symm
+      have ha2 : a₂ = addr₁ := (Value.loc.inj hv2).symm
+      exact ⟨l, hin, by rw [← ha1]; exact hlk1, by rw [← ha2]; exact hlk2⟩
+  | clean_eq_nonref_nonarrow _hp _hnf hnotref _ => exact absurd ⟨ls, hetyp⟩ hnotref
+  | withPred_true_eq _k _htag _hreg _hnf hnotref _ => exact absurd ⟨ls, hetyp⟩ hnotref
+  | clean_internal_arrow _hci het _ _ _ _ _ _ _ _ _ _ _ => rw [hetyp] at het; simp at het
+  | clean_internal_arrow_extern _hci het _ _ _ _ _ _ _ _ _ _ _ => rw [hetyp] at het; simp at het
+  | dirty_internal_arrow _hci hisA _ _ => rw [hetyp] at hisA; simp [ETyp.isArrow] at hisA
+  | clean_internal_parrow _hci het _ _ _ _ _ _ _ _ _ _ _ => rw [hetyp] at het; simp at het
+  | clean_internal_parrow_extern _hci het _ _ _ _ _ _ _ _ _ _ _ => rw [hetyp] at het; simp at het
+  | dirty_internal_parrow _hci hisP _ _ => rw [hetyp] at hisP; simp [ETyp.isParrow] at hisP
+
 /-- Helper 2: clean agreement at a call-body entry forces the two integer
     arguments to be equal.  Given two clean-agreeing runs whose shared body
     context binds `x` to a clean integer type, and whose runtime environments
@@ -3316,5 +3354,703 @@ theorem defaultRegistry_lookup_abs :
     defaultRegistry.get? 12 = some builtinAbsImpl := by
   simp [defaultRegistry, defaultInitialState, regInsert, register, builtinAbsImpl,
     Std.HashMap.getElem_insert, Std.HashMap.contains_insert, Std.HashMap.contains_empty]
+
+/-! ## Memory-read (`!r`) read dependencies
+
+The `memVar` capture target (`!r`) names a *memory cell* reached through a
+reference variable, rather than an environment entry.  The trusted artifact
+below (`builtinMemDeref*`) is the explicit-clean-reference-argument form: an
+extern `@23 r : (ref int :> clean {}) -> (int :> clean {})` that dereferences
+its reference argument and returns the cell contents, with
+`captures: { !r :> (int :> clean {}) }` declaring that memory read.  This is the
+`!r2` (explicit-argument) half of the goal document's `maxmem` example.
+
+Two cleanness facts cooperate at the call boundary, and *both* are load-bearing:
+
+  * the **argument condition** `(ref int :> clean {})` forces the reference clean,
+    so both runs realise `r` to a *common* logical location `l`
+    (`agreeValueUnder.clean_ref` produces the shared `l ∈ ls`); and
+  * the **capture** `!r :> (int :> clean {})` forces the *cell contents* at `l`
+    clean, so the two memory reads agree (`agreeOnClean` on the location side,
+    `agreeLocUnder.agree_values`).
+
+A clean reference may still point to a poisoned cell, so the capture is not
+implied by the argument condition — it is exactly the extra fact memory-read
+read-dependencies contribute to fault-robustness. -/
+
+/-- `List.foldl (· && g ·)` over a list yields `true` only when the initial
+    accumulator is `true` and every element satisfies `g`. -/
+private theorem list_foldl_and_forall {α : Type} {g : α → Bool} :
+    ∀ {xs : List α} {b : Bool},
+      List.foldl (fun acc l => acc && g l) b xs = true →
+      b = true ∧ ∀ l, l ∈ xs → g l = true := by
+  intro xs
+  induction xs with
+  | nil => intro b h; exact ⟨h, by intro l hl; cases hl⟩
+  | cons x xs ih =>
+      intro b h
+      simp only [List.foldl_cons] at h
+      obtain ⟨hbx, hrest⟩ := ih h
+      rw [Bool.and_eq_true] at hbx
+      refine ⟨hbx.1, ?_⟩
+      intro l hl
+      rcases List.mem_cons.mp hl with rfl | htail
+      · exact hbx.2
+      · exact hrest l htail
+
+/-- A `LocSet.fold` with `&&` succeeds only when every member of the set
+    satisfies the folded predicate.  This is the membership reading of the
+    `memVar` call gate's per-cell fold. -/
+private theorem locset_fold_and_forall {g : Loc → Bool} {ls : LocSet}
+    (h : LocSet.fold ls true (fun acc l => acc && g l) = true) :
+    ∀ l, l ∈ ls → g l = true := by
+  unfold LocSet.fold at h
+  rw [Std.ExtTreeSet.foldl_eq_foldl_toList] at h
+  intro l hl
+  exact (list_foldl_and_forall h).2 l (by simpa using hl)
+
+/-- Gate-extraction for a singleton *memory-read* `captures:` dependency
+    `[⟨!v, ty, clean, noPred⟩]`: the dependency target resolves in the callable
+    environment to a *reference* type `ref ls`, and every cell in `ls` resolves
+    in the current memory typing to a qualified type that is clean under the
+    regime.  The call boundary instantiates this at the single logical location
+    that the runtime reference realises (the one supplied by
+    `agreeValueUnder.clean_ref`). -/
+private theorem capturesSatisfied_singleton_memVar
+    {v : Name} {ty : Typ} {u : VarTypeEnv} {m : MemoryTypeEnv} {r : Regime}
+    (h : capturesSatisfied
+        [⟨CaptureTarget.memVar v, ty, false, SyntaxPredicate.noPred⟩] u m r = true) :
+    ∃ ls : LocSet, (∃ qt : QTyp, u.lookup v = some qt ∧ qt.etyp = ETyp.ref ls) ∧
+      ∀ l, l ∈ ls → ∃ cellQt : QTyp,
+        m.lookup l = some cellQt ∧ qtypCleanUnderRegime cellQt r = true := by
+  simp only [capturesSatisfied, List.all_cons, List.all_nil, Bool.and_true,
+    captureSatisfied] at h
+  cases hlk : u.lookup v with
+  | none => simp [hlk] at h
+  | some qt =>
+      simp only [hlk] at h
+      cases het : qt.etyp with
+      | ref ls =>
+          simp only [het] at h
+          refine ⟨ls, ⟨qt, rfl, het⟩, ?_⟩
+          intro l hl
+          have hg := locset_fold_and_forall h l hl
+          cases hcl : m.lookup l with
+          | none => simp [hcl] at hg
+          | some cellQt =>
+              simp only [hcl] at hg
+              simp only [captureCondSatisfied, Bool.and_eq_true] at hg
+              exact ⟨cellQt, rfl, by simpa using hg.1.2⟩
+      | int => simp [het] at h
+      | bool => simp [het] at h
+      | unit => simp [het] at h
+      | string => simp [het] at h
+      | arrow _ _ _ _ => simp [het] at h
+      | parrow _ _ _ _ => simp [het] at h
+
+/-! ### Trusted memory-read extern `@23` (the `!r` read-dependency demonstrator)
+
+`builtinMemDerefDecl` is `@23 r : (ref int :> clean {}) -> (int :> clean {})`
+with `captures: { !r :> (int :> clean {}) }`.  Its implementation
+(`memDerefImpl`) dereferences the reference argument and returns the cell
+contents.  The relational `callFR` is the new content: it composes the argument
+condition (reference clean ⇒ a *common* logical cell via
+`agreeValueUnder_ref_common_loc`) with the `!r` capture (cell contents clean ⇒
+the two reads agree via `agreeOnClean` on the location side).  The four
+non-relational fields mirror the captures-`[]`/`[a]` machinery; the only
+declaration-level novelty is the reference-typed argument
+(`argTypToETyp (ref int) = ETyp.ref ∅`, a signature placeholder compared
+modulo locset). -/
+
+def builtinMemDerefRetSpec : ExternReturn :=
+  .simple .int false .noPred
+
+/-- Proof-side declaration for the memory-read extern (`@23`): a pfn taking a
+    `ref int` argument, declaring a `!r` read dependency on the cell behind it. -/
+def builtinMemDerefDecl : ExternDeclaration :=
+  { id := 23
+    kind := .pfn
+    typ := Typ.ref Typ.int
+    argName := some "r"
+    retSpec := some builtinMemDerefRetSpec
+    effects := []
+    preds := collectExternPreds builtinMemDerefRetSpec []
+    argPoison := false
+    captures := [⟨CaptureTarget.memVar "r", Typ.int, false, SyntaxPredicate.noPred⟩] }
+
+def builtinMemDerefImpl : ExternImpl :=
+  .pfn memDerefImpl
+
+/-- Output shape of a successful `memDerefImpl` dispatch: the argument is a
+    `Value.loc`, the memory cell behind it holds `n`, and the result is
+    `Value.num n`. -/
+private theorem memDerefImpl_ok_shape
+    {env : VarEnv} {vArg : Value} {mem : Memory} {vRaw : Value}
+    (h : memDerefImpl env vArg mem = .ok vRaw) :
+    ∃ (addr : Address) (n : Int), vArg = Value.loc addr ∧
+      Memory.lookup mem addr = some n ∧ vRaw = Value.num n := by
+  cases vArg with
+  | loc addr =>
+      simp only [memDerefImpl] at h
+      cases hcl : Memory.lookup mem addr with
+      | none => rw [hcl] at h; simp at h
+      | some n =>
+          rw [hcl] at h
+          simp only [Except.ok.injEq] at h
+          exact ⟨addr, n, rfl, hcl, h.symm⟩
+  | _ => simp [memDerefImpl] at h
+
+/-! #### `@23` declaration-boundary fields (mirror of the captures-`[a]` machinery) -/
+
+private def builtinMemDerefExternClosure (ctx : TypeContext) (argQt : QTyp) : PFnTClosure :=
+  PFnTClosure.extern 23 "r" builtinMemDerefRetSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt
+    [⟨CaptureTarget.memVar "r", Typ.int, false, SyntaxPredicate.noPred⟩]
+
+private def builtinMemDerefDeclResult (ctx : TypeContext) (argQt : QTyp) : TypeResult := {
+  qualType :=
+    ⟨ETyp.parrow (Typ.ref Typ.int) (parseReturnType builtinMemDerefRetSpec) ctx.pc
+        [builtinMemDerefExternClosure ctx argQt],
+      ctx.pc, Predicate.noPred⟩
+  memEnv' := ctx.memEnv
+  tagEnv' := ctx.tagEnv
+  nextLoc' := ctx.nextLoc
+  nextTag' := ctx.nextTag
+  regime' := ctx.regime
+}
+
+private theorem builtinMemDeref_decl_shape
+    {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Decl builtinMemDerefDecl postExpr ctx res) :
+    ∃ argQt : QTyp, res = builtinMemDerefDeclResult ctx argQt := by
+  cases htyped with
+  | pfn htc =>
+      rename_i fuel argPred
+      cases fuel with
+      | zero => simp [typecheck, typecheckExpr] at htc
+      | succ fuel' =>
+          have htcPfn :
+              typecheckExternPfn ctx 23 "r" (Typ.ref Typ.int) false argPred builtinMemDerefRetSpec
+                [⟨CaptureTarget.memVar "r", Typ.int, false, SyntaxPredicate.noPred⟩] = .ok res := by
+            have h := htc
+            simp only [typecheck, typecheckExpr] at h
+            exact h
+          obtain ⟨argQt, _hpoison, hres⟩ :=
+            typecheckExternPfn_ok_res_eq ctx 23 "r" (Typ.ref Typ.int) false argPred
+              builtinMemDerefRetSpec res htcPfn
+          exact ⟨argQt, hres⟩
+
+private theorem builtinMemDeref_decl_postExpr
+    {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Decl builtinMemDerefDecl postExpr ctx res) :
+    ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      postExpr = Expr.externPfn 23 "r" (Typ.ref Typ.int) false argPred builtinMemDerefRetSpec captures := by
+  cases htyped with
+  | pfn _htc => exact ⟨_, _, rfl⟩
+
+private theorem builtinMemDeref_decl_valueHasETyp
+    {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
+    valueHasETyp θ
+      (Value.peClosure "r" (Expr.externPfn 23 "r" (Typ.ref Typ.int) false argPred builtinMemDerefRetSpec captures) ρ)
+      (builtinMemDerefDeclResult ctx argQt).qualType.etyp := by
+  show valueHasETyp θ
+      (Value.peClosure "r" (Expr.externPfn 23 "r" (Typ.ref Typ.int) false argPred builtinMemDerefRetSpec captures) ρ)
+      (ETyp.parrow (Typ.ref Typ.int) (parseReturnType builtinMemDerefRetSpec) ctx.pc
+        [builtinMemDerefExternClosure ctx argQt])
+  refine valueHasETyp.peClosure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
+      (argQTyp := argQt) (memberCap := [⟨CaptureTarget.memVar "r", Typ.int, false, SyntaxPredicate.noPred⟩])
+      (htcl := by simp [builtinMemDerefExternClosure])
+      (henv := ?_) (hcover := ?_)
+  · intro n qt v hlookupσ hlookupρ
+    have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv n qt hlookupσ
+    obtain ⟨v', hvlookup, hvtyp⟩ := hric.2 hlookup_ctx
+    have hvEq : v' = v := by
+      have : some v' = some v := by rw [← hvlookup, hlookupρ]
+      exact Option.some.inj this
+    subst hvEq; exact hvtyp
+  · intro n qt hlookupσ
+    have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv n qt hlookupσ
+    obtain ⟨v', hvlookup, _⟩ := hric.2 hlookup_ctx
+    exact ⟨v', hvlookup⟩
+
+private theorem builtinMemDeref_decl_valueConsistent
+    {predSat : PredSat} {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+    (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ) :
+    valueConsistentWithRegime predSat ctx.regime (builtinMemDerefDeclResult ctx argQt).qualType μ θ
+      (Value.peClosure "r" (Expr.externPfn 23 "r" (Typ.ref Typ.int) false argPred builtinMemDerefRetSpec captures) ρ) := by
+  refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinMemDerefDeclResult]) (.intro ?_)
+  apply deepValueQTypProperty.peClosure_extern (argQt := argQt)
+      (memberCap := [⟨CaptureTarget.memVar "r", Typ.int, false, SyntaxPredicate.noPred⟩])
+      23 "r" "r" (Typ.ref Typ.int) builtinMemDerefRetSpec ρ
+      (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinMemDerefExternClosure ctx argQt]
+  · rfl
+  · rfl
+  · simp [builtinMemDerefExternClosure]
+  · refine ⟨?_, ?_⟩
+    · intro y qt_y k_y hlookupσ hguard hkR
+      exact hcwr.2.1 y qt_y k_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookupσ) hguard hkR
+    · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctx.varEnv,
+        fun y qt hlookupσ =>
+          let ⟨v, hv, _⟩ := hric.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookupσ)
+          ⟨v, hv⟩,
+        fun y qt v hlookupσ hlookupρ =>
+          let ⟨v', hv', htyp⟩ := hric.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookupσ)
+          by rw [hlookupρ] at hv'; cases hv'; exact htyp⟩
+  · intro y qt_y v_y hlookupσ hlookupρ
+    cases hcwr.2.2 y qt_y v_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookupσ) hlookupρ with
+    | intro h => exact h
+
+private theorem builtinMemDeref_declRun_shape
+    {ctx : TypeContext} {res : TypeResult} {cᵢ cf : Config} {o : Value}
+    (hrun : ExternDeclBoundaryRun builtinMemDerefDecl builtinMemDerefImpl ctx res cᵢ cf o) :
+    cf = cᵢ ∧ ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      o = Value.peClosure "r" (Expr.externPfn 23 "r" (Typ.ref Typ.int) false argPred builtinMemDerefRetSpec captures) cᵢ.varEnv := by
+  cases hrun with
+  | val hfacts => have h := hfacts.kind_val; simp [builtinMemDerefDecl] at h
+  | fn hfacts => have h := hfacts.kind_fn; simp [builtinMemDerefDecl] at h
+  | pfn hfacts =>
+      refine ⟨hfacts.output_config, ?_⟩
+      obtain ⟨x, argPred, retSpec, captures, hargName, hretSpec, hval⟩ := hfacts.value_shape
+      have hx : x = "r" := by
+        have h := hargName; simp [builtinMemDerefDecl] at h; exact h.symm
+      have hretSpec' : retSpec = builtinMemDerefRetSpec := by
+        have h := hretSpec; simp [builtinMemDerefDecl] at h; exact h.symm
+      subst hx; subst hretSpec'
+      exact ⟨argPred, captures, by simpa [builtinMemDerefDecl] using hval⟩
+
+theorem builtinMemDeref_declSingle :
+    ExternDeclBoundarySingle builtinMemDerefDecl builtinMemDerefImpl := by
+  intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
+    μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg hrun _hpc
+  obtain ⟨argQt, hres⟩ := builtinMemDeref_decl_shape htyped
+  obtain ⟨hcf, argPred, captures, ho⟩ := builtinMemDeref_declRun_shape hrun
+  have hctxAfter : ctxAfter ctx res = ctx := by
+    rw [hres]; simp [ctxAfter, builtinMemDerefDeclResult]
+  have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    rw [hres]
+    exact QTypRespectsTagMeaning_pfn_extern tm ctx 23 "r" (Typ.ref Typ.int)
+      (parseReturnType builtinMemDerefRetSpec) ctx.pc builtinMemDerefRetSpec (argQt := argQt) hwfTm
+  have hcfmem : cf.memory = μ := by rw [hcf]
+  have hcfvar : cf.varEnv = ρ := by rw [hcf]
+  have ho' : o = Value.peClosure "r"
+      (Expr.externPfn 23 "r" (Typ.ref Typ.int) false argPred builtinMemDerefRetSpec captures) ρ := by
+    rw [ho]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, θ,
+    ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter]; exact hwfTm
+  · rw [ho', hres]; exact builtinMemDeref_decl_valueHasETyp hric
+  · rw [hctxAfter, hcfmem, hcfvar]; exact hric
+  · rw [hctxAfter, hcfmem, hcfvar]; exact hcons
+  · rw [hctxAfter, hcfmem, hres, ho']; exact builtinMemDeref_decl_valueConsistent hric hcons
+  · rw [hcfmem]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+
+theorem builtinMemDeref_declFR :
+    ExternDeclBoundaryFR builtinMemDerefDecl builtinMemDerefImpl := by
+  intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
+    μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
+    hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+  obtain ⟨argQt, hres⟩ := builtinMemDeref_decl_shape htyped
+  obtain ⟨argPredT, capturesT, hpostExpr⟩ := builtinMemDeref_decl_postExpr htyped
+  obtain ⟨hcf₀, _⟩ := builtinMemDeref_declRun_shape hrun₀.run
+  obtain ⟨hcf₁, _⟩ := builtinMemDeref_declRun_shape hrun₁.run
+  have ho₀ : o₀ = Value.peClosure "r"
+      (Expr.externPfn 23 "r" (Typ.ref Typ.int) false argPredT builtinMemDerefRetSpec capturesT) ρ₀ := by
+    have hfe := hrun₀.forExpr; rw [hpostExpr] at hfe
+    simpa [declRunOutputMatchesExpr] using hfe
+  have ho₁ : o₁ = Value.peClosure "r"
+      (Expr.externPfn 23 "r" (Typ.ref Typ.int) false argPredT builtinMemDerefRetSpec capturesT) ρ₁ := by
+    have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
+    simpa [declRunOutputMatchesExpr] using hfe
+  have hctxAfter : ctxAfter ctx res = ctx := by
+    rw [hres]; simp [ctxAfter, builtinMemDerefDeclResult]
+  have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    rw [hres]
+    exact QTypRespectsTagMeaning_pfn_extern tm ctx 23 "r" (Typ.ref Typ.int)
+      (parseReturnType builtinMemDerefRetSpec) ctx.pc builtinMemDerefRetSpec (argQt := argQt) hwfTm
+  have hcf₀mem : cf₀.memory = μ₀ := by rw [hcf₀]
+  have hcf₀var : cf₀.varEnv = ρ₀ := by rw [hcf₀]
+  have hcf₁mem : cf₁.memory = μ₁ := by rw [hcf₁]
+  have hcf₁var : cf₁.varEnv = ρ₁ := by rw [hcf₁]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, hpredlaws, hresTm,
+    θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter]; exact hwfTm
+  · rw [ho₀, hres]; exact builtinMemDeref_decl_valueHasETyp hric₀
+  · rw [ho₁, hres]; exact builtinMemDeref_decl_valueHasETyp hric₁
+  · rw [hctxAfter]; exact hwfTm
+  · rw [hctxAfter]; exact hwf
+  · rw [hctxAfter]; exact htagBounded
+  · rw [hcf₀]; exact hwfcfg₀
+  · rw [hcf₁]; exact hwfcfg₁
+  · rw [hctxAfter, hcf₀mem, hcf₀var]; exact hric₀
+  · rw [hctxAfter, hcf₁mem, hcf₁var]; exact hric₁
+  · rw [hctxAfter]; exact hreg
+  · rw [hctxAfter, hcf₀mem, hcf₀var]; exact hcwr₀
+  · rw [hctxAfter, hcf₁mem, hcf₁var]; exact hcwr₁
+  · rw [hctxAfter, hcf₀mem, hcf₀var, hcf₁mem, hcf₁var]; exact hagree
+  · rw [hctxAfter, hcf₀mem, hres, ho₀]; exact builtinMemDeref_decl_valueConsistent hric₀ hcwr₀
+  · rw [hctxAfter, hcf₁mem, hres, ho₁]; exact builtinMemDeref_decl_valueConsistent hric₁ hcwr₁
+  · rw [hctxAfter, hcf₀mem, hcf₁mem, hres]
+    intro hclean
+    cases hclean with
+    | clean hpoison =>
+        have hetyp : (builtinMemDerefDeclResult ctx argQt).qualType.etyp =
+            ETyp.parrow (Typ.ref Typ.int) (parseReturnType builtinMemDerefRetSpec) ctx.pc
+              [builtinMemDerefExternClosure ctx argQt] := rfl
+        have htcl : builtinMemDerefExternClosure ctx argQt ∈
+            [builtinMemDerefExternClosure ctx argQt] := by simp
+        have hpc_clean : ctx.pc = false := by
+          have hpoison' : (builtinMemDerefDeclResult ctx argQt).qualType.poison = false := hpoison
+          simpa [builtinMemDerefDeclResult] using hpoison'
+        have hclean_internal : internalPoisonClean (builtinMemDerefDeclResult ctx argQt).qualType := by
+          simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
+        have hcap : agreeCapturedEnv predSat ctx.regime μ₀ μ₁ θ₀ θ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ ρ₁ :=
+          agreeCapturedEnv_of_agreeOnClean predSat ctx.regime ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime μ₀
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
+        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime μ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
+        have hmemberCvcr₀ : MemberCvcrEvidence predSat ctx.regime μ₀ θ₀
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          memberCvcrEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
+        have hmemberCvcr₁ : MemberCvcrEvidence predSat ctx.regime μ₁ θ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          memberCvcrEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
+        have htyping₀ : capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          capturedVarsTypingProperty_of_toCaptured ctx μ₀ ρ₀ θ₀ hric₀
+        have htyping₁ : capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          capturedVarsTypingProperty_of_toCaptured ctx μ₁ ρ₁ θ₁ hric₁
+        exact agreeValueUnder.clean_internal_parrow_extern
+          (σcap := VarTypeEnv.toCaptured ctx.varEnv) (argQt := argQt)
+          (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+          hclean_internal hetyp htcl rfl hcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
+          htyping₀ htyping₁ ho₀ ho₁
+    | guard k htag _hregime _hnotfun =>
+        have hnone : qtypGuardTag (builtinMemDerefDeclResult ctx argQt).qualType = none := by
+          simp [qtypGuardTag, builtinMemDerefDeclResult]
+        simp [hnone] at htag
+
+/-! #### `@23` call-boundary fields — the memory-read `callFR` -/
+
+/-- Output of a successful `@23` call: the argument is a `Value.loc addr`, the
+    cell behind it holds `n` in the call-config memory, the result is
+    `Value.num n`, and the config is unchanged. -/
+private theorem builtinMemDeref_call_output
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hfacts : ExternCallPfnFacts builtinMemDerefDecl builtinMemDerefImpl entry res cf o) :
+    ∃ (addr : Address) (n : Int), entry.argValue = Value.loc addr ∧
+      Memory.lookup entry.callConfig.memory addr = some n ∧
+      o = Value.num n ∧ cf = entry.callConfig := by
+  rcases hfacts.impl_success with
+    ⟨implPfn, retSpec, vRaw, himpl, hretSpec, _hargMatch, hrun, hvalRet⟩
+  simp only [builtinMemDerefImpl, ExternImpl.pfn.injEq] at himpl
+  subst himpl
+  have hret : retSpec = builtinMemDerefRetSpec := by
+    simp only [builtinMemDerefDecl] at hretSpec
+    exact (Option.some.inj hretSpec).symm
+  subst hret
+  obtain ⟨addr, n, harg, hlk, hraw⟩ := memDerefImpl_ok_shape hrun
+  refine ⟨addr, n, harg, hlk, ?_, hfacts.output_config⟩
+  rw [hraw] at hvalRet
+  simp only [builtinMemDerefRetSpec, validateExternReturn, valueMatchesTyp,
+    if_true, Except.ok.injEq] at hvalRet
+  exact hvalRet.symm
+
+private theorem builtinMemDeref_callRun_output
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hrun : ExternCallBoundaryRun builtinMemDerefDecl builtinMemDerefImpl entry res cf o) :
+    ∃ (addr : Address) (n : Int), entry.argValue = Value.loc addr ∧
+      Memory.lookup entry.callConfig.memory addr = some n ∧
+      o = Value.num n ∧ cf = entry.callConfig := by
+  cases hrun with
+  | fn hfacts => have h := hfacts.kind_fn; simp [builtinMemDerefDecl] at h
+  | pfn hfacts => exact builtinMemDeref_call_output hfacts
+
+/-- The body-entry environment of a successful `@23` call binds the reference
+    argument name `"r"` to the runtime argument value. -/
+private theorem builtinMemDeref_callRun_bodyVar
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hrun : ExternCallBoundaryRun builtinMemDerefDecl builtinMemDerefImpl entry res cf o) :
+    entry.bodyConfig.varEnv.lookup "r" = some entry.argValue := by
+  cases hrun with
+  | fn hfacts => have h := hfacts.kind_fn; simp [builtinMemDerefDecl] at h
+  | pfn hfacts =>
+      have hargName : entry.argName = "r" := by
+        have h := hfacts.argName; simp only [builtinMemDerefDecl] at h
+        exact (Option.some.inj h).symm
+      have hbc : entry.bodyConfig.varEnv = entry.unifiedEnv := by
+        simp [ExternCallEntry.bodyConfig]
+      rw [hbc, hfacts.unifiedEnv_eq, hargName]
+      simp [VarEnv.update, VarEnv.lookup]
+
+/-- Shared structure from a `@23` call typing witness: clean integer result, post
+    context equals body context, and — crucially — the reference argument `"r"`
+    resolves clean (the argument gate) to a `ref ls` whose every cell is clean
+    under the body regime (the `!r` capture gate). -/
+private theorem builtinMemDeref_call_clean_shape
+    {typedExpr : Expr} {entry : ExternCallEntry} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Call builtinMemDerefDecl typedExpr entry res) :
+    res.qualType.etyp = ETyp.int ∧
+      res.qualType.pred = Predicate.noPred ∧
+      ctxAfter entry.bodyCtx res = entry.bodyCtx ∧
+      (∃ (rQt : QTyp) (ls : LocSet),
+        entry.bodyCtx.varEnv.lookup "r" = some rQt ∧
+        rQt.etyp = ETyp.ref ls ∧
+        qtypCleanUnderRegime rQt entry.bodyCtx.regime = true ∧
+        ∀ l, l ∈ ls → ∃ cellQt : QTyp,
+          entry.bodyCtx.memEnv.lookup l = some cellQt ∧
+          qtypCleanUnderRegime cellQt entry.bodyCtx.regime = true) := by
+  cases htyped with
+  | fnExternMember _ hkind _ _ _ _ _ _ _ => simp [builtinMemDerefDecl] at hkind
+  | fnRegularExternBody _ hkind _ _ _ _ _ _ _ => simp [builtinMemDerefDecl] at hkind
+  | pfnExternMember hid hkind htyp harg hret hcap hpin hbody happly =>
+      rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
+      have hcap' : captures =
+          [⟨CaptureTarget.memVar "r", Typ.int, false, SyntaxPredicate.noPred⟩] := by
+        simpa [builtinMemDerefDecl] using hcap.symm
+      subst hcap'
+      have hx : x = "r" := by
+        have : some x = some "r" := by simpa [builtinMemDerefDecl] using harg.symm
+        exact Option.some.inj this
+      subst hx
+      have hretSpec : retSpec = ExternReturn.simple Typ.int false SyntaxPredicate.noPred := by
+        have : some retSpec = some (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) := by
+          simpa [builtinMemDerefDecl, builtinMemDerefRetSpec] using hret.symm
+        exact Option.some.inj this
+      subst retSpec
+      have hpin' : declaredArgQt.poison = false := by simpa [builtinMemDerefDecl] using hpin
+      cases fuel with
+      | zero => simp [applyPFnTClosureAtCursor] at happly
+      | succ fuel' =>
+          have hcollect := collectAndAllocExternTags_noPred cursor.1
+          simp only [applyPFnTClosureAtCursor, hcollect, resolveSyntaxPred, returnSpecToQTyp,
+            bind, Except.bind, pure, Except.pure] at happly
+          split at happly
+          · simp at happly
+          rename_i hgate
+          rw [Bool.not_eq_true, Bool.not_eq_false'] at hgate
+          rw [Bool.and_eq_true] at hgate
+          obtain ⟨hcondArg, hcapGate⟩ := hgate
+          have hargClean : qtypCleanUnderRegime ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              bodyState.regime' = true :=
+            argConditionSatisfied_cleanRegime_of_declClean hcondArg hpin'
+          obtain ⟨ls, ⟨lemQt, hlemLk, hlemEt⟩, hcells⟩ :=
+            capturesSatisfied_singleton_memVar hcapGate
+          have hfront : (VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) "r"
+              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩).lookup "r"
+              = some ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+            VarTypeEnv_lookup_update_eq _ "r" _
+          have hlemEq : lemQt = ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
+            Option.some.inj (hlemLk.symm.trans hfront)
+          simp only [Except.ok.injEq] at happly
+          subst res
+          refine ⟨?_, ?_, ?_,
+            ⟨⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩, ls, ?_, ?_, ?_, ?_⟩⟩
+          · by_cases hprov : joinPoison p1 p = true <;>
+              simp [normalizeAppResultByProvenance, hprov]
+          · by_cases hprov : joinPoison p1 p = true <;>
+              simp [normalizeAppResultByProvenance, hprov]
+          · rw [hbody]; simp only [ctxAfter, applyExternRegimePolicy]; rfl
+          · rw [hbody]; exact hfront
+          · rw [hlemEq] at hlemEt; exact hlemEt
+          · rw [hbody]; exact hargClean
+          · intro l hl
+            rw [hbody]
+            exact hcells l hl
+
+/-- Deref-value equality across the two runs: the reference argument is clean
+    (a common logical cell `l`), the `!r` capture forces that cell's contents
+    clean, so `agreeOnClean` on the location side forces the two integer reads
+    equal. -/
+private theorem builtinMemDeref_callRun_nEq
+    {predSat : PredSat} {θ₀ θ₁ : RealizationMap}
+    {entry₀ entry₁ : ExternCallEntry} {res : TypeResult}
+    {cf₀ cf₁ : Config} {o₀ o₁ : Value} {typedExpr₀ : Expr}
+    (htyped₀ : ExternBoundaryTyping.Call builtinMemDerefDecl typedExpr₀ entry₀ res)
+    (hbody : BodyEntryInputsAgree predSat entry₀.bodyCtx entry₀ entry₁ θ₀ θ₁)
+    (hrun₀ : ExternCallBoundaryRun builtinMemDerefDecl builtinMemDerefImpl entry₀ res cf₀ o₀)
+    (hrun₁ : ExternCallBoundaryRun builtinMemDerefDecl builtinMemDerefImpl entry₁ res cf₁ o₁)
+    {addr₀ addr₁ : Address} {n₀ n₁ : Int}
+    (harg₀ : entry₀.argValue = Value.loc addr₀)
+    (harg₁ : entry₁.argValue = Value.loc addr₁)
+    (hlk₀ : Memory.lookup entry₀.callConfig.memory addr₀ = some n₀)
+    (hlk₁ : Memory.lookup entry₁.callConfig.memory addr₁ = some n₁) :
+    n₀ = n₁ := by
+  obtain ⟨_, _, _, rQt, ls, hbindR, hetypR, hcleanR, hcells⟩ :=
+    builtinMemDeref_call_clean_shape htyped₀
+  have hrv₀ : entry₀.bodyConfig.varEnv.lookup "r" = some (Value.loc addr₀) := by
+    rw [builtinMemDeref_callRun_bodyVar hrun₀, harg₀]
+  have hrv₁ : entry₁.bodyConfig.varEnv.lookup "r" = some (Value.loc addr₁) := by
+    rw [builtinMemDeref_callRun_bodyVar hrun₁, harg₁]
+  have hnotfun : rQt.etyp.isFunctionType = false := by rw [hetypR]; rfl
+  have hcleanRP : qtypCleanUnder entry₀.bodyCtx.regime rQt :=
+    qtypCleanUnder_of_cleanUnderRegime hcleanR hnotfun
+  have hvar := hbody.agree.2 "r" rQt hbindR hcleanRP
+  cases hvar with
+  | both_none _x _qt hl0 _hl1 => rw [hrv₀] at hl0; exact absurd hl0 (by simp)
+  | agree_values _x _qt v₀ v₁ hl0 hl1 hval =>
+      have e0 : v₀ = Value.loc addr₀ := Option.some.inj (hl0.symm.trans hrv₀)
+      have e1 : v₁ = Value.loc addr₁ := Option.some.inj (hl1.symm.trans hrv₁)
+      subst e0; subst e1
+      obtain ⟨l, hlin, hθ0, hθ1⟩ := agreeValueUnder_ref_common_loc hetypR hval
+      obtain ⟨cellQt, hcellLk, hcellClean⟩ := hcells l hlin
+      have hcellInt : cellQt.etyp = ETyp.int :=
+        memEnv_lookup_etyp_int entry₀.bodyCtx.memEnv l cellQt hcellLk
+      have hcellCleanP : qtypCleanUnder entry₀.bodyCtx.regime cellQt :=
+        qtypCleanUnder_of_cleanUnderRegime hcellClean (by rw [hcellInt]; rfl)
+      have hloc := hbody.agree.1 l cellQt hcellLk hcellCleanP
+      have hbcmem₀ : entry₀.bodyConfig.memory = entry₀.callConfig.memory := by
+        simp [ExternCallEntry.bodyConfig]
+      have hbcmem₁ : entry₁.bodyConfig.memory = entry₁.callConfig.memory := by
+        simp [ExternCallEntry.bodyConfig]
+      cases hloc with
+      | both_unrealized _l _qt hnone0 _hnone1 => rw [hθ0] at hnone0; exact absurd hnone0 (by simp)
+      | agree_values _l _qt a₀' a₁' m₀ m₁ hr0 hr1 hm0 hm1 hmagree =>
+          have ha0 : a₀' = addr₀ := Option.some.inj (hr0.symm.trans hθ0)
+          have ha1 : a₁' = addr₁ := Option.some.inj (hr1.symm.trans hθ1)
+          have e0 : entry₀.bodyConfig.memory.lookup a₀' = some n₀ := by
+            rw [ha0, hbcmem₀]; exact hlk₀
+          have e1 : entry₁.bodyConfig.memory.lookup a₁' = some n₁ := by
+            rw [ha1, hbcmem₁]; exact hlk₁
+          have hn0 : m₀ = n₀ := Option.some.inj (hm0.symm.trans e0)
+          have hn1 : m₁ = n₁ := Option.some.inj (hm1.symm.trans e1)
+          have hmeq : m₀ = m₁ := agreeValueUnder_num_int_imp_eq hcellInt hmagree
+          rw [← hn0, ← hn1]; exact hmeq
+
+theorem builtinMemDeref_callFR :
+    ExternCallBoundaryFR builtinMemDerefDecl builtinMemDerefImpl := by
+  intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
+    htyped₀ htyped₁ hpredlaws hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+  obtain ⟨hetyp, hpred, hctxAfter, _⟩ := builtinMemDeref_call_clean_shape htyped₀
+  obtain ⟨addr₀, n₀, harg₀, hlk₀, ho₀, hcf₀⟩ := builtinMemDeref_callRun_output hrun₀
+  obtain ⟨addr₁, n₁, harg₁, hlk₁, ho₁, hcf₁⟩ := builtinMemDeref_callRun_output hrun₁
+  have hneq : n₀ = n₁ :=
+    builtinMemDeref_callRun_nEq htyped₀ hbody hrun₀ hrun₁ harg₀ harg₁ hlk₀ hlk₁
+  have hboc₀ : entry₀.bodyOutputConfig cf₀ = entry₀.bodyConfig := by
+    rw [hcf₀]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
+  have hboc₁ : entry₁.bodyOutputConfig cf₁ = entry₁.bodyConfig := by
+    rw [hcf₁]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
+  have hctxAfter' : ctxAfter ctx res = ctx := hctxAfter
+  have hnt : res.nextTag' = ctx.nextTag := by
+    have h := congrArg TypeContext.nextTag hctxAfter'; simpa [ctxAfter] using h
+  have hnotfun : res.qualType.etyp.isFunctionType = false := by rw [hetyp]; rfl
+  have hrespects : QTypRespectsTagMeaning tm res.qualType :=
+    QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun
+      (by simp [qtypGuardDesc?, hpred])
+  have hvc : ∀ (μ : Memory) (θ : RealizationMap) (n : Int),
+      valueConsistentWithRegime predSat ctx.regime res.qualType μ θ (Value.num n) := by
+    intro μ θ n
+    refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred]) ?_
+    exact closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+      (by rw [hetyp]; exact valueHasETyp.num n) (by rw [hetyp]; rfl)
+  rw [hboc₀, hboc₁]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws⟩, hpredlaws, hrespects,
+    θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter']; exact hwfTm
+  · rw [ho₀, hetyp]; exact valueHasETyp.num _
+  · rw [ho₁, hetyp]; exact valueHasETyp.num _
+  · rw [hctxAfter']; exact hwfTm
+  · rw [hctxAfter']; exact hbody.wfCtx
+  · rw [hctxAfter']; exact hbody.tagBounded
+  · exact hbody.wfConfig₀
+  · exact hbody.wfConfig₁
+  · rw [hctxAfter']; exact hbody.runtime₀
+  · rw [hctxAfter']; exact hbody.runtime₁
+  · rw [hctxAfter']; exact hbody.regime
+  · rw [hctxAfter']; exact hbody.consistent₀
+  · rw [hctxAfter']; exact hbody.consistent₁
+  · rw [hctxAfter']; exact hbody.agree
+  · rw [hctxAfter', ho₀]; exact hvc _ _ _
+  · rw [hctxAfter', ho₁]; exact hvc _ _ _
+  · rw [hctxAfter', ho₀, ho₁]
+    exact resultAgreesIfClean_int_noPred_of_eq hetyp hpred (by rw [hneq])
+
+theorem builtinMemDeref_callSingle :
+    ExternCallBoundarySingle builtinMemDerefDecl builtinMemDerefImpl := by
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws hwfTm hTmBounded
+    θ cf o _hθwf _hwfCtx hric _hreg hcons _hwfcfg hrun _hpc
+  obtain ⟨hetyp, hpred, hctxAfter, _⟩ := builtinMemDeref_call_clean_shape htyped
+  obtain ⟨addr, n, _harg, _hlk, ho, hcf⟩ := builtinMemDeref_callRun_output hrun
+  have hboc : entry.bodyOutputConfig cf = entry.bodyConfig := by
+    rw [hcf]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
+  have hctxAfter' : ctxAfter ctx res = ctx := hctxAfter
+  have hnt : res.nextTag' = ctx.nextTag := by
+    have h := congrArg TypeContext.nextTag hctxAfter'; simpa [ctxAfter] using h
+  have hnotfun : res.qualType.etyp.isFunctionType = false := by rw [hetyp]; rfl
+  have hrespects : QTypRespectsTagMeaning tm res.qualType :=
+    QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun
+      (by simp [qtypGuardDesc?, hpred])
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws⟩, θ,
+    ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter']; exact hwfTm
+  · rw [ho, hetyp]; exact valueHasETyp.num _
+  · rw [hctxAfter', hboc]; exact hric
+  · rw [hctxAfter', hboc]; exact hcons
+  · rw [hboc, ho]
+    refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred]) ?_
+    exact closureCapturedVarsRegime_nonClosure_of_nonFunctionType
+      (by rw [hetyp]; exact valueHasETyp.num _) (by rw [hetyp]; rfl)
+  · rw [hboc]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter'
+
+theorem builtinMemDerefImpl_operationalSafe :
+    ExternOperationalSafe builtinMemDerefDecl builtinMemDerefImpl := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro implFn himpl _ _ _ _ _ _ _ _
+    simp [builtinMemDerefImpl] at himpl
+  · intro implPfn himpl env vArg mem addr vRaw hrun _hmem _henv _harg
+    simp only [builtinMemDerefImpl, ExternImpl.pfn.injEq] at himpl
+    subst himpl
+    obtain ⟨addr, n, _harg, _hlk, hraw⟩ := memDerefImpl_ok_shape hrun
+    rw [hraw]
+    exact wfValue.num _
+  · intro v himpl _ _
+    simp [builtinMemDerefImpl] at himpl
+
+/-- The complete trusted-extern-entry boundary contract for the memory-read
+    extern (`@23`, captures `[!r]`): all five `ExternBoundarySpec` fields.  The
+    relational `callFR` is the crux (`builtinMemDeref_callFR`), composing the
+    reference-clean argument condition with the cell-clean `!r` capture. -/
+theorem builtinMemDerefSpec :
+    ExternBoundarySpec builtinMemDerefDecl builtinMemDerefImpl where
+  declFR := builtinMemDeref_declFR
+  callFR := builtinMemDeref_callFR
+  declSingle := builtinMemDeref_declSingle
+  callSingle := builtinMemDeref_callSingle
+  operational := builtinMemDerefImpl_operationalSafe
+
+/-- The interpreter's assembled `defaultRegistry` resolves `@23` to exactly the
+    memory-read implementation `memDerefImpl` that the trusted boundary spec
+    `builtinMemDerefSpec` validates (`builtinMemDerefImpl ≡ .pfn memDerefImpl`
+    definitionally).  Function-level interpreter↔proof agreement for the
+    memory-read extern, mirroring `defaultRegistry_lookup_max11`. -/
+theorem defaultRegistry_lookup_memderef :
+    defaultRegistry.get? 23 = some builtinMemDerefImpl := by
+  simp [defaultRegistry, defaultInitialState, regInsert, register, builtinMemDerefImpl,
+    Std.HashMap.contains_insert, Std.HashMap.contains_empty]
 
 end ExternProofs

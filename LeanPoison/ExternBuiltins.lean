@@ -14,6 +14,8 @@ tests may invoke by their well-known identifiers:
   * `@20` : extern val `ZERO`  : `int`         (constant 0)
   * `@21` : extern val `errno` : `ref int`     (driver-allocated cell, init 0)
   * `@22` : extern fn  `set_err n` : `(int) -> unit`   (writes n into `!errno`)
+  * `@23` : extern pfn `memDeref r` : `(ref int) -> int` (reads `!r`; declares the
+            memory-read read-dependency `captures: { !r :> (int :> clean {}) }`)
 
 These implementations live here, *below* both the interpreter (`Main.lean`) and
 the proof stack (`LeanProofs/`), so that the running interpreter and the
@@ -70,6 +72,25 @@ def sqrtImpl
   | _, Value.num n, _ => .ok (Value.num (Int.ofNat (Nat.sqrt n.toNat)))
   | _, _, _           => .error (.implFailure 19 "expected int argument")
 
+/-- Memory-read extern (`@23`, the `!r` read-dependency demonstrator): given a
+    *reference* argument `r : ref int`, dereference it and return the cell's
+    integer contents.  The declared `captures: { !r :> (int :> clean {}) }`
+    states that the result reads the memory cell behind `r`.  Combined with the
+    `(ref int :> clean {})` argument condition this is exactly enough for
+    fault-robustness: the argument condition fixes the reference's *location*
+    (both runs realise `r` to a common logical cell), and the capture fixes the
+    cell *contents* clean (so the two reads agree).  A clean reference may point
+    to a poisoned cell, so the capture is genuinely load-bearing — this is why
+    memory-read read-dependencies exist.  See `doc/extern-env-deps.md` (the
+    `maxmem` `!r2` explicit-argument memory dependency). -/
+def memDerefImpl
+    : VarEnv → Value → Memory → Except ExternError Value
+  | _unifiedEnv, Value.loc addr, mem =>
+      match Memory.lookup mem addr with
+      | some n => .ok (Value.num n)
+      | none   => .error (.implFailure 23 "memDeref: referenced cell missing")
+  | _, _, _ => .error (.implFailure 23 "memDeref: expected ref argument")
+
 /-- `set_err n` (`@22`) writes `n` into the `errno` cell and returns `unit`. No
     new allocation, so `nextAddr` is threaded through unchanged. -/
 def setErrImpl
@@ -106,7 +127,8 @@ def defaultInitialState : DefaultInitialState :=
   let r5 := regInsert r4 21 (.val (Value.loc errnoAddr))
   let r6 := regInsert r5 22 (.fn setErrImpl)
   let r7 := regInsert r6 19 (.pfn sqrtImpl)
-  { memory := mem0, nextAddr := 0, registry := r7 }
+  let r8 := regInsert r7 23 (.pfn memDerefImpl)
+  { memory := mem0, nextAddr := 0, registry := r8 }
 
 /-- Back-compat alias: older call sites that just want the registry. -/
 def defaultRegistry : ExternRegistry := defaultInitialState.registry

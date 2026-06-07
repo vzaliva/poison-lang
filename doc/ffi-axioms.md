@@ -10,14 +10,14 @@ Contract*) and validated nested returned extern callables.
 
 The public fault-robustness theorem is relative to trusted extern boundary
 evidence under a populated registry. The active `extern-env-deps` branch extends
-that boundary with explicit extern read dependencies (`captures:`) and should
-finish branch-join capture conjunctions and memory-read `!r` captures before
-merging back to the FFI integration branch `ffi`. Guarded captures are complete
-at the typecheck/trusted-call-boundary level. The remaining guarded-value work is
-a trusted producer extern plus applied program-FR routing from producer to
-capturing consumer; that is broader FFI/regime validation. Reusable helper
-machinery is secondary and should be extracted only from proof patterns that
-actually repeat.
+that boundary with explicit extern read dependencies (`captures:`). Bare
+environment reads, guarded call-time satisfaction, and the representative
+explicit-argument memory-read `!r` path are implemented/proved; branch-join
+capture conjunction merging remains before `extern-env-deps` merges back to the
+FFI integration branch `ffi`. The remaining guarded-value work is a trusted
+producer extern plus applied program-FR routing from producer to capturing
+consumer; that is broader FFI/regime validation. Reusable helper machinery is
+secondary and should be extracted only from proof patterns that actually repeat.
 
 Related documents:
 
@@ -858,20 +858,20 @@ needed by `@11`.
 The remaining `max`-adjacent work is not the two-argument arithmetic behavior;
 that path is proved. Guarded captures are also proved at the trusted call
 boundary through `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec`, with
-bare-decl program FR in `GuardedCapturesFR.guardedCaptures_FR`. The remaining
-work is to complete branch-join precondition merging and memory-read `!r`
-dependencies.
+bare-decl program FR in `GuardedCapturesFR.guardedCaptures_FR`. Memory-read
+`!r` dependencies are proved for the representative explicit-argument path via
+`builtinMemDerefSpec` and `MemReadCapturesFR.appliedMemReadCaptures_FR`. The
+remaining `extern-env-deps` blocker is branch-join precondition merging.
 
 ### 3. Captures Branch Completion
 
 The `extern-env-deps` branch should merge into `ffi` only after pfn-side
-`captures:` supports:
+`captures:` supports branch joins that combine capture preconditions by
+conjunction and reject or avoid incompatible predicate shapes.
 
-- branch joins that combine capture preconditions by conjunction and reject or
-  avoid incompatible predicate shapes;
-- memory-read `!r` dependencies exercised end-to-end with a trusted spec /
-  program-FR artifact;
-- representative accepted and rejected examples for the dependency gate.
+Memory-read `!r` dependencies are exercised end-to-end with a trusted spec /
+program-FR artifact for the representative explicit-reference-argument path, and
+representative accepted/rejected examples cover the dependency gate.
 
 Guarded dependencies are complete at the typecheck/trusted-call-boundary level:
 active and inactive examples exercise the regime gate, and the guarded `@11`

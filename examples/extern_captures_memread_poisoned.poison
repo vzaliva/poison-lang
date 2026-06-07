@@ -1,0 +1,18 @@
+-- Rejection counterpart to extern_captures_memread.poison: the memory-read
+-- (`!r`) gate is checked against the *current memory typing*.  Here the reference
+-- `rr` points to a *poisoned* cell, so the bang read dependency
+-- `captures: { !r :> (int :> clean {}) }` is NOT satisfied at the `f rr` call
+-- boundary: a declared-clean cell dependency requires the cell contents clean,
+-- which a poisoned cell is not.  (The reference itself is fine — `ref int` is
+-- clean — but a clean reference may point to a poisoned cell, which is exactly
+-- the contents fact the bang capture governs.)  Type checking is therefore
+-- expected to FAIL, demonstrating that the bang gate genuinely consults memory
+-- typing rather than passing for the wrong reason.
+let bad = extern val @244 : (int :> poisoned {})
+in
+let rr = ref bad
+in
+let f =
+  extern pfn @23 r : (ref int :> clean {}) -> ((int :> clean {})),
+    captures: { !r :> (int :> clean {}) }
+in f rr

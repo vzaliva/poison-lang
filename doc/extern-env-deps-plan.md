@@ -17,13 +17,16 @@ argument `a`, which the abstract extern call-boundary proof could not previously
 justify as a clean dependency. That curried-`max` (all-clean) path is now
 **implemented and proved end-to-end**. The branch is not complete merely because
 that path is green: `extern-env-deps` should merge to `ffi` only after the pfn
-read-dependency model is complete enough to match the goal document, including
-branch-join capture conjunctions and memory-read dependencies. Guarded
+read-dependency model is complete enough to match the goal document. Guarded
 dependencies are now implemented/proved to the same maturity level as extern
 argument guards: typecheck/examples are end-to-end and the trusted call boundary
-is proved. The remaining guarded-value work is a trusted producer extern plus an
-applied program-FR proof that routes `producer -> captured value -> consumer`;
-that is broader FFI/regime validation, not a blocker for this branch.
+is proved. Memory-read (`!r`) dependencies are now implemented/proved end-to-end
+as well — including an applied/routed program-FR (`@23 (ref 3)`) and a runnable
+example — so the only pfn read-dependency item still required before merging is
+the branch-join capture conjunction merge. The remaining guarded-value work is a
+trusted producer extern plus an applied program-FR proof that routes
+`producer -> captured value -> consumer`; that is broader FFI/regime validation,
+not a blocker for this branch.
 
 ## Status — curried-`max` path: DONE; branch still in progress
 
@@ -141,6 +144,39 @@ of the closure body captures (and the runtime check modulo-captures) keeps
   FFI/regime work because it needs a trusted guarded-value producer that returns
   the de-poisoned captured value.
 
+- **Memory-read (`!r`) dependencies, end-to-end** (goal doc's `maxmem`
+  `@20`/`@21`, the `!r2` explicit-argument half). Bang capture targets are now
+  real beyond parser/typecheck: a trusted memory-read extern `@23 r : (ref int :>
+  clean {}) -> (int :> clean {})` declaring `captures: { !r :> (int :> clean {})
+  }` (dereferences its reference argument and returns the cell contents) carries
+  a full 5-field `ExternBoundarySpec` (`ExternProofs.builtinMemDerefSpec`). Its
+  relational `builtinMemDeref_callFR` is the new content, composing *two*
+  load-bearing cleanness facts: the argument condition forces the reference clean
+  (both runs realise `r` to a **common** logical cell, via
+  `agreeValueUnder_ref_common_loc`), and the `!r` capture forces that cell's
+  *contents* clean (the two reads agree, via `agreeOnClean` on the location
+  side). A clean reference may point to a poisoned cell, so the capture is
+  genuinely load-bearing. `MemReadCapturesFR.memReadCaptures_FR` proves the
+  bare-decl registry-agreement shape and
+  `MemReadCapturesFR.appliedMemReadCaptures_FR` the **applied/routed** program
+  `@23 (ref 3)` — because a clean cell is trivially materialisable with `ref`,
+  the memory-read path routes through the call boundary in an applied program,
+  reaching the environment-capture gold standard (`appliedMaxCurried_FR`), not
+  just the bare-decl level. `@23` is registered in the shared `defaultRegistry`
+  (`defaultRegistry_lookup_memderef` confirms interpreter↔proof agreement), so
+  `examples/extern_captures_memread.poison` runs end-to-end to `3`, while
+  `examples/extern_captures_memread_poisoned.poison` is rejected at the call gate
+  when the cell is poisoned. All new artifacts are axiom-clean
+  (`propext`/`Classical.choice`/`Quot.sound`); the program-FR theorems inherit
+  only the FR step stack's pre-existing `native_decide` axioms.
+
+- **Representative examples and rejection coverage.** The accepted curried-`max`,
+  guarded, and memory-read examples are in place, and the negative path is
+  covered by concrete rejections — `extern_captures_guarded_inactive.poison`
+  (inactive regime) and `extern_captures_memread_poisoned.poison` (poisoned
+  cell) — so the call gate's rejection is exercised in the example suite, not
+  only implicit in proofs.
+
 ## Required before merging `extern-env-deps` to `ffi`
 
 - **Branch-join conjunction merge for capture preconditions**
@@ -148,17 +184,6 @@ of the closure body captures (and the runtime check modulo-captures) keeps
   preconditions must combine by **conjunction** across branches (reject
   incompatible predicate shapes), not by the return-side join that collapses to
   `noPred`. Not exercised by `max` (no branches over a capture-bearing closure).
-- **Memory-read (`!r`) dependencies, end-to-end** (the goal doc's `maxmem`
-  `@20`/`@21` example or an equivalent). Bang targets already belong to the
-  surface model and are checked at the extern call boundary against current
-  memory typing. The branch should include a trusted spec / program-FR artifact
-  exercising memory reads through captured reference variables and/or the
-  reference-typed explicit argument, rather than leaving `!r` as parser-only or
-  typechecker-only support.
-- **Representative examples and rejection coverage.** The branch should keep the
-  accepted curried-`max` and guarded examples and add coverage for the new
-  memory-read path. At least one rejected missing/incompatible capture case
-  should exist so the call gate's negative path is not only implicit in proofs.
 
 ## Out of scope (this effort)
 
@@ -181,9 +206,10 @@ of the closure body captures (and the runtime check modulo-captures) keeps
 
 ## Branch merge rule
 
-Merge `extern-env-deps` into `ffi` only when the pfn-side `captures:` feature is
-complete for environment reads, branch-join capture conjunctions, and memory-read
-`!r` dependencies, with the standard gates green and no new `sorry`/axioms.
+Merge `extern-env-deps` into `ffi` once branch-join capture conjunction merging
+is complete, with the standard gates green and no new `sorry`/axioms. The
+pfn-side environment-read and representative memory-read `!r` paths are already
+implemented/proved.
 Guarded call-time satisfaction is already complete at the typecheck/trusted
 call-boundary level; do not hold this branch for the trusted guarded-value
 producer/applied-program routing work, fn-side captures, or default-registry

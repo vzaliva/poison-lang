@@ -255,8 +255,10 @@ memory footprints to be exactly equal to the declared dependency list.
 The `extern-env-deps` branch implements this design on top of the `ffi`
 integration branch. The curried-`max` environment-read path is implemented and
 proved end-to-end. Guarded captures are implemented at the typecheck gate and
-proved at the trusted call boundary. The branch should not merge back to `ffi`
-until the remaining pfn read-dependency surface described here is complete.
+proved at the trusted call boundary. Memory-read (`!r`) dependencies are
+implemented and proved end-to-end (the `maxmem` `!r2` explicit-argument form).
+The branch should not merge back to `ffi` until the remaining pfn
+read-dependency surface described here is complete.
 
 Already implemented for the curried-`max` path:
 
@@ -275,19 +277,27 @@ Already implemented for the curried-`max` path:
   `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec` for a guarded
   captured dependency; `LeanProofs/GuardedCapturesFR.lean` records the
   bare-declaration program-FR artifact.
+- `LeanProofs/ExternProofs.lean` proves the memory-read extern `@23`
+  (`builtinMemDerefSpec`, whose `builtinMemDeref_callFR` composes the
+  reference-clean argument condition with the cell-clean `!r` capture);
+  `LeanProofs/MemReadCapturesFR.lean` records both the bare-declaration and the
+  applied/routed (`@23 (ref 3)`) program-FR artifacts. `@23` is registered in the
+  shared `defaultRegistry`, so `examples/extern_captures_memread.poison` runs
+  end-to-end and `examples/extern_captures_memread_poisoned.poison` is rejected.
 - `poison-lang-spec/poison-lang.ott` and `doc/poison-lang-description.tex`
-  describe the surface syntax and call-time satisfaction judgement.
+  describe the surface syntax and call-time satisfaction judgement (including the
+  memory-read two-cleanness-facts reading).
 
 Required before merging this branch to `ffi`:
 
 - branch joins must merge capture preconditions by conjunction, rejecting or
   avoiding incompatible predicate shapes rather than collapsing them to
-  `noPred`;
-- memory-read `!r` captures must be exercised end-to-end with a trusted spec /
-  program-FR artifact, not only parser/typechecker support;
-- examples should keep the accepted/rejected guarded cases and add memory-read
-  dependency coverage, plus at least one rejected missing or incompatible
-  dependency.
+  `noPred`.
+
+The accepted/rejected example suite is in place: the guarded cases
+(`extern_captures_guarded{,_inactive}.poison`) and the memory-read cases
+(`extern_captures_memread{,_poisoned}.poison`) cover both acceptance and the
+call-gate rejection path.
 
 Still out of scope for this branch:
 

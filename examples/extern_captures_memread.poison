@@ -1,0 +1,19 @@
+-- Memory-read (`!r`) extern read dependency, running end-to-end
+-- (doc/extern-env-deps.md, the `maxmem` `!r2` explicit-argument memory
+-- dependency).  The built-in `@23` takes a *reference* argument `r : ref int`
+-- and declares that it reads the cell behind it via the bang capture
+-- `captures: { !r :> (int :> clean {}) }`; its implementation dereferences `r`
+-- and returns the cell contents.
+--
+-- The call boundary checks the bang dependency against the current memory
+-- typing: the reference `rr` points to a clean cell (`ref 3`), so the `!r`
+-- read dependency is satisfied and the trusted clean result is available.  The
+-- argument condition `(ref int :> clean {})` fixes the cell; the capture
+-- `!r :> (int :> clean {})` fixes its contents clean.  Both are checked at the
+-- call site, then `@23` runs and returns the dereferenced value `3`.
+let rr = ref 3
+in
+let f =
+  extern pfn @23 r : (ref int :> clean {}) -> ((int :> clean {})),
+    captures: { !r :> (int :> clean {}) }
+in f rr

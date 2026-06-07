@@ -453,6 +453,24 @@ into a single guard at application, so a trusted result requires both. The
 states this contravariant satisfaction relation, mirroring
 \(\mathit{satisfiesArgCond}\) for the argument precondition.
 
+A bang target \texttt{!r} resolves the reference variable \texttt{r} in the
+callable environment --- a captured reference or the explicit argument when that
+argument is reference-typed --- and then checks the cell(s) it points to against
+the declared dependency in the current memory typing. For a memory-read
+dependency, two cleanness facts cooperate, and both are load-bearing. The
+\emph{argument condition} on the reference (e.g.\ \texttt{(ref int :> clean
+\{\})}) forces the reference clean, so two runs that agree on clean inputs realise
+\texttt{r} to a \emph{common} logical cell; the \emph{capture} \texttt{!r :> (int
+:> clean \{\})} forces that cell's \emph{contents} clean, so the two reads agree.
+A clean reference may still point to a poisoned cell --- a reference's cleanness
+concerns its address, not its contents --- so the capture is exactly the extra
+fact a memory-read dependency contributes to fault-robustness; it is not implied
+by the argument condition. The built-in \(@23\) (a pure extern \texttt{r : (ref
+int :> clean \{\}) -> (int :> clean \{\})} declaring \texttt{captures: \{ !r :>
+(int :> clean \{\}) \}} and returning \texttt{!r}) exercises this end-to-end:
+the call boundary checks the bang dependency against memory typing, and the
+trusted boundary proof discharges fault-robustness from exactly those two facts.
+
 Because the satisfaction relation is the same regime-based one used for argument
 conditions, a \texttt{captures:} dependency may be \emph{guarded}. A declared-clean
 requirement such as \texttt{captures: \{ a :> (int :> clean \{ 5, v => v >= 0 \})

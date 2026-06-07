@@ -3,9 +3,10 @@
 Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof has a populated-registry theorem that
 consumes trusted extern boundary evidence. Concrete trusted specs now exist for
-`abs` and the curried-`max` pair; the active `extern-env-deps` branch completes
-the read-dependency/captures feature before merging back to the FFI integration
-branch `ffi`.
+`abs`, the curried-`max` pair, and the explicit-argument memory-read extern
+`@23`; the active `extern-env-deps` branch completes the remaining
+read-dependency/captures work before merging back to the FFI integration branch
+`ffi`.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
@@ -246,11 +247,13 @@ Branch structure:
 - `extern-env-deps` is a feature branch above `ffi`, corresponding to
   `doc/extern-env-deps.md`.
 - `extern-env-deps` should merge to `ffi` only after pfn-side `captures:` covers
-  bare environment reads, branch-join capture conjunctions, and memory-read
-  `!r` dependencies. Guarded call-time satisfaction is complete at the
-  typecheck/trusted-call-boundary level. The trusted guarded-value producer plus
-  applied program-FR routing is broader FFI/regime validation work, not a blocker
-  for this branch.
+  bare environment reads, memory-read `!r` dependencies, and branch-join capture
+  conjunctions. Bare environment reads and the representative explicit-argument
+  memory-read path are implemented/proved; branch-join conjunction merging is
+  the remaining branch blocker. Guarded call-time satisfaction is complete at
+  the typecheck/trusted-call-boundary level. The trusted guarded-value producer
+  plus applied program-FR routing is broader FFI/regime validation work, not a
+  blocker for this branch.
 
 ### Topics To Settle
 
@@ -295,12 +298,16 @@ Completed concrete validation:
   guarded-value routing remains later FFI/regime work because it needs a trusted
   producer extern that returns the guarded/de-poisoned value consumed by the
   capture.
+- Memory-read `!r` dependencies are implemented/proved end-to-end for the
+  representative explicit-reference-argument path: `@23` has a complete
+  `ExternBoundarySpec`, accepted/rejected examples exercise the call gate, and
+  `MemReadCapturesFR.appliedMemReadCaptures_FR` routes the applied `@23 (ref 3)`
+  program through the trusted `callFR`.
 
 The remaining concrete proof obligations are:
 
 - **Finish the captures branch.** `extern-env-deps` must finish branch-join
-  capture conjunctions and memory-read `!r` dependencies before merging into
-  `ffi`.
+  capture conjunction merging before merging into `ffi`.
 - **Cover the rest of the default registry.** After the captures branch lands,
   prove trusted entries for the remaining builtins as needed: sqrt-style guarded
   input (`@19`), constant extern values (`@20`), initialized ref-valued extern
@@ -398,7 +405,7 @@ Open questions are now narrower:
 
 - Are current extern annotations (`ExternReturn`, `Effect`, `Capture`,
   `SyntaxPredicate`) sufficient for FR, or is extra proof-only metadata
-  unavoidable for the remaining memory-read and branch-join cases?
+  unavoidable for the remaining branch-join case?
 - Beyond within-run determinism, what additional stability properties
   are needed for trusted externs?
 - Should the current binary `TrustedRegistry` model remain the only proof

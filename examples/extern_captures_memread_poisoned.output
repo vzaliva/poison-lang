@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_captures_memread_poisoned.poison (verbose mode)
+
+Type checking error:
+  extern @23: argument precondition or a captures: read dependency not satisfied (arg runtime type Typ.ref (Typ.int), poison=false; declared poison=false)
+

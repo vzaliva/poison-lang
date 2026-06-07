@@ -1,0 +1,12 @@
+Evaluating file: examples/extern_captures_memread.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=false, pred={}},
+  MemoryTypeEnv: { 0 := (false, {}) },
+  tagEnv: {},
+  nextLoc: 1
+
+Result: 3
+Final state:
+Variable environment: []
+  Memory: [(0, 3), (1000000, 0)]
