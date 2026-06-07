@@ -248,8 +248,9 @@ Branch structure:
 - `extern-env-deps` should merge to `ffi` only after pfn-side `captures:` covers
   bare environment reads, branch-join capture conjunctions, and memory-read
   `!r` dependencies. Guarded call-time satisfaction is complete at the
-  typecheck/trusted-call-boundary level; applied guarded-value materialisation is
-  tracked separately as §4.6 work.
+  typecheck/trusted-call-boundary level. The trusted guarded-value producer plus
+  applied program-FR routing is broader FFI/regime validation work, not a blocker
+  for this branch.
 
 ### Topics To Settle
 
@@ -291,7 +292,9 @@ Completed concrete validation:
   and inactive regime examples, and proved at the trusted call boundary via
   `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec`. The accompanying
   program-FR artifact is the bare-declaration registry-agreement shape; applied
-  guarded-value routing remains §4.6 work.
+  guarded-value routing remains later FFI/regime work because it needs a trusted
+  producer extern that returns the guarded/de-poisoned value consumed by the
+  capture.
 
 The remaining concrete proof obligations are:
 

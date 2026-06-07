@@ -21,7 +21,9 @@ read-dependency model is complete enough to match the goal document, including
 branch-join capture conjunctions and memory-read dependencies. Guarded
 dependencies are now implemented/proved to the same maturity level as extern
 argument guards: typecheck/examples are end-to-end and the trusted call boundary
-is proved, while applied guarded-value materialisation remains §4.6 work.
+is proved. The remaining guarded-value work is a trusted producer extern plus an
+applied program-FR proof that routes `producer -> captured value -> consumer`;
+that is broader FFI/regime validation, not a blocker for this branch.
 
 ## Status — curried-`max` path: DONE; branch still in progress
 
@@ -93,8 +95,9 @@ What is implemented and proved:
   `builtinMax11Guarded_callFR` and full 5-field `builtinMax11GuardedSpec` are
   proved axiom-clean; `GuardedCapturesFR.guardedCaptures_FR` gives the
   bare-declaration registry-agreement/program-FR artifact. Routing the guarded
-  `callFR` through an applied program that materialises a de-poisoned captured
-  value remains the separate §4.6 dynamic materialisation task.
+  `callFR` through an applied program remains later FFI/regime work: it needs a
+  trusted producer extern that returns a guarded/de-poisoned value for the
+  consumer extern to capture.
 - **Spec + examples.** `poison-lang.ott`: `capture_spec`/`capture_list` grammar,
   `CSL` on the extern declarations, the `capturesSatisfied` satisfaction
   judgement; `doc/poison-lang-description.tex`: the "Extern read dependencies"
@@ -134,9 +137,9 @@ of the closure body captures (and the runtime check modulo-captures) keeps
   requirements; active and inactive regime examples cover acceptance/rejection;
   `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec` prove the trusted
   boundary; and `GuardedCapturesFR.guardedCaptures_FR` proves the bare-decl
-  registry-agreement shape. Applied guarded program routing remains §4.6-blocked
-  because it needs a trusted guarded-value producer that materialises the
-  de-poisoned captured value.
+  registry-agreement shape. Applied guarded program routing remains later
+  FFI/regime work because it needs a trusted guarded-value producer that returns
+  the de-poisoned captured value.
 
 ## Required before merging `extern-env-deps` to `ffi`
 
@@ -167,10 +170,14 @@ of the closure body captures (and the runtime check modulo-captures) keeps
   documentation for the trusted-footprint model, but it is not needed to finish
   the core pfn read-dependency branch once the accepted/rejected dependency paths
   above are covered.
-- **Dynamic §4.6 de-poisoning materialisation.** This concerns the
-  guarded/poisoned scenario (materialising a de-poisoned value at runtime), not
-  the read-dependency mechanism itself. It remains a broader FFI/regime
-  validation item after this branch lands in `ffi`.
+- **Trusted guarded-value producer and applied-program routing.** Call-time
+  regime checking for guarded captures is implemented: the typechecker/call
+  boundary can accept a captured value when the required regime evidence is
+  active and reject it when inactive. What remains is a trusted producer extern
+  that returns a guarded/de-poisoned value, plus an applied program-FR proof that
+  routes `producer -> captured value -> consumer extern`. This is broader
+  FFI/regime validation after this branch lands in `ffi`, not part of the
+  pfn-side read-dependency mechanism itself.
 
 ## Branch merge rule
 
@@ -178,9 +185,9 @@ Merge `extern-env-deps` into `ffi` only when the pfn-side `captures:` feature is
 complete for environment reads, branch-join capture conjunctions, and memory-read
 `!r` dependencies, with the standard gates green and no new `sorry`/axioms.
 Guarded call-time satisfaction is already complete at the typecheck/trusted
-call-boundary level; do not hold this branch for applied guarded-value
-materialisation (§4.6), fn-side captures, or default-registry specs unrelated to
-read dependencies.
+call-boundary level; do not hold this branch for the trusted guarded-value
+producer/applied-program routing work, fn-side captures, or default-registry
+specs unrelated to read dependencies.
 
 ## Constraints
 

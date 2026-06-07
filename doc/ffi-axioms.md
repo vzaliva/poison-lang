@@ -13,9 +13,11 @@ evidence under a populated registry. The active `extern-env-deps` branch extends
 that boundary with explicit extern read dependencies (`captures:`) and should
 finish branch-join capture conjunctions and memory-read `!r` captures before
 merging back to the FFI integration branch `ffi`. Guarded captures are complete
-at the typecheck/trusted-call-boundary level, with applied guarded-value routing
-left to §4.6 dynamic materialisation. Reusable helper machinery is secondary and
-should be extracted only from proof patterns that actually repeat.
+at the typecheck/trusted-call-boundary level. The remaining guarded-value work is
+a trusted producer extern plus applied program-FR routing from producer to
+capturing consumer; that is broader FFI/regime validation. Reusable helper
+machinery is secondary and should be extracted only from proof patterns that
+actually repeat.
 
 Related documents:
 
@@ -873,8 +875,9 @@ The `extern-env-deps` branch should merge into `ffi` only after pfn-side
 
 Guarded dependencies are complete at the typecheck/trusted-call-boundary level:
 active and inactive examples exercise the regime gate, and the guarded `@11`
-trusted call boundary is proved. Applied routing remains separate §4.6 work
-because it requires materialising a guarded producer.
+trusted call boundary is proved. Applied routing remains later FFI/regime work
+because it requires a trusted producer extern that returns the guarded value for
+the consumer to capture.
 
 These items belong with `doc/extern-env-deps.md`; they should not be split into
 unrelated later FFI branches unless the branch scope is deliberately reduced.

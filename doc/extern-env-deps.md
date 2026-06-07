@@ -293,7 +293,8 @@ Still out of scope for this branch:
 
 - fn-side captures (`extern fn ... captures:`), unless explicitly promoted into
   this effort later;
-- dynamic §4.6 de-poisoning materialisation;
+- trusted guarded-value producer and applied-program routing for guarded
+  de-poisoned values;
 - trusted specs for default-registry builtins whose behavior is unrelated to
   read dependencies.
 
@@ -366,9 +367,10 @@ the same operational interpretation: the contract is checked when the extern is
 about to rely on the dependency. For pfn captures, this obligation is implemented
 at the typecheck gate and proved for the trusted guarded inner-`max` call
 boundary. Routing that guarded call boundary through an applied program that
-materialises a de-poisoned captured value remains the separate §4.6 dynamic
-materialisation task; it is not a declaration-time/call-time regime
-reconciliation issue.
+consumes a de-poisoned captured value remains later FFI/regime work: it needs a
+trusted producer extern that returns a guarded/de-poisoned value for the consumer
+extern to capture. That missing producer/routing proof is not a
+declaration-time/call-time regime reconciliation issue.
 
 Read-target resolution is also part of the trusted proof story. For a bang
 target, the location set used by the typechecker/proof must be the same
