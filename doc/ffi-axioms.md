@@ -11,15 +11,14 @@ expression-coupled runs (`ExternDeclBoundaryRunForExpr`; see *The High-Level
 Contract*) and validated nested returned extern callables.
 
 The public fault-robustness theorem is relative to trusted extern boundary
-evidence under a populated registry. The completed `extern-env-deps` branch
-extends that boundary with explicit extern read dependencies (`captures:`). Bare
-environment reads, guarded call-time satisfaction, the representative
-explicit-argument memory-read `!r` path, and branch-join capture conjunction
-merging are all implemented/proved, so `extern-env-deps` is ready to merge back
-to the FFI integration branch `ffi`. The remaining guarded-value work is a trusted
-producer extern plus applied program-FR routing from producer to capturing
-consumer; that is broader FFI/regime validation. Reusable helper machinery is
-secondary and should be extracted only from proof patterns that actually repeat.
+evidence under a populated registry. Explicit extern read dependencies
+(`captures:`) are implemented on `ffi`: bare environment reads, guarded call-time
+satisfaction, the representative explicit-argument memory-read `!r` path, and
+branch-join capture conjunction merging are all implemented/proved. The
+remaining guarded-value work is a trusted producer extern plus applied program-FR
+routing from producer to capturing consumer; that is broader FFI/regime
+validation. Reusable helper machinery is secondary and should be extracted only
+from proof patterns that actually repeat.
 
 Related documents:
 
@@ -57,11 +56,11 @@ typechecking, while making the FFI trust boundary explicit.
 ## Current Goal and Non-Goals
 
 The immediate goal is to keep the extern boundary stable after completing the
-captures feature branch:
+captures mechanism:
 
 - preserve the completed trusted specs for `abs` and curried `max`;
-- keep pfn-side `captures:` support on `extern-env-deps` complete: branch-join
-  capture conjunctions and memory-read `!r` dependencies are implemented/proved;
+- keep pfn-side `captures:` support complete: branch-join capture conjunctions
+  and memory-read `!r` dependencies are implemented/proved;
 - preserve the first trusted impure (`extern fn`) spec, `@13`
   (`ExternProofs.builtinImpureIdSpec`), as the fn-boundary smoke test;
 - preserve the public fault-robustness theorem shape: no new public
@@ -766,8 +765,8 @@ details.
 ## Roadmap
 
 The registry-aware proof spine and the first concrete trusted entries are done.
-The roadmap now separates completed validation, current branch status, and
-later builtin coverage.
+The roadmap now separates completed validation, captures/read-dependency status,
+and later builtin coverage.
 
 ### 1. Direct `abs` Boundary Validation
 
@@ -868,11 +867,10 @@ Branch-join precondition merging is proved in `CaptureJoinConjunction.lean`
 `mergedParrow_apply_captures_conjunction`), so no pfn-side read-dependency
 blocker remains.
 
-### 3. Captures Branch Completion
+### 3. Captures Completion
 
-The `extern-env-deps` branch's pfn-side `captures:` supports branch joins that
-combine capture preconditions by conjunction and reject incompatible predicate
-shapes, so the branch is ready to merge into `ffi`.
+The `captures:` implementation supports pfn-side branch joins that combine
+capture preconditions by conjunction and reject incompatible predicate shapes.
 
 Memory-read `!r` dependencies are exercised end-to-end with a trusted spec /
 program-FR artifact for the representative explicit-reference-argument path, and
@@ -887,11 +885,12 @@ the consumer to capture.
 The first trusted impure (`extern fn`) spec is complete as `@13`
 (`ExternProofs.builtinImpureIdSpec`), with program-level routing through
 `FnExternFR.appliedFnExtern_FR`. It exercises the fn call boundary and kind
-dispatch without captures or memory effects; a memory-effecting fn spec remains
-future default-registry coverage.
+dispatch without captures or memory effects. A captures-bearing trusted fn spec
+remains follow-up proof coverage for fn-side read dependencies, and a
+memory-effecting fn spec remains future default-registry coverage.
 
 These items belong with `doc/extern-env-deps.md`; they should not be split into
-unrelated later FFI branches unless the branch scope is deliberately reduced.
+unrelated later FFI workstreams unless the scope is deliberately reduced.
 
 ### 4. Boundary Tightening If Needed
 
@@ -927,6 +926,9 @@ proofs.
 
 If more coverage is desired later, the next checks are:
 
+- fn read-dependency coverage: a captures-bearing `kind = .fn` spec mirroring
+  the pfn `builtinMax11CapturesSpec` path; `@13` is deliberately no-captures /
+  no-effects;
 - guarded-input pure pfn: `@19`, a sqrt-style extern;
 - low risk: `@20`, an extern integer value;
 - medium risk: `@21`, a reference-valued extern value backed by the driver-initialized

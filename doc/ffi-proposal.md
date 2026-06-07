@@ -4,9 +4,8 @@ Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof has a populated-registry theorem that
 consumes trusted extern boundary evidence. Concrete trusted specs now exist for
 `abs`, the curried-`max` pair, the explicit-argument memory-read extern `@23`,
-and the first impure (`extern fn`) entry `@13` (`builtinImpureIdSpec`). The
-`extern-env-deps` branch completes the read-dependency/captures work and is ready
-to merge back to the FFI integration branch `ffi`.
+and the first impure (`extern fn`) entry `@13` (`builtinImpureIdSpec`).
+Read-dependency/captures support is implemented on `ffi`.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
@@ -238,15 +237,12 @@ This is where the live work sits. The runtime baseline above is the input; the
 output is a proof interface that lets FR see through trusted externs without
 inspecting Lean implementation code.
 
-Branch structure:
+Integration status:
 
-- `ffi` is the integration branch for the FFI effort.
-- `extern-env-deps` is the completed feature branch above `ffi`, corresponding to
-  the design in `doc/extern-env-deps.md`.
-- Its remaining branch action is integration: merge it to `ffi` after the
-  standard gates are green. The trusted guarded-value producer plus applied
-  program-FR routing is broader FFI/regime validation work, not a blocker for
-  this branch.
+- `ffi` carries the FFI effort, including the completed `captures:` design in
+  `doc/extern-env-deps.md`.
+- The trusted guarded-value producer plus applied program-FR routing is broader
+  FFI/regime validation work, not part of the completed captures mechanism.
 
 ### Topics To Settle
 
@@ -307,17 +303,18 @@ Completed concrete validation:
 
 The remaining work is:
 
-- **Merge the completed captures branch.** `extern-env-deps`'s pfn-side
-  `captures:` surface — bare environment reads, guarded call-time satisfaction,
-  memory-read `!r`, and branch-join capture conjunction merging — is
-  implemented/proved, so the branch is ready to merge into `ffi`.
+- **Add a captures-bearing trusted `kind = .fn` spec.** `@13` closes the impure
+  fn call-boundary milestone, but it has `captures = []` and `effects = []`. The
+  fn side still needs proof coverage that exercises `captures:` read-dependency
+  evidence under a trusted fn spec, mirroring the pfn
+  `builtinMax11CapturesSpec` path.
 - **Build a trusted guarded-value producer.** Applied guarded-value routing
   requires a trusted producer extern that returns the guarded/de-poisoned value
   consumed by the capturing extern.
-- **Cover the rest of the default registry.** After the captures branch lands,
-  prove trusted entries for the remaining builtins as needed: sqrt-style guarded
-  input (`@19`), constant extern values (`@20`), initialized ref-valued extern
-  values (`@21`), and errno-style impure updates (`@22`).
+- **Cover the rest of the default registry.** Prove trusted entries for the
+  remaining builtins as needed: sqrt-style guarded input (`@19`), constant
+  extern values (`@20`), initialized ref-valued extern values (`@21`), and
+  errno-style impure updates (`@22`).
 - **Helper extraction after repetition.** Directly proving
   `ExternBoundarySpec` assembles large `StepFRPost` and single-run
   conjunctions, but public constructors should be introduced only after repeated
@@ -401,9 +398,8 @@ worth tightening.
 
 Specification artefacts (`poison-lang-spec/poison-lang.ott`,
 `doc/poison-lang-description.tex`) already reflect the runtime baseline and the
-current captures syntax. Further changes are expected only if the remaining
-captures branch work or later trusted-builtin coverage changes the language
-surface.
+current captures syntax. Further changes are expected only if later
+trusted-builtin coverage changes the language surface.
 
 ## Open Questions
 

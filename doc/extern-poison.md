@@ -11,11 +11,11 @@ declared argument condition, curried extern levels are checked uniformly, and
 the proof stack threads the clean/poison part of the condition through trusted
 boundary reachability. Concrete trusted specs exist for `abs`, the curried
 `max` pair, the memory-read `@23`, and the first impure (`extern fn`) entry
-`@13` (`builtinImpureIdSpec`). The `extern-env-deps` branch's read-dependency
-work is complete: guarded `captures:` are complete at the
-typecheck/trusted-call-boundary level, memory-read `!r` captures are complete for
-the representative explicit-reference-argument path, and branch-join capture
-conjunction merging is complete.
+`@13` (`builtinImpureIdSpec`). Read-dependency work is complete on `ffi`:
+guarded `captures:` are complete at the typecheck/trusted-call-boundary level,
+memory-read `!r` captures are complete for the representative
+explicit-reference-argument path, and branch-join capture conjunction merging is
+complete.
 The broader remaining design work is predicate-language validation,
 latent-marker examples, and concrete validation of the remaining live trusted
 extern specs.
@@ -226,9 +226,8 @@ only.
 
 The call-time rule is intentional: a memory read dependency is checked when the
 extern is about to rely on it, because memory may have changed since the
-callable was created. The `extern-env-deps` branch validates this end-to-end for
-the representative explicit-reference-argument path, including a trusted spec /
-program-FR artifact.
+callable was created. The representative explicit-reference-argument path is
+validated end-to-end, including a trusted spec / program-FR artifact.
 
 ### 5.7 Shape of the cleanness obligation
 
@@ -356,9 +355,9 @@ of the latent-marker reading.
 ### 7.3 Read-side memory captures  *(from §5.6)*
 
 The syntax and model are selected: use bang targets in `captures:`. The
-representative explicit-reference-argument path is implemented/proved on
-`extern-env-deps`: `@23` has a trusted spec and program-FR artifact, and the
-accepted/rejected examples exercise the call gate.
+representative explicit-reference-argument path is implemented/proved: `@23` has
+a trusted spec and program-FR artifact, and the accepted/rejected examples
+exercise the call gate.
 
 ### 7.4 Remaining live trusted extern specs
 
@@ -370,11 +369,11 @@ contribute to the public FR theorem as live trusted entries.
 
 ## 8. Next steps
 
-1. Merge the completed `extern-env-deps` branch into `ffi` once the standard
-   gates are green and no
-   new `sorry`/axioms are introduced.
-2. Resolve §7.1 (predicate language expressiveness).
-3. Construct §7.2 (latent-marker example) to validate the interpretation
+1. Resolve §7.1 (predicate language expressiveness).
+2. Construct §7.2 (latent-marker example) to validate the interpretation
    against existing predicate machinery.
+3. Add a captures-bearing trusted `kind = .fn` spec so fn-side `captures:` gets
+   the same read-dependency proof coverage that pfn has; `@13` is only the
+   no-captures/no-effects fn call-boundary milestone.
 4. Add trusted specs for remaining live builtins (`@19`, `@20`, `@21`, `@22`) as
    separate FFI coverage work.

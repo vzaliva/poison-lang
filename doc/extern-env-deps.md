@@ -7,7 +7,7 @@ dependency model via `captures:`.
 Related documents:
 
 - `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document,
-  including the remaining post-`extern-env-deps` work.
+  including remaining read-dependency follow-up work.
 - `doc/extern-poison.md` explains the broader extern precondition, regime, and
   trust model that `captures:` extends to read dependencies.
 - `doc/ffi-axioms.md` explains the proof-boundary structures that consume the
@@ -249,17 +249,15 @@ trusted FR registry for that clean-return contract.
 This preserves precision without requiring runtime closure environments or
 memory footprints to be exactly equal to the declared dependency list.
 
-## Implementation Status And Branch Boundary
+## Implementation Status
 
-The `extern-env-deps` branch implements this design on top of the `ffi`
-integration branch and is ready to merge back to `ffi` once the standard gates
-are green. The curried-`max` environment-read path is implemented and proved
-end-to-end. Guarded captures are implemented at the typecheck gate and proved at
-the trusted call boundary. Memory-read (`!r`) dependencies are implemented and
-proved end-to-end (the `maxmem` `!r2` explicit-argument form). Branch-join
-capture conjunction merging is implemented (structurally, via the existing
-closure-member set-merge) and proved. The pfn-side read-dependency surface
-described here is therefore complete.
+The curried-`max` environment-read path is implemented and proved end-to-end.
+Guarded captures are implemented at the typecheck gate and proved at the trusted
+call boundary. Memory-read (`!r`) dependencies are implemented and proved
+end-to-end (the `maxmem` `!r2` explicit-argument form). Branch-join capture
+conjunction merging is implemented (structurally, via the existing closure-member
+set-merge) and proved. The pfn-side read-dependency surface described here is
+therefore complete on `ffi`.
 
 Already implemented for the curried-`max` path:
 
@@ -301,9 +299,9 @@ Already implemented for the curried-`max` path:
   memory-read two-cleanness-facts reading and the branch-join conjunction of
   capture preconditions).
 
-All pfn-side read-dependency items required before merging this branch to `ffi`
-are complete: bare environment reads, guarded call-time satisfaction,
-memory-read `!r` dependencies, and branch-join capture conjunction merging.
+All pfn-side read-dependency items are complete: bare environment reads, guarded
+call-time satisfaction, memory-read `!r` dependencies, and branch-join capture
+conjunction merging.
 
 The accepted/rejected example suite is in place: the guarded cases
 (`extern_captures_guarded{,_inactive}.poison`), the memory-read cases
@@ -349,8 +347,12 @@ its argument with no `captures:` (`captures = []`) and no effects
 (`effects = []`), so it exercises the `fn` call boundary and kind dispatch but
 neither extern read-dependencies nor memory effects (both are follow-ups).
 
-Still out of scope for this branch:
+Still out of scope for this design:
 
+- a captures-bearing trusted `kind = .fn` spec: `@13` validates the impure fn
+  call boundary with `captures = []` and `effects = []`, but no trusted fn spec
+  yet exercises read-dependency evidence; the natural follow-up mirrors the pfn
+  `builtinMax11CapturesSpec` path on the fn side;
 - a trusted fault-robustness spec for a *memory-effecting* `extern fn` built-in
   (e.g. `set_err`): it would exercise the effect machinery but breaks the
   `cf = callConfig` collapse the no-effect `@13` spec relies on, and `set_err`'s
