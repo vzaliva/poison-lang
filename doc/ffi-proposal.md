@@ -27,7 +27,22 @@ the shipped extern cleanup and default-registry assembly:
 1. **Finish trusted specs for shipped gaps.** Prove default trusted entries for
    the shipped builtins that still lack concrete specs: sqrt-style guarded input
    (`@19`), initialized ref-valued extern value (`@21`), and errno-style impure
-   update (`@22`).
+   update (`@22`). Each is blocked on a boundary decision, but the two cases sit
+   on *different mechanisms*:
+
+   - `@19` is blocked on **predicate semantics for value-attached guards**. A
+     faithful guarded-input contract must derive a value fact from an *inactive*
+     guard (`¬predSat ⟹ n < 0`), which the abstract `predSat` / `match_iff`
+     machinery does not expose for guards carried on values (it is forward and
+     needs an evaluated `if` condition). Pinning only the argument poison flag
+     would silently reduce `@19` to a clean-input extern that ignores its
+     predicate. Closing it requires expanding the predicate/guard trust surface.
+   - `@21`/`@22` are blocked on the **reserved-cell / address-cursor invariant**
+     (`errnoAddr < nextAddr`), which their `ExternOperationalSafe` obligations
+     cannot establish under the current contract (universally quantified over
+     well-formed configs, with no floor on `nextAddr`).
+
+   See `doc/externs.md` (`@19`, `@21`, `@22`).
 2. **Assemble the default trusted registry.** Define `defaultTrustedRegistry`
    for the shipped extern set, then prove
    `TrustedRegistry.toRuntimeRegistry defaultTrustedRegistry` agrees with

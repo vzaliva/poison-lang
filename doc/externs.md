@@ -128,28 +128,46 @@ agreement. No `captures:` or `effects:`.
 ## `@19` — integer `sqrt` (pure)
 
 **Kind:** `extern pfn`  
-**Trust:** Missing default trusted spec
+**Trust:** Missing default trusted spec — **blocked** (see Blocker below)
 
-**Canonical declaration (guarded-input example used in tests):**
+**Intended canonical declaration (guarded-input example):**
 
 ```poison
-extern pfn @19 x : (int :> clean { t, v => (v >= 0) }) -> ((int :> clean {}))
+extern pfn @19 x : (int :> poisoned { t, v => (v >= 0) }) -> ((int :> clean {}))
 ```
 
-**Implementation:** Currently computes `Nat.sqrt n.toNat`; non-integer
-arguments fail at dispatch. This should be changed to the explicit guarded
-definition `if x >= 0 then Lean.sqrt x else 0` (for integer `x`). The negative
-case is semantically important even though the current `toNat` route is close
-operationally: it exposes the constant-output branch needed by the boundary
-proof.
+The intended boundary example takes a *guarded poisoned* integer: a value whose
+poison is vouched clean exactly when the guard `v >= 0` is active. (The shipped
+test `examples/extern_arg_precond_sqrt.poison` currently uses a clean-guarded
+variant that typechecks and runs but carries no trusted spec.)
 
-**Boundary contract (intended, not yet proved):** Always clean integer result,
-with a two-case FR proof. If both runs satisfy `x >= 0`, the guarded clean input
-condition forces matching arguments, so the square-root results match. If both
-runs fail `x >= 0`, the arguments need not match, but both executions return
-`0`. See `examples/extern_arg_precond_sqrt.poison`. A trusted spec is still
-needed before `@19` can appear in a `TrustedRegistry` used by the public FR
-theorem.
+**Implementation:** Computes `Nat.sqrt n.toNat`; non-integer arguments fail at
+dispatch. The intended guarded contract would use the explicit form
+`if n >= 0 then Int.ofNat (Nat.sqrt n.toNat) else 0`, so the negative branch
+is a constant `0`.
+
+**Boundary contract (intended):** Always clean integer result, with a two-case
+FR proof. When the guard is active, the argument is clean-under-regime, paired
+runs must agree, and the roots match. When the guard is inactive, paired runs
+need not agree, but both arguments fail `v >= 0` (are negative) and the
+implementation returns `0`.
+
+**Blocker (not provable without trusted-surface expansion).** The inactive-guard
+branch is the obstruction. The FR stack is parametric over an abstract predicate
+oracle `predSat`, whose only behavioral law (`PredSatLaws`) is `match_iff` — a
+*forward* law requiring an evaluated source-level `if` condition (`matchGuard`
+recognition plus a `terminatesTo … (bool b)` witness). A guard attached to a
+*value* (not an evaluated condition) yields only the abstract
+`¬ predSat k μ (num n)` from `varsRegime.withPred_ok`; nothing connects that to
+the arithmetic fact `n < 0`. Discharging the inactive branch through the return
+spec ("guard inactive ⟹ returns `0`") does not avoid this — it relocates the
+same `¬predSat ⟹ n < 0` fact into the trusted layer. A clean-input spec that
+pins only the argument poison flag and ignores the predicate compiles, but it is
+*not* this example: it silently restricts `@19` to the clean (active-guard)
+precondition. A faithful trusted `@19` therefore needs a deliberate
+trusted-surface expansion (a `PredSatLaws` guard-body-evaluation law, or a
+per-spec arithmetic precondition on the boundary) — a reserved design decision.
+Until that is taken, `@19` has no trusted spec.
 
 ## `@21` — `errno` (extern value)
 
