@@ -301,26 +301,55 @@ Completed concrete validation:
   fields, and `LeanProofs/FnExternFR.lean` routes `(extern fn @13 ...) 7`
   through the impure `callFR`.
 
-The remaining work is:
+The FFI mechanism and external-boundary proof interface are done. What remains is
+example coverage: additional concrete extern implementations with trusted
+boundary proofs, plus registry-assembly examples, to demonstrate and stress-test
+the interface across more extern shapes.
 
-- **Add a captures-bearing trusted `kind = .fn` spec.** `@13` closes the impure
-  fn call-boundary milestone, but it has `captures = []` and `effects = []`. The
-  fn side still needs proof coverage that exercises `captures:` read-dependency
-  evidence under a trusted fn spec, mirroring the pfn
+The public FR theorem is relative to a supplied `TrustedRegistry`; it does not
+automatically cover every executable host registry. Concrete shipped-registry
+coverage is therefore an instantiation/example claim, not part of the core FFI
+interface. The following examples and stress tests remain useful:
+
+- **Cover the rest of the default registry as examples.** Prove trusted entries
+  for the remaining shipped builtins: sqrt-style guarded input (`@19`), constant
+  extern value (`@20`), initialized ref-valued extern value (`@21`), and
+  errno-style impure update (`@22`).
+- **Assemble a shipped-registry trusted example.** Define a
+  `defaultTrustedRegistry` bundling the trusted entries for the shipped registry,
+  then prove
+  `TrustedRegistry.toRuntimeRegistry defaultTrustedRegistry` agrees with
+  `defaultRegistry` from `LeanPoison/ExternBuiltins.lean` (either by extensional
+  equality or lookup agreement for every shipped id). This bridges concrete
+  trusted examples to the interpreter's actual registry. Because trusted lookup
+  is id-based, this registry must choose one canonical declaration per extern id;
+  alternate same-id proof variants such as guarded/capture-specialized `@11`
+  specs remain specialized examples unless their declaration is the chosen
+  shipped contract.
+- **Route representative programs over the shipped trusted registry.**
+  Program-level FR artifacts should include representative applications proved
+  against
+  `defaultTrustedRegistry`, not only minimal one- or two-entry bespoke registries.
+  This is the end-to-end evidence that executable examples and proof examples use
+  the same registry.
+- **Add a captures-bearing trusted `kind = .fn` example.** `@13` closes the
+  impure fn call-boundary milestone, but it has `captures = []` and
+  `effects = []`. The fn side still needs proof coverage that exercises
+  `captures:` read-dependency evidence under a trusted fn spec, mirroring the pfn
   `builtinMax11CapturesSpec` path.
-- **Build a trusted guarded-value producer.** Applied guarded-value routing
-  requires a trusted producer extern that returns the guarded/de-poisoned value
-  consumed by the capturing extern.
-- **Cover the rest of the default registry.** Prove trusted entries for the
-  remaining builtins as needed: sqrt-style guarded input (`@19`), constant
-  extern values (`@20`), initialized ref-valued extern values (`@21`), and
-  errno-style impure updates (`@22`).
-- **Helper extraction after repetition.** Directly proving
-  `ExternBoundarySpec` assembles large `StepFRPost` and single-run
-  conjunctions, but public constructors should be introduced only after repeated
-  concrete proofs show a stable shape. Likely future helpers include shapes such
-  as `pureUnaryCleanInt`, `constCleanInt`, `nestedPfn`, `refValInitialized`, and
-  `impureCellUpdate`.
+- **Build a trusted guarded-value producer and applied route.** The
+  regime/de-poisoning scaffolding is already present at the theorem-shape level,
+  but applied guarded routing requires a trusted producer extern that returns the
+  guarded/de-poisoned value consumed by the capturing extern, plus a program-FR
+  artifact that routes producer to consumer.
+
+Deliberately deferred:
+
+- **Helper extraction after repetition.** Directly proving `ExternBoundarySpec`
+  assembles large `StepFRPost` and single-run conjunctions, but public
+  constructors should not be introduced until repeated concrete proofs show a
+  stable shape. Likely future helpers include shapes such as `pureUnaryCleanInt`,
+  `constCleanInt`, `nestedPfn`, `refValInitialized`, and `impureCellUpdate`.
 
 The operational-safety portion of the stack is already discharged through
 `ExternBoundarySpec.operational`: `TrustedRegistry.operationalSafe` derives
@@ -373,6 +402,10 @@ shape.
   preserved, extended, or repackaged.
 - `S-5`: The design is stress-tested against multiple examples, even if
   they are not all written out here.
+- `S-6`: The example suite includes a shipped-registry instantiation:
+  `defaultTrustedRegistry` projects to `defaultRegistry` from
+  `LeanPoison/ExternBuiltins.lean`, so representative FR artifacts can be stated
+  against the same registry that executable examples use.
 
 ### Affected Artefacts
 

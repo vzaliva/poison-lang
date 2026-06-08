@@ -924,19 +924,11 @@ private helper experiments. Do not extend it as a framework by default; either
 ignore it or reuse only tiny private helpers that directly shorten the concrete
 proofs.
 
-If more coverage is desired later, the next checks are:
-
-- fn read-dependency coverage: a captures-bearing `kind = .fn` spec mirroring
-  the pfn `builtinMax11CapturesSpec` path; `@13` is deliberately no-captures /
-  no-effects;
-- guarded-input pure pfn: `@19`, a sqrt-style extern;
-- low risk: `@20`, an extern integer value;
-- medium risk: `@21`, a reference-valued extern value backed by the driver-initialized
-  `errno` cell;
-- high risk: `@22`, the impure `set_err` extern. It mutates the fixed
-  driver-allocated `errno` cell without allocation and is the first proof that
-  the impure-`fn` boundary handles clean-memory agreement, not just returned
-  values.
+Further concrete coverage is tracked in `doc/ffi-proposal.md`: remaining
+shipped-builtin examples (`@19`, `@20`, `@21`, `@22`), a captures-bearing
+`kind = .fn` example, guarded producer routing, and a shipped-registry trusted
+instantiation. Those are stress tests and examples for the completed boundary
+interface, not prerequisites for extending the proof interface itself.
 
 ### 6. Single-Run and Operational Facts
 
