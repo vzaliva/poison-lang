@@ -1,2 +1,0 @@
--- Test: built-in extern val @20 (ZERO) returns the int constant 0.
-let z = extern val @20 : (int :> clean {}) in z

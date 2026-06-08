@@ -1,8 +1,0 @@
-Evaluating file: examples/extern_fn_impure_id.poison (verbose mode)
-
-Type checking passed: Type: {type=int, poison=false, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
-
-Result: 7
-Final state:
-Variable environment: []
-  Memory: [(1000000, 0)]

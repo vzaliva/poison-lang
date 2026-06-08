@@ -3,9 +3,8 @@
 Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof has a populated-registry theorem that
 consumes trusted extern boundary evidence. Concrete trusted specs exist for
-`abs`, the curried-`max` pair, the explicit-argument memory-read extern `@23`,
-and the first impure (`extern fn`) entry `@13` (`builtinImpureIdSpec`).
-Read-dependency/captures support is implemented on `ffi`.
+`abs`, the curried-`max` pair, and the explicit-argument memory-read extern
+`@23`. Read-dependency/captures support is implemented on `ffi`.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
@@ -23,55 +22,27 @@ Related documents:
 ## Planning
 
 The FFI mechanism and external-boundary proof interface are done. What remains is
-example coverage: additional concrete extern implementations with trusted
-boundary proofs, plus registry-assembly examples, to demonstrate and stress-test
-the interface across more extern shapes.
+the shipped extern cleanup and default-registry assembly:
 
-Current concrete validation covers:
-
-- `abs` (`@12`) with a complete `ExternBoundarySpec`;
-- the curried-`max` pair, including nested returned pfn callables,
-  capture-bearing `@11`, and applied `(m 7) 2` program FR;
-- guarded pfn captures at the typecheck gate and trusted call boundary;
-- representative memory-read `!r` dependencies through `@23`;
-- branch-join capture conjunction merging; and
-- the first impure (`extern fn`) trusted spec, `@13`
-  (`ExternProofs.builtinImpureIdSpec`), with applied program FR.
-
-Additional example coverage should focus on:
-
-- **Remaining shipped builtin examples.** Prove trusted entries for the shipped
-  builtins that still lack concrete specs: sqrt-style guarded input (`@19`),
-  constant extern value (`@20`), initialized ref-valued extern value (`@21`), and
-  errno-style impure update (`@22`).
-- **Shipped-registry trusted assembly.** Define a `defaultTrustedRegistry`
-  bundling trusted entries for the shipped registry, then prove
-  `TrustedRegistry.toRuntimeRegistry defaultTrustedRegistry` agrees with
-  `defaultRegistry` from `LeanPoison/ExternBuiltins.lean` by extensional equality
-  or lookup agreement. Because trusted lookup is id-based, this registry must
-  choose one canonical declaration per extern id; alternate same-id proof variants
-  such as guarded/capture-specialized `@11` specs remain specialized examples
-  unless their declaration is the chosen shipped contract.
-- **Representative programs over the shipped trusted registry.** State
-  program-level FR artifacts against `defaultTrustedRegistry`, not only minimal
-  bespoke registries, so executable examples and proof examples use the same
-  registry.
-- **Captures-bearing trusted `kind = .fn` example.** `@13` closes the impure fn
-  call-boundary milestone, but it has `captures = []` and `effects = []`. The fn
-  side still needs proof coverage that exercises `captures:` read-dependency
-  evidence under a trusted fn spec.
-- **Trusted guarded-value producer and applied route.** The
-  regime/de-poisoning theorem-shape scaffolding exists, but applied guarded
-  routing still needs a trusted producer extern that returns the guarded value
-  consumed by the capturing extern, plus a program-FR artifact that routes
-  producer to consumer.
+1. **Finish trusted specs for shipped gaps.** Prove default trusted entries for
+   the shipped builtins that still lack concrete specs: sqrt-style guarded input
+   (`@19`), initialized ref-valued extern value (`@21`), and errno-style impure
+   update (`@22`).
+2. **Assemble the default trusted registry.** Define `defaultTrustedRegistry`
+   for the shipped extern set, then prove
+   `TrustedRegistry.toRuntimeRegistry defaultTrustedRegistry` agrees with
+   `defaultRegistry` from `LeanPoison/ExternBuiltins.lean` by extensional
+   equality or lookup agreement. Because trusted lookup is id-based, this
+   registry must choose one canonical declaration per extern id; alternate
+   same-id proof variants such as guarded/capture-specialized `@11` specs remain
+   specialized examples unless their declaration is the chosen shipped contract.
 
 Deliberately deferred:
 
 - **Helper extraction after repetition.** Direct `ExternBoundarySpec` proofs are
   large, but public constructors should be introduced only after repeated
   concrete proofs show a stable shape. Likely future helpers include
-  `pureUnaryCleanInt`, `constCleanInt`, `nestedPfn`, `refValInitialized`, and
+  `pureUnaryCleanInt`, `nestedPfn`, `refValInitialized`, and
   `impureCellUpdate`.
 
 ## Scope
@@ -356,9 +327,9 @@ Current coverage:
 - branch-join capture conjunction preservation is proved in
   `LeanProofs/CaptureJoinConjunction.lean`; and
 - fn-side captures are operationally/typecheck-supported, with accepted/rejected
-  examples. A captures-bearing trusted `kind = .fn` spec remains example
-  coverage in `## Planning`; `@13` is the no-captures/no-effects trusted fn
-  boundary example.
+  examples. The remaining shipped `fn` proof work should focus on `@22`'s real
+  `effects:` post-state; a trusted captures-bearing `fn` example should be
+  revisited only if a shipped implementation actually reads captures.
 
 ## Proof Interface
 

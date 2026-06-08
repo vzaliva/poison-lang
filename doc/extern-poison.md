@@ -10,8 +10,7 @@ qualified annotations, the typechecker rejects calls that do not satisfy the
 declared argument condition, curried extern levels are checked uniformly, and
 the proof stack threads the clean/poison part of the condition through trusted
 boundary reachability. Concrete trusted specs exist for `abs`, the curried
-`max` pair, the memory-read `@23`, and the first impure (`extern fn`) entry
-`@13` (`builtinImpureIdSpec`). Read-dependency work is complete on `ffi`:
+`max` pair, and the memory-read `@23`. Read-dependency work is complete on `ffi`:
 guarded `captures:` are complete at the typecheck/trusted-call-boundary level,
 memory-read `!r` captures are complete for the representative
 explicit-reference-argument path, and branch-join capture conjunction merging is
@@ -360,10 +359,10 @@ exercise the call gate.
 ### 7.4 Trusted extern spec coverage
 
 The proof stack has concrete trusted specs for `abs`, the curried `max` entries,
-the memory-read `@23`, and the impure-identity `@13` (`builtinImpureIdSpec`, the
-first `kind = .fn` entry). Interpreter builtins such as `@19`, `@20`, `@21`, and
-`@22` contribute to the public FR theorem only through explicit trusted-registry
-instantiations.
+and the memory-read `@23`. Interpreter builtins such as `@19`, `@21`, and `@22`
+contribute to the public FR theorem only through explicit trusted-registry
+instantiations; the meaningful shipped `kind = .fn` trusted example should be
+`set_err`-style effecting behavior rather than a no-effect identity shim.
 
 ## 8. Next steps
 

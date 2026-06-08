@@ -3,8 +3,7 @@
 Status: the registry-aware extern-boundary path is in place. The
 clean-input/clean-output `abs` entry (`@12`) is a complete trusted entry
 (`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields), and the
-curried-`max` entries, memory-read `@23`, and first impure (`extern fn`) entry
-`@13` (`ExternProofs.builtinImpureIdSpec`) have concrete trusted specs and
+curried-`max` entries and memory-read `@23` have concrete trusted specs and
 program-level FR artifacts. Declaration runs are expression-coupled through
 `ExternDeclBoundaryRunForExpr`; nested returned extern callables are covered by
 the same id-indexed trusted boundary.
@@ -761,23 +760,22 @@ details.
 
 Concrete trusted specs and program-level FR artifacts live with the Lean proof
 files, especially `LeanProofs/ExternProofs.lean`,
-`LeanProofs/MaxCurriedFR.lean`, `LeanProofs/MemReadCapturesFR.lean`, and
-`LeanProofs/FnExternFR.lean`. Current coverage includes:
+`LeanProofs/MaxCurriedFR.lean`, and `LeanProofs/MemReadCapturesFR.lean`.
+Current coverage includes:
 
 - clean-input/clean-output `abs` (`@12`);
 - curried `max`, including nested returned pfn callables and the
   capture-bearing `@11` path;
 - guarded pfn captures at the trusted call boundary;
 - representative memory-read `!r` captures through `@23`;
-- branch-join capture conjunction preservation; and
-- the no-captures/no-effects impure fn identity extern `@13`.
+- branch-join capture conjunction preservation.
 
 The active example-coverage plan is tracked in `doc/ffi-proposal.md` under
 `## Planning`. That plan covers remaining shipped-builtin examples (`@19`,
-`@20`, `@21`, `@22`), a captures-bearing trusted `kind = .fn` example, guarded
-producer routing, and a shipped-registry trusted instantiation. These are
-stress tests and examples for the completed boundary interface, not prerequisites
-for changing the proof interface itself.
+`@21`, `@22`), a meaningful trusted `kind = .fn` example over an effect-bearing
+extern such as `set_err`, guarded producer routing, and a shipped-registry
+trusted instantiation. These are stress tests and examples for the completed
+boundary interface, not prerequisites for changing the proof interface itself.
 
 ## Boundary Discipline
 
