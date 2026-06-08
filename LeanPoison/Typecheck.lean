@@ -389,10 +389,10 @@ def advanceNextTagForPred (pred : Predicate) (nextTag : Tag) : Tag :=
   | Predicate.guardOnly k          => max nextTag (k + 1)
   | Predicate.noPred               => nextTag
 
-/-- Advance nextTag past any tag introduced by a SyntaxPredicate.
-    NOTE: No longer called by the typechecker (tags are now allocated fresh via
-    collectAndAllocExternTags). Kept for proof compatibility until proofs are updated.
--/
+/-- Advance `nextTag` past any literal tag index mentioned by a
+    `SyntaxPredicate`. The extern typechecking path allocates fresh tags via
+    `collectAndAllocExternTags`; this helper is the direct cursor arithmetic for
+    already-indexed syntax predicates. -/
 def advanceNextTagForSyntaxPred (pred : SyntaxPredicate) (nextTag : Tag) : Tag :=
   match pred with
   | SyntaxPredicate.guardClosure k _ _ => max nextTag (k.val + 1)
@@ -1183,7 +1183,7 @@ def argConditionSatisfied (declared actual : QTyp) (R : Regime) (fuel : Nat) : B
 /-- Conservative predicate-shape match for a `captures:` dependency: the declared
     side is a surface `SyntaxPredicate`, so only its shape is compared against the
     resolved actual `Predicate` (no logical implication, no guarded
-    reconciliation — see `doc/extern-env-deps.md`). -/
+    reconciliation — see `doc/ffi-proposal.md`). -/
 def captureSyntaxPredShapeMatches (declared : SyntaxPredicate) (actual : Predicate) : Bool :=
   match declared with
   | SyntaxPredicate.noPred => true

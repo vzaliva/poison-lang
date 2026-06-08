@@ -57,7 +57,7 @@ structure ExternDeclaration where
   preds     : List SyntaxPredicate
   argPoison : Bool
   argPred   : SyntaxPredicate := .noPred
-  /-- Declared `captures:` read dependencies (`doc/extern-env-deps.md`).  Defaults
+  /-- Declared `captures:` read dependencies (`doc/ffi-proposal.md`).  Defaults
       to `[]` so existing declarations are unaffected; populated for externs whose
       trusted clean result depends on environment or memory read targets. -/
   captures  : List Capture := []

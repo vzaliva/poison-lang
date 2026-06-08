@@ -16,18 +16,16 @@ guarded `captures:` are complete at the typecheck/trusted-call-boundary level,
 memory-read `!r` captures are complete for the representative
 explicit-reference-argument path, and branch-join capture conjunction merging is
 complete.
-The broader remaining design work is predicate-language validation,
-latent-marker examples, and concrete validation of the remaining live trusted
-extern specs.
+Predicate-language validation, latent-marker examples, and further trusted
+extern example coverage are tracked from `doc/ffi-proposal.md`.
 
 Related documents:
 
 - `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document.
 - `doc/ffi-axioms.md` is the proof-boundary reference for trusted extern
   evidence and the FR theorem interface.
-- `doc/extern-env-deps.md` specifies `captures:` for environment and memory
-  read dependencies; this file treats that as the selected read-side dependency
-  model.
+- `doc/ffi-proposal.md` specifies `captures:` for environment and memory read
+  dependencies; this file treats that as the selected read-side dependency model.
 
 ## 1. Purpose and scope
 
@@ -52,7 +50,7 @@ extern pfn @12 x : (int :> clean {}) -> ((int :> clean {}))
 This document describes the current source-language contract for extern
 argument conditions, return/effect poison meaning, regimes, and trust triage.
 The proof-boundary packaging lives in `doc/ffi-axioms.md`; read dependencies
-over captured environment and memory live in `doc/extern-env-deps.md`.
+over captured environment and memory are recorded in `doc/ffi-proposal.md`.
 
 ## 2. Annotation surface
 
@@ -359,21 +357,16 @@ representative explicit-reference-argument path is implemented/proved: `@23` has
 a trusted spec and program-FR artifact, and the accepted/rejected examples
 exercise the call gate.
 
-### 7.4 Remaining live trusted extern specs
+### 7.4 Trusted extern spec coverage
 
 The proof stack has concrete trusted specs for `abs`, the curried `max` entries,
 the memory-read `@23`, and the impure-identity `@13` (`builtinImpureIdSpec`, the
-first `kind = .fn` entry). Remaining interpreter builtins such as `@19`, `@20`,
-`@21`, and `@22` still need explicit trusted-registry instantiations before they
-contribute to the public FR theorem as live trusted entries.
+first `kind = .fn` entry). Interpreter builtins such as `@19`, `@20`, `@21`, and
+`@22` contribute to the public FR theorem only through explicit trusted-registry
+instantiations.
 
 ## 8. Next steps
 
-1. Resolve §7.1 (predicate language expressiveness).
-2. Construct §7.2 (latent-marker example) to validate the interpretation
-   against existing predicate machinery.
-3. Add a captures-bearing trusted `kind = .fn` spec so fn-side `captures:` gets
-   the same read-dependency proof coverage that pfn has; `@13` is only the
-   no-captures/no-effects fn call-boundary milestone.
-4. Add trusted specs for remaining live builtins (`@19`, `@20`, `@21`, `@22`) as
-   separate FFI coverage work.
+The active FFI example-coverage plan lives in `doc/ffi-proposal.md` under
+`## Planning`. This source-language note keeps the contract model and open
+semantic questions; it does not carry an independent roadmap.

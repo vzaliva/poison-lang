@@ -178,10 +178,9 @@ structure Config where
   varEnv : VarEnv  -- List (Name × Value)
   nextAddr : Address  -- for fresh address generation
   pureMode : Bool   -- whether evaluation is inside a pure function body
-  /-- Lean-side extern implementations (FFI). Defaults to an empty registry
-      so that older proof code that builds `Config` literals without this
-      field continues to type-check unchanged; production call sites (see
-      `Main.lean`) supply a populated registry. -/
+  /-- Lean-side extern implementations (FFI). Defaults to an empty registry so
+      proof-side `Config` literals can omit this field; production call sites
+      (see `Main.lean`) supply a populated registry. -/
   registry : ExternRegistry := emptyExternRegistry
 
 -- Allocate a fresh address and return it along with updated config

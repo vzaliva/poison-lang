@@ -4,7 +4,7 @@ import LeanProofs.MaxCurriedFR
 # Program-level fault-robustness for a *guarded* `captures:` read dependency
 
 This is the capstone for guarded extern read dependencies
-(`doc/extern-env-deps.md` §"Guarded Dependencies").  Where `MaxCurriedFR`
+(`doc/ffi-proposal.md`, `captures:` section).  Where `MaxCurriedFR`
 exercises an all-clean captured dependency, here the inner-`max` extern `@11`
 declares its captured `a` as a **guarded** dependency
 `captures: { a :> (int :> clean { 5, v => v >= 0 }) }`.  The guard predicate
@@ -30,9 +30,8 @@ The program here is the bare guarded `@11` declaration (mirroring
 guarded-capture trusted spec is a registry entry that agrees with the program's
 reachable declarations.  Routing the guarded `callFR` through an *applied* program
 that materialises a genuinely de-poisoned captured value additionally requires a
-trusted guarded-value *producer*, whose declaration boundary is the §4.6 dynamic
-de-poisoning materialisation that remains separate, larger work (and is the same
-dependency the extern-argument guarded path carries — see
+trusted guarded-value producer/routing example (the same dependency the
+extern-argument guarded path carries — see
 `ExternRegimeInt.open_empty_context_FR_instantiable`, which is still parameterised
 over `impl`/`spec`).
 -/

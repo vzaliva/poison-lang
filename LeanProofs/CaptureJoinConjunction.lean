@@ -4,8 +4,8 @@ import LeanProofs.TypeSafety
 # Branch-join capture conjunction
 
 This module discharges the **branch-join capture conjunction merge** obligation
-for extern `captures:` read dependencies (`doc/extern-env-deps.md`,
-§"Contract Syntax and Variance").
+for extern `captures:` read dependencies (`doc/ffi-proposal.md`, `captures:`
+section).
 
 The design requirement is:
 
@@ -69,7 +69,7 @@ Two clarifications on scope.
   the call boundary, where applying the merged `parrow` fires every member's
   gate (`applyClosuresThreaded`) and a single actual cannot satisfy two
   incompatible non-`noPred` shapes. This is one of the design's permitted
-  realisations of "reject the merge" (`doc/extern-env-deps.md`): the precondition
+  realisations of "reject the merge" from the `captures:` model: the precondition
   is never collapsed to `noPred`; it is enforced as a conjunction at the call.
 
 * *Why there is no single-extern two-distinct-member program-FR artifact.* Such

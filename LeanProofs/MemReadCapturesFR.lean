@@ -4,11 +4,10 @@ import LeanProofs.MaxCurriedFR
 # Program-level fault-robustness for a *memory-read* (`!r`) `captures:` dependency
 
 This is the capstone for memory-read read-dependencies
-(`doc/extern-env-deps.md`, the `maxmem` `!r2` explicit-argument memory
-dependency).  Where `MaxCurriedFR` exercises an environment capture and
-`GuardedCapturesFR` a guarded environment capture, here the memory-read extern
-`@23` takes a reference argument `r : ref int` and declares a *bang* read
-dependency on the cell behind it:
+(`doc/ffi-proposal.md`, `captures:` section).  Where `MaxCurriedFR` exercises an
+environment capture and `GuardedCapturesFR` a guarded environment capture, here
+the memory-read extern `@23` takes a reference argument `r : ref int` and
+declares a *bang* read dependency on the cell behind it:
 `captures: { !r :> (int :> clean {}) }`.
 
 The trusted contract is `builtinMemDerefSpec` (a complete five-field
@@ -97,7 +96,7 @@ applies `@23` to it, so the generic FR theorem routes that application through t
 registry's `builtinMemDerefSpec.callFR` — the memory-read gate (reference-clean
 argument ⇒ common cell; `!r`-clean capture ⇒ agreeing contents).  Crucially, a
 *clean* memory cell is trivially materialisable with `ref`, so — unlike the
-guarded environment-capture path, which needs an open-extern producer (§4.6) —
+guarded environment-capture path, which needs a trusted guarded-value producer —
 the memory-read call boundary can be routed through a real application here,
 reaching the environment-capture gold standard (`appliedMaxCurried_FR`).
 

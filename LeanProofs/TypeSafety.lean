@@ -5412,8 +5412,9 @@ lemma applyFnTClosure_extern_regime_preserve_some
   · rw [hr2]
     exact applyExternRegimePolicy_lookup_preserve_some r1.regime' id ctx.externRegime tm k b hk
 
-/-- Backward exact regime preservation for an applied Fn extern: an OLD tag (`< r1.nextTag'`) that is
-    `some b` in `r2.regime'` was already `some b` in `r1.regime'` (the policy only inserts fresh tags). -/
+/-- Backward exact regime preservation for an applied Fn extern: a pre-existing tag
+    (`< r1.nextTag'`) that is `some b` in `r2.regime'` was already `some b` in
+    `r1.regime'` (the policy only inserts fresh tags). -/
 lemma applyFnTClosure_extern_regime_preserve_some_back
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)

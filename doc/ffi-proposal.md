@@ -1,8 +1,8 @@
-# Poison FFI: Runtime Baseline and Proof Roadmap
+# Poison FFI: Runtime Baseline and Proof Interface
 
 Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof has a populated-registry theorem that
-consumes trusted extern boundary evidence. Concrete trusted specs now exist for
+consumes trusted extern boundary evidence. Concrete trusted specs exist for
 `abs`, the curried-`max` pair, the explicit-argument memory-read extern `@23`,
 and the first impure (`extern fn`) entry `@13` (`builtinImpureIdSpec`).
 Read-dependency/captures support is implemented on `ffi`.
@@ -11,30 +11,68 @@ Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
 (FR) boundary explicit.
 
-This document has two parts:
-
-1. **Part I — Runtime baseline (implemented).** A short, factual summary of
-   what the runtime already does, with the source of truth being the code in
-   `LeanPoison/Runtime.lean`, `LeanPoison/BigStep.lean`, and (on the typing
-   side) `LeanProofs/ExternTypingAssumptions.lean`. Detailed operational rules
-   are not duplicated here.
-2. **Part II — Proofs / reasoning.** The live design work: what evidence the
-   proof layer needs about trusted externs, how it is indexed, and how it
-   connects to the existing typing-side assumptions. This is also where the
-   remaining concrete trusted-builtin coverage and any helper/API extraction are
-   tracked.
-
 Related documents:
 
-- `doc/ffi-proposal.md` is the status hub and roadmap for the FFI branch stack.
 - `doc/ffi-axioms.md` is the proof-boundary reference for
   `ExternBoundarySpec`, `TrustedRegistry`, and FR-facing extern evidence.
 - `doc/extern-poison.md` is the source-language contract reference for argument
   preconditions, return/effect poison meaning, regimes, and trust triage.
-- `doc/extern-env-deps.md` is the selected `captures:` design for extern read
-  dependencies.
 - `doc/poison-interpreter.md` documents executable CLI behavior and the default
   runtime extern registry.
+
+## Planning
+
+The FFI mechanism and external-boundary proof interface are done. What remains is
+example coverage: additional concrete extern implementations with trusted
+boundary proofs, plus registry-assembly examples, to demonstrate and stress-test
+the interface across more extern shapes.
+
+Current concrete validation covers:
+
+- `abs` (`@12`) with a complete `ExternBoundarySpec`;
+- the curried-`max` pair, including nested returned pfn callables,
+  capture-bearing `@11`, and applied `(m 7) 2` program FR;
+- guarded pfn captures at the typecheck gate and trusted call boundary;
+- representative memory-read `!r` dependencies through `@23`;
+- branch-join capture conjunction merging; and
+- the first impure (`extern fn`) trusted spec, `@13`
+  (`ExternProofs.builtinImpureIdSpec`), with applied program FR.
+
+Additional example coverage should focus on:
+
+- **Remaining shipped builtin examples.** Prove trusted entries for the shipped
+  builtins that still lack concrete specs: sqrt-style guarded input (`@19`),
+  constant extern value (`@20`), initialized ref-valued extern value (`@21`), and
+  errno-style impure update (`@22`).
+- **Shipped-registry trusted assembly.** Define a `defaultTrustedRegistry`
+  bundling trusted entries for the shipped registry, then prove
+  `TrustedRegistry.toRuntimeRegistry defaultTrustedRegistry` agrees with
+  `defaultRegistry` from `LeanPoison/ExternBuiltins.lean` by extensional equality
+  or lookup agreement. Because trusted lookup is id-based, this registry must
+  choose one canonical declaration per extern id; alternate same-id proof variants
+  such as guarded/capture-specialized `@11` specs remain specialized examples
+  unless their declaration is the chosen shipped contract.
+- **Representative programs over the shipped trusted registry.** State
+  program-level FR artifacts against `defaultTrustedRegistry`, not only minimal
+  bespoke registries, so executable examples and proof examples use the same
+  registry.
+- **Captures-bearing trusted `kind = .fn` example.** `@13` closes the impure fn
+  call-boundary milestone, but it has `captures = []` and `effects = []`. The fn
+  side still needs proof coverage that exercises `captures:` read-dependency
+  evidence under a trusted fn spec.
+- **Trusted guarded-value producer and applied route.** The
+  regime/de-poisoning theorem-shape scaffolding exists, but applied guarded
+  routing still needs a trusted producer extern that returns the guarded value
+  consumed by the capturing extern, plus a program-FR artifact that routes
+  producer to consumer.
+
+Deliberately deferred:
+
+- **Helper extraction after repetition.** Direct `ExternBoundarySpec` proofs are
+  large, but public constructors should be introduced only after repeated
+  concrete proofs show a stable shape. Likely future helpers include
+  `pureUnaryCleanInt`, `constCleanInt`, `nestedPfn`, `refValInitialized`, and
+  `impureCellUpdate`.
 
 ## Scope
 
@@ -192,7 +230,7 @@ a declaration at type `ref int`):
 These contracts are the evidence interface the proof layer consumes. The
 `wfConfig` preservation gap for `ExternImpl.fn` consumes `D-FN-1` /
 `D-FN-2`; the `externVal` well-formedness gap for `ref int` consumes
-`D-REF-1`. See Part II for where they feed in.
+`D-REF-1`. See the proof interface section for where they feed in.
 
 ### Typing Baseline
 
@@ -202,17 +240,16 @@ which exposes the `ExternTypingAssumptions` structure with a single field:
 - `externPredSatDelta` — predicate-law preservation across one structural
   extern allocation batch.
 
-A previous `guardProvenance` field was removed once the typechecker was
-tightened to erase predicates on extern effect writes under poisoned `pc`
-(mirroring assignment); the guard-origin trace is now structurally provable
-via `applyFnTClosure_extern_ok_memEnv_guard_origin` in `StepFR.lean`.
+Guard-origin provenance is derived structurally via
+`applyFnTClosure_extern_ok_memEnv_guard_origin` in `StepFR.lean`; extern effect
+writes under poisoned `pc` erase predicates in the same style as assignment.
 
 The fault-robustness theorem is relative to a witness of
 `ExternTypingAssumptions`: callers must supply (or postulate) one to
 instantiate it.
 
-Any new semantics-side evidence introduced by Part II must compose with
-this baseline rather than replace it wholesale.
+Any new semantics-side evidence should compose with this baseline rather than
+replace it wholesale.
 
 ### What Lives In Code, Not Here
 
@@ -231,125 +268,107 @@ re-specified in this document:
   `LeanPoison/ExternBuiltins.lean`, interpreter wiring in `Main.lean`, and the
   extern tests under `examples/`).
 
-## Part II: Proofs / Reasoning
+## Extern Read Dependencies (`captures:`)
 
-This is where the live work sits. The runtime baseline above is the input; the
-output is a proof interface that lets FR see through trusted externs without
-inspecting Lean implementation code.
+Extern callable implementations receive a runtime environment and memory as well
+as the explicit argument. The extern argument precondition describes only the
+explicit argument, so a trusted clean result also needs a way to name environment
+or memory entries that the implementation reads.
 
-Integration status:
+The motivating shape is curried `max`: the outer extern `@10` receives `a` and
+returns an inner extern closure `@11`; the inner implementation computes
+`max captured_a b`. The `@11` argument precondition can make `b` clean, but the
+trusted call-boundary proof also needs a contract for the captured `a`:
 
-- `ffi` carries the FFI effort, including the completed `captures:` design in
-  `doc/extern-env-deps.md`.
-- The trusted guarded-value producer plus applied program-FR routing is broader
-  FFI/regime validation work, not part of the completed captures mechanism.
+```poison
+extern pfn @10 a : (int :> clean {}) -> (
+  extern pfn @11 b : (int :> clean {}) -> ((int :> clean {})),
+    captures: { a :> (int :> clean {}) })
+```
 
-### Topics To Settle
+The `captures:` clause is a list of read-dependency requirements. A bare target
+such as `a` names a callable-environment entry. A bang target such as `!r` names
+the current memory entry reached through a reference in the callable environment.
+The callable environment is the closure's captured environment plus the explicit
+argument binding, so a bang target may refer either to a captured reference or to
+the explicit argument when the argument is reference-typed.
 
-- Whether current extern summaries (`ExternReturn`, `Effect`, `Capture`,
-  `SyntaxPredicate`) are sufficient for FR, or whether extra proof-only metadata
-  is needed.
-- Which reusable constructor lemmas should be the driver-facing API for common
-  extern shapes, and what small behavior facts each constructor should require.
-- Whether the current binary `TrustedRegistry` model is the intended long-term
-  proof boundary, or future work needs multiple trust levels.
-- How any new semantics-side assumptions relate to the existing
-  typing-side `ExternTypingAssumptions` fields in
-  `ExternTypingAssumptions.lean`.
-- How much convenience API is needed to build finite trusted registries and
-  discharge reachable-domain trust for programs using them.
-- Whether the same interface can stand in for a separately verified Poison
-  component linked through an extern boundary.
-- What soundness relation should hold between executable extern
-  semantics, typing, and FR.
+The clause is sibling syntax to `effects:` on extern callables. It is allowed on
+top-level and nested `extern fn` / `extern pfn` declarations, and the list may be
+empty. Empty `captures:` means the trusted result may depend on the explicit
+argument and on registry-local implementation state that agrees across FR runs,
+but not on ambient environment or memory entries.
 
-### Proof Status And Remaining Obligations
+Capture requirements use the same contract/ascription syntax as `effects:`:
+
+```poison
+captures: {
+  a :> (int :> clean { 7, v => v >= 0 }),
+  !r :> (int :> clean {})
+}
+```
+
+The typechecker checks each declared dependency at the extern call boundary using
+the same structural satisfaction relation as extern argument conditions:
+
+```text
+Qactual <:R Qdecl
+```
+
+The base type must match after erasure. A declared poisoned requirement accepts
+clean or poisoned actuals; a declared clean requirement needs the actual to be
+clean under the current regime. A declared `noPred` imposes no predicate
+obligation; a declared predicate requires the actual to carry the same structural
+predicate shape. There is no general logical implication.
+
+The check is intentionally call-time. Extern arguments are checked when the
+argument expression is evaluated, captured environment dependencies are checked
+when the implementation reads the callable environment, and memory dependencies
+are checked when the implementation is about to read memory. This gives guarded
+values the right regime interpretation: if guard `7` is active at the call site,
+`a` can be accepted as clean-under-regime; if it is inactive, the gate rejects
+the trusted result even if the guard was active when the closure was created.
+
+The trusted boundary still owns completeness of the dependency list. Runtime
+closure environments and memory may contain entries not listed in `captures:`.
+The proof obligation is that a clean result depends only on the explicit
+argument, the listed read dependencies under their declared qualified types, and
+declared memory effects. If an implementation reads an unlisted entry in a way
+that can affect a clean result, that entry must be listed as a dependency or the
+result must be typed poisoned/guarded accordingly.
+
+Branch joins treat capture requirements as preconditions. They combine by
+conjunction, not by return-side join, and they must not collapse distinct capture
+predicate shapes to `noPred`. The implementation achieves this structurally:
+closure members with different `captures:` contracts stay distinct, and applying
+a merged closure gates every surviving member.
+
+Current coverage:
+
+- pfn-side environment captures are implemented and proved through the curried
+  `max` artifacts (`builtinMax11CapturesSpec`,
+  `MaxCurriedFR.appliedMaxCurried_FR`);
+- guarded pfn captures are checked at the call boundary and proved at the
+  trusted call boundary (`builtinMax11GuardedSpec`,
+  `GuardedCapturesFR.guardedCaptures_FR`);
+- representative memory-read `!r` captures are implemented/proved through `@23`
+  (`builtinMemDerefSpec`, `MemReadCapturesFR.appliedMemReadCaptures_FR`);
+- branch-join capture conjunction preservation is proved in
+  `LeanProofs/CaptureJoinConjunction.lean`; and
+- fn-side captures are operationally/typecheck-supported, with accepted/rejected
+  examples. A captures-bearing trusted `kind = .fn` spec remains example
+  coverage in `## Planning`; `@13` is the no-captures/no-effects trusted fn
+  boundary example.
+
+## Proof Interface
 
 The main FR proof obligation is discharged through a registry-aware theorem:
 `TypeSystemEnforcesFaultRobustness` proves the trusted-registry-facing
 `FaultRobustnessSpec tr ...`, requiring registry agreement
-(`InitialContextTrusted` / `TrustedRegistryAgreesWithReachable`) *per* initial
-context admitted by the input spec rather than over all of them at once; the old
-all-context form survives as `TypeSystemEnforcesFaultRobustness_allCtx`. The old
-`terminatesTo_extern_absurd` path has been replaced by declaration and call
-boundary consumption.
-
-Completed concrete validation:
-
-- `abs` (`@12`) has a complete `ExternBoundarySpec`.
-- The curried-`max` pair has complete trusted specs for the relevant `@10` and
-  capture-bearing `@11` declarations, plus program-level FR for both the bare
-  declaration path and the applied `(m 7) 2` path.
-- Guarded pfn captures are implemented at the typecheck gate, covered by active
-  and inactive regime examples, and proved at the trusted call boundary via
-  `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec`. The accompanying
-  program-FR artifact is the bare-declaration registry-agreement shape; applied
-  guarded-value routing remains later FFI/regime work because it needs a trusted
-  producer extern that returns the guarded/de-poisoned value consumed by the
-  capture.
-- Memory-read `!r` dependencies are implemented/proved end-to-end for the
-  representative explicit-reference-argument path: `@23` has a complete
-  `ExternBoundarySpec`, accepted/rejected examples exercise the call gate, and
-  `MemReadCapturesFR.appliedMemReadCaptures_FR` routes the applied `@23 (ref 3)`
-  program through the trusted `callFR`.
-- Branch-join capture conjunction merging is proved in
-  `LeanProofs/CaptureJoinConjunction.lean`: branch capture contracts survive the
-  closure-member merge, and applying a merged capture-bearing `parrow` requires
-  every surviving capture gate.
-- The first impure (`extern fn`) trusted spec is complete: `@13`
-  (`ExternProofs.builtinImpureIdSpec`) proves all five `ExternBoundarySpec`
-  fields, and `LeanProofs/FnExternFR.lean` routes `(extern fn @13 ...) 7`
-  through the impure `callFR`.
-
-The FFI mechanism and external-boundary proof interface are done. What remains is
-example coverage: additional concrete extern implementations with trusted
-boundary proofs, plus registry-assembly examples, to demonstrate and stress-test
-the interface across more extern shapes.
-
-The public FR theorem is relative to a supplied `TrustedRegistry`; it does not
-automatically cover every executable host registry. Concrete shipped-registry
-coverage is therefore an instantiation/example claim, not part of the core FFI
-interface. The following examples and stress tests remain useful:
-
-- **Cover the rest of the default registry as examples.** Prove trusted entries
-  for the remaining shipped builtins: sqrt-style guarded input (`@19`), constant
-  extern value (`@20`), initialized ref-valued extern value (`@21`), and
-  errno-style impure update (`@22`).
-- **Assemble a shipped-registry trusted example.** Define a
-  `defaultTrustedRegistry` bundling the trusted entries for the shipped registry,
-  then prove
-  `TrustedRegistry.toRuntimeRegistry defaultTrustedRegistry` agrees with
-  `defaultRegistry` from `LeanPoison/ExternBuiltins.lean` (either by extensional
-  equality or lookup agreement for every shipped id). This bridges concrete
-  trusted examples to the interpreter's actual registry. Because trusted lookup
-  is id-based, this registry must choose one canonical declaration per extern id;
-  alternate same-id proof variants such as guarded/capture-specialized `@11`
-  specs remain specialized examples unless their declaration is the chosen
-  shipped contract.
-- **Route representative programs over the shipped trusted registry.**
-  Program-level FR artifacts should include representative applications proved
-  against
-  `defaultTrustedRegistry`, not only minimal one- or two-entry bespoke registries.
-  This is the end-to-end evidence that executable examples and proof examples use
-  the same registry.
-- **Add a captures-bearing trusted `kind = .fn` example.** `@13` closes the
-  impure fn call-boundary milestone, but it has `captures = []` and
-  `effects = []`. The fn side still needs proof coverage that exercises
-  `captures:` read-dependency evidence under a trusted fn spec, mirroring the pfn
-  `builtinMax11CapturesSpec` path.
-- **Build a trusted guarded-value producer and applied route.** The
-  regime/de-poisoning scaffolding is already present at the theorem-shape level,
-  but applied guarded routing requires a trusted producer extern that returns the
-  guarded/de-poisoned value consumed by the capturing extern, plus a program-FR
-  artifact that routes producer to consumer.
-
-Deliberately deferred:
-
-- **Helper extraction after repetition.** Directly proving `ExternBoundarySpec`
-  assembles large `StepFRPost` and single-run conjunctions, but public
-  constructors should not be introduced until repeated concrete proofs show a
-  stable shape. Likely future helpers include shapes such as `pureUnaryCleanInt`,
-  `constCleanInt`, `nestedPfn`, `refValInitialized`, and `impureCellUpdate`.
+(`InitialContextTrusted` / `TrustedRegistryAgreesWithReachable`) per initial
+context admitted by the input spec. `TypeSystemEnforcesFaultRobustness_allCtx`
+is a compatibility corollary for callers that can supply universal agreement.
+Declaration and call boundary evidence are the active extern-consumption path.
 
 The operational-safety portion of the stack is already discharged through
 `ExternBoundarySpec.operational`: `TrustedRegistry.operationalSafe` derives
@@ -385,7 +404,7 @@ shape.
 - The consumed proof-core interface is `StepFR`-shaped; driver-facing APIs
   should be finer-grained constructors over that core.
 
-### Success Criteria (Part II)
+### Success Criteria
 
 - `S-1`: The proof layer discharges concrete builtin boundary obligations using
   an id-indexed evidence interface that composes with
@@ -436,7 +455,7 @@ trusted-builtin coverage changes the language surface.
 
 ## Open Questions
 
-Open questions are now narrower:
+Current open questions:
 
 - Are current extern annotations (`ExternReturn`, `Effect`, `Capture`,
   `SyntaxPredicate`) sufficient for FR, or is extra proof-only metadata

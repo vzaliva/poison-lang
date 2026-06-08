@@ -677,7 +677,7 @@ private lemma agreeCapturedEnv_same
         · exact hhenv y qt' v' (by simp only [heq, CapturedVarEnv.lookup_eq, List.lookup]; exact hσ) hρ
 
 -- Auxiliary: builds agreeValueUnder from deepValueQTypProperty evidence (induction on the tree).
--- This resolves the mutual recursion that previously causing issues in agreeCapturedEnv_same_toCaptured.
+-- This keeps the captured-environment agreement helper out of the mutual-recursive core.
 -- Note: hclean and htyp are in the conclusion (not parameters) so that induction on hdeep
 -- automatically generalizes them without needing manual revert/intro.
 private lemma agreeValueUnder_same_aux
@@ -5534,7 +5534,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
 --   Requires case analysis on which branch each run actually takes
 -- Mode 4: matchGuard fails - standard conservative join
 --   Similar to mode 3
--- This proof was previously blocked by issue #98, now resolved by adding consistentWithRegime
+-- The branch-commit modes rely on `consistentWithRegime` to align runtime guard outcomes.
 
 -- Mode 1: R(k) = some true (then-branch effective)
 
@@ -7141,8 +7141,8 @@ private lemma forIn_effects_loop_preserves_guard_lookup
     cell in the post-extern memEnv traces back pointwise to a guard-tagged
     cell in `result2.memEnv'`.  The remaining step from `result2.memEnv'`
     to `ctx.memEnv` is handled at the call site (parallel to the poison
-    origin lemma).  This replaces what was previously the
-    `extTyping.guardProvenance` trust input. -/
+    origin lemma).  Guard provenance is derived structurally here rather than
+    trusted as an extern-typing assumption. -/
 lemma applyFnTClosure_extern_ok_memEnv_guard_origin_of_effect_pc_true
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)

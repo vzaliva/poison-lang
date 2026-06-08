@@ -1,4 +1,4 @@
--- Negative call-gate case for fn-side `captures:` (doc/extern-env-deps.md).
+-- Negative call-gate case for fn-side `captures:` (doc/ffi-proposal.md).
 -- The impure built-in `@22` (`set_err`) declares a `captures:` read dependency
 -- requiring a *clean* integer `bad`, but `bad` is bound to a poisoned value.
 -- The capture contract is checked at the call boundary (`capturesSatisfied`,

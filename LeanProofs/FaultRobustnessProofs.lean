@@ -3288,12 +3288,11 @@ theorem TypeSystemEnforcesFaultRobustness_at
         ctx predSat tm hOp
         (ContextReachableFrom.refl e ctx))
 
--- All-context corollary, under the old global (universal) agreement premise.
--- After the per-context reshape this survives only as a corollary: the global
--- premise is unprovable for a non-empty registry (see
--- `ExternRegimeInt.nonempty_registry_hagrees_unprovable`).  The global premise
--- is gated on `ctxMatchesInputSpec`, so it is fed per-context inside
--- `faultRobustnessSpec_of_step` where that hypothesis is in scope.
+-- All-context corollary under a universal agreement premise. The public theorem
+-- uses per-context trust; callers that can supply universal agreement can use
+-- this stronger wrapper. The premise is gated on `ctxMatchesInputSpec`, so it is
+-- fed per-context inside `faultRobustnessSpec_of_step` where that hypothesis is
+-- in scope.
 theorem TypeSystemEnforcesFaultRobustness_allCtx
   (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
   (hagrees :
@@ -3325,13 +3324,10 @@ def FaultRobustnessSpec
     InitialContextTrusted tr e ctx →
     FaultRobustnessSpecForCtx (TrustedRegistry.toRuntimeRegistry tr) e s obs ctx
 
--- Main public fault-robustness theorem (trusted-registry-facing).  Registry
--- agreement is required per initial context (`InitialContextTrusted`), so it is
--- provable for a non-empty registry — e.g. at the canonical empty context, where
--- it reduces to program agreement (see
--- `ExternRegimeInt.open_empty_context_hagrees_provable`).  This is unlike the
--- old all-context premise of `TypeSystemEnforcesFaultRobustness_allCtx`, which is
--- unprovable for a non-empty registry.
+-- Main public fault-robustness theorem (trusted-registry-facing). Registry
+-- agreement is required per initial context (`InitialContextTrusted`), so
+-- concrete non-empty trusted registries can be used at the contexts where their
+-- reachable extern declarations agree with the registry entries.
 theorem TypeSystemEnforcesFaultRobustness
     (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec) :
     FaultRobustnessSpec tr e s obs := by

@@ -69,8 +69,8 @@ Typecheck with an extern-regime policy:
 
 ## RELATED DOCUMENTS
 
-- `doc/ffi-proposal.md` gives the FFI branch roadmap and status.
+- `doc/ffi-proposal.md` gives the FFI branch roadmap/status and records the
+  `captures:` read-dependency model for externs.
 - `doc/extern-poison.md` explains extern argument conditions, regimes, and
   trusted/untrusted extern contracts.
-- `doc/extern-env-deps.md` explains `captures:` read dependencies for externs.
 - `doc/ffi-axioms.md` explains the proof-facing trusted extern boundary.

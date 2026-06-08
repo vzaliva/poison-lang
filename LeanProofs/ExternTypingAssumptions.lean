@@ -8,9 +8,9 @@
   * `PredSatLaws` preservation across one structural extern allocation batch
     (`ExternTypingAssumptions.externPredSatDelta`).
 
-  A previous `guardProvenance` field has been removed: the typechecker now
-  erases predicates on extern effect writes under poisoned `pc` (mirroring
-  assignment), making the guard-origin trace structurally provable via
+  Guard-origin provenance is derived structurally: the typechecker erases
+  predicates on extern effect writes under poisoned `pc` (mirroring assignment),
+  making the guard-origin trace provable via
   `applyFnTClosure_extern_ok_memEnv_guard_origin` in `StepFR.lean`.  See
   `doc/ffi-axioms.md` for the broader extern-boundary design.
 
@@ -499,7 +499,7 @@ theorem ExternBatchTagMeaningExtension.canonical_singleton
                 have h_eqs :=
                   (SyntaxPredicate.guardClosure.injEq idx' arg' body' idx arg body).mp heq
                 obtain ⟨h_idx, h_arg, h_body⟩ := h_eqs
-                -- Flip directions so the older variables (idx, arg, body) survive.
+                -- Flip directions so the original variables (idx, arg, body) survive.
                 have h_idx_rev : idx = idx' := h_idx.symm
                 have h_arg_rev : arg = arg' := h_arg.symm
                 have h_body_rev : body = body' := h_body.symm

@@ -2,9 +2,9 @@
   ExternBoundaryConstructors.lean - Reusable proof constructors for trusted externs.
 
   This module is the private helper layer for compact `ExternBoundarySpec`
-  constructors.  Public constructor theorems are added in later stages; the
-  declarations here keep raw `StepFRPost` and `ExternBoundarySinglePost`
-  assembly out of driver-facing behavior predicates.
+  constructors. The declarations here keep raw `StepFRPost` and
+  `ExternBoundarySinglePost` assembly out of driver-facing behavior predicates;
+  public constructor APIs should be extracted only from repeated concrete specs.
 -/
 import LeanProofs.ExternBoundaryProofs
 

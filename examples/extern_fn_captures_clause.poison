@@ -1,4 +1,4 @@
--- fn-side `captures:` read-dependency clause (doc/extern-env-deps.md).
+-- fn-side `captures:` read-dependency clause (doc/ffi-proposal.md).
 -- Mirrors `extern_captures_clause.poison` (which exercises the *pure* `pfn`
 -- path) for an *impure* `extern fn`: the built-in `@22` (`set_err`) carries both
 -- an `effects:` block (it writes the `errno` cell) and a `captures:` block

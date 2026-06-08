@@ -3,20 +3,19 @@
 Status: the registry-aware extern-boundary path is in place. The
 clean-input/clean-output `abs` entry (`@12`) is a complete trusted entry
 (`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields), and the
-curried-`max` entries, the memory-read `@23`, and the first impure (`extern fn`)
-entry `@13` (`ExternProofs.builtinImpureIdSpec`) now have concrete trusted specs
-and program-level FR artifacts. Proving these entries tightened the declaration
-boundary to consume
-expression-coupled runs (`ExternDeclBoundaryRunForExpr`; see *The High-Level
-Contract*) and validated nested returned extern callables.
+curried-`max` entries, memory-read `@23`, and first impure (`extern fn`) entry
+`@13` (`ExternProofs.builtinImpureIdSpec`) have concrete trusted specs and
+program-level FR artifacts. Declaration runs are expression-coupled through
+`ExternDeclBoundaryRunForExpr`; nested returned extern callables are covered by
+the same id-indexed trusted boundary.
 
 The public fault-robustness theorem is relative to trusted extern boundary
 evidence under a populated registry. Explicit extern read dependencies
 (`captures:`) are implemented on `ffi`: bare environment reads, guarded call-time
 satisfaction, the representative explicit-argument memory-read `!r` path, and
-branch-join capture conjunction merging are all implemented/proved. The
-remaining guarded-value work is a trusted producer extern plus applied program-FR
-routing from producer to capturing consumer; that is broader FFI/regime
+branch-join capture conjunction merging are all implemented/proved.
+Guarded-value applied routing requires a trusted producer extern plus
+program-FR from producer to capturing consumer; that is broader FFI/regime
 validation. Reusable helper machinery is secondary and should be extracted only
 from proof patterns that actually repeat.
 
@@ -28,8 +27,8 @@ Related documents:
 - `doc/extern-poison.md` explains the source-language extern contract:
   argument preconditions, return/effect poison meaning, regimes, and trust
   triage.
-- `doc/extern-env-deps.md` specifies `captures:` read dependencies; proof
-  obligations here should use that document for read-dependency semantics.
+- `doc/ffi-proposal.md` also specifies `captures:` read dependencies; proof
+  obligations here should use that section for read-dependency semantics.
 
 This document covers two pieces of the FFI trust story:
 
@@ -53,18 +52,16 @@ The current top-level theorem is relative:
 This keeps the core language proof focused on Poison semantics and
 typechecking, while making the FFI trust boundary explicit.
 
-## Current Goal and Non-Goals
+## Scope and Non-Goals
 
-The immediate goal is to keep the extern boundary stable after completing the
-captures mechanism:
+This file documents the current extern-boundary proof interface:
 
-- preserve the completed trusted specs for `abs` and curried `max`;
-- keep pfn-side `captures:` support complete: branch-join capture conjunctions
-  and memory-read `!r` dependencies are implemented/proved;
-- preserve the first trusted impure (`extern fn`) spec, `@13`
-  (`ExternProofs.builtinImpureIdSpec`), as the fn-boundary smoke test;
-- preserve the public fault-robustness theorem shape: no new public
-  precondition should be added to `TypeSystemEnforcesFaultRobustness`;
+- the public fault-robustness theorem shape stays registry-relative and does not
+  expose per-extern proof details;
+- pfn-side `captures:` support includes branch-join capture conjunctions and the
+  representative memory-read `!r` dependency path;
+- the concrete trusted entries in `LeanProofs/ExternProofs.lean` are examples of
+  the boundary, not a special case inside the core FR theorem;
 - keep executable semantics unchanged unless a concrete proof exposes that an
   extern declaration overclaims what the typechecker can justify.
 
@@ -72,19 +69,17 @@ This is not a framework-building exercise. The non-goals are:
 
 - building a general library for proving arbitrary externs;
 - proving every plausible extern pattern;
-- factoring public constructor APIs before `abs` and `max` demonstrate a
-  repeated proof shape;
+- factoring public constructor APIs before several concrete specs demonstrate a
+  stable repeated proof shape;
 - making concrete drivers avoid every occurrence of `StepFRPost` if the direct
   proof is tractable;
 - accepting extern-specific shortcuts that native Poison code with the same
   typing summary could not justify.
 
-Private local helpers are still useful when they reduce noise in the concrete
-proofs, but they should be extracted only when a second builtin proof needs
-the same shape. The lasting outcome of this exercise is concrete trusted entries
-plus a tightened `ExternBoundarySpec` / declaration discipline discovered by
-trying to prove them. Later builtin coverage should reuse that discipline rather
-than reopen the public theorem surface.
+Private local helpers are still useful when they reduce noise in concrete
+proofs. Public helper APIs should wait until repeated specs show the same shape.
+Further builtin coverage should reuse `ExternBoundarySpec` / trusted-registry
+discipline rather than reopen the public theorem surface.
 
 ## Core Idea
 
@@ -429,10 +424,9 @@ argument predicate, and the relational obligation in `StepFRPost`
 `agreeValueUnder.clean_internal_parrow_extern`, whose closure-shape witnesses
 bind a *single* argument predicate for both sides. A bare
 `ExternDeclBoundaryRun` leaves that predicate as a free existential per run (it
-is absent from `d`, `res`, and `impl`), so the two runs could carry distinct
-closure expressions and the field is false as stated. Because both runs of
-`ExternDeclBoundaryFR` are now runs of the one
-shared `postExpr`, their outputs are provably the same closure (up to the captured
+is absent from `d`, `res`, and `impl`), so the two runs can carry distinct
+closure expressions. Both runs of `ExternDeclBoundaryFR` are tied to the one
+shared `postExpr`; their outputs are provably the same closure (up to the captured
 environment), and the agreement goes through without weakening `agreeValueUnder`
 (part of fault-robustness's conclusion) or widening the trusted-registry match
 predicates.
@@ -655,8 +649,8 @@ def TrustedRegistryAgreesWithReachable
     entry.decl = d
 ```
 
-The top-level theorem is relative to both inputs.  It is now
-trusted-registry-facing and takes registry trust *per initial context*
+The top-level theorem is relative to both inputs. It is trusted-registry-facing
+and takes registry trust *per initial context*
 (`InitialContextTrusted tr e ctx`, which is
 `TrustedRegistryAgreesWithReachable e ctx tr`) as part of `FaultRobustnessSpec`,
 rather than as a single all-context
@@ -668,11 +662,12 @@ theorem TypeSystemEnforcesFaultRobustness
   FaultRobustnessSpec tr e s obs := ...
 ```
 
-The old all-context premise survives as the corollary
+The universal-agreement variant is available as the corollary
 `TypeSystemEnforcesFaultRobustness_allCtx`, concluding the renamed
 registry-parametric spec `FaultRobustnessSpecForRegistry
-(TrustedRegistry.toRuntimeRegistry tr) e s obs`; that all-context premise is
-unprovable for a non-empty registry (see §5.9 of `doc/extern-poison.md`).
+(TrustedRegistry.toRuntimeRegistry tr) e s obs`. That premise is intentionally
+stronger than the public theorem and is not the shape used for concrete
+non-empty registries.
 
 In the current runtime, `Config.registry` is the actual implementation map. The
 registry-relative FR spec fixes successful runs to use the implementation
@@ -762,175 +757,55 @@ inside Lean, one can later prove the relevant declaration/call boundary fields
 from more detailed lemmas. The core FR theorem does not need to know those
 details.
 
-## Roadmap
+## Coverage Reference
 
-The registry-aware proof spine and the first concrete trusted entries are done.
-The roadmap now separates completed validation, captures/read-dependency status,
-and later builtin coverage.
+Concrete trusted specs and program-level FR artifacts live with the Lean proof
+files, especially `LeanProofs/ExternProofs.lean`,
+`LeanProofs/MaxCurriedFR.lean`, `LeanProofs/MemReadCapturesFR.lean`, and
+`LeanProofs/FnExternFR.lean`. Current coverage includes:
 
-### 1. Direct `abs` Boundary Validation
+- clean-input/clean-output `abs` (`@12`);
+- curried `max`, including nested returned pfn callables and the
+  capture-bearing `@11` path;
+- guarded pfn captures at the trusted call boundary;
+- representative memory-read `!r` captures through `@23`;
+- branch-join capture conjunction preservation; and
+- the no-captures/no-effects impure fn identity extern `@13`.
 
-Prove the built-in `abs` extern (`@12`) directly against
-`ExternBoundarySpec` in `LeanProofs/ExternProofs.lean`, using only small
-private helpers where they immediately reduce proof noise. Do not design a
-public constructor first.
+The active example-coverage plan is tracked in `doc/ffi-proposal.md` under
+`## Planning`. That plan covers remaining shipped-builtin examples (`@19`,
+`@20`, `@21`, `@22`), a captures-bearing trusted `kind = .fn` example, guarded
+producer routing, and a shipped-registry trusted instantiation. These are
+stress tests and examples for the completed boundary interface, not prerequisites
+for changing the proof interface itself.
 
-The current examples declare `abs` as:
+## Boundary Discipline
 
-```poison
-extern pfn @12 x : (int :> clean {}) -> ((int :> clean {}))
-```
-
-That declaration is intentional: `abs` is a clean-input to clean-output
-builtin.  The trusted boundary proof should consume the declared argument
-precondition and show that two clean-agreeing integer arguments produce equal
-absolute values.  It should not weaken the result declaration and should not add
-a declassification-style obligation for `abs`.
-
-Before the proof, compare the current `abs` declaration with the native Poison
-analogue. The current typechecker gates extern application through the declared
-argument precondition; once the argument is known clean under the call regime,
-the boundary has the same clean-agreement information an ordinary function body
-would consume. Therefore the proof obligation is to connect that clean argument
-agreement to the implementation equation for `Int.natAbs`.
-
-**Status: done.** `ExternProofs.builtinAbsSpec : ExternBoundarySpec
-builtinAbsDecl builtinAbsImpl` is complete — all five fields
-(`operational`, `callFR`, `callSingle`, `declSingle`, `declFR`) compile with no
-`sorry` or `axiom` (the full `make lean-build` is green and the entry depends
-only on `propext`, `Classical.choice`, `Quot.sound`). The call fields derive
-argument equality from the boundary premises and transport it through `natAbs`,
-exactly as anticipated.
-
-Proving the relational declaration field `declFR` surfaced — and fixed — one
-concrete boundary gap of the "missing obligation" kind. As originally stated,
-`ExternDeclBoundaryFR` related its two runs only through the shared `res`, which
-does not pin the declared closure's argument predicate; the two outputs could
-then be distinct clean extern closures that `agreeValueUnder` cannot relate
-(`ExternProofs` first recorded this as a bounded falsification). The fix was the
-`ExternDeclBoundaryRunForExpr` coupling described under *Declaration runs are
-coupled to the declared expression* above: it preserves same-expression closure
-identity across the two runs without weakening `agreeValueUnder` or the
-trusted-registry match predicates. This is the "tighten `ExternBoundarySpec`"
-outcome, localized to the run/field boundary.
-
-Validation note: `LeanProofs/ExternProofs.lean` also records
-`ExternProofs.builtinAbs_cleanPost_obstruction`, which shows that a dirty-input
-interpretation of `abs` cannot justify a clean result: `abs (-1) = 1` and
-`abs 2 = 2`, so disagreeing dirty inputs can produce disagreeing clean outputs.
-That obstruction remains as a guardrail; it is not the intended `@12` contract,
-and the clean-input contract proved above does not weaken the declaration.
-
-This is the minimal boundary validation exercise. It checks that trusted
-boundary evidence can actually be packaged, looked up, and consumed by the
-`StepFR` extern branch. It does not validate nested returned callables.
-
-Verification:
-
-```bash
-make lean-build-file FILE=LeanProofs/ExternProofs.lean
-make lean-build-file FILE=LeanProofs/FaultRobustnessProofs.lean
-```
-
-### 2. Direct Built-In Curried `max`
-
-After `abs`, prove `ExternBoundarySpec` directly for the built-in curried
-`max` externs:
-
-- `@11`, the inner pure extern, receives captured `a` and argument `b`, returns
-  `Value.num (max a b)`, and leaves memory/config unchanged.
-- `@10`, the outer pure extern, receives `a` and returns a `Value.peClosure`
-  whose body is `Expr.externPfn 11 ...` and whose captured runtime environment
-  contains `a`.
-
-This pair is the main stress test. The `@11` proof checks that clean numeric
-results can be justified from exactly the clean-agreement facts available at an
-extern call boundary. The `@10` proof checks the nested-callable story: the
-returned value is an extern closure that will be called later, so the witness
-must establish the closure typing, regime consistency, and clean-result
-agreement facts consumed by later application proofs.
-
-**Status: done.** The capture-bearing inner declaration and the outer
-nested-returning declaration are proved as concrete `ExternBoundarySpec`s, and
-the curried-`max` programs have program-level FR artifacts. This validates the
-nested returned callable path and the unguarded captured-environment dependency
-needed by `@11`.
-
-The remaining `max`-adjacent work is not the two-argument arithmetic behavior;
-that path is proved. Guarded captures are also proved at the trusted call
-boundary through `builtinMax11Guarded_callFR` / `builtinMax11GuardedSpec`, with
-bare-decl program FR in `GuardedCapturesFR.guardedCaptures_FR`. Memory-read
-`!r` dependencies are proved for the representative explicit-argument path via
-`builtinMemDerefSpec` and `MemReadCapturesFR.appliedMemReadCaptures_FR`.
-Branch-join precondition merging is proved in `CaptureJoinConjunction.lean`
-(structural `mem_mergePFnTClosures_extern_captures` and operational
-`mergedParrow_apply_captures_conjunction`), so no pfn-side read-dependency
-blocker remains.
-
-### 3. Captures Completion
-
-The `captures:` implementation supports pfn-side branch joins that combine
-capture preconditions by conjunction and reject incompatible predicate shapes.
-
-Memory-read `!r` dependencies are exercised end-to-end with a trusted spec /
-program-FR artifact for the representative explicit-reference-argument path, and
-representative accepted/rejected examples cover the dependency gate.
-
-Guarded dependencies are complete at the typecheck/trusted-call-boundary level:
-active and inactive examples exercise the regime gate, and the guarded `@11`
-trusted call boundary is proved. Applied routing remains later FFI/regime work
-because it requires a trusted producer extern that returns the guarded value for
-the consumer to capture.
-
-The first trusted impure (`extern fn`) spec is complete as `@13`
-(`ExternProofs.builtinImpureIdSpec`), with program-level routing through
-`FnExternFR.appliedFnExtern_FR`. It exercises the fn call boundary and kind
-dispatch without captures or memory effects. A captures-bearing trusted fn spec
-remains follow-up proof coverage for fn-side read dependencies, and a
-memory-effecting fn spec remains future default-registry coverage.
-
-These items belong with `doc/extern-env-deps.md`; they should not be split into
-unrelated later FFI workstreams unless the scope is deliberately reduced.
-
-### 4. Boundary Tightening If Needed
-
-If later trusted specs fail for semantic rather than tactical reasons, tighten
-the boundary or declaration discipline at the smallest point:
+Concrete extern specs should tighten only the smallest relevant boundary:
 
 - If a builtin declaration promises a clean result that the native analogue
-  could not justify, revise that declaration or its proof-side trust
-  obligation.
-- If `ExternBoundarySpec` lacks typechecking-origin, body-entry, captured-env,
-  or implementation-success evidence required for a valid proof, add that
-  evidence to the boundary path rather than duplicating typechecker facts in
-  runtime payloads.
-- If a predicate-checked extern is intended to de-poison, require a formal
-  proof that the implementation's value-level check semantically matches the
-  declared predicate used by the typechecker.
+  cannot justify, revise that declaration or its proof-side trust obligation.
+- If `ExternBoundarySpec` lacks typechecking-origin, body-entry, captured-env, or
+  implementation-success evidence required for a valid proof, add that evidence
+  to the boundary path rather than duplicating typechecker facts in runtime
+  payloads.
+- If a predicate-checked extern is intended to de-poison, require a formal proof
+  that the implementation's value-level check semantically matches the declared
+  predicate used by the typechecker.
 
 Any such change must state its impact on soundness, precision, executable
 semantics, and the public fault-robustness theorem.
 
-### 5. Optional Helper Extraction
-
-Only after `abs`, `max`, and at least one more distinct extern shape are proved,
-review the proof bodies for repeated shapes. Extract a public helper or
-constructor only if it removes real duplication across concrete proofs.
+## Helper Extraction
 
 Non-goal: expose a complete set of constructors for arbitrary externs.
-`LeanProofs/ExternProofs.lean` is the concrete home for the built-in `abs` and
-`max` proofs. `LeanProofs/ExternBoundaryConstructors.lean` currently contains
-private helper experiments. Do not extend it as a framework by default; either
-ignore it or reuse only tiny private helpers that directly shorten the concrete
-proofs.
+`LeanProofs/ExternBoundaryConstructors.lean` contains private helper
+experiments. Do not extend it as a framework by default; either ignore it or
+reuse only tiny private helpers that directly shorten concrete proofs. Extract a
+public helper or constructor only when it removes real duplication across
+multiple concrete specs.
 
-Further concrete coverage is tracked in `doc/ffi-proposal.md`: remaining
-shipped-builtin examples (`@19`, `@20`, `@21`, `@22`), a captures-bearing
-`kind = .fn` example, guarded producer routing, and a shipped-registry trusted
-instantiation. Those are stress tests and examples for the completed boundary
-interface, not prerequisites for extending the proof interface itself.
-
-### 6. Single-Run and Operational Facts
+## Single-Run and Operational Facts
 
 The single-run fields overlap with the two-run postcondition, but they serve a
 different consumer: the existing `StepFRSingle...` lemmas. They should remain

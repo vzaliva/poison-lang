@@ -83,8 +83,8 @@ def sqrtImpl
     (both runs realise `r` to a common logical cell), and the capture fixes the
     cell *contents* clean (so the two reads agree).  A clean reference may point
     to a poisoned cell, so the capture is genuinely load-bearing — this is why
-    memory-read read-dependencies exist.  See `doc/extern-env-deps.md` (the
-    `maxmem` `!r2` explicit-argument memory dependency). -/
+    memory-read read-dependencies exist.  See the `captures:` section of
+    `doc/ffi-proposal.md`. -/
 def memDerefImpl
     : VarEnv → Value → Memory → Except ExternError Value
   | _unifiedEnv, Value.loc addr, mem =>
@@ -145,5 +145,5 @@ def defaultInitialState : DefaultInitialState :=
   let r9 := regInsert r8 13 (.fn impureIdImpl)
   { memory := mem0, nextAddr := 0, registry := r9 }
 
-/-- Back-compat alias: older call sites that just want the registry. -/
+/-- Convenience handle for callers that need only the shipped extern registry. -/
 def defaultRegistry : ExternRegistry := defaultInitialState.registry

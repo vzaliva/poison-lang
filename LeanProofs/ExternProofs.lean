@@ -453,9 +453,9 @@ field, with `valueHasETyp` / `valueConsistentWithRegime` holding for the
 *dirty*-input reading; the clean-input contract proved here does not weaken the
 declaration.  The impure mirror runs through `Call.fnExternMember`, which already
 carries the arg-poison pin (`declaredArgQt.poison = d.argPoison`); the
-regular-closure-extern-body route no longer exists (rejected at `typecheckFn`),
-so the only remaining fn-side follow-up is a concrete trusted `kind = .fn` spec
-instance (Checkpoint B). -/
+regular-closure-extern-body route is rejected at `typecheckFn`. Concrete fn specs
+are handled separately; `builtinImpureIdSpec` is the first trusted `kind = .fn`
+spec, and captures-bearing/effecting fn specs are additional coverage examples. -/
 
 /-- A successful `abs` call boundary returns `Value.num (Int.ofNat n.natAbs)` for
     an integer argument; the impure branch is impossible (`kind = .pfn`). -/
@@ -960,13 +960,13 @@ def builtinMax11Decl : ExternDeclaration :=
     argPoison := false }
 
 /-- Capture-bearing declaration for the inner curried-`max` extern (`@11`), carrying
-    the read dependency `captures: { a :> (int :> clean {}) }` (`doc/extern-env-deps.md`).
+    the read dependency `captures: { a :> (int :> clean {}) }` (`doc/ffi-proposal.md`).
     This is the trusted contract under which `@11`'s clean `max a b` result is
     fault-robust: the captured `a` is a declared clean integer dependency.  It is a
     *distinct* declaration from `builtinMax11Decl` (captures `[]`): the captures=`[]`
     declaration cannot close the relational call boundary (that was the gap), and a
     top-level declaration with this `captures` list is not produced by the current AST
-    (`doc/extern-env-deps.md`), so only the call-boundary field is proved here. -/
+    (`doc/ffi-proposal.md`), so only the call-boundary field is proved here. -/
 def builtinMax11CapturesDecl : ExternDeclaration :=
   { id := 11
     kind := .pfn
@@ -1990,7 +1990,7 @@ theorem builtinMax11CapturesSpec :
 
 /-! ## Guarded read dependency: the inner `@11` with a *guarded* captured `a`
 
-`doc/extern-env-deps.md` §"Guarded Dependencies" specifies that `captures:` accepts
+The `captures:` section of `doc/ffi-proposal.md` specifies that `captures:` accepts
 a guarded (de-poisoned-under-regime) dependency under exactly the regime-based
 satisfaction relation used by extern argument conditions: a declared-clean
 dependency is satisfied when the actual is clean *under the call-site regime*
@@ -2486,8 +2486,8 @@ private theorem builtinMax11Guarded_callRun_bEq
     qtypCleanUnder_of_cleanUnderRegime hcleanB (by rw [hInt]; rfl)
   exact builtinAbs_arg_eq_of_bodyAgree hbody hbindB hcleanP hInt hrv₀ hrv₁
 
-/-- **The guarded `@11` `callFR` field** (`doc/extern-env-deps.md` §"Guarded
-    Dependencies"): the inner-`max` call boundary returns the clean integer
+/-- **The guarded `@11` `callFR` field** (`doc/ffi-proposal.md`, `captures:`
+    section): the inner-`max` call boundary returns the clean integer
     `max a b`, reading the captured `a` whose declared dependency is *guarded*.  The
     captured-`a` equality is sourced through the guarded gate (the declared
     `clean { 5, v => v >= 0 }` requirement is satisfied because the actual `a` is
@@ -3359,8 +3359,8 @@ reference variable, rather than an environment entry.  The trusted artifact
 below (`builtinMemDeref*`) is the explicit-clean-reference-argument form: an
 extern `@23 r : (ref int :> clean {}) -> (int :> clean {})` that dereferences
 its reference argument and returns the cell contents, with
-`captures: { !r :> (int :> clean {}) }` declaring that memory read.  This is the
-`!r2` (explicit-argument) half of the goal document's `maxmem` example.
+`captures: { !r :> (int :> clean {}) }` declaring that memory read. This is the
+representative explicit-reference-argument memory dependency used by `@23`.
 
 Two cleanness facts cooperate at the call boundary, and *both* are load-bearing:
 
@@ -4104,14 +4104,14 @@ private theorem impureIdImpl_ok_shape
   | _ => simp [impureIdImpl] at h
 
 /-- The impure-id extern (`@13`) satisfies the operational-safety contract.  The
-    impure (`fn`) branch is now live: the implementation threads `mem`/`nextAddr`
+    impure (`fn`) branch is live: the implementation threads `mem`/`nextAddr`
     unchanged, so `nextAddr` monotonicity is reflexive and the conditional wf
     preservation reduces to `wfValue` of a `Value.num`.  The pure and value
     branches are impossible by `ExternImpl` constructor discrimination. -/
 theorem builtinImpureIdImpl_operationalSafe :
     ExternOperationalSafe builtinImpureIdDecl builtinImpureIdImpl := by
   refine ⟨?_, ?_, ?_⟩
-  · -- impure `fn` branch (now live): unchanged `mem`/`nextAddr`, `wfValue` num.
+  · -- impure `fn` branch: unchanged `mem`/`nextAddr`, `wfValue` num.
     intro implFn himpl env vArg mem addr vRaw mem' addr' hrun
     simp only [builtinImpureIdImpl, ExternImpl.fn.injEq] at himpl
     subst himpl

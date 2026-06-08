@@ -11,7 +11,7 @@ file routes it through the first trusted **`kind = .fn`** spec,
 `impure_id n : (int) -> int`).
 
 It is the program-level capstone of the fn-boundary narrowing
-(`doc/extern-env-deps.md`): once `ExternBoundaryTyping.Call` covers only real
+(`doc/ffi-proposal.md`): once `ExternBoundaryTyping.Call` covers only real
 extern dispatch (`fnExternMember`/`pfnExternMember`), a `kind = .fn` spec's
 `callFR`/`callSingle` are provable, so a trusted fn entry can sit in a registry
 that *agrees with a program's reachable declarations* and discharge the
@@ -20,13 +20,14 @@ per-context trust premise of `TypeSystemEnforcesFaultRobustness_at`.
 Scope, honestly stated: `@13` declares **no `captures:`** (`captures = []`) and
 performs **no memory effect** (`effects = []`; it threads memory/`nextAddr`
 unchanged), so it exercises the `fn` *call boundary and kind dispatch* but neither
-extern read-dependencies nor memory effects. Two deliberate follow-ups: (1) a
-captures-bearing `fn` spec (the fn-side capture machinery from Checkpoint A
-exists; it would mirror the pfn `builtinMax11CapturesSpec` capture→value-equality
-chain); (2) a memory-effecting `fn` spec — it would exercise the effect machinery
-but breaks the `cf = callConfig` collapse that keeps this first spec's `callFR` a
-mirror of the pure side (and `set_err`'s fixed `errnoAddr`-above-cursor write is
-not universally operational-safe).
+extern read-dependencies nor memory effects.
+
+Additional coverage examples are (1) a captures-bearing `fn` spec, mirroring the
+pfn `builtinMax11CapturesSpec` capture→value-equality chain; and (2) a
+memory-effecting `fn` spec — it would exercise the effect machinery but breaks
+the `cf = callConfig` collapse that keeps this first spec's `callFR` a mirror of
+the pure side (and `set_err`'s fixed `errnoAddr`-above-cursor write is not
+universally operational-safe).
 -/
 
 open Std LeanPoison ExternProofs ExternRegimeInt

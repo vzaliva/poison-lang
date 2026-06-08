@@ -161,7 +161,7 @@ inductive EffectTarget where
 
 -- Capture target: an extern read dependency.  Either an environment variable
 -- (`a`, bare) or a memory location reached through a reference variable
--- (`!r`, bang).  See `doc/extern-env-deps.md`.
+-- (`!r`, bang).  See `doc/ffi-proposal.md`.
 inductive CaptureTarget where
   | bareVar : Name → CaptureTarget   -- `a`  : environment entry
   | memVar  : Name → CaptureTarget   -- `!r` : memory entry via reference
@@ -192,7 +192,7 @@ structure Effect where
 -- Read-dependency ("captures:") specification for extern callables.  Parallel to
 -- `Effect`, but a capture target may be bare (environment entry) or bang (memory
 -- entry), and carries an explicit base type used by the dependency check
--- (`Qactual <:R Qdecl`).  See `doc/extern-env-deps.md`.
+-- (`Qactual <:R Qdecl`).  See `doc/ffi-proposal.md`.
 structure Capture where
   target : CaptureTarget
   typ : Typ
@@ -289,7 +289,7 @@ inductive Value : Type where
 -- inductive type definitions (inside pe_closure)
 abbrev VarEnv := List (Name × Value)
 
--- Note: No helper functions needed for literals since they are now direct constructors
+-- Literals are direct constructors, so no helper functions are needed.
 -- Locations cannot be created as expressions - they only exist at runtime
 
 -- Extract value from expression if it's a literal
@@ -531,7 +531,7 @@ structure QTyp where
 inductive FnTClosure : Type where
   | regular : Name → Expr → List (Name × QTyp) → FnTClosure
   -- The trailing `List Capture` records the declared `captures:` read
-  -- dependencies (`doc/extern-env-deps.md`) for impure (`fn`) externs,
+  -- dependencies (`doc/ffi-proposal.md`) for impure (`fn`) externs,
   -- mirroring the `PFnTClosure.extern` field; resolved at the declaration /
   -- nested-return site and re-checked when the closure is applied.
   | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp) → QTyp → List Capture → FnTClosure
@@ -539,13 +539,13 @@ inductive FnTClosure : Type where
 inductive PFnTClosure : Type where
   | regular : Name → PExpr → List (Name × QTyp) → PFnTClosure
   -- The trailing `List Capture` records the declared `captures:` read
-  -- dependencies (`doc/extern-env-deps.md`), resolved at the declaration /
+  -- dependencies (`doc/ffi-proposal.md`), resolved at the declaration /
   -- nested-return site and re-checked when the closure is applied.
   | extern : ExternId → Name → ExternReturn → List (Name × QTyp) → QTyp → List Capture → PFnTClosure
 
 -- Enriched type (full type)
--- Arrow types now carry non-empty lists of closures (merged typing closures)
--- to support flow-insensitive joins at conditionals
+-- Arrow types carry non-empty lists of closures (merged typing closures) to
+-- support flow-insensitive joins at conditionals.
 inductive ETyp : Type where
   | int : ETyp
   | bool : ETyp

@@ -1,6 +1,6 @@
 -- Memory-read (`!r`) extern read dependency, running end-to-end
--- (doc/extern-env-deps.md, the `maxmem` `!r2` explicit-argument memory
--- dependency).  The built-in `@23` takes a *reference* argument `r : ref int`
+-- (doc/ffi-proposal.md, `captures:` section).  The built-in `@23` takes a
+-- *reference* argument `r : ref int`
 -- and declares that it reads the cell behind it via the bang capture
 -- `captures: { !r :> (int :> clean {}) }`; its implementation dereferences `r`
 -- and returns the cell contents.
