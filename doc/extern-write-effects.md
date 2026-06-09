@@ -160,10 +160,30 @@ Because the implementation receives the unified env, the shape lemmas should als
 record the `@22` argument name `n` and the fact that updating the captured env
 with `n` does not shadow `errno`.
 
-If the current boundary hypotheses are not strong enough for arbitrary
-reference locsets, the extra condition should be stated as a generic condition
-on the resolved target, such as target stability or singleton-target shape. It
-should not be a special case for `@21`.
+The captured `errno` target needs no special restriction — the extern effect must
+simply be typed the way an ordinary assignment through a reference is. Today
+`applyExternEffect` strong-updates *every* location in the target locset `ls`
+(`LocSet.fold ls … updateMemEnv … storedQt`, Typecheck.lean:1606), which is
+unsound for `|ls| > 1`: the runtime writes one physical cell, so an unwritten
+member of `ls` would be marked clean while stale. `typecheckAssign` already solves
+exactly this (Typecheck.lean:1487-1497):
+
+- singleton `ls = {l}` → strong update (`updateMemEnv`, `assign_singleton`);
+- non-singleton `ls` → weak update (`updateLocsetWeak`, `assign_locset`), joining
+  the stored type into each member's existing type;
+- `storedPoison`/`storedPred` fold in the *target reference's own poison* `p1`
+  (`joinPoison pc (joinPoison p1 p2)`; predicates erased when `p1 || pc`), so a
+  dirty target poisons the written locations instead of claiming them clean.
+
+The fix is to make `applyExternEffect` mirror `typecheckAssign`: the effect
+becomes "an assignment of the declared effect type to the resolved target ref".
+This removes any singleton/cleanness gate — a multi-location or dirty captured
+`errno` is handled by the same weak-update + poison-join semantics assignment
+already uses — and lets `@22`'s `callFR` reuse the assignment strong/weak
+update-transport reasoning instead of a bespoke singleton proof. It also closes
+a latent unsoundness: `applyExternEffect`'s current strong-update-all would
+mis-type any multi-location effect target, invisible today only because no
+effect-bearing extern is trusted.
 
 The single-run fields have a different shape:
 
@@ -232,37 +252,111 @@ agreement by logical location:
 
 ## Plan
 
-1. Prove or refute captured-target stability first.
-   This is the highest-risk checkpoint. Show that the trusted `@22` boundary can
-   derive a stable logical target for the declaration-captured `errno` reference
-   from the current call-boundary hypotheses, without depending on the
-   reference's origin and without reading any later caller shadowing. If not,
-   decide the minimal generic restriction and document its effect on typing/trust.
+1. Align `applyExternEffect` with `typecheckAssign`, then prove the `@22`
+   effect-update / target-resolution lemma. The scoping / no-retarget half is
+   structural and cheap: the runtime call entry uses the closure-captured `VarEnv`
+   (`ExternCallFnFacts.unifiedEnv_eq`), the typing closure uses the
+   declaration-captured `VarTypeEnv` (`ofCaptured tenv`), and extending either
+   with argument `n` does not shadow `errno` (`n ≠ errno`). The substance is the
+   effect update: change `applyExternEffect` to mirror assignment (singleton
+   strong / non-singleton `updateLocsetWeak`, folding the target ref's poison `p1`
+   into `storedPoison`/`storedPred`), then show the resulting memEnv update
+   transports across the two runs exactly as the assignment weak/strong update
+   already does. No singleton or cleanness restriction is needed — multi-location
+   and dirty targets are covered by the weak-update + poison-join. This is a
+   typechecking change: re-check the existing effect examples (errno is a clean
+   singleton, so their singleton branch is unchanged). Extract the reusable
+   weak-update / store-transport lemmas to a shared layer (`StepFR.lean`,
+   `TypeSafety.lean`, or a small dedicated helper module) — the `@22` proof must
+   NOT import `StepFRAssign`; the per-operator FR files stay mutually independent.
 
-2. Add the runtime and typing shape lemmas.
+2. Add the `@22` runtime and typing shape lemmas.
    Keep these local to `LeanProofs/ExternProofs.lean` unless another extern
-   needs them. Done means successful `setErrImpl` runs and the corresponding
+   needs them. Done means successful `setErrImpl` runs, captured-`errno` lookup,
+   non-shadowing by argument `n`, `bodyOutputConfig`, and the corresponding
    one-effect type result can be inverted without reopening large definitions.
 
-3. Prove `callSingle`.
+3. Prove `@22` `callSingle`.
    Use the `ctx.pc = true` path and existing effect-loop preservation helpers.
    Done means the single-run post is proven for the runtime memory update.
 
-4. Prove `callFR`.
-   This is the main relational write-effect proof. Done means paired successful
-   `@22` calls produce `StepFRPost` for `entry.bodyOutputConfig cf₀` and
-   `entry.bodyOutputConfig cf₁`.
+4. Prove `@22` `callFR`.
+   This is the main relational write-effect proof, and `@22` is the first-ever
+   complete trusted `.fn` spec (every existing complete spec is `.pfn`), so the
+   `.fn` call path — `ExternCallFnFacts` with its memory-modifying `output_config`
+   — is unexercised end-to-end; budget that novelty as an independent risk axis
+   from "write-effect". Done means paired successful `@22` calls produce
+   `StepFRPost` for `entry.bodyOutputConfig cf₀` and `entry.bodyOutputConfig cf₁`.
+   Split clean-memory agreement by logical location, reusing the shared
+   update-transport lemmas (extracted per step 1, not imported from
+   `StepFRAssign`): a written singleton target carries the clean-argument
+   agreement; a multi-location target uses the weak update (members joined, dirty
+   targets poisoned) so unwritten members are not force-marked clean; unwritten
+   clean locations come from the pre-call `BodyEntryInputsAgree.agree`.
 
-5. Prove `declSingle` and `declFR`.
-   Reuse existing impure extern declaration proof patterns. Done means the
-   closure value produced by declaring `@22` is consistent and agrees under the
-   captured environment assumptions.
+5. Author `builtinSetErrDecl` / `builtinSetErrSpec` and prove `@22`
+   `declSingle` / `declFR`.
+   Reuse existing impure extern declaration proof patterns for the closure value.
+   Two pieces the operational milestone left open: there is no
+   `builtinSetErrDecl : ExternDeclaration` yet (it must be authored), and
+   `setErrImpl_operational`'s standalone signature must be *wrapped* into the
+   `ExternOperationalSafe` structure for `.fn setErrImpl` (its `val`/`pfn` clauses
+   vacuous) — not a free "combine". Done means the declaration closure is
+   consistent/agrees under the captured-environment assumptions and all five
+   fields combine into `builtinSetErrSpec`.
 
-6. Assemble `builtinSetErrSpec`.
-   Combine the four relational/single fields with the already-established
-   operational field, add the trusted entry to the default trusted registry, and
-   update the extern documentation from "operationally clean" to "fully
-   trusted" only after all five fields compile.
+6. Thread the `@21` reserved-address invariant through `wfConfig`.
+   Fold `RegistryReservedBelow cfg.registry cfg.nextAddr` into `wfConfig`, then
+   re-establish `wfConfig_preserved` and monotonicity using registry immutability
+   plus `nextAddr` monotonicity. Done means the FR stack compiles with explicit
+   registry-equality bridges at the former registry-agnostic config coercions.
+   Because this strengthens `wfConfig`, the `@22` `callFR` assembled in steps 1-5
+   must also be re-touched to produce `RegistryReservedBelow` of its output cursor
+   (trivial — `@22` preserves the registry and `nextAddr`, so
+   `RegistryReservedBelow_mono` with `le_refl` applies); the churn estimate should
+   include the just-assembled `@22` obligations, not only the pre-existing sites.
+
+7. Repair the `@21` val operational bridge and prove `builtinErrnoSpec`.
+   Rewrite `TrustedRegistry.operationalSafe` so the registry-level `val` clause
+   consumes `cfg.registry = reg` and the folded `RegistryReservedBelow` fact via
+   `wfValue_loc_of_RegistryReservedBelow`. Weakening the per-entry `val` clause
+   is not just the bridge: its *signature* changes, so every site that currently
+   discharges `val` as impossible (`impl = pfn ≠ val`) must be updated to keep
+   discharging the now-conditional clause trivially — the six `.pfn` operational
+   lemmas plus `pureUnaryCleanInt_operational`.
+
+   `@21`'s call fields are vacuous by extern kind (`ExternCallBoundaryRun` has no
+   `val` constructor), but its `declFR` / `declSingle` are a SECOND, independent
+   open problem the operational fold does not touch: the declaration boundary must
+   realise a bare `Value.loc errnoAddr` as a `ref int` (`valueHasETyp.loc` +
+   `runtimeInstantiatesCtx` + `valueConsistentWithRegime` for a reference value).
+   No extern declaration has ever realised a bare location — every existing
+   trusted spec is `.pfn` realising a closure. It is plausibly doable (the `errno`
+   cell is seeded in `defaultInitialState.memory`), but it is novel work, not the
+   "reuse existing patterns" the rest of this track implies. Done means `@21`'s
+   operational AND declaration fields close.
+
+8. Assemble a scenario trusted registry for `@21`/`@22` and bridge to the
+   interpreter.
+   There is no single "default trusted registry": FR is proved per-scenario at
+   `TrustedRegistry.toRuntimeRegistry <subsetRegistry>`, and a `TrustedRegistry`
+   projecting to the *whole* `defaultRegistry` is impossible — it would need a
+   compiling entry for `@19` (sqrt), which has no spec and is recorded infeasible
+   under the 0-sorry gate. So put `builtinErrnoSpec` and `builtinSetErrSpec`
+   in a dedicated scenario `TrustedRegistry` with only `@21`/`@22`, and prove
+   FR for a program reaching them via `TypeSystemEnforcesFaultRobustness_at`
+   (whose `TrustedRegistryAgreesWithReachable` premise requires only the
+   externs the program *reaches*, not all of `defaultRegistry`). Separately,
+   add per-id bridge lemmas `defaultRegistry_lookup_errno` /
+   `defaultRegistry_lookup_seterr` (`defaultRegistry.get? id = some
+   builtin…Impl`), mirroring the existing
+   `defaultRegistry_lookup_max10/11/abs/memderef`; `@19` never enters. State
+   explicitly whether this step delivers full top-level FR integration or
+   stops at the per-scenario runtime-projection agreement (the existing
+   precedent does the
+   latter). End-to-end example tests already exist (`extern_set_err.poison`,
+   `extern_errno.poison`); update `doc/externs.md` / `doc/ffi-proposal.md` status
+   only after all fields compile.
 
 ## History
 
