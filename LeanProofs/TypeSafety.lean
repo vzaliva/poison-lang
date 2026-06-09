@@ -841,6 +841,110 @@ lemma assign_memEnv_formula_lookup_eq_of_not_mem
           simp
           exact updateLocsetWeak_lookup_eq_of_not_mem env ls storedPoison storedPred l hnot
 
+/-- For a written member `l ∈ ls`, the weak update stores the joined entry, whose
+    poison is `true` whenever `storedPoison` is, and whose predicate is `noPred`
+    whenever `storedPred` is.  Mirrors the assignment weak-update; shared so the
+    extern write-effect proof need not import `StepFRAssign`. -/
+private lemma updateLocsetWeak_lookup_mem_props
+    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
+    (l : Loc) (hmem : l ∈ ls) (qt : QTyp)
+    (hlookup : (updateLocsetWeak env ls storedPoison storedPred).lookup l = some qt) :
+    (storedPoison = true → qt.poison = true) ∧
+    (storedPred = Predicate.noPred → qt.pred = Predicate.noPred) := by
+  have fold_pres : ∀ {β : Type} (s : LocSet) (init : β) (f : β → Loc → β)
+      (P : β → Prop), P init → (∀ acc x, P acc → P (f acc x)) → P (LocSet.fold s init f) := by
+    intro β s init f P hinit hstep
+    simp only [LocSet.fold]; rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+    induction s.toList generalizing init with
+    | nil => exact hinit
+    | cons hd tl ih => simp only [List.foldl]; exact ih (f init hd) (hstep init hd hinit)
+  set joined := LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
+    match env.get? l with
+    | some e => (joinPoison accP e.poison, joinPredicates accPred e.pred)
+    | none => (accP, accPred)) with hjoinedDef
+  set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩ with hfinalDef
+  have hmemList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hmem
+  have hval : (updateLocsetWeak env ls storedPoison storedPred).lookup l = some finalQt := by
+    unfold updateLocsetWeak
+    dsimp only []
+    unfold LocSet.fold
+    rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
+    exact list_fold_updateMemEnv_lookup_eq_of_mem ls.toList env l finalQt hmemList (by simp [finalQt])
+  rw [hval] at hlookup
+  simp only [Option.some.injEq] at hlookup
+  subst hlookup
+  refine ⟨fun hsp => ?_, fun hspd => ?_⟩
+  · show finalQt.poison = true
+    rw [hfinalDef]
+    show joined.1 = true
+    rw [hjoinedDef]
+    exact fold_pres ls (storedPoison, storedPred) _ (fun p => p.1 = true) hsp
+      (by rintro ⟨accP, accPred⟩ x hacc
+          have h : accP = true := hacc
+          subst h
+          cases env.get? x with
+          | none => rfl
+          | some e => simp [joinPoison])
+  · show finalQt.pred = Predicate.noPred
+    rw [hfinalDef]
+    show joined.2 = Predicate.noPred
+    rw [hjoinedDef]
+    exact fold_pres ls (storedPoison, storedPred) _ (fun p => p.2 = Predicate.noPred) hspd
+      (by rintro ⟨accP, accPred⟩ x hacc
+          have h : accPred = Predicate.noPred := hacc
+          subst h
+          cases env.get? x with
+          | none => rfl
+          | some e => simp only [joinPredicates]; split <;> rfl)
+
+/-- Written-member poison/pred of the assign-shaped memEnv update (singleton strong /
+    non-singleton weak).  For `l ∈ ls`, a `true` `storedPoison` forces the stored poison
+    and a `noPred` `storedPred` forces the stored predicate. -/
+lemma assign_memEnv_formula_lookup_mem_props
+    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate)
+    (l : Loc) (hmem : l ∈ ls) (qt : QTyp)
+    (hlookup : (match Std.ExtTreeSet.toList ls with
+      | [l0] => updateMemEnv env l0 { etyp := ETyp.int, poison := storedPoison, pred := storedPred }
+      | _ => updateLocsetWeak env ls storedPoison storedPred).lookup l = some qt) :
+    (storedPoison = true → qt.poison = true) ∧
+    (storedPred = Predicate.noPred → qt.pred = Predicate.noPred) := by
+  cases hls : Std.ExtTreeSet.toList ls with
+  | nil =>
+      exact absurd ((Std.ExtTreeSet.mem_toList).2 hmem) (by rw [hls]; simp)
+  | cons x xs =>
+      cases xs with
+      | nil =>
+          simp only [hls] at hlookup
+          have hlx : l = x := by
+            have hml : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hmem
+            rw [hls] at hml; simpa using hml
+          subst hlx
+          have hself : (updateMemEnv env l { etyp := ETyp.int, poison := storedPoison, pred := storedPred }).lookup l
+              = some { etyp := ETyp.int, poison := storedPoison, pred := storedPred } := by
+            simp only [updateMemEnv, MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?,
+              Std.ExtTreeMap.getElem?_insert_self, Option.map_some]
+          rw [hself] at hlookup
+          simp only [Option.some.injEq] at hlookup
+          subst hlookup
+          exact ⟨fun h => h, fun h => h⟩
+      | cons y ys =>
+          simp only [hls] at hlookup
+          exact updateLocsetWeak_lookup_mem_props env ls storedPoison storedPred l hmem qt hlookup
+
+/-- The assign-shaped memEnv update keeps every location below `nl`, provided every
+    pre-existing location and every target location in `ls` is below `nl`. -/
+lemma assign_memEnv_formula_wf
+    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) (nl : Loc)
+    (hwf : ∀ l, env.contains l → l < nl)
+    (hls : ∀ l, ls.contains l → l < nl) :
+    ∀ l, (match Std.ExtTreeSet.toList ls with
+      | [l0] => updateMemEnv env l0 { etyp := ETyp.int, poison := storedPoison, pred := storedPred }
+      | _ => updateLocsetWeak env ls storedPoison storedPred).contains l → l < nl := by
+  intro l hl
+  cases assign_memEnv_formula_contains_eq_or_mem env ls storedPoison storedPred l hl with
+  | inl hOld => exact hwf l hOld
+  | inr hMem => exact hls l (Std.ExtTreeSet.mem_iff_contains.mp hMem)
+
 -- Helper: locset fold max successor bound from membership
 lemma locset_fold_max_succ_ge_of_mem
     (ls : LocSet) (init l : Nat)
@@ -6508,6 +6612,24 @@ private lemma predTagsBoundedInMemEnv_updateLocsetWeak
     exact predTagsBoundedInMemEnv_update hacc hJoinedBounded
   exact this l qt (by convert hlookup using 2)
 
+/-- predTagsBoundedInMemEnv preserved by the assign-shaped memEnv update
+    (singleton strong / non-singleton weak).  Mirrors `assign_memEnv_formula_*`;
+    shared so the extern write-effect proof need not import `StepFRAssign`. -/
+lemma assign_memEnv_formula_predBounded
+    (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) (nt : Tag)
+    (hb : predTagsBoundedInMemEnv env nt) (hpred : predTagBounded nt storedPred) :
+    predTagsBoundedInMemEnv
+      (match Std.ExtTreeSet.toList ls with
+        | [l0] => updateMemEnv env l0 { etyp := ETyp.int, poison := storedPoison, pred := storedPred }
+        | _ => updateLocsetWeak env ls storedPoison storedPred) nt := by
+  have hqt : qtypPredTagBounded ⟨ETyp.int, storedPoison, storedPred⟩ nt := hpred
+  cases hls : Std.ExtTreeSet.toList ls with
+  | nil => simpa using predTagsBoundedInMemEnv_updateLocsetWeak hb hpred
+  | cons x xs =>
+      cases xs with
+      | nil => simpa using predTagsBoundedInMemEnv_update hb hqt
+      | cons y ys => simpa using predTagsBoundedInMemEnv_updateLocsetWeak hb hpred
+
 -- ═══════════════════════════════════════════════════════════════════
 -- CapturedEnvFullBounded: recursive closure-env boundedness
 -- ═══════════════════════════════════════════════════════════════════
@@ -7611,16 +7733,13 @@ private lemma applyFnTClosure_extern_predTagsBounded
                   simp [pure, Except.pure] at happlyEffect; subst happlyEffect
                   have hResBounded := resolveSyntaxPred_predTagBounded_of_mapping
                     eff.pred unifiedEnv tagMapping nextTag' resolvedPred_eff hmapping hresolve_eff
-                  have hStoredBounded : qtypPredTagBounded
-                      (⟨(effectSpecToQTyp eff.poison resolvedPred_eff).etyp,
-                        joinPoison effectPc (effectSpecToQTyp eff.poison resolvedPred_eff).poison,
-                        if effectPc = true then Predicate.noPred
-                          else (effectSpecToQTyp eff.poison resolvedPred_eff).pred⟩ : QTyp)
-                      nextTag' := by
-                    by_cases hpc : effectPc = true
-                    · simp [hpc, qtypPredTagBounded, predTagBounded]
-                    · simp [hpc, effectSpecToQTyp, qtypPredTagBounded]; exact hResBounded
-                  exact locset_fold_updateMemEnv_predBounded _ r _ nextTag' hr hStoredBounded
+                  -- The effect update now mirrors assignment (singleton strong /
+                  -- non-singleton weak); the stored predicate is `noPred` under a
+                  -- poisoned target/pc, otherwise the resolved effect predicate.
+                  apply assign_memEnv_formula_predBounded r _ _ _ nextTag' hr
+                  split
+                  · simp [predTagBounded]
+                  · simpa [effectSpecToQTyp] using hResBounded
               · simp at happlyEffect -- non-ref: error
             · simp at happlyEffect -- none: error
         -- Case on retSpec
@@ -13161,7 +13280,7 @@ private lemma applyFnTClosure_extern_wfTypeResult
                 · simp at happlyEffect  -- resolveSyntaxPred error
                 · rename_i resolvedPred _hresolve
                   simp [pure, Except.pure] at happlyEffect; subst happlyEffect
-                  apply locset_fold_updateMemEnv_wf ls r _ result2.nextLoc' hr
+                  apply assign_memEnv_formula_wf r _ _ _ result2.nextLoc' hr
                   -- Show all locations in ls are < result2.nextLoc'
                   intro l' hl'
                   simp only [VarTypeEnv.update, VarTypeEnv.lookup,
@@ -13282,8 +13401,7 @@ private lemma applyFnTClosure_extern_mem_contains_preserved
                       rename_i v' _hresolve
                       simp only [Except.ok.injEq] at happlyEffect
                       subst happlyEffect
-                      unfold LocSet.fold; rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-                      exact list_fold_updateMemEnv_contains_of_contains _ b l _ hP
+                      exact assign_memEnv_formula_contains_of_contains b _ _ _ l hP
                   · -- non-ref etyp: error
                     exact absurd happlyEffect (by simp)
                 · -- lookup = none: error

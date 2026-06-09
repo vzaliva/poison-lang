@@ -427,6 +427,38 @@ pattern used elsewhere in the spec for binary distinctions (e.g.,
 \texttt{assign\_singleton} /
 \texttt{assign\_singleton\_poisoned\_ref}).
 
+The memory update each variant performs follows assignment exactly. The
+target reference's location set fixes the update mode: a singleton target is
+\emph{strong}-updated (the cell's type is replaced), while a multi-location
+target is \emph{weak}-updated (the stored type is joined into each member's
+existing type), because a runtime effect writes a single physical cell and
+must not claim the other members of a non-singleton target clean. Provenance
+folds in exactly as in assignment: the stored poison is \(\textit{pc} \sqcup
+p_1^{\text{ref}} \sqcup p^{\text{eff}}\) --- the effect pc, the \emph{target
+reference's own poison} \(p_1^{\text{ref}}\), and the declared effect poison
+\(p^{\text{eff}}\) --- and the stored predicate is erased to \texttt{no\_pred}
+whenever \(p_1^{\text{ref}}\) or the effect pc is poisoned, mirroring
+\texttt{assign\_singleton\_poisoned\_ref} /
+\texttt{assign\_locset\_poisoned\_ref}. (The target reference's own poison
+\(p_1^{\text{ref}}\) is distinct from the function-expression poison \(p_1\)
+that feeds the effect-pc gate above.)
+
+One asymmetry with assignment remains and is deliberately not yet closed.
+Assignment additionally \emph{invalidates} every guard tag whose dependency
+set includes a written location (Ott rule \texttt{assign}), because
+overwriting the location makes a predicate keyed on its old value stale.
+Extern effects currently perform the memory update but do \emph{not}
+invalidate such guard-tag dependencies. This is sound for the cases the
+metatheory currently establishes --- the effect-loop fault-robustness
+obligations are all discharged under a \emph{poisoned} effect pc, where every
+written cell becomes poisoned with \texttt{no\_pred} and so carries no
+surviving guard. This justification is narrow: it covers only those
+poisoned-effect-pc lemmas and confers no licence to admit an extern that writes
+a \emph{clean} predicate. Full dependency-invalidation parity with assignment
+(or a proof that the cell-overwrite argument also covers clean effects) must be
+settled before any clean write-effect extern can be admitted to a trusted
+registry (see \texttt{doc/extern-write-effects.md}).
+
 \subsubsection*{Extern read dependencies (\texttt{captures:})}
 \label{sec:extern-captures}
 

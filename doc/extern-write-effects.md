@@ -252,7 +252,8 @@ agreement by logical location:
 
 ## Plan
 
-1. Align `applyExternEffect` with `typecheckAssign`, then prove the `@22`
+1. Align the **heap update** of `applyExternEffect` with `typecheckAssign` (the
+   dependency-invalidation half is split out as step 1b below), then prove the `@22`
    effect-update / target-resolution lemma. The scoping / no-retarget half is
    structural and cheap: the runtime call entry uses the closure-captured `VarEnv`
    (`ExternCallFnFacts.unifiedEnv_eq`), the typing closure uses the
@@ -270,6 +271,41 @@ agreement by logical location:
    `TypeSafety.lean`, or a small dedicated helper module) — the `@22` proof must
    NOT import `StepFRAssign`; the per-operator FR files stay mutually independent.
 
+   **Status — heap update DONE (uncommitted).** `applyExternEffect` now
+   mirrors `typecheckAssign`'s *memory update*: singleton strong /
+   non-singleton `updateLocsetWeak`, with the target ref's own poison
+   `p1 = qt.poison` folded into `storedPoison`/`storedPred`. Reusable transport
+   lemmas live in `TypeSafety.lean` / `StepFR.lean` (`assign_memEnv_formula_*`
+   plus `updateLocsetWeak_lookup_mem_props`), reachable without importing
+   `StepFRAssign`. This closes the latent strong-update-all unsoundness; build
+   green, 0-sorry, axiom-clean, 115 example tests byte-identical
+   (clean-singleton errno unchanged). NOT done: the `@22`-specific two-run
+   transport (step 4) and the dependency-invalidation parity (step 1b).
+
+   **Step 1b — effect dependency invalidation (required, gates step 4).** The
+   heap update above mirrors `typecheckAssign` but its dependency invalidation
+   does not: `typecheckAssign` runs `invalidateTagDeps` /
+   `invalidateRegimeDeps` on the written locset (Typecheck.lean ~1501-1503),
+   dropping any guard tag whose `deps` include a written location; the effect
+   path leaves `tagEnv'` / `regime'` untouched (only `applyExternRegimePolicy`
+   adds the extern's own fresh output tags). A guard *can* depend on an effect
+   target — `if deref errno > 0 then …` yields a tag whose `deps` contain
+   errno's location (deps come from `extractDepsFromPExpr`, Typecheck.lean
+   ~341). This is **not** an open soundness hole for the system *as proven*:
+   `TypeSystemEnforcesFaultRobustness` is total over the effect case and
+   axiom-clean, and the effect-loop FR obligations are discharged under a
+   *poisoned* effect pc (`stepFR_app`'s extern branch carries `heffectPc`),
+   where every written cell becomes poisoned with `noPred` and so orphans any
+   guard. **Read this narrowly.** It is justified *only* by the existing
+   poisoned-effect-pc origin lemmas; it says nothing about clean effect writes,
+   and it is **not** clearance to admit a clean write-effect extern to a trusted
+   registry. Trusting any clean write-effect extern (e.g. `@22`, which writes a
+   *clean* errno cell under clean effect pc) stays blocked until this step / step
+   4 either proves the cell-overwrite / orphaning argument holds for clean
+   effects, or adds the `invalidate*Deps` calls to the effect output (a
+   signature-touching change to the effect loop that must re-establish
+   `StepFRApp`'s extern-case regime consistency). Settle it at step 4 (`callFR`).
+
 2. Add the `@22` runtime and typing shape lemmas.
    Keep these local to `LeanProofs/ExternProofs.lean` unless another extern
    needs them. Done means successful `setErrImpl` runs, captured-`errno` lookup,
@@ -285,7 +321,10 @@ agreement by logical location:
    complete trusted `.fn` spec (every existing complete spec is `.pfn`), so the
    `.fn` call path — `ExternCallFnFacts` with its memory-modifying `output_config`
    — is unexercised end-to-end; budget that novelty as an independent risk axis
-   from "write-effect". Done means paired successful `@22` calls produce
+   from "write-effect". This step must also settle the effect
+   dependency-invalidation question (step 1b): `@22` writes a *clean* errno
+   cell, so the orphaning argument that covers poisoned effects does not apply
+   directly. Done means paired successful `@22` calls produce
    `StepFRPost` for `entry.bodyOutputConfig cf₀` and `entry.bodyOutputConfig cf₁`.
    Split clean-memory agreement by logical location, reusing the shared
    update-transport lemmas (extracted per step 1, not imported from

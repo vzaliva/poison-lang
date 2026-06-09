@@ -6653,6 +6653,44 @@ private lemma locset_fold_updateMemEnv_allCellsRespect
   exact hPost (GuardDescInEnvsDeep.intro qtDeep k d
     (QTypInEnvs.inMem {} _ loc qtDeep qtRoot hlookup hinq) hqd)
 
+/-- The assign-shaped memEnv update (singleton strong / non-singleton weak)
+    preserves "all cells respect tag meaning", given the stored predicate respects
+    tag meaning.  Mirrors `locset_fold_updateMemEnv_allCellsRespect` for the
+    assignment-shaped update now used by `applyExternEffect`. -/
+private lemma assign_memEnv_formula_allCellsRespect
+    (tm : TagMeaning) (env : MemoryTypeEnv) (ls : LocSet)
+    (storedPoison : Poison) (storedPred : Predicate)
+    (hinit : ∀ l qt, env.lookup l = some qt → QTypRespectsTagMeaning tm qt)
+    (hstored : PredRespectsTagMeaning tm storedPred) :
+    ∀ l qt, (match Std.ExtTreeSet.toList ls with
+      | [l0] => updateMemEnv env l0 ⟨ETyp.int, storedPoison, storedPred⟩
+      | _ => updateLocsetWeak env ls storedPoison storedPred).lookup l = some qt →
+      QTypRespectsTagMeaning tm qt := by
+  have hEnvInit : EnvRespectsTagMeaning tm {} env :=
+    EnvRespectsTagMeaning.intro fun ⟨qtDeep, k0, d0, hqte0, hqd0⟩ => by
+      rcases hqte0 with ⟨_, _, xv, _, qtRoot, hlookupVar, _⟩ | ⟨_, _, loc, _, qtRoot, hlookupMem, hinq⟩
+      · simp [VarTypeEnv.lookup] at hlookupVar
+      · exact (hinit loc qtRoot hlookupMem) hinq hqd0
+  have hQt : QTypRespectsTagMeaning tm ⟨ETyp.int, storedPoison, storedPred⟩ :=
+    QTypRespectsTagMeaning_int_of_predRespects tm storedPoison storedPred hstored
+  have hEnvPost : EnvRespectsTagMeaning tm {} (match Std.ExtTreeSet.toList ls with
+      | [l0] => updateMemEnv env l0 ⟨ETyp.int, storedPoison, storedPred⟩
+      | _ => updateLocsetWeak env ls storedPoison storedPred) := by
+    cases hls : Std.ExtTreeSet.toList ls with
+    | nil =>
+        simpa using EnvRespectsTagMeaning_updateLocsetWeak tm {} env ls storedPoison storedPred hEnvInit hstored
+    | cons x xs =>
+        cases xs with
+        | nil =>
+            simpa using EnvRespectsTagMeaning_updateMemEnv tm {} env x
+              ⟨ETyp.int, storedPoison, storedPred⟩ (by simp) hEnvInit hQt
+        | cons y ys =>
+            simpa using EnvRespectsTagMeaning_updateLocsetWeak tm {} env ls storedPoison storedPred hEnvInit hstored
+  intro loc qtRoot hlookup qtDeep k d hinq hqd
+  rcases hEnvPost with ⟨hPost⟩
+  exact hPost (GuardDescInEnvsDeep.intro qtDeep k d
+    (QTypInEnvs.inMem {} _ loc qtDeep qtRoot hlookup hinq) hqd)
+
 /-- Per-step: `applyExternEffect` preserves the all-cells-respect-tm invariant. -/
 private lemma applyExternEffect_preserves_allCellsRespect
     (tm : TagMeaning) (effect : Effect)
@@ -6677,38 +6715,13 @@ private lemma applyExternEffect_preserves_allCellsRespect
         simp [pure, Except.pure] at happly; subst happly
         have hpredTm := resolveSyntaxPred_respectsTagMeaning tm effect.pred unifiedEnv
           tagMapping allPreds resolvedPred hcompat hpred hresolve
-        -- Under `pc = true` the stored pred is `noPred` (PredRespectsTagMeaning
-        -- is vacuous); under `pc = false` it is the resolved pred (existing
-        -- argument applies).  Both branches produce a PredRespects fact for
-        -- the stored predicate.
-        have hstoredPredTm :
-            PredRespectsTagMeaning tm
-              (if pc = true then Predicate.noPred
-                 else (effectSpecToQTyp effect.poison resolvedPred).pred) := by
-          by_cases hpc : pc = true
-          · simp [hpc]
-            intro k an pb ve hEq; cases hEq
-          · simp [hpc, effectSpecToQTyp]; exact hpredTm
-        have hstoredTm : QTypRespectsTagMeaning tm
-            ⟨(effectSpecToQTyp effect.poison resolvedPred).etyp,
-             joinPoison pc (effectSpecToQTyp effect.poison resolvedPred).poison,
-             if pc = true then Predicate.noPred
-               else (effectSpecToQTyp effect.poison resolvedPred).pred⟩ := by
-          have hetyp : (effectSpecToQTyp effect.poison resolvedPred).etyp = ETyp.int := by
-            simp [effectSpecToQTyp]
-          intro qt' k d hinq hqd
-          rw [hetyp] at hinq
-          exact QTypRespectsTagMeaning_int_of_predRespects tm
-            (joinPoison pc (effectSpecToQTyp effect.poison resolvedPred).poison)
-            (if pc = true then Predicate.noPred
-               else (effectSpecToQTyp effect.poison resolvedPred).pred)
-            hstoredPredTm hinq hqd
-        exact locset_fold_updateMemEnv_allCellsRespect tm ls memEnv
-          ⟨(effectSpecToQTyp effect.poison resolvedPred).etyp,
-           joinPoison pc (effectSpecToQTyp effect.poison resolvedPred).poison,
-           if pc = true then Predicate.noPred
-             else (effectSpecToQTyp effect.poison resolvedPred).pred⟩
-          hinit hstoredTm rfl
+        -- The effect update mirrors assignment.  Under a poisoned target ref
+        -- (`qtVar.poison`) or a poisoned `pc`, the stored predicate is `noPred`
+        -- (respecting tag meaning vacuously); otherwise it is the resolved pred.
+        apply assign_memEnv_formula_allCellsRespect tm memEnv ls _ _ hinit
+        split
+        · intro k an pb ve hEq; cases hEq
+        · simpa [effectSpecToQTyp] using hpredTm
     · simp at happly
   · simp at happly
 
@@ -6894,31 +6907,18 @@ private lemma applyExternEffect_preserves_clean_lookup
       · rename_i resolvedPred _hresolve
         simp [pure, Except.pure] at happly
         subst happly
-        -- Under `pc = true`, applyExternEffect erases the stored predicate
-        -- to noPred (mirroring assignment).  storedQt has poison=true and
-        -- pred=noPred, so any post-cell that is unpoisoned must not have
-        -- been written.
-        set storedQt : QTyp :=
-          ⟨ETyp.int, joinPoison true effect.poison, Predicate.noPred⟩ with hstoredDef
-        have hstoredPoison : storedQt.poison = true := by
-          simp [hstoredDef, joinPoison]
-        have hstored_int : storedQt.etyp = ETyp.int := by simp [hstoredDef]
-        -- Unfold LocSet.fold to list foldl and effectSpecToQTyp to match storedQt
-        simp only [LocSet.fold, Std.ExtTreeSet.foldl_eq_foldl_toList,
-          effectSpecToQTyp] at hlookup
-        by_cases hmem : l ∈ ls.toList
+        -- The effect update mirrors assignment.  Under `pc = true` the written
+        -- cells carry `storedPoison = joinPoison true _ = true`, so any post-cell
+        -- that is unpoisoned must not have been written.
+        by_cases hmem : l ∈ ls
         · -- Written cell: poison = true, contradicting hpoison
-          have heq := list_fold_updateMemEnv_lookup_eq_of_mem ls.toList memEnv l
-            storedQt hmem hstored_int
-          rw [heq] at hlookup
-          have hqt : qt = storedQt := (Option.some.inj hlookup).symm
-          rw [hqt, hstoredPoison] at hpoison
+          have hprops := assign_memEnv_formula_lookup_mem_props memEnv ls _ _ l hmem qt hlookup
+          have hpt := hprops.1 (by simp [joinPoison])
+          rw [hpt] at hpoison
           exact absurd hpoison (by decide)
         · -- Not written: lookup unchanged
-          have heq := list_fold_updateMemEnv_lookup_eq_of_not_mem ls.toList memEnv l
-            storedQt hmem
-          rw [heq] at hlookup
-          exact ⟨qt, hlookup, hpoison⟩
+          exact ⟨qt, (assign_memEnv_formula_lookup_eq_of_not_mem memEnv ls _ _ l hmem).symm.trans hlookup,
+            hpoison⟩
     · simp at happly
   · simp at happly
 
@@ -6949,26 +6949,15 @@ private lemma applyExternEffect_preserves_guard_lookup
       · rename_i resolvedPred _hresolve
         simp [pure, Except.pure] at happly
         subst happly
-        set storedQt : QTyp :=
-          ⟨ETyp.int, joinPoison true effect.poison, Predicate.noPred⟩ with hstoredDef
-        have hstored_int : storedQt.etyp = ETyp.int := by simp [hstoredDef]
-        have hstoredNoTag : qtypGuardTag storedQt = none := by
-          simp [hstoredDef, qtypGuardTag]
-        simp only [LocSet.fold, Std.ExtTreeSet.foldl_eq_foldl_toList,
-          effectSpecToQTyp] at hlookup
-        by_cases hmem : l ∈ ls.toList
-        · -- Written cell: stored qt has no guard tag, contradicting htag
-          have heq := list_fold_updateMemEnv_lookup_eq_of_mem ls.toList memEnv l
-            storedQt hmem hstored_int
-          rw [heq] at hlookup
-          have hqt : qt = storedQt := (Option.some.inj hlookup).symm
-          rw [hqt, hstoredNoTag] at htag
-          cases htag
+        -- Under `pc = true` the effect update erases the stored predicate to
+        -- `noPred`, so any post-cell with a guard tag must not have been written.
+        by_cases hmem : l ∈ ls
+        · -- Written cell: stored pred is noPred, contradicting htag
+          have hprops := assign_memEnv_formula_lookup_mem_props memEnv ls _ _ l hmem qt hlookup
+          have hpred := hprops.2 (by simp)
+          simp [qtypGuardTag, hpred] at htag
         · -- Not written: lookup unchanged
-          have heq := list_fold_updateMemEnv_lookup_eq_of_not_mem ls.toList memEnv l
-            storedQt hmem
-          rw [heq] at hlookup
-          exact hlookup
+          exact (assign_memEnv_formula_lookup_eq_of_not_mem memEnv ls _ _ l hmem).symm.trans hlookup
     · simp at happly
   · simp at happly
 

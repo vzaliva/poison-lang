@@ -1596,14 +1596,27 @@ def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
       | some qt =>
           match qt.etyp with
           | ETyp.ref ls =>
+              -- The effect is typed exactly as `typecheckAssign` types an
+              -- assignment through this reference (Typecheck.lean:1471).  `p1` is
+              -- the captured target reference's own poison; a poisoned target
+              -- (`p1`) or a control-poisoned write (`pc`) poisons the written
+              -- cells and erases their predicates, mirroring assignment.  A
+              -- multi-location target is *weak*-updated (join), never strong-
+              -- updated: the runtime writes one physical cell, so strong-updating
+              -- every member of `ls` would unsoundly mark unwritten members clean.
+              let p1 := qt.poison
               let resolvedPred ← resolveSyntaxPred effect.pred unifiedEnv tagMapping
               let effectQt := effectSpecToQTyp effect.poison resolvedPred
-              -- Control-poisoned writes erase predicates in memory, mirroring
-              -- assignment.  This keeps fresh extern-allocated guard tags from
-              -- ever being installed under poisoned `pc`.
-              let storedPred := if pc then Predicate.noPred else effectQt.pred
-              let storedQt := ⟨effectQt.etyp, joinPoison pc effectQt.poison, storedPred⟩
-              return LocSet.fold ls memEnv (fun acc l => updateMemEnv acc l storedQt)
+              let storedPoison := joinPoison pc (joinPoison p1 effectQt.poison)
+              let storedPred := if p1 || pc then Predicate.noPred else effectQt.pred
+              return match ExtTreeSet.toList ls with
+                | [l] =>
+                    -- Singleton: strong update (assign_singleton)
+                    let storedQt : QTyp := ⟨ETyp.int, storedPoison, storedPred⟩
+                    updateMemEnv memEnv l storedQt
+                | _ =>
+                    -- Non-singleton: weak update (assign_locset)
+                    updateLocsetWeak memEnv ls storedPoison storedPred
           | _ => throw s!"Effect target {v} must be a reference type"
       | none => throw s!"Effect target {v} not found in environment"
 

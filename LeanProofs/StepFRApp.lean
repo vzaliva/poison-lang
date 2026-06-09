@@ -6088,30 +6088,6 @@ private lemma applyPFnTClosure_extern_of_threaded_mem
     ⟨first, hfirst_mem, cursor, hcursorTag, hcursorLoc, happly⟩
   exact ⟨cursor, first, hcursorTag, hcursorLoc, hfirst_mem, happly⟩
 
-private lemma updateMemEnv_contains_of_contains_local
-    (env : MemoryTypeEnv) (l l' : Loc) (qt : QTyp)
-    (h : env.contains l' = true) :
-    (updateMemEnv env l qt).contains l' = true := by
-  by_cases hEq : l' = l
-  · subst hEq
-    simp [updateMemEnv, Std.ExtTreeMap.contains_insert]
-  · have hCmp : compare l l' ≠ Ordering.eq := by
-      intro hce
-      have : l = l' := (Nat.compare_eq_eq).1 hce
-      exact hEq this.symm
-    simp [updateMemEnv, Std.ExtTreeMap.contains_insert, h]
-
-private lemma list_fold_updateMemEnv_contains_of_contains_local
-    (xs : List Loc) (env : MemoryTypeEnv) (l' : Loc) (qt : QTyp)
-    (h : env.contains l' = true) :
-    (xs.foldl (fun acc l => updateMemEnv acc l qt) env).contains l' = true := by
-  induction xs generalizing env with
-  | nil => simpa using h
-  | cons x xs ih =>
-      have h1 : (updateMemEnv env x qt).contains l' = true :=
-        updateMemEnv_contains_of_contains_local env x l' qt h
-      exact ih (env := updateMemEnv env x qt) h1
-
 private lemma applyFnTClosureAtCursor_extern_mem_contains_preserved
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -6175,9 +6151,7 @@ private lemma applyFnTClosureAtCursor_extern_mem_contains_preserved
                         · rename_i v' _hresolve
                           simp only [Except.ok.injEq] at happlyEffect
                           subst happlyEffect
-                          unfold LocSet.fold
-                          rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-                          exact list_fold_updateMemEnv_contains_of_contains_local _ b l _ hP
+                          exact assign_memEnv_formula_contains_of_contains b _ _ _ l hP
                       · exact absurd happlyEffect (by simp)
                     · exact absurd happlyEffect (by simp)
             split at happly
