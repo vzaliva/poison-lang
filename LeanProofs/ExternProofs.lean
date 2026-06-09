@@ -4127,4 +4127,123 @@ theorem setErrImpl_operational
   | closure _ _ _ => simp [setErrImpl] at hImpl
   | peClosure _ _ _ => simp [setErrImpl] at hImpl
 
+/-! ### `@22` (`set_err`) runtime shape lemmas
+
+Reusable inversions of a successful `setErrImpl` dispatch, the `@22`
+write-effect target resolution, and the non-shadowing of the captured `errno`
+target by the argument binding.  These feed the `@22` `callSingle` / `callFR`
+boundary fields (steps 3-4 of `doc/extern-write-effects.md`). -/
+
+/-- Output shape of a successful `setErrImpl` (`@22`) dispatch: the argument is a
+    `Value.num n`, the runtime environment resolves `errno` to a location `a`, the
+    result is `Value.unit`, the cell at `a` is overwritten with `n`, and the
+    address cursor is threaded through unchanged. -/
+private theorem setErrImpl_ok_shape
+    {env : VarEnv} {vArg : Value} {mem : Memory} {next : Address}
+    {vRaw : Value} {mem' : Memory} {next' : Address}
+    (h : setErrImpl env vArg mem next = .ok (vRaw, mem', next')) :
+    ∃ (n : Int) (a : Address),
+      vArg = Value.num n ∧
+      VarEnv.lookup env "errno" = some (Value.loc a) ∧
+      vRaw = Value.unit ∧
+      mem' = Memory.update mem a n ∧
+      next' = next := by
+  cases vArg with
+  | num n =>
+    cases hlook : VarEnv.lookup env "errno" with
+    | none => simp [setErrImpl, hlook] at h
+    | some w =>
+      cases w with
+      | loc a =>
+        simp only [setErrImpl, hlook, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl, rfl⟩ := h
+        exact ⟨n, a, rfl, rfl, rfl, rfl, rfl⟩
+      | num _ => simp [setErrImpl, hlook] at h
+      | bool _ => simp [setErrImpl, hlook] at h
+      | unit => simp [setErrImpl, hlook] at h
+      | str _ => simp [setErrImpl, hlook] at h
+      | closure _ _ _ => simp [setErrImpl, hlook] at h
+      | peClosure _ _ _ => simp [setErrImpl, hlook] at h
+  | bool _ => simp [setErrImpl] at h
+  | unit => simp [setErrImpl] at h
+  | str _ => simp [setErrImpl] at h
+  | loc _ => simp [setErrImpl] at h
+  | closure _ _ _ => simp [setErrImpl] at h
+  | peClosure _ _ _ => simp [setErrImpl] at h
+
+/-- The cell `setErrImpl` writes is below the address cursor: from
+    `wfVarEnv addr env` and the resolved `errno` binding `Value.loc a`, `a < addr`. -/
+private theorem setErrImpl_errno_target_wf
+    {env : VarEnv} {a : Address} {addr : Address}
+    (hwf : wfVarEnv addr env)
+    (hlook : VarEnv.lookup env "errno" = some (Value.loc a)) :
+    a < addr := by
+  have hw := wfVarEnv_lookup_loc hwf hlook
+  cases hw with | loc h => exact h
+
+/-- Non-shadowing of the captured `errno` target by the argument binding:
+    extending the captured environment with the `@22` argument (any name other
+    than `errno`) leaves the resolved `errno` target unchanged.  For `@22` the
+    argument name is `n`, so `n ≠ errno` discharges the hypothesis. -/
+private theorem setErrImpl_errno_lookup_captured
+    (capturedEnv : VarEnv) (argName : Name) (argVal : Value)
+    (hne : argName ≠ "errno") :
+    VarEnv.lookup (VarEnv.update capturedEnv argName argVal) "errno"
+      = VarEnv.lookup capturedEnv "errno" :=
+  VarEnv_lookup_update_ne capturedEnv argName "errno" argVal (Ne.symm hne)
+
+/-- The synthetic body-output config of a `@22` dispatch keeps the runtime result
+    config `cf` (its memory and address cursor) and rebinds the variable
+    environment to the call's unified environment. -/
+private theorem setErrImpl_bodyOutputConfig (entry : ExternCallEntry) (cf : Config) :
+    entry.bodyOutputConfig cf = { cf with varEnv := entry.unifiedEnv } := rfl
+
+/-- Type-side mirror of `setErrImpl_ok_shape`: invert a successful type-level
+    effect application.  A `!v`-targeted effect resolves `v` in the unified type
+    environment to a reference type `ref ls`, the syntactic effect predicate
+    resolves, and the resulting `memEnv'` is the assignment-shaped update of `ls`
+    (singleton strong / multi-location weak), with the target reference's own
+    poison `qt.poison` folded into the stored poison/predicate.  Parameterized
+    over the effect, so the `@22` clean-singleton `!errno` instantiation is a
+    later specialization. -/
+private theorem applyExternEffect_errno_shape
+    {effect : Effect} {unifiedEnv : VarTypeEnv} {tagMapping : TagMapping}
+    {pc : Poison} {memEnv memEnv' : MemoryTypeEnv}
+    (h : applyExternEffect effect unifiedEnv tagMapping pc memEnv = .ok memEnv') :
+    ∃ (v : Name) (qt : QTyp) (ls : LocSet) (resolvedPred : Predicate),
+      effect.target = EffectTarget.namedVar v ∧
+      VarTypeEnv.lookup unifiedEnv v = some qt ∧
+      qt.etyp = ETyp.ref ls ∧
+      resolveSyntaxPred effect.pred unifiedEnv tagMapping = .ok resolvedPred ∧
+      memEnv' =
+        (match ExtTreeSet.toList ls with
+         | [l] => updateMemEnv memEnv l
+             ⟨ETyp.int, joinPoison pc (joinPoison qt.poison effect.poison),
+              if qt.poison || pc then Predicate.noPred else resolvedPred⟩
+         | _ => updateLocsetWeak memEnv ls
+             (joinPoison pc (joinPoison qt.poison effect.poison))
+             (if qt.poison || pc then Predicate.noPred else resolvedPred)) := by
+  unfold applyExternEffect at h
+  cases htarget : effect.target with
+  | namedVar v =>
+    simp only [htarget, bind, Except.bind] at h
+    cases hlk : VarTypeEnv.lookup unifiedEnv v with
+    | none => simp only [hlk] at h; simp at h
+    | some qt =>
+      simp only [hlk] at h
+      cases hetyp : qt.etyp with
+      | ref ls =>
+        simp only [hetyp] at h
+        cases hres : resolveSyntaxPred effect.pred unifiedEnv tagMapping with
+        | error e => simp only [hres] at h; simp at h
+        | ok resolvedPred =>
+          simp only [hres, pure, Except.pure, Except.ok.injEq, effectSpecToQTyp] at h
+          exact ⟨v, qt, ls, resolvedPred, rfl, hlk, hetyp, rfl, h.symm⟩
+      | int => simp only [hetyp] at h; simp at h
+      | bool => simp only [hetyp] at h; simp at h
+      | unit => simp only [hetyp] at h; simp at h
+      | string => simp only [hetyp] at h; simp at h
+      | arrow _ _ _ _ => simp only [hetyp] at h; simp at h
+      | parrow _ _ _ _ => simp only [hetyp] at h; simp at h
+
 end ExternProofs
