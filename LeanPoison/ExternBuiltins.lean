@@ -90,18 +90,35 @@ def memDerefImpl
       | none   => .error (.implFailure 23 "memDeref: referenced cell missing")
   | _, _, _ => .error (.implFailure 23 "memDeref: expected ref argument")
 
-/-- `set_err n` (`@22`) writes `n` into the `errno` cell and returns `unit`. No
-    new allocation, so `nextAddr` is threaded through unchanged. -/
+/-- `set_err n` (`@22`): write `n` into the cell named by the lexical `errno`
+    binding and return `unit`.
+
+    Following its declared effect `!errno`, the implementation resolves `errno`
+    against the runtime environment it is handed.  Per `beval`'s impure-extern
+    dispatch that environment is the *closure-captured* environment of the `@22`
+    declaration, extended with the argument — so the write targets whatever
+    `errno` denoted at the point `@22` was declared.  A binding that shadows
+    `errno` later, in the body that calls `set_err`, lives in the body scope and
+    never enters the captured environment, so it cannot retarget the write.  In
+    the intended example `errno` is bound by `@21`, so the resolved cell is
+    `errnoAddr`.  No new allocation, so `nextAddr` is threaded through unchanged. -/
 def setErrImpl
     : VarEnv → Value → Memory → Address →
       Except ExternError (Value × Memory × Address)
-  | _, Value.num n, mem, next =>
-      .ok (Value.unit, Memory.update mem errnoAddr n, next)
+  | env, Value.num n, mem, next =>
+      match VarEnv.lookup env "errno" with
+      | some (Value.loc a) => .ok (Value.unit, Memory.update mem a n, next)
+      | _ => .error (.implFailure 22 "set_err: `errno` must be a reference in scope")
   | _, _, _, _ => .error (.implFailure 22 "expected int argument")
 
 /-- Bundled initial runtime state shipped with the interpreter: the registry,
-    pre-populated memory (the `errno` cell), and `nextAddr` (unchanged at `0`
-    since `errnoAddr` sits above the program-visible allocation range). -/
+    pre-populated memory (the `errno` cell), and `nextAddr`.
+
+    `nextAddr` starts at `errnoAddr + 1` so the pre-populated `errno` cell — and
+    every registry-reserved address — sits strictly below the address cursor.
+    This is what makes the shipped state well formed: the `wfConfig` memory bound
+    requires every populated address to be below `nextAddr`, and the
+    registry-reserved-address invariant requires the same of `errnoAddr`. -/
 structure DefaultInitialState where
   memory   : Memory
   nextAddr : Address
@@ -126,7 +143,7 @@ def defaultInitialState : DefaultInitialState :=
   let r5 := regInsert r4 22 (.fn setErrImpl)
   let r6 := regInsert r5 19 (.pfn sqrtImpl)
   let r7 := regInsert r6 23 (.pfn memDerefImpl)
-  { memory := mem0, nextAddr := 0, registry := r7 }
+  { memory := mem0, nextAddr := errnoAddr + 1, registry := r7 }
 
 /-- Convenience handle for callers that need only the shipped extern registry. -/
 def defaultRegistry : ExternRegistry := defaultInitialState.registry

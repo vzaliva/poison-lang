@@ -53,11 +53,52 @@ mutual
         wfValue next v → wfVarEnv next env → wfVarEnv next ((x, v) :: env)
 end
 
+/-- An address is *reserved* by the registry when some extern entry exposes it
+    as a stored location value `.val (Value.loc a)`.  Reserved addresses name
+    concrete runtime cells the registry hands out (e.g. the `errno` cell), so the
+    address cursor must account for them just as it accounts for memory keys. -/
+def ReservedAddr (reg : ExternRegistry) (a : Address) : Prop :=
+  ∃ id, reg.get? id = some (ExternImpl.val (Value.loc a))
+
+/-- Registry/cursor compatibility: every registry-reserved address is below the
+    address cursor `next`.  Kept *separate* from `wfConfig` for now (which stays
+    registry-agnostic — see the `wfConfig` note below) and consumed only via the
+    standalone witness `wfValue_loc_of_RegistryReservedBelow`.  The registry is
+    fixed across evaluation and `nextAddr` only grows, so this invariant is
+    preserved automatically (see `RegistryReservedBelow_mono`).  Folding it into
+    `wfConfig` is the eventual target, deferred until a `.val` extern is actually
+    trusted; see `doc/extern-write-effects.md`. -/
+def RegistryReservedBelow (reg : ExternRegistry) (next : Address) : Prop :=
+  ∀ a, ReservedAddr reg a → a < next
+
+/-- `RegistryReservedBelow` is monotone in the address cursor: raising the cursor
+    preserves the invariant.  With the registry fixed, this is the only fact
+    needed to re-establish the invariant under `nextAddr` monotonicity. -/
+theorem RegistryReservedBelow_mono {reg : ExternRegistry} {n n' : Address}
+    (h : RegistryReservedBelow reg n) (hle : n ≤ n') :
+    RegistryReservedBelow reg n' :=
+  fun a ha => Nat.lt_of_lt_of_le (h a ha) hle
+
+/-- The empty registry reserves no addresses, so `RegistryReservedBelow` holds
+    vacuously at any cursor.  Used for throwaway configs that carry the default
+    (empty) registry. -/
+theorem RegistryReservedBelow_emptyExternRegistry (n : Address) :
+    RegistryReservedBelow emptyExternRegistry n := by
+  intro a ⟨id, hid⟩
+  simp [emptyExternRegistry] at hid
+
 /-- A runtime configuration is well-formed if:
     (1) all addresses in memory are below nextAddr, and
     (2) all values in varEnv only reference addresses below nextAddr.
     This captures that nextAddr is the "high-water mark" for allocated physical addresses,
-    analogous to wfTypeContext for logical locations. -/
+    analogous to wfTypeContext for logical locations.
+
+    Note: `wfConfig` is deliberately registry-agnostic — it does not read
+    `cfg.registry`.  The FR proof stack relies on this to coerce `wfConfig` freely
+    across configs that differ only in their registry field.  The
+    registry-reserved-address invariant (`RegistryReservedBelow`) is therefore
+    kept *separate* from `wfConfig` for now; see
+    `wfValue_loc_of_RegistryReservedBelow` and `doc/extern-write-effects.md`. -/
 def wfConfig (cfg : Config) : Prop :=
   (∀ a, cfg.memory.contains a → a < cfg.nextAddr) ∧
   wfVarEnv cfg.nextAddr cfg.varEnv
@@ -69,3 +110,23 @@ lemma nextAddr_not_in_memory (cfg : Config) :
   intro hwf hcontains
   have h := hwf.1 cfg.nextAddr hcontains
   exact Nat.lt_irrefl cfg.nextAddr h
+
+/-- Provability witness for the registry-reserved-address mechanism.
+
+    If a registry reserves address `a` (exposes it as a stored `.val (Value.loc a)`
+    entry) and the cursor `n` bounds every reserved address, then `Value.loc a` is
+    well formed at `n`.  This is exactly the step a future `val`-clause bridge needs
+    to discharge `wfValue cfg.nextAddr (Value.loc a)` for a trusted `.val` extern
+    such as `errno`.
+
+    It is stated standalone, taking `RegistryReservedBelow reg n` as an explicit
+    hypothesis rather than reading it out of `wfConfig`, precisely so the global
+    `wfConfig` can stay registry-agnostic (folding `RegistryReservedBelow` into
+    `wfConfig` would break the FR stack's registry-agnostic config coercions).
+    See `doc/extern-write-effects.md`. -/
+theorem wfValue_loc_of_RegistryReservedBelow
+    {reg : ExternRegistry} {n a : Address} {id : ExternId}
+    (hbelow : RegistryReservedBelow reg n)
+    (hlookup : reg.get? id = some (ExternImpl.val (Value.loc a))) :
+    wfValue n (Value.loc a) :=
+  wfValue.loc (hbelow a ⟨id, hlookup⟩)

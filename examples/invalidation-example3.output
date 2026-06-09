@@ -9,4 +9,4 @@ Type checking passed:
 Result: 10
 Final state:
 Variable environment: []
-  Memory: [(0, 100), (1000000, 0)]
+  Memory: [(1000000, 0), (1000001, 100)]

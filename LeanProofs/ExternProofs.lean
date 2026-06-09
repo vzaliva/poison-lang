@@ -4049,4 +4049,82 @@ theorem defaultRegistry_lookup_memderef :
   simp [defaultRegistry, defaultInitialState, regInsert, register, builtinMemDerefImpl,
     Std.HashMap.contains_insert, Std.HashMap.contains_empty]
 
+/-- A value found in a well-formed environment is itself well formed.  (Local
+    copy of the `private` `SemanticsProperties.wfVarEnv_lookup`, needed here to
+    bound the location `set_err` resolves from `errno`.) -/
+private theorem wfVarEnv_lookup_loc
+    {n : Address} {env : VarEnv} {x : Name} {v : Value}
+    (h_wf_env : wfVarEnv n env) (h_lookup : VarEnv.lookup env x = some v) :
+    wfValue n v := by
+  induction env with
+  | nil => simp [VarEnv.lookup, List.lookup] at h_lookup
+  | cons head tail ih =>
+      cases head with
+      | mk x' v' =>
+          cases h_wf_env with
+          | cons _ _ _ h_wf_v' h_wf_tail =>
+              simp [VarEnv.lookup, List.lookup] at h_lookup
+              by_cases h_eq : x == x'
+              · simp [h_eq] at h_lookup
+                subst h_lookup
+                exact h_wf_v'
+              · simp [h_eq] at h_lookup
+                exact ih h_wf_tail h_lookup
+
+/-- Operational safety of `setErrImpl` (`@22`), the `set_err` impure extern —
+    the `fn`-clause content of `ExternOperationalSafe`, and the key Path-2 payoff.
+
+    Because `set_err` writes the location it resolves from the captured `errno`
+    binding (rather than a fixed reserved address), its well-formedness obligation
+    discharges *directly* from the `wfVarEnv addr env` hypothesis the boundary
+    already supplies: the resolved cell `a` satisfies `a < addr` because
+    `(errno, Value.loc a)` lives in the well-formed environment.  No
+    reserved-address invariant and no fold of `RegistryReservedBelow` into
+    `wfConfig` are required.  The call neither allocates (`addr' = addr`, so
+    `addr ≤ addr'`) nor writes out of bounds, and returns a trivially well-formed
+    `unit`.  See `doc/extern-write-effects.md`. -/
+theorem setErrImpl_operational
+    (env : VarEnv) (vArg : Value) (mem : Memory) (addr : Address)
+    (vRaw : Value) (mem' : Memory) (addr' : Address)
+    (hImpl : setErrImpl env vArg mem addr = .ok (vRaw, mem', addr')) :
+    addr ≤ addr' ∧
+    ((∀ a, mem.contains a → a < addr) →
+      wfVarEnv addr env →
+      wfValue addr vArg →
+      (∀ a, mem'.contains a → a < addr') ∧ wfValue addr' vRaw) := by
+  cases vArg with
+  | num n =>
+    cases hlook : VarEnv.lookup env "errno" with
+    | none => simp [setErrImpl, hlook] at hImpl
+    | some w =>
+      cases w with
+      | loc a =>
+        simp only [setErrImpl, hlook, Except.ok.injEq, Prod.mk.injEq] at hImpl
+        obtain ⟨rfl, rfl, rfl⟩ := hImpl
+        refine ⟨Nat.le_refl _, fun hmem hwfenv _ => ?_⟩
+        have ha_lt : a < addr := by
+          have hw := wfVarEnv_lookup_loc hwfenv hlook
+          cases hw with | loc h => exact h
+        refine ⟨fun a' hc' => ?_, wfValue.unit⟩
+        by_cases h_eq : a' = a
+        · subst h_eq; exact ha_lt
+        · have hcmp : compare a a' ≠ Ordering.eq :=
+            fun hc => h_eq (LawfulEqCmp.eq_of_compare hc).symm
+          exact hmem a' (by
+            simpa [Memory.update] using
+              ExtTreeMap.contains_of_contains_insert
+                (t := mem) (k := a) (a := a') (v := n) hc' hcmp)
+      | num _ => simp [setErrImpl, hlook] at hImpl
+      | bool _ => simp [setErrImpl, hlook] at hImpl
+      | unit => simp [setErrImpl, hlook] at hImpl
+      | str _ => simp [setErrImpl, hlook] at hImpl
+      | closure _ _ _ => simp [setErrImpl, hlook] at hImpl
+      | peClosure _ _ _ => simp [setErrImpl, hlook] at hImpl
+  | bool _ => simp [setErrImpl] at hImpl
+  | unit => simp [setErrImpl] at hImpl
+  | str _ => simp [setErrImpl] at hImpl
+  | loc _ => simp [setErrImpl] at hImpl
+  | closure _ _ _ => simp [setErrImpl] at hImpl
+  | peClosure _ _ _ => simp [setErrImpl] at hImpl
+
 end ExternProofs
