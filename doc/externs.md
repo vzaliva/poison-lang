@@ -192,7 +192,8 @@ reference values to be below the consumer's `nextAddr`. No trusted val spec yet.
 ## `@22` — `set_err` (impure)
 
 **Kind:** `extern fn`  
-**Trust:** Missing default trusted spec
+**Trust:** Trusted (`ExternProofs.builtinSetErrSpec`; program FR in
+`LeanProofs/ExternRegimeInt.lean`)
 
 **Canonical declaration:**
 
@@ -206,16 +207,23 @@ Programs may also declare additional `captures:` read dependencies (see
 `examples/extern_fn_captures_clause.poison`); the shipped implementation only
 writes `!errno`.
 
-**Implementation:** Writes integer `n` into the `errno` cell; returns `unit`;
+**Implementation:** Writes integer `n` through the `errno` reference resolved
+from the extern closure's captured environment; in the shipped `@21`/`@22`
+scenario that reference is the driver-supplied `errnoAddr` cell. Returns `unit`;
 does not allocate (`nextAddr` unchanged).
 
-**Boundary contract (intended, not yet proved):** Impure update of a declared
-effect cell. A trusted spec must cover both the immediate `unit` return and the
-post-state of `!errno` under the declared `effects:` block. Because `setErrImpl`
-writes the fixed `errnoAddr` without bumping `nextAddr`, trusted operational
-safety also needs the same address-cursor invariant as `@21`; it is not the
-universal no-allocation shape of an identity shim. This is the natural trusted
-`extern fn` example for capture- and effect-bearing fn specs.
+**Boundary contract:** Complete five-field `ExternBoundarySpec`. The declaration
+fields cover the produced extern closure. The call fields cover the immediate
+`unit` return and the typed post-state of the declared `effects:` block,
+`!errno :> (int :> clean {})`. Operational safety follows from the well-formed
+captured `errno` reference and the insertion-only memory update; `@22` itself
+does not need the reserved-address fold that still blocks trusting `@21`.
+`ExternProofs.defaultRegistry_lookup_seterr` connects the interpreter's shipped
+`defaultRegistry` entry to the proven `setErrImpl`.
+
+The combined source scenario that first declares `@21` and then declares/calls
+`@22` still depends on a trusted `@21` `extern val` spec. See
+`doc/extern-write-effects.md` for that remaining work.
 
 ## `@23` — `memDeref` (pure, memory read)
 
@@ -254,7 +262,7 @@ proof/registry work.
 | `@11` | pfn | `innerMaxImpl` | `builtinMax11CapturesSpec` |
 | `@12` | pfn | `absImpl` | `builtinAbsSpec` |
 | `@21` | val | ref at `errnoAddr` | **missing** |
-| `@22` | fn | `setErrImpl` | **missing** |
+| `@22` | fn | `setErrImpl` | `builtinSetErrSpec` |
 | `@19` | pfn | `sqrtImpl` | **missing** |
 | `@23` | pfn | `memDerefImpl` | `builtinMemDerefSpec` |
 
