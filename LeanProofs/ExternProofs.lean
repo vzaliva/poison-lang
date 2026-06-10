@@ -4333,7 +4333,11 @@ private theorem builtinSetErr_call_clean_shape
       (effectTargetLocs [builtinSetErrEffect] entry.bodyCtx.varEnv) ∧
     res.nextTag' = entry.bodyCtx.nextTag ∧
     applyExternEffect builtinSetErrEffect entry.bodyCtx.varEnv {} entry.bodyCtx.pc
-        entry.bodyCtx.memEnv = .ok res.memEnv' := by
+        entry.bodyCtx.memEnv = .ok res.memEnv' ∧
+    res.nextLoc' = entry.bodyCtx.nextLoc ∧
+    ∃ argQt : QTyp,
+      entry.bodyCtx.varEnv.lookup "n" = some argQt ∧
+      qtypCleanUnderRegime argQt entry.bodyCtx.regime = true := by
   cases htyped with
   | pfnExternMember _ hkind => simp [builtinSetErrDecl] at hkind
   | fnExternMember hid hkind htyp harg hret heff hcap hpin hbody happly =>
@@ -4361,12 +4365,20 @@ private theorem builtinSetErr_call_clean_shape
           resolveSyntaxPred, returnSpecToQTyp, bind, Except.bind, pure, Except.pure] at happly
         split at happly
         · simp at happly
-        · split at happly
+        · rename_i hgate
+          split at happly
           · simp at happly
           · rename_i memEnv' heffect
             simp only [Except.ok.injEq] at happly
             subst happly
-            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+            have hpin' : declaredArgQt.poison = false := by
+              simpa [builtinSetErrDecl] using hpin
+            have hcond :
+                argConditionSatisfied declaredArgQt
+                  ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ bodyState.regime' fuel' = true := by
+              simpa [capturesSatisfied] using hgate
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_,
+              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩, ?_, ?_⟩
             · simp [normalizeAppResultByProvenance]; split <;> rfl
             · simp [normalizeAppResultByProvenance]; split <;> rfl
             · rw [hbody]; rfl
@@ -4379,6 +4391,10 @@ private theorem builtinSetErr_call_clean_shape
                   ((VarTypeEnv.ofCaptured tenv).update "n"
                     { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred })
                   ∅ (joinPoison p (joinPoison p1 ctx.pc)) bodyState.memEnv' <;> rfl
+            · rw [hbody]
+            · rw [hbody]; exact VarTypeEnv_lookup_update_eq _ "n" _
+            · rw [hbody]
+              exact argConditionSatisfied_cleanRegime_of_declClean hcond hpin'
 
 /-- The single-run call-boundary field for `@22` (`set_err`): the first `.fn`
     (memory-writing) `callSingle`.  Under `ctx.pc = true` the effect poisons the
@@ -4390,7 +4406,7 @@ theorem builtinSetErr_callSingle :
     ExternCallBoundarySingle builtinSetErrDecl builtinSetErrImpl := by
   intro typedExpr res predSat tm entry ctx htyped hpredlaws hwfTm hTmBounded
     θ cf o hθwf hwfCtx hric hreg hcons hwfcfg hrun hpc
-  obtain ⟨hetyp, hpred, htagEnv, hregime, hnextTag, heffect⟩ :=
+  obtain ⟨hetyp, hpred, htagEnv, hregime, hnextTag, heffect, _hnextLoc, _argQt, _hbindN, _hcleanN⟩ :=
     builtinSetErr_call_clean_shape htyped
   obtain ⟨n, a, harg, herrnoRt, ho, hcfmem, hcfnext, hcfshape⟩ :=
     builtinSetErr_callRun_output hrun
@@ -4630,5 +4646,780 @@ theorem builtinSetErr_callSingle :
           simp [qtypGuardTag, (hwritten l qt hin hlk).2] at htag
     · rw [hunwritten l hin] at hlk
       exact absurd (memEnv_contains_of_lookup_some _ l qt hlk) hnc
+
+/-! ## The `set_err` `callFR` field (doc/extern-write-effects.md step 4)
+
+The two-run relational write-effect post: paired successful `@22` calls from
+agreeing inputs produce `StepFRPost` for the two effect-updated configurations.
+The per-run conjuncts mirror `builtinSetErr_callSingle` (without its `pc = true`
+hypothesis: the written cells always store `noPred` — the effect predicate is
+`noPred` on both gate branches — but may be *clean*).  The relational keys are:
+
+* written-value agreement — the declared argument is clean, so the gate forces
+  the body binding `"n"` clean under the body regime, and the two runs' integer
+  arguments agree (`builtinSetErr_callRun_argEq`);
+* target stability — when the written cells are clean the captured `errno`
+  reference is clean too, so the input agreement on the `errno` binding yields
+  one shared logical location realized by both runs' written addresses
+  (`agreeValueUnder_ref_common_loc`); a dirty target poisons the written cells
+  and the corresponding agreement obligations are vacuous. -/
+
+-- Local mirrors of `StepFRAssign`-private regime/memory transport compositions
+-- (built from the public `StepFR` primitives).
+
+private lemma setErr_qtypCleanUnder_of_monotone
+    {R R' : Regime} (hmono : Regime.monotoneStep R R') {qt : QTyp} :
+    qtypCleanUnder R' qt → qtypCleanUnder R qt := by
+  intro hclean
+  cases hclean with
+  | clean hpoison => exact qtypCleanUnder.clean hpoison
+  | guard k htag hreg hnotfun =>
+      have hkR : R.lookup? k ≠ none := hmono.2 k (by simp [hreg])
+      cases hk : R.lookup? k with
+      | none => exact (hkR hk).elim
+      | some b =>
+          rcases hmono.1 k b hk with hk' | hkNone
+          · have hb : b = true := Option.some.inj (hk'.symm.trans hreg)
+            subst hb
+            exact qtypCleanUnder.guard k htag hk hnotfun
+          · simp [hkNone] at hreg
+
+private lemma setErr_agreeValueUnder_transport
+    {predSat : PredSat} {R R' : Regime}
+    {μ₀ μ₁ μ₀' μ₁' : Memory}
+    {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value}
+    (hpred_compat₀ : ∀ (qt : QTyp) (v : Value),
+      qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v)
+    (hpred_compat₁ : ∀ (qt : QTyp) (v : Value),
+      qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v)
+    (hmono : Regime.monotoneStep R R')
+    (hclean : qtypCleanUnder R' qt)
+    (hagree : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁) :
+    agreeValueUnder predSat R' μ₀' μ₁' θ₀ θ₁ qt v₀ v₁ := by
+  have hcleanR : qtypCleanUnder R qt := setErr_qtypCleanUnder_of_monotone hmono hclean
+  have hmem : agreeValueUnder predSat R μ₀' μ₁' θ₀ θ₁ qt v₀ v₁ :=
+    agreeValueUnder_clean_extends_transport_mem hpred_compat₀ hpred_compat₁ hcleanR
+      (by intro l a h; exact h) (by intro l a h; exact h) hagree
+  exact
+    agreeValueUnder_clean_transport_by_cleanBack
+      (fun qt hclean' => setErr_qtypCleanUnder_of_monotone hmono hclean')
+      (fun h => memberVarsRegimeEvidence_monotone hmono h)
+      (fun h => memberCvcrEvidence_monotone hmono h)
+      (fun h => memberVarsRegimeEvidence_monotone hmono h)
+      (fun h => memberCvcrEvidence_monotone hmono h)
+      hclean hmem
+
+/-- Two agreeing integer values are equal (the closure/ref constructors are
+    impossible at an `int` type carried by `Value.num`). -/
+private theorem agreeValueUnder_num_eq
+    {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
+    {qt : QTyp} {n₀ n₁ : Int}
+    (hInt : qt.etyp = ETyp.int)
+    (h : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt (Value.num n₀) (Value.num n₁)) :
+    n₀ = n₁ := by
+  cases h with
+  | clean_eq_nonref_nonarrow _ _ _ hEq =>
+      simpa [Value.num.injEq] using hEq
+  | withPred_true_eq _ _ _ _ _ hEq =>
+      simpa [Value.num.injEq] using hEq
+  | clean_internal_arrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ => cases hv₀
+  | clean_internal_arrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ => cases hv₀
+  | dirty_internal_arrow _ hisArrow _ _ =>
+      rw [hInt] at hisArrow; simp [ETyp.isArrow] at hisArrow
+  | clean_internal_parrow _ _ _ _ _ _ _ _ _ _ _ hv₀ _ => cases hv₀
+  | clean_internal_parrow_extern _ _ _ _ _ _ _ _ _ _ _ hv₀ _ => cases hv₀
+  | dirty_internal_parrow _ hisParrow _ _ =>
+      rw [hInt] at hisParrow; simp [ETyp.isParrow] at hisParrow
+  | clean_ref _ _ _ _ hv₀ _ _ => cases hv₀
+  | withPred_true_ref _ _ _ _ _ _ hv₀ _ _ => cases hv₀
+
+/-- The body-entry environment of a successful `set_err` call binds `"n"` to the
+    runtime argument value. -/
+private theorem builtinSetErr_callRun_bodyVar
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hrun : ExternCallBoundaryRun builtinSetErrDecl builtinSetErrImpl entry res cf o) :
+    entry.bodyConfig.varEnv.lookup "n" = some entry.argValue := by
+  cases hrun with
+  | pfn hfacts => have h := hfacts.kind_pfn; simp [builtinSetErrDecl] at h
+  | fn hfacts =>
+      have hargName : entry.argName = "n" := by
+        have h := hfacts.argName
+        simp only [builtinSetErrDecl] at h
+        exact (Option.some.inj h).symm
+      have hbc : entry.bodyConfig.varEnv = entry.unifiedEnv := by
+        simp [ExternCallEntry.bodyConfig]
+      rw [hbc, hfacts.unifiedEnv_eq, hargName]
+      simp [VarEnv.update, VarEnv.lookup]
+
+/-- Argument equality for `set_err`: clean body agreement plus the clean argument
+    binding (gate passed against the clean precondition) force the two integer
+    arguments equal. -/
+private theorem builtinSetErr_callRun_argEq
+    {predSat : PredSat} {θ₀ θ₁ : RealizationMap}
+    {entry₀ entry₁ : ExternCallEntry} {res : TypeResult}
+    {cf₀ cf₁ : Config} {o₀ o₁ : Value} {typedExpr₀ : Expr}
+    (htyped₀ : ExternBoundaryTyping.Call builtinSetErrDecl typedExpr₀ entry₀ res)
+    (hbody : BodyEntryInputsAgree predSat entry₀.bodyCtx entry₀ entry₁ θ₀ θ₁)
+    (hrun₀ : ExternCallBoundaryRun builtinSetErrDecl builtinSetErrImpl entry₀ res cf₀ o₀)
+    (hrun₁ : ExternCallBoundaryRun builtinSetErrDecl builtinSetErrImpl entry₁ res cf₁ o₁)
+    {m₀ m₁ : Int}
+    (hm₀ : entry₀.argValue = Value.num m₀) (hm₁ : entry₁.argValue = Value.num m₁) :
+    m₀ = m₁ := by
+  obtain ⟨_, _, _, _, _, _, _, argQt, hbind, hcleanB⟩ :=
+    builtinSetErr_call_clean_shape htyped₀
+  have hrv₀ : entry₀.bodyConfig.varEnv.lookup "n" = some (Value.num m₀) := by
+    rw [builtinSetErr_callRun_bodyVar hrun₀, hm₀]
+  have hrv₁ : entry₁.bodyConfig.varEnv.lookup "n" = some (Value.num m₁) := by
+    rw [builtinSetErr_callRun_bodyVar hrun₁, hm₁]
+  obtain ⟨v, hvlk, hvet⟩ := hbody.runtime₀.2 hbind
+  have hv : v = Value.num m₀ := by rw [hrv₀] at hvlk; exact (Option.some.inj hvlk).symm
+  have hInt : argQt.etyp = ETyp.int := by rw [hv] at hvet; exact valueHasETyp_num_etyp hvet
+  have hcleanP : qtypCleanUnder entry₀.bodyCtx.regime argQt :=
+    qtypCleanUnder_of_cleanUnderRegime hcleanB (by rw [hInt]; rfl)
+  exact builtinAbs_arg_eq_of_bodyAgree hbody hbind hcleanP hInt hrv₀ hrv₁
+
+/-- The two-run call-boundary FR field for `@22` (`set_err`): the first `.fn`
+    (memory-writing) `callFR`.  See the section header for the proof shape. -/
+theorem builtinSetErr_callFR :
+    ExternCallBoundaryFR builtinSetErrDecl builtinSetErrImpl := by
+  intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
+    htyped₀ _htyped₁ hpredlaws hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+  obtain ⟨hetyp, hpred, htagEnv, hregime, hnextTag, heffect, hnextLoc, argQtN, hbindN, _hcleanN⟩ :=
+    builtinSetErr_call_clean_shape htyped₀
+  obtain ⟨n₀, a₀, harg₀, herrnoRt₀, ho₀, hcfmem₀, hcfnext₀, _⟩ := builtinSetErr_callRun_output hrun₀
+  obtain ⟨n₁, a₁, harg₁, herrnoRt₁, ho₁, hcfmem₁, hcfnext₁, _⟩ := builtinSetErr_callRun_output hrun₁
+  have hnotfun : res.qualType.etyp.isFunctionType = false := by rw [hetyp]; rfl
+  have hrespects : QTypRespectsTagMeaning tm res.qualType :=
+    QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun
+      (by simp [qtypGuardDesc?, hpred])
+  -- Type-level effect shape (shared by both runs: same bodyCtx, same res).
+  obtain ⟨vE, qtE, ls, rpE, htgtE, hlkE, hetypE, hresE, hmemE⟩ :=
+    applyExternEffect_errno_shape heffect
+  have hvE : vE = "errno" := by
+    simpa [builtinSetErrEffect, EffectTarget.namedVar.injEq] using htgtE.symm
+  subst hvE
+  have hrpE : rpE = Predicate.noPred := by
+    symm
+    simpa [builtinSetErrEffect, resolveSyntaxPred, pure, Except.pure] using hresE
+  -- Per-run errno realization.
+  obtain ⟨vRt₀, hvRtLk₀, hvRtTyp₀⟩ := hbody.runtime₀.2 hlkE
+  have hvRtEq₀ : vRt₀ = Value.loc a₀ := by
+    have hb : entry₀.bodyConfig.varEnv.lookup "errno" = some (Value.loc a₀) := by
+      simpa [ExternCallEntry.bodyConfig] using herrnoRt₀
+    rw [hb] at hvRtLk₀; exact (Option.some.inj hvRtLk₀).symm
+  rw [hvRtEq₀, hetypE] at hvRtTyp₀
+  obtain ⟨l_e₀, hθ_le₀, hle_in₀⟩ : ∃ l, θ₀.lookup l = some a₀ ∧ l ∈ ls := by
+    cases hvRtTyp₀ with | loc hlk hin => exact ⟨_, hlk, hin⟩
+  obtain ⟨vRt₁, hvRtLk₁, hvRtTyp₁⟩ := hbody.runtime₁.2 hlkE
+  have hvRtEq₁ : vRt₁ = Value.loc a₁ := by
+    have hb : entry₁.bodyConfig.varEnv.lookup "errno" = some (Value.loc a₁) := by
+      simpa [ExternCallEntry.bodyConfig] using herrnoRt₁
+    rw [hb] at hvRtLk₁; exact (Option.some.inj hvRtLk₁).symm
+  rw [hvRtEq₁, hetypE] at hvRtTyp₁
+  obtain ⟨l_e₁, hθ_le₁, hle_in₁⟩ : ∃ l, θ₁.lookup l = some a₁ ∧ l ∈ ls := by
+    cases hvRtTyp₁ with | loc hlk hin => exact ⟨_, hlk, hin⟩
+  -- The effect stores `noPred` on both gate branches (the effect predicate is
+  -- `noPred`); the stored poison is the pc/target join.
+  have hwrittenPred : ∀ l qt, l ∈ ls → res.memEnv'.lookup l = some qt →
+      qt.pred = Predicate.noPred := by
+    intro l qt hin hlk
+    rw [hmemE] at hlk
+    have h := assign_memEnv_formula_lookup_mem_props ctx.memEnv ls _ _ l hin qt hlk
+    exact h.2 (by rw [hrpE]; exact ite_self _)
+  have hwrittenPoison : ∀ l qt, l ∈ ls → res.memEnv'.lookup l = some qt →
+      joinPoison ctx.pc (joinPoison qtE.poison builtinSetErrEffect.poison) = true →
+      qt.poison = true := by
+    intro l qt hin hlk hsp
+    rw [hmemE] at hlk
+    exact (assign_memEnv_formula_lookup_mem_props ctx.memEnv ls _ _ l hin qt hlk).1 hsp
+  have hunwritten : ∀ l, l ∉ ls →
+      res.memEnv'.lookup l = ctx.memEnv.lookup l := by
+    intro l hnin
+    rw [hmemE]
+    exact assign_memEnv_formula_lookup_eq_of_not_mem ctx.memEnv ls _ _ l hnin
+  -- Memory compatibility and the regime shrink.
+  have hmemc₀ : ∀ (qt' : QTyp) (v' : Value),
+      qtypPredHolds predSat qt' entry₀.bodyConfig.memory v' ↔
+      qtypPredHolds predSat qt' cf₀.memory v' :=
+    fun qt' v' => qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ₀
+      entry₀.bodyConfig.memory cf₀.memory qt' v'
+  have hmemc₁ : ∀ (qt' : QTyp) (v' : Value),
+      qtypPredHolds predSat qt' entry₁.bodyConfig.memory v' ↔
+      qtypPredHolds predSat qt' cf₁.memory v' :=
+    fun qt' v' => qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ₁
+      entry₁.bodyConfig.memory cf₁.memory qt' v'
+  have hmono : Regime.monotoneStep ctx.regime (ctxAfter ctx res).regime := by
+    show Regime.monotoneStep ctx.regime res.regime'
+    rw [hregime]
+    exact invalidateRegimeDepsEffect_monotone _ _ _
+  have hgate_val : ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
+      ctx.regime.lookup? k = some b := by
+    intro k b hk
+    have hk'' : res.regime'.lookup? k = some b := hk
+    rw [hregime] at hk''
+    exact invalidateRegimeDepsEffect_lookup_some_imp _ _ _ k b hk''
+  have hgate_ne : ∀ k, (ctxAfter ctx res).regime.lookup? k ≠ none →
+      ctx.regime.lookup? k ≠ none := by
+    intro k hk
+    cases hk0 : (ctxAfter ctx res).regime.lookup? k with
+    | none => exact absurd hk0 hk
+    | some b => rw [hgate_val k b hk0]; exact Option.some_ne_none b
+  have hcleanIn : ∀ {qt : QTyp}, qtypCleanUnder (ctxAfter ctx res).regime qt →
+      qtypCleanUnder ctx.regime qt :=
+    fun h => setErr_qtypCleanUnder_of_monotone hmono h
+  -- Per-run final-memory lookups away from the written address.
+  have hfinal₀ : ∀ a', a' ≠ a₀ →
+      cf₀.memory.lookup a' = entry₀.bodyConfig.memory.lookup a' := by
+    intro a' hne
+    rw [hcfmem₀]
+    have hcmp : compare a₀ a' ≠ Ordering.eq := by
+      intro hce
+      exact hne ((Nat.compare_eq_eq).1 hce).symm
+    simp [Memory.update, Memory.lookup, Std.ExtTreeMap.getElem?_insert, hcmp,
+      ExternCallEntry.bodyConfig]
+  have hfinal₁ : ∀ a', a' ≠ a₁ →
+      cf₁.memory.lookup a' = entry₁.bodyConfig.memory.lookup a' := by
+    intro a' hne
+    rw [hcfmem₁]
+    have hcmp : compare a₁ a' ≠ Ordering.eq := by
+      intro hce
+      exact hne ((Nat.compare_eq_eq).1 hce).symm
+    simp [Memory.update, Memory.lookup, Std.ExtTreeMap.getElem?_insert, hcmp,
+      ExternCallEntry.bodyConfig]
+  have hne₀ : ∀ l a', l ∉ ls → θ₀.lookup l = some a' → a' ≠ a₀ := by
+    intro l a' hnin hθl heq
+    apply hnin
+    have hl_e : θ₀.lookup l_e₀ = some a' := by rw [heq]; exact hθ_le₀
+    have hll : l = l_e₀ := hbody.wfRealization₀ _ _ _ hθl hl_e
+    rw [hll]; exact hle_in₀
+  have hne₁ : ∀ l a', l ∉ ls → θ₁.lookup l = some a' → a' ≠ a₁ := by
+    intro l a' hnin hθl heq
+    apply hnin
+    have hl_e : θ₁.lookup l_e₁ = some a' := by rw [heq]; exact hθ_le₁
+    have hll : l = l_e₁ := hbody.wfRealization₁ _ _ _ hθl hl_e
+    rw [hll]; exact hle_in₁
+  -- Shared wfTagMeaningCtx for the effect-updated context.
+  have hwfTmAfter : wfTagMeaningCtx tm (ctxAfter ctx res) := by
+    rcases hwfTm with ⟨hwfTm'⟩
+    refine EnvRespectsTagMeaning.intro fun ⟨qtDeep, k0, d0, hqte0, hqd0⟩ => ?_
+    rcases hqte0 with ⟨_, _, x, _, qtRoot, hlookupVar, hinq⟩ | ⟨_, _, loc, _, qtRoot, hlookupMem, hinq⟩
+    · exact hwfTm' (GuardDescInEnvsDeep.intro qtDeep k0 d0
+        (QTypInEnvs.inVar _ _ x qtDeep qtRoot hlookupVar hinq) hqd0)
+    · have hlookupMem' : res.memEnv'.lookup loc = some qtRoot := hlookupMem
+      by_cases hin : loc ∈ ls
+      · have hprednp := hwrittenPred loc qtRoot hin hlookupMem'
+        have hint : qtRoot.etyp = ETyp.int := memEnv_lookup_etyp_int _ _ _ hlookupMem'
+        have hEq : qtDeep = qtRoot := QTypInQTyp_eq_of_nonFunctionTarget hinq
+          (by simp [hint, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
+        rw [hEq] at hqd0
+        simp [qtypGuardDesc?, hprednp] at hqd0
+      · rw [hunwritten loc hin] at hlookupMem'
+        exact hwfTm' (GuardDescInEnvsDeep.intro qtDeep k0 d0
+          (QTypInEnvs.inMem _ _ loc qtDeep qtRoot hlookupMem' hinq) hqd0)
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, hwfTmAfter, hrespects, hpredlaws⟩, hpredlaws, hrespects,
+    θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
+    ?_, ?_, hwfTmAfter, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- TagMeaningBounded tm res.nextTag'
+    rw [hnextTag]; exact hTmBounded
+  · -- valueHasETyp θ₀ o₀
+    rw [ho₀, hetyp]; exact valueHasETyp.unit
+  · -- valueHasETyp θ₁ o₁
+    rw [ho₁, hetyp]; exact valueHasETyp.unit
+  · -- wfTypeContext (ctxAfter ctx res)
+    refine ⟨?_, ?_, ?_⟩
+    · intro l hcont
+      have hcont' : res.memEnv'.contains l = true := hcont
+      rw [hmemE] at hcont'
+      have hlt : l < ctx.nextLoc := by
+        rcases assign_memEnv_formula_contains_eq_or_mem ctx.memEnv ls _ _ l hcont' with hold | hin
+        · exact hbody.wfCtx.1 l hold
+        · have hb := hbody.wfCtx.2.1 "errno" qtE hlkE
+          rw [hetypE] at hb
+          exact hb l (by simpa using hin)
+      show l < (ctxAfter ctx res).nextLoc
+      simp only [ctxAfter]
+      rw [hnextLoc]
+      exact hlt
+    · simp only [ctxAfter]
+      rw [hnextLoc]
+      exact hbody.wfCtx.2.1
+    · simp only [ctxAfter]
+      rw [hnextLoc]
+      exact hbody.wfCtx.2.2
+  · -- TagBoundedCtx (ctxAfter ctx res)
+    refine ⟨?_, ⟨?_, ?_⟩, ?_⟩
+    · intro k hk
+      have hk' : res.tagEnv'.get? k ≠ none := hk
+      rw [htagEnv] at hk'
+      have hkin := invalidateTagDeps_get?_ne_none_imp _ _ k hk'
+      have hlt := hbody.tagBounded.1 k hkin
+      show k < (ctxAfter ctx res).nextTag
+      simp only [ctxAfter]
+      rw [hnextTag]
+      exact hlt
+    · simp only [ctxAfter]
+      rw [hnextTag]
+      exact hbody.tagBounded.2.1.1
+    · intro l qt hlk
+      have hlk' : res.memEnv'.lookup l = some qt := hlk
+      show qtypPredTagBounded qt (ctxAfter ctx res).nextTag
+      simp only [ctxAfter]
+      rw [hnextTag]
+      by_cases hin : l ∈ ls
+      · have hprednp := hwrittenPred l qt hin hlk'
+        simp only [qtypPredTagBounded, hprednp]
+        trivial
+      · rw [hunwritten l hin] at hlk'
+        exact hbody.tagBounded.2.1.2 l qt hlk'
+    · simp only [ctxAfter]
+      rw [hnextTag]
+      exact hbody.tagBounded.2.2
+  · -- wfConfig (entry₀.bodyOutputConfig cf₀)
+    refine ⟨?_, ?_⟩
+    · intro a hconta
+      have ha₀lt : a₀ < entry₀.bodyConfig.nextAddr :=
+        setErrImpl_errno_target_wf hbody.wfConfig₀.2
+          (by simpa [ExternCallEntry.bodyConfig] using herrnoRt₀)
+      have hconta' : (Memory.update entry₀.callConfig.memory a₀ n₀).contains a := by
+        have : (entry₀.bodyOutputConfig cf₀).memory = cf₀.memory := rfl
+        rw [this, hcfmem₀] at hconta
+        exact hconta
+      rw [Memory.update, Std.ExtTreeMap.contains_insert] at hconta'
+      have hnext : (entry₀.bodyOutputConfig cf₀).nextAddr = entry₀.bodyConfig.nextAddr := by
+        show cf₀.nextAddr = entry₀.bodyConfig.nextAddr
+        rw [hcfnext₀]; rfl
+      rw [hnext]
+      rcases (by simpa using hconta' : a₀ = a ∨ a ∈ entry₀.callConfig.memory) with heq | hold
+      · rw [← heq]; exact ha₀lt
+      · exact hbody.wfConfig₀.1 a (by simpa [ExternCallEntry.bodyConfig] using hold)
+    · have hnext : (entry₀.bodyOutputConfig cf₀).nextAddr = entry₀.bodyConfig.nextAddr := by
+        show cf₀.nextAddr = entry₀.bodyConfig.nextAddr
+        rw [hcfnext₀]; rfl
+      show wfVarEnv (entry₀.bodyOutputConfig cf₀).nextAddr (entry₀.bodyOutputConfig cf₀).varEnv
+      rw [hnext]
+      exact hbody.wfConfig₀.2
+  · -- wfConfig (entry₁.bodyOutputConfig cf₁)
+    refine ⟨?_, ?_⟩
+    · intro a hconta
+      have ha₁lt : a₁ < entry₁.bodyConfig.nextAddr :=
+        setErrImpl_errno_target_wf hbody.wfConfig₁.2
+          (by simpa [ExternCallEntry.bodyConfig] using herrnoRt₁)
+      have hconta' : (Memory.update entry₁.callConfig.memory a₁ n₁).contains a := by
+        have : (entry₁.bodyOutputConfig cf₁).memory = cf₁.memory := rfl
+        rw [this, hcfmem₁] at hconta
+        exact hconta
+      rw [Memory.update, Std.ExtTreeMap.contains_insert] at hconta'
+      have hnext : (entry₁.bodyOutputConfig cf₁).nextAddr = entry₁.bodyConfig.nextAddr := by
+        show cf₁.nextAddr = entry₁.bodyConfig.nextAddr
+        rw [hcfnext₁]; rfl
+      rw [hnext]
+      rcases (by simpa using hconta' : a₁ = a ∨ a ∈ entry₁.callConfig.memory) with heq | hold
+      · rw [← heq]; exact ha₁lt
+      · exact hbody.wfConfig₁.1 a (by simpa [ExternCallEntry.bodyConfig] using hold)
+    · have hnext : (entry₁.bodyOutputConfig cf₁).nextAddr = entry₁.bodyConfig.nextAddr := by
+        show cf₁.nextAddr = entry₁.bodyConfig.nextAddr
+        rw [hcfnext₁]; rfl
+      show wfVarEnv (entry₁.bodyOutputConfig cf₁).nextAddr (entry₁.bodyOutputConfig cf₁).varEnv
+      rw [hnext]
+      exact hbody.wfConfig₁.2
+  · -- runtimeInstantiatesCtx (ctxAfter ctx res) (run 0)
+    refine ⟨fun l a' hθl => ?_, fun {x qt} hlk => ?_⟩
+    · obtain ⟨hmem, hcont⟩ := hbody.runtime₀.1 l a' hθl
+      refine ⟨?_, ?_⟩
+      · show res.memEnv'.contains l = true
+        rw [hmemE]
+        exact assign_memEnv_formula_contains_of_contains ctx.memEnv ls _ _ l hmem
+      · show cf₀.memory.contains a' = true
+        rw [hcfmem₀]
+        have hbc : entry₀.callConfig.memory.contains a' = true := by
+          simpa [ExternCallEntry.bodyConfig] using hcont
+        simp [Memory.update, Std.ExtTreeMap.contains_insert, hbc]
+    · exact hbody.runtime₀.2 hlk
+  · -- runtimeInstantiatesCtx (ctxAfter ctx res) (run 1)
+    refine ⟨fun l a' hθl => ?_, fun {x qt} hlk => ?_⟩
+    · obtain ⟨hmem, hcont⟩ := hbody.runtime₁.1 l a' hθl
+      refine ⟨?_, ?_⟩
+      · show res.memEnv'.contains l = true
+        rw [hmemE]
+        exact assign_memEnv_formula_contains_of_contains ctx.memEnv ls _ _ l hmem
+      · show cf₁.memory.contains a' = true
+        rw [hcfmem₁]
+        have hbc : entry₁.callConfig.memory.contains a' = true := by
+          simpa [ExternCallEntry.bodyConfig] using hcont
+        simp [Memory.update, Std.ExtTreeMap.contains_insert, hbc]
+    · exact hbody.runtime₁.2 hlk
+  · -- regimeConsistentWithCtx (ctxAfter ctx res)
+    intro k deps hk
+    have hk' : res.tagEnv'.get? k = some ⟨true, deps⟩ := hk
+    rw [htagEnv] at hk'
+    have hkin := invalidateTagDeps_get?_some_imp _ _ k _ hk'
+    have hRtrue := hbody.regime k deps hkin
+    show res.regime'.lookup? k = some true
+    rw [hregime]
+    exact invalidateRegimeDepsEffect_lookup_preserve_of_survive _ _ _ k true
+      (Option.ne_none_iff_exists'.mpr ⟨_, hk'⟩) hRtrue
+  · -- consistentWithRegime (run 0)
+    refine ⟨?_, ?_, ?_⟩
+    · intro l qt k hlookup hguard hkR
+      have hlookup' : res.memEnv'.lookup l = some qt := hlookup
+      by_cases hin : l ∈ ls
+      · have hprednp := hwrittenPred l qt hin hlookup'
+        simp [qtypGuardTag, hprednp] at hguard
+      · rw [hunwritten l hin] at hlookup'
+        have hold := hbody.consistent₀.1 l qt k hlookup' hguard (hgate_ne k hkR)
+        cases hold with
+        | noPred_ok hpn => exact locsRegime.noPred_ok (l, qt) hpn
+        | guardOnly_ok k' hgo => exact locsRegime.guardOnly_ok (l, qt) k' hgo
+        | withPred_ok k' an pb ve a' n' b' hclos hregk hreal hmem hconsist =>
+            have hclos' : qt.pred = Predicate.guardClosure k' an pb ve := hclos
+            have hk'k : k' = k := by
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag qt := by simp [qtypGuardTag, hclos']
+                  _ = some k := hguard
+              exact Option.some.inj this
+            obtain ⟨b, hbout⟩ : ∃ b, (ctxAfter ctx res).regime.lookup? k = some b := by
+              cases hk0 : (ctxAfter ctx res).regime.lookup? k with
+              | none => exact absurd hk0 hkR
+              | some b => exact ⟨b, rfl⟩
+            have hbb' : b = b' := by
+              have hbin := hgate_val k b hbout
+              rw [hk'k] at hregk
+              exact Option.some.inj (hbin.symm.trans hregk)
+            have hregk_out : (ctxAfter ctx res).regime.lookup? k' = some b' := by
+              rw [hk'k, ← hbb']
+              exact hbout
+            have hmem' : cf₀.memory.lookup a' = some n' := by
+              rw [hfinal₀ a' (hne₀ l a' hin hreal)]
+              exact hmem
+            refine locsRegime.withPred_ok (l, qt) k' an pb ve a' n' b' hclos hregk_out hreal hmem' ?_
+            exact ⟨fun hb => (hmemc₀ qt (Value.num n')).1 (hconsist.1 hb),
+              fun hb hh => (hconsist.2 hb) ((hmemc₀ qt (Value.num n')).2 hh)⟩
+    · intro x qt k hlookup hguard hkR
+      have hold := hbody.consistent₀.2.1 x qt k hlookup hguard (hgate_ne k hkR)
+      cases hold with
+      | noPred_ok hpn => exact varsRegime.noPred_ok (x, qt) hpn
+      | guardOnly_ok k' hgo => exact varsRegime.guardOnly_ok (x, qt) k' hgo
+      | withPred_ok k' an pb ve v b' hclos hregk hvar hconsist =>
+          have hclos' : qt.pred = Predicate.guardClosure k' an pb ve := hclos
+          have hk'k : k' = k := by
+            have : some k' = some k := by
+              calc
+                some k' = qtypGuardTag qt := by simp [qtypGuardTag, hclos']
+                _ = some k := hguard
+            exact Option.some.inj this
+          obtain ⟨b, hbout⟩ : ∃ b, (ctxAfter ctx res).regime.lookup? k = some b := by
+            cases hk0 : (ctxAfter ctx res).regime.lookup? k with
+            | none => exact absurd hk0 hkR
+            | some b => exact ⟨b, rfl⟩
+          have hbb' : b = b' := by
+            have hbin := hgate_val k b hbout
+            rw [hk'k] at hregk
+            exact Option.some.inj (hbin.symm.trans hregk)
+          have hregk_out : (ctxAfter ctx res).regime.lookup? k' = some b' := by
+            rw [hk'k, ← hbb']
+            exact hbout
+          refine varsRegime.withPred_ok (x, qt) k' an pb ve v b' hclos hregk_out hvar ?_
+          exact ⟨fun hb => (hmemc₀ qt v).1 (hconsist.1 hb),
+            fun hb hh => (hconsist.2 hb) ((hmemc₀ qt v).2 hh)⟩
+    · intro x qt v hlookup hvlookup
+      have hold := hbody.consistent₀.2.2 x qt v hlookup hvlookup
+      exact closureCapturedVarsRegime_monotone hmono
+        (closureCapturedVarsRegime_transport_μ hmemc₀ hold)
+  · -- consistentWithRegime (run 1)
+    refine ⟨?_, ?_, ?_⟩
+    · intro l qt k hlookup hguard hkR
+      have hlookup' : res.memEnv'.lookup l = some qt := hlookup
+      by_cases hin : l ∈ ls
+      · have hprednp := hwrittenPred l qt hin hlookup'
+        simp [qtypGuardTag, hprednp] at hguard
+      · rw [hunwritten l hin] at hlookup'
+        have hold := hbody.consistent₁.1 l qt k hlookup' hguard (hgate_ne k hkR)
+        cases hold with
+        | noPred_ok hpn => exact locsRegime.noPred_ok (l, qt) hpn
+        | guardOnly_ok k' hgo => exact locsRegime.guardOnly_ok (l, qt) k' hgo
+        | withPred_ok k' an pb ve a' n' b' hclos hregk hreal hmem hconsist =>
+            have hclos' : qt.pred = Predicate.guardClosure k' an pb ve := hclos
+            have hk'k : k' = k := by
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag qt := by simp [qtypGuardTag, hclos']
+                  _ = some k := hguard
+              exact Option.some.inj this
+            obtain ⟨b, hbout⟩ : ∃ b, (ctxAfter ctx res).regime.lookup? k = some b := by
+              cases hk0 : (ctxAfter ctx res).regime.lookup? k with
+              | none => exact absurd hk0 hkR
+              | some b => exact ⟨b, rfl⟩
+            have hbb' : b = b' := by
+              have hbin := hgate_val k b hbout
+              rw [hk'k] at hregk
+              exact Option.some.inj (hbin.symm.trans hregk)
+            have hregk_out : (ctxAfter ctx res).regime.lookup? k' = some b' := by
+              rw [hk'k, ← hbb']
+              exact hbout
+            have hmem' : cf₁.memory.lookup a' = some n' := by
+              rw [hfinal₁ a' (hne₁ l a' hin hreal)]
+              exact hmem
+            refine locsRegime.withPred_ok (l, qt) k' an pb ve a' n' b' hclos hregk_out hreal hmem' ?_
+            exact ⟨fun hb => (hmemc₁ qt (Value.num n')).1 (hconsist.1 hb),
+              fun hb hh => (hconsist.2 hb) ((hmemc₁ qt (Value.num n')).2 hh)⟩
+    · intro x qt k hlookup hguard hkR
+      have hold := hbody.consistent₁.2.1 x qt k hlookup hguard (hgate_ne k hkR)
+      cases hold with
+      | noPred_ok hpn => exact varsRegime.noPred_ok (x, qt) hpn
+      | guardOnly_ok k' hgo => exact varsRegime.guardOnly_ok (x, qt) k' hgo
+      | withPred_ok k' an pb ve v b' hclos hregk hvar hconsist =>
+          have hclos' : qt.pred = Predicate.guardClosure k' an pb ve := hclos
+          have hk'k : k' = k := by
+            have : some k' = some k := by
+              calc
+                some k' = qtypGuardTag qt := by simp [qtypGuardTag, hclos']
+                _ = some k := hguard
+            exact Option.some.inj this
+          obtain ⟨b, hbout⟩ : ∃ b, (ctxAfter ctx res).regime.lookup? k = some b := by
+            cases hk0 : (ctxAfter ctx res).regime.lookup? k with
+            | none => exact absurd hk0 hkR
+            | some b => exact ⟨b, rfl⟩
+          have hbb' : b = b' := by
+            have hbin := hgate_val k b hbout
+            rw [hk'k] at hregk
+            exact Option.some.inj (hbin.symm.trans hregk)
+          have hregk_out : (ctxAfter ctx res).regime.lookup? k' = some b' := by
+            rw [hk'k, ← hbb']
+            exact hbout
+          refine varsRegime.withPred_ok (x, qt) k' an pb ve v b' hclos hregk_out hvar ?_
+          exact ⟨fun hb => (hmemc₁ qt v).1 (hconsist.1 hb),
+            fun hb hh => (hconsist.2 hb) ((hmemc₁ qt v).2 hh)⟩
+    · intro x qt v hlookup hvlookup
+      have hold := hbody.consistent₁.2.2 x qt v hlookup hvlookup
+      exact closureCapturedVarsRegime_monotone hmono
+        (closureCapturedVarsRegime_transport_μ hmemc₁ hold)
+  · -- agreeOnClean across the two effect-updated runs
+    refine ⟨?_, ?_⟩
+    · -- locations
+      intro l qt hlk hclean
+      have hlk' : res.memEnv'.lookup l = some qt := hlk
+      by_cases hin : l ∈ ls
+      · -- A written-set cell.  Its predicate is `noPred`; cleanness forces the
+        -- stored poison clean, hence pc and the captured errno reference clean.
+        have hprednp := hwrittenPred l qt hin hlk'
+        have hpoisonF : qt.poison = false := by
+          cases hclean with
+          | clean hp => exact hp
+          | guard k htagk _ _ => simp [qtypGuardTag, hprednp] at htagk
+        have hspF : joinPoison ctx.pc (joinPoison qtE.poison builtinSetErrEffect.poison) = false := by
+          by_contra hsp
+          have hsp' : joinPoison ctx.pc (joinPoison qtE.poison builtinSetErrEffect.poison) = true := by
+            cases h : joinPoison ctx.pc (joinPoison qtE.poison builtinSetErrEffect.poison) with
+            | true => rfl
+            | false => exact absurd h hsp
+          have := hwrittenPoison l qt hin hlk' hsp'
+          rw [hpoisonF] at this
+          cases this
+        have hsplit : ctx.pc = false ∧ qtE.poison = false := by
+          have h := hspF
+          simp [joinPoison, builtinSetErrEffect, Bool.or_eq_false_iff] at h
+          exact ⟨h.1, h.2⟩
+        -- Common written logical location from the clean errno binding agreement.
+        have hcleanE : qtypCleanUnder ctx.regime qtE := qtypCleanUnder.clean hsplit.2
+        have hvarE := hbody.agree.2 "errno" qtE hlkE hcleanE
+        cases hvarE with
+        | both_none _ _ h0 _ =>
+            have hb : entry₀.bodyConfig.varEnv.lookup "errno" = some (Value.loc a₀) := by
+              simpa [ExternCallEntry.bodyConfig] using herrnoRt₀
+            rw [hb] at h0; cases h0
+        | agree_values _ _ v₀' v₁' hl0 hl1 hval =>
+            have e0 : v₀' = Value.loc a₀ := by
+              have hb : entry₀.bodyConfig.varEnv.lookup "errno" = some (Value.loc a₀) := by
+                simpa [ExternCallEntry.bodyConfig] using herrnoRt₀
+              rw [hb] at hl0; exact (Option.some.inj hl0).symm
+            have e1 : v₁' = Value.loc a₁ := by
+              have hb : entry₁.bodyConfig.varEnv.lookup "errno" = some (Value.loc a₁) := by
+                simpa [ExternCallEntry.bodyConfig] using herrnoRt₁
+              rw [hb] at hl1; exact (Option.some.inj hl1).symm
+            rw [e0, e1] at hval
+            obtain ⟨l_c, hlc_in, hθ0c, hθ1c⟩ := agreeValueUnder_ref_common_loc hetypE hval
+            have hqtInt : qt.etyp = ETyp.int := memEnv_lookup_etyp_int _ _ _ hlk'
+            have hnotref : ¬ ∃ ls', qt.etyp = ETyp.ref ls' := by
+              intro href
+              rcases href with ⟨ls', h⟩
+              rw [hqtInt] at h; cases h
+            by_cases hlc : l = l_c
+            · -- The written cell itself: both runs hold the (agreeing) argument.
+              subst hlc
+              have hagreeN : n₀ = n₁ :=
+                builtinSetErr_callRun_argEq htyped₀ hbody hrun₀ hrun₁ harg₀ harg₁
+              refine agreeLocUnder.agree_values l qt a₀ a₁ n₀ n₁ hθ0c hθ1c ?_ ?_ ?_
+              · show cf₀.memory.lookup a₀ = some n₀
+                rw [hcfmem₀]; simp [Memory.update, Memory.lookup]
+              · show cf₁.memory.lookup a₁ = some n₁
+                rw [hcfmem₁]; simp [Memory.update, Memory.lookup]
+              · exact agreeValueUnder.clean_eq_nonref_nonarrow hpoisonF
+                  (by rw [hqtInt]; rfl) hnotref (by rw [hagreeN])
+            · -- A written-set member that is not the written cell: unwritten in
+              -- both runs (the realizations of `l` differ from those of `l_c`).
+              have hne₀' : ∀ a', θ₀.lookup l = some a' → a' ≠ a₀ := by
+                intro a' hθl heq
+                apply hlc
+                have hl_c : θ₀.lookup l_c = some a' := by rw [heq]; exact hθ0c
+                exact hbody.wfRealization₀ _ _ _ hθl hl_c
+              have hne₁' : ∀ a', θ₁.lookup l = some a' → a' ≠ a₁ := by
+                intro a' hθl heq
+                apply hlc
+                have hl_c : θ₁.lookup l_c = some a' := by rw [heq]; exact hθ1c
+                exact hbody.wfRealization₁ _ _ _ hθl hl_c
+              -- The pre-call cell: absent means unrealized in both runs.
+              by_cases hcont : ctx.memEnv.contains l = true
+              · -- Present: it was clean before the call (the joined stored poison
+                -- is clean only if every tracked member was), so the input
+                -- agreement transports.
+                have hcontIsSome : (ctx.memEnv[l]?).isSome = true := by
+                  rw [← Std.ExtTreeMap.contains_eq_isSome_getElem?]
+                  exact hcont
+                obtain ⟨e_old, hget_old⟩ := Option.isSome_iff_exists.mp hcontIsSome
+                have hlk_old : ctx.memEnv.lookup l = some ⟨ETyp.int, e_old.poison, e_old.pred⟩ := by
+                  simp only [MemoryTypeEnv.lookup]
+                  rw [Std.ExtTreeMap.get?_eq_getElem?]
+                  simp [hget_old]
+                -- The output cell is the joined entry; its clean poison forces
+                -- the old member poison clean.
+                have hpoison_old : e_old.poison = false := by
+                  rcases hls_shape : Std.ExtTreeSet.toList ls with _ | ⟨x, _ | ⟨y, ys⟩⟩
+                  · have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hin
+                    simp [hls_shape] at hInList
+                  · -- singleton: l = x = l_c, contradiction with hlc
+                    exfalso
+                    apply hlc
+                    have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hin
+                    have hcInList : l_c ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hlc_in
+                    rw [hls_shape] at hInList hcInList
+                    simp at hInList hcInList
+                    rw [hInList, hcInList]
+                  · -- weak update: the joined poison is the fold over members
+                    have hlk_weak : (updateLocsetWeak ctx.memEnv ls
+                        (joinPoison ctx.pc (joinPoison qtE.poison builtinSetErrEffect.poison))
+                        (if (qtE.poison || ctx.pc) = true then Predicate.noPred else rpE)).lookup l = some qt := by
+                      rw [hmemE] at hlk'
+                      simpa [hls_shape] using hlk'
+                    unfold updateLocsetWeak at hlk_weak
+                    set joined :=
+                      LocSet.fold ls
+                        (joinPoison ctx.pc (joinPoison qtE.poison builtinSetErrEffect.poison),
+                          if (qtE.poison || ctx.pc) = true then Predicate.noPred else rpE)
+                        (fun (accP, accPred) l0 =>
+                          match ctx.memEnv.get? l0 with
+                          | some qt0 => (joinPoison accP qt0.poison, joinPredicates accPred qt0.pred)
+                          | none => (accP, Predicate.noPred)) with hjoined
+                    set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩ with hfinalQt
+                    dsimp at hlk_weak
+                    unfold LocSet.fold at hlk_weak
+                    rw [Std.ExtTreeSet.foldl_eq_foldl_toList] at hlk_weak
+                    have hInList : l ∈ ls.toList := (Std.ExtTreeSet.mem_toList).2 hin
+                    have hlookup_final :
+                        (ls.toList.foldl (fun acc l0 => updateMemEnv acc l0 finalQt) ctx.memEnv).lookup l = some finalQt :=
+                      list_fold_updateMemEnv_lookup_eq_of_mem ls.toList ctx.memEnv l finalQt hInList rfl
+                    have hqtEq : qt = finalQt := by
+                      have : some qt = some finalQt := by
+                        calc
+                          some qt =
+                              (ls.toList.foldl (fun acc l0 => updateMemEnv acc l0 finalQt) ctx.memEnv).lookup l := by
+                                symm
+                                exact hlk_weak
+                          _ = some finalQt := hlookup_final
+                      exact Option.some.inj this
+                    have hjoined_false : joined.1 = false := by
+                      have : finalQt.poison = false := by rw [← hqtEq]; exact hpoisonF
+                      simpa [hfinalQt] using this
+                    have hjoined_fold :
+                        ((ls.toList.foldl
+                            (fun acc l0 =>
+                              match ctx.memEnv[l0]? with
+                              | some qt0 => (joinPoison acc.1 qt0.poison, joinPredicates acc.2 qt0.pred)
+                              | none => (acc.1, Predicate.noPred))
+                            (joinPoison ctx.pc (joinPoison qtE.poison builtinSetErrEffect.poison),
+                              if (qtE.poison || ctx.pc) = true then Predicate.noPred else rpE)).1) = false := by
+                      unfold joined at hjoined_false
+                      unfold LocSet.fold at hjoined_false
+                      rw [Std.ExtTreeSet.foldl_eq_foldl_toList] at hjoined_false
+                      exact hjoined_false
+                    exact
+                      list_fold_joinPoison_false_implies_lookup_poison_false
+                        ctx.memEnv ls.toList
+                        (joinPoison ctx.pc (joinPoison qtE.poison builtinSetErrEffect.poison))
+                        (if (qtE.poison || ctx.pc) = true then Predicate.noPred else rpE)
+                        l ⟨ETyp.int, e_old.poison, e_old.pred⟩ hInList hlk_old hjoined_fold
+                have hclean_old : qtypCleanUnder ctx.regime (⟨ETyp.int, e_old.poison, e_old.pred⟩ : QTyp) :=
+                  qtypCleanUnder.clean hpoison_old
+                have hagree_old := hbody.agree.1 l _ hlk_old hclean_old
+                cases hagree_old with
+                | both_unrealized _ _ hnone₀ hnone₁ =>
+                    exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+                | agree_values _ _ a0 a1 m₀ m₁ hreal₀ hreal₁ hlkm₀ hlkm₁ hagreeV =>
+                    have hmEq : m₀ = m₁ := agreeValueUnder_num_eq rfl hagreeV
+                    refine agreeLocUnder.agree_values l qt a0 a1 m₀ m₁ hreal₀ hreal₁ ?_ ?_ ?_
+                    · show cf₀.memory.lookup a0 = some m₀
+                      rw [hfinal₀ a0 (hne₀' a0 hreal₀)]
+                      simpa [ExternCallEntry.bodyConfig] using hlkm₀
+                    · show cf₁.memory.lookup a1 = some m₁
+                      rw [hfinal₁ a1 (hne₁' a1 hreal₁)]
+                      simpa [ExternCallEntry.bodyConfig] using hlkm₁
+                    · exact agreeValueUnder.clean_eq_nonref_nonarrow hpoisonF
+                        (by rw [hqtInt]; rfl) hnotref (by rw [hmEq])
+              · -- Absent: never realized, in either run.
+                have hnone₀ : θ₀.lookup l = none := by
+                  cases hθl : θ₀.lookup l with
+                  | none => rfl
+                  | some a' =>
+                      have := (hbody.runtime₀.1 l a' hθl).1
+                      exact absurd this (by simpa using hcont)
+                have hnone₁ : θ₁.lookup l = none := by
+                  cases hθl : θ₁.lookup l with
+                  | none => rfl
+                  | some a' =>
+                      have := (hbody.runtime₁.1 l a' hθl).1
+                      exact absurd this (by simpa using hcont)
+                exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+      · -- An unwritten cell: the input agreement transports across the two writes.
+        rw [hunwritten l hin] at hlk'
+        have hagree_old := hbody.agree.1 l qt hlk' (hcleanIn hclean)
+        cases hagree_old with
+        | both_unrealized _ _ hnone₀ hnone₁ =>
+            exact agreeLocUnder.both_unrealized l qt hnone₀ hnone₁
+        | agree_values _ _ a0 a1 m₀ m₁ hreal₀ hreal₁ hlkm₀ hlkm₁ hagreeV =>
+            refine agreeLocUnder.agree_values l qt a0 a1 m₀ m₁ hreal₀ hreal₁ ?_ ?_ ?_
+            · show cf₀.memory.lookup a0 = some m₀
+              rw [hfinal₀ a0 (hne₀ l a0 hin hreal₀)]
+              exact hlkm₀
+            · show cf₁.memory.lookup a1 = some m₁
+              rw [hfinal₁ a1 (hne₁ l a1 hin hreal₁)]
+              exact hlkm₁
+            · exact setErr_agreeValueUnder_transport hmemc₀ hmemc₁ hmono hclean hagreeV
+    · -- variables: the environments and values are unchanged
+      intro x qt hlk hclean
+      have hvar := hbody.agree.2 x qt hlk (hcleanIn hclean)
+      cases hvar with
+      | both_none _ _ h0 h1 =>
+          exact agreeVarUnder.both_none x qt h0 h1
+      | agree_values _ _ v₀ v₁ hl0 hl1 hval =>
+          refine agreeVarUnder.agree_values x qt v₀ v₁ hl0 hl1 ?_
+          exact setErr_agreeValueUnder_transport hmemc₀ hmemc₁ hmono hclean hval
+  · -- valueConsistentWithRegime (run 0)
+    rw [ho₀]
+    exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred])
+      (closureCapturedVarsRegime_nonClosure_of_nonFunctionType (hetyp ▸ valueHasETyp.unit) hnotfun)
+  · -- valueConsistentWithRegime (run 1)
+    rw [ho₁]
+    exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred])
+      (closureCapturedVarsRegime_nonClosure_of_nonFunctionType (hetyp ▸ valueHasETyp.unit) hnotfun)
+  · -- resultAgreesIfClean (both outputs are `unit`)
+    intro hclean
+    rw [ho₀, ho₁]
+    cases hclean with
+    | clean hpoison =>
+        exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison (by rw [hetyp]; rfl)
+          (by intro href; rcases href with ⟨ls', h⟩; rw [hetyp] at h; cases h) rfl
+    | guard k htag _ _ =>
+        have hnone : qtypGuardTag res.qualType = none := by simp [qtypGuardTag, hpred]
+        simp [hnone] at htag
 
 end ExternProofs

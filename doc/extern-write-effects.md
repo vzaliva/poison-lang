@@ -488,6 +488,37 @@ agreement by logical location:
    targets poisoned) so unwritten members are not force-marked clean; unwritten
    clean locations come from the pre-call `BodyEntryInputsAgree.agree`.
 
+   **Status — DONE (0 sorries, axiom-clean: propext/Classical.choice/Quot.sound).**
+   `builtinSetErr_callFR` (`LeanProofs/ExternProofs.lean`) proves the full
+   19-conjunct two-run `StepFRPost`. The per-run conjuncts reuse the
+   `callSingle` machinery without its `pc = true` hypothesis (the effect
+   predicate is `noPred` on both gate branches, so written cells always store
+   `noPred` but may be *clean*). The relational core is `agreeOnClean`, split
+   by membership in the effect target locset:
+   - *written cell, clean*: cleanness of the stored join forces the pc and the
+     captured errno reference clean; the input agreement on the clean `errno`
+     binding yields one shared written logical location for both runs
+     (`agreeValueUnder_ref_common_loc`), at which both runs hold the agreeing
+     clean argument (`builtinSetErr_callRun_argEq`, the gate against the clean
+     declared precondition, mirroring `abs`); any other locset member is
+     unwritten in both runs (`θ`-injectivity against the shared location) and
+     transports from the input agreement (a present member was clean before the
+     call by the weak-join poison inversion; an absent member is unrealized in
+     both runs);
+   - *written cell, dirty*: poisoned `noPred` cells carry no agreement
+     obligation (vacuous);
+   - *unwritten cells and variables*: the input agreement transports across the
+     two single-address writes (`θ`-injectivity per run) and the regime shrink,
+     via the public `agreeValueUnder` memory/monotone transports.
+   Supporting additions: the typing inversion gained `res.nextLoc' = ctx.nextLoc`
+   and the clean-gated argument binding (`builtinSetErr_call_clean_shape`);
+   `builtinSetErr_callRun_bodyVar` exposes the runtime `"n"` binding. The
+   `StepFRPost`-only conjuncts absent from `callSingle` (`wfTypeContext`,
+   `TagBoundedCtx`, `wfConfig` of the written configs via
+   `setErrImpl_errno_target_wf`, `regimeConsistentWithCtx` via the coordinated
+   invalidation filters) are discharged from `BodyEntryInputsAgree` plus the
+   effect-update formulas.
+
 5. Author `builtinSetErrDecl` / `builtinSetErrSpec` and prove `@22`
    `declSingle` / `declFR`.
    **Partially pulled forward into step 3:** `builtinSetErrDecl` (plus
