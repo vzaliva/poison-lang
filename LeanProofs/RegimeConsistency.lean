@@ -1726,8 +1726,8 @@ lemma masked_lookup_none_of_monotoneStep
   by_contra hnot
   exact h_mono.2 k hnot (hmasked_none k hk)
 
-/-- Extended-regime version of `masked_lookup_none_of_monotoneStep` (doc/extern-regime.md
-    §4.4, Q5): masked tags stay absent from the regime across a `monotoneStepExt` step,
+/-- Extended-regime version of `masked_lookup_none_of_monotoneStep`:
+    masked tags stay absent from the regime across a `monotoneStepExt` step,
     provided masked tags are never among the freshly-added `newTags`.  At every use site the
     discharge is `masked k → k < ctx.nextTag` while `newTags = fun k => ctx.nextTag ≤ k`. -/
 lemma masked_lookup_none_of_monotoneStepExt

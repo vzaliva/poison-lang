@@ -1138,7 +1138,7 @@ def TrustedRegistryAgreesWithReachable
     that variable's qualified-type closures / captured environments.  Unlike
     `ExternDeclarationReachableFromContext`, this does NOT fold in the program AST
     declarations — it is exactly the `var` constructor's premise
-    (doc/extern-regime.md, "Unblocking direction"). -/
+    (the "unblocking" direction). -/
 def ContextExternReachable
     (root : Expr) (ctxRoot : TypeContext) (id : ExternId) (d : ExternDeclaration) : Prop :=
   ∃ (x : Name) (qt : QTyp),
@@ -1153,8 +1153,8 @@ def InitialContextTrusted
     (tr : TrustedRegistry) (e : Expr) (ctx : TypeContext) : Prop :=
   TrustedRegistryAgreesWithReachable e ctx tr
 
-/-- Registry-covered admissibility (doc/extern-regime.md, "Unblocking
-    direction"): the trusted registry agrees with every *context-reachable*
+/-- Registry-covered admissibility (the "unblocking" direction): the trusted
+    registry agrees with every *context-reachable*
     extern declaration.  Combined with `TrustedRegistryAgreesWithProgram` this
     yields the full `TrustedRegistryAgreesWithReachable` (see
     `TrustedRegistryAgreesWithReachable.of_registryCover`).  It also supports

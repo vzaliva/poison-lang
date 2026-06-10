@@ -25,8 +25,8 @@ theorem TrustedRegistryAgreesWithReachable.resolveDeclaration
   rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
   exact ⟨entry, hlookup, himpl, hagrees hreachable hlookup⟩
 
-/-- Program-covered admissibility bridge (doc/extern-regime.md, "Unblocking
-    direction"): if every context-reachable extern declaration also occurs in the
+/-- Program-covered admissibility bridge (the "unblocking" direction): if every
+    context-reachable extern declaration also occurs in the
     program and the registry agrees with the program, then it agrees with
     everything reachable from `(e, ctx)`.  The two reachability constructors
     (`ast` / `var`) are discharged by `hprog` directly and by `hcover` then
@@ -1670,7 +1670,7 @@ private theorem applyClosuresThreaded_forall_reachable_mem
     `LeanPoison/Typecheck.lean` — `of_applyFnTClosureAtCursor` discharges the
     `convert` with `rfl`, so any change there must be mirrored here.  In
     particular every return branch (simple and both nested returns) applies
-    `applyExternRegimePolicy` to `regime'` (doc/extern-regime.md §4.1/§4.3), and
+    `applyExternRegimePolicy` to `regime'`, and
     the simple return additionally materialises the regime-determined return
     guard into `tagEnv'` via `installReturnGuard` (doc/extern-write-effects.md;
     `fuel` is the decremented fuel of the surrounding apply). -/

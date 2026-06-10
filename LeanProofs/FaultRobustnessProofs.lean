@@ -3334,8 +3334,8 @@ theorem TypeSystemEnforcesFaultRobustness
   intro ctx _hExternRegime hInitTrust
   exact TypeSystemEnforcesFaultRobustness_at tr e s obs ctx hInitTrust
 
-/-- Public program-covered wrapper (doc/extern-regime.md, "Unblocking
-    direction"): derive the per-context trust premise from a checked
+/-- Public program-covered wrapper (the "unblocking" direction): derive the
+    per-context trust premise from a checked
     context-admissibility condition — every context-reachable extern declaration
     occurs in the program — together with registry/program agreement.  Callers
     that should not prove reachability agreement by hand can discharge the

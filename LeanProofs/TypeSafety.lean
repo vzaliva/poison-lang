@@ -5608,7 +5608,7 @@ lemma joinTypeResults_regime_monotone
                 hfold h_r h_rs
 
 /-- The regime after `applyExternRegimePolicy` either agrees with the input regime at `k`, or
-    `k` is one of the policy-allocated tags (doc/extern-regime.md §4.3). -/
+    `k` is one of the policy-allocated tags. -/
 private lemma applyExternRegimePolicy_lookup_spec
     (R : Regime) (id : ExternId) (policy : ExternId → Tag → Option Bool)
     (tagMapping : TagMapping) (k : Tag) :
@@ -5651,7 +5651,7 @@ private lemma applyExternRegimePolicy_lookup_spec
       simpa using (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).1 hpmem
     rw [hp, hpk]
 
-/-- Insert-if-absent (doc/extern-regime.md): applying the extern-regime policy never overwrites an
+/-- Insert-if-absent: applying the extern-regime policy never overwrites an
     existing regime entry, so every `some` entry of `R` is preserved exactly.  This makes the
     exact-preservation consumers (pure-regime bridge, regime-consistency transport) hold with no tag
     bound. -/
@@ -5689,7 +5689,7 @@ lemma applyExternRegimePolicy_lookup_preserve_some
                 simpa [Std.ExtTreeMap.get?_eq_getElem?] using h0
   exact hgen tagMapping.toList R h
 
-/-- Insertion-step monotonicity (doc/extern-regime.md §4.4): applying the extern-regime policy is
+/-- Insertion-step monotonicity: applying the extern-regime policy is
     a `monotoneStepExt` step whose fresh-tag set is exactly the policy-allocated tags.  With the
     restricted forward conjunct, a non-fresh `k` is untouched by the inserts, so no `hfresh`
     hypothesis is needed. -/
@@ -5708,7 +5708,7 @@ theorem applyExternRegimePolicy_monotoneStepExt
     · exact Or.inl (heq ▸ hk)
     · exact Or.inr hval
 
-/-- Extern-regime shape (doc/extern-regime.md §4.2): the applied PFn extern's `regime'` is either
+/-- Extern-regime shape: the applied PFn extern's `regime'` is either
     unchanged (nested returns) or the policy-extended `applyExternRegimePolicy` of `r1.regime'`
     over a tag mapping whose tags are all fresh (`≥ r1.nextTag'`).  This single lemma feeds both the
     regime-monotonicity chain (via `applyExternRegimePolicy_monotoneStepExt`) and the consistency
@@ -5780,7 +5780,7 @@ lemma applyPFnTClosure_extern_regime_preserve_some
 -- memEnv may differ due to the effects loop.
 -- ==========================================================================
 
-/-- Extern-regime shape (doc/extern-regime.md §4.1/§4.2; doc/extern-write-effects.md):
+/-- Extern-regime shape (doc/extern-write-effects.md):
     the applied Fn extern's `regime'` is the policy-extended `applyExternRegimePolicy` of the
     *effect-invalidated* input regime `invalidateRegimeDepsEffect r1.regime' r1.tagEnv'
     (effectTargetLocs effects …)` over a fresh tag mapping (tags `≥ r1.nextTag'`) — for both
@@ -5835,14 +5835,14 @@ lemma applyFnTClosure_extern_regime_eq_or_policy
                 refine Or.inr ⟨tm, rfl, ?_⟩
                 intro idx j hj
                 exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
-          · -- ExternReturn.nestedFn: outer effect tags are policy-extended (doc/extern-regime.md §4.1/§4.3)
+          · -- ExternReturn.nestedFn: outer effect tags are policy-extended
             split at happly
             · exact nomatch happly
             · cases happly
               refine Or.inr ⟨tm, rfl, ?_⟩
               intro idx j hj
               exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
-          · -- ExternReturn.nestedPfn: outer effect tags are policy-extended (doc/extern-regime.md §4.1/§4.3)
+          · -- ExternReturn.nestedPfn: outer effect tags are policy-extended
             split at happly
             · exact nomatch happly
             · cases happly
@@ -6712,7 +6712,7 @@ private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (f
               simp at htc
               exact typecheckApp_regime_mono ctx e1 e2 fuel' res IH_fuel' htc
 
-/-- Regime evolution through a typing step (doc/extern-regime.md §4.2): monotone for old tags,
+/-- Regime evolution through a typing step: monotone for old tags,
     but selected extern calls may add fresh tags `≥ ctx.nextTag`.  This replaces the old
     `regime_monotone` (`monotoneStep`), which became false once extern typing inserts regime
     entries.  Consumers use this `monotoneStepExt` form together with a tag bound to transport
@@ -7150,7 +7150,7 @@ lemma capturedPredTagsBounded_of_fullBounded
   fun name qt hmem => (h 1 name qt hmem).1
 
 /-- Public: a captured member's guard tag is below the bound.  Used downstream by the
-    extended-regime closure-transport (doc/extern-regime.md) to discharge freshness
+    extended-regime closure-transport to discharge freshness
     (`¬ newTags k = k < nextTag`) for captured-variable guard tags. -/
 lemma CapturedEnvFullBounded_guardTag_lt {env : List (Name × QTyp)} {nt : Tag}
     (h : CapturedEnvFullBounded env nt) {name : Name} {qt : QTyp} {k : Tag}
@@ -7479,7 +7479,7 @@ def closureEnvBoundedInCtx (ctx : TypeContext) : Prop :=
 def TagBoundedCtx (ctx : TypeContext) : Prop :=
   tagEnvBoundedInCtx ctx ∧ predTagsBoundedInCtx ctx ∧ closureEnvBoundedInCtx ctx
 
-/-- Public extractors from `TagBoundedCtx` (doc/extern-regime.md §4.4): discharge freshness
+/-- Public extractors from `TagBoundedCtx`: discharge freshness
     `¬ newTags k = k < ctx.nextTag` for memEnv/varEnv guard tags and supply the deep closure
     bound for varEnv values.  Used pervasively by the extended-regime consumer retargeting. -/
 lemma TagBoundedCtx_memEnv_guardTag_lt {ctx : TypeContext} {l : Loc} {qt : QTyp} {k : Tag}

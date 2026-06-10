@@ -1,5 +1,5 @@
 --! poison-interpreter --extern-regime "238=true"
--- Acceptance (doc/extern-regime.md sec 4.6): extern-id regime de-poisons a
+-- Acceptance: extern-id regime de-poisons a
 -- checked extern return value.
 --
 -- The `open`-style extern returns a poisoned int with the return predicate

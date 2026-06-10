@@ -195,8 +195,7 @@ def monotoneStep (R R' : Regime) : Prop :=
   (∀ k, R'.lookup? k ≠ none → R.lookup? k ≠ none)
 
 /-- Regime evolution that is monotone for old tags but may add fresh tags
-    satisfying `newTags` (doc/extern-regime.md §4.2, "monotone modulo fresh selected
-    extern outputs").  The first conjunct (old-entry preservation) is IDENTICAL to
+    satisfying `newTags` ("monotone modulo fresh selected extern outputs").  The first conjunct (old-entry preservation) is IDENTICAL to
     `monotoneStep`; the second conjunct is weakened to allow result entries whose tag
     is in `newTags`.  Instantiated with `newTags = fun k => bound ≤ k` for the
     freshly-allocated selected extern-output tags of a typing step. -/
@@ -241,7 +240,7 @@ theorem monotoneStepExt_weaken {R R' : Regime} {nt nt' : Tag → Prop}
    fun k hk => (h.2 k hk).imp id (hsub k)⟩
 
 /-- Transitivity of the extended-regime relation.  With the forward conjunct restricted to
-    non-fresh tags, NO disjointness side condition is needed (doc/extern-regime.md §4.2). -/
+    non-fresh tags, NO disjointness side condition is needed. -/
 theorem monotoneStepExt_trans {R1 R2 R3 : Regime} {nt1 nt2 : Tag → Prop}
     (h12 : monotoneStepExt R1 R2 nt1) (h23 : monotoneStepExt R2 R3 nt2) :
     monotoneStepExt R1 R3 (fun k => nt1 k ∨ nt2 k) := by
@@ -267,7 +266,7 @@ theorem monotoneStepExt_trans {R1 R2 R3 : Regime} {nt1 nt2 : Tag → Prop}
 
 /-- Packaged transitivity for the `≥`-bound fresh-tag sets used by the typechecker regime chain:
     compose `R1→R2` (fresh `≥ b1`) with `R2→R3` (fresh `≥ b2`), where `b1 ≤ b2` (nextTag-mono),
-    and weaken back to `≥ b1`.  doc/extern-regime.md §4.2. -/
+    and weaken back to `≥ b1`. -/
 theorem monotoneStepExt_trans_le {R1 R2 R3 : Regime} {b1 b2 : Tag}
     (h12 : monotoneStepExt R1 R2 (fun k => b1 ≤ k))
     (h23 : monotoneStepExt R2 R3 (fun k => b2 ≤ k)) (hb : b1 ≤ b2) :
@@ -303,7 +302,7 @@ structure TypeContext where
   nextLoc : Loc  -- for fresh logical location generation
   nextTag : Tag  -- for fresh location generation
   pureCtx : Bool -- whether we are inside a pure function body typing
-  -- Extern-regime policy (doc/extern-regime.md §4.1): for a selected extern id and
+  -- Extern-regime policy: for a selected extern id and
   -- a freshly-allocated output guard tag, the scenario chooses `some b` (insert
   -- `tag ↦ b` into `regime'`) or `none` (leave the tag out → conservative path).
   -- Default `fun _ _ => none` recovers the pre-extern-regime behaviour and threads
@@ -1691,7 +1690,7 @@ def effectTargetLocs (effects : List Effect) (unifiedEnv : VarTypeEnv) : LocSet 
             | _ => acc
         | none => acc) (∅ : LocSet)
 
-/-- Extern-regime insertion (doc/extern-regime.md §4.1, §4.3): for each freshly-allocated
+/-- Extern-regime insertion: for each freshly-allocated
     output guard tag `k` of a selected extern id, query the scenario policy
     `policy id k`; when it returns `some b`, insert `k ↦ b` into the active regime.  Tags
     with `none` are left out (conservative path).  All tags in `tagMapping` are fresh

@@ -1,6 +1,6 @@
 --! poison-interpreter --extern-regime "109=true"
 -- Regression test for extern-regime call-site insertion on nested-return
--- externs (doc/extern-regime.md sec 4.1 / 4.3).
+-- externs.
 --
 -- An impure extern whose return is a NESTED function AND which writes an effect
 -- predicate must insert the freshly-generated OUTER EFFECT tag into the active

@@ -1326,7 +1326,7 @@ lemma closureCapturedVarsRegime_monotone
 -- Extended-regime (monotoneStepExt) deep transport of the closure-captured regime/typing
 -- property.  At each closure level the per-variable freshness `¬ newTags k_x` is discharged
 -- from the existing deep type bound `etypClosuresFullBounded qt.etyp B` (captured guard tags
--- are `< B`, while `newTags k → B ≤ k`).  See doc/extern-regime.md §4.4.
+-- are `< B`, while `newTags k → B ≤ k`).
 private lemma deepValueQTypProperty_capturedVarsRegime_monotoneExt
     {θ : RealizationMap} {newTags : Tag → Prop} {B : Tag}
     (h_mono : Regime.monotoneStepExt R R' newTags)
@@ -1395,7 +1395,7 @@ private lemma deepValueQTypProperty_capturedVarsRegime_monotoneExt
 
 /-- Extended-regime variant of `closureCapturedVarsRegime_monotone`: transports closure-captured
     regime consistency across a `monotoneStepExt` step, discharging captured-tag freshness from
-    the deep type bound `etypClosuresFullBounded qt.etyp B` (doc/extern-regime.md §4.4). -/
+    the deep type bound `etypClosuresFullBounded qt.etyp B`. -/
 lemma closureCapturedVarsRegime_monotoneExt
     {qt : QTyp} {θ : RealizationMap} {v : Value} {newTags : Tag → Prop} {B : Tag}
     (h_mono : Regime.monotoneStepExt R R' newTags)
@@ -1969,7 +1969,7 @@ lemma valueConsistentWithRegime_monotone
       | inr hk'none =>
           exact valueConsistentWithRegime.notInRegime k htag hk'none hcap'
 
-/-- Extended-regime variant of `valueConsistentWithRegime_monotone` (doc/extern-regime.md §4.4).
+/-- Extended-regime variant of `valueConsistentWithRegime_monotone`.
     Freshness for the value's own guard tag is discharged from `hqtbound : qtypPredTagBounded qt B`,
     and for the closure-captured tags from `hbound : etypClosuresFullBounded qt.etyp B`. -/
 lemma valueConsistentWithRegime_monotoneExt
@@ -5019,7 +5019,7 @@ lemma consistentWithRegimeMasked_monotone
     exact closureCapturedVarsRegimeMasked_monotone h_mono (h_cwr.2.2 x qt v hlookup hρ)
 
 -- ============================================================================
--- Extended-regime (monotoneStepExt) transport: Masked variants (doc/extern-regime.md §4.4).
+-- Extended-regime (monotoneStepExt) transport: Masked variants.
 -- Generic deep-bounded transport + Masked mirrors of the non-masked `_ext` lemmas.
 -- ============================================================================
 
@@ -12604,7 +12604,7 @@ lemma cleanUnder_of_monotone {R R' : Regime} {qt : QTyp} :
           | inr hkR'_none =>
               simp [hkR'_none] at hkR'
 
-/-- Extended-regime (monotoneStepExt) backward clean-under transport (doc/extern-regime.md §4.4).
+/-- Extended-regime (monotoneStepExt) backward clean-under transport.
     Freshness for qt's guard tag is discharged from `qtypPredTagBounded qt B`. -/
 lemma cleanUnder_of_monotoneExt {R R' : Regime} {qt : QTyp} {newTags : Tag → Prop} {B : Tag} :
     Regime.monotoneStepExt R R' newTags → (∀ k, newTags k → B ≤ k) → qtypPredTagBounded qt B →
