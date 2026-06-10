@@ -4132,7 +4132,7 @@ theorem setErrImpl_operational
 Reusable inversions of a successful `setErrImpl` dispatch, the `@22`
 write-effect target resolution, and the non-shadowing of the captured `errno`
 target by the argument binding.  These feed the `@22` `callSingle` / `callFR`
-boundary fields (steps 3-4 of `doc/extern-write-effects.md`). -/
+boundary fields (doc/extern-write-effects.md). -/
 
 /-- Output shape of a successful `setErrImpl` (`@22`) dispatch: the argument is a
     `Value.num n`, the runtime environment resolves `errno` to a location `a`, the
@@ -4483,7 +4483,7 @@ theorem builtinSetErr_callSingle :
           simpa [ExternCallEntry.bodyConfig] using hcont
         simp [Memory.update, Std.ExtTreeMap.contains_insert, hbc]
     · exact hric.2 hlk
-  · -- consistentWithRegime for the effect-updated context and memory (step 1b.2).
+  · -- consistentWithRegime for the effect-updated context and memory.
     -- Written cells are poisoned with `noPred` (no obligation).  A tag live in
     -- the invalidated output regime was live with the same value in the input
     -- regime (the invalidation is a value-preserving sub-map), so the input
@@ -4647,7 +4647,7 @@ theorem builtinSetErr_callSingle :
     · rw [hunwritten l hin] at hlk
       exact absurd (memEnv_contains_of_lookup_some _ l qt hlk) hnc
 
-/-! ## The `set_err` `callFR` field (doc/extern-write-effects.md step 4)
+/-! ## The `set_err` `callFR` field
 
 The two-run relational write-effect post: paired successful `@22` calls from
 agreeing inputs produce `StepFRPost` for the two effect-updated configurations.
@@ -5724,8 +5724,7 @@ theorem builtinSetErr_declFR :
 
 /-- The complete trusted-extern-entry boundary contract for the built-in
     `set_err` extern (`@22`): all five `ExternBoundarySpec` fields.  This is the
-    first fully proven `.fn` (write-effect) trusted entry
-    (doc/extern-write-effects.md steps 3-5). -/
+    first fully proven `.fn` (write-effect) trusted entry. -/
 theorem builtinSetErrSpec : ExternBoundarySpec builtinSetErrDecl builtinSetErrImpl where
   declFR := builtinSetErr_declFR
   callFR := builtinSetErr_callFR
@@ -5739,5 +5738,35 @@ theorem defaultRegistry_lookup_seterr :
     defaultRegistry.get? 22 = some builtinSetErrImpl := by
   simp [defaultRegistry, defaultInitialState, regInsert, register, builtinSetErrImpl,
     Std.HashMap.getElem_insert, Std.HashMap.contains_insert, Std.HashMap.contains_empty]
+
+/-- The bare write-effect declaration node: `@22` taking a clean integer `n`
+    and declaring the write effect `effects: { !errno :> (int :> clean {}) }`. -/
+def setErrProg : Expr :=
+  Expr.externFn 22 "n" Typ.int false SyntaxPredicate.noPred builtinSetErrRetSpec
+    [builtinSetErrEffect] []
+
+/-- Trusted registry holding the write-effect extern with its complete
+    `ExternBoundarySpec`. -/
+def setErrRegistry : TrustedRegistry :=
+  [⟨builtinSetErrDecl, builtinSetErrImpl, builtinSetErrSpec⟩]
+
+/-- The single declaration syntactically reachable in `setErrProg` — the
+    top-level `@22` `externFn` node — is matched by the registry.  The
+    `simple unit` return carries no nested extern. -/
+theorem setErr_agreesWithProgram :
+    TrustedRegistryAgreesWithProgram setErrProg setErrRegistry := by
+  intro id d entry hprog hlookup
+  unfold setErrProg at hprog
+  cases hprog with
+  | externFn =>
+      have hl : TrustedRegistry.lookup? setErrRegistry 22
+          = some ⟨builtinSetErrDecl, builtinSetErrImpl, builtinSetErrSpec⟩ := by
+        simp [setErrRegistry, TrustedRegistry.lookup?, builtinSetErrDecl]
+      rw [hl] at hlookup
+      cases hlookup
+      rfl
+  | externFn_return hret =>
+      -- The `@22` return is `simple unit`, which carries no nested extern.
+      cases hret
 
 end ExternProofs

@@ -1,6 +1,6 @@
 --! poison-interpreter --regime "1=true"
--- Positive control for extern_set_err_stale_guard (doc/extern-write-effects.md
--- step 1b.2): a driver-asserted return guard that does NOT read errno must
+-- Positive control for extern_set_err_stale_guard (doc/extern-write-effects.md):
+-- a driver-asserted return guard that does NOT read errno must
 -- survive a `set_err` write effect.
 --
 -- `getv 5` returns a poisoned int guarded by `r >= 0` — the predicate reads

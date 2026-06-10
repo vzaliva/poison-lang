@@ -3398,7 +3398,7 @@ lemma typecheckVar_preserves_nextTag (ctx : TypeContext) (x : Name) (res : TypeR
 -- All branches of applyPFnTClosure for PFnTClosure.extern set
 -- memEnv'/regime-base = result2's values; the simple-return branch's tagEnv'
 -- additionally materialises the regime-determined return guard
--- (`installReturnGuard`, doc/extern-write-effects.md step 1b.2).
+-- (`installReturnGuard`, doc/extern-write-effects.md).
 -- ==========================================================================
 
 lemma applyPFnTClosure_extern_memEnv_eq
@@ -3425,7 +3425,7 @@ lemma applyPFnTClosure_extern_memEnv_eq
         | (simp only [pure, Except.pure, Except.ok.injEq] at happly; subst happly; rfl)
 
 /-- `invalidateTagDeps` only removes entries (it is a `filter`), so a surviving entry
-    keeps its original value.  Shared monotonicity fact for the Step-1b effect
+    keeps its original value.  Shared monotonicity fact for the effect
     invalidation (doc/extern-write-effects.md). -/
 lemma invalidateTagDeps_get?_some_imp
     (env : TagEnv) (ls : LocSet) (k : Tag) (tv : TagVal)
@@ -3479,7 +3479,7 @@ lemma invalidateTagDeps_survive_get
   · rw [Std.ExtTreeMap.get?_eq_getElem?]; exact hget
   · simpa using hp
 
-/-- Step-1b effect-path analogue of `invalidateRegimeDeps_monotone`: the effect regime
+/-- Effect-path analogue of `invalidateRegimeDeps_monotone`: the effect regime
     invalidation is a strong (`monotoneStep`) regime step — it only removes entries and
     preserves the values it keeps.  (Proved from the sub-map fact
     `invalidateRegimeDepsEffect_lookup_some_imp`.) -/
@@ -3500,7 +3500,7 @@ lemma invalidateRegimeDepsEffect_monotone
     rw [invalidateRegimeDepsEffect_lookup_some_imp R env ls k b hb]
     exact Option.some_ne_none b
 
-/-- Surviving-tag regime preservation for the Step-1b effect invalidation: if `k`
+/-- Surviving-tag regime preservation for the effect invalidation: if `k`
     survives `invalidateTagDeps` (its deps avoid the written locs), then its regime value
     is preserved by `invalidateRegimeDepsEffect` (the coordinated filter keeps it). -/
 lemma invalidateRegimeDepsEffect_lookup_preserve_of_survive
@@ -3549,7 +3549,7 @@ lemma resolveSyntaxPred_guardClosure_tag_from_mapping
         exact ⟨idx, htageq ▸ htag⟩
     · simp at hresolve
 
-/-- `installReturnGuard` (doc/extern-write-effects.md step 1b.2) leaves every key other
+/-- `installReturnGuard` (doc/extern-write-effects.md) leaves every key other
     than the resolved return predicate's own guard tag unchanged. -/
 lemma installReturnGuard_get?_eq_of_not_guard
     (env : TagEnv) (rp : Predicate) (R : Regime) (fuel : Nat) (k : Tag)
@@ -3855,7 +3855,7 @@ private lemma forIn_tag_mapping_values_injective
       exact Nat.lt_irrefl _ hlt
 
 -- ==========================================================================
--- FnTClosure.extern / PFnTClosure.extern tagEnv shape lemmas (step 1b.2).
+-- FnTClosure.extern / PFnTClosure.extern tagEnv shape lemmas (installReturnGuard).
 -- The extern output tagEnv is the (fn: effect-invalidated) input tagEnv with
 -- the regime-determined return guard installed (`installReturnGuard`).  Two
 -- consumer-ready forms: lookups strictly below the call's fresh-tag base are
@@ -5780,9 +5780,9 @@ lemma applyPFnTClosure_extern_regime_preserve_some
 -- memEnv may differ due to the effects loop.
 -- ==========================================================================
 
-/-- Extern-regime shape (doc/extern-regime.md §4.1/§4.2; doc/extern-write-effects.md step 1b):
+/-- Extern-regime shape (doc/extern-regime.md §4.1/§4.2; doc/extern-write-effects.md):
     the applied Fn extern's `regime'` is the policy-extended `applyExternRegimePolicy` of the
-    Step-1b *effect-invalidated* input regime `invalidateRegimeDepsEffect r1.regime' r1.tagEnv'
+    *effect-invalidated* input regime `invalidateRegimeDepsEffect r1.regime' r1.tagEnv'
     (effectTargetLocs effects …)` over a fresh tag mapping (tags `≥ r1.nextTag'`) — for both
     simple returns and nested returns.  The statement keeps the weaker `invalidated ∨
     policy-extended` disjunction so downstream consumers stay uniform with the PFn variant; for
@@ -5850,13 +5850,13 @@ lemma applyFnTClosure_extern_regime_eq_or_policy
               intro idx j hj
               exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
 
-/-- Forward regime preservation for an applied Fn extern.  Under Step-1b the effect
+/-- Forward regime preservation for an applied Fn extern.  The effect
     invalidation can drop regime entries whose guard deps touch the written effect
-    targets, so preservation now requires that `k` *survives* the effect invalidation
+    targets, so preservation requires that `k` *survives* the effect invalidation
     of the input tagEnv (⇒ its deps avoid the written locs).  A surviving tag's
     regime value passes through both the effect invalidation and the insert-if-absent
-    policy unchanged.  (Step 1b.2: the survival hypothesis is stated against the
-    invalidated input tagEnv rather than `r2.tagEnv'`, which now additionally holds
+    policy unchanged.  (The survival hypothesis is stated against the
+    invalidated input tagEnv rather than `r2.tagEnv'`, which additionally holds
     the freshly installed return guard.) -/
 lemma applyFnTClosure_extern_regime_preserve_some
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -5895,7 +5895,7 @@ lemma applyFnTClosure_extern_regime_preserve_some_back
   r1.regime'.lookup? k = some b := by
   rcases applyFnTClosure_extern_regime_eq_or_policy ctx st1 st2 p p1 argEtyp argPoison argPred
       r1 r2 fuel id x retSpec effects capturedEnv declaredArgQt happly with heq | ⟨tm, hr2, hfresh⟩
-  · -- vacuous branch: r2.regime' is the Step-1b invalidated (sub-map) regime
+  · -- vacuous branch: r2.regime' is the effect-invalidated (sub-map) regime
     rw [heq] at h
     exact invalidateRegimeDepsEffect_lookup_some_imp _ _ _ k b h
   · rw [hr2] at h
@@ -5958,7 +5958,7 @@ lemma applyFnTClosure_regime_mono
       specialize IH _ (lt_add_one _) _ _ _ htc
       simpa using IH
   | extern id x retSpec effects capturedEnv declaredArgQt _captures =>
-    -- Extern case (Step-1b): `regime'` is the fresh policy extension of the *effect-invalidated*
+    -- Extern case: `regime'` is the fresh policy extension of the *effect-invalidated*
     -- input regime.  Both legs are monotone: the invalidation is a strong `monotoneStep`
     -- (sub-map), the policy a `monotoneStepExt` adding only fresh (`≥ r1.nextTag'`) tags; compose
     -- them by `monotoneStepExt_trans`.  (The disjunction's left branch is now vacuous for Fn.)
@@ -10078,8 +10078,8 @@ private lemma applyFnTClosure_tagEnvBounded_normal
                 split at happly
                 · simp at happly
                 · simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
-                  -- Step-1b: the invalidated input tagEnv stays below `r1.nextTag' ≤ nt'`;
-                  -- step 1b.2: the freshly installed return guard is below `nt'` by the
+                  -- The invalidated input tagEnv stays below `r1.nextTag' ≤ nt'`;
+                  -- the freshly installed return guard is below `nt'` by the
                   -- mapping freshness bound.
                   intro k hk
                   rcases Option.ne_none_iff_exists'.mp hk with ⟨tv, htv⟩
@@ -10191,7 +10191,7 @@ private lemma applyPFnTClosure_tagEnvBounded_normal
               split at happly
               · simp at happly
               · simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
-                -- Step 1b.2: the input tagEnv stays below `r1.nextTag' ≤ nt'`; the
+                -- The input tagEnv stays below `r1.nextTag' ≤ nt'`; the
                 -- freshly installed return guard is below `nt'` by mapping freshness.
                 intro k hk
                 rcases Option.ne_none_iff_exists'.mp hk with ⟨tv, htv⟩

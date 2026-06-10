@@ -1,5 +1,5 @@
 --! poison-interpreter --regime "1=true"
--- Regression test (doc/extern-write-effects.md step 1b.2): a stale
+-- Regression test (doc/extern-write-effects.md): a stale
 -- driver-asserted return guard that READS errno must not survive a `set_err`
 -- write effect.
 --

@@ -161,7 +161,7 @@ def invalidateRegimeDeps (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   let invalidated := env.filter (fun _ tv => not <| tv.deps.any ls.contains)
   R.filter (fun k _ => invalidated.contains k)
 
-/-- Effect-path regime invalidation (doc/extern-write-effects.md step 1b).  Unlike
+/-- Effect-path regime invalidation (doc/extern-write-effects.md).  Unlike
     `invalidateRegimeDeps` (used by assignment), this removes a regime entry ONLY
     when its tag is a *materialised* guard in `env` whose dependencies intersect the
     written locations.  Driver-asserted regime tags that are not (yet) in `env` —
@@ -1400,7 +1400,7 @@ def applyClosuresThreaded {α : Type}
 termination_by items.length
 
 /-- Value-correct materialisation of an extern call's return guard into the tag
-    environment (doc/extern-write-effects.md step 1b.2).  When a simple-return
+    environment (doc/extern-write-effects.md).  When a simple-return
     predicate is a guard closure whose fresh tag the post-call regime interprets
     (driver-asserted via the initial `--regime` map, or inserted by the
     `--extern-regime` policy through `applyExternRegimePolicy`), the tag is
@@ -1679,7 +1679,7 @@ def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
     `applyExternEffect` strong/weak-updates, so the typing context invalidates its
     guard-tag / regime dependencies on them after the effect loop — mirroring
     `typecheckAssign`'s `invalidateTagDeps` / `invalidateRegimeDeps` on the
-    assigned locset (doc/extern-write-effects.md step 1b). -/
+    assigned locset (doc/extern-write-effects.md). -/
 def effectTargetLocs (effects : List Effect) (unifiedEnv : VarTypeEnv) : LocSet :=
   effects.foldl (fun acc effect =>
     match effect.target with

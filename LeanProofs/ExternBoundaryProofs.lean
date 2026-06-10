@@ -1672,8 +1672,8 @@ private theorem applyClosuresThreaded_forall_reachable_mem
     particular every return branch (simple and both nested returns) applies
     `applyExternRegimePolicy` to `regime'` (doc/extern-regime.md §4.1/§4.3), and
     the simple return additionally materialises the regime-determined return
-    guard into `tagEnv'` via `installReturnGuard` (doc/extern-write-effects.md
-    step 1b.2; `fuel` is the decremented fuel of the surrounding apply). -/
+    guard into `tagEnv'` via `installReturnGuard` (doc/extern-write-effects.md;
+    `fuel` is the decremented fuel of the surrounding apply). -/
 private def fnExternFinishAtCursor
     (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
     (p p1 : Poison) (unifiedEnv : VarTypeEnv)

@@ -26,8 +26,12 @@
     (`FaultRobustnessSpecForCtx`) for a NON-EMPTY registry at the empty context,
     so the reshaped theorem is *instantiable* (still parameterised over
     `impl`/`spec`; no concrete extern boundary spec is constructed).
+  - `setErrWriteEffect_FR`: the concrete counterpart for the memory-writing
+    extern `@22` (`set_err`) — program-level FR for the registry
+    `[@22 set_err]` backed by the fully proven `ExternProofs.builtinSetErrSpec`.
 -/
 import LeanProofs.FaultRobustnessProofs
+import LeanProofs.ExternProofs
 
 open Std
 open LeanPoison
@@ -250,5 +254,46 @@ theorem open_empty_context_FR_instantiable (impl : ExternImpl)
       openProg s obs openEmptyCtx :=
   TypeSystemEnforcesFaultRobustness_at [⟨openDecl, impl, spec⟩] openProg s obs openEmptyCtx
     (open_empty_context_hagrees_provable impl spec)
+
+/-! ## Program-level fault-robustness for the `set_err` write effect
+
+Where `MaxCurriedFR` / `GuardedCapturesFR` / `MemReadCapturesFR` exercise *read*
+dependencies of pure externs, the impure extern `@22` declares the write effect
+`effects: { !errno :> (int :> clean {}) }`: a successful call writes its (clean,
+gated) integer argument through the declaration-captured `errno` reference.
+
+The trusted contract is `ExternProofs.builtinSetErrSpec` — the first complete
+five-field `ExternBoundarySpec` for a `.fn` (memory-writing) extern.  Its
+relational `callFR` field is the genuinely new obligation: the clean argument
+condition forces the two runs' written values to agree, the clean captured
+`errno` reference forces them to write a **common logical cell**
+(`agreeValueUnder_ref_common_loc`), and every other clean location is untouched
+by the single-address writes (realization-map injectivity), so `agreeOnClean`
+survives the effect.
+
+The program here is the bare `@22` declaration node (mirroring
+`memReadCaptures_FR`'s bare-declaration form); the end-to-end behavioural
+examples live in `examples/extern_set_err*.poison`.  The `@21`/`@22` *combined*
+scenario registry — adding the `errno` extern value itself — stays blocked on
+the deferred `@21` operational work (see doc/extern-write-effects.md). -/
+
+open ExternProofs (setErrProg setErrRegistry setErr_agreesWithProgram)
+
+/-- Per-context trust premise at the canonical empty initial context. -/
+theorem setErr_hagrees :
+    TrustedRegistryAgreesWithReachable setErrProg openEmptyCtx setErrRegistry :=
+  agreesWithReachable_of_emptyVarEnv (by rfl) setErr_agreesWithProgram
+
+/-- **Program-level fault-robustness for the `set_err` write effect.**
+    Composing the registry-agreement witness with the top-level FR theorem
+    yields the FR conclusion for the `[@22 set_err]` registry at the empty
+    context — the first program-level FR result whose trusted registry contains
+    a memory-writing extern. -/
+theorem setErrWriteEffect_FR (s : InputSpec) (obs : ObservableSpec) :
+    FaultRobustnessSpecForCtx
+      (TrustedRegistry.toRuntimeRegistry setErrRegistry)
+      setErrProg s obs openEmptyCtx :=
+  TypeSystemEnforcesFaultRobustness_at setErrRegistry setErrProg s obs openEmptyCtx
+    setErr_hagrees
 
 end ExternRegimeInt

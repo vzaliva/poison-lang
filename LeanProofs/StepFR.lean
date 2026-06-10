@@ -6328,7 +6328,7 @@ private lemma returnSpecToQTyp_pred_preserves (typ : Typ) (poison : Bool)
   cases typ <;> simp at h <;> (try exact h.1 ▸ rfl)
 
 -- --------------------------------------------------------------------------
--- Step 5a corollaries: validate the unified axiom on §2.4 and §2.2-simple
+-- typecheckExternVal / simple-return tag-meaning corollaries
 -- --------------------------------------------------------------------------
 
 /-- `typecheckExternVal` result `QTyp` respects tag meaning when the allocation
@@ -6624,8 +6624,7 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
                     pure, Except.pure])
 
 -- --------------------------------------------------------------------------
--- Impure extern corollary (Step 5c) — replaces
--- applyFnTClosure_extern_ok_outputRespectsTagMeaning
+-- Impure extern corollary
 -- --------------------------------------------------------------------------
 
 /-- LocSet.fold with updateMemEnv preserves all-cells-respect-tm. -/
@@ -6728,8 +6727,7 @@ private lemma applyExternEffect_preserves_allCellsRespect
   · simp at happly
 
 -- --------------------------------------------------------------------------
--- Per-entry-point corollaries (Step 5c) — replace
--- applyFnTClosure_extern_ok_outputRespectsTagMeaning
+-- Per-entry-point corollaries
 -- --------------------------------------------------------------------------
 
 /-- Helper: each effect's pred is in `collectExternPreds retSpec effects`. -/
@@ -7467,7 +7465,7 @@ lemma applyFnTClosure_extern_canonical_batch
             hwf' hcapTm' hargTm' hcompatBatch happly0
 
 -- (`resolveSyntaxPred_guardClosure_tag_from_mapping` now lives in TypeSafety.lean,
--- shared with the step-1b.2 `installReturnGuard` tagEnv lemmas.)
+-- shared with the `installReturnGuard` tagEnv lemmas.)
 
 /-- Helper: returnSpecToQTyp preserves the predicate of the result QTyp. -/
 private lemma returnSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (pred : Predicate)
@@ -7486,7 +7484,7 @@ private lemma returnSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (pred : Predi
 
 /-- `FnTClosure.extern` result guard tag: with the input `tagEnv` bounded by
     `nextTag`, the result's freshly minted return-guard tag is either absent
-    from the output tagEnv, or it is the step-1b.2 `installReturnGuard` entry —
+    from the output tagEnv, or it is the freshly installed `installReturnGuard` entry —
     whose value the output regime interprets identically. -/
 lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_or_installed_of_tagEnvBounded
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -7570,7 +7568,7 @@ lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_or_installed_of_tagEnvBo
 
 /-- `PFnTClosure.extern` result guard tag: with the input `tagEnv` bounded by
     `nextTag`, the result's freshly minted return-guard tag is either absent
-    from the output tagEnv, or it is the step-1b.2 `installReturnGuard` entry —
+    from the output tagEnv, or it is the freshly installed `installReturnGuard` entry —
     whose value the output regime interprets identically. -/
 lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_or_installed_of_tagEnvBounded
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -8738,7 +8736,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                         simpa [rCursor] using happly
                       simp only [regimeConsistentWithCtxMasked, ctxAfter, tagEnvConsistentWithRegimeMasked]
                       intro k deps hk
-                      -- Step 1b.2: an output `true` entry is either a surviving (invalidated)
+                      -- An output `true` entry is either a surviving (invalidated)
                       -- input entry — whose regime value the effect invalidation + policy
                       -- keep — or the freshly installed return guard, which the output
                       -- regime interprets by construction.
@@ -8814,7 +8812,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                         simpa [rCursor] using happly
                       simp only [regimeConsistentWithCtxMasked, ctxAfter, tagEnvConsistentWithRegimeMasked]
                       intro k deps hk
-                      -- Step 1b.2: surviving input entries keep their regime value through
+                      -- Surviving input entries keep their regime value through
                       -- the insert-if-absent policy; the freshly installed return guard is
                       -- regime-interpreted by construction.
                       rcases applyPFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 etyp2 p2 pred2
@@ -9411,7 +9409,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                         unfold applyFnTClosure
                         unfold applyFnTClosureAtCursor at happly
                         simpa [rCursor] using happly
-                      -- Step 1b.2: an output `true` entry is either a surviving (invalidated)
+                      -- An output `true` entry is either a surviving (invalidated)
                       -- input entry — absent for masked tags by the IH — or the freshly
                       -- installed return guard, whose tag is ≥ the cursor base and hence
                       -- never masked (masked tags are bounded by the incoming nextTag).
@@ -9496,7 +9494,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                         unfold applyPFnTClosure
                         unfold applyPFnTClosureAtCursor at happly
                         simpa [rCursor] using happly
-                      -- Step 1b.2: surviving input entries are absent for masked tags by
+                      -- Surviving input entries are absent for masked tags by
                       -- the IH; the freshly installed return guard's tag is ≥ the cursor
                       -- base and hence never masked (masked tags are bounded).
                       intro k deps hmasked hget

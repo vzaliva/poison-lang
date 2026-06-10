@@ -1412,7 +1412,7 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
       simpa [regimeConsistentWithCtx, ctxAfter] using hreg1
     simp only [regimeConsistentWithCtx, ctxAfter, tagEnvConsistentWithRegime]
     intro k deps hget
-    -- Step 1b.2: an output `true` entry is either a surviving (invalidated) input
+    -- An output `true` entry is either a surviving (invalidated) input
     -- entry — whose regime value the coordinated effect invalidation + policy keep —
     -- or the freshly installed return guard, regime-interpreted by construction.
     rcases applyFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 argEtyp argPoison argPred
@@ -1892,7 +1892,7 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
       simpa [regimeConsistentWithCtx, ctxAfter] using hreg1
     simp only [regimeConsistentWithCtx, ctxAfter, tagEnvConsistentWithRegime]
     intro k deps hget
-    -- Step 1b.2: surviving input entries keep their regime value through the
+    -- Surviving input entries keep their regime value through the
     -- insert-if-absent policy; the freshly installed return guard is
     -- regime-interpreted by construction.
     rcases applyPFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 argEtyp argPoison argPred

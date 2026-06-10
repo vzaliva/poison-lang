@@ -511,8 +511,7 @@ private lemma assign_updated_new_guardClosure_implies_invalidated_regime_none
     simp [hkeep_false] at hsurvive
   exact this.elim
 
--- (The pre-step-1b.2 `*_guardClosure_pred_implies_tag_absent` lemma cluster was removed:
--- a materialised extern return guard CAN now be present in the result tagEnv, so the
+-- (A materialised extern return guard CAN be present in the result tagEnv, so the
 -- assignment proofs case on the tag entry directly and, when it is live, prove the
 -- obligation via `assign_stored_guard_locsRegime` / the agreeOnClean guard route.)
 
@@ -643,7 +642,7 @@ private lemma assign_mem_formula_guardClosure_lookup_implies_rhs_pred
 
 -- locset_fold_max_succ_ge_of_mem: moved to TypeSafety.lean
 
-/-- Per-member companion of `fold_joinPred_guardClosure_init` (step 1b.2): if the
+/-- Per-member companion of `fold_joinPred_guardClosure_init`: if the
     weak-update predicate join produces a guard closure, every folded member was
     tracked (an untracked member degrades the join to `noPred`) and already carried
     exactly that guard closure (the join only preserves a guard closure through
@@ -703,7 +702,7 @@ private lemma fold_joinPred_guardClosure_members
             exact ⟨e, hget, hsides.2⟩
           · exact ih (joinPoison storedPoison e.poison) (joinPredicates storedPred e.pred) htail l hmem
 
-/-- Step 1b.2: regime consistency for an assign-updated cell whose stored predicate
+/-- Regime consistency for an assign-updated cell whose stored predicate
     is a regime-live guard closure (a materialised, driver-asserted extern return
     guard whose dependencies avoid the written cells).  The written (realized)
     member holds the RHS value, whose `valueConsistentWithRegime` evidence supplies
@@ -1690,7 +1689,7 @@ lemma stepFR_assign_with_expr_proof
                     have hkR_inv : (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k' ≠ none := by
                       simpa [hRegime] using hkR_res_k'
                     exact hkR_inv hnoneInv
-                  · -- Step 1b.2: a materialised, regime-live stored guard — the written
+                  · -- A materialised, regime-live stored guard — the written
                     -- cell genuinely satisfies the regime (RHS value evidence at the
                     -- written member, pre-assign cell consistency elsewhere).  The two
                     -- runs' obligations share this proof text; `first` selects the
@@ -1881,7 +1880,7 @@ lemma stepFR_assign_with_expr_proof
                   have hkR_inv : (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k' ≠ none := by
                     simpa [hRegime] using hkR_res_k'
                   exact hkR_inv hnoneInv
-                · -- Step 1b.2: a materialised, regime-live stored guard — the written
+                · -- A materialised, regime-live stored guard — the written
                   -- cell genuinely satisfies the regime (RHS value evidence at the
                   -- written member, pre-assign cell consistency elsewhere).  The two
                   -- runs' obligations share this proof text; `first` selects the
@@ -2095,7 +2094,7 @@ lemma stepFR_assign_with_expr_proof
                     have hkR_inv : (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k' ≠ none := by
                       simpa [hRegime] using hkR_res_k'
                     exact hkR_inv hnoneInv
-                  · -- Step 1b.2: a materialised, regime-live stored guard — the written
+                  · -- A materialised, regime-live stored guard — the written
                     -- cell genuinely satisfies the regime (RHS value evidence at the
                     -- written member, pre-assign cell consistency elsewhere).  The two
                     -- runs' obligations share this proof text; `first` selects the
@@ -2286,7 +2285,7 @@ lemma stepFR_assign_with_expr_proof
                   have hkR_inv : (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k' ≠ none := by
                     simpa [hRegime] using hkR_res_k'
                   exact hkR_inv hnoneInv
-                · -- Step 1b.2: a materialised, regime-live stored guard — the written
+                · -- A materialised, regime-live stored guard — the written
                   -- cell genuinely satisfies the regime (RHS value evidence at the
                   -- written member, pre-assign cell consistency elsewhere).  The two
                   -- runs' obligations share this proof text; `first` selects the
@@ -3011,7 +3010,7 @@ lemma stepFR_assign_with_expr_proof
                         | noPred =>
                             simp [qtypGuardTag, hpred] at htag
                         | guardClosure k' arg_name pred_body var_env =>
-                            -- Step 1b.2: the stored guard can be regime-live (a materialised,
+                            -- The stored guard can be regime-live (a materialised,
                             -- driver-asserted extern return guard).  The cell is clean *via
                             -- the guard*, so the two runs' values must agree: the RHS values
                             -- agree by `resultAgreesIfClean` (the RHS is clean under the same
