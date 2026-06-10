@@ -5733,4 +5733,11 @@ theorem builtinSetErrSpec : ExternBoundarySpec builtinSetErrDecl builtinSetErrIm
   callSingle := builtinSetErr_callSingle
   operational := builtinSetErrImpl_operationalSafe
 
+/-- The interpreter's default registry dispatches `@22` to the same `setErrImpl`
+    the trusted spec is proven against (mirrors `defaultRegistry_lookup_abs`). -/
+theorem defaultRegistry_lookup_seterr :
+    defaultRegistry.get? 22 = some builtinSetErrImpl := by
+  simp [defaultRegistry, defaultInitialState, regInsert, register, builtinSetErrImpl,
+    Std.HashMap.getElem_insert, Std.HashMap.contains_insert, Std.HashMap.contains_empty]
+
 end ExternProofs

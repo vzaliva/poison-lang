@@ -605,6 +605,20 @@ agreement by logical location:
    `extern_errno.poison`); update `doc/externs.md` / `doc/ffi-proposal.md` status
    only after all fields compile.
 
+   **Status — `@22`-only slice DONE; the `@21`/`@22` combined registry stays
+   blocked on steps 6-7.** `LeanProofs/SetErrWriteEffectFR.lean` delivers the
+   program-level capstone for the bare `@22` declaration node (mirroring
+   `memReadCaptures_FR`'s bare-declaration form): `setErrRegistry :=
+   [⟨builtinSetErrDecl, builtinSetErrImpl, builtinSetErrSpec⟩]`, the
+   registry-agreement witness, and `setErrWriteEffect_FR` — the first
+   program-level FR result whose trusted registry contains a memory-writing
+   extern (axioms: the standard three plus the top-level theorem's pre-existing
+   `native_decide` baseline; `builtinSetErrSpec` itself is propext/choice/quot
+   only). `defaultRegistry_lookup_seterr` bridges the interpreter dispatch for
+   `@22` to the proven `setErrImpl` (mirroring `defaultRegistry_lookup_abs`).
+   Still open here: the `@21`-inclusive scenario registry (after steps 6-7) and
+   the `externs.md` / `ffi-proposal.md` status sweeps.
+
 ## History
 
 `doc/extern-addr-proposal.md` (now deleted) proposed the reserved-address
