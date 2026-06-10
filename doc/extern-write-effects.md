@@ -536,6 +536,22 @@ agreement by logical location:
    consistent/agrees under the captured-environment assumptions and all five
    fields combine into `builtinSetErrSpec`.
 
+   **Status — DONE (0 sorries, axiom-clean). `builtinSetErrSpec :
+   ExternBoundarySpec builtinSetErrDecl builtinSetErrImpl` is complete — the
+   first fully proven `.fn` (write-effect) trusted entry.**
+   `builtinSetErr_declSingle` / `builtinSetErr_declFR` realize the first `.fn`
+   declaration: an `arrow` closure carrying the declared effects, mirroring the
+   `abs` (`.pfn`) declaration fields with the `fn`-flavored constructors
+   (`valueHasETyp.closure_extern`, `deepValueQTypProperty.closure_extern`,
+   `QTypRespectsTagMeaning_fn_extern`,
+   `agreeValueUnder.clean_internal_arrow_extern`); no tags or locations are
+   allocated, so `ctxAfter ctx res = ctx` and both posts collapse onto the input
+   hypotheses. `builtinSetErrImpl_operationalSafe` wraps
+   `setErrImpl_operational` into the `fn` clause of `ExternOperationalSafe`
+   (the `pfn`/`val` clauses are impossible by constructor mismatch).
+   `#print axioms ExternProofs.builtinSetErrSpec` = `propext, Classical.choice,
+   Quot.sound`.
+
 6. Thread the `@21` reserved-address invariant through `wfConfig`.
    Fold `RegistryReservedBelow cfg.registry cfg.nextAddr` into `wfConfig`, then
    re-establish `wfConfig_preserved` and monotonicity using registry immutability

@@ -5422,4 +5422,315 @@ theorem builtinSetErr_callFR :
         have hnone : qtypGuardTag res.qualType = none := by simp [qtypGuardTag, hpred]
         simp [hnone] at htag
 
+/-! ## The `set_err` operational field
+
+`setErrImpl_operational` already matches the `fn` clause of
+`ExternOperationalSafe` verbatim; the `pfn`/`val` clauses are impossible by
+constructor mismatch. -/
+
+theorem builtinSetErrImpl_operationalSafe :
+    ExternOperationalSafe builtinSetErrDecl builtinSetErrImpl := by
+  refine ⟨?_, ?_, ?_⟩
+  · -- impure `fn` branch: exactly `setErrImpl_operational`.
+    intro implFn himpl env vArg mem addr vRaw mem' addr' hrun
+    simp only [builtinSetErrImpl, ExternImpl.fn.injEq] at himpl
+    subst himpl
+    exact setErrImpl_operational env vArg mem addr vRaw mem' addr' hrun
+  · -- pure `pfn` branch: impossible.
+    intro implPfn himpl _ _ _ _ _ _ _ _ _
+    simp [builtinSetErrImpl] at himpl
+  · -- `val` branch: impossible.
+    intro v himpl _ _
+    simp [builtinSetErrImpl] at himpl
+
+/-! ## The `set_err` declaration-boundary fields: `declSingle` and `declFR`
+
+The declaration `extern fn @22 …` typechecks (via `typecheckExternFn`) to an
+extern *closure* type: an `arrow` whose single `FnTClosure.extern` carries the
+declared effects and captures the declaration context's type environment — the
+first `.fn` declaration realization (every prior one is `.pfn`).  No tags or
+locations are allocated, so `ctxAfter ctx res = ctx` and both posts collapse
+exactly as in the `abs` declaration fields, with the `fn`-flavored extern
+constructors (`valueHasETyp.closure_extern`,
+`deepValueQTypProperty.closure_extern`, `QTypRespectsTagMeaning_fn_extern`,
+`agreeValueUnder.clean_internal_arrow_extern`). -/
+
+/-- The extern closure stored in the `set_err` declaration's `arrow` type. -/
+private def builtinSetErrExternClosure (ctx : TypeContext) (argQt : QTyp) : FnTClosure :=
+  FnTClosure.extern 22 "n" builtinSetErrRetSpec [builtinSetErrEffect]
+    (VarTypeEnv.toCaptured ctx.varEnv) argQt []
+
+/-- The exact `TypeResult` produced by typechecking `extern fn @22 …` in `ctx`. -/
+private def builtinSetErrDeclResult (ctx : TypeContext) (argQt : QTyp) : TypeResult := {
+  qualType :=
+    ⟨ETyp.arrow Typ.int (parseReturnType builtinSetErrRetSpec) ctx.pc
+        [builtinSetErrExternClosure ctx argQt],
+      ctx.pc, Predicate.noPred⟩
+  memEnv' := ctx.memEnv
+  tagEnv' := ctx.tagEnv
+  nextLoc' := ctx.nextLoc
+  nextTag' := ctx.nextTag
+  regime' := ctx.regime
+}
+
+/-- Inverting a `set_err` declaration typing witness pins the result to
+    `builtinSetErrDeclResult ctx argQt` for some argument precondition `argQt`. -/
+private theorem builtinSetErr_decl_shape
+    {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Decl builtinSetErrDecl postExpr ctx res) :
+    ∃ argQt : QTyp, res = builtinSetErrDeclResult ctx argQt := by
+  cases htyped with
+  | fn htc =>
+      rename_i fuel argPred
+      cases fuel with
+      | zero => simp [typecheck, typecheckExpr] at htc
+      | succ fuel' =>
+          have htcFn :
+              typecheckExternFn ctx 22 "n" Typ.int false argPred builtinSetErrRetSpec
+                [builtinSetErrEffect] [] = .ok res := by
+            have h := htc
+            simp only [typecheck, typecheckExpr] at h
+            exact h
+          obtain ⟨argQt, _hpoison, hres⟩ :=
+            typecheckExternFn_ok_res_eq ctx 22 "n" Typ.int false argPred builtinSetErrRetSpec
+              [builtinSetErrEffect] res htcFn
+          exact ⟨argQt, hres⟩
+
+/-- The declaration expression typed against `builtinSetErrDecl` is
+    `externFn @22` with the clean integer signature and the single `!errno`
+    effect; only its argument predicate is free. -/
+private theorem builtinSetErr_decl_postExpr
+    {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Decl builtinSetErrDecl postExpr ctx res) :
+    ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      postExpr = Expr.externFn 22 "n" Typ.int false argPred builtinSetErrRetSpec
+        [builtinSetErrEffect] captures := by
+  cases htyped with
+  | fn _htc => exact ⟨_, _, rfl⟩
+
+/-- The `set_err` declaration's extern closure value is well-typed at the
+    declared `arrow` type (the `fn` mirror of `builtinAbs_decl_valueHasETyp`). -/
+private theorem builtinSetErr_decl_valueHasETyp
+    {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
+    valueHasETyp θ
+      (Value.closure "n"
+        (Expr.externFn 22 "n" Typ.int false argPred builtinSetErrRetSpec [builtinSetErrEffect] captures) ρ)
+      (builtinSetErrDeclResult ctx argQt).qualType.etyp := by
+  show valueHasETyp θ
+      (Value.closure "n"
+        (Expr.externFn 22 "n" Typ.int false argPred builtinSetErrRetSpec [builtinSetErrEffect] captures) ρ)
+      (ETyp.arrow Typ.int (parseReturnType builtinSetErrRetSpec) ctx.pc
+        [builtinSetErrExternClosure ctx argQt])
+  refine valueHasETyp.closure_extern (tenv := VarTypeEnv.toCaptured ctx.varEnv)
+      (argQTyp := argQt) (memberCap := []) (htcl := by simp [builtinSetErrExternClosure])
+      (henv := ?_) (hcover := ?_)
+  · intro n qt v hlookupσ hlookupρ
+    have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv n qt hlookupσ
+    obtain ⟨v', hvlookup, hvtyp⟩ := hric.2 hlookup_ctx
+    have hvEq : v' = v := by
+      have : some v' = some v := by rw [← hvlookup, hlookupρ]
+      exact Option.some.inj this
+    subst hvEq; exact hvtyp
+  · intro n qt hlookupσ
+    have hlookup_ctx : ctx.varEnv.lookup n = some qt :=
+      VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv n qt hlookupσ
+    obtain ⟨v', hvlookup, _⟩ := hric.2 hlookup_ctx
+    exact ⟨v', hvlookup⟩
+
+/-- The `set_err` declaration's extern closure value is regime-consistent (the
+    `fn` mirror of `builtinAbs_decl_valueConsistent`). -/
+private theorem builtinSetErr_decl_valueConsistent
+    {predSat : PredSat} {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+    {argPred : SyntaxPredicate} {argQt : QTyp} {captures : List Capture}
+    (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+    (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ) :
+    valueConsistentWithRegime predSat ctx.regime (builtinSetErrDeclResult ctx argQt).qualType μ θ
+      (Value.closure "n"
+        (Expr.externFn 22 "n" Typ.int false argPred builtinSetErrRetSpec [builtinSetErrEffect] captures) ρ) := by
+  refine valueConsistentWithRegime.noTag (by simp [qtypGuardTag, builtinSetErrDeclResult]) (.intro ?_)
+  apply deepValueQTypProperty.closure_extern (argQt := argQt) (memberCap := []) 22 "n" "n" Typ.int
+      builtinSetErrRetSpec [builtinSetErrEffect] ρ
+      (VarTypeEnv.toCaptured ctx.varEnv) ctx.pc [builtinSetErrExternClosure ctx argQt]
+  · rfl
+  · rfl
+  · simp [builtinSetErrExternClosure]
+  · refine ⟨?_, ?_⟩
+    · intro y qt_y k_y hlookupσ hguard hkR
+      exact hcwr.2.1 y qt_y k_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookupσ) hguard hkR
+    · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctx.varEnv,
+        fun y qt hlookupσ =>
+          let ⟨v, hv, _⟩ := hric.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookupσ)
+          ⟨v, hv⟩,
+        fun y qt v hlookupσ hlookupρ =>
+          let ⟨v', hv', htyp⟩ := hric.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt hlookupσ)
+          by rw [hlookupρ] at hv'; cases hv'; exact htyp⟩
+  · intro y qt_y v_y hlookupσ hlookupρ
+    cases hcwr.2.2 y qt_y v_y
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookupσ) hlookupρ with
+    | intro h => exact h
+
+/-- A successful `set_err` declaration boundary leaves the config unchanged and
+    emits the extern `fn` closure value (`val`/`pfn` impossible by kind). -/
+private theorem builtinSetErr_declRun_shape
+    {ctx : TypeContext} {res : TypeResult} {cᵢ cf : Config} {o : Value}
+    (hrun : ExternDeclBoundaryRun builtinSetErrDecl builtinSetErrImpl ctx res cᵢ cf o) :
+    cf = cᵢ ∧ ∃ (argPred : SyntaxPredicate) (captures : List Capture),
+      o = Value.closure "n"
+        (Expr.externFn 22 "n" Typ.int false argPred builtinSetErrRetSpec [builtinSetErrEffect] captures)
+        cᵢ.varEnv := by
+  cases hrun with
+  | val hfacts => have h := hfacts.kind_val; simp [builtinSetErrDecl] at h
+  | pfn hfacts => have h := hfacts.kind_pfn; simp [builtinSetErrDecl] at h
+  | fn hfacts =>
+      refine ⟨hfacts.output_config, ?_⟩
+      obtain ⟨x, argPred, retSpec, captures, hargName, hretSpec, hval⟩ := hfacts.value_shape
+      have hx : x = "n" := by
+        have h := hargName; simp [builtinSetErrDecl] at h; exact h.symm
+      have hretSpec' : retSpec = builtinSetErrRetSpec := by
+        have h := hretSpec; simp [builtinSetErrDecl] at h; exact h.symm
+      subst hx; subst hretSpec'
+      exact ⟨argPred, captures, by simpa [builtinSetErrDecl] using hval⟩
+
+/-- The `set_err` single-run declaration-boundary field. -/
+theorem builtinSetErr_declSingle :
+    ExternDeclBoundarySingle builtinSetErrDecl builtinSetErrImpl := by
+  intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
+    μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg hrun _hpc
+  obtain ⟨argQt, hres⟩ := builtinSetErr_decl_shape htyped
+  obtain ⟨hcf, argPred, captures, ho⟩ := builtinSetErr_declRun_shape hrun
+  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinSetErrDeclResult]
+  have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    rw [hres]
+    exact QTypRespectsTagMeaning_fn_extern tm ctx 22 "n" Typ.int (parseReturnType builtinSetErrRetSpec)
+      ctx.pc builtinSetErrRetSpec [builtinSetErrEffect] (argQt := argQt) hwfTm
+  have hcfmem : cf.memory = μ := by rw [hcf]
+  have hcfvar : cf.varEnv = ρ := by rw [hcf]
+  have ho' : o = Value.closure "n"
+      (Expr.externFn 22 "n" Typ.int false argPred builtinSetErrRetSpec [builtinSetErrEffect] captures) ρ := by
+    rw [ho]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, θ,
+    ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter]; exact hwfTm
+  · rw [ho', hres]; exact builtinSetErr_decl_valueHasETyp hric
+  · rw [hctxAfter, hcfmem, hcfvar]; exact hric
+  · rw [hctxAfter, hcfmem, hcfvar]; exact hcons
+  · rw [hctxAfter, hcfmem, hres, ho']; exact builtinSetErr_decl_valueConsistent hric hcons
+  · rw [hcfmem]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+
+/-- The `set_err` paired declaration-boundary field: both outputs are the `fn`
+    closure of the shared declaration expression, so the two clean extern arrows
+    agree via `agreeValueUnder.clean_internal_arrow_extern`. -/
+theorem builtinSetErr_declFR :
+    ExternDeclBoundaryFR builtinSetErrDecl builtinSetErrImpl := by
+  intro postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
+    μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
+    hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+  obtain ⟨argQt, hres⟩ := builtinSetErr_decl_shape htyped
+  obtain ⟨argPredT, capturesT, hpostExpr⟩ := builtinSetErr_decl_postExpr htyped
+  obtain ⟨hcf₀, _⟩ := builtinSetErr_declRun_shape hrun₀.run
+  obtain ⟨hcf₁, _⟩ := builtinSetErr_declRun_shape hrun₁.run
+  have ho₀ : o₀ = Value.closure "n"
+      (Expr.externFn 22 "n" Typ.int false argPredT builtinSetErrRetSpec [builtinSetErrEffect] capturesT) ρ₀ := by
+    have hfe := hrun₀.forExpr; rw [hpostExpr] at hfe
+    simpa [declRunOutputMatchesExpr] using hfe
+  have ho₁ : o₁ = Value.closure "n"
+      (Expr.externFn 22 "n" Typ.int false argPredT builtinSetErrRetSpec [builtinSetErrEffect] capturesT) ρ₁ := by
+    have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
+    simpa [declRunOutputMatchesExpr] using hfe
+  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinSetErrDeclResult]
+  have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
+  have hresTm : QTypRespectsTagMeaning tm res.qualType := by
+    rw [hres]
+    exact QTypRespectsTagMeaning_fn_extern tm ctx 22 "n" Typ.int (parseReturnType builtinSetErrRetSpec)
+      ctx.pc builtinSetErrRetSpec [builtinSetErrEffect] (argQt := argQt) hwfTm
+  have hcf₀mem : cf₀.memory = μ₀ := by rw [hcf₀]
+  have hcf₀var : cf₀.varEnv = ρ₀ := by rw [hcf₀]
+  have hcf₁mem : cf₁.memory = μ₁ := by rw [hcf₁]
+  have hcf₁var : cf₁.varEnv = ρ₁ := by rw [hcf₁]
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws⟩, hpredlaws, hresTm,
+    θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hnt]; exact hTmBounded
+  · rw [hctxAfter]; exact hwfTm
+  · rw [ho₀, hres]; exact builtinSetErr_decl_valueHasETyp hric₀
+  · rw [ho₁, hres]; exact builtinSetErr_decl_valueHasETyp hric₁
+  · rw [hctxAfter]; exact hwfTm
+  · rw [hctxAfter]; exact hwf
+  · rw [hctxAfter]; exact htagBounded
+  · rw [hcf₀]; exact hwfcfg₀
+  · rw [hcf₁]; exact hwfcfg₁
+  · rw [hctxAfter, hcf₀mem, hcf₀var]; exact hric₀
+  · rw [hctxAfter, hcf₁mem, hcf₁var]; exact hric₁
+  · rw [hctxAfter]; exact hreg
+  · rw [hctxAfter, hcf₀mem, hcf₀var]; exact hcwr₀
+  · rw [hctxAfter, hcf₁mem, hcf₁var]; exact hcwr₁
+  · rw [hctxAfter, hcf₀mem, hcf₀var, hcf₁mem, hcf₁var]; exact hagree
+  · rw [hctxAfter, hcf₀mem, hres, ho₀]; exact builtinSetErr_decl_valueConsistent hric₀ hcwr₀
+  · rw [hctxAfter, hcf₁mem, hres, ho₁]; exact builtinSetErr_decl_valueConsistent hric₁ hcwr₁
+  · -- resultAgreesIfClean: the two extern arrows agree (shared argPredT)
+    rw [hctxAfter, hcf₀mem, hcf₁mem, hres]
+    intro hclean
+    cases hclean with
+    | clean hpoison =>
+        have hetyp : (builtinSetErrDeclResult ctx argQt).qualType.etyp =
+            ETyp.arrow Typ.int (parseReturnType builtinSetErrRetSpec) ctx.pc
+              [builtinSetErrExternClosure ctx argQt] := rfl
+        have htcl : builtinSetErrExternClosure ctx argQt ∈ [builtinSetErrExternClosure ctx argQt] := by simp
+        have hpc_clean : ctx.pc = false := by
+          have hpoison' : (builtinSetErrDeclResult ctx argQt).qualType.poison = false := hpoison
+          simpa [builtinSetErrDeclResult] using hpoison'
+        have hclean_internal : internalPoisonClean (builtinSetErrDeclResult ctx argQt).qualType := by
+          simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
+        have hcap : agreeCapturedEnv predSat ctx.regime μ₀ μ₁ θ₀ θ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ ρ₁ :=
+          agreeCapturedEnv_of_agreeOnClean predSat ctx.regime ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime μ₀
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
+        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime μ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
+        have hmemberCvcr₀ : MemberCvcrEvidence predSat ctx.regime μ₀ θ₀
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          memberCvcrEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
+        have hmemberCvcr₁ : MemberCvcrEvidence predSat ctx.regime μ₁ θ₁
+            (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          memberCvcrEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
+            (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
+        have htyping₀ : capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
+          capturedVarsTypingProperty_of_toCaptured ctx μ₀ ρ₀ θ₀ hric₀
+        have htyping₁ : capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
+          capturedVarsTypingProperty_of_toCaptured ctx μ₁ ρ₁ θ₁ hric₁
+        exact agreeValueUnder.clean_internal_arrow_extern
+          (σcap := VarTypeEnv.toCaptured ctx.varEnv) (argQt := argQt)
+          (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+          hclean_internal hetyp htcl rfl hcap
+          hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
+          htyping₀ htyping₁ ho₀ ho₁
+    | guard k htag _hregime _hnotfun =>
+        have hnone : qtypGuardTag (builtinSetErrDeclResult ctx argQt).qualType = none := by
+          simp [qtypGuardTag, builtinSetErrDeclResult]
+        simp [hnone] at htag
+
+/-- The complete trusted-extern-entry boundary contract for the built-in
+    `set_err` extern (`@22`): all five `ExternBoundarySpec` fields.  This is the
+    first fully proven `.fn` (write-effect) trusted entry
+    (doc/extern-write-effects.md steps 3-5). -/
+theorem builtinSetErrSpec : ExternBoundarySpec builtinSetErrDecl builtinSetErrImpl where
+  declFR := builtinSetErr_declFR
+  callFR := builtinSetErr_callFR
+  declSingle := builtinSetErr_declSingle
+  callSingle := builtinSetErr_callSingle
+  operational := builtinSetErrImpl_operationalSafe
+
 end ExternProofs
