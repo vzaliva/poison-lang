@@ -580,7 +580,7 @@ private lemma PredRespectsTagMeaning_list_fold_updateLocsetWeak
         (fun acc l =>
           match env.get? l with
           | some qt => (joinPoison acc.1 qt.poison, joinPredicates acc.2 qt.pred)
-          | none => acc)
+          | none => (acc.1, Predicate.noPred))
         (storedPoison, storedPred)).2) := by
   induction xs generalizing storedPoison storedPred with
   | nil =>
@@ -590,7 +590,10 @@ private lemma PredRespectsTagMeaning_list_fold_updateLocsetWeak
       cases hget : env.get? x with
       | none =>
           have hget' : env[x]? = none := by simpa using hget
-          simpa [hget'] using ih storedPoison storedPred hinit
+          have hnoPred : PredRespectsTagMeaning tm Predicate.noPred := by
+            intro k an pb ve h
+            cases h
+          simpa [hget'] using ih storedPoison Predicate.noPred hnoPred
       | some qt =>
           have hjoin : PredRespectsTagMeaning tm (joinPredicates storedPred qt.pred) :=
             PredRespectsTagMeaning_joinPredicates tm storedPred qt.pred hinit
@@ -633,7 +636,7 @@ lemma EnvRespectsTagMeaning_updateLocsetWeak
     LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
       match env.get? l with
       | some qt => (joinPoison accP qt.poison, joinPredicates accPred qt.pred)
-      | none => (accP, accPred))
+      | none => (accP, Predicate.noPred))
   set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩
   have hpred_joined : PredRespectsTagMeaning tm joined.2 := by
     unfold joined

@@ -161,6 +161,22 @@ def invalidateRegimeDeps (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   let invalidated := env.filter (fun _ tv => not <| tv.deps.any ls.contains)
   R.filter (fun k _ => invalidated.contains k)
 
+/-- Effect-path regime invalidation (doc/extern-write-effects.md step 1b).  Unlike
+    `invalidateRegimeDeps` (used by assignment), this removes a regime entry ONLY
+    when its tag is a *materialised* guard in `env` whose dependencies intersect the
+    written locations.  Driver-asserted regime tags that are not (yet) in `env` —
+    e.g. an extern's shared return guard supplied via `--regime`, before it enters
+    the tag environment at a later `if`/deref — are KEPT, and a guard the effect's
+    own predicate re-establishes is not spuriously dropped (it survives via its
+    cell type).  Targeted soundness fix: a materialised guard whose predicate reads
+    a written effect target is invalidated, while legitimate driver assertions
+    persist (see `examples/lp55xx-read.poison`). -/
+def invalidateRegimeDepsEffect (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
+  R.filter (fun k _ =>
+    match env.get? k with
+    | some tv => not (tv.deps.any ls.contains)
+    | none => true)
+
 /-- Join two regimes (conservative intersection: keep only entries that agree) -/
 def joinRegimes (R1 R2 : Regime) : Regime :=
   combineExtTreeMaps R1 R2 (fun _ ob1 ob2 =>
@@ -453,13 +469,20 @@ def updateMemEnv (env : MemoryTypeEnv) (l : Loc) (qt : QTyp) : MemoryTypeEnv :=
 
 /-- Weak update for non-singleton locsets: join stored poison/pred with existing entries.
     Computes max poison and merged predicate across all locations, then updates uniformly.
-    This implements the weak update semantics for assign_locset in the Ott spec. -/
+    This implements the weak update semantics for assign_locset in the Ott spec.
+
+    A locset member that is NOT tracked by the memory environment (possible after
+    conservative if/while typing) degrades the joined predicate to `noPred`: a
+    symbolic guard claim is only kept when every written cell is tracked, since an
+    untracked cell has no prior type (and, in a well-formed run, no realization)
+    against which the claim could be justified.  The poison join is unchanged
+    (still conservative). -/
 def updateLocsetWeak (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) : MemoryTypeEnv :=
   -- First pass: compute joined poison and predicate from existing entries
   let (joinedPoison, joinedPred) := LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
     match env.get? l with
     | some e => (joinPoison accP e.poison, joinPredicates accPred e.pred)
-    | none => (accP, accPred))
+    | none => (accP, Predicate.noPred))
   -- Second pass: update all locations with the joined entry
   let entry : MemEntry := ⟨joinedPoison, joinedPred⟩
   LocSet.fold ls env (fun acc l => acc.insert l entry)
@@ -1376,6 +1399,37 @@ def applyClosuresThreaded {α : Type}
       pure (r :: rs)
 termination_by items.length
 
+/-- Value-correct materialisation of an extern call's return guard into the tag
+    environment (doc/extern-write-effects.md step 1b.2).  When a simple-return
+    predicate is a guard closure whose fresh tag the post-call regime interprets
+    (driver-asserted via the initial `--regime` map, or inserted by the
+    `--extern-regime` policy through `applyExternRegimePolicy`), the tag is
+    inserted with the regime's value and the predicate's extracted dependencies.
+
+    A regime-undetermined guard is NOT materialised: the tag-environment value
+    drives the deref-time depoison, so an eager dummy value would poison cells
+    that a driver-asserted regime keeps clean.  A predicate whose dependency
+    extraction fails is also left unmaterialised — such a predicate already
+    fails at any later `if` materialisation (`matchGuard` extracts the same
+    dependencies and throws).
+
+    Materialising the dependencies is what lets a later write effect invalidate
+    a stale guard: an errno-reading return guard gains `deps ∋ errno`, so a
+    subsequent `set_err`-style effect drops it from the tag environment and the
+    regime (`invalidateTagDeps` / `invalidateRegimeDepsEffect`) instead of
+    letting the stale regime fact de-poison values through it. -/
+def installReturnGuard (env : TagEnv) (resolvedPred : Predicate) (R : Regime)
+    (fuel : Nat) : TagEnv :=
+  match resolvedPred with
+  | Predicate.guardClosure k _ _ _ =>
+      match R.lookup? k with
+      | some b =>
+          match extractDepsFromPred resolvedPred fuel with
+          | .ok deps => env.insert k ⟨b, deps⟩
+          | .error _ => env
+      | none => env
+  | _ => env
+
 mutual
 
 -- Helper function to type check an expression with context
@@ -1620,6 +1674,23 @@ def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
           | _ => throw s!"Effect target {v} must be a reference type"
       | none => throw s!"Effect target {v} not found in environment"
 
+/-- The union of the logical locations written by a list of extern effects, as
+    resolved in the unified type environment.  These are exactly the locations
+    `applyExternEffect` strong/weak-updates, so the typing context invalidates its
+    guard-tag / regime dependencies on them after the effect loop — mirroring
+    `typecheckAssign`'s `invalidateTagDeps` / `invalidateRegimeDeps` on the
+    assigned locset (doc/extern-write-effects.md step 1b). -/
+def effectTargetLocs (effects : List Effect) (unifiedEnv : VarTypeEnv) : LocSet :=
+  effects.foldl (fun acc effect =>
+    match effect.target with
+    | EffectTarget.namedVar v =>
+        match unifiedEnv.lookup v with
+        | some qt =>
+            match qt.etyp with
+            | ETyp.ref ls => LocSet.union acc ls
+            | _ => acc
+        | none => acc) (∅ : LocSet)
+
 /-- Extern-regime insertion (doc/extern-regime.md §4.1, §4.3): for each freshly-allocated
     output guard tag `k` of a selected extern id, query the scenario policy
     `policy id k`; when it returns `some b`, insert `k ↦ b` into the active regime.  Tags
@@ -1698,8 +1769,18 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
-            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+            return { qualType := normalizedQt, memEnv' := memEnv,
+                     tagEnv' := installReturnGuard
+                       (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                       resolvedPred
+                       (applyExternRegimePolicy
+                         (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                         id ctx.externRegime tagMapping)
+                       fuel,
+                     nextLoc' := nextLoc', nextTag' := nextTag',
+                     regime' := applyExternRegimePolicy
+                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                       id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -1711,8 +1792,12 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
-            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := nextTag'', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+            return { qualType := normalizedQt, memEnv' := memEnv,
+                     tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv),
+                     nextLoc' := nextLoc, nextTag' := nextTag'',
+                     regime' := applyExternRegimePolicy
+                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                       id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -1724,8 +1809,12 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
-            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := nextTag'', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+            return { qualType := normalizedQt, memEnv' := memEnv,
+                     tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv),
+                     nextLoc' := nextLoc, nextTag' := nextTag'',
+                     regime' := applyExternRegimePolicy
+                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                       id ctx.externRegime tagMapping }
 termination_by fuel
 
 def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
@@ -1787,8 +1876,18 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
-            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+            return { qualType := normalizedQt, memEnv' := memEnv,
+                     tagEnv' := installReturnGuard
+                       (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                       resolvedPred
+                       (applyExternRegimePolicy
+                         (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                         id ctx.externRegime tagMapping)
+                       fuel,
+                     nextLoc' := nextLoc', nextTag' := nextTag',
+                     regime' := applyExternRegimePolicy
+                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                       id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -1800,8 +1899,12 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
-            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := nextTag'', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+            return { qualType := normalizedQt, memEnv' := memEnv,
+                     tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv),
+                     nextLoc' := nextLoc, nextTag' := nextTag'',
+                     regime' := applyExternRegimePolicy
+                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                       id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -1813,8 +1916,12 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
-            return { qualType := normalizedQt, memEnv' := memEnv, tagEnv' := result2.tagEnv',
-                     nextLoc' := nextLoc, nextTag' := nextTag'', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+            return { qualType := normalizedQt, memEnv' := memEnv,
+                     tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv),
+                     nextLoc' := nextLoc, nextTag' := nextTag'',
+                     regime' := applyExternRegimePolicy
+                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                       id ctx.externRegime tagMapping }
 
 /-- Helper: Apply a single PFnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single pure closure alternative.
@@ -1874,7 +1981,9 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
-            return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+            return { qualType := normalizedQt, memEnv' := result2.memEnv',
+                     tagEnv' := installReturnGuard result2.tagEnv' resolvedPred
+                       (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) fuel,
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
@@ -1962,7 +2071,9 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
-            return { qualType := normalizedQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+            return { qualType := normalizedQt, memEnv' := result2.memEnv',
+                     tagEnv' := installReturnGuard result2.tagEnv' resolvedPred
+                       (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) fuel,
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>

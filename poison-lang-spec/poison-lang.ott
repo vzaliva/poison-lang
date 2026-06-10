@@ -355,7 +355,7 @@ formula :: formula_ ::=
   | tcls = tcls1 U tcls2  :: :: tcls_union  {{ com closure set union binding }} {{ tex [[tcls]] = [[tcls1]] \cup [[tcls2]] }}
   | ptcls = ptcls1 U ptcls2 :: :: ptcls_union {{ com closure set union binding }} {{ tex [[ptcls]] = [[ptcls1]] \cup [[ptcls2]] }}
   | JoinP P1 P2 = P3       :: :: join_pred {{ com tag-aware, conservative pred join }} {{ tex [[P1]] \sqcup [[P2]] = [[P3]] }}
-  | MergePreds G LS = P     :: :: merge_preds {{ com merge predicates for LS in G }} {{ tex \bigsqcup_{\,l \in [[LS]]} \mathrm{pred}([[G]](l)) = [[P]] }}
+  | MergePreds G LS = P     :: :: merge_preds {{ com merge predicates for LS in G; a member of LS untracked by G degrades the result to no\_pred, so weak updates keep a symbolic predicate only for fully tracked targets (the deref rules are unaffected: dereference rejects untracked members before merging) }} {{ tex \bigsqcup_{\,l \in [[LS]]} \mathrm{pred}([[G]](l)) = [[P]] }}
   | JoinPoisons G LS = p    :: :: join_poisons {{ com join poisons for LS in G }} {{ tex [[p]] = \bigsqcup_{\,l \in [[LS]]} \mathrm{poison}([[G]](l)) }}
   | not_harmful_shadow x S R :: :: not_harmful_shadow {{ com no harmful shadow of x in S,R }} {{ tex \neg\mathrm{harmful\_shadow}([[x]], [[S]], [[R]]) }}
   | not_fun T :: :: not_fun {{ com T is not function type }} {{ tex [[T]] \neq \_ \rightarrow \_}}
@@ -370,9 +370,12 @@ formula :: formula_ ::=
   | externValConvert ST G = T G' :: :: extern_val_convert {{ com convert surface type to enriched type, possibly allocating fresh loc }} {{ tex \mathrm{externValConvert}([[ST]], [[G]]) = ([[T]], [[G']]) }}
   | allocReturnEffectTags SP ESL k = k' TM :: :: alloc_return_effect_tags {{ com allocate fresh tags for return pred SP and all effect preds in ESL }} {{ tex \mathrm{allocTags}([[SP]], [[ESL]], [[k]]) = ([[k']], [[TM]]) }}
   | allocEffectTags ESL k = k' TM :: :: alloc_effect_tags {{ com allocate fresh tags for effect preds only }} {{ tex \mathrm{allocEffectTags}([[ESL]], [[k]]) = ([[k']], [[TM]]) }}
-  | resolveEffects ESL TM S G = G' :: :: resolve_effects {{ com resolve effect preds via TM and apply memory updates mirroring assignment: a singleton target is strong-updated, a multi-location target weak-updated (stored type joined into each member); the target reference's own poison is folded into the stored poison and erases the stored predicate when that ref is poisoned (cf. the poisoned-ref assign variants). Otherwise predicates are stored as resolved (clean effect-pc rules, gate join pc (join p1 p) clean). Unlike assign, effects do NOT invalidate guard-tag deps on the written target (see doc/extern-write-effects.md) }} {{ tex \mathrm{resolveEffects}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
-  | resolveEffectsPoisoned ESL TM S G = G' :: :: resolve_effects_poisoned {{ com resolve effect preds via TM and apply memory updates (singleton strong / multi-location weak) with predicate erasure (stored predicate forced to noPred); used by poisoned effect-pc extern application rules, where the gate join pc (join p1 p) is poisoned, mirroring assignment under poisoned pc. Unlike assign, effects do NOT invalidate guard-tag deps on the written target (see doc/extern-write-effects.md) }} {{ tex \mathrm{resolveEffectsPoisoned}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
+  | resolveEffects ESL TM S G = G' :: :: resolve_effects {{ com resolve effect preds via TM and apply memory updates mirroring assignment: a singleton target is strong-updated, a multi-location target weak-updated (stored type joined into each member); the target reference's own poison is folded into the stored poison and erases the stored predicate when that ref is poisoned (cf. the poisoned-ref assign variants). Otherwise predicates are stored as resolved (clean effect-pc rules, gate join pc (join p1 p) clean). Like a heap update, this metafunction performs only the memory update; the guard-tag / regime dependency invalidation on the written targets is performed by the surrounding application rule (the effectTargetLocs / invalidate\_deps / invalidate\_regime\_deps\_effect premises), mirroring assignment (doc/extern-write-effects.md step 1b) }} {{ tex \mathrm{resolveEffects}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
+  | resolveEffectsPoisoned ESL TM S G = G' :: :: resolve_effects_poisoned {{ com resolve effect preds via TM and apply memory updates (singleton strong / multi-location weak) with predicate erasure (stored predicate forced to noPred); used by poisoned effect-pc extern application rules, where the gate join pc (join p1 p) is poisoned, mirroring assignment under poisoned pc. As with resolveEffects, the dependency invalidation on the written targets is performed by the surrounding application rule (doc/extern-write-effects.md step 1b) }} {{ tex \mathrm{resolveEffectsPoisoned}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
   | extendExternRegime eid TM R = R' :: :: extend_extern_regime {{ com call-site regime extension: insert into R the freshly generated output tags in the codomain of TM that the ambient extern-regime policy (the Ott analogue of the typechecker's ctx.externRegime, not shown in the judgment) selects for extern id eid; unselected extern ids leave R unchanged (see doc/extern-regime.md, sections 4.1 and 4.3) }} {{ tex [[R']] = \mathrm{extendExternRegime}([[eid]], [[TM]], [[R]]) }}
+  | effectTargetLocs ESL S = LS :: :: effect_target_locs {{ com union of the locsets of the effects' !x targets as resolved in the unified environment S (a target that does not resolve to a tracked reference contributes nothing); these are exactly the locations the effect loop writes, so the application rule invalidates guard-tag / regime dependencies on them (doc/extern-write-effects.md step 1b) }} {{ tex [[LS]] = \mathrm{effectTargetLocs}([[ESL]], [[S]]) }}
+  | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R exactly those tags that are materialised in L with a dependency set intersecting LS; tags absent from L are KEPT — unlike assignment's invalidate\_regime\_deps, which drops them — so a driver-asserted regime tag that has not yet entered the tag environment survives an unrelated write effect (doc/extern-write-effects.md step 1b) }} {{ tex [[R1]] = \mathrm{invalidate\_regime\_effect}([[R]], [[L]], [[LS]]) }}
+  | installReturnGuard L P R = L1 :: :: install_return_guard {{ com value-correct return-guard materialisation (doc/extern-write-effects.md step 1b.2): when P is a guard closure with tag k whose value the regime R determines as b — whether asserted through the initial regime or inserted by the extern-regime policy — insert k |-> (b, deps) into L, with deps extracted from the closure body; a regime-undetermined guard, a guard whose dependency extraction fails, or a non-closure P leaves L unchanged. Materialising the dependencies is what lets a later write effect (or assignment) invalidate a stale guard whose predicate reads the written cell }} {{ tex [[L1]] = \mathrm{installReturnGuard}([[L]], [[P]], [[R]]) }}
 
 
 defns
@@ -1358,6 +1361,26 @@ pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tpclos
 % resolveEffects resolves each effect's predicate via TM and applies the resulting
 % memory updates to G.
 %
+% Effect dependency invalidation (doc/extern-write-effects.md step 1b): every
+% impure (extern_tcl) application rule computes the written target locations
+% (effectTargetLocs ESL S_unified = LS1) and invalidates dependencies on them,
+% mirroring assignment: invalidate_deps drops tag-environment entries whose deps
+% intersect LS1, and invalidate_regime_deps_effect drops the corresponding regime
+% entries — but only for tags MATERIALISED in the tag environment; a regime tag
+% absent from L (e.g. a driver-asserted return guard not yet materialised) is
+% kept, unlike assignment's invalidate_regime_deps. The policy extension
+% (extendExternRegime) then runs on the invalidated regime.
+%
+% Return-guard materialisation (doc/extern-write-effects.md step 1b.2): the
+% simple-return rules (impure and pure) additionally install the resolved return
+% guard into the tag environment, value-correctly: installReturnGuard L P R' = L'
+% inserts the guard tag with the value the post-call regime R' determines for it
+% and with the dependencies extracted from the closure body; regime-undetermined
+% guards are not materialised. This makes a later write to a location the guard
+% reads invalidate the (now materialised) guard and its regime entry, closing
+% the stale-regime gap demonstrated by examples/extern_set_err_stale_guard.poison.
+% Nested returns carry no resolved return predicate and install nothing.
+%
 % Call-site regime extension (doc/extern-regime.md, sections 4.1 and 4.3): each
 % extern typing closure carries the extern id eid that produced it. At application,
 % extendExternRegime eid TM R1 = R' inserts into the active regime R1 the freshly
@@ -1422,11 +1445,15 @@ ST2 <: T2
 allocReturnEffectTags SP ESL k = k' TM
 resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
 resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+effectTargetLocs ESL S1 [ x |-> T1 :> join pc p2 { P2 } ] = LS1
+invalidate_deps L1 LS1 = L4
+invalidate_regime_deps_effect R1 L1 LS1 = R4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 p6 = join p1 p
-extendExternRegime eid TM R1 = R'
+extendExternRegime eid TM R4 = R'
+installReturnGuard L4 P R' = L5
 ----------------------------------------------------------------------  :: app_extern_fn_simple_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L1 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L5 ; R'
 
 % Extern impure function application - simple return, poisoned effect pc
 % When the gate `join pc (join p1 p)` is poisoned, effect-installed predicates
@@ -1441,11 +1468,15 @@ ST2 <: T2
 allocReturnEffectTags SP ESL k = k' TM
 resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
 resolveEffectsPoisoned ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+effectTargetLocs ESL S1 [ x |-> T1 :> join pc p2 { P2 } ] = LS1
+invalidate_deps L1 LS1 = L4
+invalidate_regime_deps_effect R1 L1 LS1 = R4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 p6 = join p1 p
-extendExternRegime eid TM R1 = R'
+extendExternRegime eid TM R4 = R'
+installReturnGuard L4 P R' = L5
 ----------------------------------------------------------------------  :: app_extern_fn_simple_poisoned
-impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L1 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L5 ; R'
 
 % Extern impure function application - nested impure fn return, clean effect pc
 % Only outer effect preds in ESL are allocated via allocEffectTags.
@@ -1459,11 +1490,14 @@ ST1 <: T1
 base_of Q3 = ST3
 allocEffectTags ESL k = k' TM
 resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+effectTargetLocs ESL S1 [ x |-> T1 :> join pc p2 { P2 } ] = LS1
+invalidate_deps L1 LS1 = L4
+invalidate_regime_deps_effect R1 L1 LS1 = R4
 returnType ER' = ST4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
-extendExternRegime eid TM R1 = R'
+extendExternRegime eid TM R4 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_nested_fn_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , Q3 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , Q3 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L4 ; R'
 
 % Extern impure function application - nested impure fn return, poisoned effect pc
 % Effect-installed predicates erased; inner return spec deferred as before.
@@ -1475,11 +1509,14 @@ ST1 <: T1
 base_of Q3 = ST3
 allocEffectTags ESL k = k' TM
 resolveEffectsPoisoned ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+effectTargetLocs ESL S1 [ x |-> T1 :> join pc p2 { P2 } ] = LS1
+invalidate_deps L1 LS1 = L4
+invalidate_regime_deps_effect R1 L1 LS1 = R4
 returnType ER' = ST4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
-extendExternRegime eid TM R1 = R'
+extendExternRegime eid TM R4 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_nested_fn_poisoned
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , Q3 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , Q3 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L4 ; R'
 
 % Extern impure function application - nested pure fn return, clean effect pc
 % Same pattern: only outer ESL preds allocated; inner ER' deferred in extern_ptcl.
@@ -1491,11 +1528,14 @@ ST1 <: T1
 base_of Q3 = ST3
 allocEffectTags ESL k = k' TM
 resolveEffects ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+effectTargetLocs ESL S1 [ x |-> T1 :> join pc p2 { P2 } ] = LS1
+invalidate_deps L1 LS1 = L4
+invalidate_regime_deps_effect R1 L1 LS1 = R4
 returnType ER' = ST4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
-extendExternRegime eid TM R1 = R'
+extendExternRegime eid TM R4 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_nested_pfn_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , Q3 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , Q3 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L4 ; R'
 
 % Extern impure function application - nested pure fn return, poisoned effect pc
 % Effect-installed predicates erased; inner pure return spec deferred as before.
@@ -1507,11 +1547,14 @@ ST1 <: T1
 base_of Q3 = ST3
 allocEffectTags ESL k = k' TM
 resolveEffectsPoisoned ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] G1 = G1'
+effectTargetLocs ESL S1 [ x |-> T1 :> join pc p2 { P2 } ] = LS1
+invalidate_deps L1 LS1 = L4
+invalidate_regime_deps_effect R1 L1 LS1 = R4
 returnType ER' = ST4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
-extendExternRegime eid TM R1 = R'
+extendExternRegime eid TM R4 = R'
 ----------------------------------------------------------------------  :: app_extern_fn_nested_pfn_poisoned
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , Q3 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L1 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , Q3 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L4 ; R'
 
 % Extern pure function application - simple return
 % Pure extern closures have no effects. Fresh tags allocated for return pred only.
@@ -1527,8 +1570,9 @@ resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 p6 = join p1 p
 extendExternRegime eid TM R1 = R'
+installReturnGuard L1 P R' = L4
 ----------------------------------------------------------------------  :: app_extern_pfn_simple
-pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1 ; L1 ; R'
+pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1 ; L4 ; R'
 
 % Extern pure function application - nested impure fn return
 % No effects to resolve (pure context). Inner spec ER' deferred in new extern_tcl.

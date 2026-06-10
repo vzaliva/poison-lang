@@ -282,29 +282,157 @@ agreement by logical location:
    (clean-singleton errno unchanged). NOT done: the `@22`-specific two-run
    transport (step 4) and the dependency-invalidation parity (step 1b).
 
-   **Step 1b — effect dependency invalidation (required, gates step 4).** The
-   heap update above mirrors `typecheckAssign` but its dependency invalidation
-   does not: `typecheckAssign` runs `invalidateTagDeps` /
-   `invalidateRegimeDeps` on the written locset (Typecheck.lean ~1501-1503),
+   **Step 1b — effect dependency invalidation.** The heap update above mirrors
+   `typecheckAssign` but its dependency invalidation did not: `typecheckAssign`
+   runs `invalidateTagDeps` / `invalidateRegimeDeps` on the written locset,
    dropping any guard tag whose `deps` include a written location; the effect
-   path leaves `tagEnv'` / `regime'` untouched (only `applyExternRegimePolicy`
-   adds the extern's own fresh output tags). A guard *can* depend on an effect
+   path left `tagEnv'` / `regime'` untouched. A guard *can* depend on an effect
    target — `if deref errno > 0 then …` yields a tag whose `deps` contain
-   errno's location (deps come from `extractDepsFromPExpr`, Typecheck.lean
-   ~341). This is **not** an open soundness hole for the system *as proven*:
-   `TypeSystemEnforcesFaultRobustness` is total over the effect case and
-   axiom-clean, and the effect-loop FR obligations are discharged under a
-   *poisoned* effect pc (`stepFR_app`'s extern branch carries `heffectPc`),
-   where every written cell becomes poisoned with `noPred` and so orphans any
-   guard. **Read this narrowly.** It is justified *only* by the existing
-   poisoned-effect-pc origin lemmas; it says nothing about clean effect writes,
-   and it is **not** clearance to admit a clean write-effect extern to a trusted
-   registry. Trusting any clean write-effect extern (e.g. `@22`, which writes a
-   *clean* errno cell under clean effect pc) stays blocked until this step / step
-   4 either proves the cell-overwrite / orphaning argument holds for clean
-   effects, or adds the `invalidate*Deps` calls to the effect output (a
-   signature-touching change to the effect loop that must re-establish
-   `StepFRApp`'s extern-case regime consistency). Settle it at step 4 (`callFR`).
+   errno's location.
+
+   **Status — invalidation DONE + integrated (uncommitted, green).** The `.fn`
+   extern returns now invalidate guard/regime deps on the written effect targets:
+   `tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv)`
+   and `regime' := applyExternRegimePolicy (invalidateRegimeDepsEffect
+   result2.regime' result2.tagEnv' (effectTargetLocs …)) …`
+   (`effectTargetLocs` + `invalidateRegimeDepsEffect` are new in
+   `LeanPoison/Typecheck.lean`; `invalidateRegimeDepsEffect` differs from
+   assignment's `invalidateRegimeDeps` by **keeping** regime tags absent from the
+   tagEnv — the lp55xx-read fix). The full FR proof stack was re-proved against
+   this change: foundational equality lemmas (`applyFnTClosure_extern_{tagEnv_eq,
+   regime_eq_or_policy, regime_preserve_some, regime_mono}`) became sub-map /
+   `monotoneStep` forms, all ~11 consumers fixed. **`lake build LeanProofs` =
+   8517 jobs green, 115/115 tests.** Shared lemmas added to `TypeSafety.lean`
+   (`invalidate{TagDeps,RegimeDepsEffect}_*` sub-map / survive / monotone).
+
+   **Step 1b.2 — value-correct return-guard materialisation (REQUIRED; the real
+   fix for the residual gap; in progress).** Step-1b invalidation only catches
+   guards that are *materialised in the tagEnv*. But an extern's **return** guard
+   is NOT in the tagEnv at the call — `collectAndAllocExternTags` returns
+   `(tagMapping, nextTag)` only, and the sole materialiser (`matchGuard`) runs at
+   an `if`, not at a store. So a value guarded by `deref errno > 0` (tag `k ∉
+   tagEnv`, driver-asserted true) can be stored into a cell and reach a later
+   `set_err` call with `k ∉ tagEnv`; the effect invalidation **keeps** it
+   (`none ⇒ true`), the cell's `consistentWithRegime.locsRegime.withPred_ok`
+   obligation (gated on `R.lookup? k ≠ none`) still fires, and `predSat` cannot
+   transport across the errno write (`mem_monotone` uses `extractDepsFromPred`).
+   The unmasked boundary `consistentWithRegime` is genuinely false for this
+   reachable config. **Fix (decided): materialise extern return guards into the
+   tagEnv at the call**, value-correctly, so an errno-reading return guard carries
+   `deps ∋ errno` and a later `set_err` invalidation drops it (vacuous
+   obligation), while non-errno guards (lp55xx) stay and remain clean.
+
+   **A proof-only masked boundary was REJECTED:** it would leave the executable
+   stale-regime fact in place (`qtypCleanUnderRegime` can still read `R(k)=true`
+   later) — hiding the inconsistency, not fixing it.
+
+   The naive version (insert `⟨false, deps⟩` for every guardClosure return)
+   **FAILED behaviourally — 10/115 tests regress, lp55xx-read `poison false→true`**
+   — because the tagEnv entry's `value` field *drives the depoison*, so a dummy
+   `false` poisons cells the driver keeps clean. Required design (value-correct,
+   post-invalidation):
+
+   1. First invalidate old/materialised deps from the pre-call tagEnv and regime
+      (the Step-1b `invalidate*` above).
+   2. Then install *this* call's fresh guard tags.
+   3. For each fresh tag `k`, compute `deps` from the matching `guardClosure`
+      (`extractDepsFromPred`).
+   4. If `ctx.externRegime id k = some b`, insert **both**
+      `tagEnv[k] := ⟨value := b, deps⟩` **and** `regime[k] := b` (the regime half
+      is already `applyExternRegimePolicy`'s insert-if-absent; add the tagEnv half).
+   5. If the policy is `none`, do **not** insert a fake tagEnv entry (an
+      undetermined guard stays out of the tagEnv — that was the `value=false` bug).
+
+   This preserves lp55xx-read (driver `1=true`, empty deps ⇒ materialised `true`,
+   stays clean) and, for an errno-reading guard, gives `deps ∋ errno` so a later
+   `set_err` invalidates the tag and drops the stale regime fact. Applies to all
+   four extern simple-returns (fn + pfn, AtCursor + non; `LeanPoison/Typecheck.lean`
+   ~1727/1828/1926/2014). Expect a SECOND round of proof churn (the foundational
+   `applyFnTClosure_extern_tagEnv_eq` etc. conclusions gain the install term;
+   reduces to the current form for `noPred` returns like `set_err`).
+
+   **Regression test (add BEFORE proof churn):** an extern returns/effects a value
+   whose guard predicate reads `errno`; `set_err` then changes `errno`; a later
+   clean use must NOT de-poison through the old guard. Run all 115 + this new test
+   green after the typechecker change, before touching proofs.
+
+   **Status — step 1b.2 DONE (uncommitted; typechecker + tests + full proof churn
+   green).** Implemented as `installReturnGuard` (`LeanPoison/Typecheck.lean`,
+   just before the typechecking `mutual` block) applied at the four extern
+   simple-return sites, with one deliberate refinement of point 4: the install is
+   gated on the **final post-call regime's value at the fresh tag** rather
+   than on
+   `ctx.externRegime` directly. Rationale: driver assertions also arrive through
+   the *initial* `--regime` map (the lp55xx pattern asserts a future tag that the
+   policy function knows nothing about), so policy-gating would materialise
+   nothing for them and leave the doc's own regression scenario unfixed;
+   regime-gating covers both driver mechanisms, reduces to policy-gating when the
+   policy is the only source, and makes `tagEnvConsistentWithRegime` hold by
+   construction (the installed value IS the regime's value). Point 5 is preserved:
+   a regime-undetermined guard is not materialised. Two further bounded choices:
+   the installer is pure and skips a predicate whose `extractDepsFromPred` fails
+   (such predicates already fail at any later `if` via `matchGuard`), and only the
+   resolved **return** predicate of simple returns is installed — a `guardOnly`
+   return predicate, an effect-only guard tag, and nested-return effect guards
+   are NOT materialised (documented residual; the lp55xx shared-index pattern is
+   covered because its return predicate is the guard closure).
+
+   **Companion soundness fix (step 1b.2 fallout): weak-update untracked-member
+   degradation.** `updateLocsetWeak` inserts the joined entry at *every*
+   member of
+   the locset, including members absent from the memory environment (possible
+   after conservative if/while typing). With regime-live stored guards such an
+   inserted cell would carry a symbolic guard claim about an untracked (and,
+   in a
+   well-formed run, unrealized) cell — unjustifiable at the FR layer. The weak
+   update now degrades the joined predicate to `noPred` whenever a member is
+   untracked (the poison join is unchanged); behaviourally invisible on the whole
+   test suite.
+
+   **Regression tests added:** `examples/extern_set_err_stale_guard.poison`
+   (errno-reading driver-asserted return guard; `set_err 0` invalidates it; the
+   later clean-argument gate REJECTS — A/B-verified to be wrongly accepted with
+   the installer disabled) and `examples/extern_set_err_unrelated_guard.poison`
+   (positive control: a guard reading only its bound argument survives `set_err`
+   and the program still typechecks and runs). Three `--extern-regime` goldens
+   (`extern_arg_precond_sqrt`, `extern_captures_guarded`,
+   `extern_captures_join_guarded`) legitimately gained the materialised
+   `tagEnv: { 1 := { value := true, deps := [] } }` entry in their verbose dumps;
+   types and results are unchanged. 117/117 tests green.
+
+   **Proof churn (DONE, green, 0-sorry, no warnings).** `TypeSafety.lean`:
+   `installReturnGuard_get?_{eq_of_not_guard, cases, ne_none_of_ne_none}`,
+   `resolveSyntaxPred_guardClosure_tag_from_mapping` (moved public from `StepFR`),
+   and the per-flavor `apply{Fn,PFn}TClosure_extern_tagEnv_{lookup_eq_of_lt,
+   get_cases}` replacing the old tagEnv equality/sub-map lemmas (an output binding
+   is an invalidated input binding OR the freshly installed guard, whose value the
+   output regime interprets); `applyFnTClosure_extern_regime_preserve_some`'s
+   survival precondition is now stated against the invalidated input tagEnv.
+   `StepFR.lean`: the `*_tag_absent_*` lemmas weakened to
+   `*_tag_absent_or_installed_*`; masked-absence and masked/unmasked
+   regime-consistency extern cases repaired via the `get_cases` disjunction
+   (installed tags are regime-interpreted, and `≥` the cursor base hence never
+   masked). `ExternBoundaryProofs.lean`: `fnExternFinishAtCursor` mirrors the
+   install (new `fuel` parameter). `StepFRAssign.lean`: the pre-1b.2
+   `*_guardClosure_pred_implies_tag_absent` lemma cluster (a stored guard is
+   never in the tagEnv) is now FALSE and was deleted; the five consumer sites
+   case on the tag entry — absent keeps the old vacuity route, present (the new,
+   genuinely reachable case) proves the obligation via the shared
+   `assign_stored_guard_locsRegime` (singleton: RHS `valueConsistentWithRegime`
+   evidence at the written member; weak: `fold_joinPred_guardClosure_members`
+   join-inversion + pre-assign cell consistency, written-address split) and, for
+   `agreeOnClean`, the guard-clean route (`withPred_true_eq`, RHS
+   `resultAgreesIfClean` under guard-cleanness, shared written-member witness).
+
+   **Proof-layer finding (recorded, not fixed here):** `PredSatLaws.mem_monotone`
+   as stated quantifies over an arbitrary `pred`, so instantiating it at
+   `Predicate.noPred` yields unconditional memory-independence of `predSat` —
+   and the existing stack already exploits exactly this
+   (`predSat_mem_noPred_compat` / `qtypPredHolds_mem_compat_of_predSatLaws`,
+   ~95 uses incl. all of `StepFRAssign`). The `@22` proofs use the same
+   established transport discipline. Tightening the law to tie `pred` to the
+   guard's canonical predicate (making memory-dependence real at the proof layer)
+   is future work that the step-1b/1b.2 dependency machinery now makes feasible.
 
 2. Add the `@22` runtime and typing shape lemmas.
    Keep these local to `LeanProofs/ExternProofs.lean` unless another extern
@@ -315,6 +443,33 @@ agreement by logical location:
 3. Prove `@22` `callSingle`.
    Use the `ctx.pc = true` path and existing effect-loop preservation helpers.
    Done means the single-run post is proven for the runtime memory update.
+
+   **Status — DONE (uncommitted, 0 sorries, axiom-clean).**
+   `builtinSetErr_callSingle` (`LeanProofs/ExternProofs.lean`) is complete — the
+   first fully proven `.fn` (memory-writing) `callSingle`. It is assembled from
+   the typing inversion `builtinSetErr_call_clean_shape` (whose
+   `tagEnv'`/`regime'` conjuncts state the Step-1b invalidated forms; set_err's
+   `noPred` return makes the step-1b.2 install reduce to the identity) and the
+   runtime inversion `builtinSetErr_callRun_output`. The three formerly open
+   conjuncts:
+   - **wfTagMeaningCtx**: written cells are `⟨int, true, noPred⟩` (no guard
+     descriptor, by `QTypInQTyp_eq_of_nonFunctionTarget` on the int cell);
+     unwritten cells and the varEnv route to the input `wfTagMeaningCtx`.
+   - **consistentWithRegime**: written cells carry no guard tag (vacuous); for
+     unwritten cells the output-regime gate transports to the input regime
+     (`invalidateRegimeDepsEffect_lookup_some_imp` — the invalidation is a
+     value-preserving sub-map), the realized address differs from the written
+     errno address by `θ`-injectivity, and the predicate facts move across the
+     write by the `PredSatLaws` mem-compatibility (see the proof-layer finding
+     under step 1b.2); the dropped (materialised errno-reading) guards are
+     vacuous by the gate. Captured-closure evidence transports by
+     `closureCapturedVarsRegime_monotone` + `_transport_μ`.
+   - **PreservesInheritedFinalCleanLocsOneRun**: a clean (or guard-clean) output
+     cell is unwritten (written cells are poisoned `noPred`), so by
+     `θ`-injectivity its realized address is untouched by the write
+     (`preserve_value`; unrealized cells are `both_unrealized`).
+   `#print axioms ExternProofs.builtinSetErr_callSingle` = `propext,
+   Classical.choice, Quot.sound` only.
 
 4. Prove `@22` `callFR`.
    This is the main relational write-effect proof, and `@22` is the first-ever
@@ -335,6 +490,12 @@ agreement by logical location:
 
 5. Author `builtinSetErrDecl` / `builtinSetErrSpec` and prove `@22`
    `declSingle` / `declFR`.
+   **Partially pulled forward into step 3:** `builtinSetErrDecl` (plus
+   `builtinSetErrRetSpec` / `builtinSetErrEffect` / `builtinSetErrImpl`) was
+   authored during step 3, because the `callSingle` goal is *stated against* the
+   concrete declaration (as `builtinAbsDecl` precedes `builtinAbs_callSingle`).
+   What remains here is `builtinSetErrSpec` assembly and the `declSingle` /
+   `declFR` fields.
    Reuse existing impure extern declaration proof patterns for the closure value.
    Two pieces the operational milestone left open: there is no
    `builtinSetErrDecl : ExternDeclaration` yet (it must be authored), and

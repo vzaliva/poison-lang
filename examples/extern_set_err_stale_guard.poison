@@ -1,0 +1,21 @@
+--! poison-interpreter --regime "1=true"
+-- Regression test (doc/extern-write-effects.md step 1b.2): a stale
+-- driver-asserted return guard that READS errno must not survive a `set_err`
+-- write effect.
+--
+-- `getv 5` returns a poisoned int guarded by `!errno > 0`; the driver asserts
+-- the freshly allocated tag 1 (`--regime "1=true"`), and the call materialises
+-- the guard into the tag environment with `deps = {errno}` (value-correct
+-- return-guard materialisation).  `set_err 0` then writes the errno cell, so
+-- the effect invalidation drops tag 1 from both the tag environment and the
+-- regime: the assertion is stale (errno changed after it was made).  The later
+-- `getv x` call therefore sees `x` as plainly poisoned — the clean-argument
+-- precondition gate must REJECT it rather than de-poison through the stale
+-- regime fact.
+let errno = extern val @21 : (ref int :> clean {}) in
+let set_err = extern fn @22 n : (int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !errno :> (int :> clean {}) } in
+let getv = extern pfn @12 v : (int :> clean {}) -> ((int :> poisoned { 100, r => (!errno > 0) })) in
+let x = getv 5 in
+let u = set_err 0 in
+getv x

@@ -1408,19 +1408,25 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
           · simp [ctxAfter]
           · exact hIH
   | extern id x retSpec effects capturedEnv declaredArgQt =>
-    have htag := applyFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred
-      result1 r fuel id x retSpec effects capturedEnv declaredArgQt happly
     have hreg1' : tagEnvConsistentWithRegime result1.tagEnv' result1.regime' := by
       simpa [regimeConsistentWithCtx, ctxAfter] using hreg1
     simp only [regimeConsistentWithCtx, ctxAfter, tagEnvConsistentWithRegime]
-    rw [htag]
-    rcases applyFnTClosure_extern_regime_eq_or_policy ctx st1 st2 p p1 argEtyp argPoison argPred
-      result1 r fuel id x retSpec effects capturedEnv declaredArgQt happly with heq | ⟨tm, heq, _hb⟩
-    · rw [heq]; exact hreg1'
-    · rw [heq]
-      intro k deps hget
-      exact applyExternRegimePolicy_lookup_preserve_some result1.regime' id ctx.externRegime tm k true
-        (hreg1' k deps hget)
+    intro k deps hget
+    -- Step 1b.2: an output `true` entry is either a surviving (invalidated) input
+    -- entry — whose regime value the coordinated effect invalidation + policy keep —
+    -- or the freshly installed return guard, regime-interpreted by construction.
+    rcases applyFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 r fuel id x retSpec effects capturedEnv declaredArgQt happly k ⟨true, deps⟩ hget with
+      hold | ⟨_, _, hR⟩
+    · have hget_orig := invalidateTagDeps_get?_some_imp _ _ k _ hold
+      have hsurvive : (invalidateTagDeps result1.tagEnv'
+          (effectTargetLocs effects (VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
+            ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩))).get? k ≠ none := by
+        rw [hold]; exact Option.some_ne_none _
+      exact applyFnTClosure_extern_regime_preserve_some ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 r fuel id x retSpec effects capturedEnv declaredArgQt happly k true hsurvive
+        (hreg1' k deps hget_orig)
+    · exact hR
 
 
 private lemma applyFnTClosureAtCursor_ok_regimeConsistentWithCtx
@@ -1882,19 +1888,19 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
           · simp [ctxAfter]
           · exact hIH
   | extern id x retSpec capturedEnv declaredArgQt captures =>
-    have htag := applyPFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred
-      result1 r fuel id x retSpec capturedEnv declaredArgQt happly
     have hreg1' : tagEnvConsistentWithRegime result1.tagEnv' result1.regime' := by
       simpa [regimeConsistentWithCtx, ctxAfter] using hreg1
     simp only [regimeConsistentWithCtx, ctxAfter, tagEnvConsistentWithRegime]
-    rw [htag]
-    rcases applyPFnTClosure_extern_regime_eq_or_policy ctx st1 st2 p p1 argEtyp argPoison argPred
-      result1 r fuel id x retSpec capturedEnv declaredArgQt happly with heq | ⟨tm, heq, _hb⟩
-    · rw [heq]; exact hreg1'
-    · rw [heq]
-      intro k deps hget
-      exact applyExternRegimePolicy_lookup_preserve_some result1.regime' id ctx.externRegime tm k true
-        (hreg1' k deps hget)
+    intro k deps hget
+    -- Step 1b.2: surviving input entries keep their regime value through the
+    -- insert-if-absent policy; the freshly installed return guard is
+    -- regime-interpreted by construction.
+    rcases applyPFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 r fuel id x retSpec capturedEnv declaredArgQt happly k ⟨true, deps⟩ hget with
+      hold | ⟨_, _, hR⟩
+    · exact applyPFnTClosure_extern_regime_preserve_some ctx st1 st2 p p1 argEtyp argPoison argPred
+        result1 r fuel id x retSpec capturedEnv declaredArgQt happly k true (hreg1' k deps hold)
+    · exact hR
 
 
 private lemma applyPFnTClosureAtCursor_ok_wfTypeResult

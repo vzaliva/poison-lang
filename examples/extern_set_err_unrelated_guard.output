@@ -1,0 +1,22 @@
+Evaluating file: examples/extern_set_err_unrelated_guard.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int,
+   poison=true,
+   pred={2, pfn r -> r >= 0, deps: [errno : {type=ref @ [0], poison=false, pred={}},
+     set_err : {type=arrow int unit false [extern @22 n : {type=int,
+        poison=false,
+        pred={}} ((unit :> clean {})) effects: {!errno :> (int :> clean {})}, deps: [errno : {type=ref @ [0],
+         poison=false,
+         pred={}}]],
+      poison=false,
+      pred={}},
+     v : {type=int, poison=false, pred={}}]}},
+  MemoryTypeEnv: { 0 := (false, {}) },
+  tagEnv: { 1 := { value := true, deps := [] } },
+  nextLoc: 1
+
+Result: 5
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0)]

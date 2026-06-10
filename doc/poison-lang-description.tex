@@ -432,7 +432,10 @@ target reference's location set fixes the update mode: a singleton target is
 \emph{strong}-updated (the cell's type is replaced), while a multi-location
 target is \emph{weak}-updated (the stored type is joined into each member's
 existing type), because a runtime effect writes a single physical cell and
-must not claim the other members of a non-singleton target clean. Provenance
+must not claim the other members of a non-singleton target clean. As in
+assignment's weak update, a target member untracked by the memory environment
+degrades the joined predicate to \texttt{no\_pred}: a symbolic guard claim is
+kept only when every written cell is tracked. Provenance
 folds in exactly as in assignment: the stored poison is \(\textit{pc} \sqcup
 p_1^{\text{ref}} \sqcup p^{\text{eff}}\) --- the effect pc, the \emph{target
 reference's own poison} \(p_1^{\text{ref}}\), and the declared effect poison
@@ -443,21 +446,34 @@ whenever \(p_1^{\text{ref}}\) or the effect pc is poisoned, mirroring
 \(p_1^{\text{ref}}\) is distinct from the function-expression poison \(p_1\)
 that feeds the effect-pc gate above.)
 
-One asymmetry with assignment remains and is deliberately not yet closed.
-Assignment additionally \emph{invalidates} every guard tag whose dependency
-set includes a written location (Ott rule \texttt{assign}), because
-overwriting the location makes a predicate keyed on its old value stale.
-Extern effects currently perform the memory update but do \emph{not}
-invalidate such guard-tag dependencies. This is sound for the cases the
-metatheory currently establishes --- the effect-loop fault-robustness
-obligations are all discharged under a \emph{poisoned} effect pc, where every
-written cell becomes poisoned with \texttt{no\_pred} and so carries no
-surviving guard. This justification is narrow: it covers only those
-poisoned-effect-pc lemmas and confers no licence to admit an extern that writes
-a \emph{clean} predicate. Full dependency-invalidation parity with assignment
-(or a proof that the cell-overwrite argument also covers clean effects) must be
-settled before any clean write-effect extern can be admitted to a trusted
-registry (see \texttt{doc/extern-write-effects.md}).
+Extern effects invalidate dependencies on the written targets exactly as
+assignment does, with one deliberate refinement on the regime side. After the
+effect loop, every tag-environment entry whose dependency set intersects a
+written target location is dropped (\(\mathrm{invalidate\_deps}\) over
+\(\mathrm{effectTargetLocs}\)), because overwriting a location makes a
+predicate keyed on its old value stale. The corresponding regime entries are
+dropped by the effect-specific \(\mathrm{invalidate\_regime\_effect}\),
+which removes a regime tag only when it is \emph{materialised} in the tag
+environment with intersecting dependencies; a regime tag absent from the tag
+environment --- typically a driver-asserted guard that has not yet been
+materialised --- survives an unrelated write, unlike under assignment's
+\(\mathrm{invalidate\_regime}\), which drops regime tags it cannot find in
+the tag environment. The extern-regime policy extension then runs on the
+invalidated regime.
+
+For this invalidation to be value-correct it must be able to see the guards
+that matter, so a simple extern return additionally \emph{materialises} its
+resolved return guard into the tag environment at the call site
+(\(\mathrm{installReturnGuard}\)): when the post-call regime determines the
+fresh guard tag's value --- whether asserted through the initial regime or
+inserted by the extern-regime policy --- the tag enters the tag environment
+with that value and with the dependency locations extracted from the guard's
+closure body. A regime-undetermined guard is not materialised. A later write
+effect (or assignment) to a location such a guard reads therefore invalidates
+both the materialised tag and its regime entry, so a stale assertion cannot
+keep de-poisoning values whose guard condition the write falsified (see
+\texttt{doc/extern-write-effects.md} and the regression example
+\texttt{examples/extern\_set\_err\_stale\_guard.poison}).
 
 \subsubsection*{Extern read dependencies (\texttt{captures:})}
 \label{sec:extern-captures}
@@ -1169,7 +1185,7 @@ Assignment through references uses different update strategies depending on whet
     \item \textbf{Non-singleton locsets} ($\text{ref} @ LS$ where $|LS| > 1$): The typechecker uses \emph{weak update}, joining poison/predicate information with existing entries at all locations in $LS$. This conservative approach is necessary because the typechecker cannot statically determine which single location will be updated at runtime.
 \end{itemize}
 
-The weak update computes joined poison and predicate using the existing $\mathsf{JoinPoisons}$ and $\mathsf{MergePreds}$ operations over all locations in $LS$, then updates all locations uniformly with this conservative approximation. This ensures soundness: the post-typing environment correctly approximates all possible runtime outcomes, avoiding spurious agreement obligations on locations that may not have been modified.
+The weak update computes joined poison and predicate using the existing $\mathsf{JoinPoisons}$ and $\mathsf{MergePreds}$ operations over all locations in $LS$, then updates all locations uniformly with this conservative approximation. A member of $LS$ untracked by $\Gamma$ (possible after conservative \texttt{if}/\texttt{while} typing) degrades the merged predicate to \texttt{no\_pred} --- the poison join is unchanged --- so a symbolic guard claim is kept only for fully tracked targets. This ensures soundness: the post-typing environment correctly approximates all possible runtime outcomes, avoiding spurious agreement obligations on locations that may not have been modified.
 
 \subsection{Environment Evolution}
 

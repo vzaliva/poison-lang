@@ -1253,7 +1253,7 @@ lemma list_fold_joinPredicates_init_noPred
       (fun acc l0 =>
         match env[l0]? with
         | some qt0 => (joinPoison acc.1 qt0.poison, joinPredicates acc.2 qt0.pred)
-        | none => acc)
+        | none => (acc.1, Predicate.noPred))
       (storedPoison, Predicate.noPred)).2) = Predicate.noPred := by
   induction xs generalizing storedPoison with
   | nil =>
@@ -6582,7 +6582,9 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
               ⟨retQt.etyp, joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison)),
                 retQt.pred⟩
           let outRes : TypeResult :=
-            { qualType := outQt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
+            { qualType := outQt, memEnv' := result2.memEnv',
+              tagEnv' := installReturnGuard result2.tagEnv' resolvedPred
+                (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) n,
               nextLoc' := nextLoc', nextTag' := nextTag',
               regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
           refine ⟨tm', tagMapping, nextTag', hbatch, ?_, ?_, ?_⟩
@@ -7464,35 +7466,8 @@ lemma applyFnTClosure_extern_canonical_batch
             (effects := effects) (capturedEnv := capturedEnv) (r := r) (declaredArgQt := declaredArgQt)
             hwf' hcapTm' hargTm' hcompatBatch happly0
 
-/-- Helper: if resolveSyntaxPred produces a guardClosure predicate, the tag came from the mapping. -/
-private lemma resolveSyntaxPred_guardClosure_tag_from_mapping
-    (pred : SyntaxPredicate) (varEnv : VarTypeEnv)
-    (mapping : TagMapping) (resolvedPred : Predicate)
-    (hresolve : resolveSyntaxPred pred varEnv mapping = .ok resolvedPred)
-    (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
-    (hpred : resolvedPred = Predicate.guardClosure k arg_name pred_body var_env) :
-    ∃ (idx : TagIndex), mapping.get? idx = some k := by
-  cases pred with
-  | noPred =>
-    simp [resolveSyntaxPred, pure, Except.pure] at hresolve
-    simp [← hresolve] at hpred
-  | guardOnly idx =>
-    simp only [resolveSyntaxPred] at hresolve
-    split at hresolve
-    · simp [pure, Except.pure] at hresolve; simp [← hresolve] at hpred
-    · simp at hresolve
-  | guardClosure idx arg body =>
-    simp only [resolveSyntaxPred, bind, Except.bind] at hresolve
-    split at hresolve
-    · rename_i tag htag
-      cases htoPExpr : body.toPExpr with
-      | error e => simp [htoPExpr] at hresolve
-      | ok pbody =>
-        simp only [htoPExpr, pure, Except.pure, Except.ok.injEq] at hresolve
-        rw [← hresolve] at hpred
-        have htageq : tag = k := ((Predicate.guardClosure.injEq _ _ _ _ _ _ _ _).mp hpred).1
-        exact ⟨idx, htageq ▸ htag⟩
-    · simp at hresolve
+-- (`resolveSyntaxPred_guardClosure_tag_from_mapping` now lives in TypeSafety.lean,
+-- shared with the step-1b.2 `installReturnGuard` tagEnv lemmas.)
 
 /-- Helper: returnSpecToQTyp preserves the predicate of the result QTyp. -/
 private lemma returnSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (pred : Predicate)
@@ -7509,9 +7484,11 @@ private lemma returnSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (pred : Predi
   | ref _ => simp at h
   | arrow _ _ => simp at h
 
-/-- `FnTClosure.extern` guard tag is absent from `tagEnv`, given that the
-    input `tagEnv` is bounded by `nextTag`. -/
-lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
+/-- `FnTClosure.extern` result guard tag: with the input `tagEnv` bounded by
+    `nextTag`, the result's freshly minted return-guard tag is either absent
+    from the output tagEnv, or it is the step-1b.2 `installReturnGuard` entry —
+    whose value the output regime interprets identically. -/
+lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_or_installed_of_tagEnvBounded
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
@@ -7523,13 +7500,21 @@ lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
     argEtyp argPoison argPred ctx result2 fuel = .ok r)
   (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
   (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  r.tagEnv'.get? k = none := by
-  have htagEq : r.tagEnv' = result2.tagEnv' :=
-    applyFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred result2 r fuel
-      id x retSpec effects capturedEnv declaredArgQt happly
-  rw [htagEq]
-  suffices hge : result2.nextTag' ≤ k from
-    tagEnvBounded_get_none_of_ge result2.tagEnv' result2.nextTag' k hbound hge
+  r.tagEnv'.get? k = none ∨
+    ∃ tv, r.tagEnv'.get? k = some tv ∧ r.regime'.lookup? k = some tv.value := by
+  suffices hge : result2.nextTag' ≤ k by
+    cases hk : r.tagEnv'.get? k with
+    | none => exact Or.inl rfl
+    | some tv =>
+        refine Or.inr ⟨tv, rfl, ?_⟩
+        rcases applyFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 argEtyp argPoison argPred
+            result2 r fuel id x retSpec effects capturedEnv declaredArgQt happly k tv hk with
+          hold | ⟨_, _, hR⟩
+        · -- An (invalidated) input entry at a fresh tag contradicts boundedness.
+          have h2 := invalidateTagDeps_get?_some_imp _ _ k tv hold
+          rw [tagEnvBounded_get_none_of_ge result2.tagEnv' result2.nextTag' k hbound hge] at h2
+          simp at h2
+        · exact hR
   unfold applyFnTClosure at happly
   cases fuel with
   | zero => simp at happly
@@ -7583,9 +7568,11 @@ lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
             simp only [normalizeAppResultByProvenance] at hpred
             split at hpred <;> simp at hpred
 
-/-- `PFnTClosure.extern` guard tag is absent from `tagEnv`, given that the
-    input `tagEnv` is bounded by `nextTag`. -/
-lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
+/-- `PFnTClosure.extern` result guard tag: with the input `tagEnv` bounded by
+    `nextTag`, the result's freshly minted return-guard tag is either absent
+    from the output tagEnv, or it is the step-1b.2 `installReturnGuard` entry —
+    whose value the output regime interprets identically. -/
+lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_or_installed_of_tagEnvBounded
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (result2 : TypeResult) (fuel : Nat)
@@ -7597,13 +7584,19 @@ lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_of_tagEnvBounded
     argEtyp argPoison argPred ctx result2 fuel = .ok r)
   (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
   (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  r.tagEnv'.get? k = none := by
-  have htagEq : r.tagEnv' = result2.tagEnv' :=
-    applyPFnTClosure_extern_tagEnv_eq ctx st1 st2 p p1 argEtyp argPoison argPred result2 r fuel
-      id x retSpec capturedEnv declaredArgQt happly
-  rw [htagEq]
-  suffices hge : result2.nextTag' ≤ k from
-    tagEnvBounded_get_none_of_ge result2.tagEnv' result2.nextTag' k hbound hge
+  r.tagEnv'.get? k = none ∨
+    ∃ tv, r.tagEnv'.get? k = some tv ∧ r.regime'.lookup? k = some tv.value := by
+  suffices hge : result2.nextTag' ≤ k by
+    cases hk : r.tagEnv'.get? k with
+    | none => exact Or.inl rfl
+    | some tv =>
+        refine Or.inr ⟨tv, rfl, ?_⟩
+        rcases applyPFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 argEtyp argPoison argPred
+            result2 r fuel id x retSpec capturedEnv declaredArgQt happly k tv hk with
+          hold | ⟨_, _, hR⟩
+        · rw [tagEnvBounded_get_none_of_ge result2.tagEnv' result2.nextTag' k hbound hge] at hold
+          simp at hold
+        · exact hR
   unfold applyPFnTClosure at happly
   cases fuel with
   | zero => simp at happly
@@ -8743,17 +8736,24 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                         unfold applyFnTClosure
                         unfold applyFnTClosureAtCursor at happly
                         simpa [rCursor] using happly
-                      have htag := applyFnTClosure_extern_tagEnv_eq
-                        ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
-                        id x retSpec effects capturedEnv declaredArgQt happly_old
                       simp only [regimeConsistentWithCtxMasked, ctxAfter, tagEnvConsistentWithRegimeMasked]
-                      rw [htag]
                       intro k deps hk
-                      rcases hIH1_tagEnv k deps hk with hm | ht
-                      · exact Or.inl hm
-                      · exact Or.inr (applyFnTClosure_extern_regime_preserve_some
-                          ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
-                          id x retSpec effects capturedEnv declaredArgQt happly_old k true ht)
+                      -- Step 1b.2: an output `true` entry is either a surviving (invalidated)
+                      -- input entry — whose regime value the effect invalidation + policy
+                      -- keep — or the freshly installed return guard, which the output
+                      -- regime interprets by construction.
+                      rcases applyFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 etyp2 p2 pred2
+                          rCursor r fuel'' id x retSpec effects capturedEnv declaredArgQt happly_old
+                          k ⟨true, deps⟩ hk with hold | ⟨_, _, hR⟩
+                      · have hk_orig : rCursor.tagEnv'.get? k = some ⟨true, deps⟩ :=
+                          invalidateTagDeps_get?_some_imp _ _ k _ hold
+                        rcases hIH1_tagEnv k deps hk_orig with hm | ht
+                        · exact Or.inl hm
+                        · refine Or.inr (applyFnTClosure_extern_regime_preserve_some
+                            ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
+                            id x retSpec effects capturedEnv declaredArgQt happly_old k true ?_ ht)
+                          rw [hold]; exact Option.some_ne_none _
+                      · exact Or.inr hR
                 have h_pfn_closure_reg :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
                       (results : List TypeResult),
@@ -8812,17 +8812,20 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                         unfold applyPFnTClosure
                         unfold applyPFnTClosureAtCursor at happly
                         simpa [rCursor] using happly
-                      have htag := applyPFnTClosure_extern_tagEnv_eq
-                        ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
-                        id x retSpec capturedEnv declaredArgQt happly_old
                       simp only [regimeConsistentWithCtxMasked, ctxAfter, tagEnvConsistentWithRegimeMasked]
-                      rw [htag]
                       intro k deps hk
-                      rcases hIH1_tagEnv k deps hk with hm | ht
-                      · exact Or.inl hm
-                      · exact Or.inr (applyPFnTClosure_extern_regime_preserve_some
-                          ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
-                          id x retSpec capturedEnv declaredArgQt happly_old k true ht)
+                      -- Step 1b.2: surviving input entries keep their regime value through
+                      -- the insert-if-absent policy; the freshly installed return guard is
+                      -- regime-interpreted by construction.
+                      rcases applyPFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 etyp2 p2 pred2
+                          rCursor r fuel'' id x retSpec capturedEnv declaredArgQt happly_old
+                          k ⟨true, deps⟩ hk with hold | ⟨_, _, hR⟩
+                      · rcases hIH1_tagEnv k deps hold with hm | ht
+                        · exact Or.inl hm
+                        · exact Or.inr (applyPFnTClosure_extern_regime_preserve_some
+                            ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
+                            id x retSpec capturedEnv declaredArgQt happly_old k true ht)
+                      · exact Or.inr hR
                 rcases hcases with
                   ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join⟩ |
                   ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join⟩
@@ -9408,14 +9411,20 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                         unfold applyFnTClosure
                         unfold applyFnTClosureAtCursor at happly
                         simpa [rCursor] using happly
-                      have htag := applyFnTClosure_extern_tagEnv_eq
-                        ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
-                        id x retSpec effects capturedEnv declaredArgQt happly_old
-                      apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
-                        (ctx₁ := { ctx with tagEnv := result1.tagEnv' })
-                        (ctx₂ := ctxAfter ctx r)
-                      · simp [ctxAfter, htag, rCursor]
-                      · simpa [MaskedTagsAbsentFromTrueTagEnv] using hIH1_tag
+                      -- Step 1b.2: an output `true` entry is either a surviving (invalidated)
+                      -- input entry — absent for masked tags by the IH — or the freshly
+                      -- installed return guard, whose tag is ≥ the cursor base and hence
+                      -- never masked (masked tags are bounded by the incoming nextTag).
+                      intro k deps hmasked hget
+                      rcases applyFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 etyp2 p2 pred2
+                          rCursor r fuel'' id x retSpec effects capturedEnv declaredArgQt happly_old
+                          k ⟨true, deps⟩ (by simpa [ctxAfter] using hget) with hold | ⟨hge, _, _⟩
+                      · have habsent : MaskedTagsAbsentFromTrueTagEnv masked
+                            { ctx with tagEnv := rCursor.tagEnv' } := by
+                          simpa [rCursor, MaskedTagsAbsentFromTrueTagEnv] using hIH1_tag
+                        exact habsent k deps hmasked (invalidateTagDeps_get?_some_imp _ _ k _ hold)
+                      · exact absurd hge (Nat.not_le.2
+                          (Nat.lt_of_lt_of_le (hmasked_bounded k hmasked) (Nat.le_trans hb_r1 hcursorTag)))
                 have h_pfn_closure_absent :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
                       (results : List TypeResult),
@@ -9487,14 +9496,19 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                         unfold applyPFnTClosure
                         unfold applyPFnTClosureAtCursor at happly
                         simpa [rCursor] using happly
-                      have htag := applyPFnTClosure_extern_tagEnv_eq
-                        ctx st1 st2 p p1 etyp2 p2 pred2 rCursor r fuel''
-                        id x retSpec capturedEnv declaredArgQt happly_old
-                      apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
-                        (ctx₁ := { ctx with tagEnv := result1.tagEnv' })
-                        (ctx₂ := ctxAfter ctx r)
-                      · simp [ctxAfter, htag, rCursor]
-                      · simpa [MaskedTagsAbsentFromTrueTagEnv] using hIH1_tag
+                      -- Step 1b.2: surviving input entries are absent for masked tags by
+                      -- the IH; the freshly installed return guard's tag is ≥ the cursor
+                      -- base and hence never masked (masked tags are bounded).
+                      intro k deps hmasked hget
+                      rcases applyPFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 etyp2 p2 pred2
+                          rCursor r fuel'' id x retSpec capturedEnv declaredArgQt happly_old
+                          k ⟨true, deps⟩ (by simpa [ctxAfter] using hget) with hold | ⟨hge, _, _⟩
+                      · have habsent : MaskedTagsAbsentFromTrueTagEnv masked
+                            { ctx with tagEnv := rCursor.tagEnv' } := by
+                          simpa [rCursor, MaskedTagsAbsentFromTrueTagEnv] using hIH1_tag
+                        exact habsent k deps hmasked hold
+                      · exact absurd hge (Nat.not_le.2
+                          (Nat.lt_of_lt_of_le (hmasked_bounded k hmasked) (Nat.le_trans hb_r1 hcursorTag)))
                 rcases hcases with
                   ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join⟩ |
                   ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join⟩
@@ -14087,7 +14101,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                         (fun (accP, accPred) l0 =>
                           match result2.memEnv'.get? l0 with
                           | some qt0 => (joinPoison accP qt0.poison, joinPredicates accPred qt0.pred)
-                          | none => (accP, accPred)) with hjoined
+                          | none => (accP, Predicate.noPred)) with hjoined
                     set finalQt : QTyp := ⟨ETyp.int, joined.1, joined.2⟩ with hfinalQt
                     dsimp at hlookup_weak
                     unfold LocSet.fold at hlookup_weak

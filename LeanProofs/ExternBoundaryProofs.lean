@@ -1670,13 +1670,16 @@ private theorem applyClosuresThreaded_forall_reachable_mem
     `LeanPoison/Typecheck.lean` — `of_applyFnTClosureAtCursor` discharges the
     `convert` with `rfl`, so any change there must be mirrored here.  In
     particular every return branch (simple and both nested returns) applies
-    `applyExternRegimePolicy` to `regime'` (doc/extern-regime.md §4.1/§4.3). -/
+    `applyExternRegimePolicy` to `regime'` (doc/extern-regime.md §4.1/§4.3), and
+    the simple return additionally materialises the regime-determined return
+    guard into `tagEnv'` via `installReturnGuard` (doc/extern-write-effects.md
+    step 1b.2; `fuel` is the decremented fuel of the surrounding apply). -/
 private def fnExternFinishAtCursor
     (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
     (p p1 : Poison) (unifiedEnv : VarTypeEnv)
     (tagMapping : ExtTreeMap TagIndex Tag compare) (nextTag' : Tag)
-    (id : ExternId)
-    (retSpec : ExternReturn) (memEnv : MemoryTypeEnv) : TypecheckM TypeResult :=
+    (id : ExternId) (effects : List Effect)
+    (retSpec : ExternReturn) (fuel : Nat) (memEnv : MemoryTypeEnv) : TypecheckM TypeResult :=
   match retSpec with
   | ExternReturn.simple typ poison pred =>
       match resolveSyntaxPred pred unifiedEnv tagMapping with
@@ -1693,10 +1696,18 @@ private def fnExternFinishAtCursor
                           joinPoison p1 (joinPoison p (joinPoison ctx.pc v_2.1.poison)),
                         pred := v_2.1.pred },
                   memEnv' := memEnv,
-                  tagEnv' := result2.tagEnv',
+                  tagEnv' := installReturnGuard
+                    (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                    v_1
+                    (applyExternRegimePolicy
+                      (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                      id ctx.externRegime tagMapping)
+                    fuel,
                   nextLoc' := v_2.2,
                   nextTag' := nextTag',
-                  regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+                  regime' := applyExternRegimePolicy
+                    (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                    id ctx.externRegime tagMapping }
   | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
@@ -1711,10 +1722,12 @@ private def fnExternFinishAtCursor
                     poison := joinPoison p1 (joinPoison p ctx.pc),
                     pred := Predicate.noPred },
               memEnv' := memEnv,
-              tagEnv' := result2.tagEnv',
+              tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv),
               nextLoc' := cursor.2,
               nextTag' := nextTag'',
-              regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+              regime' := applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping }
   | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
@@ -1729,10 +1742,12 @@ private def fnExternFinishAtCursor
                     poison := joinPoison p1 (joinPoison p ctx.pc),
                     pred := Predicate.noPred },
               memEnv' := memEnv,
-              tagEnv' := result2.tagEnv',
+              tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv),
               nextLoc' := cursor.2,
               nextTag' := nextTag'',
-              regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping }
+              regime' := applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping }
 
 private theorem of_applyFnTClosureAtCursor
     {root : Expr} {ctxRoot ctx : TypeContext}
@@ -1878,7 +1893,7 @@ private theorem of_applyFnTClosureAtCursor
                       | Except.ok v => Except.ok (ForInStep.yield v)
                   let finish : MemoryTypeEnv → TypecheckM TypeResult :=
                     fnExternFinishAtCursor ctx result1 cursor p p1 unifiedEnv tagMapping
-                      nextTag' id retSpec
+                      nextTag' id effects retSpec fuel'
                   have hwholeOk :
                       (match effectRun with
                       | Except.error err => Except.error err

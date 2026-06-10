@@ -1,0 +1,18 @@
+--! poison-interpreter --regime "1=true"
+-- Positive control for extern_set_err_stale_guard (doc/extern-write-effects.md
+-- step 1b.2): a driver-asserted return guard that does NOT read errno must
+-- survive a `set_err` write effect.
+--
+-- `getv 5` returns a poisoned int guarded by `r >= 0` — the predicate reads
+-- only the bound argument, so the materialised guard has empty dependencies.
+-- `set_err 0` writes the errno cell; the effect invalidation keeps tag 1 (its
+-- dependencies are disjoint from the written location), so the regime still
+-- de-poisons `x` at the later `getv x` clean-argument gate and the program
+-- typechecks and runs.
+let errno = extern val @21 : (ref int :> clean {}) in
+let set_err = extern fn @22 n : (int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !errno :> (int :> clean {}) } in
+let getv = extern pfn @12 v : (int :> clean {}) -> ((int :> poisoned { 100, r => (r >= 0) })) in
+let x = getv 5 in
+let u = set_err 0 in
+getv x

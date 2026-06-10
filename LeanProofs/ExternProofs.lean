@@ -4246,4 +4246,389 @@ private theorem applyExternEffect_errno_shape
       | arrow _ _ _ _ => simp only [hetyp] at h; simp at h
       | parrow _ _ _ _ => simp only [hetyp] at h; simp at h
 
+/-! ### `@22` (`set_err`) proof-side declaration
+
+Mirrors the interpreter's `regInsert r4 22 (.fn setErrImpl)`
+(`LeanPoison.ExternBuiltins`): an impure `fn` extern taking an `int` argument
+`n`, returning `unit`, with the single declared effect `!errno :> (int :> clean
+{})`.  Authored here (rather than at the spec-assembly step) because the
+call-boundary fields are stated against this declaration. -/
+
+/-- Return spec of `@22`: `unit`, clean, no predicate. -/
+def builtinSetErrRetSpec : ExternReturn :=
+  .simple .unit false .noPred
+
+/-- The single declared write-effect of `@22`: a clean `int` written through the
+    captured `errno` reference, with no predicate. -/
+def builtinSetErrEffect : Effect :=
+  ⟨EffectTarget.namedVar "errno", false, .noPred⟩
+
+/-- Proof-side declaration for the interpreter's built-in `set_err` extern (`@22`). -/
+def builtinSetErrDecl : ExternDeclaration :=
+  { id := 22
+    kind := .fn
+    typ := .int
+    argName := some "n"
+    retSpec := some builtinSetErrRetSpec
+    effects := [builtinSetErrEffect]
+    preds := collectExternPreds builtinSetErrRetSpec [builtinSetErrEffect]
+    argPoison := false }
+
+/-- Runtime implementation shape for `@22`: the interpreter's shared `setErrImpl`,
+    so the running interpreter and this proof-side spec reference the same
+    function. -/
+def builtinSetErrImpl : ExternImpl :=
+  .fn setErrImpl
+
+/-- Runtime inversion of a successful `@22` (`set_err`) call boundary run: the
+    `.fn` dispatch resolves `errno` to a location `a` in the unified environment,
+    returns `unit`, overwrites the cell at `a` with the integer argument, and
+    threads the address cursor through unchanged.  The `.pfn` constructor is
+    impossible because `builtinSetErrDecl.kind = .fn`. -/
+private theorem builtinSetErr_callRun_output
+    {entry : ExternCallEntry} {res : TypeResult} {cf : Config} {o : Value}
+    (hrun : ExternCallBoundaryRun builtinSetErrDecl builtinSetErrImpl entry res cf o) :
+    ∃ (n : Int) (a : Address),
+      entry.argValue = Value.num n ∧
+      VarEnv.lookup entry.unifiedEnv "errno" = some (Value.loc a) ∧
+      o = Value.unit ∧
+      cf.memory = Memory.update entry.callConfig.memory a n ∧
+      cf.nextAddr = entry.callConfig.nextAddr ∧
+      cf = { entry.callConfig with memory := cf.memory, nextAddr := cf.nextAddr } := by
+  cases hrun with
+  | fn hfacts =>
+      rcases hfacts.impl_success with
+        ⟨implFn, retSpec, vRaw, himpl, hretSpec, _hargMatch, hrunImpl, hvalRet⟩
+      simp only [builtinSetErrImpl, ExternImpl.fn.injEq] at himpl
+      subst himpl
+      have hret : retSpec = builtinSetErrRetSpec := by
+        simp only [builtinSetErrDecl] at hretSpec
+        exact (Option.some.inj hretSpec).symm
+      subst hret
+      obtain ⟨n, a, harg, hlk, hraw, hmem, hnext⟩ := setErrImpl_ok_shape hrunImpl
+      refine ⟨n, a, harg, hlk, ?_, hmem, hnext, hfacts.output_config⟩
+      rw [hraw] at hvalRet
+      simp only [builtinSetErrRetSpec, validateExternReturn, valueMatchesTyp,
+        if_true, Except.ok.injEq] at hvalRet
+      exact hvalRet.symm
+  | pfn hfacts => have h := hfacts.kind_pfn; simp [builtinSetErrDecl] at h
+
+private theorem collectAndAllocExternTags_noPred₂ (nextTag : Tag) :
+    collectAndAllocExternTags [SyntaxPredicate.noPred, SyntaxPredicate.noPred] nextTag
+      = .ok ({}, nextTag) := rfl
+
+/-- Typing inversion of a successful `@22` (`set_err`) call boundary witness:
+    the result is `unit`/`noPred`, the tag environment and regime are unchanged
+    (the `noPred` effect/return allocate no tags), and `res.memEnv'` is the output
+    of the single `!errno` effect applied to the body-context memory environment
+    under the body program counter. -/
+private theorem builtinSetErr_call_clean_shape
+    {typedExpr : Expr} {entry : ExternCallEntry} {res : TypeResult}
+    (htyped : ExternBoundaryTyping.Call builtinSetErrDecl typedExpr entry res) :
+    res.qualType.etyp = ETyp.unit ∧
+    res.qualType.pred = Predicate.noPred ∧
+    res.tagEnv' = invalidateTagDeps entry.bodyCtx.tagEnv
+      (effectTargetLocs [builtinSetErrEffect] entry.bodyCtx.varEnv) ∧
+    res.regime' = invalidateRegimeDepsEffect entry.bodyCtx.regime entry.bodyCtx.tagEnv
+      (effectTargetLocs [builtinSetErrEffect] entry.bodyCtx.varEnv) ∧
+    res.nextTag' = entry.bodyCtx.nextTag ∧
+    applyExternEffect builtinSetErrEffect entry.bodyCtx.varEnv {} entry.bodyCtx.pc
+        entry.bodyCtx.memEnv = .ok res.memEnv' := by
+  cases htyped with
+  | pfnExternMember _ hkind => simp [builtinSetErrDecl] at hkind
+  | fnExternMember hid hkind htyp harg hret heff hcap hpin hbody happly =>
+    rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
+      id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec effects captures tenv
+    have hcap' : captures = [] := by simpa [builtinSetErrDecl] using hcap.symm
+    subst hcap'
+    have heff' : effects = [builtinSetErrEffect] := by simpa [builtinSetErrDecl] using heff.symm
+    subst heff'
+    have hx : x = "n" := by
+      have h : some x = some "n" := by simpa [builtinSetErrDecl] using harg.symm
+      exact Option.some.inj h
+    subst hx
+    have hretSpec : retSpec = builtinSetErrRetSpec := by
+      have h : some retSpec = some builtinSetErrRetSpec := by
+        simpa [builtinSetErrDecl] using hret.symm
+      exact Option.some.inj h
+    subst hretSpec
+    cases fuel with
+    | zero => simp [applyFnTClosureAtCursor] at happly
+    | succ fuel' =>
+        simp only [applyFnTClosureAtCursor, builtinSetErrRetSpec, builtinSetErrEffect,
+          collectExternPreds, List.map, List.cons_append, List.nil_append,
+          collectAndAllocExternTags_noPred₂, List.forIn_cons, List.forIn_nil,
+          resolveSyntaxPred, returnSpecToQTyp, bind, Except.bind, pure, Except.pure] at happly
+        split at happly
+        · simp at happly
+        · split at happly
+          · simp at happly
+          · rename_i memEnv' heffect
+            simp only [Except.ok.injEq] at happly
+            subst happly
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp [normalizeAppResultByProvenance]; split <;> rfl
+            · simp [normalizeAppResultByProvenance]; split <;> rfl
+            · rw [hbody]; rfl
+            · rw [hbody]; simp only [applyExternRegimePolicy]; rfl
+            · rw [hbody]
+            · rw [hbody]; simp only [builtinSetErrEffect]
+              convert heffect using 1
+              cases applyExternEffect
+                  { target := EffectTarget.namedVar "errno", poison := false, pred := SyntaxPredicate.noPred }
+                  ((VarTypeEnv.ofCaptured tenv).update "n"
+                    { etyp := argEtyp, poison := joinPoison ctx.pc argPoison, pred := argPred })
+                  ∅ (joinPoison p (joinPoison p1 ctx.pc)) bodyState.memEnv' <;> rfl
+
+/-- The single-run call-boundary field for `@22` (`set_err`): the first `.fn`
+    (memory-writing) `callSingle`.  Under `ctx.pc = true` the effect poisons the
+    written errno cell (`storedPoison = true`, `storedPred = noPred`), so the
+    memory post conjuncts go through: unwritten cells transport, the written cell
+    carries no surviving guard, and (by `θ` injectivity) no clean cell aliases the
+    written address. -/
+theorem builtinSetErr_callSingle :
+    ExternCallBoundarySingle builtinSetErrDecl builtinSetErrImpl := by
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws hwfTm hTmBounded
+    θ cf o hθwf hwfCtx hric hreg hcons hwfcfg hrun hpc
+  obtain ⟨hetyp, hpred, htagEnv, hregime, hnextTag, heffect⟩ :=
+    builtinSetErr_call_clean_shape htyped
+  obtain ⟨n, a, harg, herrnoRt, ho, hcfmem, hcfnext, hcfshape⟩ :=
+    builtinSetErr_callRun_output hrun
+  have hnotfun : res.qualType.etyp.isFunctionType = false := by rw [hetyp]; rfl
+  have hrespects : QTypRespectsTagMeaning tm res.qualType :=
+    QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType hnotfun
+      (by simp [qtypGuardDesc?, hpred])
+  -- Shared setup: the effect's target locset `ls`, and the runtime errno write
+  -- realizes a logical location in `ls`.
+  obtain ⟨vE, qtE, ls, rpE, htgtE, hlkE, hetypE, hresE, hmemE⟩ :=
+    applyExternEffect_errno_shape heffect
+  have hvE : vE = "errno" := by
+    simpa [builtinSetErrEffect, EffectTarget.namedVar.injEq] using htgtE.symm
+  subst hvE
+  obtain ⟨vRt, hvRtLk, hvRtTyp⟩ := hric.2 hlkE
+  have hvRtEq : vRt = Value.loc a := by
+    have hb : entry.bodyConfig.varEnv.lookup "errno" = some (Value.loc a) := by
+      simpa [ExternCallEntry.bodyConfig] using herrnoRt
+    rw [hb] at hvRtLk; exact (Option.some.inj hvRtLk).symm
+  subst hvRtEq
+  rw [hetypE] at hvRtTyp
+  obtain ⟨l_e, hθ_le, hle_in⟩ : ∃ l_e, θ.lookup l_e = some a ∧ l_e ∈ ls := by
+    cases hvRtTyp with | loc hlk hin => exact ⟨_, hlk, hin⟩
+  have hpcbody : entry.bodyCtx.pc = true := hpc
+  -- Under `pc = true` the effect poisons every written cell and erases its
+  -- predicate; unwritten cells keep their incoming type.
+  have hwritten : ∀ l qt, l ∈ ls → res.memEnv'.lookup l = some qt →
+      qt.poison = true ∧ qt.pred = Predicate.noPred := by
+    intro l qt hin hlk
+    rw [hmemE] at hlk
+    have h := assign_memEnv_formula_lookup_mem_props entry.bodyCtx.memEnv ls _ _ l hin qt hlk
+    exact ⟨h.1 (by simp [hpcbody, joinPoison]), h.2 (by simp [hpcbody])⟩
+  have hunwritten : ∀ l, l ∉ ls →
+      res.memEnv'.lookup l = entry.bodyCtx.memEnv.lookup l := by
+    intro l hnin
+    rw [hmemE]
+    exact assign_memEnv_formula_lookup_eq_of_not_mem entry.bodyCtx.memEnv ls _ _ l hnin
+  refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws⟩, θ,
+    ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- TagMeaningBounded tm res.nextTag'
+    rw [hnextTag]; exact hTmBounded
+  · -- wfTagMeaningCtx tm (ctxAfter ctx res): the effect writes poison=true/noPred
+    -- cells (carrying no guard descriptor), leaves every other cell unchanged, and
+    -- does not touch the variable environment.
+    rcases hwfTm with ⟨hwfTm'⟩
+    refine EnvRespectsTagMeaning.intro fun ⟨qtDeep, k0, d0, hqte0, hqd0⟩ => ?_
+    rcases hqte0 with ⟨_, _, x, _, qtRoot, hlookupVar, hinq⟩ | ⟨_, _, loc, _, qtRoot, hlookupMem, hinq⟩
+    · exact hwfTm' (GuardDescInEnvsDeep.intro qtDeep k0 d0
+        (QTypInEnvs.inVar _ _ x qtDeep qtRoot hlookupVar hinq) hqd0)
+    · have hlookupMem' : res.memEnv'.lookup loc = some qtRoot := hlookupMem
+      by_cases hin : loc ∈ ls
+      · -- Written cell: ⟨int, true, noPred⟩ carries no guard descriptor.
+        obtain ⟨_, hprednp⟩ := hwritten loc qtRoot hin hlookupMem'
+        have hint : qtRoot.etyp = ETyp.int := memEnv_lookup_etyp_int _ _ _ hlookupMem'
+        have hEq : qtDeep = qtRoot := QTypInQTyp_eq_of_nonFunctionTarget hinq
+          (by simp [hint, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
+        rw [hEq] at hqd0
+        simp [qtypGuardDesc?, hprednp] at hqd0
+      · rw [hunwritten loc hin] at hlookupMem'
+        exact hwfTm' (GuardDescInEnvsDeep.intro qtDeep k0 d0
+          (QTypInEnvs.inMem _ _ loc qtDeep qtRoot hlookupMem' hinq) hqd0)
+  · -- valueHasETyp θ o res.qualType.etyp
+    rw [ho, hetyp]; exact valueHasETyp.unit
+  · -- runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ
+    refine ⟨fun l a' hθl => ?_, fun {x qt} hlk => ?_⟩
+    · obtain ⟨hmem, hcont⟩ := hric.1 l a' hθl
+      refine ⟨?_, ?_⟩
+      · show res.memEnv'.contains l = true
+        rw [hmemE]
+        exact assign_memEnv_formula_contains_of_contains entry.bodyCtx.memEnv ls _ _ l hmem
+      · show cf.memory.contains a' = true
+        rw [hcfmem]
+        have hbc : entry.callConfig.memory.contains a' = true := by
+          simpa [ExternCallEntry.bodyConfig] using hcont
+        simp [Memory.update, Std.ExtTreeMap.contains_insert, hbc]
+    · exact hric.2 hlk
+  · -- consistentWithRegime for the effect-updated context and memory (step 1b.2).
+    -- Written cells are poisoned with `noPred` (no obligation).  A tag live in
+    -- the invalidated output regime was live with the same value in the input
+    -- regime (the invalidation is a value-preserving sub-map), so the input
+    -- consistency transports: an unwritten cell's realized address differs from
+    -- the written errno address by `θ`-injectivity, and `predSat`-level facts
+    -- move across the memory change by the `PredSatLaws` mem-compatibility law
+    -- (a materialised errno-reading guard has been dropped from the regime, so
+    -- its obligation is vacuous).
+    have hmemc : ∀ (qt' : QTyp) (v' : Value),
+        qtypPredHolds predSat qt' entry.bodyConfig.memory v' ↔
+        qtypPredHolds predSat qt' cf.memory v' :=
+      fun qt' v' => qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ
+        entry.bodyConfig.memory cf.memory qt' v'
+    have hmono : Regime.monotoneStep entry.bodyCtx.regime (ctxAfter ctx res).regime := by
+      show Regime.monotoneStep entry.bodyCtx.regime res.regime'
+      rw [hregime]
+      exact invalidateRegimeDepsEffect_monotone _ _ _
+    have hgate_val : ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
+        entry.bodyCtx.regime.lookup? k = some b := by
+      intro k b hk
+      have hk'' : res.regime'.lookup? k = some b := hk
+      rw [hregime] at hk''
+      exact invalidateRegimeDepsEffect_lookup_some_imp _ _ _ k b hk''
+    have hgate_ne : ∀ k, (ctxAfter ctx res).regime.lookup? k ≠ none →
+        entry.bodyCtx.regime.lookup? k ≠ none := by
+      intro k hk
+      cases hk0 : (ctxAfter ctx res).regime.lookup? k with
+      | none => exact absurd hk0 hk
+      | some b => rw [hgate_val k b hk0]; exact Option.some_ne_none b
+    refine ⟨?_, ?_, ?_⟩
+    · -- locations
+      intro l qt k hlookup hguard hkR
+      have hlookup' : res.memEnv'.lookup l = some qt := hlookup
+      by_cases hin : l ∈ ls
+      · obtain ⟨_, hprednp⟩ := hwritten l qt hin hlookup'
+        simp [qtypGuardTag, hprednp] at hguard
+      · rw [hunwritten l hin] at hlookup'
+        have hold := hcons.1 l qt k hlookup' hguard (hgate_ne k hkR)
+        cases hold with
+        | noPred_ok hpn => exact locsRegime.noPred_ok (l, qt) hpn
+        | guardOnly_ok k' hgo => exact locsRegime.guardOnly_ok (l, qt) k' hgo
+        | withPred_ok k' an pb ve a' n' b' hclos hregk hreal hmem hconsist =>
+            have hclos' : qt.pred = Predicate.guardClosure k' an pb ve := hclos
+            have hk'k : k' = k := by
+              have : some k' = some k := by
+                calc
+                  some k' = qtypGuardTag qt := by simp [qtypGuardTag, hclos']
+                  _ = some k := hguard
+              exact Option.some.inj this
+            obtain ⟨b, hbout⟩ : ∃ b, (ctxAfter ctx res).regime.lookup? k = some b := by
+              cases hk0 : (ctxAfter ctx res).regime.lookup? k with
+              | none => exact absurd hk0 hkR
+              | some b => exact ⟨b, rfl⟩
+            have hbb' : b = b' := by
+              have hbin := hgate_val k b hbout
+              rw [hk'k] at hregk
+              exact Option.some.inj (hbin.symm.trans hregk)
+            have hregk_out : (ctxAfter ctx res).regime.lookup? k' = some b' := by
+              rw [hk'k, ← hbb']
+              exact hbout
+            have hne : a' ≠ a := by
+              intro heq
+              apply hin
+              have hl_e : θ.lookup l_e = some a' := by rw [heq]; exact hθ_le
+              have hll : l = l_e := hθwf _ _ _ hreal hl_e
+              rw [hll]; exact hle_in
+            have hmem' : cf.memory.lookup a' = some n' := by
+              rw [hcfmem]
+              have hcmp : compare a a' ≠ Ordering.eq := by
+                intro hce
+                exact hne ((Nat.compare_eq_eq).1 hce).symm
+              have hbody : entry.callConfig.memory.lookup a' = some n' := by
+                simpa [ExternCallEntry.bodyConfig] using hmem
+              simpa [Memory.update, Memory.lookup, Std.ExtTreeMap.getElem?_insert, hcmp] using hbody
+            refine locsRegime.withPred_ok (l, qt) k' an pb ve a' n' b' hclos hregk_out hreal hmem' ?_
+            exact ⟨fun hb => (hmemc qt (Value.num n')).1 (hconsist.1 hb),
+              fun hb hh => (hconsist.2 hb) ((hmemc qt (Value.num n')).2 hh)⟩
+    · -- variables (the variable environment and its values are unchanged)
+      intro x qt k hlookup hguard hkR
+      have hold := hcons.2.1 x qt k hlookup hguard (hgate_ne k hkR)
+      cases hold with
+      | noPred_ok hpn => exact varsRegime.noPred_ok (x, qt) hpn
+      | guardOnly_ok k' hgo => exact varsRegime.guardOnly_ok (x, qt) k' hgo
+      | withPred_ok k' an pb ve v b' hclos hregk hvar hconsist =>
+          have hclos' : qt.pred = Predicate.guardClosure k' an pb ve := hclos
+          have hk'k : k' = k := by
+            have : some k' = some k := by
+              calc
+                some k' = qtypGuardTag qt := by simp [qtypGuardTag, hclos']
+                _ = some k := hguard
+            exact Option.some.inj this
+          obtain ⟨b, hbout⟩ : ∃ b, (ctxAfter ctx res).regime.lookup? k = some b := by
+            cases hk0 : (ctxAfter ctx res).regime.lookup? k with
+            | none => exact absurd hk0 hkR
+            | some b => exact ⟨b, rfl⟩
+          have hbb' : b = b' := by
+            have hbin := hgate_val k b hbout
+            rw [hk'k] at hregk
+            exact Option.some.inj (hbin.symm.trans hregk)
+          have hregk_out : (ctxAfter ctx res).regime.lookup? k' = some b' := by
+            rw [hk'k, ← hbb']
+            exact hbout
+          refine varsRegime.withPred_ok (x, qt) k' an pb ve v b' hclos hregk_out hvar ?_
+          exact ⟨fun hb => (hmemc qt v).1 (hconsist.1 hb),
+            fun hb hh => (hconsist.2 hb) ((hmemc qt v).2 hh)⟩
+    · -- captured closures: the regime shrinks monotonically and `predSat`-level
+      -- facts move across the memory change
+      intro x qt v hlookup hvlookup
+      have hold := hcons.2.2 x qt v hlookup hvlookup
+      exact closureCapturedVarsRegime_monotone hmono
+        (closureCapturedVarsRegime_transport_μ hmemc hold)
+  · -- valueConsistentWithRegime
+    rw [ho]
+    exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred])
+      (closureCapturedVarsRegime_nonClosure_of_nonFunctionType (hetyp ▸ valueHasETyp.unit) hnotfun)
+  · -- PreservesInheritedFinalCleanLocsOneRun: a clean (or guard-clean) output cell
+    -- is unwritten — written cells are poisoned with `noPred` — so by `θ`-injectivity
+    -- its realized address differs from the written errno address and the write
+    -- leaves its value unchanged.
+    refine ⟨?_⟩
+    intro l qt_in qt_out hlk_in hlk_out hclean_out
+    have hnin : l ∉ ls := by
+      intro hin
+      obtain ⟨hp, hprednp⟩ := hwritten l qt_out hin hlk_out
+      cases hclean_out with
+      | clean hp' => rw [hp] at hp'; cases hp'
+      | guard k htagk _ _ => simp [qtypGuardTag, hprednp] at htagk
+    cases hθl : θ.lookup l with
+    | none => exact .both_unrealized hθl hθl
+    | some a' =>
+        have hne : a' ≠ a := by
+          intro heq
+          apply hnin
+          have hl_e : θ.lookup l_e = some a' := by rw [heq]; exact hθ_le
+          have hll : l = l_e := hθwf _ _ _ hθl hl_e
+          rw [hll]; exact hle_in
+        obtain ⟨_, hcontA⟩ := hric.1 l a' hθl
+        have hsomeA : (entry.bodyConfig.memory[a']?).isSome = true := by
+          rw [← Std.ExtTreeMap.contains_eq_isSome_getElem?]
+          exact hcontA
+        obtain ⟨n', hn'⟩ := Option.isSome_iff_exists.mp hsomeA
+        have hn'' : entry.bodyConfig.memory.lookup a' = some n' := by
+          rw [Memory.lookup, Std.ExtTreeMap.get?_eq_getElem?]
+          exact hn'
+        refine .preserve_value a' n' hθl hn'' hθl ?_
+        show cf.memory.lookup a' = some n'
+        rw [hcfmem]
+        have hcmp : compare a a' ≠ Ordering.eq := by
+          intro hce
+          exact hne ((Nat.compare_eq_eq).1 hce).symm
+        have hbody : entry.callConfig.memory.lookup a' = some n' := by
+          simpa [ExternCallEntry.bodyConfig] using hn''
+        simpa [Memory.update, Memory.lookup, Std.ExtTreeMap.getElem?_insert, hcmp] using hbody
+  · -- FreshCleanLocsUnrealizedOneRun ctx res θ
+    intro l qt hnc hlk hclean
+    by_cases hin : l ∈ ls
+    · cases hclean with
+      | clean hp => rw [(hwritten l qt hin hlk).1] at hp; exact absurd hp (by decide)
+      | guard k htag _ _ =>
+          simp [qtypGuardTag, (hwritten l qt hin hlk).2] at htag
+    · rw [hunwritten l hin] at hlk
+      exact absurd (memEnv_contains_of_lookup_some _ l qt hlk) hnc
+
 end ExternProofs

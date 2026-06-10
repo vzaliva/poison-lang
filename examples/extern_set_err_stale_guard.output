@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_set_err_stale_guard.poison (verbose mode)
+
+Type checking error:
+  extern @12: argument precondition or a captures: read dependency not satisfied (arg runtime type Typ.int, poison=true; declared poison=false)
+
