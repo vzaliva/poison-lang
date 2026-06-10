@@ -3,8 +3,11 @@
 Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof has a populated-registry theorem that
 consumes trusted extern boundary evidence. Concrete trusted specs exist for
-`abs`, the curried-`max` pair, and the explicit-argument memory-read extern
-`@23`. Read-dependency/captures support is implemented on `ffi`.
+`abs`, the curried-`max` pair, the explicit-argument memory-read extern
+`@23`, and the errno-style impure write-effect extern `@22` (`set_err` —
+the first trusted `.fn` entry, with the program-level capstone
+`ExternRegimeInt.setErrWriteEffect_FR`; see `doc/extern-write-effects.md`).
+Read-dependency/captures support is implemented on `ffi`.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
 while keeping implementations outside Poison and making the fault-robustness
@@ -24,11 +27,12 @@ Related documents:
 The FFI mechanism and external-boundary proof interface are done. What remains is
 the shipped extern cleanup and default-registry assembly:
 
-1. **Finish trusted specs for shipped gaps.** Prove default trusted entries for
-   the shipped builtins that still lack concrete specs: sqrt-style guarded input
-   (`@19`), initialized ref-valued extern value (`@21`), and errno-style impure
-   update (`@22`). Each is blocked on a boundary decision, but the two cases sit
-   on *different mechanisms*:
+1. **Finish trusted specs for shipped gaps.** Prove default trusted entries
+   for the shipped builtins that still lack concrete specs: sqrt-style
+   guarded input (`@19`) and the initialized ref-valued extern value
+   (`@21`). (`@22`, the errno-style impure update, is done:
+   `ExternProofs.builtinSetErrSpec` is the first trusted `.fn` write-effect
+   entry.) The two open cases sit on *different mechanisms*:
 
    - `@19` is blocked on **predicate semantics for value-attached guards**. A
      faithful guarded-input contract must derive a value fact from an *inactive*
@@ -37,12 +41,17 @@ the shipped extern cleanup and default-registry assembly:
      needs an evaluated `if` condition). Pinning only the argument poison flag
      would silently reduce `@19` to a clean-input extern that ignores its
      predicate. Closing it requires expanding the predicate/guard trust surface.
-   - `@21`/`@22` are blocked on the **reserved-cell / address-cursor invariant**
-     (`errnoAddr < nextAddr`), which their `ExternOperationalSafe` obligations
-     cannot establish under the current contract (universally quantified over
-     well-formed configs, with no floor on `nextAddr`).
+   - `@21` is blocked on the **reserved-cell invariants**: its `val`
+     operational clause needs the reserved address below the consumer's
+     cursor, and its declaration boundary additionally needs the reserved
+     cell *present in memory* — while the typechecker's clean seeding of
+     the cell-content entry makes the declaration fields semantically
+     FR-false as stated (two valid runs may disagree on the seeded cell).
+     The planned fix — seed the content poisoned, then fold reserved-cell
+     presence into `wfConfig` — and the full obstruction analysis live in
+     `doc/extern-write-effects.md`.
 
-   See `doc/externs.md` (`@19`, `@21`, `@22`).
+   See `doc/externs.md` (`@19`, `@21`).
 2. **Assemble the default trusted registry.** Define `defaultTrustedRegistry`
    for the shipped extern set, then prove
    `TrustedRegistry.toRuntimeRegistry defaultTrustedRegistry` agrees with
@@ -342,9 +351,10 @@ Current coverage:
 - branch-join capture conjunction preservation is proved in
   `LeanProofs/CaptureJoinConjunction.lean`; and
 - fn-side captures are operationally/typecheck-supported, with accepted/rejected
-  examples. The remaining shipped `fn` proof work should focus on `@22`'s real
-  `effects:` post-state; a trusted captures-bearing `fn` example should be
-  revisited only if a shipped implementation actually reads captures.
+  examples. `@22`'s real `effects:` post-state is now proved
+  (`builtinSetErrSpec` / `setErrWriteEffect_FR`); a trusted
+  captures-bearing `fn` example should be revisited only if a shipped
+  implementation actually reads captures.
 
 ## Proof Interface
 
