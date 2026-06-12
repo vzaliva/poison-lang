@@ -1,0 +1,5 @@
+-- Writing through an extern ref re-qualifies the external cell: the
+-- assignment stores a clean value into the conservatively poisoned
+-- points_to: cell, so the subsequent dereference is clean.
+let errno = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
+(errno := 7; !errno)

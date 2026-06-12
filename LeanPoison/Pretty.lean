@@ -199,6 +199,18 @@ partial def reprExpr : Expr → Nat → Std.Format
       Std.Format.text " " ++
       syntaxPredInline pred ++
       Std.Format.text ")"
+    | Expr.externRef id refPoison refPred cellPoison cellPred =>
+      -- Surface syntax:
+      -- `extern ref @<id> : (ref int :> q { SP }), points_to: (int :> q' { SP' })`
+      Std.Format.text s!"extern ref @{id} : (ref int :> " ++
+      Std.Format.text (if refPoison then "poisoned" else "clean") ++
+      Std.Format.text " " ++
+      syntaxPredInline refPred ++
+      Std.Format.text "), points_to: (int :> " ++
+      Std.Format.text (if cellPoison then "poisoned" else "clean") ++
+      Std.Format.text " " ++
+      syntaxPredInline cellPred ++
+      Std.Format.text ")"
     | Expr.externFn id x t argPoison argPred ret eff cap =>
       Std.Format.text s!"extern fn @{id} " ++
       Std.Format.text x ++

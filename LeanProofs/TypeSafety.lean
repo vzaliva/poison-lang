@@ -1199,7 +1199,7 @@ def wfTypeContext (ctx : TypeContext) : Prop :=
 
 /-- Post-context derived from typing result. -/
 def ctxAfter (ctx : TypeContext) (res : TypeResult) : TypeContext :=
-  { ctx with memEnv := res.memEnv', tagEnv := res.tagEnv', nextLoc := res.nextLoc', nextTag := res.nextTag', regime := res.regime' }
+  { ctx with memEnv := res.memEnv', tagEnv := res.tagEnv', nextLoc := res.nextLoc', nextTag := res.nextTag', regime := res.regime', declaredExternRefs := res.declared' }
 
 /-- A location at or above ctx.nextLoc is not realized in θ if runtimeInstantiatesCtx holds. -/
 lemma freshLoc_not_realized (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (l : Loc) :
@@ -1320,7 +1320,7 @@ lemma typecheckOp_structure (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel :
                       | none =>
                           simp [h_opEType_result] at h_typecheck
               | error _msg2 =>
-                  have hctx : updateCtxFromResult ctx result1 = { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' } := by simp only [updateCtxFromResult]
+                  have hctx : updateCtxFromResult ctx result1 = { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' } := by simp only [updateCtxFromResult]
                   rw [hctx] at h_tc2_result
                   simp only [h_tc2_result] at h_typecheck
                   exact absurd h_typecheck (fun h => by injection h)
@@ -1365,7 +1365,7 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
   typecheckVlet ctx x e1 e2 fuel = .ok res →
   ∃ (result1 result2 : TypeResult) (ctx' : TypeContext),
     typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
-    ctx' = ({ ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }) ∧
+    ctx' = ({ ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' }) ∧
     typecheckExpr ctx' e2 (fuel - 1) = .ok result2 ∧
     res.qualType.etyp = result2.qualType.etyp ∧
     res.memEnv' = result2.memEnv' ∧
@@ -1392,7 +1392,8 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
               cases h_tc2 :
                 typecheckExpr
                     { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
-                               tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                               tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag',
+                               regime := result1.regime', declaredExternRefs := result1.declared' }
                     e2 fuel' with
               | ok result2 =>
                   simp [h_tc2] at h_typecheck
@@ -1401,7 +1402,10 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
                       rw [h_qt2] at h_typecheck
                       simp at h_typecheck
                       simp [pure, Except.pure] at h_typecheck
-                      let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                      let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                                             tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                             nextTag := result1.nextTag', regime := result1.regime',
+                                             declaredExternRefs := result1.declared' }
                       cases h_typecheck
                       refine ⟨result1, result2, ctx', ?_⟩
                       simp [ctx', h_tc1, h_tc2, h_qt2]
@@ -1430,7 +1434,9 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
                       cases h_tc2 :
                         typecheckExpr
                             { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
-                                       tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                                       tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                       nextTag := result1.nextTag', regime := result1.regime',
+                                       declaredExternRefs := result1.declared' }
                             e2 fuel' with
                       | ok result2 =>
                           simp [h_tc2] at h_typecheck
@@ -1439,7 +1445,11 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
                               rw [h_qt2] at h_typecheck
                               simp at h_typecheck
                               simp [pure, Except.pure] at h_typecheck
-                              let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                              let ctx' := { ctx with memEnv := result1.memEnv',
+                                                     varEnv := ctx.varEnv.update x result1.qualType,
+                                                     tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                                     nextTag := result1.nextTag', regime := result1.regime',
+                                                     declaredExternRefs := result1.declared' }
                               cases h_typecheck
                               refine ⟨result1, result2, ctx', ?_⟩
                               simp [ctx', h_tc1, h_tc2, h_qt2]
@@ -1456,7 +1466,9 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
                   cases h_tc2 :
                     typecheckExpr
                         { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
-                                   tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                                   tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                   nextTag := result1.nextTag', regime := result1.regime',
+                                   declaredExternRefs := result1.declared' }
                         e2 fuel' with
                   | ok result2 =>
                       simp [h_tc2] at h_typecheck
@@ -1465,7 +1477,11 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
                           rw [h_qt2] at h_typecheck
                           simp at h_typecheck
                           simp [pure, Except.pure] at h_typecheck
-                          let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                          let ctx' := { ctx with memEnv := result1.memEnv',
+                                                 varEnv := ctx.varEnv.update x result1.qualType,
+                                                 tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                                 nextTag := result1.nextTag', regime := result1.regime',
+                                                 declaredExternRefs := result1.declared' }
                           cases h_typecheck
                           refine ⟨result1, result2, ctx', ?_⟩
                           simp [ctx', h_tc1, h_tc2, h_qt2]
@@ -1482,7 +1498,9 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
                   cases h_tc2 :
                     typecheckExpr
                         { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
-                                   tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                                   tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                   nextTag := result1.nextTag', regime := result1.regime',
+                                   declaredExternRefs := result1.declared' }
                         e2 fuel' with
                   | ok result2 =>
                       simp [h_tc2] at h_typecheck
@@ -1491,7 +1509,11 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
                           rw [h_qt2] at h_typecheck
                           simp at h_typecheck
                           simp [pure, Except.pure] at h_typecheck
-                          let ctx' := { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                          let ctx' := { ctx with memEnv := result1.memEnv',
+                                                 varEnv := ctx.varEnv.update x result1.qualType,
+                                                 tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                                 nextTag := result1.nextTag', regime := result1.regime',
+                                                 declaredExternRefs := result1.declared' }
                           cases h_typecheck
                           refine ⟨result1, result2, ctx', ?_⟩
                           simp [ctx', h_tc1, h_tc2, h_qt2]
@@ -1499,6 +1521,9 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
                       simp [h_tc2] at h_typecheck
               | error _err =>
                   simp [h_tc1] at h_typecheck
+
+-- Helper lemma: declared' field from typecheckVlet
+-- Allows callers to avoid dependent elimination on pred when extracting declared'.
 
 -- Helper lemma: extract structure from typecheckNewRef
 -- NOTE: Now requires etyp = ETyp.int (heap stores only integers)
@@ -1626,7 +1651,7 @@ private lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
   typecheckApp ctx e1 e2 fuel = .ok res →
   ∃ (result2 result1 : TypeResult) (st1 st2 : Typ) (p p1 : Poison) (isArrow : Bool),
     typecheckExpr ctx e2 (fuel - 1) = .ok result2 ∧
-    typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } e1 (fuel - 1) = .ok result1 ∧
+    typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime', declaredExternRefs := result2.declared' } e1 (fuel - 1) = .ok result1 ∧
     ((isArrow = true ∧
       (∃ (tcls : List FnTClosure), result1.qualType.etyp = ETyp.arrow st1 st2 p tcls) ∧
       result1.qualType.poison = p1 ∧
@@ -1652,8 +1677,13 @@ private lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
           | QTyp.mk etyp2 p2 pred2 =>
               rw [h_qt2] at h_typecheck
               simp at h_typecheck
-              let ctx' := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' }
-              have h_ctx'_eq : ctx' = { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } := rfl
+              let ctx' := { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc',
+                                     nextTag := result2.nextTag', regime := result2.regime',
+                                     declaredExternRefs := result2.declared' }
+              have h_ctx'_eq : ctx' = { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv',
+                                                  nextLoc := result2.nextLoc', nextTag := result2.nextTag',
+                                                  regime := result2.regime',
+                                                  declaredExternRefs := result2.declared' } := rfl
               cases h_tc1_result : typecheckExpr ctx' e1 fuel' with
               | ok result1 =>
                   rw [h_ctx'_eq] at h_tc1_result
@@ -1732,16 +1762,19 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
          typecheckExpr { ctx with pureCtx := true } e1 (fuel - 1) = .ok res1 ∧
          res1.qualType.etyp = ETyp.bool ∧
          ∃ (res2 : TypeResult) (res3 : TypeResult),
-           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                     declaredExternRefs := res1.declared' }
            typecheckExpr ctxTrue e2 (fuel - 1) = .ok res2 ∧
            let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                      nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                                      nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                                      declaredExternRefs := res2.declared' }
            typecheckExpr ctxFalse e3 (fuel - 1) = .ok res3 ∧
            res.memEnv' = res2.memEnv' ∧
            res.tagEnv' = res2.tagEnv' ∧
            res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
            res.nextTag' = max res2.nextTag' res3.nextTag' ∧
            res.regime' = res2.regime' ∧
+           res.declared' = res3.declared' ∧
            res.qualType.poison = joinPoison ctx.pc res2.qualType.poison ∧
            res.qualType.etyp = res2.qualType.etyp)
     ∨
@@ -1754,16 +1787,19 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
          typecheckExpr { ctx with pureCtx := true } e1 (fuel - 1) = .ok res1 ∧
          res1.qualType.etyp = ETyp.bool ∧
          ∃ (res2 : TypeResult) (res3 : TypeResult),
-           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+           let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                     declaredExternRefs := res1.declared' }
            typecheckExpr ctxTrue e2 (fuel - 1) = .ok res2 ∧
            let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                      nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                                      nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                                      declaredExternRefs := res2.declared' }
            typecheckExpr ctxFalse e3 (fuel - 1) = .ok res3 ∧
            res.memEnv' = res3.memEnv' ∧
            res.tagEnv' = res3.tagEnv' ∧
            res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
            res.nextTag' = max res2.nextTag' res3.nextTag' ∧
            res.regime' = res3.regime' ∧
+           res.declared' = res3.declared' ∧
            res.qualType.poison = joinPoison ctx.pc res3.qualType.poison ∧
            res.qualType.etyp = res3.qualType.etyp)
     ∨
@@ -1779,18 +1815,21 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
        res1.qualType.etyp = ETyp.bool ∧
        ∃ res2 : TypeResult,
          let ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
-                                nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+                                nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime',
+                                declaredExternRefs := res1.declared' }
          let pc' := joinPoison ctx.pc res1.qualType.poison
          let ctx'' := { ctx' with pc := pc' }
          typecheckExpr ctx'' e2 (fuel - 1) = .ok res2 ∧
          ∃ res3 : TypeResult,
-           let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+           let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                                        declaredExternRefs := res2.declared' }
            typecheckExpr ctxForE3 e3 (fuel - 1) = .ok res3 ∧
           res.memEnv' = joinMemEnvsStrong res2.memEnv' res3.memEnv' ∧
           res.tagEnv' = joinTagEnvs res2.tagEnv' res3.tagEnv' ∧
           res.nextLoc' = max res2.nextLoc' res3.nextLoc' ∧
           res.nextTag' = max res2.nextTag' res3.nextTag' ∧
           res.regime' = joinRegimes res2.regime' res3.regime' ∧
+          res.declared' = res3.declared' ∧
           res.qualType.poison = joinPoison ctx.pc (joinPoison res1.qualType.poison
                                   (joinPoison res2.qualType.poison res3.qualType.poison)) ∧
           res.qualType.etyp = joinETyps res2.qualType.etyp res3.qualType.etyp
@@ -1826,7 +1865,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
             by_cases hbool : etyp1 = ETyp.bool
             · constructor; exact hbool
               simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc
-              let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+              let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                        declaredExternRefs := result1.declared' }
               cases htc2 : typecheckExpr ctxTrue e2 fuel' with
               | error e => rw [htc2] at htc; simp at htc
               | ok result2 =>
@@ -1836,7 +1876,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
                   simp only [hq2] at htc
                   -- Case-split on e3 typechecking (non-dominant branch)
                   let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                              nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+                                              nextLoc := result2.nextLoc', nextTag := result2.nextTag',
+                                              declaredExternRefs := result2.declared' }
                   cases htc3 : typecheckExpr ctxFalse e3 fuel' with
                   | error e => rw [htc3] at htc; simp at htc
                   | ok result3 =>
@@ -1848,7 +1889,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
                     · cases htc
                     · simp only [Except.ok.injEq] at htc
                       subst htc
-                      exact ⟨result2, result3, rfl, htc3, rfl, rfl, rfl, rfl, rfl,
+                      exact ⟨result2, result3, rfl, htc3, rfl, rfl, rfl, rfl, rfl, rfl,
                              by simp [hq2], by simp [hq2]⟩
             · simp only [hbool, bne_iff_ne, ne_eq] at htc; cases htc
         | false =>
@@ -1866,7 +1907,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
             by_cases hbool : etyp1 = ETyp.bool
             · constructor; exact hbool
               simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc
-              let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+              let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                        declaredExternRefs := result1.declared' }
               cases htc2 : typecheckExpr ctxTrue e2 fuel' with
               | error e => rw [htc2] at htc; simp at htc
               | ok result2 =>
@@ -1875,7 +1917,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
                 | ⟨etyp2, _p2, _pred2⟩ =>
                 simp only [hq2] at htc
                 let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                            nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+                                            nextLoc := result2.nextLoc', nextTag := result2.nextTag',
+                                            declaredExternRefs := result2.declared' }
                 cases htc3 : typecheckExpr ctxFalse e3 fuel' with
                 | error e => rw [htc3] at htc; simp at htc
                 | ok result3 =>
@@ -1887,7 +1930,7 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
                   · cases htc
                   · simp only [Except.ok.injEq] at htc
                     subst htc
-                    exact ⟨result2, result3, rfl, htc3, rfl, rfl, rfl, rfl, rfl,
+                    exact ⟨result2, result3, rfl, htc3, rfl, rfl, rfl, rfl, rfl, rfl,
                            by simp [hq3], by simp [hq3]⟩
             · simp only [hbool, bne_iff_ne, ne_eq] at htc; cases htc
       | none =>
@@ -1915,7 +1958,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
               · constructor; exact hbool
                 simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at htc
                 let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                       nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                                       nextLoc := result1.nextLoc', nextTag := result1.nextTag',
+                                       regime := result1.regime', declaredExternRefs := result1.declared' }
                 let pc' := joinPoison ctx.pc p1
                 let ctx'' := { ctx' with pc := pc' }
                 cases htc2 : typecheckExpr ctx'' e2 fuel' with
@@ -1926,7 +1970,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
                   match hq2 : result2.qualType with
                   | ⟨etyp2, p2, pred2⟩ =>
                   simp only [hq2] at htc
-                  let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+                  let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag',
+                                               declaredExternRefs := result2.declared' }
                   cases htc3 : typecheckExpr ctxForE3 e3 fuel' with
                   | error e => rw [htc3] at htc; cases htc
                   | ok result3 =>
@@ -1960,7 +2005,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
         · constructor; exact hbool
           simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc
           let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                 nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                                 nextLoc := result1.nextLoc', nextTag := result1.nextTag',
+                                 regime := result1.regime', declaredExternRefs := result1.declared' }
           let pc' := joinPoison ctx.pc p1
           let ctx'' := { ctx' with pc := pc' }
           cases htc2 : typecheckExpr ctx'' e2 fuel' with
@@ -1971,7 +2017,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
             match hq2 : result2.qualType with
             | ⟨etyp2, p2, pred2⟩ =>
             simp only [hq2] at htc
-            let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+            let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag',
+                                         declaredExternRefs := result2.declared' }
             cases htc3 : typecheckExpr ctxForE3 e3 fuel' with
             | error e => rw [htc3] at htc; cases htc
             | ok result3 =>
@@ -1984,7 +2031,8 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
               · simp only [hcompat, Bool.not_eq_true', ↓reduceIte] at htc; cases htc
               · have hcompat' : beqETypSignature etyp2 etyp3 = true := by
                   cases h : beqETypSignature etyp2 etyp3 <;> simp_all
-                simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte, Except.ok.injEq] at htc
+                simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte] at htc
+                simp only [Except.ok.injEq] at htc
                 rw [← htc]
                 simp
         · simp only [hbool, bne_iff_ne, ne_eq] at htc; cases htc
@@ -2019,7 +2067,8 @@ private lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (f
         by_cases hbool : etyp1 = ETyp.bool
         · simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at htc
           let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                 nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                                 nextLoc := result1.nextLoc', nextTag := result1.nextTag',
+                                 regime := result1.regime', declaredExternRefs := result1.declared' }
           let pc' := joinPoison ctx.pc p1
           let ctx'' := { ctx' with pc := pc' }
           cases htc2 : typecheckExpr ctx'' e2 fuel' with
@@ -2031,7 +2080,8 @@ private lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (f
             match hq2 : result2.qualType with
             | ⟨etyp2, p2, pred2⟩ =>
               simp only [hq2] at htc
-              let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag' }
+              let ctxForE3 := { ctx'' with nextLoc := result2.nextLoc', nextTag := result2.nextTag',
+                                           declaredExternRefs := result2.declared' }
               cases htc3 : typecheckExpr ctxForE3 e3 fuel' with
               | error e =>
                 rw [htc3] at htc
@@ -2046,11 +2096,14 @@ private lemma typecheckIf_standard_etyp (ctx : TypeContext) (e1 e2 e3 : Expr) (f
                     cases htc
                   · have hcompat' : beqETypSignature etyp2 etyp3 = true := by
                       cases h : beqETypSignature etyp2 etyp3 <;> simp_all
-                    simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte,
-                               pure, Except.pure, Except.ok.injEq] at htc
-                    refine ⟨result1, result2, result3, ?_, ?_⟩
-                    · exact htc1
-                    · simp [← htc, hq2, hq3]
+                    simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte] at htc
+                    split at htc
+                    · cases htc
+                    · split at htc
+                      · cases htc
+                      · cases htc
+                        refine ⟨result1, result2, result3, htc1, ?_⟩
+                        simp [hq2, hq3]
         · simp only [hbool, bne_iff_ne, ne_eq] at htc
           cases htc
 
@@ -2061,8 +2114,8 @@ private lemma typecheckIf_standard_etyp' (ctx : TypeContext) (e1 e2 e3 : Expr) (
     (hmatch_fail : ∃ err, matchGuard e1 ctx.memEnv ctx.varEnv (fuel - 1) = .error err)
     (htc1 : typecheckExpr ctx e1 (fuel - 1) = .ok res1)
     (hbool1 : res1.qualType.etyp = ETyp.bool)
-    (htc2 : typecheckExpr ({ ctx with pc := joinPoison ctx.pc res1.qualType.poison, memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }) e2 (fuel - 1) = .ok res2)
-    (htc3 : typecheckExpr ({ ctx with pc := joinPoison ctx.pc res1.qualType.poison, memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag', regime := res1.regime' }) e3 (fuel - 1) = .ok res3) :
+    (htc2 : typecheckExpr ({ ctx with pc := joinPoison ctx.pc res1.qualType.poison, memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime', declaredExternRefs := res1.declared' }) e2 (fuel - 1) = .ok res2)
+    (htc3 : typecheckExpr ({ ctx with pc := joinPoison ctx.pc res1.qualType.poison, memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag', regime := res1.regime', declaredExternRefs := res2.declared' }) e3 (fuel - 1) = .ok res3) :
     res.qualType.etyp = joinETyps res2.qualType.etyp res3.qualType.etyp
                           res2.qualType.poison res3.qualType.poison := by
   obtain ⟨err, hmatch_err⟩ := hmatch_fail
@@ -2090,7 +2143,8 @@ private lemma typecheckIf_standard_etyp' (ctx : TypeContext) (e1 e2 e3 : Expr) (
         have hbool' : etyp1 = ETyp.bool := by simp [hq1] at hbool1; exact hbool1
         simp only [hbool', bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at htc
         let ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
-                               nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+                               nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime',
+                               declaredExternRefs := res1.declared' }
         let pc' := joinPoison ctx.pc p1
         let ctx'' := { ctx' with pc := pc' }
         cases htc2' : typecheckExpr ctx'' e2 fuel' with
@@ -2110,7 +2164,8 @@ private lemma typecheckIf_standard_etyp' (ctx : TypeContext) (e1 e2 e3 : Expr) (
           match hq2 : res2.qualType with
           | ⟨etyp2, p2, pred2⟩ =>
             simp only [hq2] at htc
-            let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+            let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                                         declaredExternRefs := res2.declared' }
             cases htc3' : typecheckExpr ctxForE3 e3 fuel' with
             | error e =>
               rw [htc3'] at htc
@@ -2133,9 +2188,13 @@ private lemma typecheckIf_standard_etyp' (ctx : TypeContext) (e1 e2 e3 : Expr) (
                     cases h : beqETypSignature etyp2 etyp3
                     · simp [h] at hcompat
                     · rfl
-                  simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte,
-                             pure, Except.pure, Except.ok.injEq] at htc
-                  simp [← htc]
+                  simp only [hcompat', Bool.not_true, Bool.false_eq_true, ↓reduceIte] at htc
+                  split at htc
+                  · cases htc
+                  · split at htc
+                    · cases htc
+                    · cases htc
+                      simp
 
 -- Structure lemma for assign typechecking
 -- NOTE: Now requires both reference and RHS to be int type (heap stores only integers)
@@ -2172,7 +2231,7 @@ lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) 
               | ref ls =>
                   simp at h_typecheck
                   let ctx' := updateCtxFromResult ctx result1
-                  cases h_tc2 : typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' } e2 fuel' with
+                  cases h_tc2 : typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' } e2 fuel' with
                   | ok result2 =>
                       rw [h_tc2] at h_typecheck
                       simp at h_typecheck
@@ -2263,7 +2322,8 @@ lemma typecheckAssign_memEnv_formula (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
                   cases h_tc2 :
                     typecheckExpr
                         { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                   nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+                                   nextLoc := result1.nextLoc', nextTag := result1.nextTag',
+                                   regime := result1.regime', declaredExternRefs := result1.declared' }
                         e2 fuel' with
                   | ok result2 =>
                       rw [h_tc2] at h_typecheck
@@ -2466,7 +2526,8 @@ lemma typecheckApp_arrow_structure_full
             tagEnv := result2.tagEnv',
             nextLoc := result2.nextLoc',
             nextTag := result2.nextTag',
-            regime := result2.regime' }
+            regime := result2.regime',
+            declaredExternRefs := result2.declared' }
         e1 fuel' = .ok result1 ∧
     (
       (∃ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
@@ -2509,7 +2570,9 @@ lemma typecheckApp_arrow_structure_full
       rcases h_qt2 : result2.qualType with ⟨etyp2, p2, pred2⟩
       simp [h_qt2] at htc
       let ctx' : TypeContext :=
-        { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' }
+        { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc',
+                   nextTag := result2.nextTag', regime := result2.regime',
+                   declaredExternRefs := result2.declared' }
       cases h_tc1 : typecheckExpr ctx' e1 fuel' with
       | error _err =>
           rw [h_tc1] at htc
@@ -3112,7 +3175,8 @@ lemma typecheckExternFn_ok_res_eq
              ctx.pc, Predicate.noPred⟩,
           memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
           nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
-          regime' := ctx.regime } := by
+          regime' := ctx.regime,
+          declared' := ctx.declaredExternRefs } := by
   intro h
   have h1ok : checkExternInputFirstOrder argTyp = .ok PUnit.unit := by
     cases argTyp
@@ -3161,7 +3225,8 @@ lemma typecheckExternFn_ok_res_eq
                         ctx.pc, Predicate.noPred⟩,
                     memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
                     nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
-                    regime' := ctx.regime } := by
+                    regime' := ctx.regime,
+                    declared' := ctx.declaredExternRefs } := by
         simp [typecheckExternFn, h1ok, h2ok, hr, bind, Except.bind, TypecheckM_pure_eq]
       exact (by injection h.symm.trans hdef)
 
@@ -3179,7 +3244,8 @@ lemma typecheckExternPfn_ok_res_eq
              ctx.pc, Predicate.noPred⟩,
           memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
           nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
-          regime' := ctx.regime } := by
+          regime' := ctx.regime,
+          declared' := ctx.declaredExternRefs } := by
   intro h
   have h1ok : checkExternInputFirstOrder argTyp = .ok PUnit.unit := by
     cases argTyp
@@ -3228,9 +3294,34 @@ lemma typecheckExternPfn_ok_res_eq
                         ctx.pc, Predicate.noPred⟩,
                     memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
                     nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
-                    regime' := ctx.regime } := by
+                    regime' := ctx.regime,
+                    declared' := ctx.declaredExternRefs } := by
         simp [typecheckExternPfn, h1ok, h2ok, hr, bind, Except.bind, TypecheckM_pure_eq]
       exact (by injection h.symm.trans hdef)
+
+
+private lemma typecheckExternRef_ok_res_eq
+    (ctx : TypeContext) (id : ExternId)
+    (rp : Bool) (rpred : SyntaxPredicate)
+    (cp : Bool) (cpred : SyntaxPredicate) (res : TypeResult) :
+    typecheckExternRef ctx id rp rpred cp cpred = .ok res →
+    res = { qualType := ⟨ETyp.ref (LocSet.singleton ctx.nextLoc), false, Predicate.noPred⟩,
+            memEnv' := updateMemEnv ctx.memEnv ctx.nextLoc ⟨ETyp.int, true, Predicate.noPred⟩,
+            tagEnv' := ctx.tagEnv, nextLoc' := ctx.nextLoc + 1, nextTag' := ctx.nextTag,
+            regime' := ctx.regime, declared' := id :: ctx.declaredExternRefs } := by
+  intro h
+  simp only [typecheckExternRef, bind, Except.bind, Bool.not_eq_true', pure, Except.pure,
+             Bool.or_eq_true] at h
+  split at h
+  · simp at h
+  · split at h
+    · simp at h
+    · split at h
+      · split at h
+        · simp only [Except.ok.injEq] at h; exact h.symm
+        · simp at h
+        · simp at h
+      · simp at h
 
 
 lemma joinTypeResults_nextTag_eq_max
@@ -4452,7 +4543,9 @@ private lemma applyFnTClosure_nextTag_mono_normal
                 nextLoc := r1.nextLoc',
                 nextTag := r1.nextTag',
                 pureCtx := ctx.pureCtx,
-                externRegime := ctx.externRegime } with hctx'
+                externRegime := ctx.externRegime,
+                externRefAllowed := false,
+                declaredExternRefs := r1.declared' } with hctx'
               have htc' : typecheck ctx' body fuel' = .ok r := by
                 simpa [typecheck, hctx'] using htc
               have hmono := IH fuel' (Nat.lt_succ_self fuel') body ctx' r htc'
@@ -4527,7 +4620,9 @@ private lemma applyPFnTClosure_nextTag_mono_normal
                 nextLoc := r1.nextLoc',
                 nextTag := r1.nextTag',
                 pureCtx := true,
-                externRegime := ctx.externRegime } with hctx'
+                externRegime := ctx.externRegime,
+                externRefAllowed := false,
+                declaredExternRefs := r1.declared' } with hctx'
               have htc' : typecheck ctx' body.toExpr fuel' = .ok r := by
                 simpa [typecheck, hctx'] using htc
               have hmono := IH fuel' (Nat.lt_succ_self fuel') body.toExpr ctx' r htc'
@@ -4607,7 +4702,9 @@ private lemma typecheckApp_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Expr
     nextLoc := res2.nextLoc',
     nextTag := res2.nextTag',
     pureCtx := ctx.pureCtx,
-    externRegime := ctx.externRegime } with hctx'
+    externRegime := ctx.externRegime,
+    externRefAllowed := ctx.externRefAllowed,
+    declaredExternRefs := res2.declared' } with hctx'
   rcases htce1 : typecheckExpr ctx' e1 _ with _ | ⟨res1⟩
     <;> rw [htce1] at htc
     <;> simp at htc
@@ -5206,7 +5303,7 @@ private lemma typecheckIf_nextTag_mono_normal (ctx : TypeContext) (e1 e2 e3 : Ex
                     simp at htc
                     rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
                     simp [hq2] at htc
-                    let ctxForE3 := { ctx'' with nextLoc := r2.nextLoc', nextTag := r2.nextTag' }
+                    let ctxForE3 := { ctx'' with nextLoc := r2.nextLoc', nextTag := r2.nextTag', declaredExternRefs := r2.declared' }
                     cases hte3 : typecheckExpr ctxForE3 e3 fuel' with
                     | error err3 =>
                         erw [hte3] at htc
@@ -5248,8 +5345,10 @@ private lemma typecheckIf_nextTag_mono_normal (ctx : TypeContext) (e1 e2 e3 : Ex
               simp [hq1] at htc
               by_cases hbool : etyp1 = ETyp.bool
               · simp [hbool] at htc
-                let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
-                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ }
+                let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                          declaredExternRefs := r1.declared' }
+                let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
+                                           declaredExternRefs := r1.declared' }
                 cases hreg : ctx.regime.lookup? k with
                 | some b =>
                     cases b with
@@ -5265,7 +5364,7 @@ private lemma typecheckIf_nextTag_mono_normal (ctx : TypeContext) (e1 e2 e3 : Ex
                             simp at htc
                             rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
                             simp [hq2] at htc
-                            let ctxFalse' := { ctxFalse with nextLoc := r2.nextLoc', nextTag := r2.nextTag' }
+                            let ctxFalse' := { ctxFalse with nextLoc := r2.nextLoc', nextTag := r2.nextTag', declaredExternRefs := r2.declared' }
                             cases hte3 : typecheckExpr ctxFalse' e3 fuel' with
                             | error err3 =>
                                 erw [hte3] at htc
@@ -5299,7 +5398,7 @@ private lemma typecheckIf_nextTag_mono_normal (ctx : TypeContext) (e1 e2 e3 : Ex
                             simp at htc
                             rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
                             simp [hq2] at htc
-                            let ctxFalse' := { ctxFalse with nextLoc := r2.nextLoc', nextTag := r2.nextTag' }
+                            let ctxFalse' := { ctxFalse with nextLoc := r2.nextLoc', nextTag := r2.nextTag', declaredExternRefs := r2.declared' }
                             cases hte3 : typecheckExpr ctxFalse' e3 fuel' with
                             | error err3 =>
                                 erw [hte3] at htc
@@ -5348,7 +5447,7 @@ private lemma typecheckIf_nextTag_mono_normal (ctx : TypeContext) (e1 e2 e3 : Ex
                               simp at htc
                               rcases hq2 : r2.qualType with ⟨etyp2, p2, pred2⟩
                               simp [hq2] at htc
-                              let ctxForE3 := { ctx'' with nextLoc := r2.nextLoc', nextTag := r2.nextTag' }
+                              let ctxForE3 := { ctx'' with nextLoc := r2.nextLoc', nextTag := r2.nextTag', declaredExternRefs := r2.declared' }
                               cases hte3 : typecheckExpr ctxForE3 e3 fuel' with
                               | error err3 =>
                                   erw [hte3] at htc
@@ -5461,6 +5560,10 @@ private lemma typecheck_nextTag_mono_normal_main : ∀ (ctx : TypeContext) (e : 
               simp at htc
               have hpres := typecheckExternPfn_preserves_nextTag ctx id arg argTyp argPoison argPred retSpec res htc
               simp [hpres]
+          | externRef _id _rp _rpred _cp _cpred =>
+              simp at htc
+              have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
+              simp [hres]
           | op e1 op e2 =>
               simp at htc
               exact typecheckOp_nextTag_mono_normal ctx e1 e2 fuel' op res IH_fuel' htc
@@ -6271,7 +6374,7 @@ private lemma typecheckApp_regime_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel 
   | succ fuel' =>
       have hstruct := typecheckApp_arrow_structure_full ctx e1 e2 fuel' res htc
       rcases hstruct with ⟨res2, res1, etyp2, p2, pred2, hq2, hte2, hte1, hcases⟩
-      set ctx' : TypeContext := { ctx with memEnv := res2.memEnv', tagEnv := res2.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag', regime := res2.regime' }
+      set ctx' : TypeContext := { ctx with memEnv := res2.memEnv', tagEnv := res2.tagEnv', nextLoc := res2.nextLoc', nextTag := res2.nextTag', regime := res2.regime', declaredExternRefs := res2.declared' }
       have h_fuel : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
       have hte2' : typecheck ctx e2 fuel' = .ok res2 := by
         simpa [typecheck] using hte2
@@ -6376,7 +6479,7 @@ private lemma typecheckOp_regime_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel :
       have htc1_simp : typecheckExpr ctx e1 fuel' = .ok result1 := by simpa using htc1
       have hm1 := IH fuel' h_fuel e1 ctx result1 htc1_simp
       have hb1 : ctx.nextTag ≤ result1.nextTag' := typecheck_nextTag_mono ctx e1 fuel' result1 htc1_simp
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' }
       have htc2_simp : typecheckExpr ctx' e2 fuel' = .ok result2 := by simpa using htc2
       have hm2 := IH fuel' h_fuel e2 ctx' result2 htc2_simp
       have hm2' : Regime.monotoneStepExt result1.regime' result2.regime' (fun k => result1.nextTag' ≤ k) := by
@@ -6522,15 +6625,17 @@ private lemma typecheckIf_regime_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fue
       have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
       cases hstruct with
       | inl h1 =>
-          rcases h1 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, _res3, htc2, _htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hpoison, _hetyp⟩
-          have hm2 := IH fuel' h_fuel e2 { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } res2 htc2
+          rcases h1 with ⟨k, deps, _, _, res1, _htc1, _hbool, res2, _res3, htc2, _htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hdecl, _hpoison, _hetyp⟩
+          have hm2 := IH fuel' h_fuel e2 { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                                    declaredExternRefs := res1.declared' } res2 htc2
           simpa [hregime] using hm2
       | inr h_rest =>
           cases h_rest with
           | inl h2 =>
-              rcases h2 with ⟨k, deps, _, _, res1, _htc1, _hbool, _res2, res3, htc2f, htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hpoison, _hetyp⟩
+              rcases h2 with ⟨k, deps, _, _, res1, _htc1, _hbool, _res2, res3, htc2f, htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hdecl, _hpoison, _hetyp⟩
               let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                         nextLoc := _res2.nextLoc', nextTag := _res2.nextTag' }
+                                         nextLoc := _res2.nextLoc', nextTag := _res2.nextTag',
+                                         declaredExternRefs := _res2.declared' }
               have htc3' : typecheck ctxFalse e3 fuel' = .ok res3 := by
                 simpa [typecheck, ctxFalse] using htc3
               have hm3 := IH fuel' h_fuel e3 ctxFalse res3 htc3'
@@ -6547,10 +6652,10 @@ private lemma typecheckIf_regime_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fue
               have ⟨htc2, h_res3⟩ := h_body
               have ⟨res3, h_body3⟩ := h_res3
               have ⟨htc3, _hmem, _htag, _hloc, _hnexttag, hregime, _hpoison, _hetyp, _hpred⟩ := h_body3
-              let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+              let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime', declaredExternRefs := res1.declared' }
               let pc' := joinPoison ctx.pc res1.qualType.poison
               let ctx'' := { ctx1 with pc := pc' }
-              let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+              let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
               have htc1' : typecheck ctx e1 fuel' = .ok res1 := by
                 simpa [typecheck] using htc1
               have htc2' : typecheck ctx'' e2 fuel' = .ok res2 := by
@@ -6683,6 +6788,11 @@ private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (f
               obtain ⟨argQt, _, hres⟩ :=
                 typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
               rw [hres]
+              exact Regime.monotoneStepExt_refl ctx.regime _
+          | externRef _id _rp _rpred _cp _cpred =>
+              simp at htc
+              have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
+              subst hres
               exact Regime.monotoneStepExt_refl ctx.regime _
           | op e1 op e2 =>
               simp at htc
@@ -9060,7 +9170,7 @@ private lemma typecheckAssign_memEnv_bounded (ctx : TypeContext) (e1 e2 : Expr) 
     simp at h
     -- Now h has the e2 evaluation
     rw [show typecheckExpr (updateCtxFromResult ctx r1) e2 fuel' = typecheckExpr
-        ⟨ctx.pc, r1.regime', r1.memEnv', ctx.varEnv, r1.tagEnv', r1.nextLoc', r1.nextTag', ctx.pureCtx, ctx.externRegime⟩
+        ⟨ctx.pc, r1.regime', r1.memEnv', ctx.varEnv, r1.tagEnv', r1.nextLoc', r1.nextTag', ctx.pureCtx, ctx.externRegime, ctx.externRefAllowed, r1.declared'⟩
         e2 fuel' from by simp [updateCtxFromResult]] at hte2
     rw [hte2] at h; simp at h
     rcases hqr2 : r2.qualType with ⟨etyp2, p2, pred2⟩
@@ -9166,6 +9276,21 @@ private lemma typecheckExpr_preserves_combined_main :
               intro tcl hmem
               simp at hmem; subst hmem
               exact capturedEnvFullBounded_of_toCaptured hpred.1 hclosure
+          | externRef _id _rp _rpred _cp _cpred =>
+              simp at htc
+              have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
+              subst hres
+              refine ⟨?_, predTagBounded_noPred _, trivial⟩
+              intro l qt hl
+              by_cases heq : l = ctx.nextLoc
+              · subst heq
+                simp only [updateMemEnv, MemoryTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?,
+                  Std.ExtTreeMap.getElem?_insert_self, Option.map] at hl
+                simp only [Option.some.injEq] at hl; subst hl
+                simp only [qtypPredTagBounded]
+                exact predTagBounded_noPred ctx.nextTag
+              · rw [MemoryTypeEnv_lookup_updateMemEnv_ne heq] at hl
+                exact hpred.2 l qt hl
           | var x =>
               -- All branches of typecheckVar preserve memEnv and nextTag
               -- and produce pred that is either noPred or from ctx.varEnv
@@ -9509,7 +9634,7 @@ private lemma typecheckExpr_preserves_combined_main :
                 htrue | hfalse | hstd
               · -- Mode 1: matchGuard succeeds, R(k) = some true
                 obtain ⟨k, deps, hmatch, _hR, _res1, _htc1, _, res2, res3, htc2, htc3,
-                  hmemEnv, _, _hresQT, hresNext, _, _, hresEtyp⟩ := htrue
+                  hmemEnv, _, _hresQT, hresNext, _, _, _, hresEtyp⟩ := htrue
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
                 have hIH2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2
                   ⟨hpred.1, hpred.2⟩ hclosure
@@ -9523,10 +9648,11 @@ private lemma typecheckExpr_preserves_combined_main :
                   exact etypClosuresFullBounded_mono hIH2.2.2 (Nat.le_max_left _ _)
               · -- Mode 2: matchGuard succeeds, R(k) = some false
                 obtain ⟨k, deps, hmatch, _hR, _res1, _htc1, _, res2, res3, htc2, htc3,
-                  hmemEnv, _, _hresQT, hresNext, _, _, hresEtyp⟩ := hfalse
+                  hmemEnv, _, _hresQT, hresNext, _, _, _, hresEtyp⟩ := hfalse
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
                 have hmono2 := typecheck_normal_nextTag_mono
-                  { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2
+                  { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                             declaredExternRefs := _res1.declared' } e2 _ res2 htc2
                 have hIH3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3
                   ⟨predTagsBoundedInVarEnv_mono hpred.1 hmono2,
                    predTagsBoundedInMemEnv_mono hpred.2 hmono2⟩
@@ -9541,7 +9667,7 @@ private lemma typecheckExpr_preserves_combined_main :
                   exact etypClosuresFullBounded_mono hIH3.2.2 (Nat.le_max_right _ _)
               · -- Standard case (mode 3/4)
                 obtain ⟨_, res1, htc1, _hbool1, ⟨res2, htc2, ⟨res3, htc3, hmemEnv, _,
-                  _hresQT, hresNextTag, _, _, hresEtyp, _⟩⟩⟩ := hstd
+                  _hresQT, hresNextTag, _, _, _, hresEtyp, _⟩⟩⟩ := hstd
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
                 have hIH1 := IH_fuel (fuel' - 1) h_fuelm1 e1 ctx res1 htc1 hpred hclosure
                 have hmono1 := typecheck_normal_nextTag_mono ctx e1 _ res1 htc1
@@ -9585,7 +9711,9 @@ private lemma typecheckExpr_preserves_combined_main :
                   pc := ctx.pc, regime := res2.regime', memEnv := res2.memEnv',
                   varEnv := ctx.varEnv, tagEnv := res2.tagEnv', nextLoc := res2.nextLoc',
                   nextTag := res2.nextTag', pureCtx := ctx.pureCtx,
-                  externRegime := ctx.externRegime } with hctx'
+                  externRegime := ctx.externRegime,
+                  externRefAllowed := ctx.externRefAllowed,
+                  declaredExternRefs := res2.declared' } with hctx'
                 rcases htce1 : typecheckExpr ctx' e1 _ with _ | ⟨res1⟩
                   <;> rw [htce1] at htcApp <;> simp at htcApp
                 rcases hq1 : res1.qualType with ⟨etyp1, poison1, pred1⟩
@@ -9805,30 +9933,7 @@ private lemma typecheckExpr_preserves_combined_main :
                               simp [pure, Except.pure, bind, Except.bind] at hsurf; cases hsurf
                               exact ⟨predTagsBoundedInMemEnv_mono hpred.2 hmono, hpredBound, trivial⟩
                             | ref t =>
-                              by_cases ht : t = Typ.int
-                              · -- t = Typ.int: memEnv has freshTLoc + updateMemEnv
-                                simp [bind, Except.bind, pure, Except.pure, ht, freshTLoc] at hsurf
-                                cases hsurf; simp [updateMemEnv]
-                                refine ⟨?_, hpredBound, trivial⟩
-                                -- memEnv = ctx.memEnv.insert ctx.nextLoc {false, noPred}
-                                -- This is MemoryTypeEnv.update ctx.memEnv _ {int, false, noPred}
-                                have : predTagsBoundedInMemEnv ctx.memEnv nextTag' :=
-                                  predTagsBoundedInMemEnv_mono hpred.2 hmono
-                                intro l' qt' hlookup
-                                simp [MemoryTypeEnv.lookup] at hlookup
-                                obtain ⟨a, ha_lookup, ha_eq⟩ := hlookup
-                                rw [Std.ExtTreeMap.getElem?_insert] at ha_lookup
-                                split at ha_lookup
-                                · -- l' = ctx.nextLoc: a = {false, noPred}
-                                  simp at ha_lookup; subst a; subst qt'
-                                  trivial -- noPred is bounded
-                                · -- l' ≠ ctx.nextLoc: a comes from ctx.memEnv
-                                  subst qt'
-                                  exact this l' ⟨ETyp.int, a.poison, a.pred⟩ (by
-                                    simp [MemoryTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]
-                                    exact ⟨a, ha_lookup, ⟨rfl, rfl⟩⟩)
-                              · -- t ≠ Typ.int: surfaceSpecToQTyp errors
-                                simp [bind, Except.bind, ht] at hsurf
+                              simp [bind, Except.bind] at hsurf
                             | arrow _ _ =>
                               simp [bind, Except.bind] at hsurf
 
@@ -10042,7 +10147,9 @@ private lemma applyFnTClosure_tagEnvBounded_normal
               nextLoc := r1.nextLoc',
               nextTag := r1.nextTag',
               pureCtx := ctx.pureCtx,
-              externRegime := ctx.externRegime } with hctx''
+              externRegime := ctx.externRegime,
+              externRefAllowed := false,
+              declaredExternRefs := r1.declared' } with hctx''
             have htc' : typecheckExpr ctx'' body fuel' = .ok r := by simpa [hctx''] using htc
             exact IH fuel' (Nat.lt_succ_self fuel') body ctx'' r htc'
               (by simp only [tagEnvBoundedInCtx, hctx'']; exact hbound_r1)
@@ -10155,7 +10262,9 @@ private lemma applyPFnTClosure_tagEnvBounded_normal
               nextLoc := r1.nextLoc',
               nextTag := r1.nextTag',
               pureCtx := true,
-              externRegime := ctx.externRegime } with hctx''
+              externRegime := ctx.externRegime,
+              externRefAllowed := false,
+              declaredExternRefs := r1.declared' } with hctx''
             have htc' : typecheckExpr ctx'' body.toExpr fuel' = .ok r := by simpa [hctx''] using htc
             exact IH fuel' (Nat.lt_succ_self fuel') body.toExpr ctx'' r htc'
               (by simp only [tagEnvBoundedInCtx, hctx'']; exact hbound_r1)
@@ -10324,7 +10433,9 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
     nextLoc := res2.nextLoc',
     nextTag := res2.nextTag',
     pureCtx := ctx.pureCtx,
-    externRegime := ctx.externRegime } with hctx'
+    externRegime := ctx.externRegime,
+    externRefAllowed := ctx.externRefAllowed,
+    declaredExternRefs := res2.declared' } with hctx'
   rcases htce1 : typecheckExpr ctx' e1 _ with _ | ⟨res1⟩
     <;> rw [htce1] at htc <;> simp at htc
   rcases hq1 : res1.qualType with ⟨etyp1, poison1, pred1⟩
@@ -10525,6 +10636,11 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                   typecheckExternPfn_ok_res_eq ctx _id _arg _argTyp _argPoison _argPred _retSpec res htc
                 rw [hres]
               rw [htagEnv, hpres]; exact hbound
+          | externRef _id _rp _rpred _cp _cpred =>
+              simp at htc
+              have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
+              subst hres
+              exact tagEnvBounded_mono ctx.tagEnv ctx.nextTag ctx.nextTag hbound (Nat.le_refl _)
           | unaryop op e1 =>
               -- htc : typecheckUnaryOp ctx op e1 fuel' = .ok res
               unfold typecheckUnaryOp at htc
@@ -10859,13 +10975,13 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                   matchGuard_tag_bounded e1 ctx.memEnv ctx.varEnv (fuel' - 1) k deps ctx.nextTag
                     hmatch hpred.1 hpred.2
                 have hboundTrue : tagEnvBoundedInCtx
-                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } :=
+                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := _res1.declared' } :=
                   tagEnvBounded_insert_of_lt ctx.tagEnv ctx.nextTag k _ hbound hk_lt
                 have hpredTrue : predTagsBoundedInCtx
-                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := hpred
+                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := _res1.declared' } := hpred
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
                 have hclosureTrue : closureEnvBoundedInCtx
-                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } := hclosure
+                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := _res1.declared' } := hclosure
                 have hbound2 := IH_fuel (fuel' - 1) h_fuelm1 e2 _ res2 htc2 hboundTrue hpredTrue hclosureTrue
                 rw [hresTag, hresNext]
                 exact tagEnvBounded_mono _ res2.nextTag' _ hbound2 (Nat.le_max_left _ _)
@@ -10877,22 +10993,22 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
                     hmatch hpred.1 hpred.2
                 have hmono2 : ctx.nextTag ≤ res2.nextTag' :=
                   typecheck_normal_nextTag_mono
-                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } e2 _ res2 htc2
+                    { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := _res1.declared' } e2 _ res2 htc2
                 have hboundFalse : tagEnvBoundedInCtx
                     { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                               nextLoc := res2.nextLoc', nextTag := res2.nextTag' } := by
+                               nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' } := by
                   simp only [tagEnvBoundedInCtx]
                   exact tagEnvBounded_insert_of_lt ctx.tagEnv res2.nextTag' k _
                     (tagEnvBounded_mono ctx.tagEnv ctx.nextTag res2.nextTag' hbound hmono2)
                     (Nat.lt_of_lt_of_le hk_lt hmono2)
                 have hpredFalse : predTagsBoundedInCtx
                     { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                               nextLoc := res2.nextLoc', nextTag := res2.nextTag' } :=
+                               nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' } :=
                   ⟨predTagsBoundedInVarEnv_mono hpred.1 hmono2,
                    predTagsBoundedInMemEnv_mono hpred.2 hmono2⟩
                 have hclosureFalse : closureEnvBoundedInCtx
                     { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                               nextLoc := res2.nextLoc', nextTag := res2.nextTag' } :=
+                               nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' } :=
                   varEnvClosuresCapturedBounded_mono hclosure hmono2
                 have h_fuelm1 : fuel' - 1 < fuel' + 1 := by omega
                 have hbound3 := IH_fuel (fuel' - 1) h_fuelm1 e3 _ res3 htc3 hboundFalse hpredFalse hclosureFalse
@@ -11087,7 +11203,7 @@ private lemma typecheckOp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel 
       have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
       have htc1_simp : typecheckExpr ctx e1 fuel' = .ok result1 := by simpa using htc1
       have IH1 := IH fuel' h_fuel e1 ctx result1 htc1_simp
-      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+      let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' }
       have htc2_simp : typecheckExpr ctx' e2 fuel' = .ok result2 := by simpa using htc2
       have IH2 := IH fuel' h_fuel e2 ctx' result2 htc2_simp
       have h_ctx'_nextLoc : ctx'.nextLoc = result1.nextLoc' := by rfl
@@ -11156,13 +11272,13 @@ private lemma typecheckAssign_preserves_nextLoc (ctx : TypeContext) (e1 e2 : Exp
   typecheckAssign ctx e1 e2 fuel = .ok res →
   ∃ (result1 result2 : TypeResult) (ctx' : TypeContext),
     typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
-    ctx' = { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' } ∧
+    ctx' = { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' } ∧
     typecheckExpr ctx' e2 (fuel - 1) = .ok result2 ∧
     result2.nextLoc' ≤ res.nextLoc' := by
   intro htc
   have hstruct := typecheckAssign_structure ctx e1 e2 fuel res htc
   rcases hstruct with ⟨result1, result2, ls, htc1, _hetyp1, htc2, _hetyp2, hnextloc, _hnexttag, _⟩
-  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+  let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' }
   have h_ineq : result2.nextLoc' ≤ LocSet.fold ls result2.nextLoc' (fun acc l => max acc (l + 1)) := by
     have h_mono : ∀ acc l, acc ≤ max acc (l + 1) := by
       intro acc l
@@ -11269,7 +11385,7 @@ private lemma typecheckIf_nextLoc_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
       | inl h1 =>
         -- R(k) = some true
         rcases h1 with ⟨k, deps, _, _, res1, htc1, _, res2, res3, htc2, _htc3, _, _, hnextloc, _hnexttag, _, _⟩
-        have IH2 := IH fuel' h_fuel e2 { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } res2 htc2
+        have IH2 := IH fuel' h_fuel e2 { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := res1.declared' } res2 htc2
         simp at IH2
         calc ctx.nextLoc
           _ ≤ res2.nextLoc' := IH2
@@ -11280,9 +11396,9 @@ private lemma typecheckIf_nextLoc_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
         | inl h2 =>
           -- R(k) = some false
           rcases h2 with ⟨k, deps, _, _, res1, htc1, _, res2, res3, htc2, htc3, _, _, hnextloc, _hnexttag, _, _⟩
-          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := res1.declared' }
           let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
           have IH2 := IH fuel' h_fuel e2 ctxTrue res2 (by simpa [ctxTrue] using htc2)
           simp [ctxTrue] at IH2
           have IH3 := IH fuel' h_fuel e3 ctxFalse res3 (by simpa [ctxFalse] using htc3)
@@ -11299,10 +11415,10 @@ private lemma typecheckIf_nextLoc_mono (ctx : TypeContext) (e1 e2 e3 : Expr) (fu
             have ⟨htc2, h_res3⟩ := h_body
             have ⟨res3, h_body3⟩ := h_res3
             have ⟨htc3, _hmem, _htag, _hloc, hnextloc, _hregime, _hpoison, _hetyp, _hpred⟩ := h_body3
-            let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+            let ctx1 : TypeContext := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv', nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime', declaredExternRefs := res1.declared' }
             let pc' := joinPoison ctx.pc res1.qualType.poison
             let ctx'' := { ctx1 with pc := pc' }
-            let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+            let ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
             have htc1' : typecheck ctx e1 fuel' = .ok res1 := by simpa [typecheck] using htc1
             have htc2' : typecheck ctx'' e2 fuel' = .ok res2 := by simpa [typecheck, ctx'', ctx1, pc'] using htc2
             have htc3' : typecheck ctxForE3 e3 fuel' = .ok res3 := by simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3
@@ -11514,7 +11630,9 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     nextLoc := res2.nextLoc',
     nextTag := res2.nextTag',
     pureCtx := ctx.pureCtx,
-    externRegime := ctx.externRegime } with hctx'
+    externRegime := ctx.externRegime,
+    externRefAllowed := ctx.externRefAllowed,
+    declaredExternRefs := res2.declared' } with hctx'
   rcases htce1 : typecheckExpr ctx' e1 _ with _ | ⟨res1⟩
     <;> rw [htce1] at htc
     <;> simp at htc
@@ -11654,7 +11772,9 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                           nextLoc := res1.nextLoc',
                           nextTag := res1.nextTag',
                           pureCtx := true,
-                          externRegime := ctx.externRegime } with hctx''
+                          externRegime := ctx.externRegime,
+                          externRefAllowed := false,
+                          declaredExternRefs := res1.declared' } with hctx''
                       have htc_body' : typecheck ctx'' body.toExpr fuel'' = .ok r3 := by
                         simpa [typecheck, hctx''] using htc_body
                       have IH_body := IH' fuel'' (Nat.lt_succ_self fuel'') body.toExpr ctx'' r3 htc_body'
@@ -11743,10 +11863,7 @@ private lemma surfaceSpecToQTyp_nextLoc_mono
   | ref t =>
       cases t with
       | int =>
-          simp [freshTLoc, bind, Except.bind, pure, Except.pure] at h
-          cases h
-          change ctx.nextLoc ≤ ctx.nextLoc + 1
-          exact Nat.le_succ ctx.nextLoc
+          simp [bind, Except.bind] at h
       | bool | unit | string | ref _ | arrow _ _ =>
           simp [bind, Except.bind] at h
   | arrow _ _ =>
@@ -11839,6 +11956,11 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
             obtain ⟨argQt, _, hres⟩ :=
               typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
             rw [hres]
+        | externRef _id _rp _rpred _cp _cpred =>
+            simp at htc
+            have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
+            subst hres
+            exact Nat.le_succ ctx.nextLoc
         | op e1 op e2 =>
             simp at htc
             exact typecheckOp_nextLoc_mono ctx e1 e2 fuel' op res IH_fuel' htc
@@ -11875,6 +11997,902 @@ lemma typecheck_nextLoc_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
   ctx.nextLoc ≤ res.nextLoc' := by
   intro htc
   exact typecheck_nextLoc_mono_main ctx e fuel res htc
+
+-- ================================================================
+-- Declared extern-ref set: monotonicity and no-declare equality
+-- (serial threading; doc/extern-write-effects.md)
+-- ================================================================
+
+/-- Both `declared'` facts carried through the fuel induction: ids declared on
+    entry survive typechecking (membership monotonicity), and in contexts where
+    `extern ref` is disallowed the declared set is unchanged. -/
+private def DeclaredFacts (ctx : TypeContext) (res : TypeResult) : Prop :=
+  (∀ id, id ∈ ctx.declaredExternRefs → id ∈ res.declared') ∧
+  (ctx.externRefAllowed = false → res.declared' = ctx.declaredExternRefs)
+
+/-- `typecheckVar` returns the entry declared set unchanged. -/
+private lemma typecheckVar_declared'_eq (ctx : TypeContext) (x : Name) (res : TypeResult) :
+  typecheckVar ctx x = .ok res →
+  res.declared' = ctx.declaredExternRefs := by
+  intro htc
+  unfold typecheckVar at htc
+  cases h_lookup : ctx.varEnv.lookup x with
+  | none =>
+      simp [h_lookup] at htc
+  | some qt =>
+      simp [h_lookup] at htc
+      cases qt with
+      | mk etyp poison pred =>
+          cases pred with
+          | noPred =>
+              simp at htc
+              injection htc with h_eq
+              subst h_eq
+              rfl
+          | guardOnly k =>
+              simp at htc
+              cases hft : etyp.isFunctionType with
+              | true =>
+                  simp [hft, throw] at htc
+                  cases htc
+              | false =>
+                  simp [hft] at htc
+                  cases htagopt : ctx.tagEnv.get? k with
+                  | none =>
+                      have htagopt' : ctx.tagEnv[k]? = none := by
+                        simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                      simp [htagopt', pure, Except.pure] at htc
+                      cases htc
+                      rfl
+                  | some tv =>
+                      cases tv with
+                      | mk b deps =>
+                          have htagopt' : ctx.tagEnv[k]? = some ⟨b, deps⟩ := by
+                            simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                          simp [htagopt'] at htc
+                          cases b with
+                          | true =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              rfl
+                          | false =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              rfl
+          | guardClosure k _ _ _ =>
+              simp at htc
+              cases hft : etyp.isFunctionType with
+              | true =>
+                  simp [hft, throw] at htc
+                  cases htc
+              | false =>
+                  simp [hft] at htc
+                  cases htagopt : ctx.tagEnv.get? k with
+                  | none =>
+                      have htagopt' : ctx.tagEnv[k]? = none := by
+                        simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                      simp [htagopt', pure, Except.pure] at htc
+                      cases htc
+                      rfl
+                  | some tv =>
+                      cases tv with
+                      | mk b deps =>
+                          have htagopt' : ctx.tagEnv[k]? = some ⟨b, deps⟩ := by
+                            simpa [Std.ExtTreeMap.get?_eq_getElem?] using htagopt
+                          simp [htagopt'] at htc
+                          cases b with
+                          | true =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              rfl
+                          | false =>
+                              simp [pure, Except.pure] at htc
+                              cases htc
+                              rfl
+
+/-- `typecheckOp` threads the declared set serially and returns the second
+    operand's set. -/
+private lemma typecheckOp_declared'_eq (ctx : TypeContext) (e1 e2 : Expr) (op : Op) (fuel : Nat)
+    (res : TypeResult) :
+  typecheckOp ctx e1 e2 fuel op = .ok res →
+  ∃ (result1 result2 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    typecheckExpr (updateCtxFromResult ctx result1) e2 (fuel - 1) = .ok result2 ∧
+    res.declared' = result2.declared' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      simp [typecheckOp] at h_typecheck
+  | succ fuel' =>
+      unfold typecheckOp at h_typecheck
+      simp at h_typecheck
+      cases h_tc1_result : typecheckExpr ctx e1 fuel' with
+      | ok result1 =>
+          simp [h_tc1_result, bind, Except.bind] at h_typecheck
+          match h_qt1 : result1.qualType with
+          | QTyp.mk etyp1 p1 pred1 =>
+              rw [h_qt1] at h_typecheck
+              cases h_tc2_result : typecheckExpr (updateCtxFromResult ctx result1) e2 fuel' with
+              | ok result2 =>
+                  have h_tc2_orig := h_tc2_result
+                  simp only [updateCtxFromResult] at h_tc2_result
+                  rw [h_tc2_result] at h_typecheck
+                  simp only [pure, Except.pure] at h_typecheck
+                  match h_qt2 : result2.qualType with
+                  | QTyp.mk etyp2 p2 pred2 =>
+                      rw [h_qt2] at h_typecheck
+                      simp at h_typecheck
+                      cases h_opEType_result : opEType? op etyp1 etyp2 with
+                      | some result_etyp =>
+                          simp [h_opEType_result] at h_typecheck
+                          simp only [Nat.add_sub_cancel]
+                          rw [← h_typecheck]
+                          exact ⟨result1, result2, h_tc1_result, h_tc2_orig, rfl⟩
+                      | none =>
+                          simp [h_opEType_result] at h_typecheck
+              | error _msg2 =>
+                  have hctx : updateCtxFromResult ctx result1 = { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' } := by simp only [updateCtxFromResult]
+                  rw [hctx] at h_tc2_result
+                  simp only [h_tc2_result] at h_typecheck
+                  exact absurd h_typecheck (fun h => by injection h)
+      | error _msg =>
+          simp [h_tc1_result, bind, Except.bind] at h_typecheck
+
+/-- `typecheckUnaryOp` keeps the operand's declared set. -/
+private lemma typecheckUnaryOp_declared'_eq (ctx : TypeContext) (op : UnaryOp) (e1 : Expr) (fuel : Nat)
+    (res : TypeResult) :
+  typecheckUnaryOp ctx op e1 fuel = .ok res →
+  ∃ (result1 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    res.declared' = result1.declared' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      simp [typecheckUnaryOp] at h_typecheck
+  | succ fuel' =>
+      unfold typecheckUnaryOp at h_typecheck
+      simp at h_typecheck
+      cases h_tc1_result : typecheckExpr ctx e1 fuel' with
+      | ok result1 =>
+          simp [h_tc1_result, bind, Except.bind] at h_typecheck
+          match h_qt1 : result1.qualType with
+          | QTyp.mk etyp1 p1 pred1 =>
+              rw [h_qt1] at h_typecheck
+              cases h_opEType_result : opUnaryEType? op etyp1 with
+              | some result_etyp =>
+                  simp [h_opEType_result] at h_typecheck
+                  injection h_typecheck with h_res_eq
+                  subst h_res_eq
+                  simp only [Nat.add_sub_cancel]
+                  exact ⟨result1, h_tc1_result, rfl⟩
+              | none =>
+                  simp [h_opEType_result] at h_typecheck
+      | error _msg =>
+          simp [h_tc1_result, bind, Except.bind] at h_typecheck
+
+/-- `typecheckNewRef` keeps the operand's declared set (fresh-location
+    allocation does not touch it). -/
+private lemma typecheckNewRef_declared'_eq (ctx : TypeContext) (e1 : Expr) (fuel : Nat)
+    (res : TypeResult) :
+  typecheckNewRef ctx e1 fuel = .ok res →
+  ∃ (result1 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    res.declared' = result1.declared' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+    unfold typecheckNewRef at h_typecheck
+    simp at h_typecheck
+  | succ fuel' =>
+    unfold typecheckNewRef at h_typecheck
+    simp at h_typecheck
+    simp [bind, Except.bind] at h_typecheck
+    cases h_tc1 : typecheckExpr ctx e1 fuel' with
+    | ok result1 =>
+      simp [h_tc1] at h_typecheck
+      cases h_qt1 : result1.qualType with
+      | mk etyp poison pred =>
+        rw [h_qt1] at h_typecheck
+        simp at h_typecheck
+        split at h_typecheck
+        · simp [pure, Except.pure, freshTLocRes] at h_typecheck
+          simp only [Nat.add_sub_cancel]
+          refine ⟨result1, h_tc1, ?_⟩
+          have hd := congrArg TypeResult.declared' h_typecheck
+          simpa using hd.symm
+        · simp [Functor.map, Except.map] at h_typecheck
+    | error _err =>
+      simp [h_tc1] at h_typecheck
+
+/-- `typecheckAssign` threads the declared set serially and returns the
+    right-hand side's set. -/
+private lemma typecheckAssign_declared'_eq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat)
+    (res : TypeResult) :
+  typecheckAssign ctx e1 e2 fuel = .ok res →
+  ∃ (result1 result2 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' } e2 (fuel - 1) = .ok result2 ∧
+    res.declared' = result2.declared' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      unfold typecheckAssign at h_typecheck
+      simp at h_typecheck
+  | succ fuel' =>
+      unfold typecheckAssign at h_typecheck
+      simp at h_typecheck
+      simp [bind, Except.bind] at h_typecheck
+      cases h_tc1 : typecheckExpr ctx e1 fuel' with
+      | ok result1 =>
+          simp [h_tc1] at h_typecheck
+          cases h_qt1 : result1.qualType with
+          | mk etyp1 p1 pred1 =>
+              rw [h_qt1] at h_typecheck
+              simp at h_typecheck
+              cases etyp1 <;> simp at h_typecheck
+              rename_i ls
+              cases h_tc2 : typecheckExpr { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' } e2 fuel' with
+              | ok result2 =>
+                  rw [h_tc2] at h_typecheck
+                  simp at h_typecheck
+                  cases h_qt2 : result2.qualType with
+                  | mk etyp2 p2 pred2 =>
+                      rw [h_qt2] at h_typecheck
+                      simp at h_typecheck
+                      split at h_typecheck
+                      · simp [pure, Except.pure] at h_typecheck
+                        simp only [Nat.add_sub_cancel]
+                        refine ⟨result1, result2, h_tc1, h_tc2, ?_⟩
+                        have hd := congrArg TypeResult.declared' h_typecheck
+                        simpa using hd.symm
+                      · simp [Functor.map, Except.map] at h_typecheck
+              | error _err =>
+                  rw [h_tc2] at h_typecheck
+                  simp at h_typecheck
+      | error _err =>
+          simp [h_tc1] at h_typecheck
+
+/-- `typecheckDeref` keeps the operand's declared set in every branch. -/
+private lemma typecheckDeref_declared'_eq (ctx : TypeContext) (e : Expr) (fuel : Nat)
+    (res : TypeResult) :
+  typecheckDeref ctx e fuel = .ok res →
+  ∃ (result1 : TypeResult),
+    typecheckExpr ctx e (fuel - 1) = .ok result1 ∧
+    res.declared' = result1.declared' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      unfold typecheckDeref at h_typecheck
+      simp at h_typecheck
+  | succ fuel' =>
+      unfold typecheckDeref at h_typecheck
+      simp at h_typecheck
+      simp [bind, Except.bind] at h_typecheck
+      cases h_tc1 : typecheckExpr ctx e fuel' with
+      | ok result1 =>
+          simp [h_tc1] at h_typecheck
+          simp only [Nat.add_sub_cancel]
+          refine ⟨result1, h_tc1, ?_⟩
+          cases h_qt : result1.qualType with
+          | mk etyp poisonRef predRef =>
+              rw [h_qt] at h_typecheck
+              simp at h_typecheck
+              cases etyp <;> simp at h_typecheck
+              split at h_typecheck
+              · contradiction
+              · split at h_typecheck
+                · contradiction
+                · split at h_typecheck
+                  · simp [pure, Except.pure] at h_typecheck
+                    cases h_typecheck; rfl
+                  · split at h_typecheck
+                    · simp [pure, Except.pure] at h_typecheck
+                      cases h_typecheck; rfl
+                    · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+                    · split at h_typecheck <;> simp [pure, Except.pure] at h_typecheck <;> cases h_typecheck <;> rfl
+      | error _err =>
+          simp [h_tc1] at h_typecheck
+
+/-- `typecheckVlet` threads the declared set serially and returns the body's
+    set. -/
+private lemma typecheckVlet_declared'_eq (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fuel : Nat)
+    (res : TypeResult) :
+  typecheckVlet ctx x e1 e2 fuel = .ok res →
+  ∃ (result1 result2 : TypeResult),
+    typecheckExpr ctx e1 (fuel - 1) = .ok result1 ∧
+    typecheckExpr { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' } e2 (fuel - 1) = .ok result2 ∧
+    res.declared' = result2.declared' := by
+  intro h_typecheck
+  cases fuel with
+  | zero =>
+      unfold typecheckVlet at h_typecheck
+      simp at h_typecheck
+  | succ fuel' =>
+      unfold typecheckVlet at h_typecheck
+      simp only [Nat.add_sub_cancel]
+      cases h_shadow : ctx.varEnv.lookup x with
+      | none =>
+          simp [h_shadow] at h_typecheck
+          simp [bind, Except.bind] at h_typecheck
+          cases h_tc1 : typecheckExpr ctx e1 fuel' with
+          | ok result1 =>
+              simp [h_tc1] at h_typecheck
+              cases h_tc2 :
+                typecheckExpr
+                    { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                               tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                               nextTag := result1.nextTag', regime := result1.regime',
+                               declaredExternRefs := result1.declared' }
+                    e2 fuel' with
+              | ok result2 =>
+                  simp [h_tc2] at h_typecheck
+                  cases h_qt2 : result2.qualType with
+                  | mk _etyp2 p2 pred2 =>
+                      rw [h_qt2] at h_typecheck
+                      simp at h_typecheck
+                      simp [pure, Except.pure] at h_typecheck
+                      refine ⟨result1, result2, rfl, h_tc2, ?_⟩
+                      have hd := congrArg TypeResult.declared' h_typecheck
+                      simpa using hd.symm
+              | error _err =>
+                  simp [h_tc2] at h_typecheck
+          | error _err =>
+              simp [h_tc1] at h_typecheck
+      | some qt_outer =>
+          simp [h_shadow] at h_typecheck
+          cases h_pred : qt_outer.pred with
+          | guardClosure k _ _ _ =>
+              simp [h_pred] at h_typecheck
+              cases h_regime : (ctx.regime.lookup? k).isSome with
+              | true =>
+                  simp [h_regime] at h_typecheck
+                  contradiction
+              | false =>
+                  simp [h_regime] at h_typecheck
+                  simp [bind, Except.bind] at h_typecheck
+                  cases h_tc1 : typecheckExpr ctx e1 fuel' with
+                  | ok result1 =>
+                      simp [h_tc1] at h_typecheck
+                      cases h_tc2 :
+                        typecheckExpr
+                            { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                                       tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                       nextTag := result1.nextTag', regime := result1.regime',
+                                       declaredExternRefs := result1.declared' }
+                            e2 fuel' with
+                      | ok result2 =>
+                          simp [h_tc2] at h_typecheck
+                          cases h_qt2 : result2.qualType with
+                          | mk _etyp2 p2 pred2 =>
+                              rw [h_qt2] at h_typecheck
+                              simp at h_typecheck
+                              simp [pure, Except.pure] at h_typecheck
+                              refine ⟨result1, result2, rfl, h_tc2, ?_⟩
+                              have hd := congrArg TypeResult.declared' h_typecheck
+                              simpa using hd.symm
+                      | error _err =>
+                          simp [h_tc2] at h_typecheck
+                  | error _err =>
+                      simp [h_tc1] at h_typecheck
+          | guardOnly _ =>
+              simp [h_pred] at h_typecheck
+              simp [bind, Except.bind] at h_typecheck
+              cases h_tc1 : typecheckExpr ctx e1 fuel' with
+              | ok result1 =>
+                  simp [h_tc1] at h_typecheck
+                  cases h_tc2 :
+                    typecheckExpr
+                        { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                                   tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                   nextTag := result1.nextTag', regime := result1.regime',
+                                   declaredExternRefs := result1.declared' }
+                        e2 fuel' with
+                  | ok result2 =>
+                      simp [h_tc2] at h_typecheck
+                      cases h_qt2 : result2.qualType with
+                      | mk _etyp2 p2 pred2 =>
+                          rw [h_qt2] at h_typecheck
+                          simp at h_typecheck
+                          simp [pure, Except.pure] at h_typecheck
+                          refine ⟨result1, result2, rfl, h_tc2, ?_⟩
+                          have hd := congrArg TypeResult.declared' h_typecheck
+                          simpa using hd.symm
+                  | error _err =>
+                      simp [h_tc2] at h_typecheck
+              | error _err =>
+                  simp [h_tc1] at h_typecheck
+          | noPred =>
+              simp [h_pred] at h_typecheck
+              simp [bind, Except.bind] at h_typecheck
+              cases h_tc1 : typecheckExpr ctx e1 fuel' with
+              | ok result1 =>
+                  simp [h_tc1] at h_typecheck
+                  cases h_tc2 :
+                    typecheckExpr
+                        { ctx with memEnv := result1.memEnv', varEnv := ctx.varEnv.update x result1.qualType,
+                                   tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                   nextTag := result1.nextTag', regime := result1.regime',
+                                   declaredExternRefs := result1.declared' }
+                        e2 fuel' with
+                  | ok result2 =>
+                      simp [h_tc2] at h_typecheck
+                      cases h_qt2 : result2.qualType with
+                      | mk _etyp2 p2 pred2 =>
+                          rw [h_qt2] at h_typecheck
+                          simp at h_typecheck
+                          simp [pure, Except.pure] at h_typecheck
+                          refine ⟨result1, result2, rfl, h_tc2, ?_⟩
+                          have hd := congrArg TypeResult.declared' h_typecheck
+                          simpa using hd.symm
+                  | error _err =>
+                      simp [h_tc2] at h_typecheck
+              | error _err =>
+                  simp [h_tc1] at h_typecheck
+
+/-- `joinTypeResults` pins the joined declared set to the first member's. -/
+private lemma joinTypeResults_declared'_eq
+  (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
+    joinTypeResults ctx r rs = .ok res →
+    res.declared' = r.declared' := by
+  intro hjoin
+  let joinStep :
+      (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
+        TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
+    fun (acc : ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) (result : TypeResult) =>
+      match result.qualType with
+      | ⟨resEtyp, resPoison, resPred⟩ =>
+          Except.ok
+            (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
+              joinMemEnvsStrong acc.2.1 result.memEnv',
+              joinPoison acc.2.2.1 resPoison,
+              joinPredicates acc.2.2.2.1 resPred,
+              joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
+              joinRegimes acc.2.2.2.2.2.1 result.regime',
+              max acc.2.2.2.2.2.2.1 result.nextLoc',
+              max acc.2.2.2.2.2.2.2 result.nextTag')
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw, TypecheckM] at hjoin
+      cases hcheck :
+          (List.foldlM
+      (fun x result =>
+        match result.qualType with
+        | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
+          if beqETypSignature etyp resEtyp = false then
+            Except.error
+              (toString "Closure alternatives produced incompatible result types: " ++ toString (repr etyp) ++
+                  toString " vs " ++
+                toString (repr resEtyp))
+          else Except.ok ())
+      () rs : Except String Unit) with
+      | error err =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+      | ok _ =>
+          erw [hcheck] at hjoin
+          simp at hjoin
+          cases hfold :
+              List.foldlM joinStep
+                (etyp, r.memEnv', poison, pred, r.tagEnv', r.regime', r.nextLoc', r.nextTag') rs with
+          | error err =>
+              erw [hfold] at hjoin
+              simp at hjoin
+          | ok a =>
+              erw [hfold] at hjoin
+              simp at hjoin
+              subst res
+              simp
+
+/-- Every successful `applyFnTClosure` pins the result's declared set to the
+    pre-application one (bodies run with `externRefAllowed := false`). -/
+private lemma applyFnTClosure_declared'_eq
+    (tcl : FnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (fuel : Nat) :
+    applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
+    r2.declared' = r1.declared' := by
+  intro happly
+  cases tcl with
+  | regular x body env =>
+    unfold applyFnTClosure at happly
+    cases fuel <;> simp at happly
+    simp [bind, Except.bind] at happly
+    rcases htc : typecheckExpr _ _ _ with _ | ⟨r⟩
+      <;> rw [htc] at happly
+      <;> simp at happly
+    rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
+    simp [hqt] at happly
+    rcases hsub : isSubtype st2 _
+      <;> rw [hsub] at happly
+      <;> simp at happly
+    · simp [Functor.map, Except.map] at happly
+    · simp [pure, Except.pure] at happly
+      subst r2
+      rfl
+  | extern id x retSpec effects capturedEnv declaredArgQt captures =>
+    unfold applyFnTClosure at happly
+    cases fuel with
+    | zero => simp at happly
+    | succ n =>
+        simp only [bind, Except.bind] at happly
+        split at happly
+        · exact nomatch happly
+        simp only [pure, Except.pure] at happly
+        split at happly
+        · exact nomatch happly
+        · next tmRes hcollect =>
+          obtain ⟨tm, nt'⟩ := tmRes
+          split at happly
+          · exact nomatch happly
+          · split at happly
+            · -- ExternReturn.simple
+              split at happly
+              · exact nomatch happly
+              · split at happly
+                · exact nomatch happly
+                · cases happly
+                  rfl
+            · -- ExternReturn.nestedFn
+              split at happly
+              · exact nomatch happly
+              · cases happly
+                rfl
+            · -- ExternReturn.nestedPfn
+              split at happly
+              · exact nomatch happly
+              · cases happly
+                rfl
+
+/-- Cursor variant of `applyFnTClosure_declared'_eq`. -/
+private lemma applyFnTClosureAtCursor_declared'_eq
+    (tcl : FnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat) :
+    applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2 →
+    r2.declared' = r1.declared' := by
+  intro happly
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hOld :
+      applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel =
+        .ok r2 := by
+    unfold applyFnTClosure
+    unfold applyFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  simpa [rCursor] using
+    applyFnTClosure_declared'_eq tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel hOld
+
+/-- Every successful `applyPFnTClosure` pins the result's declared set to the
+    pre-application one. -/
+private lemma applyPFnTClosure_declared'_eq
+    (tcl : PFnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (fuel : Nat) :
+    applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 fuel = .ok r2 →
+    r2.declared' = r1.declared' := by
+  intro happly
+  cases tcl with
+  | regular x body env =>
+      unfold applyPFnTClosure at happly
+      cases fuel <;> simp at happly
+      simp [bind, Except.bind] at happly
+      rcases htc_body : typecheckExpr _ _ _ with _ | ⟨r3⟩
+      · rw [htc_body] at happly
+        simp at happly
+      · rw [htc_body] at happly
+        simp at happly
+        rcases hq3 : r3.qualType with ⟨etyp3, poison3, pred3⟩
+        simp [hq3] at happly
+        rcases hsub : isSubtype st2 { etyp := etyp3, poison := poison3, pred := pred3 }
+        · rw [hsub] at happly
+          simp [Functor.map, Except.map] at happly
+        · rw [hsub] at happly
+          simp [pure, Except.pure] at happly
+          subst r2
+          rfl
+  | extern id x retSpec capturedEnv declaredArgQt captures =>
+      unfold applyPFnTClosure at happly
+      cases fuel with
+      | zero => simp at happly
+      | succ n =>
+          simp only [bind, Except.bind] at happly
+          split at happly
+          · exact nomatch happly
+          simp only [pure, Except.pure] at happly
+          split at happly
+          · -- ExternReturn.simple
+            split at happly
+            · exact nomatch happly
+            · next tmRes hcollect =>
+              obtain ⟨tm, nt'⟩ := tmRes
+              split at happly
+              · exact nomatch happly
+              · split at happly
+                · exact nomatch happly
+                · cases happly
+                  rfl
+          · -- ExternReturn.nestedFn
+            split at happly
+            · exact nomatch happly
+            · cases happly
+              rfl
+          · -- ExternReturn.nestedPfn
+            split at happly
+            · exact nomatch happly
+            · cases happly
+              rfl
+
+/-- Cursor variant of `applyPFnTClosure_declared'_eq`. -/
+private lemma applyPFnTClosureAtCursor_declared'_eq
+    (tcl : PFnTClosure) (ctx : TypeContext)
+    (st1 st2 : Typ) (p p1 : Poison)
+    (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+    (r1 r2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat) :
+    applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1
+        cursor fuel = .ok r2 →
+    r2.declared' = r1.declared' := by
+  intro happly
+  let rCursor : TypeResult := { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+  have hOld :
+      applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx rCursor fuel =
+        .ok r2 := by
+    unfold applyPFnTClosure
+    unfold applyPFnTClosureAtCursor at happly
+    simpa [rCursor] using happly
+  simpa [rCursor] using
+    applyPFnTClosure_declared'_eq tcl ctx st1 st2 p p1 argEtyp argPoison argPred
+      rCursor r2 fuel hOld
+
+/-- `typecheckApp` returns the function-position result's declared set: every
+    closure member pins it and the join keeps the first member's. -/
+private lemma typecheckApp_declared'_eq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat)
+    (res : TypeResult) :
+  typecheckApp ctx e1 e2 fuel = .ok res →
+  ∃ (result2 result1 : TypeResult),
+    typecheckExpr ctx e2 (fuel - 1) = .ok result2 ∧
+    typecheckExpr
+        { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc',
+                   nextTag := result2.nextTag', regime := result2.regime',
+                   declaredExternRefs := result2.declared' }
+        e1 (fuel - 1) = .ok result1 ∧
+    res.declared' = result1.declared' := by
+  intro htc
+  cases fuel with
+  | zero =>
+      unfold typecheckApp at htc
+      simp at htc
+  | succ fuel' =>
+      rcases typecheckApp_arrow_structure_full ctx e1 e2 fuel' res htc with
+        ⟨result2, result1, etyp2, p2, pred2, _hq2, htc2, htc1, hbranch⟩
+      simp only [Nat.add_sub_cancel]
+      refine ⟨result2, result1, htc2, htc1, ?_⟩
+      rcases hbranch with
+        ⟨st1, st2, p, p1, tcls, results, first, rest, _h1, _h2, _h3, _h4, _h5, hthread, hresults, hjoin⟩ |
+        ⟨st1, st2, p, p1, tcls, results, first, rest, _h1, _h2, _h3, _h4, hthread, hresults, hjoin⟩
+      · have hfirst : first.declared' = result1.declared' := by
+          have hall := applyClosuresThreaded_forall
+            (P := fun r => r.declared' = result1.declared')
+            (fun tcl cursor => applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel')
+            tcls (result1.nextTag', result1.nextLoc') results
+            (fun item cursor r h =>
+              applyFnTClosureAtCursor_declared'_eq item ctx st1 st2 p p1 etyp2 p2 pred2 result1 r cursor fuel' h)
+            hthread
+          exact hall first (by rw [hresults]; exact List.Mem.head _)
+        exact (joinTypeResults_declared'_eq ctx first rest res hjoin).trans hfirst
+      · have hfirst : first.declared' = result1.declared' := by
+          have hall := applyClosuresThreaded_forall
+            (P := fun r => r.declared' = result1.declared')
+            (fun tcl cursor => applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel')
+            tcls (result1.nextTag', result1.nextLoc') results
+            (fun item cursor r h =>
+              applyPFnTClosureAtCursor_declared'_eq item ctx st1 st2 p p1 etyp2 p2 pred2 result1 r cursor fuel' h)
+            hthread
+          exact hall first (by rw [hresults]; exact List.Mem.head _)
+        exact (joinTypeResults_declared'_eq ctx first rest res hjoin).trans hfirst
+
+private lemma typecheck_declared'_main : ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
+  typecheck ctx e fuel = .ok res →
+  DeclaredFacts ctx res := by
+  intro ctx e fuel res htc
+  revert ctx e res htc
+  induction fuel using Nat.strong_induction_on with
+  | _ fuel IH =>
+    intro ctx e res htc
+    have IH_converted : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
+      typecheck ctx' e m = .ok res' →
+      DeclaredFacts ctx' res' := by
+      intro m h_lt e' ctx' res' htc'
+      exact IH m h_lt ctx' e' res' htc'
+    unfold typecheck at htc
+    cases fuel with
+    | zero =>
+        unfold typecheckExpr at htc
+        simp at htc
+    | succ fuel' =>
+        unfold typecheckExpr at htc
+        have hlt : fuel' - 1 < fuel' + 1 := by omega
+        have hlt' : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
+        cases e with
+        | num _n =>
+            unfold typecheckInt at htc
+            simp at htc
+            injection htc with h_eq
+            subst h_eq
+            exact ⟨fun id hid => hid, fun _ => rfl⟩
+        | bool _b =>
+            unfold typecheckBool at htc
+            simp at htc
+            injection htc with h_eq
+            subst h_eq
+            exact ⟨fun id hid => hid, fun _ => rfl⟩
+        | unit =>
+            unfold typecheckUnit at htc
+            simp at htc
+            injection htc with h_eq
+            subst h_eq
+            exact ⟨fun id hid => hid, fun _ => rfl⟩
+        | str _s =>
+            unfold typecheckString at htc
+            simp at htc
+            injection htc with h_eq
+            subst h_eq
+            exact ⟨fun id hid => hid, fun _ => rfl⟩
+        | var x =>
+            simp at htc
+            have hd := typecheckVar_declared'_eq ctx x res htc
+            exact ⟨fun id hid => hd ▸ hid, fun _ => hd⟩
+        | fn x st1 body st2 =>
+            have hfn := typecheckFn_ok_eq htc; subst hfn
+            exact ⟨fun id hid => hid, fun _ => rfl⟩
+        | pfn x st1 body st2 =>
+            unfold typecheckPfn at htc
+            simp [Bind.bind, Except.bind] at htc
+            cases h_topexpr : body.toPExpr with
+            | error _ =>
+                simp [h_topexpr] at htc
+            | ok _ =>
+                simp [h_topexpr] at htc
+                injection htc with h_eq
+                subst h_eq
+                exact ⟨fun id hid => hid, fun _ => rfl⟩
+        | externVal typ poison pred =>
+            simp only [typecheckExternVal] at htc
+            simp [Bind.bind, Except.bind, pure, Except.pure] at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            cases htc
+            exact ⟨fun id hid => hid, fun _ => rfl⟩
+        | externFn id arg argTyp argPoison argPred retSpec effects =>
+            obtain ⟨argQt, _, hres⟩ :=
+              typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
+            rw [hres]
+            exact ⟨fun id' hid => hid, fun _ => rfl⟩
+        | externPfn id arg argTyp argPoison argPred retSpec =>
+            obtain ⟨argQt, _, hres⟩ :=
+              typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
+            rw [hres]
+            exact ⟨fun id' hid => hid, fun _ => rfl⟩
+        | externRef _id _rp _rpred _cp _cpred =>
+            simp at htc
+            have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
+            subst hres
+            refine ⟨fun id' hid => List.mem_cons_of_mem _ hid, fun hallow => ?_⟩
+            exfalso
+            unfold typecheckExternRef at htc
+            simp [hallow, bind, Except.bind] at htc
+        | op e1 op e2 =>
+            simp at htc
+            obtain ⟨r1, r2, htc1, htc2, hdecl⟩ := typecheckOp_declared'_eq ctx e1 e2 op fuel' res htc
+            have h1 := IH_converted (fuel' - 1) hlt e1 ctx r1 (by simpa [typecheck] using htc1)
+            have h2 := IH_converted (fuel' - 1) hlt e2 _ r2 (by simpa [typecheck] using htc2)
+            exact ⟨fun id hid => hdecl ▸ h2.1 id (h1.1 id hid),
+                   fun hallow => hdecl.trans ((h2.2 hallow).trans (h1.2 hallow))⟩
+        | unaryop op e1 =>
+            simp at htc
+            obtain ⟨r1, htc1, hdecl⟩ := typecheckUnaryOp_declared'_eq ctx op e1 fuel' res htc
+            have h1 := IH_converted (fuel' - 1) hlt e1 ctx r1 (by simpa [typecheck] using htc1)
+            exact ⟨fun id hid => hdecl ▸ h1.1 id hid,
+                   fun hallow => hdecl.trans (h1.2 hallow)⟩
+        | ite e1 e2 e3 =>
+            simp at htc
+            have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
+            rcases hstruct with h1 | h2 | hstd
+            · rcases h1 with ⟨k, deps, _, _, res1, htc1, _, res2, res3, htc2, htc3,
+                _, _, _, _, _, hdecl, _, _⟩
+              have hP := IH_converted (fuel' - 1) hlt e1 { ctx with pureCtx := true } res1
+                (by simpa [typecheck] using htc1)
+              have hT := IH_converted (fuel' - 1) hlt e2 _ res2 (by simpa [typecheck] using htc2)
+              have hF := IH_converted (fuel' - 1) hlt e3 _ res3 (by simpa [typecheck] using htc3)
+              refine ⟨fun id hid => ?_, fun hallow => ?_⟩
+              · rw [hdecl]
+                exact hF.1 id (hT.1 id (hP.1 id hid))
+              · rw [hdecl]
+                exact (hF.2 hallow).trans ((hT.2 hallow).trans (hP.2 hallow))
+            · rcases h2 with ⟨k, deps, _, _, res1, htc1, _, res2, res3, htc2, htc3,
+                _, _, _, _, _, hdecl, _, _⟩
+              have hP := IH_converted (fuel' - 1) hlt e1 { ctx with pureCtx := true } res1
+                (by simpa [typecheck] using htc1)
+              have hT := IH_converted (fuel' - 1) hlt e2 _ res2 (by simpa [typecheck] using htc2)
+              have hF := IH_converted (fuel' - 1) hlt e3 _ res3 (by simpa [typecheck] using htc3)
+              refine ⟨fun id hid => ?_, fun hallow => ?_⟩
+              · rw [hdecl]
+                exact hF.1 id (hT.1 id (hP.1 id hid))
+              · rw [hdecl]
+                exact (hF.2 hallow).trans ((hT.2 hallow).trans (hP.2 hallow))
+            · rcases hstd with ⟨_h_std_case, res1, htc1, _hbool, res2, htc2, res3, htc3,
+                _, _, _, _, _, hdecl, _, _, _⟩
+              have h1 := IH_converted (fuel' - 1) hlt e1 ctx res1 (by simpa [typecheck] using htc1)
+              have h2 := IH_converted (fuel' - 1) hlt e2 _ res2 (by simpa [typecheck] using htc2)
+              have h3 := IH_converted (fuel' - 1) hlt e3 _ res3 (by simpa [typecheck] using htc3)
+              refine ⟨fun id hid => ?_, fun hallow => ?_⟩
+              · rw [hdecl]
+                exact h3.1 id (h2.1 id (h1.1 id hid))
+              · rw [hdecl]
+                exact (h3.2 hallow).trans ((h2.2 hallow).trans (h1.2 hallow))
+        | newRef e1 =>
+            simp at htc
+            obtain ⟨r1, htc1, hdecl⟩ := typecheckNewRef_declared'_eq ctx e1 fuel' res htc
+            have h1 := IH_converted (fuel' - 1) hlt e1 ctx r1 (by simpa [typecheck] using htc1)
+            exact ⟨fun id hid => hdecl ▸ h1.1 id hid,
+                   fun hallow => hdecl.trans (h1.2 hallow)⟩
+        | assign e1 e2 =>
+            simp at htc
+            obtain ⟨r1, r2, htc1, htc2, hdecl⟩ := typecheckAssign_declared'_eq ctx e1 e2 fuel' res htc
+            have h1 := IH_converted (fuel' - 1) hlt e1 ctx r1 (by simpa [typecheck] using htc1)
+            have h2 := IH_converted (fuel' - 1) hlt e2 _ r2 (by simpa [typecheck] using htc2)
+            exact ⟨fun id hid => hdecl ▸ h2.1 id (h1.1 id hid),
+                   fun hallow => hdecl.trans ((h2.2 hallow).trans (h1.2 hallow))⟩
+        | deref e1 =>
+            simp at htc
+            obtain ⟨r1, htc1, hdecl⟩ := typecheckDeref_declared'_eq ctx e1 fuel' res htc
+            have h1 := IH_converted (fuel' - 1) hlt e1 ctx r1 (by simpa [typecheck] using htc1)
+            exact ⟨fun id hid => hdecl ▸ h1.1 id hid,
+                   fun hallow => hdecl.trans (h1.2 hallow)⟩
+        | seq e1 e2 =>
+            simp at htc
+            obtain ⟨r1, ctx', htc1, hctx', htc2⟩ := typecheckSeq_structure ctx e1 e2 fuel' res htc
+            subst hctx'
+            have h1 := IH_converted (fuel' - 1) hlt e1 ctx r1 (by simpa [typecheck] using htc1)
+            have h2 := IH_converted (fuel' - 1) hlt e2 _ res (by simpa [typecheck] using htc2)
+            exact ⟨fun id hid => h2.1 id (h1.1 id hid),
+                   fun hallow => (h2.2 hallow).trans (h1.2 hallow)⟩
+        | vlet x e1 e2 =>
+            simp at htc
+            obtain ⟨r1, r2, htc1, htc2, hdecl⟩ := typecheckVlet_declared'_eq ctx x e1 e2 fuel' res htc
+            have h1 := IH_converted (fuel' - 1) hlt e1 ctx r1 (by simpa [typecheck] using htc1)
+            have h2 := IH_converted (fuel' - 1) hlt e2 _ r2 (by simpa [typecheck] using htc2)
+            exact ⟨fun id hid => hdecl ▸ h2.1 id (h1.1 id hid),
+                   fun hallow => hdecl.trans ((h2.2 hallow).trans (h1.2 hallow))⟩
+        | app e1 e2 =>
+            simp at htc
+            obtain ⟨r2, r1, htc2, htc1, hdecl⟩ := typecheckApp_declared'_eq ctx e1 e2 fuel' res htc
+            have h2 := IH_converted (fuel' - 1) hlt e2 ctx r2 (by simpa [typecheck] using htc2)
+            have h1 := IH_converted (fuel' - 1) hlt e1 _ r1 (by simpa [typecheck] using htc1)
+            exact ⟨fun id hid => hdecl ▸ h1.1 id (h2.1 id hid),
+                   fun hallow => hdecl.trans ((h1.2 hallow).trans (h2.2 hallow))⟩
+
+/-- The declared extern-ref set is monotone under typechecking: every id
+    declared on entry is still declared in the result. -/
+lemma typecheck_declared'_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
+  typecheck ctx e fuel = .ok res →
+  ∀ id, id ∈ ctx.declaredExternRefs → id ∈ res.declared' := by
+  intro htc
+  exact (typecheck_declared'_main ctx e fuel res htc).1
+
+/-- Where `extern ref` declarations are disallowed (in particular inside
+    fn/pfn bodies), typechecking cannot change the declared set. -/
+lemma typecheck_declared'_eq_of_not_allowed (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
+  ctx.externRefAllowed = false →
+  typecheck ctx e fuel = .ok res →
+  res.declared' = ctx.declaredExternRefs := by
+  intro hallow htc
+  exact (typecheck_declared'_main ctx e fuel res htc).2 hallow
 
 -- ================================================================
 -- wfTypeResult Preservation by Typechecker
@@ -13400,7 +14418,7 @@ private lemma typecheckAssign_wfTypeResult
         cases etyp1 with
         | ref ls =>
           simp at htc
-          set ctx2 : TypeContext := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+          set ctx2 : TypeContext := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv', nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime', declaredExternRefs := result1.declared' }
           have hmono1 : ctx.nextLoc ≤ result1.nextLoc' :=
             typecheck_nextLoc_mono ctx e1 fuel' result1 htc1'
           have hwf2_ctx : wfTypeContext ctx2 := wfTypeContext_of_wfTypeResult ctx result1 hwf1 hwf hmono1
@@ -13465,8 +14483,8 @@ private lemma typecheckIf_wfTypeResult
     have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel'.succ res htc
     rcases hstruct with h1 | h2 | hstd
     · -- Mode 1: Depoison, R(k) = true
-      rcases h1 with ⟨k, deps, _, _, _, _, _, res2, res3, htc2, _htc3, hmem, _, hnextloc, _, _, _, _⟩
-      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+      rcases h1 with ⟨k, deps, _, _, res1, _, _, res2, res3, htc2, _htc3, hmem, _, hnextloc, _, _, _, _⟩
+      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := res1.declared' }
       have htc2' : typecheck ctxTrue e2 fuel' = .ok res2 := by simpa [ctxTrue] using htc2
       have hwf_ctxT : wfTypeContext ctxTrue := by simp only [ctxTrue, wfTypeContext]; exact hwf
       have hwf2 : wfTypeResult res2 := IH fuel' h_fuel e2 ctxTrue res2 hwf_ctxT htc2'
@@ -13474,10 +14492,10 @@ private lemma typecheckIf_wfTypeResult
       rw [hmem] at hcontains
       exact Nat.lt_of_lt_of_le (hwf2 l' hcontains) (hnextloc ▸ le_max_left _ _)
     · -- Mode 2: Depoison, R(k) = false
-      rcases h2 with ⟨k, deps, _, _, _, _, _, res2, res3, htc2, htc3, hmem, _, hnextloc, _, _, _, _⟩
-      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+      rcases h2 with ⟨k, deps, _, _, res1, _, _, res2, res3, htc2, htc3, hmem, _, hnextloc, _, _, _, _⟩
+      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := res1.declared' }
       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                               nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                                               nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
       have htc2' : typecheck ctxTrue e2 fuel' = .ok res2 := by simpa [ctxTrue] using htc2
       have hmono2 : ctxTrue.nextLoc ≤ res2.nextLoc' := by
         have := typecheck_nextLoc_mono ctxTrue e2 fuel' res2 htc2'; simpa [ctxTrue] using this
@@ -13506,7 +14524,7 @@ private lemma typecheckIf_wfTypeResult
       have h_mono2 : res1.nextLoc' ≤ res2.nextLoc' := by
         have := typecheck_nextLoc_mono ctx'' e2 fuel' res2 htc2'
         simp [ctx'', ctx', ctxAfter] at this; exact this
-      let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+      let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
       have hwf_ctxE3 : wfTypeContext ctxForE3 := by
         simp only [ctxForE3, ctx'', ctx', ctxAfter, wfTypeContext]
         exact ⟨fun l hl => Nat.lt_of_lt_of_le (hwf_ctx'.1 l hl) h_mono2,
@@ -13862,7 +14880,9 @@ private lemma applyFnTClosure_wfTypeResult
         tagEnv := result_fn.tagEnv',
         nextTag := result_fn.nextTag',
         nextLoc := result_fn.nextLoc',
-        regime := result_fn.regime' }
+        regime := result_fn.regime',
+        externRefAllowed := false,
+        declaredExternRefs := result_fn.declared' }
       cases htc_body : typecheckExpr ctx'' body fuelBody with
       | error _ => dsimp only [ctx''] at htc_body; simp [htc_body] at htc
       | ok result3 =>
@@ -13932,7 +14952,9 @@ private lemma applyPFnTClosure_wfTypeResult
         pureCtx := true,
         nextLoc := result_fn.nextLoc',
         nextTag := result_fn.nextTag',
-        regime := result_fn.regime' }
+        regime := result_fn.regime',
+        externRefAllowed := false,
+        declaredExternRefs := result_fn.declared' }
       cases htc_body : typecheckExpr ctx'' (PExpr.toExpr body) fuelBody with
       | error _ => dsimp only [ctx''] at htc_body; simp [htc_body] at htc
       | ok result3 =>
@@ -14275,7 +15297,8 @@ private lemma applyFnTClosure_refLocsResultOutputs
         memEnv := result_fn.memEnv', varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
         tagEnv := result_fn.tagEnv', nextTag := result_fn.nextTag',
-        nextLoc := result_fn.nextLoc', regime := result_fn.regime' }
+        nextLoc := result_fn.nextLoc', regime := result_fn.regime',
+        externRefAllowed := false, declaredExternRefs := result_fn.declared' }
       cases htc_body : typecheckExpr ctx'' body fuelBody with
       | error _ => dsimp only [ctx''] at htc_body; simp [htc_body] at htc
       | ok result3 =>
@@ -14368,7 +15391,8 @@ private lemma applyPFnTClosure_refLocsResultOutputs
         memEnv := result_fn.memEnv', varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
         tagEnv := result_fn.tagEnv', nextTag := result_fn.nextTag',
-        nextLoc := result_fn.nextLoc', regime := result_fn.regime', pureCtx := true }
+        nextLoc := result_fn.nextLoc', regime := result_fn.regime', pureCtx := true,
+        externRefAllowed := false, declaredExternRefs := result_fn.declared' }
       cases htc_body : typecheckExpr ctx'' (PExpr.toExpr body) fuelBody with
       | error _ => simp only [ctx''] at htc_body; simp [htc_body] at htc
       | ok result3 =>
@@ -14833,6 +15857,22 @@ private lemma typecheckExpr_preserves_refLocs_main :
         simp at hmem; subst hmem
         exact CapturedEnvRefLocsFullBounded_of_toCaptured hrlCtx hclCtx
 
+      -- ────────────────── externRef: allocates one fresh ref location ──────────────────
+      | externRef _id _rp _rpred _cp _cpred =>
+        simp at htc
+        have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
+        subst hres
+        refine ⟨?_, ?_, trivial⟩
+        · -- wfTypeResult: all locs in memEnv' are < nextLoc'
+          intro l' hl'
+          rcases updateMemEnv_contains_eq_or_old ctx.memEnv ctx.nextLoc l' _ hl' with h | h
+          · rw [h]; exact Nat.lt_succ_self _
+          · exact Nat.lt_of_lt_of_le (hwfMem l' h) (Nat.le_succ _)
+        · -- etypRefLocsBounded for ref (singleton ctx.nextLoc) bounded by ctx.nextLoc + 1
+          intro l hmem
+          simp [LocSet.singleton] at hmem
+          subst hmem; exact Nat.lt_succ_self _
+
       -- ────────────────── externVal: result from surfaceSpecToQTyp ──────────────────
       | externVal typ poison pred =>
         -- externVal: result etyp is int, bool, unit, string, or ref with fresh loc
@@ -14846,26 +15886,11 @@ private lemma typecheckExpr_preserves_refLocs_main :
         cases htc
         rename_i _surf _heqSurf
         unfold surfaceSpecToQTyp at _heqSurf
-        split at _heqSurf <;> simp [freshTLoc, bind, Except.bind, pure, Except.pure] at _heqSurf
+        split at _heqSurf <;> simp [bind, Except.bind, pure, Except.pure] at _heqSurf
         · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- int
         · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- bool
         · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- unit
         · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- string
-        · -- ref case: fresh location
-          split at _heqSurf <;> simp (config := { failIfUnchanged := false }) at _heqSurf
-          subst _heqSurf
-          rename_i _v _hcond
-          split at _hcond
-          · simp only [Except.ok.injEq] at _hcond; cases _hcond
-            refine ⟨by intro l' hl'
-                       rcases updateMemEnv_contains_eq_or_old ctx.memEnv ctx.nextLoc l' _ hl' with h | h
-                       · rw [h]; exact Nat.lt_succ_self _
-                       · exact Nat.lt_of_lt_of_le (hwfMem l' h) (Nat.le_succ _), ?_, trivial⟩
-            · -- etypRefLocsBounded (ref (singleton ctx.nextLoc)) (ctx.nextLoc + 1)
-              intro l hmem
-              simp [LocSet.singleton] at hmem
-              subst hmem; exact Nat.lt_succ_self _
-          · simp at _hcond
 
       -- ────────────────── op: result etyp from opEType? (always int or bool) ──────────────────
       | op e1 oper e2 =>
@@ -14989,8 +16014,8 @@ private lemma typecheckExpr_preserves_refLocs_main :
         have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
         rcases hstruct with hmode1 | hmode2 | hmode3
         · -- Mode 1 (true branch): res.etyp = res2.etyp, nextLoc' = max
-          obtain ⟨k, deps, _, _, _, _, _, res2, _, htc_e2, _, _, _, hnextloc, _, _, -, hretyp⟩ := hmode1
-          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+          obtain ⟨k, deps, _, _, res1, _, _, res2, _, htc_e2, _, _, _, hnextloc, _, _, _, -, hretyp⟩ := hmode1
+          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := res1.declared' }
           have htc2' : typecheck ctxTrue e2 (fuel' - 1) = .ok res2 := htc_e2
           have hIH2 := IH' (fuel' - 1) (by omega) e2 ctxTrue res2 ⟨hwfMem, hrlCtx, hclCtx⟩ htc2'
           refine ⟨hwfRes, ?_, ?_⟩
@@ -14999,13 +16024,14 @@ private lemma typecheckExpr_preserves_refLocs_main :
           · rw [hretyp, hnextloc]
             exact etypClosuresCapturedRefLocsBounded_mono hIH2.2.2 (Nat.le_max_left _ _)
         · -- Mode 2 (false branch): res.etyp = res3.etyp, nextLoc' = max
-          obtain ⟨k, deps, _, _, _, _, _, res2, res3, htc_e2, htc_e3, _, _, hnextloc, _, _, -, hretyp⟩ := hmode2
-          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+          obtain ⟨k, deps, _, _, res1, _, _, res2, res3, htc_e2, htc_e3, _, _, hnextloc, _, _, _, -, hretyp⟩ := hmode2
+          let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩, declaredExternRefs := res1.declared' }
           have hmono2 : ctx.nextLoc ≤ res2.nextLoc' :=
             typecheck_nextLoc_mono_main ctxTrue e2 (fuel' - 1) res2 htc_e2
           let ctxFalse : TypeContext :=
             { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                       nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                       nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                       declaredExternRefs := res2.declared' }
           have hIH3 := IH' (fuel' - 1) (by omega) e3 ctxFalse res3
             ⟨fun l h => Nat.lt_of_lt_of_le (hwfMem l h) hmono2,
              varEnvRefLocsBounded_mono hrlCtx hmono2,
@@ -15018,7 +16044,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
         · -- Mode 3 (conservative): res.etyp = joinETyps res2 res3, nextLoc' = max
           obtain ⟨_, hmode3_rest⟩ := hmode3
           obtain ⟨res1, htc_e1, _, res2, htc_e2, res3, htc_e3,
-            _, _, hnextloc, _, _, -, hretyp, -⟩ := hmode3_rest
+            _, _, hnextloc, _, _, _, -, hretyp, -⟩ := hmode3_rest
           have htc1' := typecheck_of_typecheckExpr htc_e1
           have hmono1 := typecheck_nextLoc_mono_main ctx e1 (fuel' - 1) res1 htc1'
           have hwf1 := (IH' (fuel' - 1) (by omega) e1 ctx res1 ⟨hwfMem, hrlCtx, hclCtx⟩ htc1').1
@@ -15073,7 +16099,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
               have hwf_ctx' : wfTypeContext (updateCtxFromResult ctx result2) :=
                 ⟨hIH_e2.1, varEnvRefLocsBounded_mono hrlCtx hmono2,
                  varEnvClosuresCapturedRefLocsBounded_mono hclCtx hmono2⟩
-              cases htc1 : typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime' } e1 fuel'' with
+              cases htc1 : typecheckExpr { ctx with memEnv := result2.memEnv', tagEnv := result2.tagEnv', nextLoc := result2.nextLoc', nextTag := result2.nextTag', regime := result2.regime', declaredExternRefs := result2.declared' } e1 fuel'' with
               | error _ => simp [htc1] at htc
               | ok result1 =>
                 simp [htc1] at htc
@@ -15461,7 +16487,9 @@ private lemma applyFnTClosure_mem_contains_preserved
               tagEnv := result_fn.tagEnv',
               nextTag := result_fn.nextTag',
               nextLoc := result_fn.nextLoc',
-              regime := result_fn.regime' }
+              regime := result_fn.regime',
+              externRefAllowed := false,
+              declaredExternRefs := result_fn.declared' }
           cases htc_body : typecheckExpr ctx'' body fuelBody with
           | error _ =>
               dsimp only [ctx''] at htc_body
@@ -15525,7 +16553,9 @@ private lemma applyPFnTClosure_mem_contains_preserved
               pureCtx := true,
               nextLoc := result_fn.nextLoc',
               nextTag := result_fn.nextTag',
-              regime := result_fn.regime' }
+              regime := result_fn.regime',
+              externRefAllowed := false,
+              declaredExternRefs := result_fn.declared' }
           cases htc_body : typecheckExpr ctx'' (PExpr.toExpr body) fuelBody with
           | error _ =>
               dsimp only [ctx''] at htc_body
@@ -15601,7 +16631,8 @@ private lemma typecheckApp_mem_contains_preserved
                   tagEnv := result2.tagEnv'
                   nextLoc := result2.nextLoc'
                   nextTag := result2.nextTag'
-                  regime := result2.regime' }
+                  regime := result2.regime'
+                  declaredExternRefs := result2.declared' }
               have hctxFun : ctxFun.memEnv.contains l := by
                 simpa [ctxFun] using hcontains2
               cases htc1 : typecheckExpr ctxFun e1 fuel' with
@@ -15760,7 +16791,8 @@ private lemma typecheckAssign_mem_contains_preserved
                       tagEnv := result1.tagEnv'
                       nextLoc := result1.nextLoc'
                       nextTag := result1.nextTag'
-                      regime := result1.regime' }
+                      regime := result1.regime'
+                      declaredExternRefs := result1.declared' }
                   have hctx2 : ctx2.memEnv.contains l := by
                     simpa [ctx2] using hcontains1
                   cases h_tc2 : typecheckExpr ctx2 e2 fuel' with
@@ -15806,8 +16838,9 @@ private lemma typecheckIf_mem_contains_preserved
         htrue | hfalse | hstd
       · rcases htrue with
           ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, _res3, htc2, _htc3, h_mem,
-           _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
-        let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+           _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp⟩
+        let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                                declaredExternRefs := _res1.declared' }
         have hcontains2 : res2.memEnv'.contains l :=
           IH fuel' h_fuel e2 ctxTrue res2
             (by simpa [typecheck, ctxTrue] using htc2) l
@@ -15815,9 +16848,10 @@ private lemma typecheckIf_mem_contains_preserved
         simpa [h_mem] using hcontains2
       · rcases hfalse with
           ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, _res2, res3, _htc2, htc3, h_mem,
-           _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
+           _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp⟩
         let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                                 nextLoc := _res2.nextLoc', nextTag := _res2.nextTag' }
+                                                 nextLoc := _res2.nextLoc', nextTag := _res2.nextTag',
+                                                 declaredExternRefs := _res2.declared' }
         have hcontains3 : res3.memEnv'.contains l :=
           IH fuel' h_fuel e3 ctxFalse res3
             (by simpa [typecheck, ctxFalse] using htc3) l
@@ -15828,7 +16862,7 @@ private lemma typecheckIf_mem_contains_preserved
         simp at hstd_tail
         rcases hstd_tail with ⟨htc2, res3, hstd_tail'⟩
         rcases hstd_tail' with
-          ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp, _h_pred⟩
+          ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp, _h_pred⟩
         let ctx2 : TypeContext :=
           { ctx with
             memEnv := res1.memEnv'
@@ -15836,7 +16870,8 @@ private lemma typecheckIf_mem_contains_preserved
             nextLoc := res1.nextLoc'
             nextTag := res1.nextTag'
             regime := res1.regime'
-            pc := joinPoison ctx.pc res1.qualType.poison }
+            pc := joinPoison ctx.pc res1.qualType.poison
+            declaredExternRefs := res1.declared' }
         let ctx3 : TypeContext :=
           { ctx with
             memEnv := res1.memEnv'
@@ -15844,7 +16879,8 @@ private lemma typecheckIf_mem_contains_preserved
             nextLoc := res2.nextLoc'
             nextTag := res2.nextTag'
             regime := res1.regime'
-            pc := joinPoison ctx.pc res1.qualType.poison }
+            pc := joinPoison ctx.pc res1.qualType.poison
+            declaredExternRefs := res2.declared' }
         have hcontains1 : res1.memEnv'.contains l :=
           IH fuel' h_fuel e1 ctx res1
             (by simpa [typecheck] using htc1) l hcontains
@@ -15936,19 +16972,11 @@ private lemma typecheckExpr_mem_contains_preserved_main :
               cases htc
               rename_i _surf _heqSurf
               unfold surfaceSpecToQTyp at _heqSurf
-              split at _heqSurf <;> simp [freshTLoc, bind, Except.bind, pure, Except.pure] at _heqSurf
+              split at _heqSurf <;> simp [bind, Except.bind, pure, Except.pure] at _heqSurf
               · cases _heqSurf; exact hcontains
               · cases _heqSurf; exact hcontains
               · cases _heqSurf; exact hcontains
               · cases _heqSurf; exact hcontains
-              · split at _heqSurf <;> simp (config := { failIfUnchanged := false }) at _heqSurf
-                subst _heqSurf
-                rename_i _v _hcond
-                split at _hcond
-                · simp only [Except.ok.injEq] at _hcond
-                  cases _hcond
-                  exact updateMemEnv_contains_of_contains ctx.memEnv ctx.nextLoc l _ hcontains
-                · simp at _hcond
           | externFn id arg argTyp argPoison argPred retSpec effects =>
               obtain ⟨argQt, _, hres⟩ :=
                 typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
@@ -15959,6 +16987,11 @@ private lemma typecheckExpr_mem_contains_preserved_main :
                 typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
               rw [hres]
               exact hcontains
+          | externRef _id _rp _rpred _cp _cpred =>
+              simp at htc
+              have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
+              subst hres
+              exact updateMemEnv_contains_of_contains ctx.memEnv ctx.nextLoc l _ hcontains
           | op e1 bop e2 =>
               have htcOp : typecheckOp ctx e1 e2 fuel' bop = .ok res := by
                 simpa [typecheckExpr] using htc
@@ -16660,7 +17693,8 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                     tagEnv := result2.tagEnv'
                     nextLoc := result2.nextLoc'
                     nextTag := result2.nextTag'
-                    regime := result2.regime' }
+                    regime := result2.regime'
+                    declaredExternRefs := result2.declared' }
                 have htc1' :
                     typecheckExpr { ctxFun with pureCtx := true } e1 (fuel' - 1) = .ok result1 := by
                   simpa [ctxFun] using htc1
@@ -16771,7 +17805,9 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                                       pureCtx := true
                                                       nextTag := cursor.1
                                                       nextLoc := cursor.2
-                                                      regime := result1.regime' }
+                                                      regime := result1.regime'
+                                                      externRefAllowed := false
+                                                      declaredExternRefs := result1.declared' }
                                                   cases htcBody :
                                                       typecheckExpr ctxBody (PExpr.toExpr pbody) fuelBody with
                                                   | error _ =>
@@ -16801,7 +17837,8 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                                                           normalizeAppResultByProvenance (joinPoison p1r p)
                                                                             { result3.qualType with
                                                                               poison := joinPoison p1r
-                                                                                (joinPoison p result3.qualType.poison) } } := by
+                                                                                (joinPoison p result3.qualType.poison) }
+                                                                        declared' := result1.declared' } := by
                                                                   simpa [hq3] using happly.symm
                                                                 simp [hrEq]
                                                           have hrl3 : result3.memEnv'.contains l := by
@@ -16890,8 +17927,9 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                       htrue | hfalse | hstd
                     · rcases htrue with
                         ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, _res3, htc2, _htc3,
-                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
-                      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ }
+                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp⟩
+                      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                                              declaredExternRefs := _res1.declared' }
                       have htc2' :
                           typecheckExpr { ctxTrue with pureCtx := true } e2 (fuel' - 1) = .ok res2 := by
                         simpa [ctxTrue] using htc2
@@ -16904,9 +17942,10 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                       simpa [ctxTrue] using hctxTrue
                     · rcases hfalse with
                         ⟨k, deps, _hmatch, _hreg, _res1, _htc1, _hbool, _res2, res3, _htc2, htc3,
-                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
+                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp⟩
                       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                                               nextLoc := _res2.nextLoc', nextTag := _res2.nextTag' }
+                                                               nextLoc := _res2.nextLoc', nextTag := _res2.nextTag',
+                                                               declaredExternRefs := _res2.declared' }
                       have htc3' :
                           typecheckExpr { ctxFalse with pureCtx := true } e3 (fuel' - 1) = .ok res3 := by
                         simpa [ctxFalse] using htc3
@@ -16922,7 +17961,7 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                       simp at hstd_tail
                       rcases hstd_tail with ⟨htc2, res3, hstd_tail'⟩
                       rcases hstd_tail' with
-                        ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp, _h_pred⟩
+                        ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp, _h_pred⟩
                       let ctx2 :
                           TypeContext :=
                         { ctx with
@@ -16931,7 +17970,8 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                           nextLoc := res1.nextLoc'
                           nextTag := res1.nextTag'
                           regime := res1.regime'
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          declaredExternRefs := res1.declared' }
                       let ctx3 :
                           TypeContext :=
                         { ctx with
@@ -16940,7 +17980,8 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag'
                           regime := res1.regime'
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          declaredExternRefs := res2.declared' }
                       have htc1' :
                           typecheckExpr { ctx with pureCtx := true } e1 (fuel' - 1) = .ok res1 := by
                         simpa using htc1
@@ -17126,7 +18167,8 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                     tagEnv := result2.tagEnv'
                     nextLoc := result2.nextLoc'
                     nextTag := result2.nextTag'
-                    regime := result2.regime' }
+                    regime := result2.regime'
+                    declaredExternRefs := result2.declared' }
                 have htc1' :
                     typecheckExpr { ctxFun with pureCtx := true } e1 (fuel' - 1) = .ok result1 := by
                   simpa [ctxFun] using htc1
@@ -17232,7 +18274,9 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                                       pureCtx := true
                                                       nextTag := cursor.1
                                                       nextLoc := cursor.2
-                                                      regime := result1.regime' }
+                                                      regime := result1.regime'
+                                                      externRefAllowed := false
+                                                      declaredExternRefs := result1.declared' }
                                                   cases htcBody :
                                                       typecheckExpr ctxBody (PExpr.toExpr pbody) fuelBody with
                                                   | error _ =>
@@ -17274,7 +18318,8 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                                                           normalizeAppResultByProvenance (joinPoison p1r p)
                                                                             { result3.qualType with
                                                                               poison := joinPoison p1r
-                                                                                (joinPoison p result3.qualType.poison) } } := by
+                                                                                (joinPoison p result3.qualType.poison) }
+                                                                        declared' := result1.declared' } := by
                                                                   simpa [hq3] using happly.symm
                                                                 simp [hrEq]
                                                           simpa [hrReg] using hregBody
@@ -17327,7 +18372,8 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                     · rcases htrue with
                         ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, _res3, htc2, _htc3,
                          _h_mem, _h_tag, _h_loc, _h_ntag, h_regime, _h_poison, _h_etyp⟩
-                      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩ }
+                      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩,
+                                                              declaredExternRefs := _res1.declared' }
                       have htc2' :
                           typecheckExpr { ctxTrue with pureCtx := true } e2 (fuel' - 1) = .ok res2 := by
                         simpa [ctxTrue] using htc2
@@ -17341,7 +18387,8 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                         ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, _res2, res3, _htc2, htc3,
                          _h_mem, _h_tag, _h_loc, _h_ntag, h_regime, _h_poison, _h_etyp⟩
                       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩,
-                                                               nextLoc := _res2.nextLoc', nextTag := _res2.nextTag' }
+                                                               nextLoc := _res2.nextLoc', nextTag := _res2.nextTag',
+                                                               declaredExternRefs := _res2.declared' }
                       have htc3' :
                           typecheckExpr { ctxFalse with pureCtx := true } e3 (fuel' - 1) = .ok res3 := by
                         simpa [ctxFalse] using htc3
@@ -17365,7 +18412,8 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                           nextLoc := res1.nextLoc'
                           nextTag := res1.nextTag'
                           regime := res1.regime'
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          declaredExternRefs := res1.declared' }
                       let ctx3 :
                           TypeContext :=
                         { ctx with
@@ -17374,7 +18422,8 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag'
                           regime := res1.regime'
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          declaredExternRefs := res2.declared' }
                       have htc1' :
                           typecheckExpr { ctx with pureCtx := true } e1 (fuel' - 1) = .ok res1 := by
                         simpa using htc1
@@ -17556,7 +18605,8 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                     tagEnv := result2.tagEnv'
                     nextLoc := result2.nextLoc'
                     nextTag := result2.nextTag'
-                    regime := result2.regime' }
+                    regime := result2.regime'
+                    declaredExternRefs := result2.declared' }
                 have htc1' :
                     typecheckExpr { ctxFun with pureCtx := true } e1 (fuel' - 1) = .ok result1 := by
                   simpa [ctxFun] using htc1
@@ -17662,7 +18712,9 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                                       pureCtx := true
                                                       nextTag := cursor.1
                                                       nextLoc := cursor.2
-                                                      regime := result1.regime' }
+                                                      regime := result1.regime'
+                                                      externRefAllowed := false
+                                                      declaredExternRefs := result1.declared' }
                                                   cases htcBody :
                                                       typecheckExpr ctxBody (PExpr.toExpr pbody) fuelBody with
                                                   | error _ =>
@@ -17704,7 +18756,8 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                                                           normalizeAppResultByProvenance (joinPoison p1r p)
                                                                             { result3.qualType with
                                                                               poison := joinPoison p1r
-                                                                                (joinPoison p result3.qualType.poison) } } := by
+                                                                                (joinPoison p result3.qualType.poison) }
+                                                                        declared' := result1.declared' } := by
                                                                   simpa [hq3] using happly.symm
                                                                 simp [hrEq]
                                                           simpa [hrMem] using hlookupBody
@@ -17757,8 +18810,9 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                       htrue | hfalse | hstd
                     · rcases htrue with
                         ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, _res3, htc2, _htc3,
-                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
-                      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩ }
+                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp⟩
+                      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩,
+                                                              declaredExternRefs := _res1.declared' }
                       have htc2' :
                           typecheckExpr { ctxTrue with pureCtx := true } e2 (fuel' - 1) = .ok res2 := by
                         simpa [ctxTrue] using htc2
@@ -17770,9 +18824,10 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                       simpa [h_mem] using hlookup2
                     · rcases hfalse with
                         ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, _res2, res3, _htc2, htc3,
-                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
+                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp⟩
                       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩,
-                                                               nextLoc := _res2.nextLoc', nextTag := _res2.nextTag' }
+                                                               nextLoc := _res2.nextLoc', nextTag := _res2.nextTag',
+                                                               declaredExternRefs := _res2.declared' }
                       have htc3' :
                           typecheckExpr { ctxFalse with pureCtx := true } e3 (fuel' - 1) = .ok res3 := by
                         simpa [ctxFalse] using htc3
@@ -17787,7 +18842,7 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                       simp at hstd_tail
                       rcases hstd_tail with ⟨htc2, res3, hstd_tail'⟩
                       rcases hstd_tail' with
-                        ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp, _h_pred⟩
+                        ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp, _h_pred⟩
                       let ctx2 :
                           TypeContext :=
                         { ctx with
@@ -17796,7 +18851,8 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                           nextLoc := res1.nextLoc'
                           nextTag := res1.nextTag'
                           regime := res1.regime'
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          declaredExternRefs := res1.declared' }
                       let ctx3 :
                           TypeContext :=
                         { ctx with
@@ -17805,7 +18861,8 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag'
                           regime := res1.regime'
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          declaredExternRefs := res2.declared' }
                       have htc1' :
                           typecheckExpr { ctx with pureCtx := true } e1 (fuel' - 1) = .ok res1 := by
                         simpa using htc1
@@ -18023,7 +19080,8 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                     tagEnv := result2.tagEnv'
                     nextLoc := result2.nextLoc'
                     nextTag := result2.nextTag'
-                    regime := result2.regime' }
+                    regime := result2.regime'
+                    declaredExternRefs := result2.declared' }
                 have htc1' :
                     typecheckExpr { ctxFun with pureCtx := true } e1 (fuel' - 1) = .ok result1 := by
                   simpa [ctxFun] using htc1
@@ -18140,7 +19198,9 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                                       pureCtx := true
                                                       nextTag := cursor.1
                                                       nextLoc := cursor.2
-                                                      regime := result1.regime' }
+                                                      regime := result1.regime'
+                                                      externRefAllowed := false
+                                                      declaredExternRefs := result1.declared' }
                                                   cases htcBody :
                                                       typecheckExpr ctxBody (PExpr.toExpr pbody) fuelBody with
                                                   | error _ =>
@@ -18189,7 +19249,8 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                                                           normalizeAppResultByProvenance (joinPoison p1r p)
                                                                             { result3.qualType with
                                                                               poison := joinPoison p1r
-                                                                                (joinPoison p result3.qualType.poison) } } := by
+                                                                                (joinPoison p result3.qualType.poison) }
+                                                                        declared' := result1.declared' } := by
                                                                   simpa [hq3] using happly.symm
                                                                 simp [hrEq]
                                                           simpa [hrMem] using hlookupBody
@@ -18242,8 +19303,9 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                       htrue | hfalse | hstd
                     · rcases htrue with
                         ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, res2, _res3, htc2, _htc3,
-                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
-                      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩ }
+                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp⟩
+                      let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨true, deps⟩,
+                                                              declaredExternRefs := _res1.declared' }
                       have htc2' :
                           typecheckExpr { ctxTrue with pureCtx := true } e2 (fuel' - 1) = .ok res2 := by
                         simpa [ctxTrue] using htc2
@@ -18257,9 +19319,10 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                       simpa [h_mem] using hlookup2
                     · rcases hfalse with
                         ⟨k', deps, _hmatch, _hreg, _res1, _htc1, _hbool, _res2, res3, _htc2, htc3,
-                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp⟩
+                         h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp⟩
                       let ctxFalse : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k' ⟨false, deps⟩,
-                                                               nextLoc := _res2.nextLoc', nextTag := _res2.nextTag' }
+                                                               nextLoc := _res2.nextLoc', nextTag := _res2.nextTag',
+                                                               declaredExternRefs := _res2.declared' }
                       have htc3' :
                           typecheckExpr { ctxFalse with pureCtx := true } e3 (fuel' - 1) = .ok res3 := by
                         simpa [ctxFalse] using htc3
@@ -18276,7 +19339,7 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                       simp at hstd_tail
                       rcases hstd_tail with ⟨htc2, res3, hstd_tail'⟩
                       rcases hstd_tail' with
-                        ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_poison, _h_etyp, _h_pred⟩
+                        ⟨htc3, h_mem, _h_tag, _h_loc, _h_ntag, _h_regime, _h_decl, _h_poison, _h_etyp, _h_pred⟩
                       let ctx2 :
                           TypeContext :=
                         { ctx with
@@ -18285,7 +19348,8 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                           nextLoc := res1.nextLoc'
                           nextTag := res1.nextTag'
                           regime := res1.regime'
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          declaredExternRefs := res1.declared' }
                       let ctx3 :
                           TypeContext :=
                         { ctx with
@@ -18294,7 +19358,8 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                           nextLoc := res2.nextLoc'
                           nextTag := res2.nextTag'
                           regime := res1.regime'
-                          pc := joinPoison ctx.pc res1.qualType.poison }
+                          pc := joinPoison ctx.pc res1.qualType.poison
+                          declaredExternRefs := res2.declared' }
                       have htc1' :
                           typecheckExpr { ctx with pureCtx := true } e1 (fuel' - 1) = .ok res1 := by
                         simpa using htc1

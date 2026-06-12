@@ -22,7 +22,7 @@ lemma stepFR_literal
   (hpredNo : res.qualType.pred = Predicate.noPred)
   (hctxAfter : ctxAfter ctx res = ctx) :
   StepFR ctx e res predSat tm (registry := registry) := by
-  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   -- Use world-free inversion lemma for literals
   have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -50,7 +50,7 @@ lemma stepFR_literal
   --   runtimeInstantiatesCtx ... ∧ runtimeInstantiatesCtx ... ∧
   --   regimeConsistentWithCtx ... ∧ consistentWithRegime ... ∧ consistentWithRegime ... ∧
   --   agreeOnClean ... ∧ valueConsistentWithRegime ... ∧ valueConsistentWithRegime ... ∧ resultAgreesIfClean ...
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
@@ -90,6 +90,16 @@ lemma stepFR_literal
   · -- resultAgreesIfClean
     intro _hclean
     exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref (by simp [ho₀, ho₁])
+  · -- ReservedDiscipline for θ₀'
+    have hdecl : res.declared' = ctx.declaredExternRefs := by
+      have := congrArg TypeContext.declaredExternRefs hctxAfter
+      simpa [ctxAfter] using this
+    rwa [hdecl]
+  · -- ReservedDiscipline for θ₁'
+    have hdecl : res.declared' = ctx.declaredExternRefs := by
+      have := congrArg TypeContext.declaredExternRefs hctxAfter
+      simpa [ctxAfter] using this
+    rwa [hdecl]
 
 lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
   (masked : Tag → Prop)
@@ -113,7 +123,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
         hpredlaws hwfTm hTmBounded hctxAfter
         (QTypRespectsTagMeaning_of_nonFunction_noGuard tm res.qualType
           hnotfun (by simp [qtypGuardDesc?, hpredNo]))
-  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg ht _hpc
+  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg hres hrd ht _hpc
   have ⟨hcf, ho⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   subst hcf
@@ -135,4 +145,4 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
       (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry })
       (o := o) (a := a) (pm := pm)
       hctxAfter rfl (ho ▸ hvtyp θ) hcwr hvalc hwfTm hwf hric hreg hmasked_none
-      hmasked_absent hwfcfg
+      hmasked_absent hwfcfg hrd

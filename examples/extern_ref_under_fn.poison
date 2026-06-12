@@ -1,0 +1,6 @@
+-- `extern ref` may not appear under fn/pfn bodies (evaluate-at-most-once
+-- positions only): a body re-evaluated at each application would re-realize
+-- the same reserved address.  Bodies typecheck at application time, so the
+-- rejection surfaces at the call.
+let f = fn x : int => (let r = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in !r) : int in
+f 1

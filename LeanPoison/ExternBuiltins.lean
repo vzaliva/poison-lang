@@ -11,7 +11,7 @@ tests may invoke by their well-known identifiers:
   * `@11` : inner pure-fn stage of curried `max`, expects captured `a` in env
   * `@12` : pure `abs` (`int -> int`)
   * `@19` : pure integer `sqrt`
-  * `@21` : extern val `errno` : `ref int`     (driver-allocated cell, init 0)
+  * `@21` : extern ref `errno` : `ref int`     (driver-allocated cell, init 0)
   * `@22` : extern fn  `set_err n` : `(int) -> unit`   (writes n into `!errno`)
   * `@23` : extern pfn `memDeref r` : `(ref int) -> int` (reads `!r`; declares the
             memory-read read-dependency `captures: { !r :> (int :> clean {}) }`)

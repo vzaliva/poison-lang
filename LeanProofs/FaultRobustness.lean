@@ -777,6 +777,99 @@ inductive trustedVarsClosureRegimeInit
         closureCapturedVarsRegime predSat R qt μ θ v) →
       trustedVarsClosureRegimeInit predSat R s ctx μ ρ θ
 
+/-- Reserved-address discipline for the realization map
+    (doc/extern-write-effects.md, "Why the realization map is the crux").
+
+    Bundles (1) registry sanity — distinct extern ids reserve distinct
+    addresses — and (2) the realization discipline: an address reserved for a
+    *not-yet-declared* extern-ref id is not realized.  Conjunct (2) is what
+    licenses the injectivity-preserving θ-insert at an `extern ref`
+    declaration; it is re-established afterwards because the declared set
+    grows by exactly the declared id (`ReservedDiscipline.declare`).
+    Conjunct (1) is registry-static and rides along so preservation proofs
+    are self-contained. -/
+def ReservedDiscipline
+    (reg : ExternRegistry) (declared : List ExternId) (θ : RealizationMap) : Prop :=
+  (∀ id₁ id₂ a, reg.get? id₁ = some (ExternImpl.val (Value.loc a)) →
+      reg.get? id₂ = some (ExternImpl.val (Value.loc a)) → id₁ = id₂) ∧
+  (∀ id a, reg.get? id = some (ExternImpl.val (Value.loc a)) →
+      id ∉ declared → ∀ l, θ.lookup l ≠ some a)
+
+namespace ReservedDiscipline
+
+private lemma lookup_update_ne'
+    {θ : RealizationMap} {l l' : Loc} {addr : Address} (hne : l' ≠ l) :
+    (θ.update l addr).lookup l' = θ.lookup l' := by
+  have hcmp : compare l l' ≠ Ordering.eq := by
+    intro hcmp
+    exact hne (LawfulEqCmp.eq_of_compare hcmp).symm
+  simp [RealizationMap.update, RealizationMap.lookup, ExtTreeMap.getElem?_insert, hcmp]
+
+/-- Discipline is monotone in the declared set: declaring more ids only
+    weakens the unrealizedness obligation. -/
+theorem mono_declared {reg : ExternRegistry} {d₁ d₂ : List ExternId}
+    {θ : RealizationMap}
+    (hsub : ∀ id, id ∈ d₁ → id ∈ d₂)
+    (h : ReservedDiscipline reg d₁ θ) :
+    ReservedDiscipline reg d₂ θ :=
+  ⟨h.1, fun id a hlookup hnot l => h.2 id a hlookup (fun hin => hnot (hsub id hin)) l⟩
+
+/-- Inserting a binding to an address above every reserved address (e.g. a
+    fresh `nextAddr` allocation under `RegistryReservedBelow`) preserves the
+    discipline. -/
+theorem insert_above {reg : ExternRegistry} {declared : List ExternId}
+    {θ : RealizationMap} {l₀ : Loc} {addr : Address}
+    (hbelow : ∀ a, ReservedAddr reg a → a < addr)
+    (h : ReservedDiscipline reg declared θ) :
+    ReservedDiscipline reg declared (θ.update l₀ addr) := by
+  refine ⟨h.1, ?_⟩
+  intro id a hlookup hnot l hl
+  by_cases heq : l = l₀
+  · subst heq
+    have hself : (θ.update l addr).lookup l = some addr := by
+      simp [RealizationMap.update, RealizationMap.lookup]
+    have ha : a = addr := Option.some.inj (hl.symm.trans hself)
+    subst ha
+    exact Nat.lt_irrefl a (hbelow a ⟨id, hlookup⟩)
+  · rw [lookup_update_ne' heq] at hl
+    exact h.2 id a hlookup hnot l hl
+
+/-- The extern-ref declaration step: realizing the reserved address of `id`
+    and moving `id` into the declared set preserves the discipline.  Uses the
+    distinctness conjunct: any *other* undeclared id reserves a different
+    address. -/
+theorem declare {reg : ExternRegistry} {declared : List ExternId}
+    {θ : RealizationMap} {id : ExternId} {a : Address} {ell : Loc}
+    (hlookup : reg.get? id = some (ExternImpl.val (Value.loc a)))
+    (h : ReservedDiscipline reg declared θ) :
+    ReservedDiscipline reg (id :: declared) (θ.update ell a) := by
+  refine ⟨h.1, ?_⟩
+  intro id' a' hlookup' hnot l hl
+  have hne_id : id' ≠ id := fun heq => hnot (heq ▸ List.mem_cons_self)
+  have hnot' : id' ∉ declared := fun hin => hnot (List.mem_cons_of_mem id hin)
+  by_cases heq : l = ell
+  · subst heq
+    have hself : (θ.update l a).lookup l = some a := by
+      simp [RealizationMap.update, RealizationMap.lookup]
+    have ha : a' = a := Option.some.inj (hl.symm.trans hself)
+    subst ha
+    exact hne_id (h.1 id' id a' hlookup' hlookup)
+  · rw [lookup_update_ne' heq] at hl
+    exact h.2 id' a' hlookup' hnot' l hl
+
+/-- Extract the θ-range freshness fact for the address of a not-yet-declared
+    extern-ref id — the hypothesis consumed by the declaration's
+    injectivity-preserving insert. -/
+theorem fresh_addr {reg : ExternRegistry} {declared : List ExternId}
+    {θ : RealizationMap} {id : ExternId} {a : Address}
+    (h : ReservedDiscipline reg declared θ)
+    (hlookup : reg.get? id = some (ExternImpl.val (Value.loc a)))
+    (hnot : id ∉ declared) :
+    ∀ l, θ.lookup l ≠ some a :=
+  h.2 id a hlookup hnot
+
+end ReservedDiscipline
+
 -- ------------------------ Top-level definitions -------------------------------
 
 /-- Pointwise two-run fault-robustness obligation under an explicit runtime
@@ -794,6 +887,15 @@ private def FaultRobustnessPointwise
     wfRealizationMap θ₁ → wfRealizationMap θ₂ →
     wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } →
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry } →
+    -- Trusted initial-state assumptions for registry-reserved external cells
+    -- (doc/extern-write-effects.md): each run's initial memory contains every
+    -- reserved cell below its cursor, and neither initial realization map
+    -- pre-claims a reserved address (the discipline instance at the initial
+    -- context's declared set, which the spec requires to be empty).
+    RegistryReservedWF registry μ₁ a₁ →
+    RegistryReservedWF registry μ₂ a₂ →
+    ReservedDiscipline registry ctx.declaredExternRefs θ₁ →
+    ReservedDiscipline registry ctx.declaredExternRefs θ₂ →
     inputsConformSpec s μ₁ ρ₁ θ₁ → inputsConformSpec s μ₂ ρ₂ θ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ → runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
     trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ θ₁ →
@@ -824,6 +926,11 @@ def FaultRobustnessSpecForCtx
   wfTypeContext ctx →
   ctx.pc = false →
   ctx.tagEnv = {} →
+  -- Semantic precondition on the context-parametric spec (like `ctx.pc = false`
+  -- and `ctx.tagEnv = {}` above): the initial context has not pre-declared any
+  -- extern refs.  Callers instantiating the spec at hand-built contexts must
+  -- satisfy it.
+  ctx.declaredExternRefs = [] →
   TagBoundedCtx ctx →
   ∀ (predSat : PredSat) (tm : TagMeaning),
     wfTagMeaningCtx tm ctx →

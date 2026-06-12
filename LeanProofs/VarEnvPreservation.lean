@@ -154,6 +154,10 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool)
                 unfold LeanPoison.beval at hEval
                 simp at hEval
                 split at hEval <;> (try split at hEval) <;> simp_all
+            | externRef _id _rp _rpred _cp _cpred =>
+                unfold LeanPoison.beval at hEval
+                simp at hEval
+                split at hEval <;> (try split at hEval) <;> simp_all
             | externFn _id _arg _argTyp _ _ _retSpec _effects _cap =>
                 unfold LeanPoison.beval at hEval
                 simp at hEval

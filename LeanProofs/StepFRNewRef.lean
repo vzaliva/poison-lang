@@ -302,13 +302,31 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
+  have h_decl : res.declared' = res1.declared' := by
+    simp only [typecheckNewRef, bind, Except.bind] at htc'
+    have htc1_norm : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
+      simpa [Nat.succ_sub_one] using htc1
+    rw [htc1_norm] at htc'
+    simp only at htc'
+    cases hqt : res1.qualType with
+    | mk etyp p pred =>
+      rw [hqt] at htc'
+      simp only at htc'
+      cases hetyp : etyp with
+      | int =>
+        rw [hetyp] at htc'
+        simp only [show (ETyp.int != ETyp.int) = false from by native_decide,
+          Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc'
+        cases htc'; rfl
+      | bool | unit | string | ref _ | arrow _ _ | parrow _ _ =>
+          rw [hetyp] at htc'; simp at htc'
   intro hpredlaws hExtTyping hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.newRef e) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg _hres _hrd ht hpc
   have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_newRef_inv' e
@@ -316,14 +334,14 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
   rcases hstruct with ⟨cfg', n, ht_e, ho, hmem, _hnext, hvar, _hpm⟩
   rcases
     (hIH hpredlaws hExtTyping hwfTm hTmBounded).2 μ ρ θ cfg' (Value.num n)
-      hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e hpc
-    with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1⟩
+      hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg _hres _hrd ht_e hpc
+    with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1, _hrd1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
     wfTypeContext_of_wfTypeResult ctxᵢ res1
       (typecheckExpr_preserves_wfTypeResult ctxᵢ e fuel' res1 hwf htc1')
       hwf (typecheck_nextLoc_mono ctxᵢ e fuel' res1 htc1')
-  have hwfcfg1 : wfConfig cfg' := (wfConfig_preserved e _ cfg' (Value.num n) hOp ht_e hwfcfg).1
+  have hwfcfg1 : wfConfig cfg' := (wfConfig_preserved e _ cfg' (Value.num n) hOp _hres.toBelow ht_e hwfcfg).1
   have hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime := by
     simp [ctxAfter, h_regime]
   let θ' := θ1.update l cfg'.nextAddr
@@ -533,8 +551,18 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
         rwa [h_regime] at hclean
       have hθ1_none := _hfresh1 l0 qt hnotIn hlookup1 hclean1
       simpa [θ', RealizationMap_lookup_update_ne h_eq] using hθ1_none
+  have hrd_final : ReservedDiscipline cf.registry res.declared' θ' := by
+    have hreg_cf : cf.registry = registry := by simpa using terminatesTo_preserves_registry ht
+    have hreg_cfg' : cfg'.registry = registry := by simpa using terminatesTo_preserves_registry ht_e
+    have hle : a ≤ cfg'.nextAddr :=
+      terminatesTo_nextAddr_mono e _ cfg' (Value.num n) hOp ht_e
+    have hbelow : ∀ addr, ReservedAddr registry addr → addr < cfg'.nextAddr :=
+      fun addr haddr => Nat.lt_of_lt_of_le (_hres.toBelow addr haddr) hle
+    rw [hreg_cf, h_decl]
+    have hrd1' : ReservedDiscipline registry res1.declared' θ1 := hreg_cfg' ▸ _hrd1
+    exact ReservedDiscipline.insert_above hbelow hrd1'
   exact
-    ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
+    ⟨θ', hθext, hvaltyp_final, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final, hrd_final⟩
 
 
 lemma stepFR_newRef_with_expr_proof
@@ -557,7 +585,25 @@ lemma stepFR_newRef_with_expr_proof
     typecheckNewRef_structure ctxᵢ e (Nat.succ fuel') res htc'
   have htc1' : typecheck ctxᵢ e fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
-  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  have h_decl : res.declared' = res1.declared' := by
+    simp only [typecheckNewRef, bind, Except.bind] at htc'
+    have htc1_norm : typecheckExpr ctxᵢ e fuel' = .ok res1 := by
+      simpa [Nat.succ_sub_one] using htc1
+    rw [htc1_norm] at htc'
+    simp only at htc'
+    cases hqt : res1.qualType with
+    | mk etyp p pred =>
+      rw [hqt] at htc'
+      simp only at htc'
+      cases hetyp : etyp with
+      | int =>
+        rw [hetyp] at htc'
+        simp only [show (ETyp.int != ETyp.int) = false from by native_decide,
+          Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc'
+        cases htc'; rfl
+      | bool | unit | string | ref _ | arrow _ _ | parrow _ _ =>
+          rw [hetyp] at htc'; simp at htc'
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm htagBounded res1 htc1'
   -- Use world-free inversion lemma for newRef
@@ -570,9 +616,9 @@ lemma stepFR_newRef_with_expr_proof
   -- Apply IH for e
   have hstep_e :=
     hIH hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
-      hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e ht₁_e
+      hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e ht₁_e
   rcases hstep_e with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e⟩
-  rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hTm1, hwf1, _htagBounded1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e⟩
+  rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hTm1, hwf1, _htagBounded1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e, _hrd₀_e, _hrd₁_e⟩
   -- Derive regime equality: newRef preserves regime (res.regime' = res1.regime')
   -- From typecheckNewRef_structure, we already have h_regime
   -- This gives us (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime
@@ -788,8 +834,8 @@ lemma stepFR_newRef_with_expr_proof
       hθext₀' hθext₁' hwfcf₀1 hwfcf₁1 hqtypPredHolds_mem₀ hqtypPredHolds_mem₁
       hagree_clean_e hres_agree_e
   -- Derive wfConfig for final configs
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.newRef e) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.newRef e) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.newRef e) _ cf₀ o₀ hOp hres₀.toBelow ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.newRef e) _ cf₁ o₁ hOp hres₁.toBelow ht₁ hwfcfg₁).1
   -- consistentWithRegime for extended realization maps
   -- Key insight: res.regime' = res1.regime' (newRef doesn't change regime)
   -- For newRef:
@@ -1454,7 +1500,7 @@ lemma stepFR_newRef_with_expr_proof
       by simpa [h_ntag] using BoundaryTagMeaningPost.bounded hcanon1,
       hwfTm_final, hresTm, hpredlaws1⟩
   refine ⟨tm1, hboundary_newRef, hpredlaws1, hresTm, ?_⟩
-  refine ⟨θ₀', θ₁', ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_⟩
+  refine ⟨θ₀', θ₁', ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'
   · -- wfExtendsMap θ₁ θ₁'
@@ -1503,6 +1549,26 @@ lemma stepFR_newRef_with_expr_proof
       simp [RealizationMap.lookup]; rw [← ExtTreeMap.get?_eq_getElem?]; exact ExtTreeMap.getElem?_insert_self
     have hin1 : l ∈ LocSet.singleton l := by simp [LocSet.singleton]
     exact agreeValueUnder.clean_ref hpoison_res h_etyp hlookup1 hin1 ho₀ hlookup2 ho₁
+  · -- ReservedDiscipline for θ₀'
+    have hreg_cf₀ : cf₀.registry = registry := by simpa using terminatesTo_preserves_registry ht₀
+    have hreg_cfg₀' : cfg₀'.registry = registry := by simpa using terminatesTo_preserves_registry ht₀_e
+    have hle₀ : a₀ ≤ cfg₀'.nextAddr :=
+      terminatesTo_nextAddr_mono e _ cfg₀' (Value.num n₀) hOp ht₀_e
+    have hbelow₀ : ∀ addr, ReservedAddr registry addr → addr < cfg₀'.nextAddr :=
+      fun addr haddr => Nat.lt_of_lt_of_le (hres₀.toBelow addr haddr) hle₀
+    rw [hreg_cf₀, h_decl]
+    have hrd₀_e' : ReservedDiscipline registry res1.declared' θ₀1 := hreg_cfg₀' ▸ _hrd₀_e
+    exact ReservedDiscipline.insert_above hbelow₀ hrd₀_e'
+  · -- ReservedDiscipline for θ₁'
+    have hreg_cf₁ : cf₁.registry = registry := by simpa using terminatesTo_preserves_registry ht₁
+    have hreg_cfg₁' : cfg₁'.registry = registry := by simpa using terminatesTo_preserves_registry ht₁_e
+    have hle₁ : a₁ ≤ cfg₁'.nextAddr :=
+      terminatesTo_nextAddr_mono e _ cfg₁' (Value.num n₁) hOp ht₁_e
+    have hbelow₁ : ∀ addr, ReservedAddr registry addr → addr < cfg₁'.nextAddr :=
+      fun addr haddr => Nat.lt_of_lt_of_le (hres₁.toBelow addr haddr) hle₁
+    rw [hreg_cf₁, h_decl]
+    have hrd₁_e' : ReservedDiscipline registry res1.declared' θ₁1 := hreg_cfg₁' ▸ _hrd₁_e
+    exact ReservedDiscipline.insert_above hbelow₁ hrd₁_e'
 
 lemma stepFR_newRef
   (ctxᵢ : TypeContext) (predSat : PredSat)

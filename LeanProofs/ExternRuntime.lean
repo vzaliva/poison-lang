@@ -22,6 +22,7 @@ open Std
 
 inductive ExternDeclarationKind where
   | val
+  | ref
   | fn
   | pfn
   deriving Repr, BEq
@@ -61,6 +62,15 @@ structure ExternDeclaration where
       to `[]` so existing declarations are unaffected; populated for externs whose
       trusted clean result depends on environment or memory read targets. -/
   captures  : List Capture := []
+  /-- `.ref` kind only: the declared poison of the reference value itself
+      (`(ref int :> clean {})` ⇒ `false`).  Defaults keep other kinds
+      unaffected. -/
+  refPoison : Bool := false
+  /-- `.ref` kind only: the declared poison of the pointed-to cell
+      (`points_to: (int :> poisoned {})` ⇒ `true`).  v1 accepts only `true`
+      (see doc/extern-write-effects.md, "Limitation: no clean `points_to:`
+      cells"). -/
+  cellPoison : Bool := true
 
 /-- Runtime/typechecking facts for a successful `extern val` declaration step. -/
 structure ExternDeclValFacts
@@ -70,6 +80,17 @@ structure ExternDeclValFacts
   kind_val : d.kind = .val
   lookup : cᵢ.registry.get? d.id = some impl
   impl_value : ∃ vImpl, impl = ExternImpl.val vImpl ∧ v = vImpl
+  output_config : cₒ = cᵢ
+
+/-- Runtime/typechecking facts for a successful `extern ref` declaration step:
+    the registry supplies a stored location value for the external cell. -/
+structure ExternDeclRefFacts
+    (d : ExternDeclaration) (impl : ExternImpl)
+    (_ctx : TypeContext) (_res : TypeResult)
+    (cᵢ cₒ : Config) (v : Value) : Prop where
+  kind_ref : d.kind = .ref
+  lookup : cᵢ.registry.get? d.id = some impl
+  impl_value : ∃ addr, impl = ExternImpl.val (Value.loc addr) ∧ v = Value.loc addr
   output_config : cₒ = cᵢ
 
 /-- Runtime/typechecking facts for a successful `extern fn` declaration step. -/
@@ -107,6 +128,9 @@ inductive ExternDeclBoundaryRun
     (cᵢ cₒ : Config) (v : Value) : Prop where
   | val :
       ExternDeclValFacts d impl ctx res cᵢ cₒ v →
+      ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v
+  | ref :
+      ExternDeclRefFacts d impl ctx res cᵢ cₒ v →
       ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v
   | fn :
       ExternDeclFnFacts d impl ctx res cᵢ cₒ v →
@@ -158,6 +182,23 @@ private theorem val_of_runtime
     { kind_val := hkind
       lookup := hlookup
       impl_value := ⟨v, himpl, rfl⟩
+      output_config := hcfg }
+
+private theorem ref_of_runtime
+    {d : ExternDeclaration} {impl : ExternImpl}
+    {ctx : TypeContext} {res : TypeResult}
+    {cᵢ cₒ : Config} {v : Value} {addr : Address}
+    (hkind : d.kind = .ref)
+    (hlookup : cᵢ.registry.get? d.id = some impl)
+    (himpl : impl = ExternImpl.val (Value.loc addr))
+    (hv : v = Value.loc addr)
+    (hcfg : cₒ = cᵢ) :
+    ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v := by
+  refine ExternDeclBoundaryRun.ref ?_
+  exact
+    { kind_ref := hkind
+      lookup := hlookup
+      impl_value := ⟨addr, himpl, hv⟩
       output_config := hcfg }
 
 private theorem fn_of_runtime
@@ -216,6 +257,7 @@ theorem lookup
     cᵢ.registry.get? d.id = some impl := by
   cases h with
   | val hfacts => exact hfacts.lookup
+  | ref hfacts => exact hfacts.lookup
   | fn hfacts => exact hfacts.lookup
   | pfn hfacts => exact hfacts.lookup
 
@@ -251,6 +293,55 @@ theorem of_terminatesTo_externVal
                   ⟨ExternImpl.val vImpl,
                     { run := ExternDeclBoundaryRun.val_of_runtime rfl hlookup
                         (by simp [hv]) hcfg.symm,
+                      forExpr := trivial }⟩
+              · rw [hlookup] at hbeval
+                simp [hmatch] at hbeval
+          | pfn implPfn =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+          | fn implFn =>
+              rw [hlookup] at hbeval
+              simp at hbeval
+
+theorem of_terminatesTo_externRef
+    {id : ExternId} {refPoison : Bool} {refPred : SyntaxPredicate}
+    {cellPoison : Bool} {cellPred : SyntaxPredicate}
+    {ctx : TypeContext} {res : TypeResult}
+    {cᵢ cₒ : Config} {v : Value}
+    (ht : terminatesTo (Expr.externRef id refPoison refPred cellPoison cellPred) cᵢ cₒ v) :
+    ∃ impl,
+      ExternDeclBoundaryRunForExpr (Expr.externRef id refPoison refPred cellPoison cellPred)
+        { id := id, kind := .ref, typ := Typ.ref Typ.int, argName := none, retSpec := none,
+          effects := [], preds := [refPred, cellPred], argPoison := false,
+          refPoison := refPoison, cellPoison := cellPoison }
+        impl ctx res cᵢ cₒ v := by
+  rcases ht with ⟨fuel, verbose, hbeval⟩
+  cases fuel with
+  | zero =>
+      simp [LeanPoison.beval] at hbeval
+  | succ fuel' =>
+      simp [LeanPoison.beval] at hbeval
+      rw [← Std.HashMap.get?_eq_getElem?] at hbeval
+      cases hlookup : cᵢ.registry.get? id with
+      | none =>
+          rw [hlookup] at hbeval
+          simp at hbeval
+      | some impl =>
+          cases impl with
+          | val vImpl =>
+              by_cases hmatch : valueMatchesTyp vImpl (Typ.ref Typ.int) = true
+              · rw [hlookup] at hbeval
+                simp [hmatch] at hbeval
+                rcases hbeval with ⟨hcfg, hv⟩
+                -- A stored value matching `ref int` is a location value.
+                obtain ⟨addr, haddr⟩ : ∃ addr, vImpl = Value.loc addr := by
+                  cases vImpl <;> first
+                    | exact ⟨_, rfl⟩
+                    | simp [valueMatchesTyp] at hmatch
+                exact
+                  ⟨ExternImpl.val vImpl,
+                    { run := ExternDeclBoundaryRun.ref_of_runtime rfl hlookup
+                        (by rw [haddr]) (by rw [← hv, haddr]) hcfg.symm,
                       forExpr := trivial }⟩
               · rw [hlookup] at hbeval
                 simp [hmatch] at hbeval
@@ -508,8 +599,28 @@ def ExternOperationalSafe
       wfValue addr vArg →
       wfValue addr vRaw)
   ∧
+  -- val: a stored value is wf at the consumer's cursor.  The clause is
+  -- lookup-aware: for stored *location* values (reference externs) the bound
+  -- comes from the registry-reserved-address invariant
+  -- (`RegistryReservedBelow`), which a registry-agnostic `wfConfig` cannot
+  -- supply (see doc/extern-write-effects.md).
   (∀ (v : Value), impl = ExternImpl.val v →
-    ∀ (cfg : Config), wfConfig cfg → wfValue cfg.nextAddr v)
+    ∀ (cfg : Config) (id : ExternId),
+      wfConfig cfg →
+      cfg.registry.get? id = some impl →
+      RegistryReservedBelow cfg.registry cfg.nextAddr →
+      wfValue cfg.nextAddr v)
+  ∧
+  -- fn memory monotonicity: a trusted impure dispatch never removes existing
+  -- memory entries.  Needed by `terminatesTo_memory_contains_mono` to
+  -- re-establish `RegistryReservedWF` after sequential sub-evaluations.
+  (∀ (implFn : VarEnv → Value → Memory → Address →
+        Except ExternError (Value × Memory × Address)),
+      impl = ExternImpl.fn implFn →
+    ∀ (env : VarEnv) (vArg : Value) (mem : Memory) (addr : Address)
+      (vRaw : Value) (mem' : Memory) (addr' : Address),
+      implFn env vArg mem addr = .ok (vRaw, mem', addr') →
+      ∀ a, mem.contains a → mem'.contains a)
 
 /-- Registry-level operational safety contract.
 
@@ -571,8 +682,26 @@ def RegistryOperationalSafe (reg : ExternRegistry) : Prop :=
       wfValue addr vArg →
       wfValue addr vRaw)
   ∧
-  -- (4) val: a stored extern value is wf at the consumer's `nextAddr`.
+  -- (4) val: a stored extern value is wf at the consumer's `nextAddr`.  The
+  --     clause takes the reserved-address bound (`RegistryReservedBelow`) so
+  --     that stored *location* values (reference externs such as `errno`) are
+  --     coverable; scalar stored values ignore it.
   (∀ (cfg : Config), wfConfig cfg → cfg.registry = reg →
+    RegistryReservedBelow reg cfg.nextAddr →
     ∀ (id : ExternId) (v : Value),
       reg.get? id = some (ExternImpl.val v) →
       wfValue cfg.nextAddr v)
+  ∧
+  -- (5) fn memory monotonicity (unconditional): a trusted impure dispatch
+  --     never removes existing memory entries; the output memory contains
+  --     every address that the input memory contained.  This is needed by
+  --     `terminatesTo_memory_contains_mono` in `SemanticsProperties.lean`
+  --     to re-establish `RegistryReservedWF` across sequential sub-runs.
+  (∀ (id : ExternId)
+      (implFn : VarEnv → Value → Memory → Address →
+        Except ExternError (Value × Memory × Address)),
+      reg.get? id = some (ExternImpl.fn implFn) →
+    ∀ (env : VarEnv) (vArg : Value) (mem : Memory) (addr : Address)
+      (vRaw : Value) (mem' : Memory) (addr' : Address),
+      implFn env vArg mem addr = .ok (vRaw, mem', addr') →
+      ∀ a, mem.contains a → mem'.contains a)

@@ -1,9 +1,33 @@
 # Extern Ref Trust: Plan for `@21`
 
+## Status
+
+Implemented end to end. The surface form, gates, boundary contract, and
+threading below are all in the tree:
+
+- Trusted spec: `ExternProofs.builtinErrnoSpec` (axioms
+  `propext`/`Classical.choice`/`Quot.sound` only).
+- Program-level FR: `ExternRegimeInt.errnoExternRef_FR` (bare declaration)
+  and `ExternRegimeInt.errnoScenario_FR` (combined `@21`/`@22`
+  declare/write/read);
+  the migrated `@22` capstone `ExternRegimeInt.setErrWriteEffect_FR` remains
+  axiom-clean modulo the top-level theorem's pre-existing `native_decide`
+  baseline.
+- Examples: `examples/extern_errno.poison`, `examples/extern_ref_*.poison`.
+- The declared-set/no-declare typechecker lemmas live in
+  `LeanProofs/TypeSafety.lean` (`typecheck_declared'_mono`,
+  `typecheck_declared'_eq_of_not_allowed`); the reserved-address invariants
+  (`RegistryReservedWF`, `ReservedDiscipline`) are threaded through
+  `StepFR`/`StepFRPost` exactly as planned below.
+
+The remainder of this document is the design rationale and plan it was built
+from; the entry for `@21` in `doc/externs.md` describes the resulting
+language-level behavior.
+
 ## Problem
 
 `@21` models an external `errno` cell as a stable reference supplied by the
-runtime registry. The current surface form is:
+runtime registry. The pre-pivot surface form (now rejected) was:
 
 ```poison
 extern val @21 : (ref int :> clean {})
@@ -11,10 +35,10 @@ extern val @21 : (ref int :> clean {})
 
 That form is ambiguous. It says the returned value is a clean reference, but it
 does not separately say what is known about the memory cell behind the
-reference. The implementation currently fills that gap by seeding the fresh
-logical cell as clean (`surfaceSpecToQTyp`, `Typecheck.lean:1055`). That is too
-strong for fault-robustness unless the theorem also knows that both runs
-initially contain the external cell and agree on its contents.
+reference. The pre-pivot implementation filled that gap by seeding the fresh
+logical cell as clean (`surfaceSpecToQTyp`). That is too strong for
+fault-robustness unless the theorem also knows that both runs initially
+contain the external cell and agree on its contents.
 
 There are two distinct obligations:
 
@@ -61,6 +85,12 @@ scalar values; `extern ref` is the only spelling for external memory handles.
   declaration site to evaluate-at-most-once positions. The language currently
   has no loop construct; if one is ever added, its body must join this
   exclusion — the `ReservedDiscipline` invariant below depends on it.
+  Enforcement follows the language's deferred body typechecking: `pfn` bodies
+  are rejected at declaration (the `toPExpr` conversion has no
+  extern-declaration form), `fn` bodies at application (a never-applied `fn`
+  whose body contains an `extern ref` typechecks, like any other type error
+  in a never-applied body; that body never evaluates, so soundness is
+  unaffected).
 
 ## Limitation: no clean `points_to:` cells
 
@@ -150,7 +180,12 @@ Consequences:
   top-level statement only ever see named instances of it.
 - **Registry well-formedness.** Reserved addresses must be pairwise distinct
   across extern ids, else one declaration's θ-insert falsifies another id's
-  invariant instance. One clearly-named `TrustedRegistry` field.
+  invariant instance. As implemented this is *not* a `TrustedRegistry` field
+  (`TrustedRegistry` remains a plain `List TrustedExternEntry`): distinctness
+  is the first conjunct of `ReservedDiscipline` itself, stated over the
+  runtime registry, which keeps the invariant's preservation lemmas
+  self-contained — no separate registry hypothesis needs threading through
+  the step proofs.
 
 ## Where the config facts live
 
@@ -353,7 +388,9 @@ Re-verify the `@22` axiom-cleanliness after the migration.
   is a semantic precondition narrowing the admissible contexts of the
   context-parametric spec.
 - **Extern boundary:** new ref kind; one bundled hypothesis record on the
-  declaration obligations; one distinctness field on `TrustedRegistry`.
+  declaration obligations; reserved-address distinctness rides as the first
+  conjunct of `ReservedDiscipline` over the runtime registry rather than as a
+  `TrustedRegistry` field (`TrustedRegistry` is unchanged).
 - **Proof risk:** concentrated in step 1 (boundary shape, done first) and the
   step-6 threading (broad but mechanical, done last, after the trusted spec
   already exists). The `wfConfig` fold is explicitly avoided.

@@ -28,11 +28,15 @@ The FFI mechanism and external-boundary proof interface are done. What remains i
 the shipped extern cleanup and default-registry assembly:
 
 1. **Finish trusted specs for shipped gaps.** Prove default trusted entries
-   for the shipped builtins that still lack concrete specs: sqrt-style
-   guarded input (`@19`) and the initialized ref-valued extern value
-   (`@21`). (`@22`, the errno-style impure update, is done:
-   `ExternProofs.builtinSetErrSpec` is the first trusted `.fn` write-effect
-   entry.) The two open cases sit on *different mechanisms*:
+   for the shipped builtins that still lack concrete specs: only the
+   sqrt-style guarded input (`@19`) remains. (`@22`, the errno-style impure
+   update, is done — `ExternProofs.builtinSetErrSpec` is the first trusted
+   `.fn` write-effect entry — and `@21`, the reference-valued extern declared
+   with the `extern ref ... points_to: ...` form, is done:
+   `ExternProofs.builtinErrnoSpec`, carried by the reserved-cell
+   invariants `RegistryReservedBelow` / `RegistryReservedWF` /
+   `ReservedDiscipline`; the design and obstruction analysis live in
+   `doc/extern-write-effects.md`.)
 
    - `@19` is blocked on **predicate semantics for value-attached guards**. A
      faithful guarded-input contract must derive a value fact from an *inactive*
@@ -41,15 +45,6 @@ the shipped extern cleanup and default-registry assembly:
      needs an evaluated `if` condition). Pinning only the argument poison flag
      would silently reduce `@19` to a clean-input extern that ignores its
      predicate. Closing it requires expanding the predicate/guard trust surface.
-   - `@21` is blocked on the **reserved-cell invariants**: its `val`
-     operational clause needs the reserved address below the consumer's
-     cursor, and its declaration boundary additionally needs the reserved
-     cell *present in memory* — while the typechecker's clean seeding of
-     the cell-content entry makes the declaration fields semantically
-     FR-false as stated (two valid runs may disagree on the seeded cell).
-     The planned fix — seed the content poisoned, then fold reserved-cell
-     presence into `wfConfig` — and the full obstruction analysis live in
-     `doc/extern-write-effects.md`.
 
    See `doc/externs.md` (`@19`, `@21`).
 2. **Assemble the default trusted registry.** Define `defaultTrustedRegistry`
@@ -206,8 +201,9 @@ Impure-callable contracts (`ExternImpl.fn`):
   `Config.nextAddr` observed by the call. This keeps any pre-existing
   `varEnv` well-formed with respect to the post-call `nextAddr`.
 
-Reference-typed `extern val` contracts (`ExternImpl.val (Value.loc a)` for
-a declaration at type `ref int`):
+Reference-valued `extern ref` contracts (`ExternImpl.val (Value.loc a)` for
+an `extern ref` declaration; the old ref-typed `extern val` spelling is
+rejected by the typechecker):
 
 - `D-REF-1`: The registered `Value.loc a` satisfies `a < Config.nextAddr`
   in the initial configuration. `Config.nextAddr` must be initialised
@@ -216,11 +212,12 @@ a declaration at type `ref int`):
   any evaluation that could dereference it.
 - `D-REF-3`: The address `a` is stable across all evaluations of that
   declaration in a given run.
-- `D-REF-4`: Distinct extern ids registered as ref-typed `extern val`
+- `D-REF-4`: Distinct extern ids registered as reference-valued externs
   resolve to distinct addresses, so the registry never introduces
   aliasing. Sharing of an extern reference across multiple Poison names
   must be expressed through ordinary `let` binding, not by repeating the
-  extern declaration.
+  extern declaration — the typechecker now enforces this (each extern id
+  may be declared by `extern ref` at most once per program).
 
 These contracts are the evidence interface the proof layer consumes. The
 `wfConfig` preservation gap for `ExternImpl.fn` consumes `D-FN-1` /

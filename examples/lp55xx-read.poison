@@ -1,7 +1,7 @@
 --! poison-interpreter --regime "1=true"
 -- lp55xx_read example with shared guard tag between return value and status
-let status = extern val @233 : (ref int :> clean {}) in
-let eng = extern val @234 : (ref int :> clean {}) in
+let status = extern ref @233 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
+let eng = extern ref @234 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
 let ENG_STATUS_MASK = extern val @235 : (int :> clean {}) in
 let NOT_READY = extern val @236 : (int :> clean {}) in
 let READY = extern val @237 : (int :> clean {}) in

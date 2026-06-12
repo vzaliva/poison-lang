@@ -10,7 +10,7 @@
 -- Expected MemoryTypeEnv at !errno: (true, {}) — outer poison true (from
 -- provenance), predicate erased.
 
-let errno   = extern val @21 : (ref int :> clean {}) in
+let errno   = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
 let set_err = extern fn @22 n : (int :> poisoned {}) -> ((unit :> clean {})) ,
                 effects: { !errno :> (int :> poisoned { 1, v => v >= 0 }) } in
 let dirty   = extern val @5 : (bool :> poisoned { 1, v => v }) in

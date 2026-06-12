@@ -1,0 +1,4 @@
+-- The old ref-typed `extern val` spelling is rejected: it conflates the
+-- reference qualifier with the pointed-to cell contract.  Use
+-- `extern ref ... , points_to: ...` instead.
+let errno = extern val @21 : (ref int :> clean {}) in !errno

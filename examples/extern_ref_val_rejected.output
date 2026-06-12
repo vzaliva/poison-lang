@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_ref_val_rejected.poison (verbose mode)
+
+Type checking error:
+  Type error: 'extern val' cannot have a ref type; use 'extern ref @id : (ref int :> ...), points_to: (int :> ...)' instead
+

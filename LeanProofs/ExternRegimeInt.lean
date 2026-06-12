@@ -274,8 +274,8 @@ survives the effect.
 The program here is the bare `@22` declaration node (mirroring
 `memReadCaptures_FR`'s bare-declaration form); the end-to-end behavioural
 examples live in `examples/extern_set_err*.poison`.  The `@21`/`@22` *combined*
-scenario registry — adding the `errno` extern value itself — stays blocked on
-the deferred `@21` operational work (see doc/extern-write-effects.md). -/
+scenario registry — adding the `errno` reference extern itself — is
+`errnoScenario_FR` below. -/
 
 open ExternProofs (setErrProg setErrRegistry setErr_agreesWithProgram)
 
@@ -295,5 +295,151 @@ theorem setErrWriteEffect_FR (s : InputSpec) (obs : ObservableSpec) :
       setErrProg s obs openEmptyCtx :=
   TypeSystemEnforcesFaultRobustness_at setErrRegistry setErrProg s obs openEmptyCtx
     setErr_hagrees
+
+/-! ## Program-level FR for the `@21` `errno` reference extern
+
+Two scenarios (the `extern ref` capstones of doc/extern-write-effects.md):
+
+* `errnoExternRef_FR` — the bare `extern ref @21` declaration node, with the
+  singleton trusted registry `[@21]` (mirrors `setErrWriteEffect_FR`'s
+  bare-declaration form).
+* `errnoScenario_FR` — the combined declare-`@21` / call-`@22` / deref
+  program with the two-entry trusted registry `[@21, @22]`: the
+  conservatively poisoned external cell is written through `set_err`'s
+  declared `!errno` effect and then dereferenced.  This is the first
+  program-level FR result whose trusted registry contains a
+  reference-valued extern.
+
+The reserved-address distinctness demanded by `ReservedDiscipline`'s first
+conjunct is trivial for these registries: `errnoAddr` is the only reserved
+address (`@22` is a `.fn` entry). -/
+
+open ExternProofs (builtinErrnoDecl builtinErrnoImpl builtinErrnoSpec
+  builtinSetErrDecl builtinSetErrImpl builtinSetErrSpec
+  builtinSetErrRetSpec builtinSetErrEffect)
+
+/-! ## Bare-declaration scenario -/
+
+/-- The bare reference-extern declaration node:
+    `extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {})`. -/
+def errnoProg : Expr :=
+  Expr.externRef 21 false SyntaxPredicate.noPred true SyntaxPredicate.noPred
+
+/-- Trusted registry holding the `@21` reference extern with its complete
+    `ExternBoundarySpec`. -/
+def errnoRegistry : TrustedRegistry :=
+  [⟨builtinErrnoDecl, builtinErrnoImpl, builtinErrnoSpec⟩]
+
+/-- The single declaration syntactically reachable in `errnoProg` — the
+    top-level `@21` `externRef` node — is matched by the registry. -/
+theorem errno_agreesWithProgram :
+    TrustedRegistryAgreesWithProgram errnoProg errnoRegistry := by
+  intro id d entry hprog hlookup
+  unfold errnoProg at hprog
+  cases hprog with
+  | externRef =>
+      have hl : TrustedRegistry.lookup? errnoRegistry 21
+          = some ⟨builtinErrnoDecl, builtinErrnoImpl, builtinErrnoSpec⟩ := by
+        simp [errnoRegistry, TrustedRegistry.lookup?, builtinErrnoDecl]
+      rw [hl] at hlookup
+      cases hlookup
+      rfl
+
+/-- Per-context trust premise at the canonical empty initial context. -/
+theorem errno_hagrees :
+    TrustedRegistryAgreesWithReachable errnoProg openEmptyCtx errnoRegistry :=
+  agreesWithReachable_of_emptyVarEnv (by rfl) errno_agreesWithProgram
+
+/-- **Program-level fault-robustness for the bare `extern ref @21`
+    declaration** — the first program-level FR result for a reference-valued
+    extern. -/
+theorem errnoExternRef_FR (s : InputSpec) (obs : ObservableSpec) :
+    FaultRobustnessSpecForCtx
+      (TrustedRegistry.toRuntimeRegistry errnoRegistry)
+      errnoProg s obs openEmptyCtx :=
+  TypeSystemEnforcesFaultRobustness_at errnoRegistry errnoProg s obs openEmptyCtx
+    errno_hagrees
+
+/-! ## Combined declare/write/read scenario -/
+
+/-- The combined errno scenario: declare the reference, write through the
+    `@22` `set_err` effect, then dereference:
+
+    ```poison
+    let errno = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
+    (extern fn @22 n : (int :> clean {}) -> ((unit :> clean {})),
+       effects: { !errno :> (int :> clean {}) }) 7;
+    !errno
+    ```
+-/
+def errnoScenarioProg : Expr :=
+  Expr.vlet "errno"
+    (Expr.externRef 21 false SyntaxPredicate.noPred true SyntaxPredicate.noPred)
+    (Expr.seq
+      (Expr.app
+        (Expr.externFn 22 "n" Typ.int false SyntaxPredicate.noPred
+          builtinSetErrRetSpec [builtinSetErrEffect] [])
+        (Expr.num 7))
+      (Expr.deref (Expr.var "errno")))
+
+/-- The combined trusted scenario registry: the reference extern together with
+    the write-effect extern. -/
+def errnoScenarioRegistry : TrustedRegistry :=
+  [⟨builtinErrnoDecl, builtinErrnoImpl, builtinErrnoSpec⟩,
+   ⟨builtinSetErrDecl, builtinSetErrImpl, builtinSetErrSpec⟩]
+
+/-- Every declaration syntactically reachable in `errnoScenarioProg` — the
+    `@21` `externRef` binding and the `@22` `externFn` callee — is matched by
+    the registry.  The `@22` return is `simple unit`, which carries no nested
+    extern, and the remaining program nodes declare nothing. -/
+theorem errnoScenario_agreesWithProgram :
+    TrustedRegistryAgreesWithProgram errnoScenarioProg errnoScenarioRegistry := by
+  intro id d entry hprog hlookup
+  unfold errnoScenarioProg at hprog
+  cases hprog with
+  | vlet_bound h1 =>
+      cases h1 with
+      | externRef =>
+          have hl : TrustedRegistry.lookup? errnoScenarioRegistry 21
+              = some ⟨builtinErrnoDecl, builtinErrnoImpl, builtinErrnoSpec⟩ := by
+            simp [errnoScenarioRegistry, TrustedRegistry.lookup?, builtinErrnoDecl]
+          rw [hl] at hlookup
+          cases hlookup
+          rfl
+  | vlet_body h2 =>
+      cases h2 with
+      | seq_left h3 =>
+          cases h3 with
+          | app_fun h4 =>
+              cases h4 with
+              | externFn =>
+                  have hl : TrustedRegistry.lookup? errnoScenarioRegistry 22
+                      = some ⟨builtinSetErrDecl, builtinSetErrImpl, builtinSetErrSpec⟩ := by
+                    simp [errnoScenarioRegistry, TrustedRegistry.lookup?,
+                      builtinErrnoDecl, builtinSetErrDecl]
+                  rw [hl] at hlookup
+                  cases hlookup
+                  rfl
+              | externFn_return hret => cases hret
+          | app_arg h5 => cases h5
+      | seq_right h6 =>
+          cases h6 with
+          | deref h7 => cases h7
+
+/-- Per-context trust premise at the canonical empty initial context. -/
+theorem errnoScenario_hagrees :
+    TrustedRegistryAgreesWithReachable errnoScenarioProg openEmptyCtx
+      errnoScenarioRegistry :=
+  agreesWithReachable_of_emptyVarEnv (by rfl) errnoScenario_agreesWithProgram
+
+/-- **Program-level fault-robustness for the combined errno scenario**:
+    declare the `@21` reference, write through the `@22` `set_err` effect,
+    dereference — under the two-entry trusted registry. -/
+theorem errnoScenario_FR (s : InputSpec) (obs : ObservableSpec) :
+    FaultRobustnessSpecForCtx
+      (TrustedRegistry.toRuntimeRegistry errnoScenarioRegistry)
+      errnoScenarioProg s obs openEmptyCtx :=
+  TypeSystemEnforcesFaultRobustness_at errnoScenarioRegistry errnoScenarioProg
+    s obs openEmptyCtx errnoScenario_hagrees
 
 end ExternRegimeInt

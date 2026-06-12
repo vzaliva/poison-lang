@@ -124,7 +124,9 @@ private def AppClosureBodyStart
             tagEnv := result1.tagEnv'
             nextTag := cursor.1
             nextLoc := cursor.2
-            regime := result1.regime' }
+            regime := result1.regime'
+            externRefAllowed := false
+            declaredExternRefs := result1.declared' }
       CtxCons bodyCtx μ (ρcap.update x vArg) θ
 
 private def AppPClosureBodyStart
@@ -164,7 +166,9 @@ private def AppPClosureBodyStart
             pureCtx := true
             nextTag := cursor.1
             nextLoc := cursor.2
-            regime := result1.regime' }
+            regime := result1.regime'
+            externRefAllowed := false
+            declaredExternRefs := result1.declared' }
       CtxCons bodyCtx μ (ρcap.update x vArg) θ
 
 private lemma notExternFnAst_ne_externFn {body : Expr}
@@ -193,7 +197,7 @@ private def AppMemberCtxCons
     (cpre cbody cfinal : Config) (θpre θfinal : RealizationMap),
     (∀ (qt : QTyp) (v : Value),
       qtypPredHolds predSat qt cpre.memory v ↔ qtypPredHolds predSat qt cfinal.memory v) →
-    src = { result3 with qualType := qtSrc } →
+    src = { result3 with qualType := qtSrc, declared' := result1.declared' } →
     cfinal.memory = cbody.memory →
     cfinal.varEnv = cpre.varEnv →
     Regime.monotoneStepExt (ctxAfter (ctxAfter ctx result2) result1).regime
@@ -208,13 +212,14 @@ private def AppMemberCtxCons
 private def AppBodyResultValCons
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   ∀ (ctx bodyCtx : TypeContext) (src result3 : TypeResult)
-    (p p1 : Poison) (μ_src μ_body : Memory) (θ : RealizationMap) (v : Value),
+    (p p1 : Poison) (decl : List ExternId) (μ_src μ_body : Memory) (θ : RealizationMap) (v : Value),
     src =
       { result3 with
         qualType :=
           normalizeAppResultByProvenance (joinPoison p1 p)
             { result3.qualType with
-              poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } →
+              poison := joinPoison p1 (joinPoison p result3.qualType.poison) }
+        declared' := decl } →
     μ_src = μ_body →
     ValCons (ctxAfter bodyCtx result3).regime result3.qualType μ_body θ v →
     ValCons (ctxAfter ctx src).regime src.qualType μ_src θ v
@@ -379,7 +384,9 @@ private def AppExternClosureBodyStart
             tagEnv := result1.tagEnv'
             nextTag := cursor.1
             nextLoc := cursor.2
-            regime := result1.regime' }
+            regime := result1.regime'
+            externRefAllowed := false
+            declaredExternRefs := result1.declared' }
       CtxCons bodyCtx μ (ρcap.update x vArg) θ
 
 private def AppExternPClosureBodyStart
@@ -420,7 +427,9 @@ private def AppExternPClosureBodyStart
             pureCtx := true
             nextTag := cursor.1
             nextLoc := cursor.2
-            regime := result1.regime' }
+            regime := result1.regime'
+            externRefAllowed := false
+            declaredExternRefs := result1.declared' }
       CtxCons bodyCtx μ (ρcap.update x vArg) θ
 
 private lemma QTypRespectsTagMeaning_of_arrow_static_source_captured_lookup
@@ -653,7 +662,9 @@ private lemma consistentWithRegimeMasked_app_closure_body_start
       tagEnv := result1.tagEnv'
       nextTag := cursor.1
       nextLoc := cursor.2
-      regime := result1.regime' }
+      regime := result1.regime'
+      externRefAllowed := false
+      declaredExternRefs := result1.declared' }
   consistentWithRegimeMasked masked predSat bodyCtx.regime bodyCtx μ (ρcap.update x vArg) θ := by
   intro bodyCtx
   refine ⟨?_, ?_, ?_⟩
@@ -749,7 +760,7 @@ private lemma consistentWithRegimeMasked_app_member_from_body
   (hpred_compat :
     ∀ (qt : QTyp) (v : Value),
       qtypPredHolds predSat qt cpre.memory v ↔ qtypPredHolds predSat qt cfinal.memory v)
-  (hsrc_eq : src = { result3 with qualType := qtSrc })
+  (hsrc_eq : src = { result3 with qualType := qtSrc, declared' := result1.declared' })
   (hμ_eq : cfinal.memory = cbody.memory)
   (hρ_eq : cfinal.varEnv = cpre.varEnv)
   (hmono_pre_to_src :
@@ -871,7 +882,9 @@ private lemma consistentWithRegimeMasked_app_arrow_body_start
           tagEnv := result1.tagEnv'
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
       consistentWithRegimeMasked masked predSat bodyCtx.regime bodyCtx μ
         (ρcap.update x vArg) θ := by
   cases valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_fun with
@@ -999,7 +1012,9 @@ private lemma consistentWithRegimeMasked_app_arrow_extern_body_start
           tagEnv := result1.tagEnv'
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
       consistentWithRegimeMasked masked predSat bodyCtx.regime bodyCtx μ
         (ρcap.update x vArg) θ := by
   cases valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_fun with
@@ -1135,7 +1150,9 @@ private lemma consistentWithRegimeMasked_app_parrow_body_start
           pureCtx := true
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
       consistentWithRegimeMasked masked predSat bodyCtx.regime bodyCtx μ
         (ρcap.update x vArg) θ := by
   cases valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_fun with
@@ -1266,7 +1283,9 @@ private lemma consistentWithRegimeMasked_app_parrow_extern_body_start
           pureCtx := true
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
       consistentWithRegimeMasked masked predSat bodyCtx.regime bodyCtx μ
         (ρcap.update x vArg) θ := by
   cases valueConsistentWithRegimeMasked_closureCapturedVarsRegime hval_fun with
@@ -1397,7 +1416,8 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
               memEnv := result1.memEnv',
               varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
               tagEnv := result1.tagEnv', nextTag := result1.nextTag',
-              nextLoc := result1.nextLoc', regime := result1.regime' }
+              nextLoc := result1.nextLoc', regime := result1.regime',
+              externRefAllowed := false, declaredExternRefs := result1.declared' }
           have htcBody' : typecheck bodyCtx body fuel' = .ok result3 := by simpa using htcBody
           have hreg_body : regimeConsistentWithCtx bodyCtx := by
             simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using hreg1
@@ -1584,6 +1604,118 @@ private lemma threaded_applyFnTClosure_member_nextLoc_mono
     (fun m hm e c res htc => typecheck_nextLoc_mono c e m res htc)
     happly
 
+private lemma joinTypeResults_declared'_eq
+  (ctx : TypeContext) (r : TypeResult) (rs : List TypeResult) (res : TypeResult) :
+    joinTypeResults ctx r rs = .ok res →
+    res.declared' = r.declared' := by
+  intro hjoin
+  unfold joinTypeResults at hjoin
+  simp only [bind, Except.bind, pure, Except.pure] at hjoin
+  cases hqt : r.qualType with
+  | mk etyp poison pred =>
+    rw [hqt] at hjoin
+    simp only at hjoin
+    split at hjoin
+    · simp at hjoin
+    · split at hjoin
+      · simp at hjoin
+      · simp only [Except.ok.injEq] at hjoin
+        subst hjoin
+        rfl
+
+private lemma applyFnTClosureAtCursor_declared'_eq
+  (tcl : FnTClosure) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+  (r : TypeResult) :
+    applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+      ctx result2 cursor fuel = .ok r →
+    r.declared' = result2.declared' := by
+  intro happly
+  unfold applyFnTClosureAtCursor at happly
+  cases fuel with
+  | zero => simp [throw, throwThe, MonadExceptOf.throw] at happly
+  | succ n =>
+    cases tcl with
+    | regular x body env =>
+      simp only [bind, Except.bind, pure, Except.pure] at happly
+      split at happly
+      · simp at happly
+      · split at happly
+        split at happly
+        · simp at happly
+        · simp only [Except.ok.injEq] at happly
+          subst happly; rfl
+    | extern id x retSpec effects capturedEnv declaredArgQt captures =>
+      -- Do cases retSpec first to avoid cross-match confusion from later split
+      cases retSpec with
+      | simple typ poison pred =>
+        simp only [bind, Except.bind, pure, Except.pure] at happly
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        simp only [Except.ok.injEq] at happly; subst happly; rfl
+      | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
+        simp only [bind, Except.bind, pure, Except.pure] at happly
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        simp only [Except.ok.injEq] at happly; subst happly; rfl
+      | nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
+        simp only [bind, Except.bind, pure, Except.pure] at happly
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        simp only [Except.ok.injEq] at happly; subst happly; rfl
+
+private lemma applyPFnTClosureAtCursor_declared'_eq
+  (tcl : PFnTClosure) (st1 st2 : Typ) (p p1 : Poison)
+  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
+  (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+  (r : TypeResult) :
+    applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
+      ctx result2 cursor fuel = .ok r →
+    r.declared' = result2.declared' := by
+  intro happly
+  unfold applyPFnTClosureAtCursor at happly
+  cases fuel with
+  | zero => simp [throw, throwThe, MonadExceptOf.throw] at happly
+  | succ n =>
+    cases tcl with
+    | regular x body env =>
+      simp only [bind, Except.bind, pure, Except.pure] at happly
+      split at happly
+      · simp at happly
+      · split at happly
+        split at happly
+        · simp at happly
+        · simp only [Except.ok.injEq] at happly
+          subst happly; rfl
+    | extern id x retSpec capturedEnv declaredArgQt captures =>
+      -- Do cases retSpec first to avoid cross-match confusion from later split
+      cases retSpec with
+      | simple typ poison pred =>
+        simp only [bind, Except.bind, pure, Except.pure] at happly
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        simp only [Except.ok.injEq] at happly; subst happly; rfl
+      | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
+        simp only [bind, Except.bind, pure, Except.pure] at happly
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        simp only [Except.ok.injEq] at happly; subst happly; rfl
+      | nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
+        simp only [bind, Except.bind, pure, Except.pure] at happly
+        split at happly; · exact absurd happly (by simp)
+        split at happly; · exact absurd happly (by simp)
+        simp only [Except.ok.injEq] at happly; subst happly; rfl
+
 private lemma joinTypeResults_tagEnvConsistentWithRegime
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (h_join : joinTypeResults ctx first rest = .ok res)
@@ -1648,13 +1780,16 @@ private lemma applyPFnTClosure_regular_inv_of_threaded_mem
         pureCtx := true
         nextTag := cursor.1
         nextLoc := cursor.2
-        regime := bodyState.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
+        regime := bodyState.regime'
+        externRefAllowed := false
+        declaredExternRefs := bodyState.declared' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
     isSubtype st2 result3.qualType = true ∧
     first =
       { result3 with
         qualType :=
           normalizeAppResultByProvenance (joinPoison p1 p)
-            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) } } := by
+            { result3.qualType with poison := joinPoison p1 (joinPoison p result3.qualType.poison) }
+        declared' := bodyState.declared' } := by
   rcases applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bounds
       (applyOne := fun tcl' cursor =>
         applyPFnTClosureAtCursor tcl' st1 st2 p p1 argEtyp argPoison argPred
@@ -1695,7 +1830,7 @@ private lemma applyPFnTClosure_regular_inv_of_threaded_mem
       first happly_succ with
     ⟨result3, htc_body, hsub, hfirst_eq⟩
   exact ⟨cursor, fuelBody, first, result3, hcursorTag, hcursorLoc, hfirst_mem, happly, hfuel,
-    by simpa [cursorState] using htc_body, hsub, hfirst_eq⟩
+    by simpa [cursorState] using htc_body, hsub, by simpa [cursorState] using hfirst_eq⟩
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Parrow (PFnTClosure) versions of the per-member preservation lemmas.
@@ -1722,7 +1857,9 @@ private lemma applyPFnTClosure_regular_body_wfTypeResult
       pureCtx := true
       nextTag := result1.nextTag'
       nextLoc := result1.nextLoc'
-      regime := result1.regime' })
+      regime := result1.regime'
+      externRefAllowed := false
+      declaredExternRefs := result1.declared' })
   (result3 : TypeResult)
   (htc : typecheckExpr ctx'' (PExpr.toExpr pbody) fuelBody = .ok result3) :
   wfTypeResult result3 := by
@@ -1774,7 +1911,9 @@ private lemma applyPFnTClosure_ok_wfTypeResult
           pureCtx := true
           nextTag := result1.nextTag'
           nextLoc := result1.nextLoc'
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
         rfl result3 htc_body
       rw [hfirst]
       exact hwf3
@@ -1877,7 +2016,8 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
               varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
               tagEnv := result1.tagEnv', nextTag := result1.nextTag',
               pureCtx := true,
-              nextLoc := result1.nextLoc', regime := result1.regime' }
+              nextLoc := result1.nextLoc', regime := result1.regime',
+              externRefAllowed := false, declaredExternRefs := result1.declared' }
           have htcBody' : typecheck bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by simpa using htcBody
           have hreg_body : regimeConsistentWithCtx bodyCtx := by
             simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using hreg1
@@ -2152,7 +2292,9 @@ private lemma tagBoundedCtx_closure_body
       tagEnv := result1.tagEnv'
       nextTag := cursor.1
       nextLoc := cursor.2
-      regime := result1.regime' } := by
+      regime := result1.regime'
+      externRefAllowed := false
+      declaredExternRefs := result1.declared' } := by
   obtain ⟨hb_tag1, ⟨_hb_predV1, hb_predM1⟩, _hb_clos1⟩ := hbnd1
   have hCapBound : CapturedEnvFullBounded σcap cursor.1 :=
     CapturedEnvFullBounded_mono hCapBoundBase hcursorTag
@@ -2342,7 +2484,9 @@ private lemma externBoundarySinglePost_of_singleRun_normalized_app
           qualType :=
             normalizeAppResultByProvenance (joinPoison p1 p)
               { result3.qualType with
-                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) }
+          declared' := bodyCtx.declaredExternRefs })
+    (hdecl3 : result3.declared' = bodyCtx.declaredExternRefs)
     (htag : StepFRSingleRunTagMeaningPost bodyCtx body result3 predSat tm)
     (hpost :
       StepFRSingleRunFinalCleanPcTruePost bodyCtx result3 predSat
@@ -2351,10 +2495,10 @@ private lemma externBoundarySinglePost_of_singleRun_normalized_app
   rcases StepFRSingleRunTagMeaningPost.to_boundary htag with ⟨tm', htag_post⟩
   rcases htag_post with ⟨hext, hbounded, hwfCtx, hresTm, hpredlaws⟩
   rcases hpost with
-    ⟨θ', hθext, hv, hric_final, hcwr_final, hval_final, hpres, hfresh⟩
+    ⟨θ', hθext, hv, hric_final, hcwr_final, hval_final, hpres, hfresh, hrd⟩
   have hctxAfter_eq : ctxAfter bodyCtx first = ctxAfter bodyCtx result3 := by
     rw [hfirst_eq]
-    simp [ctxAfter]
+    simp [ctxAfter, hdecl3]
   have hfirst_memEnv : first.memEnv' = result3.memEnv' := by
     rw [hfirst_eq]
   have hfirst_regime : first.regime' = result3.regime' := by
@@ -2365,7 +2509,7 @@ private lemma externBoundarySinglePost_of_singleRun_normalized_app
   have hfirst_no_guard : qtypGuardDesc? first.qualType = none := by
     rw [hfirst_eq]
     simp [normalizeAppResultByProvenance, h_p1p, qtypGuardDesc?]
-  refine ⟨tm', ?_, θ', hθext, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨tm', ?_, θ', hθext, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · refine ⟨hext, ?_, ?_, ?_, hpredlaws⟩
     · simpa [hfirst_eq, normalizeAppResultByProvenance] using hbounded
     · simpa [hctxAfter_eq] using hwfCtx
@@ -2394,6 +2538,7 @@ private lemma externBoundarySinglePost_of_singleRun_normalized_app
     exact hfresh l qt hnot
       (by simpa [hfirst_memEnv] using hlookup)
       (by simpa [hfirst_regime] using hclean)
+  · simpa [hfirst_eq, hdecl3.symm] using hrd
 
 private lemma resultAgreesIfClean_transport_normalizeAppResultByProvenance
   (predSat : PredSat) (R : Regime) (p p1 : Poison) (qt : QTyp)
@@ -2427,14 +2572,15 @@ private lemma resultAgreesIfClean_transport_normalizeAppResultByProvenance
 private lemma valueConsistentWithRegimeMasked_app_body_result_member
   (masked : Tag → Prop) (predSat : PredSat)
   (ctx bodyCtx : TypeContext) (src result3 : TypeResult)
-  (p p1 : Poison) (μ_src μ_body : Memory) (θ : RealizationMap) (v : Value)
+  (p p1 : Poison) (decl : List ExternId) (μ_src μ_body : Memory) (θ : RealizationMap) (v : Value)
   (hsrc :
     src =
       { result3 with
         qualType :=
           normalizeAppResultByProvenance (joinPoison p1 p)
             { result3.qualType with
-              poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+              poison := joinPoison p1 (joinPoison p result3.qualType.poison) }
+        declared' := decl })
   (hμ : μ_src = μ_body)
   (hval :
     valueConsistentWithRegimeMasked masked predSat (ctxAfter bodyCtx result3).regime
@@ -2517,7 +2663,9 @@ private lemma applyFnTClosure_ok_poison_pred_of_p1p_true
                   tagEnv := result2.tagEnv'
                   nextTag := result2.nextTag'
                   nextLoc := result2.nextLoc'
-                  regime := result2.regime' } body fuelBody with
+                  regime := result2.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result2.declared' } body fuelBody with
           | error err =>
               simp [htc] at happly
           | ok result3 =>
@@ -2539,7 +2687,8 @@ private lemma applyFnTClosure_ok_poison_pred_of_p1p_true
                                 tagEnv' := result3.tagEnv'
                                 nextLoc' := result3.nextLoc'
                                 nextTag' := result3.nextTag'
-                                regime' := result3.regime' } : Except String TypeResult) = Except.ok r := by
+                                regime' := result3.regime'
+                                declared' := result2.declared' } : Except String TypeResult) = Except.ok r := by
                         simpa [hsub', hq3, pure, Except.pure, normalizeAppResultByProvenance, h_p1p] using happly
                       have hr :
                           { qualType := { etyp := et3, poison := true, pred := Predicate.noPred }
@@ -2547,7 +2696,8 @@ private lemma applyFnTClosure_ok_poison_pred_of_p1p_true
                             tagEnv' := result3.tagEnv'
                             nextLoc' := result3.nextLoc'
                             nextTag' := result3.nextTag'
-                            regime' := result3.regime' } = r := by
+                            regime' := result3.regime'
+                            declared' := result2.declared' } = r := by
                         exact Except.ok.inj happly'
                       subst hr
                       simp
@@ -2610,7 +2760,9 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
                   pureCtx := true
                   nextTag := result2.nextTag'
                   nextLoc := result2.nextLoc'
-                  regime := result2.regime' } (PExpr.toExpr body) fuelBody with
+                  regime := result2.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result2.declared' } (PExpr.toExpr body) fuelBody with
           | error err =>
               simp [htc] at happly
           | ok result3 =>
@@ -2632,7 +2784,8 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
                                 tagEnv' := result3.tagEnv'
                                 nextLoc' := result3.nextLoc'
                                 nextTag' := result3.nextTag'
-                                regime' := result3.regime' } : Except String TypeResult) = Except.ok r := by
+                                regime' := result3.regime'
+                                declared' := result2.declared' } : Except String TypeResult) = Except.ok r := by
                         simpa [hsub', hq3, pure, Except.pure, normalizeAppResultByProvenance, h_p1p] using happly
                       have hr :
                           { qualType := { etyp := et3, poison := true, pred := Predicate.noPred }
@@ -2640,7 +2793,8 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
                             tagEnv' := result3.tagEnv'
                             nextLoc' := result3.nextLoc'
                             nextTag' := result3.nextTag'
-                            regime' := result3.regime' } = r := by
+                            regime' := result3.regime'
+                            declared' := result2.declared' } = r := by
                         exact Except.ok.inj happly'
                       subst hr
                       simp
@@ -3441,7 +3595,9 @@ private theorem stepFRApp_externClosureBodyStart_regular
           tagEnv := result1.tagEnv'
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
         bodyCtx.regime))
       (ctx := (let bodyCtx : TypeContext :=
         { ctx with
@@ -3452,7 +3608,9 @@ private theorem stepFRApp_externClosureBodyStart_regular
           tagEnv := result1.tagEnv'
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
         bodyCtx))
       (μ := μ) (ρ := ρcap.update x vArg) (θ := θ)
       (by intro k hk; cases hk)
@@ -3493,7 +3651,9 @@ private theorem stepFRApp_pClosureBodyStart_regular
           pureCtx := true
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
         bodyCtx.regime))
       (ctx := (let bodyCtx : TypeContext :=
         { ctx with
@@ -3505,7 +3665,9 @@ private theorem stepFRApp_pClosureBodyStart_regular
           pureCtx := true
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
         bodyCtx))
       (μ := μ) (ρ := ρcap.update x vArg) (θ := θ)
       (by intro k hk; cases hk)
@@ -3545,7 +3707,9 @@ private theorem stepFRApp_externPClosureBodyStart_regular
           pureCtx := true
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
         bodyCtx.regime))
       (ctx := (let bodyCtx : TypeContext :=
         { ctx with
@@ -3557,7 +3721,9 @@ private theorem stepFRApp_externPClosureBodyStart_regular
           pureCtx := true
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := result1.regime' }
+          regime := result1.regime'
+          externRefAllowed := false
+          declaredExternRefs := result1.declared' }
         bodyCtx))
       (μ := μ) (ρ := ρcap.update x vArg) (θ := θ)
       (by intro k hk; cases hk)
@@ -3590,10 +3756,10 @@ private theorem stepFRApp_bodyResultValCons_masked
   (masked : Tag → Prop) (predSat : PredSat) :
   StepFRAppBodyResultValCons
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v) := by
-  intro ctx bodyCtx src result3 p p1 μ_src μ_body θ v hsrc hμ hval
+  intro ctx bodyCtx src result3 p p1 decl μ_src μ_body θ v hsrc hμ hval
   simpa [StepFRAppBodyResultValCons] using
     valueConsistentWithRegimeMasked_app_body_result_member masked predSat ctx bodyCtx src result3
-      p p1 μ_src μ_body θ v hsrc hμ hval
+      p p1 decl μ_src μ_body θ v hsrc hμ hval
 
 private theorem stepFRApp_joinValConsFromMember_masked
   (masked : Tag → Prop) (predSat : PredSat) :
@@ -4059,7 +4225,9 @@ private theorem externCallFnTypingProvider_of_selected
           tagEnv := bodyState.tagEnv'
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := bodyState.regime' })
+          regime := bodyState.regime'
+          externRefAllowed := false
+          declaredExternRefs := bodyState.declared' })
     (hselected :
       (∃ declaredArgQt, applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv declaredArgQt captures)
           st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res ∧
@@ -4098,7 +4266,9 @@ private theorem externCallPfnTypingProvider_of_selected
           pureCtx := true
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := bodyState.regime' })
+          regime := bodyState.regime'
+          externRefAllowed := false
+          declaredExternRefs := bodyState.declared' })
     (hselected :
       ∃ declaredArgQt, applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt memberCap)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res ∧
@@ -4132,13 +4302,14 @@ private theorem externCallBoundaryRun_singlePost
       consistentWithRegime predSatBody callEntry.bodyCtx.regime callEntry.bodyCtx
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
     (hwfcfgBody : wfConfig callEntry.bodyConfig)
+    (hrdBody : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody)
     (hrun : ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf o)
     (hpcBody : callEntry.bodyCtx.pc = true) :
     ExternBoundarySinglePost callEntry.bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o :=
   entry.spec.callSingle typedExpr result3 predSatBody tmBody callEntry
     htypedCall hpredlawsBody hwfTmBody hTmBoundedBody θBody cf o
-    hθBodyWf hwfBody hricBody htagRBody hcwrBody hwfcfgBody hrun hpcBody
+    hθBodyWf hwfBody hricBody htagRBody hcwrBody hwfcfgBody hrdBody hrun hpcBody
 
 /-- Body-local single-run contract for successful impure extern app dispatch.
 
@@ -4184,6 +4355,7 @@ def ExternCallBoundarySingleFnContract
       consistentWithRegime predSatBody bodyCtx.regime bodyCtx
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
     (_hwfcfgBody : wfConfig callEntry.bodyConfig)
+    (_hrdBody : ReservedDiscipline callEntry.bodyConfig.registry bodyCtx.declaredExternRefs θBody)
     (_hpcBody : bodyCtx.pc = true)
     (c₂' : Config) (v₂ : Value) (c₁ : Config)
     (id : ExternId) (x y : Name) (argTyp : Typ)
@@ -4229,7 +4401,7 @@ theorem ExternCallBoundarySingleFnContract.of_emptyExternRegistry
   intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
         _hpredlawsBody _hwfTmBody _hTmBoundedBody _hθBodyWf _hwfBody _hricBody
-        _htagRBody _hcwrBody _hwfcfgBody _hpcBody
+        _htagRBody _hcwrBody _hwfcfgBody _hrdBody _hpcBody
         c₂' v₂ c₁ id x y argTyp _argPoison _declaredArgPoison _argPred retSpec eff _tenv _memberCap _cap _env
         _impl _vRaw _mem' _addr' _hstatic _htypedCall ht_e2 ht_e1 _hpure hGet _hArg _hImpl
         _hValRet _hcf _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured
@@ -4259,7 +4431,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
-        htagRBody hcwrBody hwfcfgBody hpcBody
+        htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec eff tenv memberCap cap env impl vRaw mem' addr'
         hstatic htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
@@ -4322,13 +4494,15 @@ theorem ExternCallBoundarySingleFnContract.of_trustedRegistry
     simpa [hbodyCtx] using hcwrBody
   have hpcCall : callEntry.bodyCtx.pc = true := by
     simpa [hbodyCtx] using hpcBody
+  have hrdCall : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody := by
+    simpa [hbodyCtx] using hrdBody
   simpa [hbodyCtx] using
     externCallBoundaryRun_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
       htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
-      htagRCall hcwrCall hwfcfgBody hrun hpcCall
+      htagRCall hcwrCall hwfcfgBody hrdCall hrun hpcCall
 
 theorem ExternCallBoundarySingleFnContract.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -4354,7 +4528,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedProgram
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
-        htagRBody hcwrBody hwfcfgBody hpcBody
+        htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec eff tenv memberCap cap env impl vRaw mem' addr'
         hstatic htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
@@ -4414,13 +4588,15 @@ theorem ExternCallBoundarySingleFnContract.of_trustedProgram
     simpa [hbodyCtx] using hcwrBody
   have hpcCall : callEntry.bodyCtx.pc = true := by
     simpa [hbodyCtx] using hpcBody
+  have hrdCall : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody := by
+    simpa [hbodyCtx] using hrdBody
   simpa [hbodyCtx] using
     externCallBoundaryRun_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
       htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
-      htagRCall hcwrCall hwfcfgBody hrun hpcCall
+      htagRCall hcwrCall hwfcfgBody hrdCall hrun hpcCall
 
 theorem ExternCallBoundarySingleFnContract.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -4446,7 +4622,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
-        htagRBody hcwrBody hwfcfgBody hpcBody
+        htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec eff tenv memberCap cap env impl vRaw mem' addr'
         hstatic htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
@@ -4506,13 +4682,15 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
     simpa [hbodyCtx] using hcwrBody
   have hpcCall : callEntry.bodyCtx.pc = true := by
     simpa [hbodyCtx] using hpcBody
+  have hrdCall : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody := by
+    simpa [hbodyCtx] using hrdBody
   simpa [hbodyCtx] using
     externCallBoundaryRun_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
       htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
-      htagRCall hcwrCall hwfcfgBody hrun hpcCall
+      htagRCall hcwrCall hwfcfgBody hrdCall hrun hpcCall
 
 /-- Body-local single-run contract for successful pure extern app dispatch. -/
 def ExternCallBoundarySinglePfnContract
@@ -4553,6 +4731,7 @@ def ExternCallBoundarySinglePfnContract
       consistentWithRegime predSatBody bodyCtx.regime bodyCtx
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
     (_hwfcfgBody : wfConfig callEntry.bodyConfig)
+    (_hrdBody : ReservedDiscipline callEntry.bodyConfig.registry bodyCtx.declaredExternRefs θBody)
     (_hpcBody : bodyCtx.pc = true)
     (c₂' : Config) (v₂ : Value) (c₁ : Config)
     (id : ExternId) (x y : Name) (argTyp : Typ)
@@ -4593,7 +4772,7 @@ theorem ExternCallBoundarySinglePfnContract.of_emptyExternRegistry
   intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hctxCons a pm hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
         _hpredlawsBody _hwfTmBody _hTmBoundedBody _hθBodyWf _hwfBody _hricBody
-        _htagRBody _hcwrBody _hwfcfgBody _hpcBody
+        _htagRBody _hcwrBody _hwfcfgBody _hrdBody _hpcBody
         c₂' v₂ c₁ id x y argTyp _argPoison _declaredArgPoison _argPred retSpec _tenv _memberCap _cap _env _impl _vRaw
         _hstatic _htypedCall ht_e2 ht_e1 hGet _hArg _hImpl _hValRet _hcf
         _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
@@ -4620,7 +4799,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedRegistry
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
-        htagRBody hcwrBody hwfcfgBody hpcBody
+        htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec tenv memberCap cap env impl vRaw
         hstatic htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
@@ -4676,13 +4855,15 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedRegistry
     simpa [hbodyCtx] using hcwrBody
   have hpcCall : callEntry.bodyCtx.pc = true := by
     simpa [hbodyCtx] using hpcBody
+  have hrdCall : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody := by
+    simpa [hbodyCtx] using hrdBody
   simpa [hbodyCtx] using
     externCallBoundaryRun_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
       htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
-      htagRCall hcwrCall hwfcfgBody hrun hpcCall
+      htagRCall hcwrCall hwfcfgBody hrdCall hrun hpcCall
 
 theorem ExternCallBoundarySinglePfnContract.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -4708,7 +4889,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedProgram
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
-        htagRBody hcwrBody hwfcfgBody hpcBody
+        htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec tenv memberCap cap env impl vRaw
         hstatic htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
@@ -4762,13 +4943,15 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedProgram
     simpa [hbodyCtx] using hcwrBody
   have hpcCall : callEntry.bodyCtx.pc = true := by
     simpa [hbodyCtx] using hpcBody
+  have hrdCall : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody := by
+    simpa [hbodyCtx] using hrdBody
   simpa [hbodyCtx] using
     externCallBoundaryRun_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
       htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
-      htagRCall hcwrCall hwfcfgBody hrun hpcCall
+      htagRCall hcwrCall hwfcfgBody hrdCall hrun hpcCall
 
 theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -4794,7 +4977,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
         hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
-        htagRBody hcwrBody hwfcfgBody hpcBody
+        htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec tenv memberCap cap env impl vRaw
         hstatic htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
         hargName hargValue hcaptured hunified
@@ -4848,13 +5031,15 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
     simpa [hbodyCtx] using hcwrBody
   have hpcCall : callEntry.bodyCtx.pc = true := by
     simpa [hbodyCtx] using hpcBody
+  have hrdCall : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody := by
+    simpa [hbodyCtx] using hrdBody
   simpa [hbodyCtx] using
     externCallBoundaryRun_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
       htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
-      htagRCall hcwrCall hwfcfgBody hrun hpcCall
+      htagRCall hcwrCall hwfcfgBody hrdCall hrun hpcCall
 
 private def AppTwoRunOutPack
     (predSat : PredSat) (ctx : TypeContext) (res : TypeResult)
@@ -4876,7 +5061,9 @@ private def AppTwoRunOutPack
   valueConsistentWithRegime predSat (ctxAfter ctx res).regime
     res.qualType cf₁.memory θ₁_out o₁ ∧
   resultAgreesIfClean predSat (ctxAfter ctx res).regime
-    cf₀.memory cf₁.memory θ₀_out θ₁_out res.qualType o₀ o₁
+    cf₀.memory cf₁.memory θ₀_out θ₁_out res.qualType o₀ o₁ ∧
+  ReservedDiscipline cf₀.registry res.declared' θ₀_out ∧
+  ReservedDiscipline cf₁.registry res.declared' θ₁_out
 
 private def AppTwoRunOutChoice
     (predSat : PredSat) (ctx : TypeContext) (res : TypeResult)
@@ -5074,13 +5261,15 @@ private lemma appMember_valueConsistentWithRegime_from_body
     {cf evalCfg : Config} {θ : RealizationMap} {o : Value} {p p1 : Poison}
     (h_join : joinTypeResults ctx first rest = .ok res)
     (hsrc_mem : src ∈ first :: rest)
+    {declSrc : List ExternId}
     (hsrc_eq :
       src =
         { result3 with
           qualType :=
             normalizeAppResultByProvenance (joinPoison p1 p)
               { result3.qualType with
-                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) },
+          declared' := declSrc })
     (hmem_eq : cf.memory = evalCfg.memory)
     (hbody_val :
       valueConsistentWithRegime predSat (ctxAfter bodyCtx result3).regime
@@ -5115,13 +5304,15 @@ private lemma appMember_resultAgreesIfClean_from_body
     {θ₀ θ₁ : RealizationMap} {o₀ o₁ : Value} {p p1 : Poison}
     (h_join : joinTypeResults ctx first rest = .ok res)
     (hsrc_mem : src ∈ first :: rest)
+    {declSrc : List ExternId}
     (hsrc_eq :
       src =
         { result3 with
           qualType :=
             normalizeAppResultByProvenance (joinPoison p1 p)
               { result3.qualType with
-                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) },
+          declared' := declSrc })
     (hmem₀_eq : cf₀.memory = evalCfg₀.memory)
     (hmem₁_eq : cf₁.memory = evalCfg₁.memory)
     (hbody_agree :
@@ -5162,13 +5353,15 @@ private lemma appTwoRunOutPack_from_body_post
     {o₀ o₁ : Value} {p p1 : Poison}
     (h_join : joinTypeResults ctx first rest = .ok res)
     (hsrc_mem : src ∈ first :: rest)
+    {declSrc : List ExternId}
     (hsrc_eq :
       src =
         { result3 with
           qualType :=
             normalizeAppResultByProvenance (joinPoison p1 p)
               { result3.qualType with
-                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) },
+          declared' := declSrc })
     (hmono_pre_to_src :
       Regime.monotoneStepExt preCtx.regime (ctxAfter ctx src).regime
         (fun k => preCtx.nextTag ≤ k))
@@ -5215,13 +5408,15 @@ private lemma appTwoRunOutPack_from_body_post
       result3.qualType evalCfg₁.memory θbody₁ o₁)
     (hres_agree_body :
       resultAgreesIfClean predSat (ctxAfter bodyCtx result3).regime
-        evalCfg₀.memory evalCfg₁.memory θbody₀ θbody₁ result3.qualType o₀ o₁) :
+        evalCfg₀.memory evalCfg₁.memory θbody₀ θbody₁ result3.qualType o₀ o₁)
+    (hrd₀ : ReservedDiscipline cf₀.registry res.declared' θbody₀)
+    (hrd₁ : ReservedDiscipline cf₁.registry res.declared' θbody₁) :
     AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θbody₀ θbody₁ := by
   have hsrc_etyp : src.qualType.etyp = result3.qualType.etyp := by
     rw [hsrc_eq]
     unfold normalizeAppResultByProvenance
     split_ifs <;> rfl
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, hagree, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, hagree, ?_, ?_, ?_, hrd₀, hrd₁⟩
   · have hv_src₀ : valueHasETyp θbody₀ o₀ src.qualType.etyp := by
       rw [hsrc_etyp]
       exact hv_body₀
@@ -5325,13 +5520,15 @@ private lemma appTwoRunOutChoice_from_body_stepFRPost
     {o₀ o₁ : Value} {p p1 : Poison}
     (h_join : joinTypeResults ctx first rest = .ok res)
     (hsrc_mem : src ∈ first :: rest)
+    {declSrc : List ExternId}
     (hsrc_eq :
       src =
         { result3 with
           qualType :=
             normalizeAppResultByProvenance (joinPoison p1 p)
               { result3.qualType with
-                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) },
+          declared' := declSrc })
     (hmono_pre_to_src :
       Regime.monotoneStepExt preCtx.regime (ctxAfter ctx src).regime
         (fun k => preCtx.nextTag ≤ k))
@@ -5372,14 +5569,17 @@ private lemma appTwoRunOutChoice_from_body_stepFRPost
           cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁)
     (hbody_post :
       StepFRPost bodyCtx postExpr result3 predSat tmBody
-        θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁) :
+        θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁)
+    (hreg₀ : evalCfg₀.registry = cf₀.registry)
+    (hreg₁ : evalCfg₁.registry = cf₁.registry)
+    (hres_decl : res.declared' = result3.declared') :
     AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
   rcases hbody_post with
     ⟨_tmOut, _hboundary, _hpredlawsOut, _hresTmOut,
       θbody₀, θbody₁, hθext₀, hθext₁, hv₀, hv₁, _hwfTmOut, _hwfOut,
       _htagOut, _hwfcfg₀, _hwfcfg₁, hric_body₀, hric_body₁, _htagR,
       hcwr_body₀, hcwr_body₁, _hagree_body, hval_body₀, hval_body₁,
-      hres_agree_body⟩
+      hres_agree_body, _hrd₀_body, _hrd₁_body⟩
   have hpack :
       AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θbody₀ θbody₁ := by
     exact
@@ -5400,6 +5600,8 @@ private lemma appTwoRunOutChoice_from_body_stepFRPost
         hcwr_body₀ hcwr_body₁ hcwr_pre₀ hcwr_pre₁
         (hagree_out θbody₀ θbody₁ hθext₀ hθext₁ hric_body₀ hric_body₁ _hagree_body)
         hval_body₀ hval_body₁ hres_agree_body
+        (by rw [hres_decl, ← hreg₀]; exact _hrd₀_body)
+        (by rw [hres_decl, ← hreg₁]; exact _hrd₁_body)
   exact appTwoRunOutChoice_of_pack hθext₀ hθext₁ hpack
 
 private lemma appTwoRunOutPack_from_direct_body_post
@@ -5456,9 +5658,11 @@ private lemma appTwoRunOutPack_from_direct_body_post
       src.qualType evalCfg₁.memory θbody₁ o₁)
     (hres_agree_body :
       resultAgreesIfClean predSat (ctxAfter bodyCtx src).regime
-        evalCfg₀.memory evalCfg₁.memory θbody₀ θbody₁ src.qualType o₀ o₁) :
+        evalCfg₀.memory evalCfg₁.memory θbody₀ θbody₁ src.qualType o₀ o₁)
+    (hrd₀ : ReservedDiscipline cf₀.registry res.declared' θbody₀)
+    (hrd₁ : ReservedDiscipline cf₁.registry res.declared' θbody₁) :
     AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θbody₀ θbody₁ := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, hagree, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, hagree, ?_, ?_, ?_, hrd₀, hrd₁⟩
   · exact
       joinTypeResults_transport_valueHasETyp_from_member
         (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
@@ -5602,14 +5806,17 @@ private lemma appTwoRunOutChoice_from_direct_body_stepFRPost
           cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁)
     (hbody_post :
       StepFRPost bodyCtx postExpr src predSat tmBody
-        θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁) :
+        θpre₀ θpre₁ evalCfg₀ evalCfg₁ o₀ o₁)
+    (hreg₀ : evalCfg₀.registry = cf₀.registry)
+    (hreg₁ : evalCfg₁.registry = cf₁.registry)
+    (hres_decl : res.declared' = src.declared') :
     AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
   rcases hbody_post with
     ⟨_tmOut, _hboundary, _hpredlawsOut, _hresTmOut,
       θbody₀, θbody₁, hθext₀, hθext₁, hv₀, hv₁, _hwfTmOut, _hwfOut,
       _htagOut, _hwfcfg₀, _hwfcfg₁, hric_body₀, hric_body₁, _htagR,
       hcwr_body₀, hcwr_body₁, _hagree_body, hval_body₀, hval_body₁,
-      hres_agree_body⟩
+      hres_agree_body, _hrd₀_body, _hrd₁_body⟩
   have hpack :
       AppTwoRunOutPack predSat ctx res cf₀ cf₁ o₀ o₁ θbody₀ θbody₁ := by
     exact
@@ -5629,6 +5836,8 @@ private lemma appTwoRunOutChoice_from_direct_body_stepFRPost
         hcwr_body₀ hcwr_body₁ hcwr_pre₀ hcwr_pre₁
         (hagree_out θbody₀ θbody₁ hθext₀ hθext₁ hric_body₀ hric_body₁ _hagree_body)
         hval_body₀ hval_body₁ hres_agree_body
+        (by rw [hres_decl, ← hreg₀]; exact _hrd₀_body)
+        (by rw [hres_decl, ← hreg₁]; exact _hrd₁_body)
   exact appTwoRunOutChoice_of_pack hθext₀ hθext₁ hpack
 
 private lemma appTwoRunOutChoice_from_direct_call_boundaryFR
@@ -5693,7 +5902,10 @@ private lemma appTwoRunOutChoice_from_direct_call_boundaryFR
           evalCfg₀.memory evalCfg₀.varEnv θbody₀
           evalCfg₁.memory evalCfg₁.varEnv θbody₁ →
         agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
-          cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁) :
+          cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁)
+    (hreg₀ : evalCfg₀.registry = cf₀.registry)
+    (hreg₁ : evalCfg₁.registry = cf₁.registry)
+    (hres_decl : res.declared' = src.declared') :
     AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
   have hbody_post :
       StepFRPost entry₀.bodyCtx postExpr src predSat tmBody
@@ -5716,6 +5928,7 @@ private lemma appTwoRunOutChoice_from_direct_call_boundaryFR
       h_join hsrc_mem hmono_pre_to_src hbnd_pre hvar_lookup_src_to_pre
       hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
       hric_pre₀ hric_pre₁ hcwr_pre₀ hcwr_pre₁ hagree_out hbody_post
+      hreg₀ hreg₁ hres_decl
 
 private lemma appSingleRunMaskedPost_from_body_fields
     {masked : Tag → Prop}
@@ -5750,7 +5963,8 @@ private lemma appSingleRunMaskedPost_from_body_fields
           qualType :=
             normalizeAppResultByProvenance (joinPoison p1 p)
               { result3.qualType with
-                poison := joinPoison p1 (joinPoison p result3.qualType.poison) } })
+                poison := joinPoison p1 (joinPoison p result3.qualType.poison) }
+          declared' := result1.declared' })
     (hmono_pre_to_src :
       Regime.monotoneStepExt (ctxAfter (ctxAfter ctx result2) result1).regime
         (ctxAfter ctx src).regime
@@ -5780,12 +5994,13 @@ private lemma appSingleRunMaskedPost_from_body_fields
     (hval_body : ValCons (ctxAfter bodyCtx result3).regime result3.qualType
       evalCfg.memory θbody o)
     (hpres_final : PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θbody)
-    (hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θbody) :
+    (hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θbody)
+    (hrd_final : ReservedDiscipline cf.registry res.declared' θbody) :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
       masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
       hθwf hwf hric_start hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctx_start a pm hwfcfg := by
   refine ⟨θbody, wfExtendsMap_trans hθ_start_pre hθ_pre_body, ?_, ?_, ?_, ?_,
-    hpres_final, hfresh_final⟩
+    hpres_final, hfresh_final, hrd_final⟩
   · have hsrc_etyp : src.qualType.etyp = result3.qualType.etyp := by
       rw [hsrc_eq]
       unfold normalizeAppResultByProvenance
@@ -5821,7 +6036,7 @@ private lemma appSingleRunMaskedPost_from_body_fields
       h_join hsrc_mem hctx_src
   · have hval_src :
         ValCons (ctxAfter ctx src).regime src.qualType cf.memory θbody o :=
-      valBodyResult ctx bodyCtx src result3 p p1 cf.memory evalCfg.memory θbody o
+      valBodyResult ctx bodyCtx src result3 p p1 result1.declared' cf.memory evalCfg.memory θbody o
         hsrc_eq hmem_eq hval_body
     exact valJoinMember ctx first src rest res cf.memory θbody o
       h_join hsrc_mem hval_src
@@ -5881,12 +6096,14 @@ private lemma appSingleRunMaskedPost_from_direct_body_fields
     (hval_body : ValCons (ctxAfter bodyCtx src).regime src.qualType
       evalCfg.memory θbody o)
     (hpres_final : PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θbody)
-    (hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θbody) :
+    (hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θbody)
+    (hrd_final : ReservedDiscipline cf.registry res.declared' θbody)
+    (hdecl_eq : src.declared' = result1.declared') :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
       masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
       hθwf hwf hric_start hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctx_start a pm hwfcfg := by
   refine ⟨θbody, wfExtendsMap_trans hθ_start_pre hθ_pre_body, ?_, ?_, ?_, ?_,
-    hpres_final, hfresh_final⟩
+    hpres_final, hfresh_final, hrd_final⟩
   · exact
       joinTypeResults_transport_valueHasETyp_from_member
         (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
@@ -5903,9 +6120,8 @@ private lemma appSingleRunMaskedPost_from_direct_body_fields
         (fun l hcontains_body => by
           simpa [ctxAfter] using hcontains_body)
         hvar_lookup_src_to_pre hmem_eq hvar_eq hθ_pre_body
-  · have hsrc_eq : src = { src with qualType := src.qualType } := by
-      cases src
-      rfl
+  · have hsrc_eq : src = { src with qualType := src.qualType, declared' := result1.declared' } := by
+      rw [← hdecl_eq]
     have hctx_src : CtxCons (ctxAfter ctx src) cf.memory cf.varEnv θbody :=
       ctxMember ctx bodyCtx result2 result1 src src src.qualType
         preCfg evalCfg cf θpre θbody
@@ -5988,13 +6204,16 @@ private lemma appSingleRunMaskedPost_from_direct_boundary
         FreshCleanLocsUnrealizedOneRun bodyCtx src θbody →
         FreshCleanLocsUnrealizedOneRun ctx res θbody)
     (hboundary :
-      ExternBoundarySinglePost bodyCtx src predSat tmBody θpre preCfg.memory evalCfg o) :
+      ExternBoundarySinglePost bodyCtx src predSat tmBody θpre preCfg.memory evalCfg o)
+    (hdecl_eq : src.declared' = result1.declared')
+    (hreg_eval : evalCfg.registry = cf.registry)
+    (hres_decl : res.declared' = src.declared') :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
       masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
       hθwf hwf hric_start hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctx_start a pm hwfcfg := by
   rcases hboundary with
     ⟨_tm', _htag, θbody, hθ_pre_body, hv_body, hric_body, hcwr_body,
-      hval_body, hpres_body, hfresh_body⟩
+      hval_body, hpres_body, hfresh_body, _hrd_body⟩
   exact
     appSingleRunMaskedPost_from_direct_body_fields
       (predSat := predSat)
@@ -6011,6 +6230,8 @@ private lemma appSingleRunMaskedPost_from_direct_boundary
       (ctxConsOfRegular hcwr_body) hctx_pre (valConsOfRegular hval_body)
       (hpres_final_of_boundary hθ_pre_body hpres_body)
       (hfresh_final_of_boundary hric_body hpres_body hfresh_body)
+      (by rw [hres_decl]; exact hreg_eval ▸ _hrd_body)
+      hdecl_eq
 
 private lemma applyFnTClosure_extern_of_threaded_mem
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -6440,6 +6661,7 @@ private theorem externCallBoundaryRunProvider_singlePost
       consistentWithRegime predSatBody callEntry.bodyCtx.regime callEntry.bodyCtx
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
     (hwfcfgBody : wfConfig callEntry.bodyConfig)
+    (hrdBody : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody)
     (hpcBody : callEntry.bodyCtx.pc = true) :
     ExternBoundarySinglePost callEntry.bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o := by
@@ -6450,7 +6672,7 @@ private theorem externCallBoundaryRunProvider_singlePost
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
       htypedCall hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
-      htagRBody hcwrBody hwfcfgBody hrun hpcBody
+      htagRBody hcwrBody hwfcfgBody hrdBody hrun hpcBody
 
 /-- Body-local boundary-run contract for the side-0 impure extern arm. -/
 def ExternCallBoundaryFRFnSide0Contract
@@ -7978,7 +8200,10 @@ private lemma appTwoRunOutChoice_from_keyed_direct_call_boundaryFR
           evalCfg₀.memory evalCfg₀.varEnv θbody₀
           evalCfg₁.memory evalCfg₁.varEnv θbody₁ →
         agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res)
-          cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁) :
+          cf₀.memory cf₀.varEnv θbody₀ cf₁.memory cf₁.varEnv θbody₁)
+    (hreg₀ : evalCfg₀.registry = cf₀.registry)
+    (hreg₁ : evalCfg₁.registry = cf₁.registry)
+    (hres_decl : res.declared' = src.declared') :
     AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
   rcases hrunProvider₀ with ⟨trusted₀, hkey₀, htyped₀, hrun₀⟩
   rcases hrunProvider₁ with ⟨trusted₁, hkey₁, htyped₁, hrun₁⟩
@@ -8002,6 +8227,7 @@ private lemma appTwoRunOutChoice_from_keyed_direct_call_boundaryFR
       hmono_pre_to_src hbnd_pre hvar_lookup_src_to_pre
       hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
       hric_pre₀ hric_pre₁ hcwr_pre₀ hcwr_pre₁ hagree_out
+      hreg₀ hreg₁ hres_decl
 
 private lemma bodyEntryInputsAgree_of_facts
     {predSat : PredSat} {ctx : TypeContext}
@@ -8021,7 +8247,9 @@ private lemma bodyEntryInputsAgree_of_facts
       entry₀.bodyConfig.memory entry₀.bodyConfig.varEnv θ₀
       entry₁.bodyConfig.memory entry₁.bodyConfig.varEnv θ₁)
     (hwfcfg₀ : wfConfig entry₀.bodyConfig)
-    (hwfcfg₁ : wfConfig entry₁.bodyConfig) :
+    (hwfcfg₁ : wfConfig entry₁.bodyConfig)
+    (hrd₀ : ReservedDiscipline entry₀.bodyConfig.registry ctx.declaredExternRefs θ₀)
+    (hrd₁ : ReservedDiscipline entry₁.bodyConfig.registry ctx.declaredExternRefs θ₁) :
     BodyEntryInputsAgree predSat ctx entry₀ entry₁ θ₀ θ₁ :=
   { wfRealization₀ := hθ₀
     wfRealization₁ := hθ₁
@@ -8034,7 +8262,9 @@ private lemma bodyEntryInputsAgree_of_facts
     consistent₁ := hcwr₁
     agree := hagree
     wfConfig₀ := hwfcfg₀
-    wfConfig₁ := hwfcfg₁ }
+    wfConfig₁ := hwfcfg₁
+    reserved₀ := hrd₀
+    reserved₁ := hrd₁ }
 
 private lemma appAgreeOnClean_out_from_body_member
     {predSat : PredSat} {ctx preCtx bodyFinalCtx : TypeContext}
@@ -8339,10 +8569,12 @@ private lemma appTwoRunOutChoice_from_independent_single_posts_dirty
       PreservesInheritedFinalCleanLocsOneRun bodyCtx₁ src₁
         preCfg₁.memory evalCfg₁.memory θpre₁ θbody₁)
     (hfresh₀ : FreshCleanLocsUnrealizedOneRun bodyCtx₀ src₀ θbody₀)
-    (hfresh₁ : FreshCleanLocsUnrealizedOneRun bodyCtx₁ src₁ θbody₁) :
+    (hfresh₁ : FreshCleanLocsUnrealizedOneRun bodyCtx₁ src₁ θbody₁)
+    (hrd₀ : ReservedDiscipline cf₀.registry res.declared' θbody₀)
+    (hrd₁ : ReservedDiscipline cf₁.registry res.declared' θbody₁) :
     AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
   refine ⟨θbody₀, θbody₁, hθext₀, hθext₁, ?_⟩
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hrd₀, hrd₁⟩
   · exact
       joinTypeResults_transport_valueHasETyp_from_member
         (ctx := ctx) (first := first) (src := src₀) (rest := rest) (res := res)
@@ -8684,7 +8916,11 @@ private lemma appTwoRunOutChoice_from_independent_single_boundary_posts_dirty
         θpre₀ preCfg₀.memory evalCfg₀ o₀)
     (hboundary₁ :
       ExternBoundarySinglePost bodyCtx₁ src₁ predSat tmBody₁
-        θpre₁ preCfg₁.memory evalCfg₁ o₁) :
+        θpre₁ preCfg₁.memory evalCfg₁ o₁)
+    (hreg₀ : evalCfg₀.registry = cf₀.registry)
+    (hreg₁ : evalCfg₁.registry = cf₁.registry)
+    (hres_decl₀ : res.declared' = src₀.declared')
+    (hres_decl₁ : res.declared' = src₁.declared') :
     AppTwoRunOutChoice predSat ctx res θpre₀ θpre₁ cf₀ cf₁ o₀ o₁ := by
   rcases hboundary₀ with
     ⟨_tm₀, _hboundary₀, θbody₀, hθext₀, hv₀, hric_body₀, hcwr_body₀,
@@ -8718,7 +8954,9 @@ private lemma appTwoRunOutChoice_from_independent_single_boundary_posts_dirty
       hcwr_body₀ hcwr_body₁ hcwr_pre₀ hcwr_pre₁ hagree_pre
       (by simpa [ctxAfter, hmem₀_eq] using hval_body₀)
       (by simpa [ctxAfter, hmem₁_eq] using hval_body₁)
-      hpres₀ hpres₁ hfresh₀ hfresh₁
+      hpres₀ hpres₁ hfresh₀.1 hfresh₁.1
+      (by rw [hres_decl₀, ← hreg₀]; exact hfresh₀.2)
+      (by rw [hres_decl₁, ← hreg₁]; exact hfresh₁.2)
 
 private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
   (masked : Tag → Prop)
@@ -8820,7 +9058,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht hpc
   let cinit : Config :=
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -8833,8 +9071,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       ht_body heq_cfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e2 hpc
-      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
+        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht_e2 hpc
+      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2, _hrd2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
       wfTypeContext_of_wfTypeResult ctxᵢ result2
@@ -8882,12 +9120,20 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
+    have hres2 : RegistryReservedWF registry c₂'.memory c₂'.nextAddr := by
+      apply RegistryReservedWF_mono hres
+      · exact terminatesTo_memory_contains_mono e2 cinit c₂' v₂ hOp ht_e2
+      · exact terminatesTo_nextAddr_mono e2 cinit c₂' v₂ hOp ht_e2
+    have hreg_c₂' : c₂'.registry = registry := by simpa [cinit] using terminatesTo_preserves_registry ht_e2
+    have hrd2 : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ2 := by
+      simp only [ctxAfter]; simpa [hreg_c₂'] using _hrd2
     rcases
       hIH_e1_inst.2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hmasked_bounded2 hbnd2 hcwr2 c₂'.nextAddr pm
-        ((wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
-      with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
+        ((wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1) hres2 hrd2
+        (heq_cfg2' ▸ ht_e1) hpc2
+      with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, _hfresh1, _hrd1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
     rcases hIH_e1_inst.1 with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hTm1⟩
     have hwf1 : wfTypeContext (ctxAfter (ctxAfter ctxᵢ result2) result1) :=
@@ -8951,7 +9197,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
             tagEnv := result1.tagEnv'
             nextTag := cursorA.1
             nextLoc := cursorA.2
-            regime := result1.regime' }
+            regime := result1.regime'
+            externRefAllowed := false
+            declaredExternRefs := result1.declared' }
         have hcwr_body : CtxCons bodyCtx c₁.memory (env.update x v₂) θ1 := by
           simpa [bodyCtx] using hcwr_body_for cursorA
         have hargTm : QTypRespectsTagMeaning tm1 ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ :=
@@ -9048,18 +9296,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
                 pureMode := false
                 registry := registry } := by
           have hwfcfg2 : wfConfig c₂' :=
-            (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
+            (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1
           have hwfcfg1 : wfConfig c₁ :=
-            (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).1
+            (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) (hreg2'.symm ▸ hres2.toBelow) ht_e1 hwfcfg2).1
           have hv₂_wf_e2 : wfValue c₂'.nextAddr v₂ :=
-            (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).2
+            (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).2
           have hnext₂_to₁ : c₂'.nextAddr ≤ c₁.nextAddr :=
             terminatesTo_nextAddr_mono e1 c₂' c₁
               (Value.closure x body env) (hreg2'.symm ▸ hOp) ht_e1
           have hv₂_wf : wfValue c₁.nextAddr v₂ :=
             wfValue_mono_of_le_nextAddr hnext₂_to₁ x v₂ hv₂_wf_e2
           have henv_wf : wfVarEnv c₁.nextAddr env := by
-            cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).2 with
+            cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) (hreg2'.symm ▸ hres2.toBelow) ht_e1 hwfcfg2).2 with
             | closure _ _ _ henv => exact henv
           constructor
           · intro a ha; exact hwfcfg1.1 a ha
@@ -9131,14 +9379,22 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           have h2 : c₂'.registry = registry := by
             simpa [cinit] using terminatesTo_preserves_registry ht_e2
           exact (terminatesTo_preserves_registry ht_e1).trans h2
+        have hres_c₁ : RegistryReservedWF registry c₁.memory c₁.nextAddr := by
+          apply RegistryReservedWF_mono hres2
+          · exact terminatesTo_memory_contains_mono e1 c₂' c₁
+              (Value.closure x body env) (hreg2'.symm ▸ hOp) ht_e1
+          · exact terminatesTo_nextAddr_mono e1 c₂' c₁
+              (Value.closure x body env) (hreg2'.symm ▸ hOp) ht_e1
+        have hrd_body : ReservedDiscipline registry bodyCtx.declaredExternRefs θ1 := by
+          simp only [bodyCtx]; simpa [hreg_c₁] using _hrd1
         rw [hreg_c₁] at ht_body
         rcases
           (hSingle_body hpredlaws1 hExtTyping hTmBody hTmBoundedBody).2
             c₁.memory (env.update x v₂) θ1 evalCfg o
             hθ1wf hwfBody hric_body htagR_body hmasked_none_body
             hmasked_absent_body hmasked_bounded_body htagBoundedBody hcwr_body
-            c₁.nextAddr false hwfcfg_body_init ht_body hpc_body
-          with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body⟩
+            c₁.nextAddr false hwfcfg_body_init hres_c₁ hrd_body ht_body hpc_body
+          with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body, _hrd_body⟩
         have hθext : wfExtendsMap θ θ_body :=
           wfExtendsMap_trans hθext2 (wfExtendsMap_trans hθext1 hθext_body)
         have hfirstA_etyp : firstA.qualType.etyp = result3.qualType.etyp := by
@@ -9200,7 +9456,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
             ValCons (ctxAfter ctxᵢ firstA).regime
               firstA.qualType cf.memory θ_body o := by
           exact
-            valBodyResult ctxᵢ bodyCtx firstA result3 p p1 cf.memory evalCfg.memory θ_body o
+            valBodyResult ctxᵢ bodyCtx firstA result3 p p1 result1.declared' cf.memory evalCfg.memory θ_body o
               hfirstA_eq hmem_eq hvalc_body
         have hvalc_final :
             ValCons (ctxAfter ctxᵢ res).regime
@@ -9403,12 +9659,33 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
             (wfExtendsMap_trans hθext2 hθext1) hθext_body hv_body_typed
             hric_body_final hric1 hcwr_body_final hcwr1 hvalc_body
             hpres_final hfresh_final
+            (by
+              have hfirst_decl : first.declared' = result1.declared' := by
+                rcases applyClosuresThreaded_ok_mem_output_exists_input
+                    (applyOne := fun tcl cursor =>
+                      applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                        ctxᵢ result1 cursor fuel')
+                    (hthread := hmap)
+                    (hmem := by rw [heq_results]; exact List.Mem.head _) with
+                  ⟨tcl, _htcl, cursor, happly⟩
+                exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 cursor fuel' first happly
+              have h3_decl : result3.declared' = result1.declared' :=
+                typecheck_declared'_eq_of_not_allowed bodyCtx body fuelBody result3 rfl htcBody'
+              have hres_decl : res.declared' = result3.declared' := by
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hfirst_decl, h3_decl]
+              have hreg_cf : cf.registry = evalCfg.registry := by
+                have hevalReg : evalCfg.registry = registry := by
+                  simpa using terminatesTo_preserves_registry ht_body
+                simp [heq_cfg, hreg_c₁, hevalReg]
+              rw [hreg_cf, hres_decl]
+              exact _hrd_body)
   | @externFn cap c₂' v₂ c₁ x y id argTyp argPoison argPred retSpec eff env impl vRaw mem' addr'
       ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e2 hpc
-      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, hfresh2⟩
+        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht_e2 hpc
+      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, hfresh2, hrd2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
       wfTypeContext_of_wfTypeResult ctxᵢ result2
@@ -9456,13 +9733,20 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
+    have hres2 : RegistryReservedWF registry c₂'.memory c₂'.nextAddr := by
+      apply RegistryReservedWF_mono hres
+      · exact terminatesTo_memory_contains_mono e2 cinit c₂' v₂ hOp ht_e2
+      · exact terminatesTo_nextAddr_mono e2 cinit c₂' v₂ hOp ht_e2
+    have hrd2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ2 := by
+      simp only [ctxAfter]; simpa [hreg2'] using hrd2
     rcases
       hIH_e1_inst.2
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hmasked_bounded2 hbnd2 hcwr2 c₂'.nextAddr pm
-        ((wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1) (heq_cfg2' ▸ ht_e1) hpc2
-      with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, hfresh1⟩
+        ((wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1) hres2 hrd2'
+        (heq_cfg2' ▸ ht_e1) hpc2
+      with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, hfresh1, hrd1⟩
     have hv₁_arrow :
         valueHasETyp θ1
           (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env)
@@ -9527,7 +9811,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         tagEnv := result1.tagEnv'
         nextTag := cursorA.1
         nextLoc := cursorA.2
-        regime := result1.regime' }
+        regime := result1.regime'
+        externRefAllowed := false
+        declaredExternRefs := result1.declared' }
     have hcwr_body : CtxCons bodyCtx c₁.memory (env.update x v₂) θ1 := by
       simpa [bodyCtx] using hcwr_body_for cursorA
     have htagBoundedBody : TagBoundedCtx bodyCtx := by
@@ -9643,18 +9929,18 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
     have hwfcfg_body_init :
         wfConfig { c₁ with varEnv := env.update x v₂ } := by
       have hwfcfg2 : wfConfig c₂' :=
-        (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
+        (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1
       have hwfcfg1 : wfConfig c₁ :=
-        (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).1
+        (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) (hreg2'.symm ▸ hres2.toBelow) ht_e1 hwfcfg2).1
       have hv₂_wf_e2 : wfValue c₂'.nextAddr v₂ :=
-        (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).2
+        (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).2
       have hnext₂_to₁ : c₂'.nextAddr ≤ c₁.nextAddr :=
         terminatesTo_nextAddr_mono e1 c₂' c₁
           (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env) (hreg2'.symm ▸ hOp) ht_e1
       have hv₂_wf : wfValue c₁.nextAddr v₂ :=
         wfValue_mono_of_le_nextAddr hnext₂_to₁ x v₂ hv₂_wf_e2
       have henv_wf : wfVarEnv c₁.nextAddr env := by
-        cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).2 with
+        cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) (hreg2'.symm ▸ hres2.toBelow) ht_e1 hwfcfg2).2 with
         | closure _ _ _ henv => exact henv
       constructor
       · intro a ha
@@ -9682,6 +9968,10 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       have hwfcfgBody : wfConfig callEntry.bodyConfig := by
         simpa [callEntry, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime] using
           hwfcfg_body_init
+      have hreg_c₁ : c₁.registry = registry :=
+        (terminatesTo_preserves_registry ht_e1).trans hreg2'
+      have hrdBody : ReservedDiscipline callEntry.bodyConfig.registry bodyCtx.declaredExternRefs θ1 := by
+        simpa [callEntry, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime, bodyCtx, hreg_c₁] using hrd1
       have htypedCallProvider :
           ExternCallFnTypingProvider id x y argTyp retSpec eff callEntry firstA _ memberCap :=
         externCallFnTypingProvider_of_selected (hbodyCtx := rfl) hselectedA
@@ -9690,7 +9980,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg
           bodyCtx firstA predSat tm1 θ1 callEntry
           hpredlaws1 hTmBody hTmBoundedBody hθ1wf hwfBody hricBody'
-          htagR_body_regular hcwrBody' hwfcfgBody hpc_body
+          htagR_body_regular hcwrBody' hwfcfgBody hrdBody hpc_body
           c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec eff σcap memberCap cap env impl vRaw mem' addr'
           hsource htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcfg
           rfl rfl rfl rfl rfl rfl
@@ -9758,6 +10048,23 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
           qtypPredHolds predSat qt' c₁.memory v' ↔ qtypPredHolds predSat qt' cf.memory v' :=
       qtypPredHolds_mem_compat_of_predSatLaws
         (hpredlaws := hpredlaws) (θ := θ1) (μ := c₁.memory) (μ' := cf.memory)
+    have hmember_decl : ∀ r ∈ results, r.declared' = result1.declared' := by
+      intro r hr
+      rcases applyClosuresThreaded_ok_mem_output_exists_input
+          (applyOne := fun tcl cursor =>
+            applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+              ctxᵢ result1 cursor fuel')
+          (hthread := hmap) (hmem := hr) with
+        ⟨tcl, _htcl, cursor, happly⟩
+      exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+        ctxᵢ result1 cursor fuel' r happly
+    have hdecl_eqA : firstA.declared' = result1.declared' :=
+      hmember_decl firstA hfirstA_mem
+    have hreg_eval : evalCfg.registry = cf.registry := by
+      simp [evalCfg, ExternCallEntry.bodyOutputConfig]
+    have hres_declA : res.declared' = firstA.declared' := by
+      rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hdecl_eqA,
+        hmember_decl first (by rw [heq_results]; exact List.Mem.head _)]
     exact
       appSingleRunMaskedPost_from_direct_boundary
         (predSat := predSat)
@@ -9907,13 +10214,13 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
               theta_not_contains_if_not_in_memEnv
                 (ctxAfter bodyCtx firstA) evalCfg.memory evalCfg.varEnv θbody l
                 hric_body_final (by simpa [ctxAfter] using hcA))
-        hboundary
+        hboundary hdecl_eqA hreg_eval hres_declA
   | @userPfn c₂' v₂ c₁ x body env _evalCfg ht_e2 ht_e1 _hNotExtern _htoPExpr
       _ht_body _hcf hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e2 hpc
-      with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _⟩
+        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht_e2 hpc
+      with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _, hrd2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
       wfTypeContext_of_wfTypeResult ctxᵢ result2
@@ -9959,14 +10266,22 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
+    have hres2 : RegistryReservedWF registry c₂'.memory c₂'.nextAddr := by
+      apply RegistryReservedWF_mono hres
+      · exact terminatesTo_memory_contains_mono e2 cinit c₂' v₂ hOp ht_e2
+      · exact terminatesTo_nextAddr_mono e2 cinit c₂' v₂ hOp ht_e2
+    have hrd2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ2 := by
+      have hreg2'' : c₂'.registry = registry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      simp only [ctxAfter]; simpa [hreg2''] using hrd2
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hmasked_bounded2 hbnd2 hcwr2 c₂'.nextAddr pm
-        hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
+        hwfcfg2 hres2 hrd2' (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     rcases valueHasETyp_peClosure_etyp_parrow_inv hv₁_typed with
       ⟨_st1, _st2, _p, _ptcls, hparr⟩
@@ -9976,8 +10291,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       ht_e2 ht_e1 _hGet _hArg _hImpl _hValRet _hcfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e2 hpc
-      with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _⟩
+        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht_e2 hpc
+      with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _, hrd2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
       wfTypeContext_of_wfTypeResult ctxᵢ result2
@@ -10023,15 +10338,23 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
+    have hres2 : RegistryReservedWF registry c₂'.memory c₂'.nextAddr := by
+      apply RegistryReservedWF_mono hres
+      · exact terminatesTo_memory_contains_mono e2 cinit c₂' v₂ hOp ht_e2
+      · exact terminatesTo_nextAddr_mono e2 cinit c₂' v₂ hOp ht_e2
+    have hrd2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ2 := by
+      have hreg2'' : c₂'.registry = registry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      simp only [ctxAfter]; simpa [hreg2''] using hrd2
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hmasked_bounded2 hbnd2 hcwr2 c₂'.nextAddr pm
-        hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
+        hwfcfg2 hres2 hrd2' (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     rcases valueHasETyp_peClosure_etyp_parrow_inv hv₁_typed with
       ⟨_st1, _st2, _p, _ptcls, hparr⟩
@@ -10136,7 +10459,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht hpc
   let cinit : Config :=
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
   have hIH_e2 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
@@ -10149,8 +10472,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       _ht_body _heq_cfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e2 hpc
-      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
+        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht_e2 hpc
+      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2, hrd2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
       wfTypeContext_of_wfTypeResult ctxᵢ result2
@@ -10196,14 +10519,22 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
+    have hres2 : RegistryReservedWF registry c₂'.memory c₂'.nextAddr := by
+      apply RegistryReservedWF_mono hres
+      · exact terminatesTo_memory_contains_mono e2 cinit c₂' v₂ hOp ht_e2
+      · exact terminatesTo_nextAddr_mono e2 cinit c₂' v₂ hOp ht_e2
+    have hrd2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ2 := by
+      have hreg2'' : c₂'.registry = registry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      simp only [ctxAfter]; simpa [hreg2''] using hrd2
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.closure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hmasked_bounded2 hbnd2 hcwr2 c₂'.nextAddr pm
-        hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
+        hwfcfg2 hres2 hrd2' (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     rcases valueHasETyp_closure_etyp_arrow_inv hv₁_typed with
       ⟨_st1, _st2, _p, _tcls, harrow⟩
@@ -10213,8 +10544,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       ht_e2 ht_e1 _hpure _hGet _hArg _hImpl _hValRet _hcfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e2 hpc
-      with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _hfresh2⟩
+        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht_e2 hpc
+      with ⟨θ2, hθext2, _hv₂_typed, hric2, hcwr2, _hvalc2, _hpres2, _hfresh2, hrd2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
       wfTypeContext_of_wfTypeResult ctxᵢ result2
@@ -10260,15 +10591,23 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
+    have hres2 : RegistryReservedWF registry c₂'.memory c₂'.nextAddr := by
+      apply RegistryReservedWF_mono hres
+      · exact terminatesTo_memory_contains_mono e2 cinit c₂' v₂ hOp ht_e2
+      · exact terminatesTo_nextAddr_mono e2 cinit c₂' v₂ hOp ht_e2
+    have hrd2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ2 := by
+      have hreg2'' : c₂'.registry = registry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      simp only [ctxAfter]; simpa [hreg2''] using hrd2
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hmasked_bounded2 hbnd2 hcwr2 c₂'.nextAddr pm
-        hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
+        hwfcfg2 hres2 hrd2' (heq_cfg2' ▸ ht_e1) hpc2
       with ⟨_θ1, _hθext1, hv₁_typed, _hric1, _hcwr1, _hvalc1, _hpres1, _⟩
     rcases valueHasETyp_closure_etyp_arrow_inv hv₁_typed with
       ⟨_st1, _st2, _p, _tcls, harrow⟩
@@ -10278,8 +10617,8 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       ht_body hcf hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e2 hpc
-      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
+        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht_e2 hpc
+      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, _hfresh2, hrd2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
       wfTypeContext_of_wfTypeResult ctxᵢ result2
@@ -10325,16 +10664,24 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
     have hIH_e1_inst := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
+    have hres2 : RegistryReservedWF registry c₂'.memory c₂'.nextAddr := by
+      apply RegistryReservedWF_mono hres
+      · exact terminatesTo_memory_contains_mono e2 cinit c₂' v₂ hOp ht_e2
+      · exact terminatesTo_nextAddr_mono e2 cinit c₂' v₂ hOp ht_e2
+    have hrd2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ2 := by
+      have hreg2'' : c₂'.registry = registry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      simp only [ctxAfter]; simpa [hreg2''] using hrd2
     rcases
       hIH_e1_inst.2
         c₂'.memory c₂'.varEnv θ2 c₁ (Value.peClosure x body env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hmasked_bounded2 hbnd2 hcwr2 c₂'.nextAddr pm
-        hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
-      with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
+        hwfcfg2 hres2 hrd2' (heq_cfg2' ▸ ht_e1) hpc2
+      with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, _hfresh1, _hrd1⟩
     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθ2wf
     rcases hIH_e1_inst.1 with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hTm1⟩
     have hwf1 : wfTypeContext (ctxAfter (ctxAfter ctxᵢ result2) result1) :=
@@ -10408,7 +10755,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             pureCtx := true
             nextTag := cursorA.1
             nextLoc := cursorA.2
-            regime := result1.regime' }
+            regime := result1.regime'
+            externRefAllowed := false
+            declaredExternRefs := result1.declared' }
         have hcwr_body : CtxCons bodyCtx cf.memory (env.update x v₂) θ1 := by
           simpa [bodyCtx] using hcwr_body_for cursorA
         have hargTm : QTypRespectsTagMeaning tm1 ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩ :=
@@ -10504,7 +10853,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         have hreg2' : c₂'.registry = registry := by
           simpa [cinit] using terminatesTo_preserves_registry ht_e2
         have hwfcfg1 : wfConfig cf := by
-          simpa [hcf] using (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).1
+          simpa [hcf] using (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) (hreg2'.symm ▸ hres2.toBelow) ht_e1 hwfcfg2).1
         have hwfcfg_body_init :
             wfConfig
               { memory := cf.memory
@@ -10512,14 +10861,14 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
                 nextAddr := cf.nextAddr
                 pureMode := true } := by
           have hv₂_wf_e2 : wfValue c₂'.nextAddr v₂ :=
-            (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).2
+            (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).2
           have hnext₂_to₁ : c₂'.nextAddr ≤ cf.nextAddr := by
             simpa [hcf] using
               (terminatesTo_nextAddr_mono e1 c₂' c₁ (Value.peClosure x body env) (hreg2'.symm ▸ hOp) ht_e1)
           have hv₂_wf : wfValue cf.nextAddr v₂ :=
             wfValue_mono_of_le_nextAddr hnext₂_to₁ x v₂ hv₂_wf_e2
           have henv_wf : wfVarEnv cf.nextAddr env := by
-            have hwf_val := (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).2
+            have hwf_val := (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) (hreg2'.symm ▸ hres2.toBelow) ht_e1 hwfcfg2).2
             cases hwf_val with
             | peClosure _ _ _ henv =>
                 simpa [hcf] using henv
@@ -10601,13 +10950,21 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             hTmBody hTmBoundedBody result3 htcBody_body
         have hpc_body : bodyCtx.pc = true := by
           simp [bodyCtx, hpc, joinPoison]
+        have hres_c₁ : RegistryReservedWF registry cf.memory cf.nextAddr := by
+          apply RegistryReservedWF_mono hres2
+          · simpa [hcf] using terminatesTo_memory_contains_mono e1 c₂' c₁
+              (Value.peClosure x body env) (hreg2'.symm ▸ hOp) ht_e1
+          · simpa [hcf] using terminatesTo_nextAddr_mono e1 c₂' c₁
+              (Value.peClosure x body env) (hreg2'.symm ▸ hOp) ht_e1
+        have hrd_body : ReservedDiscipline registry bodyCtx.declaredExternRefs θ1 := by
+          simp only [bodyCtx]; simpa [hreg_c₁_p] using _hrd1
         rcases
           (hSingle_body hpredlaws1 hExtTyping hTmBody hTmBoundedBody).2
             cf.memory (env.update x v₂) θ1 evalCfg o
             hθ1wf hwfBody hric_body htagR_body hmasked_none_body
             hmasked_absent_body hmasked_bounded_body htagBoundedBody hcwr_body
-            cf.nextAddr true hwfcfg_body_init ht_body' hpc_body
-          with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body⟩
+            cf.nextAddr true hwfcfg_body_init hres_c₁ hrd_body ht_body' hpc_body
+          with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body, _hrd_body⟩
         have hθext : wfExtendsMap θ θ_body :=
           wfExtendsMap_trans hθext2 (wfExtendsMap_trans hθext1 hθext_body)
         have hfirstA_etyp : firstA.qualType.etyp = result3.qualType.etyp := by
@@ -10674,7 +11031,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             ValCons (ctxAfter ctxᵢ firstA).regime
               firstA.qualType cf.memory θ_body o := by
           exact
-            valBodyResult ctxᵢ bodyCtx firstA result3 p p1 cf.memory evalCfg.memory θ_body o
+            valBodyResult ctxᵢ bodyCtx firstA result3 p p1 result1.declared' cf.memory evalCfg.memory θ_body o
               hfirstA_eq hmem_eq hvalc_body
         have hvalc_final :
             ValCons (ctxAfter ctxᵢ res).regime
@@ -10889,12 +11246,35 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             (wfExtendsMap_trans hθext2 hθext1) hθext_body hv_body_typed
             hric_body_final hric1_cf hcwr_body_final hcwr1_cf hvalc_body
             hpres_final hfresh_final
+            (by
+              have hfirst_decl : first.declared' = result1.declared' := by
+                rcases applyClosuresThreaded_ok_mem_output_exists_input
+                    (applyOne := fun tcl cursor =>
+                      applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                        ctxᵢ result1 cursor fuel')
+                    (hthread := hmap)
+                    (hmem := by rw [heq_results]; exact List.Mem.head _) with
+                  ⟨tcl, _htcl, cursor, happly⟩
+                exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 cursor fuel' first happly
+              have h3_decl : result3.declared' = result1.declared' :=
+                typecheck_declared'_eq_of_not_allowed bodyCtx _ fuelBody result3 rfl htcBody_body
+              have hres_decl : res.declared' = result3.declared' := by
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hfirst_decl, h3_decl]
+              have hreg_cf : cf.registry = evalCfg.registry := by
+                have hevalReg : evalCfg.registry = registry := by
+                  simpa using terminatesTo_preserves_registry ht_body'
+                have hcf_reg : cf.registry = registry := by
+                  simpa [cinit] using terminatesTo_preserves_registry ht
+                rw [hcf_reg, hevalReg]
+              rw [hreg_cf, hres_decl]
+              exact _hrd_body)
   | @externPfn cap c₂' v₂ c₁ x y id argTyp argPoison argPred retSpec env impl vRaw
       ht_e2 ht_e1 hGet hArg hImpl hValRet hcfg hpm_e2 _ =>
     rcases
       hIH_e2_inst.2 μ ρ θ c₂' v₂
-        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht_e2 hpc
-      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, hfresh2⟩
+        hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht_e2 hpc
+      with ⟨θ2, hθext2, hv₂_typed, hric2, hcwr2, hvalc2, hpres2, hfresh2, hrd2⟩
     have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθwf
     have hwf2 : wfTypeContext (ctxAfter ctxᵢ result2) :=
       wfTypeContext_of_wfTypeResult ctxᵢ result2
@@ -10940,16 +11320,24 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       rw [← hpm2]
       exact config_eq_of_registry c₂' registry hreg2'
     have hwfcfg2 : wfConfig c₂' := by
-      exact (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).1
+      exact (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).1
     have hIH_e1 := singleIH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _))
       e1 (ctxAfter ctxᵢ result2) hctxE1 hcan1 hTm2 hTmBounded2 result1 htc1'
+    have hres2 : RegistryReservedWF registry c₂'.memory c₂'.nextAddr := by
+      apply RegistryReservedWF_mono hres
+      · exact terminatesTo_memory_contains_mono e2 cinit c₂' v₂ hOp ht_e2
+      · exact terminatesTo_nextAddr_mono e2 cinit c₂' v₂ hOp ht_e2
+    have hrd2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ2 := by
+      have hreg2'' : c₂'.registry = registry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      simp only [ctxAfter]; simpa [hreg2''] using hrd2
     rcases
       (hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2).2
         c₂'.memory c₂'.varEnv θ2 c₁
         (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) env)
         hθ2wf hwf2 hric2 htagR2 hmasked_none2 hmasked_absent2 hmasked_bounded2 hbnd2 hcwr2 c₂'.nextAddr pm
-        hwfcfg2 (heq_cfg2' ▸ ht_e1) hpc2
-      with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, hfresh1⟩
+        hwfcfg2 hres2 hrd2' (heq_cfg2' ▸ ht_e1) hpc2
+      with ⟨θ1, hθext1, hv₁_typed, hric1, hcwr1, hvalc1, hpres1, hfresh1, hrd1⟩
     have hv₁_parrow :
         valueHasETyp θ1
           (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) env)
@@ -11016,7 +11404,9 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         pureCtx := true
         nextTag := cursorA.1
         nextLoc := cursorA.2
-        regime := result1.regime' }
+        regime := result1.regime'
+        externRefAllowed := false
+        declaredExternRefs := result1.declared' }
     have hcwr_body : CtxCons bodyCtx c₁.memory (env.update x v₂) θ1 := by
       simpa [bodyCtx] using hcwr_body_for cursorA
     have htagR_body : regimeConsistentWithCtxMasked masked bodyCtx := by
@@ -11119,16 +11509,16 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       have hreg2' : c₂'.registry = registry := by
         simpa [cinit] using terminatesTo_preserves_registry ht_e2
       have hwfcfg1 : wfConfig c₁ :=
-        (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).1
+        (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) (hreg2'.symm ▸ hres2.toBelow) ht_e1 hwfcfg2).1
       have hv₂_wf_e2 : wfValue c₂'.nextAddr v₂ :=
-        (wfConfig_preserved e2 _ c₂' _ hOp ht_e2 hwfcfg).2
+        (wfConfig_preserved e2 _ c₂' _ hOp hres.toBelow ht_e2 hwfcfg).2
       have hnext₂_to₁ : c₂'.nextAddr ≤ c₁.nextAddr :=
         terminatesTo_nextAddr_mono e1 c₂' c₁
           (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) env) (hreg2'.symm ▸ hOp) ht_e1
       have hv₂_wf : wfValue c₁.nextAddr v₂ :=
         wfValue_mono_of_le_nextAddr hnext₂_to₁ x v₂ hv₂_wf_e2
       have henv_wf : wfVarEnv c₁.nextAddr env := by
-        cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) ht_e1 hwfcfg2).2 with
+        cases (wfConfig_preserved e1 _ c₁ _ (hreg2'.symm ▸ hOp) (hreg2'.symm ▸ hres2.toBelow) ht_e1 hwfcfg2).2 with
         | peClosure _ _ _ henv => exact henv
       constructor
       · intro a ha
@@ -11156,6 +11546,12 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
       have hwfcfgBody : wfConfig callEntry.bodyConfig := by
         simpa [callEntry, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime] using
           hwfcfg_body_init
+      have hreg_c₂'A : c₂'.registry = registry := by
+        simpa [cinit] using terminatesTo_preserves_registry ht_e2
+      have hreg_c₁ : c₁.registry = registry :=
+        (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'A
+      have hrdBody : ReservedDiscipline callEntry.bodyConfig.registry bodyCtx.declaredExternRefs θ1 := by
+        simpa [callEntry, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime, bodyCtx, hreg_c₁] using hrd1
       have htypedCallProvider :
           ExternCallPfnTypingProvider id x y argTyp retSpec callEntry firstA _ memberCap :=
         externCallPfnTypingProvider_of_selected (hbodyCtx := rfl) _happlyA
@@ -11164,7 +11560,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           hθwf hwf hric htagR hmasked_none hcwr a pm hwfcfg
           bodyCtx firstA predSat tm1 θ1 callEntry
           hpredlaws1 hTmBody hTmBoundedBody hθ1wf hwfBody hricBody'
-          htagR_body_regular hcwrBody' hwfcfgBody hpc_body
+          htagR_body_regular hcwrBody' hwfcfgBody hrdBody hpc_body
           c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec σcap memberCap cap env impl vRaw
           hsource htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcfg
           rfl rfl rfl rfl rfl rfl
@@ -11204,6 +11600,23 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
           qtypPredHolds predSat qt' c₁.memory v' ↔ qtypPredHolds predSat qt' cf.memory v' :=
       qtypPredHolds_mem_compat_of_predSatLaws
         (hpredlaws := hpredlaws) (θ := θ1) (μ := c₁.memory) (μ' := cf.memory)
+    have hmember_decl : ∀ r ∈ results, r.declared' = result1.declared' := by
+      intro r hr
+      rcases applyClosuresThreaded_ok_mem_output_exists_input
+          (applyOne := fun tcl cursor =>
+            applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+              ctxᵢ result1 cursor fuel')
+          (hthread := hmap) (hmem := hr) with
+        ⟨tcl, _htcl, cursor, happly⟩
+      exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+        ctxᵢ result1 cursor fuel' r happly
+    have hdecl_eqA : firstA.declared' = result1.declared' :=
+      hmember_decl firstA hfirstA_mem
+    have hreg_eval : evalCfg.registry = cf.registry := by
+      simp [evalCfg, ExternCallEntry.bodyOutputConfig]
+    have hres_declA : res.declared' = firstA.declared' := by
+      rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hdecl_eqA,
+        hmember_decl first (by rw [heq_results]; exact List.Mem.head _)]
     exact
       appSingleRunMaskedPost_from_direct_boundary
         (predSat := predSat)
@@ -11353,7 +11766,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
               theta_not_contains_if_not_in_memEnv
                 (ctxAfter bodyCtx firstA) evalCfg.memory evalCfg.varEnv θbody l
                 hric_body_final (by simpa [ctxAfter] using hcA))
-        hboundary
+        hboundary hdecl_eqA hreg_eval hres_declA
 
 private lemma stepFRSingleRunFinalCleanPcTrue_app_parametric_maskedReg
   (masked : Tag → Prop)
@@ -11715,7 +12128,7 @@ lemma stepFR_app_with_expr_proof
         result_arrow := hetyp1 }
     intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
     have hqt2bound1 : qtypPredTagBounded result2.qualType (ctxAfter ctxᵢ result2).nextTag :=
       (typecheckExpr_preserves_predTagsBounded ctxᵢ e2 fuel' result2
         (by simpa [typecheck] using htc2') htagBounded.2.1 htagBounded.2.2).2
@@ -11744,10 +12157,10 @@ lemma stepFR_app_with_expr_proof
       intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ o₀ o₁ ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
       have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
         μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-        hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
       rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, _hresTm2, hstep_e2⟩
       rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _, _, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-        hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
+        hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _, hrd₀2x, hrd₁2x⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
       have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
@@ -11755,11 +12168,28 @@ lemma stepFR_app_with_expr_proof
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
       obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+      have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+        apply RegistryReservedWF_mono hres₀
+        · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+        · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+      have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+        apply RegistryReservedWF_mono hres₁
+        · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+        · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+      have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+        have hreg₀2 : c₂'₀.registry = registry := by
+          simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+        simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+      have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+        have hreg₁2 : c₂'₁.registry = registry := by
+          simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+        simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
       have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
         c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
         c₁₀ c₁₁ o₀ o₁
         hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
         c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+        hres₀2 hres₁2 hrd₀2' hrd₁2'
         (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
       rcases hstep_e1 with ⟨_, _, _, _, hstep_e1⟩
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
@@ -11779,12 +12209,12 @@ lemma stepFR_app_with_expr_proof
       have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
         μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
         hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-        a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
       rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, _hresTm2, hstep_e2⟩
       rcases hstep_e2 with
         ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _, _, hTm2, hwf2,
           _htagBounded2, hwfcf₂₀, hwfcf₂₁, hric₀2, hric₁2, htagR2,
-          hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
+          hcwr₀2, hcwr₁2, hagree2, _, _, _, hrd₀2x, hrd₁2x⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
       have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
@@ -11792,15 +12222,32 @@ lemma stepFR_app_with_expr_proof
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
       obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+      have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+        apply RegistryReservedWF_mono hres₀
+        · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+        · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+      have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+        apply RegistryReservedWF_mono hres₁
+        · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+        · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+      have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+        have hreg₀2 : c₂'₀.registry = registry := by
+          simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+        simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+      have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+        have hreg₁2 : c₂'₁.registry = registry := by
+          simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+        simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
       have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
         c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
         c₁₀ c₁₁ o₀ o₁
         hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2
         hcwr₀2 hcwr₁2 hagree2 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+        hres₀2 hres₁2 hrd₀2' hrd₁2'
         (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
       rcases hstep_e1 with ⟨_, _, _, _, hstep_e1⟩
       rcases hstep_e1 with
-        ⟨θ₀1, θ₁1, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hres_agree1⟩
+        ⟨θ₀1, θ₁1, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hres_agree1, _, _⟩
       exact ⟨θ₀1, θ₁1, hres_agree1⟩
     have arrowUserExternMismatch_impossible :
         ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ : Value}
@@ -11995,8 +12442,8 @@ lemma stepFR_app_with_expr_proof
             h_rest_wf
       · exact typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2)
           (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded
-      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
-      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ hOp hres₀.toBelow ht₀ hwfcfg₀).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ hOp hres₁.toBelow ht₁ hwfcfg₁).1
       · exact
           join_transport_regimeConsistentWithCtx
             (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
@@ -12018,10 +12465,10 @@ lemma stepFR_app_with_expr_proof
           -- Phase A: Apply IH for e2
           have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
             μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-            hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+            hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
           rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
           rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-            hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩
+            hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2, hrd₀2x, hrd₁2x⟩
           have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
             simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
           -- Phase B: Apply IH for e1
@@ -12032,15 +12479,32 @@ lemma stepFR_app_with_expr_proof
             simpa [ctxAfter] using regime_monotoneExt ctxᵢ e2 fuel' result2 htc2'
           obtain ⟨hpm₀, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
           obtain ⟨hpm₁, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+          have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+            apply RegistryReservedWF_mono hres₀
+            · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+            · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+          have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+            apply RegistryReservedWF_mono hres₁
+            · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+            · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+          have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+            have hreg₀2 : c₂'₀.registry = registry := by
+              simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+            simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+          have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+            have hreg₁2 : c₂'₁.registry = registry := by
+              simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+            simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
           have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
             c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
             c₁₀ c₁₁ (Value.closure x₀ body₀ env₀) (Value.closure x₁ body₁ env₁)
             hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
             c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+            hres₀2 hres₁2 hrd₀2' hrd₁2'
             (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
           rcases hstep_e1 with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
           rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
-            hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩
+            hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1, hrd₀1x, hrd₁1x⟩
           -- Phase C: Invert closure typing to extract FnTClosure structure
           have hv₀1_arrow : valueHasETyp θ₀1 (Value.closure x₀ body₀ env₀) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
           have hv₁1_arrow : valueHasETyp θ₁1 (Value.closure x₁ body₁ env₁) (ETyp.arrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
@@ -12132,13 +12596,16 @@ lemma stepFR_app_with_expr_proof
                         tagEnv := result1.tagEnv'
                         nextTag := cursor.1
                         nextLoc := cursor.2
-                        regime := result1.regime' } body₀ fuelBody = .ok result3Shared ∧
+                        regime := result1.regime'
+                        externRefAllowed := false
+                        declaredExternRefs := result1.declared' } body₀ fuelBody = .ok result3Shared ∧
                     isSubtype st2 result3Shared.qualType = true ∧
                     firstShared =
                       { result3Shared with
                         qualType :=
                           normalizeAppResultByProvenance (joinPoison p1 p)
-                            { result3Shared.qualType with poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) } })
+                            { result3Shared.qualType with poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) }
+                        declared' := result1.declared' })
                 ∨ (¬ internalPoisonClean result1.qualType) := by
             intro hclean1_e1
             rcases _hsync1_of_clean hclean1_e1 with hsync | hdirty
@@ -12230,7 +12697,9 @@ lemma stepFR_app_with_expr_proof
                   tagEnv := result1.tagEnv'
                   nextTag := cursorA₀.1
                   nextLoc := cursorA₀.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let bodyCtxA₁ : TypeContext :=
                 { ctxᵢ with
                   pc := joinPoison p (joinPoison p1 ctxᵢ.pc)
@@ -12240,7 +12709,9 @@ lemma stepFR_app_with_expr_proof
                   tagEnv := result1.tagEnv'
                   nextTag := cursorA₁.1
                   nextLoc := cursorA₁.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               -- Common setup
               have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
               have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
@@ -12449,14 +12920,14 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₀ : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.closure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                   | closure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact hwfcf₁₀.1 a ha
@@ -12479,17 +12950,25 @@ lemma stepFR_app_with_expr_proof
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 exact (terminatesTo_preserves_registry ht₀_e1).trans h2
               rw [hreg_c₁₀_A] at ht₀_body
+              have hresBodyA₀ : RegistryReservedWF registry c₁₀.memory c₁₀.nextAddr := by
+                have h2 : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                apply RegistryReservedWF_mono hres₀2
+                · exact terminatesTo_memory_contains_mono e1 c₂'₀ c₁₀ _ (h2.symm ▸ hOp) ht₀_e1
+                · exact terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀ _ (h2.symm ▸ hOp) ht₀_e1
+              have hrdBodyA₀ : ReservedDiscipline registry bodyCtxA₀.declaredExternRefs θ₀1 := by
+                simp only [bodyCtxA₀]; simpa [hreg_c₁₀_A] using hrd₀1x
               have hsr₀ :=
                 (hSingle_bodyA₀ hpredlaws1 hExtTyping hTmBodyA₀
                   (by simpa [bodyCtxA₀] using
                     (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀) htagBoundedBodyA₀).2
                   c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
                   hθ₀1wf hwfBodyCtxA₀ hric_bodyA₀ htagR_bodyA₀
-                  hcwr_bodyA₀ c₁₀.nextAddr false hwfcfg_body_initA₀ ht₀_body
+                  hcwr_bodyA₀ c₁₀.nextAddr false hwfcfg_body_initA₀ hresBodyA₀ hrdBodyA₀ ht₀_body
                   hpc_bodyA₀_run
               rcases hsr₀ with
                 ⟨θ₀_body, hθext₀_body, hv₀_body_typed,
-                  hric_bodyA₀_final, hcwr_bodyA₀_final, hvalc_bodyA₀, _hpres₀, _hfresh₀_body⟩
+                  hric_bodyA₀_final, hcwr_bodyA₀_final, hvalc_bodyA₀, _hpres₀, _hfresh₀_body, _hrdB₀⟩
               -- ===== Run 1: unary body witness =====
               have hTmBodyA₁ : wfTagMeaningCtx tm1 bodyCtxA₁ := by
                 have hresTm1' : QTypRespectsTagMeaning tm1 result1.qualType := hresTm1
@@ -12663,14 +13142,14 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₁ : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.closure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                   | closure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact hwfcf₁₁.1 a ha
@@ -12707,17 +13186,25 @@ lemma stepFR_app_with_expr_proof
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 exact (terminatesTo_preserves_registry ht₁_e1).trans h2
               rw [hreg_c₁₁_A] at ht₁_body
+              have hresBodyA₁ : RegistryReservedWF registry c₁₁.memory c₁₁.nextAddr := by
+                have h2 : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                apply RegistryReservedWF_mono hres₁2
+                · exact terminatesTo_memory_contains_mono e1 c₂'₁ c₁₁ _ (h2.symm ▸ hOp) ht₁_e1
+                · exact terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁ _ (h2.symm ▸ hOp) ht₁_e1
+              have hrdBodyA₁ : ReservedDiscipline registry bodyCtxA₁.declaredExternRefs θ₁1 := by
+                simp only [bodyCtxA₁]; simpa [hreg_c₁₁_A] using hrd₁1x
               have hsr₁ :=
                 (hSingle_bodyA₁ hpredlaws1 hExtTyping hTmBodyA₁
                   (by simpa [bodyCtxA₁] using
                     (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁) htagBnd_bodyA₁).2
                   c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
                   hθ₁1wf hwfBodyCtxA₁ hric_bodyA₁ htagR_bodyA₁
-                  hcwr_bodyA₁ c₁₁.nextAddr false hwfcfg_body_initA₁ ht₁_body
+                  hcwr_bodyA₁ c₁₁.nextAddr false hwfcfg_body_initA₁ hresBodyA₁ hrdBodyA₁ ht₁_body
                   hpc_bodyA₁_run
               rcases hsr₁ with
                 ⟨θ₁_body, hθext₁_body, hv₁_body_typed,
-                  hric_bodyA₁_final, hcwr_bodyA₁_final, hvalc_bodyA₁, _hpres₁, _hfresh₁_body⟩
+                  hric_bodyA₁_final, hcwr_bodyA₁_final, hvalc_bodyA₁, _hpres₁, _hfresh₁_body, _hrdB₁⟩
               -- ===== Transport to joined result and pack =====
               -- etyp agreement: body result etyp = firstA etyp (normalizeAppResultByProvenance preserves etyp)
               have hfirstA₀_etyp : firstA₀.qualType.etyp = result3A₀.qualType.etyp := by
@@ -13148,7 +13635,49 @@ lemma stepFR_app_with_expr_proof
                       (p := p) (p1 := p1)
                       h_join hfirstA₁_mem' hfirstA₁_eq hmem₁_eq hvalc_bodyA₁,
                 -- resultAgreesIfClean (vacuously true since poison=true ∧ pred=noPred)
-                resultAgreesIfClean_of_poison_noPred hres_pack.1 hres_pack.2⟩
+                resultAgreesIfClean_of_poison_noPred hres_pack.1 hres_pack.2,
+                -- ReservedDiscipline run 0
+                (by
+                  have h3 : result3A₀.declared' = result1.declared' :=
+                    typecheck_declared'_eq_of_not_allowed bodyCtxA₀ body₀ fuelBodyA₀ result3A₀ rfl htcBodyA₀'
+                  have hfirst_decl : first.declared' = result1.declared' := by
+                    rcases applyClosuresThreaded_ok_mem_output_exists_input
+                        (applyOne := fun tcl cursor =>
+                          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                            ctxᵢ result1 cursor fuel')
+                        (hthread := hmap)
+                        (hmem := by rw [heq_results]; exact List.Mem.head _) with
+                      ⟨tcl, _htcl, cursor, happly⟩
+                    exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                      ctxᵢ result1 cursor fuel' first happly
+                  have hres_decl : res.declared' = result3A₀.declared' := by
+                    rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hfirst_decl, h3]
+                  have hreg₀x : cf₀.registry = evalCfg₀.registry := by
+                    have hevalReg : evalCfg₀.registry = registry := by
+                      simpa using terminatesTo_preserves_registry ht₀_body
+                    simp [heq_cfg₀, hreg_c₁₀_A, hevalReg]
+                  rw [hreg₀x, hres_decl]; exact _hrdB₀),
+                -- ReservedDiscipline run 1
+                (by
+                  have h3 : result3A₁.declared' = result1.declared' :=
+                    typecheck_declared'_eq_of_not_allowed bodyCtxA₁ body₁ fuelBodyA₁ result3A₁ rfl htcBodyA₁'
+                  have hfirst_decl : first.declared' = result1.declared' := by
+                    rcases applyClosuresThreaded_ok_mem_output_exists_input
+                        (applyOne := fun tcl cursor =>
+                          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                            ctxᵢ result1 cursor fuel')
+                        (hthread := hmap)
+                        (hmem := by rw [heq_results]; exact List.Mem.head _) with
+                      ⟨tcl, _htcl, cursor, happly⟩
+                    exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                      ctxᵢ result1 cursor fuel' first happly
+                  have hres_decl : res.declared' = result3A₁.declared' := by
+                    rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hfirst_decl, h3]
+                  have hreg₁x : cf₁.registry = evalCfg₁.registry := by
+                    have hevalReg : evalCfg₁.registry = registry := by
+                      simpa using terminatesTo_preserves_registry ht₁_body
+                    simp [heq_cfg₁, hreg_c₁₁_A, hevalReg]
+                  rw [hreg₁x, hres_decl]; exact _hrdB₁)⟩
             by_cases hclean1_e1 :
                 qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType
             · rcases _sync_extract_of_clean hclean1_e1 with hshared | hdirty
@@ -13166,7 +13695,9 @@ lemma stepFR_app_with_expr_proof
                     tagEnv := result1.tagEnv'
                     nextTag := cursorShared.1
                     nextLoc := cursorShared.2
-                    regime := result1.regime' }
+                    regime := result1.regime'
+                    externRefAllowed := false
+                    declaredExternRefs := result1.declared' }
                 have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
                 have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
                 have hfuel_lt : fuelBody < Nat.succ (Nat.succ fuel') := by
@@ -13705,13 +14236,13 @@ lemma stepFR_app_with_expr_proof
                   have hreg₂'₀ : c₂'₀.registry = registry := by
                     simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                   have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                    (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                    (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                   have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                     terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀ (Value.closure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                   have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                     wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                   have hv₀_closure_wf : wfValue c₁₀.nextAddr (Value.closure x₀ body₀ env₀) :=
-                    (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2
+                    (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2
                   have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
                     cases hv₀_closure_wf with
                     | closure _ _ _ henv => exact henv
@@ -13729,13 +14260,13 @@ lemma stepFR_app_with_expr_proof
                   have hreg₂'₁ : c₂'₁.registry = registry := by
                     simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                   have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                    (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                    (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                   have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                     terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁ (Value.closure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                   have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                     wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                   have hv₁_closure_wf : wfValue c₁₁.nextAddr (Value.closure x₁ body₁ env₁) :=
-                    (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2
+                    (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2
                   have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
                     cases hv₁_closure_wf with
                     | closure _ _ _ henv => exact henv
@@ -13754,10 +14285,26 @@ lemma stepFR_app_with_expr_proof
                   exact (terminatesTo_preserves_registry ht₁_e1).trans h2
                 rw [hreg_c₁₀_B] at ht₀_body
                 rw [hreg_c₁₁_B] at ht₁_body
+                have hresBody₀ : RegistryReservedWF registry c₁₀.memory c₁₀.nextAddr := by
+                  have h2 : c₂'₀.registry = registry := by
+                    simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                  apply RegistryReservedWF_mono hres₀2
+                  · exact terminatesTo_memory_contains_mono e1 c₂'₀ c₁₀ _ (h2.symm ▸ hOp) ht₀_e1
+                  · exact terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀ _ (h2.symm ▸ hOp) ht₀_e1
+                have hresBody₁ : RegistryReservedWF registry c₁₁.memory c₁₁.nextAddr := by
+                  have h2 : c₂'₁.registry = registry := by
+                    simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                  apply RegistryReservedWF_mono hres₁2
+                  · exact terminatesTo_memory_contains_mono e1 c₂'₁ c₁₁ _ (h2.symm ▸ hOp) ht₁_e1
+                  · exact terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁ _ (h2.symm ▸ hOp) ht₁_e1
+                have hrdBody₀ : ReservedDiscipline registry bodyCtx.declaredExternRefs θ₀1 := by
+                  simp only [bodyCtx]; simpa [hreg_c₁₀_B] using hrd₀1x
+                have hrdBody₁ : ReservedDiscipline registry bodyCtx.declaredExternRefs θ₁1 := by
+                  simp only [bodyCtx]; simpa [hreg_c₁₁_B] using hrd₁1x
                 have hwfcfg_body_final₀ : wfConfig evalCfg₀ := by
-                  exact (wfConfig_preserved body₀ _ evalCfg₀ o₀ hOp ht₀_body hwfcfg_body_init₀).1
+                  exact (wfConfig_preserved body₀ _ evalCfg₀ o₀ hOp hresBody₀.toBelow ht₀_body hwfcfg_body_init₀).1
                 have hwfcfg_body_final₁ : wfConfig evalCfg₁ := by
-                  exact (wfConfig_preserved body₁ _ evalCfg₁ o₁ hOp ht₁_body hwfcfg_body_init₁).1
+                  exact (wfConfig_preserved body₁ _ evalCfg₁ o₁ hOp hresBody₁.toBelow ht₁_body hwfcfg_body_init₁).1
                 have ht₀_body' :
                     terminatesTo body₀
                       { memory := c₁₀.memory
@@ -13780,7 +14327,7 @@ lemma stepFR_app_with_expr_proof
                   hθ₀1wf hθ₁1wf hwfBodyCtx htagBoundedBody hric_body₀ hric_body₁ htagR_body
                   hcwr_body₀ hcwr_body₁ hagree_body_start
                   c₁₀.nextAddr c₁₁.nextAddr false
-                  hwfcfg_body_init₀ hwfcfg_body_init₁ ht₀_body' ht₁_body'
+                  hwfcfg_body_init₀ hwfcfg_body_init₁ hresBody₀ hresBody₁ hrdBody₀ hrdBody₁ ht₀_body' ht₁_body'
                 rcases hstep_body with ⟨_tm_body, _hcanon_body, _hpredlaws_body, _hresTm_body, hstep_body⟩
                 rcases hstep_body with
                   ⟨θ₀_body, θ₁_body, _hθext₀_body, _hθext₁_body,
@@ -13788,7 +14335,29 @@ lemma stepFR_app_with_expr_proof
                     _hwfcfg_body_final₀, _hwfcfg_body_final₁,
                     _hric_body_final₀, _hric_body_final₁, _htagR_body_final,
                     _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
-                    _hvalc_body₀, _hvalc_body₁, _hres_agree_body⟩
+                    _hvalc_body₀, _hvalc_body₁, _hres_agree_body, _hrd₀_body, _hrd₁_body⟩
+                have hres_decl_shared : res.declared' = result3Shared.declared' := by
+                  have h3 : result3Shared.declared' = result1.declared' :=
+                    typecheck_declared'_eq_of_not_allowed bodyCtx body₀ fuelBody result3Shared rfl htcBody'
+                  have hfirst_decl : first.declared' = result1.declared' := by
+                    rcases applyClosuresThreaded_ok_mem_output_exists_input
+                        (applyOne := fun tcl cursor =>
+                          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                            ctxᵢ result1 cursor fuel')
+                        (hthread := hmap)
+                        (hmem := by rw [heq_results]; exact List.Mem.head _) with
+                      ⟨tcl, _htcl, cursor', happly⟩
+                    exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                      ctxᵢ result1 cursor' fuel' first happly
+                  rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hfirst_decl, h3]
+                have hreg₀_shared : cf₀.registry = evalCfg₀.registry := by
+                  have hevalReg : evalCfg₀.registry = registry := by
+                    simpa using terminatesTo_preserves_registry ht₀_body
+                  simp [heq_cfg₀, hreg_c₁₀_B, hevalReg]
+                have hreg₁_shared : cf₁.registry = evalCfg₁.registry := by
+                  have hevalReg : evalCfg₁.registry = registry := by
+                    simpa using terminatesTo_preserves_registry ht₁_body
+                  simp [heq_cfg₁, hreg_c₁₁_B, hevalReg]
                 have hAgree_out_body :
                     ∀ θ₀_body θ₁_body,
                       wfExtendsMap θ₀1 θ₀_body →
@@ -14196,8 +14765,7 @@ lemma stepFR_app_with_expr_proof
                       simp [heq_cfg₀]
                     have hmem₁_eq : cf₁.memory = evalCfg₁.memory := by
                       simp [heq_cfg₁]
-                    exact
-                      appMember_resultAgreesIfClean_from_body
+                    refine ⟨appMember_resultAgreesIfClean_from_body
                         (predSat := predSat)
                         (ctx := ctxᵢ) (bodyCtx := bodyCtx)
                         (first := first) (src := firstShared) (result3 := result3Shared)
@@ -14205,7 +14773,9 @@ lemma stepFR_app_with_expr_proof
                         (cf₀ := cf₀) (cf₁ := cf₁) (evalCfg₀ := evalCfg₀) (evalCfg₁ := evalCfg₁)
                         (θ₀ := θ₀_body) (θ₁ := θ₁_body) (o₀ := o₀) (o₁ := o₁)
                         (p := p) (p1 := p1)
-                        h_join hsrc_mem' hfirstShared hmem₀_eq hmem₁_eq _hres_agree_body
+                        h_join hsrc_mem' hfirstShared hmem₀_eq hmem₁_eq _hres_agree_body, ?_, ?_⟩
+                    · rw [hreg₀_shared, hres_decl_shared]; exact _hrd₀_body
+                    · rw [hreg₁_shared, hres_decl_shared]; exact _hrd₁_body
                 have hbody_post_for_transport :
                     StepFRPost bodyCtx body₀ result3Shared predSat tm1
                       θ₀1 θ₁1 evalCfg₀ evalCfg₁ o₀ o₁ := by
@@ -14215,7 +14785,7 @@ lemma stepFR_app_with_expr_proof
                     _htagBounded_body_after, _hwfcfg_body_final₀, _hwfcfg_body_final₁,
                     _hric_body_final₀, _hric_body_final₁, _htagR_body_final,
                     _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
-                    _hvalc_body₀, _hvalc_body₁, _hres_agree_body⟩
+                    _hvalc_body₀, _hvalc_body₁, _hres_agree_body, _hrd₀_body, _hrd₁_body⟩
                 have hOutChoice_body_from_helper :
                     AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ := by
                   have hsrc_mem' : firstShared ∈ first :: rest := by
@@ -14272,6 +14842,7 @@ lemma stepFR_app_with_expr_proof
                         simpa [ctxAfter] using hlookup)
                       hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
                       hric₀1 hric₁1 hcwr₀1 hcwr₁1 hAgree_out_body hbody_post_for_transport
+                      hreg₀_shared.symm hreg₁_shared.symm hres_decl_shared
                 rcases hOutChoice_body_from_helper with
                   ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁, hOutPack_body_out⟩
                 exact
@@ -14356,14 +14927,14 @@ lemma stepFR_app_with_expr_proof
               have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
                 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
                 hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁
-                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
               rcases hstep_e2 with
                 ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
               rcases hstep_e2 with
                 ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed,
                   hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀,
                   hwfcf₂₁, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2,
-                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2⟩
+                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2, hrd₀2x, hrd₁2x⟩
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
@@ -14372,6 +14943,22 @@ lemma stepFR_app_with_expr_proof
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
               obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+              have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+                apply RegistryReservedWF_mono hres₀
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+              have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                apply RegistryReservedWF_mono hres₁
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+              have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+                have hreg₀2 : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+              have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+                have hreg₁2 : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
               have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
                 c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
                 c₁₀ c₁₁
@@ -14380,6 +14967,7 @@ lemma stepFR_app_with_expr_proof
                 hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2
                 htagR2 hcwr₀2 hcwr₁2 hagree2
                 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+                hres₀2 hres₁2 hrd₀2' hrd₁2'
                 (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
               rcases hstep_e1 with
                 ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
@@ -14387,7 +14975,7 @@ lemma stepFR_app_with_expr_proof
                 ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hv₀1_typed,
                   _hv₁1_typed, hTm1, hwf1, _htagBounded1, _hwfcf₁₀,
                   _hwfcf₁₁, hric₀1, hric₁1, htagR1, hcwr₀1,
-                  hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1⟩
+                  hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1, hrd₀1x, hrd₁1x⟩
               have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
               have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
               have h_mono1 :
@@ -14458,7 +15046,9 @@ lemma stepFR_app_with_expr_proof
                   tagEnv := result1.tagEnv'
                   nextTag := cursorU₀.1
                   nextLoc := cursorU₀.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let bodyCtxE₁ : TypeContext :=
                 { ctxᵢ with
                   pc := joinPoison p (joinPoison p1 ctxᵢ.pc)
@@ -14468,7 +15058,9 @@ lemma stepFR_app_with_expr_proof
                   tagEnv := result1.tagEnv'
                   nextTag := cursorE₁.1
                   nextLoc := cursorE₁.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let callEntry₁ : ExternCallEntry :=
                 ExternCallEntry.ofRuntime bodyCtxE₁ c₁₁ env₁ x₁ v₂₁
               let evalCfgE₁ : Config := callEntry₁.bodyOutputConfig cf₁
@@ -14752,14 +15344,14 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₀ : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.closure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                   | closure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact _hwfcf₁₀.1 a ha
@@ -14768,9 +15360,9 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₁ : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hwfcfg1 : wfConfig c₁₁ :=
-                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
+                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).1
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.closure x₁ (Expr.externFn id₁ y₁ argTyp₁ argPoison₁ argPred₁ retSpec₁ eff₁ cap₁) env₁)
@@ -14778,7 +15370,7 @@ lemma stepFR_app_with_expr_proof
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                   | closure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₁ with varEnv := env₁.update x₁ v₂₁ } := by
@@ -14829,6 +15421,14 @@ lemma stepFR_app_with_expr_proof
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 exact (terminatesTo_preserves_registry ht₀_e1).trans h2
               rw [hreg_c₁₀] at ht₀_body
+              have hresBodyU₀ : RegistryReservedWF registry c₁₀.memory c₁₀.nextAddr := by
+                have hreg₂'₀U : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                apply RegistryReservedWF_mono hres₀2
+                · exact terminatesTo_memory_contains_mono e1 c₂'₀ c₁₀ _ (hreg₂'₀U.symm ▸ hOp) ht₀_e1
+                · exact terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀ _ (hreg₂'₀U.symm ▸ hOp) ht₀_e1
+              have hrdBodyU₀ : ReservedDiscipline registry bodyCtxU₀.declaredExternRefs θ₀1 := by
+                simp only [bodyCtxU₀]; rw [← hreg_c₁₀]; exact hrd₀1x
               have hbodyRunPostU₀ :
                   StepFRSingleRunFinalCleanPcTruePost bodyCtxU₀ result3U₀ predSat
                     (registry := registry) c₁₀.memory (env₀.update x₀ v₂₀) θ₀1
@@ -14837,12 +15437,13 @@ lemma stepFR_app_with_expr_proof
                 (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀ htagBnd_bodyU₀).2
                   c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
                   hθ₀1wf hwfBodyCtxU₀ hric_bodyU₀ htagR_bodyU₀ hcwr_bodyU₀
-                  c₁₀.nextAddr false hwfcfg_body_initU₀ ht₀_body hpc_bodyU₀
+                  c₁₀.nextAddr false hwfcfg_body_initU₀ hresBodyU₀ hrdBodyU₀ ht₀_body hpc_bodyU₀
               have hboundary₀ :
                   ExternBoundarySinglePost bodyCtxU₀ firstU₀ predSat tm1
                     θ₀1 c₁₀.memory evalCfg₀ o₀ :=
                 externBoundarySinglePost_of_singleRun_normalized_app
                   (p := p) (p1 := p1) h_p1p hfirstU₀_eq
+                  (typecheck_declared'_eq_of_not_allowed _ _ _ _ rfl htcBodyU₀')
                   (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀ htagBnd_bodyU₀).1
                   hbodyRunPostU₀
               have hpc_bodyE₁ : bodyCtxE₁.pc = true := by
@@ -14896,7 +15497,10 @@ lemma stepFR_app_with_expr_proof
                     (by simpa [callEntry₁] using hTmBoundedBodyE₁)
                     hθ₁1wf (by simpa [callEntry₁] using hwfBodyCtxE₁)
                     hricBody (by simpa [callEntry₁] using htagR_bodyE₁)
-                    hcwrBody hwfcfg_body_initE₁ hpcBody
+                    hcwrBody hwfcfg_body_initE₁
+                    (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                      bodyCtxE₁] using hrd₁1x)
+                    hpcBody
               have htagBoundedBodyU₀ : TagBoundedCtx bodyCtxU₀ := by
                 have hCapBoundBase : CapturedEnvFullBounded σcap₀ result1.nextTag' := by
                   have hClosFull := typecheckExpr_preserves_closureCapturedBounded
@@ -14964,6 +15568,26 @@ lemma stepFR_app_with_expr_proof
                 simp [heq_cfg₀]
               have hvar₁_eq : cf₁.varEnv = c₁₁.varEnv := by
                 simp [hcfg₁]
+              have hmember_decl : ∀ r ∈ results, r.declared' = result1.declared' := by
+                intro r hr
+                rcases applyClosuresThreaded_ok_mem_output_exists_input
+                    (applyOne := fun tcl cursor =>
+                      applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                        ctxᵢ result1 cursor fuel')
+                    (hthread := hmap) (hmem := hr) with
+                  ⟨tcl, _htcl, cursor', happly⟩
+                exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 cursor' fuel' r happly
+              have hres_decl_first : res.declared' = result1.declared' := by
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join,
+                  hmember_decl first (by rw [heq_results]; exact List.Mem.head _)]
+              have hregU₀ : evalCfg₀.registry = cf₀.registry := by
+                have hevalReg : evalCfg₀.registry = registry := by
+                  simpa using terminatesTo_preserves_registry ht₀_body
+                have hcfReg : cf₀.registry = registry := by simp [heq_cfg₀, hreg_c₁₀]
+                rw [hevalReg, hcfReg]
+              have hregE₁ : evalCfgE₁.registry = cf₁.registry := by
+                simp [evalCfgE₁, ExternCallEntry.bodyOutputConfig]
               have hOutChoice_dirty :
                   AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ :=
                 appTwoRunOutChoice_from_independent_single_boundary_posts_dirty
@@ -15001,6 +15625,9 @@ lemma stepFR_app_with_expr_proof
                   hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
                   hric₀1 hric₁1 hcwr₀1 hcwr₁1 hagree1
                   hboundary₀ hboundary₁
+                  hregU₀ hregE₁
+                  (by rw [hres_decl_first, hmember_decl firstU₀ hfirstU₀_mem])
+                  (by rw [hres_decl_first, hmember_decl firstE₁ hfirstE₁_mem])
               rcases hOutChoice_dirty with
                 ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁,
                   hOutPack_body_out⟩
@@ -15065,14 +15692,14 @@ lemma stepFR_app_with_expr_proof
               have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
                 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
                 hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁
-                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
               rcases hstep_e2 with
                 ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
               rcases hstep_e2 with
                 ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed,
                   hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀,
                   hwfcf₂₁, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2,
-                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2⟩
+                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2, hrd₀2x, hrd₁2x⟩
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
@@ -15081,6 +15708,22 @@ lemma stepFR_app_with_expr_proof
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
               obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+              have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+                apply RegistryReservedWF_mono hres₀
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+              have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                apply RegistryReservedWF_mono hres₁
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+              have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+                have hreg₀2 : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+              have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+                have hreg₁2 : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
               have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
                 c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
                 c₁₀ c₁₁
@@ -15089,6 +15732,7 @@ lemma stepFR_app_with_expr_proof
                 hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2
                 htagR2 hcwr₀2 hcwr₁2 hagree2
                 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+                hres₀2 hres₁2 hrd₀2' hrd₁2'
                 (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
               rcases hstep_e1 with
                 ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
@@ -15096,7 +15740,7 @@ lemma stepFR_app_with_expr_proof
                 ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hv₀1_typed,
                   _hv₁1_typed, hTm1, hwf1, _htagBounded1, _hwfcf₁₀,
                   _hwfcf₁₁, hric₀1, hric₁1, htagR1, hcwr₀1,
-                  hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1⟩
+                  hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1, hrd₀1x, hrd₁1x⟩
               have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
               have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
               have h_mono1 :
@@ -15167,7 +15811,9 @@ lemma stepFR_app_with_expr_proof
                   tagEnv := result1.tagEnv'
                   nextTag := cursorE₀.1
                   nextLoc := cursorE₀.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let bodyCtxU₁ : TypeContext :=
                 { ctxᵢ with
                   pc := joinPoison p (joinPoison p1 ctxᵢ.pc)
@@ -15177,7 +15823,9 @@ lemma stepFR_app_with_expr_proof
                   tagEnv := result1.tagEnv'
                   nextTag := cursorU₁.1
                   nextLoc := cursorU₁.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let callEntry₀ : ExternCallEntry :=
                 ExternCallEntry.ofRuntime bodyCtxE₀ c₁₀ env₀ x₀ v₂₀
               let evalCfgE₀ : Config := callEntry₀.bodyOutputConfig cf₀
@@ -15455,9 +16103,9 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₀ : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hwfcfg1 : wfConfig c₁₀ :=
-                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
+                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).1
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ argPoison₀ argPred₀ retSpec₀ eff₀ cap₀) env₀)
@@ -15465,7 +16113,7 @@ lemma stepFR_app_with_expr_proof
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                   | closure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -15486,14 +16134,14 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₁ : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.closure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                   | closure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact _hwfcf₁₁.1 a ha
@@ -15563,7 +16211,9 @@ lemma stepFR_app_with_expr_proof
                     (by simpa [callEntry₀] using hTmBoundedBodyE₀)
                     hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtxE₀)
                     hricBody (by simpa [callEntry₀] using htagR_bodyE₀)
-                    hcwrBody hwfcfg_body_initE₀ hpcBody
+                    hcwrBody hwfcfg_body_initE₀
+                    (by simpa [callEntry₀, ExternCallEntry.bodyConfig] using hrd₀1x)
+                    hpcBody
               have htagBnd_bodyU₁ : TagBoundedCtx bodyCtxU₁ := by
                 have hCapBoundBase : CapturedEnvFullBounded σcap₁ result1.nextTag' := by
                   have hClosFull := typecheckExpr_preserves_closureCapturedBounded
@@ -15590,6 +16240,18 @@ lemma stepFR_app_with_expr_proof
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 exact (terminatesTo_preserves_registry ht₁_e1).trans h2
               rw [hreg_c₁₁] at ht₁_body
+              have hresBodyU₁ : RegistryReservedWF registry c₁₁.memory c₁₁.nextAddr := by
+                have hreg₂'₁U : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                have hres₁2U : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                  apply RegistryReservedWF_mono hres₁
+                  · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                  · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                apply RegistryReservedWF_mono hres₁2U
+                · exact terminatesTo_memory_contains_mono e1 c₂'₁ c₁₁ _ (hreg₂'₁U.symm ▸ hOp) ht₁_e1
+                · exact terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁ _ (hreg₂'₁U.symm ▸ hOp) ht₁_e1
+              have hrdBodyU₁ : ReservedDiscipline registry bodyCtxU₁.declaredExternRefs θ₁1 := by
+                simp only [bodyCtxU₁]; rw [← hreg_c₁₁]; exact hrd₁1x
               have hbodyRunPostU₁ :
                   StepFRSingleRunFinalCleanPcTruePost bodyCtxU₁ result3U₁ predSat
                     (registry := registry) c₁₁.memory (env₁.update x₁ v₂₁) θ₁1
@@ -15598,12 +16260,13 @@ lemma stepFR_app_with_expr_proof
                 (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁ htagBnd_bodyU₁).2
                   c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
                   hθ₁1wf hwfBodyCtxU₁ hric_bodyU₁ htagR_bodyU₁ hcwr_bodyU₁
-                  c₁₁.nextAddr false hwfcfg_body_initU₁ ht₁_body hpc_bodyU₁
+                  c₁₁.nextAddr false hwfcfg_body_initU₁ hresBodyU₁ hrdBodyU₁ ht₁_body hpc_bodyU₁
               have hboundary₁ :
                   ExternBoundarySinglePost bodyCtxU₁ firstU₁ predSat tm1
                     θ₁1 c₁₁.memory evalCfg₁ o₁ :=
                 externBoundarySinglePost_of_singleRun_normalized_app
                   (p := p) (p1 := p1) h_p1p hfirstU₁_eq
+                  (typecheck_declared'_eq_of_not_allowed _ _ _ _ rfl htcBodyU₁')
                   (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁ htagBnd_bodyU₁).1
                   hbodyRunPostU₁
               have h_mono_bodyU₁ :
@@ -15677,6 +16340,26 @@ lemma stepFR_app_with_expr_proof
                 simp [hcfg₀]
               have hvar₁_eq : cf₁.varEnv = c₁₁.varEnv := by
                 simp [heq_cfg₁]
+              have hmember_decl : ∀ r ∈ results, r.declared' = result1.declared' := by
+                intro r hr
+                rcases applyClosuresThreaded_ok_mem_output_exists_input
+                    (applyOne := fun tcl cursor =>
+                      applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                        ctxᵢ result1 cursor fuel')
+                    (hthread := hmap) (hmem := hr) with
+                  ⟨tcl, _htcl, cursor', happly⟩
+                exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 cursor' fuel' r happly
+              have hres_decl_first : res.declared' = result1.declared' := by
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join,
+                  hmember_decl first (by rw [heq_results]; exact List.Mem.head _)]
+              have hregE₀x : evalCfgE₀.registry = cf₀.registry := by
+                simp [evalCfgE₀, ExternCallEntry.bodyOutputConfig]
+              have hregU₁x : evalCfg₁.registry = cf₁.registry := by
+                have hevalReg : evalCfg₁.registry = registry := by
+                  simpa using terminatesTo_preserves_registry ht₁_body
+                have hcfReg : cf₁.registry = registry := by simp [heq_cfg₁, hreg_c₁₁]
+                rw [hevalReg, hcfReg]
               have hOutChoice_dirty :
                   AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ :=
                 appTwoRunOutChoice_from_independent_single_boundary_posts_dirty
@@ -15714,6 +16397,9 @@ lemma stepFR_app_with_expr_proof
                   hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
                   hric₀1 hric₁1 hcwr₀1 hcwr₁1 hagree1
                   hboundary₀ hboundary₁
+                  hregE₀x hregU₁x
+                  (by rw [hres_decl_first, hmember_decl firstE₀ hfirstE₀_mem])
+                  (by rw [hres_decl_first, hmember_decl firstU₁ hfirstU₁_mem])
               rcases hOutChoice_dirty with
                 ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁,
                   hOutPack_body_out⟩
@@ -15763,14 +16449,14 @@ lemma stepFR_app_with_expr_proof
               have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
                 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
                 hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁
-                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
               rcases hstep_e2 with
                 ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
               rcases hstep_e2 with
                 ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed,
                   hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀,
                   hwfcf₂₁, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2,
-                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2⟩
+                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2, hrd₀2x, hrd₁2x⟩
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
@@ -15779,6 +16465,22 @@ lemma stepFR_app_with_expr_proof
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
               obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+              have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+                apply RegistryReservedWF_mono hres₀
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+              have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                apply RegistryReservedWF_mono hres₁
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+              have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+                have hreg₀2 : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+              have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+                have hreg₁2 : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
               have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
                 c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
                 c₁₀ c₁₁
@@ -15787,6 +16489,7 @@ lemma stepFR_app_with_expr_proof
                 hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2
                 htagR2 hcwr₀2 hcwr₁2 hagree2
                 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+                hres₀2 hres₁2 hrd₀2' hrd₁2'
                 (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
               rcases hstep_e1 with
                 ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
@@ -15794,7 +16497,7 @@ lemma stepFR_app_with_expr_proof
                 ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hv₀1_typed,
                   _hv₁1_typed, hTm1, hwf1, _htagBounded1, _hwfcf₁₀,
                   _hwfcf₁₁, _hric₀1, _hric₁1, _htagR1, _hcwr₀1,
-                  _hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1⟩
+                  _hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1, hrd₀1x, hrd₁1x⟩
               have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
               have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
               have h_mono1 :
@@ -15862,7 +16565,9 @@ lemma stepFR_app_with_expr_proof
                   tagEnv := result1.tagEnv'
                   nextTag := cursorA₀.1
                   nextLoc := cursorA₀.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let bodyCtx₁ : TypeContext :=
                 { ctxᵢ with
                   pc := joinPoison p (joinPoison p1 ctxᵢ.pc)
@@ -15872,7 +16577,9 @@ lemma stepFR_app_with_expr_proof
                   tagEnv := result1.tagEnv'
                   nextTag := cursorA₁.1
                   nextLoc := cursorA₁.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let callEntry₀ : ExternCallEntry :=
                 ExternCallEntry.ofRuntime bodyCtx₀ c₁₀ env₀ x₀ v₂₀
               let callEntry₁ : ExternCallEntry :=
@@ -16091,9 +16798,9 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₀ : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hwfcfg1 : wfConfig c₁₀ :=
-                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
+                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).1
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ argPoison₀ argPred₀ retSpec₀ eff₀ cap₀) env₀)
@@ -16101,7 +16808,7 @@ lemma stepFR_app_with_expr_proof
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                   | closure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -16116,9 +16823,9 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₁ : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hwfcfg1 : wfConfig c₁₁ :=
-                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
+                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).1
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.closure x₁ (Expr.externFn id₁ y₁ argTyp₁ argPoison₁ argPred₁ retSpec₁ eff₁ cap₁) env₁)
@@ -16126,7 +16833,7 @@ lemma stepFR_app_with_expr_proof
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                   | closure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₁ with varEnv := env₁.update x₁ v₂₁ } := by
@@ -16213,7 +16920,10 @@ lemma stepFR_app_with_expr_proof
                     (by simpa [callEntry₀] using hTmBoundedBody₀)
                     hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtx₀)
                     hricBody (by simpa [callEntry₀] using htagR_body₀)
-                    hcwrBody hwfcfg_body_init₀ hpcBody
+                    hcwrBody hwfcfg_body_init₀
+                    (by simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                      bodyCtx₀] using hrd₀1x)
+                    hpcBody
               have hboundary₁ :
                   ExternBoundarySinglePost bodyCtx₁ firstA₁ predSat tm1
                     θ₁1 c₁₁.memory evalCfg₁ o₁ := by
@@ -16240,7 +16950,10 @@ lemma stepFR_app_with_expr_proof
                     (by simpa [callEntry₁] using hTmBoundedBody₁)
                     hθ₁1wf (by simpa [callEntry₁] using hwfBodyCtx₁)
                     hricBody (by simpa [callEntry₁] using htagR_body₁)
-                    hcwrBody hwfcfg_body_init₁ hpcBody
+                    hcwrBody hwfcfg_body_init₁
+                    (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                      bodyCtx₁] using hrd₁1x)
+                    hpcBody
               have hfirstA₀_mem' : firstA₀ ∈ first :: rest := by
                 simpa [heq_results] using hfirstA₀_mem
               have hfirstA₁_mem' : firstA₁ ∈ first :: rest := by
@@ -16304,6 +17017,23 @@ lemma stepFR_app_with_expr_proof
                 simp [hcfg₀]
               have hvar₁_eq : cf₁.varEnv = c₁₁.varEnv := by
                 simp [hcfg₁]
+              have hmember_decl : ∀ r ∈ results, r.declared' = result1.declared' := by
+                intro r hr
+                rcases applyClosuresThreaded_ok_mem_output_exists_input
+                    (applyOne := fun tcl cursor =>
+                      applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                        ctxᵢ result1 cursor fuel')
+                    (hthread := hmap) (hmem := hr) with
+                  ⟨tcl, _htcl, cursor', happly⟩
+                exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 cursor' fuel' r happly
+              have hres_decl_first : res.declared' = result1.declared' := by
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join,
+                  hmember_decl first (by rw [heq_results]; exact List.Mem.head _)]
+              have hregA₀x : evalCfg₀.registry = cf₀.registry := by
+                simp [evalCfg₀, ExternCallEntry.bodyOutputConfig]
+              have hregA₁x : evalCfg₁.registry = cf₁.registry := by
+                simp [evalCfg₁, ExternCallEntry.bodyOutputConfig]
               have hOutChoice_dirty :
                   AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ := by
                 exact
@@ -16336,6 +17066,9 @@ lemma stepFR_app_with_expr_proof
                     hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
                     _hric₀1 _hric₁1 _hcwr₀1 _hcwr₁1 hagree1
                     hboundary₀ hboundary₁
+                    hregA₀x hregA₁x
+                    (by rw [hres_decl_first, hmember_decl firstA₀ hfirstA₀_mem])
+                    (by rw [hres_decl_first, hmember_decl firstA₁ hfirstA₁_mem])
               rcases hOutChoice_dirty with
                 ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁,
                   hOutPack_body_out⟩
@@ -16355,14 +17088,14 @@ lemma stepFR_app_with_expr_proof
                   have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
                     μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
                     hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁
-                    hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+                    hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
                   rcases hstep_e2 with
                     ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
                   rcases hstep_e2 with
                     ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed,
                       hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀,
                       hwfcf₂₁, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2,
-                      hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩
+                      hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2, hrd₀2x, hrd₁2x⟩
                   have hTmBounded2 :
                       TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                     simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
@@ -16371,6 +17104,22 @@ lemma stepFR_app_with_expr_proof
                   have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
                   obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
                   obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+                  have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+                    apply RegistryReservedWF_mono hres₀
+                    · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                    · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                  have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                    apply RegistryReservedWF_mono hres₁
+                    · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                    · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                  have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+                    have hreg₀2 : c₂'₀.registry = registry := by
+                      simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                    simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+                  have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+                    have hreg₁2 : c₂'₁.registry = registry := by
+                      simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                    simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
                   have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
                     c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
                     c₁₀ c₁₁
@@ -16379,6 +17128,7 @@ lemma stepFR_app_with_expr_proof
                     hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2
                     htagR2 hcwr₀2 hcwr₁2 hagree2
                     c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+                    hres₀2 hres₁2 hrd₀2' hrd₁2'
                     (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
                   rcases hstep_e1 with
                     ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
@@ -16386,7 +17136,7 @@ lemma stepFR_app_with_expr_proof
                     ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hv₀1_typed,
                       _hv₁1_typed, hTm1, hwf1, htagBounded1, _hwfcf₁₀,
                       _hwfcf₁₁, _hric₀1, _hric₁1, _htagR1, _hcwr₀1,
-                      _hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩
+                      _hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1, hrd₀1x, hrd₁1x⟩
                   rcases
                     stepFR_app_arrow_runtime_extern_source_from_internal_clean
                       predSat (ctxAfter ctxᵢ result2) result1 st1 st2 p tcls
@@ -16419,7 +17169,9 @@ lemma stepFR_app_with_expr_proof
                       tagEnv := result1.tagEnv'
                       nextTag := cursorA.1
                       nextLoc := cursorA.2
-                      regime := result1.regime' }
+                      regime := result1.regime'
+                      externRefAllowed := false
+                      declaredExternRefs := result1.declared' }
                   let callEntry₀ : ExternCallEntry :=
                     ExternCallEntry.ofRuntime bodyCtx c₁₀ env₀ x₀ v₂₀
                   let callEntry₁ : ExternCallEntry :=
@@ -16857,9 +17609,9 @@ lemma stepFR_app_with_expr_proof
                     have hreg₂'₀ : c₂'₀.registry = registry := by
                       simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                     have hwfcfg1 : wfConfig c₁₀ :=
-                      (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
+                      (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).1
                     have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                      (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                      (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                     have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                       terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                         (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ argPoison₀ argPred₀ retSpec₀ eff₀ cap₀) env₀)
@@ -16867,7 +17619,7 @@ lemma stepFR_app_with_expr_proof
                     have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                       wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                     have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                      cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                      cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                       | closure _ _ _ henv => exact henv
                     have hwf_body :
                         wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -16882,9 +17634,9 @@ lemma stepFR_app_with_expr_proof
                     have hreg₂'₁ : c₂'₁.registry = registry := by
                       simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                     have hwfcfg1 : wfConfig c₁₁ :=
-                      (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
+                      (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).1
                     have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                      (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                      (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                     have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                       terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                         (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ argPoison₁ argPred₁ retSpec₀ eff₀ _) env₁)
@@ -16892,7 +17644,7 @@ lemma stepFR_app_with_expr_proof
                     have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                       wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₁ hv₂₁_wf_e2
                     have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                      cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                      cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                       | closure _ _ _ henv => exact henv
                     have hwf_body :
                         wfConfig { c₁₁ with varEnv := env₁.update x₀ v₂₁ } := by
@@ -16936,6 +17688,10 @@ lemma stepFR_app_with_expr_proof
                         hθ₀1wf hθ₁1wf hwfBodyCtx htagBoundedBody hricBody₀ hricBody₁
                         htagR_body hcwrBody₀ hcwrBody₁ hagreeBody
                         hwfcfg_body_init₀ hwfcfg_body_init₁
+                        (by simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                          bodyCtx] using hrd₀1x)
+                        (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                          bodyCtx] using hrd₁1x)
                   have hproviders := _hfnLocal hfnTyped
                   have htypedCallProvider₀ :
                       ExternCallFnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀
@@ -17091,6 +17847,22 @@ lemma stepFR_app_with_expr_proof
                         (by simp [evalCfg₀, ExternCallEntry.bodyOutputConfig])
                         (by simp [evalCfg₁, ExternCallEntry.bodyOutputConfig])
                         hvar₀_eq hvar₁_eq _hric₀1 _hric₁1 _hcwr₀1 _hcwr₁1 hAgree_out
+                        (by simp [evalCfg₀, ExternCallEntry.bodyOutputConfig])
+                        (by simp [evalCfg₁, ExternCallEntry.bodyOutputConfig])
+                        (by
+                          have hmember_declK : ∀ r ∈ results, r.declared' = result1.declared' := by
+                            intro r hr
+                            rcases applyClosuresThreaded_ok_mem_output_exists_input
+                                (applyOne := fun tcl cursor =>
+                                  applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                                    ctxᵢ result1 cursor fuel')
+                                (hthread := hmap) (hmem := hr) with
+                              ⟨tcl, _htcl, cursor', happly⟩
+                            exact applyFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                              ctxᵢ result1 cursor' fuel' r happly
+                          rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join,
+                            hmember_declK first (by rw [heq_results]; exact List.Mem.head _),
+                            hmember_declK firstA _hfirstA_mem])
                   rcases _hOutChoice_clean with
                     ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁,
                       hOutPack_body_out⟩
@@ -17217,7 +17989,7 @@ lemma stepFR_app_with_expr_proof
         result_parrow := hetyp1 }
     intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-      a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+      a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
     have hqt2bound1 : qtypPredTagBounded result2.qualType (ctxAfter ctxᵢ result2).nextTag :=
       (typecheckExpr_preserves_predTagsBounded ctxᵢ e2 fuel' result2
         (by simpa [typecheck] using htc2') htagBounded.2.1 htagBounded.2.2).2
@@ -17244,10 +18016,10 @@ lemma stepFR_app_with_expr_proof
       intro c₂'₀ c₂'₁ c₁₀ c₁₁ v₂₀ v₂₁ o₀ o₁ ht₀_e2 ht₁_e2 ht₀_e1 ht₁_e1
       have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
         μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-        hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
       rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, _hresTm2, hstep_e2⟩
       rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _, _, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-        hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
+        hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _, _, _, hrd₀2x, hrd₁2x⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
       have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
@@ -17255,11 +18027,28 @@ lemma stepFR_app_with_expr_proof
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
       obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+      have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+        apply RegistryReservedWF_mono hres₀
+        · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+        · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+      have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+        apply RegistryReservedWF_mono hres₁
+        · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+        · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+      have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+        have hreg₀2 : c₂'₀.registry = registry := by
+          simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+        simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+      have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+        have hreg₁2 : c₂'₁.registry = registry := by
+          simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+        simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
       have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
         c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
         c₁₀ c₁₁ o₀ o₁
         hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
         c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+        hres₀2 hres₁2 hrd₀2' hrd₁2'
         (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
       rcases hstep_e1 with ⟨_, _, _, _, hstep_e1⟩
       rcases hstep_e1 with ⟨θ₀1, θ₁1, _, _, hv₀1_typed, hv₁1_typed, _, _, _,
@@ -17279,12 +18068,12 @@ lemma stepFR_app_with_expr_proof
       have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
         μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
         hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree
-        a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+        a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
       rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, _hresTm2, hstep_e2⟩
       rcases hstep_e2 with
         ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, _, _, hTm2, hwf2,
           _htagBounded2, hwfcf₂₀, hwfcf₂₁, hric₀2, hric₁2, htagR2,
-          hcwr₀2, hcwr₁2, hagree2, _, _, _⟩
+          hcwr₀2, hcwr₁2, hagree2, _, _, _, hrd₀2x, hrd₁2x⟩
       have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
         simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
       have hIH_e1 := IH fuel' (Nat.lt_succ_of_lt (Nat.lt_succ_self _)) e1 (ctxAfter ctxᵢ result2) (hctxAfter hctxCurrent) hcan1 hTm2 _htagBounded2 result1 htc1'
@@ -17292,15 +18081,32 @@ lemma stepFR_app_with_expr_proof
       have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
       obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
       obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+      have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+        apply RegistryReservedWF_mono hres₀
+        · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+        · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+      have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+        apply RegistryReservedWF_mono hres₁
+        · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+        · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+      have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+        have hreg₀2 : c₂'₀.registry = registry := by
+          simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+        simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+      have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+        have hreg₁2 : c₂'₁.registry = registry := by
+          simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+        simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
       have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
         c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
         c₁₀ c₁₁ o₀ o₁
         hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2
         hcwr₀2 hcwr₁2 hagree2 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+        hres₀2 hres₁2 hrd₀2' hrd₁2'
         (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
       rcases hstep_e1 with ⟨_, _, _, _, hstep_e1⟩
       rcases hstep_e1 with
-        ⟨θ₀1, θ₁1, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hres_agree1⟩
+        ⟨θ₀1, θ₁1, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hres_agree1, _, _⟩
       exact ⟨θ₀1, θ₁1, hres_agree1⟩
     have parrowUserExternMismatch_impossible :
         ∀ {c₂'₀ c₂'₁ c₁₀ c₁₁ : Config} {v₂₀ v₂₁ : Value}
@@ -17489,8 +18295,8 @@ lemma stepFR_app_with_expr_proof
             h_rest_wf
       · exact typecheckExpr_preserves_TagBoundedCtx ctxᵢ (Expr.app e1 e2)
           (Nat.succ (Nat.succ fuel')) res (by simpa [typecheck] using htc) htagBounded
-      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
-      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₀ o₀ hOp hres₀.toBelow ht₀ hwfcfg₀).1
+      · exact (wfConfig_preserved (Expr.app e1 e2) _ cf₁ o₁ hOp hres₁.toBelow ht₁ hwfcfg₁).1
       · exact
           join_transport_regimeConsistentWithCtx
             (ctx := ctxᵢ) (first := first) (rest := rest) (res := res)
@@ -17532,10 +18338,10 @@ lemma stepFR_app_with_expr_proof
           -- Phase A: Apply IH for e2
           have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
             μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
-            hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+            hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
           rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
           rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed, hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀, hwfcf₂₁,
-            hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩
+            hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2, hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2, hrd₀2x, hrd₁2x⟩
           have hTmBounded2 : TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
             simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
           -- Phase B: Apply IH for e1
@@ -17546,15 +18352,32 @@ lemma stepFR_app_with_expr_proof
             simpa [ctxAfter] using regime_monotoneExt ctxᵢ e2 fuel' result2 htc2'
           obtain ⟨hpm₀, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
           obtain ⟨hpm₁, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+          have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+            apply RegistryReservedWF_mono hres₀
+            · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+            · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+          have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+            apply RegistryReservedWF_mono hres₁
+            · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+            · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+          have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+            have hreg₀2 : c₂'₀.registry = registry := by
+              simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+            simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+          have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+            have hreg₁2 : c₂'₁.registry = registry := by
+              simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+            simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
           have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
             c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
             c₁₀ c₁₁ (Value.peClosure x₀ body₀ env₀) (Value.peClosure x₁ body₁ env₁)
             hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2 htagR2 hcwr₀2 hcwr₁2 hagree2
             c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+            hres₀2 hres₁2 hrd₀2' hrd₁2'
             (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
           rcases hstep_e1 with ⟨tm1, hcanon1, hpredlaws1, _hresTm1, hstep_e1⟩
           rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₁₀, hwfcf₁₁,
-            hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩
+            hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1, hrd₀1x, hrd₁1x⟩
           -- Phase C: Invert peClosure typing to extract closure structure
           have hv₀1_parrow : valueHasETyp θ₀1 (Value.peClosure x₀ body₀ env₀) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₀1_typed
           have hv₁1_parrow : valueHasETyp θ₁1 (Value.peClosure x₁ body₁ env₁) (ETyp.parrow st1 st2 p tcls) := hetyp1.symm ▸ hv₁1_typed
@@ -17657,13 +18480,16 @@ lemma stepFR_app_with_expr_proof
                         pureCtx := true
                         nextTag := cursorShared.1
                         nextLoc := cursorShared.2
-                        regime := result1.regime' } (PExpr.toExpr pbody) fuelBody = .ok result3Shared ∧
+                        regime := result1.regime'
+                        externRefAllowed := false
+                        declaredExternRefs := result1.declared' } (PExpr.toExpr pbody) fuelBody = .ok result3Shared ∧
                     isSubtype st2 result3Shared.qualType = true ∧
                     firstShared =
                       { result3Shared with
                         qualType :=
                           normalizeAppResultByProvenance (joinPoison p1 p)
-                            { result3Shared.qualType with poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) } })
+                            { result3Shared.qualType with poison := joinPoison p1 (joinPoison p result3Shared.qualType.poison) }
+                        declared' := result1.declared' })
                 ∨ (¬ internalPoisonClean result1.qualType) := by
             intro hclean1_e1
             rcases _hsync1_of_clean hclean1_e1 with hsync | hdirty
@@ -17781,7 +18607,9 @@ lemma stepFR_app_with_expr_proof
                   valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
                     res.qualType cf₁.memory θ₁' o₁ ∧
                   resultAgreesIfClean predSat (ctxAfter ctxᵢ res).regime
-                    cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁ := by
+                    cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁ ∧
+                  ReservedDiscipline cf₀.registry res.declared' θ₀' ∧
+                  ReservedDiscipline cf₁.registry res.declared' θ₁' := by
             rcases applyClosuresThreaded_ok_mem_output_exists_input
                 (applyOne := fun tcl cursor =>
                   applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
@@ -17864,7 +18692,9 @@ lemma stepFR_app_with_expr_proof
                 pureCtx := true
                 nextTag := cursorA₀.1
                 nextLoc := cursorA₀.2
-                regime := result1.regime' }
+                regime := result1.regime'
+                externRefAllowed := false
+                declaredExternRefs := result1.declared' }
             let bodyCtxA₁ : TypeContext :=
               { ctxᵢ with
                 pc := joinPoison p (joinPoison ctxᵢ.pc p1)
@@ -17875,7 +18705,9 @@ lemma stepFR_app_with_expr_proof
                 pureCtx := true
                 nextTag := cursorA₁.1
                 nextLoc := cursorA₁.2
-                regime := result1.regime' }
+                regime := result1.regime'
+                externRefAllowed := false
+                declaredExternRefs := result1.declared' }
             -- Common setup
             have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
             have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
@@ -18065,14 +18897,14 @@ lemma stepFR_app_with_expr_proof
               have hreg₂'₀ : c₂'₀.registry = registry := by
                 simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
               have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
               have hnext₂_to₁ : c₂'₀.nextAddr ≤ cf₀.nextAddr :=
                 terminatesTo_nextAddr_mono e1 c₂'₀ cf₀
                   (Value.peClosure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
               have hv₂₀_wf : wfValue cf₀.nextAddr v₂₀ :=
                 wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
               have henv₀_wf : wfVarEnv cf₀.nextAddr env₀ := by
-                cases (wfConfig_preserved e1 _ cf₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                cases (wfConfig_preserved e1 _ cf₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                 | peClosure _ _ _ henv => exact henv
               constructor
               · intro a ha; exact hwfcf₁₀.1 a ha
@@ -18117,17 +18949,25 @@ lemma stepFR_app_with_expr_proof
             have hpc_bodyA₀_run : bodyCtxA₀.pc = true := by
               simp [bodyCtxA₀, joinPoison] at h_p1p ⊢
               cases p1 <;> cases p <;> simp at h_p1p ⊢
+            have hresBodyA₀ : RegistryReservedWF registry cf₀.memory cf₀.nextAddr := by
+              have h2 : c₂'₀.registry = registry := by
+                simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+              apply RegistryReservedWF_mono hres₀2
+              · exact terminatesTo_memory_contains_mono e1 c₂'₀ cf₀ _ (h2.symm ▸ hOp) ht₀_e1
+              · exact terminatesTo_nextAddr_mono e1 c₂'₀ cf₀ _ (h2.symm ▸ hOp) ht₀_e1
+            have hrdBodyA₀ : ReservedDiscipline registry bodyCtxA₀.declaredExternRefs θ₀1 := by
+              simp only [bodyCtxA₀]; simpa [hreg_cf₀_pp] using hrd₀1x
             have hsr₀ :=
               (hSingle_bodyA₀ hpredlaws1 hExtTyping hTmBodyA₀
                 (by simpa [bodyCtxA₀] using
                   (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₀) htagBnd_bodyA₀).2
                 cf₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
                 hθ₀1wf hwfBodyCtxA₀ hric_bodyA₀ htagR_bodyA₀
-                hcwr_bodyA₀ cf₀.nextAddr true hwfcfg_body_initA₀ ht₀_body'
+                hcwr_bodyA₀ cf₀.nextAddr true hwfcfg_body_initA₀ hresBodyA₀ hrdBodyA₀ ht₀_body'
                 hpc_bodyA₀_run
             rcases hsr₀ with
               ⟨θ₀_body, hθext₀_body, hv₀_body_typed,
-                hric_bodyA₀_final, hcwr_bodyA₀_final, hvalc_bodyA₀, hpres₀, _hfresh₀_body⟩
+                hric_bodyA₀_final, hcwr_bodyA₀_final, hvalc_bodyA₀, hpres₀, _hfresh₀_body, _hrdB₀⟩
             -- ===== Run 1: unary body witness =====
             have hTmBodyA₁ : wfTagMeaningCtx tm1 bodyCtxA₁ := by
               have hresTm1' : QTypRespectsTagMeaning tm1 result1.qualType := _hresTm1
@@ -18303,14 +19143,14 @@ lemma stepFR_app_with_expr_proof
               have hreg₂'₁ : c₂'₁.registry = registry := by
                 simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
               have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
               have hnext₂_to₁ : c₂'₁.nextAddr ≤ cf₁.nextAddr :=
                 terminatesTo_nextAddr_mono e1 c₂'₁ cf₁
                   (Value.peClosure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
               have hv₂₁_wf : wfValue cf₁.nextAddr v₂₁ :=
                 wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
               have henv₁_wf : wfVarEnv cf₁.nextAddr env₁ := by
-                cases (wfConfig_preserved e1 _ cf₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                cases (wfConfig_preserved e1 _ cf₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                 | peClosure _ _ _ henv => exact henv
               constructor
               · intro a ha; exact hwfcf₁₁.1 a ha
@@ -18354,17 +19194,25 @@ lemma stepFR_app_with_expr_proof
             have hpc_bodyA₁_run : bodyCtxA₁.pc = true := by
               simp [bodyCtxA₁, joinPoison] at h_p1p ⊢
               cases p1 <;> cases p <;> simp at h_p1p ⊢
+            have hresBodyA₁ : RegistryReservedWF registry cf₁.memory cf₁.nextAddr := by
+              have h2 : c₂'₁.registry = registry := by
+                simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+              apply RegistryReservedWF_mono hres₁2
+              · exact terminatesTo_memory_contains_mono e1 c₂'₁ cf₁ _ (h2.symm ▸ hOp) ht₁_e1
+              · exact terminatesTo_nextAddr_mono e1 c₂'₁ cf₁ _ (h2.symm ▸ hOp) ht₁_e1
+            have hrdBodyA₁ : ReservedDiscipline registry bodyCtxA₁.declaredExternRefs θ₁1 := by
+              simp only [bodyCtxA₁]; simpa [hreg_cf₁_pp] using hrd₁1x
             have hsr₁ :=
               (hSingle_bodyA₁ hpredlaws1 hExtTyping hTmBodyA₁
                 (by simpa [bodyCtxA₁] using
                   (BoundaryTagMeaningPost.bounded hcanon1).mono hcursorTagA₁) htagBnd_bodyA₁).2
                 cf₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
                 hθ₁1wf hwfBodyCtxA₁ hric_bodyA₁ htagR_bodyA₁
-                hcwr_bodyA₁ cf₁.nextAddr true hwfcfg_body_initA₁ ht₁_body'
+                hcwr_bodyA₁ cf₁.nextAddr true hwfcfg_body_initA₁ hresBodyA₁ hrdBodyA₁ ht₁_body'
                 hpc_bodyA₁_run
             rcases hsr₁ with
               ⟨θ₁_body, hθext₁_body, hv₁_body_typed,
-                hric_bodyA₁_final, hcwr_bodyA₁_final, hvalc_bodyA₁, hpres₁, _hfresh₁_body⟩
+                hric_bodyA₁_final, hcwr_bodyA₁_final, hvalc_bodyA₁, hpres₁, _hfresh₁_body, _hrdB₁⟩
             -- ===== Transport to joined result and pack =====
             -- etyp agreement: body result etyp = firstA etyp (normalizeAppResultByProvenance preserves etyp)
             have hfirstA₀_etyp : firstA₀.qualType.etyp = result3A₀.qualType.etyp := by
@@ -18782,7 +19630,51 @@ lemma stepFR_app_with_expr_proof
                     (p := p) (p1 := p1)
                     h_join hfirstA₁_mem' hfirstA₁_eq hmem₁_eq hvalc_bodyA₁,
               -- resultAgreesIfClean (vacuously true since poison=true and pred=noPred)
-              resultAgreesIfClean_of_poison_noPred hres_pack.1 hres_pack.2⟩
+              resultAgreesIfClean_of_poison_noPred hres_pack.1 hres_pack.2,
+              -- ReservedDiscipline run 0
+              (by
+                have h3 : result3A₀.declared' = result1.declared' :=
+                  typecheck_declared'_eq_of_not_allowed bodyCtxA₀ (PExpr.toExpr pbodyA₀)
+                    fuelBodyA₀ result3A₀ rfl htcBodyA₀'
+                have hfirst_decl : first.declared' = result1.declared' := by
+                  rcases applyClosuresThreaded_ok_mem_output_exists_input
+                      (applyOne := fun tcl cursor =>
+                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                          ctxᵢ result1 cursor fuel')
+                      (hthread := hmap)
+                      (hmem := by rw [heq_results]; exact List.Mem.head _) with
+                    ⟨tcl, _htcl, cursor', happly⟩
+                  exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                    ctxᵢ result1 cursor' fuel' first happly
+                have hres_decl : res.declared' = result3A₀.declared' := by
+                  rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hfirst_decl, h3]
+                have hreg₀x : cf₀.registry = evalCfg₀.registry := by
+                  have hevalReg : evalCfg₀.registry = registry := by
+                    simpa using terminatesTo_preserves_registry ht₀_body'
+                  rw [hreg_cf₀_pp, hevalReg]
+                rw [hreg₀x, hres_decl]; exact _hrdB₀),
+              -- ReservedDiscipline run 1
+              (by
+                have h3 : result3A₁.declared' = result1.declared' :=
+                  typecheck_declared'_eq_of_not_allowed bodyCtxA₁ (PExpr.toExpr pbodyA₁)
+                    fuelBodyA₁ result3A₁ rfl htcBodyA₁'
+                have hfirst_decl : first.declared' = result1.declared' := by
+                  rcases applyClosuresThreaded_ok_mem_output_exists_input
+                      (applyOne := fun tcl cursor =>
+                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                          ctxᵢ result1 cursor fuel')
+                      (hthread := hmap)
+                      (hmem := by rw [heq_results]; exact List.Mem.head _) with
+                    ⟨tcl, _htcl, cursor', happly⟩
+                  exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                    ctxᵢ result1 cursor' fuel' first happly
+                have hres_decl : res.declared' = result3A₁.declared' := by
+                  rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hfirst_decl, h3]
+                have hreg₁x : cf₁.registry = evalCfg₁.registry := by
+                  have hevalReg : evalCfg₁.registry = registry := by
+                    simpa using terminatesTo_preserves_registry ht₁_body'
+                  rw [hreg_cf₁_pp, hevalReg]
+                rw [hreg₁x, hres_decl]; exact _hrdB₁)⟩
           by_cases hclean1_e1 :
               qtypCleanUnder (ctxAfter (ctxAfter ctxᵢ result2) result1).regime result1.qualType
           · -- Clean case: shared pure-body IH
@@ -18804,7 +19696,9 @@ lemma stepFR_app_with_expr_proof
                   pureCtx := true
                   nextTag := cursorShared.1
                   nextLoc := cursorShared.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
               have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
               have hfuel_lt : fuelBody < Nat.succ (Nat.succ fuel') := by
@@ -19333,13 +20227,13 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₀ : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ cf₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ cf₀ (Value.peClosure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue cf₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have hv₀_closure_wf : wfValue cf₀.nextAddr (Value.peClosure x₀ body₀ env₀) :=
-                  (wfConfig_preserved e1 _ cf₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2
+                  (wfConfig_preserved e1 _ cf₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2
                 have henv₀_wf : wfVarEnv cf₀.nextAddr env₀ := by
                   cases hv₀_closure_wf with
                   | peClosure _ _ _ henv => exact henv
@@ -19357,13 +20251,13 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₁ : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ cf₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ cf₁ (Value.peClosure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue cf₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have hv₁_closure_wf : wfValue cf₁.nextAddr (Value.peClosure x₁ body₁ env₁) :=
-                  (wfConfig_preserved e1 _ cf₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2
+                  (wfConfig_preserved e1 _ cf₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2
                 have henv₁_wf : wfVarEnv cf₁.nextAddr env₁ := by
                   cases hv₁_closure_wf with
                   | peClosure _ _ _ henv => exact henv
@@ -19382,6 +20276,22 @@ lemma stepFR_app_with_expr_proof
                 exact (terminatesTo_preserves_registry ht₁_e1).trans h2
               rw [hreg_cf₀_pp2] at ht₀_body
               rw [hreg_cf₁_pp2] at ht₁_body
+              have hresBody₀ : RegistryReservedWF registry cf₀.memory cf₀.nextAddr := by
+                have h2 : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                apply RegistryReservedWF_mono hres₀2
+                · exact terminatesTo_memory_contains_mono e1 c₂'₀ cf₀ _ (h2.symm ▸ hOp) ht₀_e1
+                · exact terminatesTo_nextAddr_mono e1 c₂'₀ cf₀ _ (h2.symm ▸ hOp) ht₀_e1
+              have hresBody₁ : RegistryReservedWF registry cf₁.memory cf₁.nextAddr := by
+                have h2 : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                apply RegistryReservedWF_mono hres₁2
+                · exact terminatesTo_memory_contains_mono e1 c₂'₁ cf₁ _ (h2.symm ▸ hOp) ht₁_e1
+                · exact terminatesTo_nextAddr_mono e1 c₂'₁ cf₁ _ (h2.symm ▸ hOp) ht₁_e1
+              have hrdBody₀ : ReservedDiscipline registry bodyCtx.declaredExternRefs θ₀1 := by
+                simp only [bodyCtx]; simpa [hreg_cf₀_pp2] using hrd₀1x
+              have hrdBody₁ : ReservedDiscipline registry bodyCtx.declaredExternRefs θ₁1 := by
+                simp only [bodyCtx]; simpa [hreg_cf₁_pp2] using hrd₁1x
               -- Phase 7: terminatesTo for body (pureMode := true)
               have ht₀_body' :
                   terminatesTo (PExpr.toExpr pbody)
@@ -19412,7 +20322,7 @@ lemma stepFR_app_with_expr_proof
                 hθ₀1wf hθ₁1wf hwfBodyCtx htagBoundedBody hric_body₀ hric_body₁ htagR_body
                 hcwr_body₀ hcwr_body₁ hagree_body_start
                 cf₀.nextAddr cf₁.nextAddr true
-                hwfcfg_body_init₀ hwfcfg_body_init₁ ht₀_body' ht₁_body'
+                hwfcfg_body_init₀ hwfcfg_body_init₁ hresBody₀ hresBody₁ hrdBody₀ hrdBody₁ ht₀_body' ht₁_body'
               rcases hstep_body with ⟨_tm_body, _hcanon_body, _hpredlaws_body, _hresTm_body, hstep_body⟩
               rcases hstep_body with
                 ⟨θ₀_body, θ₁_body, _hθext₀_body, _hθext₁_body,
@@ -19420,7 +20330,30 @@ lemma stepFR_app_with_expr_proof
                   _hwfcfg_body_final₀, _hwfcfg_body_final₁,
                   _hric_body_final₀, _hric_body_final₁, _htagR_body_final,
                   _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
-                  _hvalc_body₀, _hvalc_body₁, _hres_agree_body⟩
+                  _hvalc_body₀, _hvalc_body₁, _hres_agree_body, _hrd₀_body, _hrd₁_body⟩
+              have hres_decl_shared : res.declared' = result3Shared.declared' := by
+                have h3 : result3Shared.declared' = result1.declared' :=
+                  typecheck_declared'_eq_of_not_allowed bodyCtx (PExpr.toExpr pbody) fuelBody
+                    result3Shared rfl htcBody'
+                have hfirst_decl : first.declared' = result1.declared' := by
+                  rcases applyClosuresThreaded_ok_mem_output_exists_input
+                      (applyOne := fun tcl cursor =>
+                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                          ctxᵢ result1 cursor fuel')
+                      (hthread := hmap)
+                      (hmem := by rw [heq_results]; exact List.Mem.head _) with
+                    ⟨tcl, _htcl, cursor', happly⟩
+                  exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                    ctxᵢ result1 cursor' fuel' first happly
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join, hfirst_decl, h3]
+              have hreg₀_shared : cf₀.registry = evalCfg₀.registry := by
+                have hevalReg : evalCfg₀.registry = registry := by
+                  simpa using terminatesTo_preserves_registry ht₀_body'
+                rw [hreg_cf₀_pp2, hevalReg]
+              have hreg₁_shared : cf₁.registry = evalCfg₁.registry := by
+                have hevalReg : evalCfg₁.registry = registry := by
+                  simpa using terminatesTo_preserves_registry ht₁_body'
+                rw [hreg_cf₁_pp2, hevalReg]
               -- Pure body preserves memory: cf₀.memory = evalCfg₀.memory
               have hmem₀_eq : cf₀.memory = evalCfg₀.memory := by
                 obtain ⟨fuel_b₀, verbose_b₀, hbeval_b₀⟩ := ht₀_body'
@@ -19895,7 +20828,7 @@ lemma stepFR_app_with_expr_proof
                   _htagBounded_body_after, _hwfcfg_body_final₀, _hwfcfg_body_final₁,
                   _hric_body_final₀, _hric_body_final₁, _htagR_body_final,
                   _hcwr_body_final₀, _hcwr_body_final₁, hagree_body_after,
-                  _hvalc_body₀, _hvalc_body₁, _hres_agree_body⟩
+                  _hvalc_body₀, _hvalc_body₁, _hres_agree_body, _hrd₀_body, _hrd₁_body⟩
               have hOutChoice_body_from_helper :
                   AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ := by
                 have hsrc_mem' : firstShared ∈ first :: rest := by
@@ -19940,6 +20873,7 @@ lemma stepFR_app_with_expr_proof
                       simpa [ctxAfter] using hlookup)
                     hpred_compat₀ hpred_compat₁ hmem₀_eq hmem₁_eq rfl rfl
                     hric₀1 hric₁1 hcwr₀1 hcwr₁1 hAgree_out_body hbody_post_for_transport
+                    hreg₀_shared.symm hreg₁_shared.symm hres_decl_shared
               rcases hOutChoice_body_from_helper with
                 ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁, hOutPack_body_out⟩
               exact
@@ -20072,14 +21006,14 @@ lemma stepFR_app_with_expr_proof
               have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
                 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
                 hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁
-                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
               rcases hstep_e2 with
                 ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
               rcases hstep_e2 with
                 ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed,
                   hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀,
                   hwfcf₂₁, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2,
-                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2⟩
+                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2, hrd₀2x, hrd₁2x⟩
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
@@ -20088,6 +21022,22 @@ lemma stepFR_app_with_expr_proof
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
               obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+              have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+                apply RegistryReservedWF_mono hres₀
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+              have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                apply RegistryReservedWF_mono hres₁
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+              have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+                have hreg₀2 : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+              have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+                have hreg₁2 : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
               have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
                 c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
                 c₁₀ c₁₁
@@ -20096,6 +21046,7 @@ lemma stepFR_app_with_expr_proof
                 hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2
                 htagR2 hcwr₀2 hcwr₁2 hagree2
                 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+                hres₀2 hres₁2 hrd₀2' hrd₁2'
                 (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
               rcases hstep_e1 with
                 ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
@@ -20103,7 +21054,7 @@ lemma stepFR_app_with_expr_proof
                 ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hv₀1_typed,
                   _hv₁1_typed, hTm1, hwf1, _htagBounded1, _hwfcf₁₀,
                   _hwfcf₁₁, hric₀1, hric₁1, htagR1, hcwr₀1,
-                  hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1⟩
+                  hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1, hrd₀1x, hrd₁1x⟩
               have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
               have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
               have h_mono1 :
@@ -20175,7 +21126,9 @@ lemma stepFR_app_with_expr_proof
                   pureCtx := true
                   nextTag := cursorU₀.1
                   nextLoc := cursorU₀.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let bodyCtxE₁ : TypeContext :=
                 { ctxᵢ with
                   pc := joinPoison p (joinPoison ctxᵢ.pc p1)
@@ -20186,7 +21139,9 @@ lemma stepFR_app_with_expr_proof
                   pureCtx := true
                   nextTag := cursorE₁.1
                   nextLoc := cursorE₁.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let callEntry₁ : ExternCallEntry :=
                 ExternCallEntry.ofRuntime bodyCtxE₁ c₁₁ env₁ x₁ v₂₁
               let evalCfgE₁ : Config := callEntry₁.bodyOutputConfig cf₁
@@ -20402,14 +21357,14 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₀ : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.peClosure x₀ body₀ env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                   | peClosure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact _hwfcf₁₀.1 a ha
@@ -20418,9 +21373,9 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₁ : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hwfcfg1 : wfConfig c₁₁ :=
-                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
+                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).1
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.peClosure x₁ (Expr.externPfn id₁ y₁ argTyp₁ argPoison₁ argPred₁ retSpec₁ cap₁) env₁)
@@ -20428,7 +21383,7 @@ lemma stepFR_app_with_expr_proof
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                   | peClosure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₁ with varEnv := env₁.update x₁ v₂₁ } := by
@@ -20492,6 +21447,14 @@ lemma stepFR_app_with_expr_proof
                     registry := registry } evalCfg₀ o₀ := by
                 rw [hbody₀_eq]
                 exact ht₀_body
+              have hresBodyU₀ : RegistryReservedWF registry c₁₀.memory c₁₀.nextAddr := by
+                have hreg₂'₀U : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                apply RegistryReservedWF_mono hres₀2
+                · exact terminatesTo_memory_contains_mono e1 c₂'₀ c₁₀ _ (hreg₂'₀U.symm ▸ hOp) ht₀_e1
+                · exact terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀ _ (hreg₂'₀U.symm ▸ hOp) ht₀_e1
+              have hrdBodyU₀ : ReservedDiscipline registry bodyCtxU₀.declaredExternRefs θ₀1 := by
+                simp only [bodyCtxU₀]; rw [← hreg_c₁₀]; exact hrd₀1x
               have hbodyRunPostU₀ :
                   StepFRSingleRunFinalCleanPcTruePost bodyCtxU₀ result3U₀ predSat
                     (registry := registry) c₁₀.memory (env₀.update x₀ v₂₀) θ₀1
@@ -20500,12 +21463,13 @@ lemma stepFR_app_with_expr_proof
                 (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀ htagBnd_bodyU₀).2
                   c₁₀.memory (env₀.update x₀ v₂₀) θ₀1 evalCfg₀ o₀
                   hθ₀1wf hwfBodyCtxU₀ hric_bodyU₀ htagR_bodyU₀ hcwr_bodyU₀
-                  c₁₀.nextAddr true hwfcfg_body_initU₀ ht₀_body' hpc_bodyU₀
+                  c₁₀.nextAddr true hwfcfg_body_initU₀ hresBodyU₀ hrdBodyU₀ ht₀_body' hpc_bodyU₀
               have hboundary₀ :
                   ExternBoundarySinglePost bodyCtxU₀ firstU₀ predSat tm1
                     θ₀1 c₁₀.memory evalCfg₀ o₀ :=
                 externBoundarySinglePost_of_singleRun_normalized_app
                   (p := p) (p1 := p1) h_p1p hfirstU₀_eq
+                  (typecheck_declared'_eq_of_not_allowed _ _ _ _ rfl htcBodyU₀')
                   (hSingle_bodyU₀ hpredlaws1 hExtTyping hTmBodyU₀ hTmBoundedBodyU₀ htagBnd_bodyU₀).1
                   hbodyRunPostU₀
               have htypedCallProvider₁ :
@@ -20556,7 +21520,10 @@ lemma stepFR_app_with_expr_proof
                     (by simpa [callEntry₁] using hTmBoundedBodyE₁)
                     hθ₁1wf (by simpa [callEntry₁] using hwfBodyCtxE₁)
                     hricBody (by simpa [callEntry₁] using htagR_bodyE₁)
-                    hcwrBody hwfcfg_body_initE₁ hpcBody
+                    hcwrBody hwfcfg_body_initE₁
+                    (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                      bodyCtxE₁] using hrd₁1x)
+                    hpcBody
               have htagBoundedBodyU₀ : TagBoundedCtx bodyCtxU₀ := by
                 have hCapBoundBase : CapturedEnvFullBounded σcap₀ result1.nextTag' := by
                   have hClosFull := typecheckExpr_preserves_closureCapturedBounded
@@ -20628,6 +21595,26 @@ lemma stepFR_app_with_expr_proof
                 simp [heq_cfg₀]
               have hvar₁_eq : cf₁.varEnv = c₁₁.varEnv := by
                 simp [hcfg₁]
+              have hmember_decl : ∀ r ∈ results, r.declared' = result1.declared' := by
+                intro r hr
+                rcases applyClosuresThreaded_ok_mem_output_exists_input
+                    (applyOne := fun tcl cursor =>
+                      applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                        ctxᵢ result1 cursor fuel')
+                    (hthread := hmap) (hmem := hr) with
+                  ⟨tcl, _htcl, cursor', happly⟩
+                exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 cursor' fuel' r happly
+              have hres_decl_first : res.declared' = result1.declared' := by
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join,
+                  hmember_decl first (by rw [heq_results]; exact List.Mem.head _)]
+              have hregU₀ : evalCfg₀.registry = cf₀.registry := by
+                have hevalReg : evalCfg₀.registry = registry := by
+                  simpa using terminatesTo_preserves_registry ht₀_body
+                have hcfReg : cf₀.registry = registry := by simp [heq_cfg₀, hreg_c₁₀]
+                rw [hevalReg, hcfReg]
+              have hregE₁ : evalCfgE₁.registry = cf₁.registry := by
+                simp [evalCfgE₁, ExternCallEntry.bodyOutputConfig]
               have hOutChoice_dirty :
                   AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ :=
                 appTwoRunOutChoice_from_independent_single_boundary_posts_dirty
@@ -20670,6 +21657,9 @@ lemma stepFR_app_with_expr_proof
                   hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
                   hric₀1 hric₁1 hcwr₀1 hcwr₁1 hagree1
                   hboundary₀ hboundary₁
+                  hregU₀ hregE₁
+                  (by rw [hres_decl_first, hmember_decl firstU₀ hfirstU₀_mem])
+                  (by rw [hres_decl_first, hmember_decl firstE₁ hfirstE₁_mem])
               rcases hOutChoice_dirty with
                 ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁,
                   hOutPack_body_out⟩
@@ -20730,14 +21720,14 @@ lemma stepFR_app_with_expr_proof
               have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
                 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
                 hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁
-                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
               rcases hstep_e2 with
                 ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
               rcases hstep_e2 with
                 ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed,
                   hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀,
                   hwfcf₂₁, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2,
-                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2⟩
+                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2, hrd₀2x, hrd₁2x⟩
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
@@ -20746,6 +21736,22 @@ lemma stepFR_app_with_expr_proof
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
               obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+              have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+                apply RegistryReservedWF_mono hres₀
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+              have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                apply RegistryReservedWF_mono hres₁
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+              have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+                have hreg₀2 : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+              have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+                have hreg₁2 : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
               have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
                 c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
                 c₁₀ c₁₁
@@ -20754,6 +21760,7 @@ lemma stepFR_app_with_expr_proof
                 hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2
                 htagR2 hcwr₀2 hcwr₁2 hagree2
                 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+                hres₀2 hres₁2 hrd₀2' hrd₁2'
                 (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
               rcases hstep_e1 with
                 ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
@@ -20761,7 +21768,7 @@ lemma stepFR_app_with_expr_proof
                 ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hv₀1_typed,
                   _hv₁1_typed, hTm1, hwf1, _htagBounded1, _hwfcf₁₀,
                   _hwfcf₁₁, hric₀1, hric₁1, htagR1, hcwr₀1,
-                  hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1⟩
+                  hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1, hrd₀1x, hrd₁1x⟩
               have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
               have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
               have h_mono1 :
@@ -20833,7 +21840,9 @@ lemma stepFR_app_with_expr_proof
                   pureCtx := true
                   nextTag := cursorE₀.1
                   nextLoc := cursorE₀.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let bodyCtxU₁ : TypeContext :=
                 { ctxᵢ with
                   pc := joinPoison p (joinPoison ctxᵢ.pc p1)
@@ -20844,7 +21853,9 @@ lemma stepFR_app_with_expr_proof
                   pureCtx := true
                   nextTag := cursorU₁.1
                   nextLoc := cursorU₁.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let callEntry₀ : ExternCallEntry :=
                 ExternCallEntry.ofRuntime bodyCtxE₀ c₁₀ env₀ x₀ v₂₀
               let evalCfgE₀ : Config := callEntry₀.bodyOutputConfig cf₀
@@ -21054,9 +22065,9 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₀ : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hwfcfg1 : wfConfig c₁₀ :=
-                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
+                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).1
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ argPoison₀ argPred₀ retSpec₀ cap₀) env₀)
@@ -21064,7 +22075,7 @@ lemma stepFR_app_with_expr_proof
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                   | peClosure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -21085,14 +22096,14 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₁ : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.peClosure x₁ body₁ env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                   | peClosure _ _ _ henv => exact henv
                 constructor
                 · intro a ha; exact _hwfcf₁₁.1 a ha
@@ -21162,7 +22173,9 @@ lemma stepFR_app_with_expr_proof
                     (by simpa [callEntry₀] using hTmBoundedBodyE₀)
                     hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtxE₀)
                     hricBody (by simpa [callEntry₀] using htagR_bodyE₀)
-                    hcwrBody hwfcfg_body_initE₀ hpcBody
+                    hcwrBody hwfcfg_body_initE₀
+                    (by simpa [callEntry₀, ExternCallEntry.bodyConfig] using hrd₀1x)
+                    hpcBody
               have htagBnd_bodyU₁ : TagBoundedCtx bodyCtxU₁ := by
                 have hCapBoundBase : CapturedEnvFullBounded σcap₁ result1.nextTag' := by
                   have hClosFull := typecheckExpr_preserves_closureCapturedBounded
@@ -21199,6 +22212,18 @@ lemma stepFR_app_with_expr_proof
                     registry := registry } evalCfg₁ o₁ := by
                 rw [hbody₁_eq]
                 exact ht₁_body
+              have hresBodyU₁ : RegistryReservedWF registry c₁₁.memory c₁₁.nextAddr := by
+                have hreg₂'₁U : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                have hres₁2U : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                  apply RegistryReservedWF_mono hres₁
+                  · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                  · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                apply RegistryReservedWF_mono hres₁2U
+                · exact terminatesTo_memory_contains_mono e1 c₂'₁ c₁₁ _ (hreg₂'₁U.symm ▸ hOp) ht₁_e1
+                · exact terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁ _ (hreg₂'₁U.symm ▸ hOp) ht₁_e1
+              have hrdBodyU₁ : ReservedDiscipline registry bodyCtxU₁.declaredExternRefs θ₁1 := by
+                simp only [bodyCtxU₁]; rw [← hreg_c₁₁]; exact hrd₁1x
               have hbodyRunPostU₁ :
                   StepFRSingleRunFinalCleanPcTruePost bodyCtxU₁ result3U₁ predSat
                     (registry := registry) c₁₁.memory (env₁.update x₁ v₂₁) θ₁1
@@ -21207,12 +22232,13 @@ lemma stepFR_app_with_expr_proof
                 (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁ htagBnd_bodyU₁).2
                   c₁₁.memory (env₁.update x₁ v₂₁) θ₁1 evalCfg₁ o₁
                   hθ₁1wf hwfBodyCtxU₁ hric_bodyU₁ htagR_bodyU₁ hcwr_bodyU₁
-                  c₁₁.nextAddr true hwfcfg_body_initU₁ ht₁_body' hpc_bodyU₁
+                  c₁₁.nextAddr true hwfcfg_body_initU₁ hresBodyU₁ hrdBodyU₁ ht₁_body' hpc_bodyU₁
               have hboundary₁ :
                   ExternBoundarySinglePost bodyCtxU₁ firstU₁ predSat tm1
                     θ₁1 c₁₁.memory evalCfg₁ o₁ :=
                 externBoundarySinglePost_of_singleRun_normalized_app
                   (p := p) (p1 := p1) h_p1p hfirstU₁_eq
+                  (typecheck_declared'_eq_of_not_allowed _ _ _ _ rfl htcBodyU₁')
                   (hSingle_bodyU₁ hpredlaws1 hExtTyping hTmBodyU₁ hTmBoundedBodyU₁ htagBnd_bodyU₁).1
                   hbodyRunPostU₁
               have h_mono_bodyU₁ :
@@ -21278,6 +22304,26 @@ lemma stepFR_app_with_expr_proof
                 simp [hcfg₀]
               have hvar₁_eq : cf₁.varEnv = c₁₁.varEnv := by
                 simp [heq_cfg₁]
+              have hmember_decl : ∀ r ∈ results, r.declared' = result1.declared' := by
+                intro r hr
+                rcases applyClosuresThreaded_ok_mem_output_exists_input
+                    (applyOne := fun tcl cursor =>
+                      applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                        ctxᵢ result1 cursor fuel')
+                    (hthread := hmap) (hmem := hr) with
+                  ⟨tcl, _htcl, cursor', happly⟩
+                exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 cursor' fuel' r happly
+              have hres_decl_first : res.declared' = result1.declared' := by
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join,
+                  hmember_decl first (by rw [heq_results]; exact List.Mem.head _)]
+              have hregE₀x : evalCfgE₀.registry = cf₀.registry := by
+                simp [evalCfgE₀, ExternCallEntry.bodyOutputConfig]
+              have hregU₁x : evalCfg₁.registry = cf₁.registry := by
+                have hevalReg : evalCfg₁.registry = registry := by
+                  simpa using terminatesTo_preserves_registry ht₁_body
+                have hcfReg : cf₁.registry = registry := by simp [heq_cfg₁, hreg_c₁₁]
+                rw [hevalReg, hcfReg]
               have hOutChoice_dirty :
                   AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ :=
                 appTwoRunOutChoice_from_independent_single_boundary_posts_dirty
@@ -21320,6 +22366,9 @@ lemma stepFR_app_with_expr_proof
                   hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
                   hric₀1 hric₁1 hcwr₀1 hcwr₁1 hagree1
                   hboundary₀ hboundary₁
+                  hregE₀x hregU₁x
+                  (by rw [hres_decl_first, hmember_decl firstE₀ hfirstE₀_mem])
+                  (by rw [hres_decl_first, hmember_decl firstU₁ hfirstU₁_mem])
               rcases hOutChoice_dirty with
                 ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁,
                   hOutPack_body_out⟩
@@ -21369,14 +22418,14 @@ lemma stepFR_app_with_expr_proof
               have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
                 μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
                 hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁
-                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+                hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
               rcases hstep_e2 with
                 ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
               rcases hstep_e2 with
                 ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed,
                   hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀,
                   hwfcf₂₁, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2,
-                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2⟩
+                  hagree2, _hvalc₂₀, _hvalc₂₁, _hres_agree2, hrd₀2x, hrd₁2x⟩
               have hTmBounded2 :
                   TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                 simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
@@ -21385,6 +22434,22 @@ lemma stepFR_app_with_expr_proof
               have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
               obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
               obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+              have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+                apply RegistryReservedWF_mono hres₀
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+              have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                apply RegistryReservedWF_mono hres₁
+                · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+              have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+                have hreg₀2 : c₂'₀.registry = registry := by
+                  simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+              have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+                have hreg₁2 : c₂'₁.registry = registry := by
+                  simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
               have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
                 c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
                 c₁₀ c₁₁
@@ -21393,6 +22458,7 @@ lemma stepFR_app_with_expr_proof
                 hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2
                 htagR2 hcwr₀2 hcwr₁2 hagree2
                 c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+                hres₀2 hres₁2 hrd₀2' hrd₁2'
                 (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
               rcases hstep_e1 with
                 ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
@@ -21400,7 +22466,7 @@ lemma stepFR_app_with_expr_proof
                 ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hv₀1_typed,
                   _hv₁1_typed, hTm1, hwf1, _htagBounded1, _hwfcf₁₀,
                   _hwfcf₁₁, _hric₀1, _hric₁1, _htagR1, _hcwr₀1,
-                  _hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1⟩
+                  _hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, _hres_agree1, hrd₀1x, hrd₁1x⟩
               have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀2wf
               have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁2wf
               have h_mono1 :
@@ -21469,7 +22535,9 @@ lemma stepFR_app_with_expr_proof
                   pureCtx := true
                   nextTag := cursorA₀.1
                   nextLoc := cursorA₀.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let bodyCtx₁ : TypeContext :=
                 { ctxᵢ with
                   pc := joinPoison p (joinPoison ctxᵢ.pc p1)
@@ -21480,7 +22548,9 @@ lemma stepFR_app_with_expr_proof
                   pureCtx := true
                   nextTag := cursorA₁.1
                   nextLoc := cursorA₁.2
-                  regime := result1.regime' }
+                  regime := result1.regime'
+                  externRefAllowed := false
+                  declaredExternRefs := result1.declared' }
               let callEntry₀ : ExternCallEntry :=
                 ExternCallEntry.ofRuntime bodyCtx₀ c₁₀ env₀ x₀ v₂₀
               let callEntry₁ : ExternCallEntry :=
@@ -21700,9 +22770,9 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₀ : c₂'₀.registry = registry := by
                   simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                 have hwfcfg1 : wfConfig c₁₀ :=
-                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
+                  (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).1
                 have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                  (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                  (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                 have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                     (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ argPoison₀ argPred₀ retSpec₀ cap₀) env₀)
@@ -21710,7 +22780,7 @@ lemma stepFR_app_with_expr_proof
                 have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                 have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                  cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                   | peClosure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -21725,9 +22795,9 @@ lemma stepFR_app_with_expr_proof
                 have hreg₂'₁ : c₂'₁.registry = registry := by
                   simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                 have hwfcfg1 : wfConfig c₁₁ :=
-                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
+                  (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).1
                 have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                  (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                  (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                 have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                   terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                     (Value.peClosure x₁ (Expr.externPfn id₁ y₁ argTyp₁ argPoison₁ argPred₁ retSpec₁ cap₁) env₁)
@@ -21735,7 +22805,7 @@ lemma stepFR_app_with_expr_proof
                 have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                   wfValue_mono_of_le_nextAddr hnext₂_to₁ x₁ v₂₁ hv₂₁_wf_e2
                 have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                  cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                   | peClosure _ _ _ henv => exact henv
                 have hwf_body :
                     wfConfig { c₁₁ with varEnv := env₁.update x₁ v₂₁ } := by
@@ -21822,7 +22892,10 @@ lemma stepFR_app_with_expr_proof
                     (by simpa [callEntry₀] using hTmBoundedBody₀)
                     hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtx₀)
                     hricBody (by simpa [callEntry₀] using htagR_body₀)
-                    hcwrBody hwfcfg_body_init₀ hpcBody
+                    hcwrBody hwfcfg_body_init₀
+                    (by simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                      bodyCtx₀] using hrd₀1x)
+                    hpcBody
               have hboundary₁ :
                   ExternBoundarySinglePost bodyCtx₁ firstA₁ predSat tm1
                     θ₁1 c₁₁.memory evalCfg₁ o₁ := by
@@ -21849,7 +22922,10 @@ lemma stepFR_app_with_expr_proof
                     (by simpa [callEntry₁] using hTmBoundedBody₁)
                     hθ₁1wf (by simpa [callEntry₁] using hwfBodyCtx₁)
                     hricBody (by simpa [callEntry₁] using htagR_body₁)
-                    hcwrBody hwfcfg_body_init₁ hpcBody
+                    hcwrBody hwfcfg_body_init₁
+                    (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                      bodyCtx₁] using hrd₁1x)
+                    hpcBody
               have hfirstA₀_mem' : firstA₀ ∈ first :: rest := by
                 simpa [heq_results] using hfirstA₀_mem
               have hfirstA₁_mem' : firstA₁ ∈ first :: rest := by
@@ -21901,6 +22977,23 @@ lemma stepFR_app_with_expr_proof
                 simp [hcfg₀]
               have hvar₁_eq : cf₁.varEnv = c₁₁.varEnv := by
                 simp [hcfg₁]
+              have hmember_decl : ∀ r ∈ results, r.declared' = result1.declared' := by
+                intro r hr
+                rcases applyClosuresThreaded_ok_mem_output_exists_input
+                    (applyOne := fun tcl cursor =>
+                      applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                        ctxᵢ result1 cursor fuel')
+                    (hthread := hmap) (hmem := hr) with
+                  ⟨tcl, _htcl, cursor', happly⟩
+                exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                  ctxᵢ result1 cursor' fuel' r happly
+              have hres_decl_first : res.declared' = result1.declared' := by
+                rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join,
+                  hmember_decl first (by rw [heq_results]; exact List.Mem.head _)]
+              have hregA₀x : evalCfg₀.registry = cf₀.registry := by
+                simp [evalCfg₀, ExternCallEntry.bodyOutputConfig]
+              have hregA₁x : evalCfg₁.registry = cf₁.registry := by
+                simp [evalCfg₁, ExternCallEntry.bodyOutputConfig]
               have hOutChoice_dirty :
                   AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ := by
                 exact
@@ -21943,6 +23036,9 @@ lemma stepFR_app_with_expr_proof
                     hmem₀_eq hmem₁_eq hvar₀_eq hvar₁_eq
                     _hric₀1 _hric₁1 _hcwr₀1 _hcwr₁1 hagree1
                     hboundary₀ hboundary₁
+                    hregA₀x hregA₁x
+                    (by rw [hres_decl_first, hmember_decl firstA₀ hfirstA₀_mem])
+                    (by rw [hres_decl_first, hmember_decl firstA₁ hfirstA₁_mem])
               rcases hOutChoice_dirty with
                 ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁,
                   hOutPack_body_out⟩
@@ -21962,14 +23058,14 @@ lemma stepFR_app_with_expr_proof
                   have hstep_e2 := hIH_e2 hpredlaws hExtTyping hwfTm hTmBounded
                     μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ c₂'₀ c₂'₁ v₂₀ v₂₁
                     hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁
-                    hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e2 ht₁_e2
+                    hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e2 ht₁_e2
                   rcases hstep_e2 with
                     ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
                   rcases hstep_e2 with
                     ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₂₀_typed,
                       hv₂₁_typed, hTm2, hwf2, _htagBounded2, hwfcf₂₀,
                       hwfcf₂₁, hric₀2, hric₁2, htagR2, hcwr₀2, hcwr₁2,
-                      hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2⟩
+                      hagree2, _hvalc₂₀, _hvalc₂₁, hres_agree2, hrd₀2x, hrd₁2x⟩
                   have hTmBounded2 :
                       TagMeaningBounded tm2 (ctxAfter ctxᵢ result2).nextTag := by
                     simpa [ctxAfter] using BoundaryTagMeaningPost.bounded hcanon2
@@ -21978,6 +23074,22 @@ lemma stepFR_app_with_expr_proof
                   have hθ₁2wf : wfRealizationMap θ₁2 := hθext₁2.2 hθ₁
                   obtain ⟨_, heq_cfg₀'⟩ := cfg_pureMode_eq_of_terminatesTo ht₀_e2 rfl rfl
                   obtain ⟨_, heq_cfg₁'⟩ := cfg_pureMode_eq_of_terminatesTo ht₁_e2 rfl rfl
+                  have hres₀2 : RegistryReservedWF registry c₂'₀.memory c₂'₀.nextAddr := by
+                    apply RegistryReservedWF_mono hres₀
+                    · exact terminatesTo_memory_contains_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                    · exact terminatesTo_nextAddr_mono e2 _ c₂'₀ v₂₀ hOp ht₀_e2
+                  have hres₁2 : RegistryReservedWF registry c₂'₁.memory c₂'₁.nextAddr := by
+                    apply RegistryReservedWF_mono hres₁
+                    · exact terminatesTo_memory_contains_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                    · exact terminatesTo_nextAddr_mono e2 _ c₂'₁ v₂₁ hOp ht₁_e2
+                  have hrd₀2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₀2 := by
+                    have hreg₀2 : c₂'₀.registry = registry := by
+                      simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
+                    simp only [ctxAfter]; simpa [hreg₀2] using hrd₀2x
+                  have hrd₁2' : ReservedDiscipline registry (ctxAfter ctxᵢ result2).declaredExternRefs θ₁2 := by
+                    have hreg₁2 : c₂'₁.registry = registry := by
+                      simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
+                    simp only [ctxAfter]; simpa [hreg₁2] using hrd₁2x
                   have hstep_e1 := hIH_e1 hpredlaws2 hExtTyping hTm2 hTmBounded2
                     c₂'₀.memory c₂'₁.memory c₂'₀.varEnv c₂'₁.varEnv θ₀2 θ₁2
                     c₁₀ c₁₁
@@ -21986,6 +23098,7 @@ lemma stepFR_app_with_expr_proof
                     hθ₀2wf hθ₁2wf hwf2 _htagBounded2 hric₀2 hric₁2
                     htagR2 hcwr₀2 hcwr₁2 hagree2
                     c₂'₀.nextAddr c₂'₁.nextAddr pm hwfcf₂₀ hwfcf₂₁
+                    hres₀2 hres₁2 hrd₀2' hrd₁2'
                     (heq_cfg₀' ▸ ht₀_e1) (heq_cfg₁' ▸ ht₁_e1)
                   rcases hstep_e1 with
                     ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
@@ -21993,7 +23106,7 @@ lemma stepFR_app_with_expr_proof
                     ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hv₀1_typed,
                       _hv₁1_typed, hTm1, hwf1, htagBounded1, _hwfcf₁₀,
                       _hwfcf₁₁, _hric₀1, _hric₁1, _htagR1, _hcwr₀1,
-                      _hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1⟩
+                      _hcwr₁1, hagree1, _hvalc₁₀, _hvalc₁₁, hres_agree1, hrd₀1x, hrd₁1x⟩
                   rcases
                     stepFR_app_parrow_runtime_extern_source_from_internal_clean
                       predSat (ctxAfter ctxᵢ result2) result1 st1 st2 p tcls
@@ -22025,7 +23138,9 @@ lemma stepFR_app_with_expr_proof
                       pureCtx := true
                       nextTag := cursorA.1
                       nextLoc := cursorA.2
-                      regime := result1.regime' }
+                      regime := result1.regime'
+                      externRefAllowed := false
+                      declaredExternRefs := result1.declared' }
                   let callEntry₀ : ExternCallEntry :=
                     ExternCallEntry.ofRuntime bodyCtx c₁₀ env₀ x₀ v₂₀
                   let callEntry₁ : ExternCallEntry :=
@@ -22465,16 +23580,16 @@ lemma stepFR_app_with_expr_proof
                     have hreg₂'₀ : c₂'₀.registry = registry := by
                       simpa [cinit₀] using terminatesTo_preserves_registry ht₀_e2
                     have hwfcfg1 : wfConfig c₁₀ :=
-                      (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).1
+                      (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).1
                     have hv₂₀_wf_e2 : wfValue c₂'₀.nextAddr v₂₀ :=
-                      (wfConfig_preserved e2 _ c₂'₀ _ hOp ht₀_e2 hwfcfg₀).2
+                      (wfConfig_preserved e2 _ c₂'₀ _ hOp hres₀.toBelow ht₀_e2 hwfcfg₀).2
                     have hnext₂_to₁ : c₂'₀.nextAddr ≤ c₁₀.nextAddr :=
                       terminatesTo_nextAddr_mono e1 c₂'₀ c₁₀
                         (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ argPoison₀ argPred₀ retSpec₀ cap₀) env₀) (hreg₂'₀.symm ▸ hOp) ht₀_e1
                     have hv₂₀_wf : wfValue c₁₀.nextAddr v₂₀ :=
                       wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₀ hv₂₀_wf_e2
                     have henv₀_wf : wfVarEnv c₁₀.nextAddr env₀ := by
-                      cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) ht₀_e1 hwfcf₂₀).2 with
+                      cases (wfConfig_preserved e1 _ c₁₀ _ (hreg₂'₀.symm ▸ hOp) (hreg₂'₀.symm ▸ hres₀2.toBelow) ht₀_e1 hwfcf₂₀).2 with
                       | peClosure _ _ _ henv => exact henv
                     have hwf_body :
                         wfConfig { c₁₀ with varEnv := env₀.update x₀ v₂₀ } := by
@@ -22489,16 +23604,16 @@ lemma stepFR_app_with_expr_proof
                     have hreg₂'₁ : c₂'₁.registry = registry := by
                       simpa [cinit₁] using terminatesTo_preserves_registry ht₁_e2
                     have hwfcfg1 : wfConfig c₁₁ :=
-                      (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).1
+                      (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).1
                     have hv₂₁_wf_e2 : wfValue c₂'₁.nextAddr v₂₁ :=
-                      (wfConfig_preserved e2 _ c₂'₁ _ hOp ht₁_e2 hwfcfg₁).2
+                      (wfConfig_preserved e2 _ c₂'₁ _ hOp hres₁.toBelow ht₁_e2 hwfcfg₁).2
                     have hnext₂_to₁ : c₂'₁.nextAddr ≤ c₁₁.nextAddr :=
                       terminatesTo_nextAddr_mono e1 c₂'₁ c₁₁
                         (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ argPoison₁ argPred₁ retSpec₀ _) env₁) (hreg₂'₁.symm ▸ hOp) ht₁_e1
                     have hv₂₁_wf : wfValue c₁₁.nextAddr v₂₁ :=
                       wfValue_mono_of_le_nextAddr hnext₂_to₁ x₀ v₂₁ hv₂₁_wf_e2
                     have henv₁_wf : wfVarEnv c₁₁.nextAddr env₁ := by
-                      cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) ht₁_e1 hwfcf₂₁).2 with
+                      cases (wfConfig_preserved e1 _ c₁₁ _ (hreg₂'₁.symm ▸ hOp) (hreg₂'₁.symm ▸ hres₁2.toBelow) ht₁_e1 hwfcf₂₁).2 with
                       | peClosure _ _ _ henv => exact henv
                     have hwf_body :
                         wfConfig { c₁₁ with varEnv := env₁.update x₀ v₂₁ } := by
@@ -22542,6 +23657,10 @@ lemma stepFR_app_with_expr_proof
                         hθ₀1wf hθ₁1wf hwfBodyCtx htagBoundedBody hricBody₀ hricBody₁
                         htagR_body hcwrBody₀ hcwrBody₁ hagreeBody
                         hwfcfg_body_init₀ hwfcfg_body_init₁
+                        (by simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                          bodyCtx] using hrd₀1x)
+                        (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
+                          bodyCtx] using hrd₁1x)
                   have hproviders := _hpfnLocal hpfnTyped
                   have htypedCallProvider₀ :
                       ExternCallPfnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀
@@ -22703,6 +23822,22 @@ lemma stepFR_app_with_expr_proof
                         (by simp [evalCfg₀, ExternCallEntry.bodyOutputConfig])
                         (by simp [evalCfg₁, ExternCallEntry.bodyOutputConfig])
                         rfl rfl hric₀1_cf hric₁1_cf hcwr₀1_cf hcwr₁1_cf hAgree_out
+                        (by simp [evalCfg₀, ExternCallEntry.bodyOutputConfig])
+                        (by simp [evalCfg₁, ExternCallEntry.bodyOutputConfig])
+                        (by
+                          have hmember_declK : ∀ r ∈ results, r.declared' = result1.declared' := by
+                            intro r hr
+                            rcases applyClosuresThreaded_ok_mem_output_exists_input
+                                (applyOne := fun tcl cursor =>
+                                  applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
+                                    ctxᵢ result1 cursor fuel')
+                                (hthread := hmap) (hmem := hr) with
+                              ⟨tcl, _htcl, cursor', happly⟩
+                            exact applyPFnTClosureAtCursor_declared'_eq tcl st1 st2 p p1 etyp2 p2 pred2
+                              ctxᵢ result1 cursor' fuel' r happly
+                          rw [joinTypeResults_declared'_eq ctxᵢ first rest res h_join,
+                            hmember_declK first (by rw [heq_results]; exact List.Mem.head _),
+                            hmember_declK firstA _hfirstA_mem])
                   rcases _hOutChoice_clean with
                     ⟨θ₀_out, θ₁_out, hθext_body_out₀, hθext_body_out₁,
                       hOutPack_body_out⟩

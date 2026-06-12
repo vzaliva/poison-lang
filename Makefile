@@ -1,4 +1,4 @@
-.PHONY: all clean test poison-lang-spec lean-build lean-build-file lean-clean run run-verbose parser parser-clean cache cache-refresh distclean
+.PHONY: all clean test poison-lang-spec doc lean-build lean-build-file lean-clean run run-verbose parser parser-clean cache cache-refresh distclean
 
 all: poison-lang-spec lean-build parser doc
 
@@ -25,9 +25,9 @@ parser: config.json
 poison-lang-spec:
 	$(MAKE) -C poison-lang-spec
 
-doc:	
+doc:
 	$(MAKE) -C doc
-	
+
 # Download precompiled lean caches for mathlib/upstreams (idempotent)
 # Uses sentinel file to avoid re-downloading if cache already exists
 .lake/.cache-downloaded:

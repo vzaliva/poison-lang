@@ -7,7 +7,7 @@
 -- call entry — before the extern's own effects run — exactly as on the pfn side.
 -- Here `y` is a clean integer, so the gate accepts and the call runs: `@22`
 -- writes `42` into `errno`, and the subsequent deref observes it.
-let errno   = extern val @21 : (ref int :> clean {}) in
+let errno   = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
 let y       = 7 in
 let set_err = extern fn @22 n : (int :> clean {}) -> ((unit :> clean {})) ,
                 effects:  { !errno :> (int :> clean {}) } ,

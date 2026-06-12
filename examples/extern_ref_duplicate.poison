@@ -1,0 +1,6 @@
+-- Each extern id may be declared at most once per program: the
+-- fault-robustness proof realizes each registry-reserved address at most
+-- once.  The second declaration of @21 is rejected.
+let a = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
+let b = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
+!b

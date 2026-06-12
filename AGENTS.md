@@ -84,6 +84,8 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `ExternRuntime.lean` - Runtime extern event predicates living below the FR proof stack: `ExternDeclaration`, `ExternDeclBoundaryRun`, `ExternCallEntry`, `ExternCallBoundaryRun`, `ExternBoundaryWFRun`, and the operational safety contracts `ExternOperationalSafe` (per trusted entry, per-kind shape) and `RegistryOperationalSafe` (per runtime registry, consumed by `SemanticsProperties.lean`).
 - `ExternBoundary.lean` - Theorem-facing FR boundary contract layer (small, readable API): `BodyEntryInputsAgree`, `ExternBoundarySpec` (with `declFR`, `callFR`, `declSingle`, `callSingle`, `operational` fields), `TrustedExternEntry`, `TrustedRegistry` (with `toRuntimeRegistry`, `runtime_lookup_exists`, and the `operationalSafe` bridge proving `RegistryOperationalSafe` from `entry.spec.operational`), `TrustedRegistryAgreesWithReachable`, and reachability-domain inductives + navigation theorems.
 - `ExternBoundaryProofs.lean` - Proof-heavy adapters and reachability integration theorems split off from `ExternBoundary.lean` (kept above it in the import graph). Resolution variants of `TrustedRegistryAgreesWithReachable`, captured-environment/QTyp reachability namespaces, and call-boundary integration. Consumers needing these proof bodies (e.g. `FaultRobustnessProofs.lean`, `StepFRApp.lean`) import this file in addition to `ExternBoundary.lean`.
+- `ExternProofs.lean` - Concrete trusted entries for the shipped externs: the complete `ExternBoundarySpec`s (`builtinMax10Spec`, `builtinMax11CapturesSpec`, `builtinAbsSpec`, `builtinSetErrSpec`, `builtinErrnoSpec`, `builtinMemDerefSpec`, …), the `extern ref` declaration-boundary machinery, spec-level scenario programs/registries, and the interpreter↔proof registry agreement lemmas. Everything lives in the `ExternProofs` namespace; implementations are shared definitionally with the interpreter via `LeanPoison/ExternBuiltins.lean`.
+- `ExternRegimeInt.lean` - Extern-regime typechecking lemmas plus the program-level FR capstones that instantiate the top-level theorem at concrete trusted registries (`setErrWriteEffect_FR`, `errnoExternRef_FR`, `errnoScenario_FR`, all in the `ExternRegimeInt` namespace). Imports `FaultRobustnessProofs` and `ExternProofs`, so it sits at the very top of the proof stack.
 - `ExternTypingAssumptions.lean` - Semantic contracts for extern typechecking (the typing-side contract floor) used in fault-robustness.
 
 **Main properties:**
@@ -110,8 +112,10 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 
 ```
 Semantics → ExternRuntime → SemanticsProperties → StepFR → ExternBoundary → ExternBoundaryProofs
-                                                                                      ↓
-                                                              FaultRobustnessProofs (orchestration)
+                                                                │                     ↓
+                                                                │     FaultRobustnessProofs (orchestration)
+                                                                ↓                     ↓
+                                                          ExternProofs  →  ExternRegimeInt (program capstones)
 ```
 
 The split puts runtime extern event predicates and `RegistryOperationalSafe` *below* `StepFR` so `SemanticsProperties.lean` can consume them without an import cycle. FR-shaped contracts (`StepFRPost`-producing) live above `StepFR` in `ExternBoundary.lean`.

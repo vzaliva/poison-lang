@@ -267,22 +267,25 @@ syntax.
 \subsection{Implementation-specific extensions}
 
 The Lean implementation includes extern declarations (\texttt{extern val},
-\texttt{extern fn}, \texttt{extern pfn}) for external code and
-specification-driven test scenarios.  Each declaration carries a mandatory
-author-chosen natural-number identifier written \texttt{@N} immediately after
-the kind keyword:
+\texttt{extern ref}, \texttt{extern fn}, \texttt{extern pfn}) for external
+code and specification-driven test scenarios.  Each declaration carries a
+mandatory author-chosen natural-number identifier written \texttt{@N}
+immediately after the kind keyword:
 \begin{verbatim}
   extern val @7 : (int :> clean {})
+  extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {})
   extern fn  @5 x : (int :> clean {}) -> ((int :> poisoned { 1, v => v >= 0 }))
   extern pfn @6 u : (unit :> clean {}) -> ((int :> clean {}))
 \end{verbatim}
 Nested callable return descriptors use the same \texttt{@N} syntax and carry
 their own identifier.  These identifiers are the runtime handles used for
 registry lookup.  Source programs should not reuse the same identifier across
-multiple extern declarations, but the current implementation does not detect
-that source-level reuse: ids mentioned in the program are only looked up in the
-registry during evaluation.  The driver-side registry separately rejects
-duplicate registrations for the same identifier.
+multiple extern declarations; for \texttt{extern ref} the type checker
+enforces this (each id may be declared at most once per program, including
+across \texttt{if} arms), while for the other kinds the reuse is not detected:
+ids mentioned in the program are only looked up in the registry during
+evaluation.  The driver-side registry separately rejects duplicate
+registrations for the same identifier.
 
 At runtime, extern declarations are resolved against a registry provided by
 the driver.  The interpreter in \texttt{Main.lean} ships with three built-in
@@ -313,6 +316,57 @@ Reaching an extern identifier that the driver has not registered yields a
 runtime error naming the missing identifier.  The type checker rejects
 extern functions that return references, but it permits reference parameters
 and explicit effect specifications on referenced locations.
+
+\subsubsection*{Reference-valued externs (\texttt{extern ref})}
+\label{sec:extern-ref}
+
+An external memory cell with a stable address — the canonical example is
+\texttt{errno} — is declared with the dedicated reference form:
+\begin{verbatim}
+  extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {})
+\end{verbatim}
+The form carries two separate contracts.  The qualifier before
+\texttt{points\_to:} describes the \emph{reference value} the registry hands
+out (a stable, well-formed location).  The \texttt{points\_to:} qualifier
+describes the \emph{memory cell} behind the reference.  Typing allocates one
+fresh logical location for the cell, seeds it from the \texttt{points\_to:}
+qualifier, and gives the declaration the type \texttt{ref} at that location.
+\texttt{extern val} is reserved for scalar values; a ref-typed
+\texttt{extern val} is rejected, since it would conflate the two contracts.
+
+The conservative default — and in the current language the only accepted
+form — declares the cell \emph{poisoned}: nothing is assumed about the
+external cell's initial contents.  Cleanness is then established by writing
+through the reference (an ordinary assignment, or an extern write effect such
+as \texttt{set\_err}'s \texttt{!errno} effect), after which dereferences are
+clean as usual.
+
+\paragraph{Limitation: no clean \texttt{points\_to:} cells.}
+A trusted \emph{initialized} external cell —
+\texttt{points\_to: (int :> clean \{\})} — is rejected by the type checker,
+and this is a language limitation rather than a temporary gate: a clean cell
+asserts that paired runs agree on its contents, and that agreement must have
+a source.  A mid-evaluation declaration has none — the fault-robustness
+proof obligations for a freshly introduced clean cell are contradictory
+(the cell would have to be simultaneously unrealized, being fresh and clean,
+and realized, being the target of the returned reference).  Lifting the
+limitation requires representing pre-existing external cells in the initial
+typing context and input specification, so the declaration becomes a lookup
+rather than an allocation.  In practice little is lost: the
+declare-poisoned / write / read-clean flow covers the \texttt{errno} use
+case.
+
+Two placement restrictions keep the declaration sound for fault-robustness
+(each registry-reserved address is realized at most once per run): each
+extern id may be declared by \texttt{extern ref} at most once per program
+(including across \texttt{if} arms), and \texttt{extern ref} may not appear
+under \texttt{fn}/\texttt{pfn} bodies, whose application-time re-typing and
+re-evaluation would re-realize the address. The nesting rule is enforced
+where a body is typechecked: at declaration for \texttt{pfn} (pure bodies
+admit no extern declarations) and at application for \texttt{fn} (a
+never-applied \texttt{fn} body is not typechecked --- consistent with the
+language's deferred body typechecking --- and never evaluates, so the
+declaration never takes effect).
 
 Extern specifications use \emph{symbolic tag indices} rather than globally
 meaningful concrete tags. Each extern definition has its own local symbolic tag
@@ -793,7 +847,12 @@ let r = ref 0 in       -- Clean reference, clean data
 
 \subsubsection*{Poisoned references}
 \begin{lstlisting}[language=poison]
-let bad_ref = extern val : (ref int :> poisoned { 3 }) in  -- Poisoned reference
+let get_sensor =
+  extern fn u : (unit :> clean {}) -> ((int :> poisoned {}))
+in
+let r1 = ref 0 in
+let r2 = ref 1 in
+let bad_ref = if get_sensor unit > 0 then r1 else r2 in  -- Poisoned reference
 (!bad_ref;      -- Result: poisoned (untrusted reference)
 bad_ref := 42)  -- Poisons data at unknown location
 \end{lstlisting}

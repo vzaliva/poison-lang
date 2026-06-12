@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_ref_clean_cell.poison (verbose mode)
+
+Type checking error:
+  extern ref @24: clean 'points_to:' cells are not supported — a trusted initialized external cell would assert cross-run agreement that cannot be established at the declaration; declare the cell '(int :> poisoned {})' and re-establish cleanness through a write effect
+

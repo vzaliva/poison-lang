@@ -1288,7 +1288,8 @@ lemma stepFR_assign_with_expr_proof
 
           { ctxᵢ with
             memEnv := res1.memEnv', tagEnv := res1.tagEnv',
-            nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime' }
+            nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime',
+            declaredExternRefs := res1.declared' }
           e2 fuel' = .ok res2 := by
     simpa [Nat.succ_sub_one] using htc2
   have htc_full := htc'
@@ -1302,10 +1303,11 @@ lemma stepFR_assign_with_expr_proof
       nextLoc := res1.nextLoc'
       nextTag := res1.nextTag'
       regime := res1.regime'
+      declaredExternRefs := res1.declared'
   }
   have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
     simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
-  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hregCtx hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hregCtx hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have hinv₀ := terminatesTo_assign_inv' e1 e2 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hinv₀ with ⟨cfg₀1, cfg₀2, a₀w, n₀, ht₀_e1, ht₀_e2, ho₀, hmem₀, hvar₀, hnext₀, hpm₀⟩
   have hinv₁ := terminatesTo_assign_inv' e1 e2 { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
@@ -1314,9 +1316,10 @@ lemma stepFR_assign_with_expr_proof
     e1 ctxᵢ hctxCurrent hcan1 hwfTm htagBounded res1 htc1'
   have hstep_e1 :=
     hIH1 hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀1 cfg₁1 (Value.loc a₀w) (Value.loc a₁w)
-      hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hregCtx hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀_e1 ht₁_e1
+      hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hregCtx hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁
+      hres₀ hres₁ hrd₀ hrd₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
-  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hvtyp₀1, hvtyp₁1, hTm1, hwf1, _htagBounded1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, hregCtx1, hcwr₀1, hcwr₁1, hagree1, hvc₀1, hvc₁1, hres_agree1⟩
+  rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hvtyp₀1, hvtyp₁1, hTm1, hwf1, _htagBounded1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, hregCtx1, hcwr₀1, hcwr₁1, hagree1, hvc₀1, hvc₁1, hres_agree1, _hrd₀1, _hrd₁1⟩
   have hwfTm' : wfTagMeaningCtx tm1 ctx' := by
     simpa [ctx', ctxAfter] using hTm1
   have htagBounded' : TagBoundedCtx ctx' := by
@@ -1383,14 +1386,39 @@ lemma stepFR_assign_with_expr_proof
       { memory := cfg₁1.memory, varEnv := cfg₁1.varEnv, nextAddr := cfg₁1.nextAddr, pureMode := cfg₀1.pureMode, registry := registry } := by
     rw [← hcfg₁1_eq]
     exact hwfcf₁1
+  have hres₀1 : RegistryReservedWF registry cfg₀1.memory cfg₀1.nextAddr := by
+    apply RegistryReservedWF_mono hres₀
+    · exact terminatesTo_memory_contains_mono e1
+        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
+        cfg₀1 (Value.loc a₀w) hOp ht₀_e1
+    · exact terminatesTo_nextAddr_mono e1
+        { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
+        cfg₀1 (Value.loc a₀w) hOp ht₀_e1
+  have hres₁1 : RegistryReservedWF registry cfg₁1.memory cfg₁1.nextAddr := by
+    apply RegistryReservedWF_mono hres₁
+    · exact terminatesTo_memory_contains_mono e1
+        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }
+        cfg₁1 (Value.loc a₁w) hOp ht₁_e1
+    · exact terminatesTo_nextAddr_mono e1
+        { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }
+        cfg₁1 (Value.loc a₁w) hOp ht₁_e1
+  have hrd₀1' : ReservedDiscipline registry ctx'.declaredExternRefs θ₀1 := by
+    have hdecl : ctx'.declaredExternRefs = res1.declared' := by simp [ctx']
+    rw [hdecl]
+    simpa [hreg_cfg₀1] using _hrd₀1
+  have hrd₁1' : ReservedDiscipline registry ctx'.declaredExternRefs θ₁1 := by
+    have hdecl : ctx'.declaredExternRefs = res1.declared' := by simp [ctx']
+    rw [hdecl]
+    simpa [hreg_cfg₁1] using _hrd₁1
   have hstep_e2 :=
     hIH2 hpredlaws1 hExtTyping hwfTm' hTmBounded'
       cfg₀1.memory cfg₁1.memory cfg₀1.varEnv cfg₁1.varEnv θ₀1 θ₁1
       cfg₀2 cfg₁2 (Value.num n₀) (Value.num n₁)
       hθ₀1wf hθ₁1wf hwf_ctx' htagBounded' hric₀1' hric₁1' hregCtx1' hcwr₀1' hcwr₁1' hagree1'
-      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1' hwfcf₁1' ht₀_e2' ht₁_e2'
+      cfg₀1.nextAddr cfg₁1.nextAddr cfg₀1.pureMode hwfcf₀1' hwfcf₁1'
+      hres₀1 hres₁1 hrd₀1' hrd₁1' ht₀_e2' ht₁_e2'
   rcases hstep_e2 with ⟨tm2, hcanon2, hpredlaws2, hresTm2, hstep_e2⟩
-  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₀2, hv₁2, hTm2, hwf2, _htagBounded2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, hregCtx2, hcwr₀2, hcwr₁2, hagree2, hvc₀2, hvc₁2, hres_agree2⟩
+  rcases hstep_e2 with ⟨θ₀2, θ₁2, hθext₀2, hθext₁2, hv₀2, hv₁2, hTm2, hwf2, _htagBounded2, hwfcf₀2, hwfcf₁2, hric₀2, hric₁2, hregCtx2, hcwr₀2, hcwr₁2, hagree2, hvc₀2, hvc₁2, hres_agree2, _hrd₀2, _hrd₁2⟩
   have hresTm : QTypRespectsTagMeaning tm2 res.qualType := by
     have hnotfun : res.qualType.etyp.isFunctionType = false := by
       simp [hEtyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
@@ -1400,8 +1428,14 @@ lemma stepFR_assign_with_expr_proof
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm2 res.qualType hnotfun hguard) hinq hqd
   have hθext₀ : wfExtendsMap θ₀ θ₀2 := wfExtendsMap_trans hθext₀1 hθext₀2
   have hθext₁ : wfExtendsMap θ₁ θ₁2 := wfExtendsMap_trans hθext₁1 hθext₁2
-  have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.assign e1 e2) _ cf₀ o₀ hOp ht₀ hwfcfg₀).1
-  have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.assign e1 e2) _ cf₁ o₁ hOp ht₁ hwfcfg₁).1
+  have hwfcf₀_final : wfConfig cf₀ :=
+    (wfConfig_preserved (Expr.assign e1 e2)
+      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }
+      cf₀ o₀ hOp hres₀.toBelow ht₀ hwfcfg₀).1
+  have hwfcf₁_final : wfConfig cf₁ :=
+    (wfConfig_preserved (Expr.assign e1 e2)
+      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }
+      cf₁ o₁ hOp hres₁.toBelow ht₁ hwfcfg₁).1
   have hassign_eq :
       { qualType := { etyp := ETyp.unit, poison := joinPoison ctxᵢ.pc res1.qualType.poison, pred := Predicate.noPred }
         memEnv' :=
@@ -1418,7 +1452,8 @@ lemma stepFR_assign_with_expr_proof
         tagEnv' := invalidateTagDeps res2.tagEnv' ls
         nextLoc' := ls.fold res2.nextLoc' (fun acc l => max acc (l + 1))
         nextTag' := res2.nextTag'
-        regime' := invalidateRegimeDeps res2.regime' res2.tagEnv' ls } = res := by
+        regime' := invalidateRegimeDeps res2.regime' res2.tagEnv' ls
+        declared' := res2.declared' } = res := by
     cases hq1 : res1.qualType with
     | mk etyp1 p1 pred1 =>
         cases hq2 : res2.qualType with
@@ -1429,6 +1464,8 @@ lemma stepFR_assign_with_expr_proof
             have htc_assign_simp := htc'
             simp [typecheckAssign, htc1_expr, htc2_expr, hq1, hq2, hRef', hInt', bind, Except.bind, pure, Except.pure] at htc_assign_simp
             simpa [hq1, hq2] using htc_assign_simp
+  have h_ret_decl : res.declared' = res2.declared' :=
+    (congrArg TypeResult.declared' hassign_eq).symm
   have hmem_assign := congrArg TypeResult.memEnv' hassign_eq
   have htag_assign := congrArg TypeResult.tagEnv' hassign_eq
   have hmem_res :
@@ -3620,7 +3657,7 @@ lemma stepFR_assign_with_expr_proof
       by simpa [hNextTag] using BoundaryTagMeaningPost.bounded hcanon2,
       hTm_final, hresTm, hpredlaws2⟩
   refine ⟨tm2, hboundary_assign, hpredlaws2, hresTm, ?_⟩
-  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, hTm_final, hwf_final, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_final, ?_, ?_, ?_⟩
+  refine ⟨θ₀2, θ₁2, hθext₀, hθext₁, ?_, ?_, hTm_final, hwf_final, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_final, ?_, ?_, ?_, ?_, ?_⟩
   · subst ho₀
     simpa [hEtyp] using valueHasETyp.unit (θ := θ₀2)
   · subst ho₁
@@ -3664,6 +3701,22 @@ lemma stepFR_assign_with_expr_proof
       have : ETyp.unit = ETyp.ref ls' := by
         simpa [hEtyp] using ht.symm
       cases this
+  · -- ReservedDiscipline cf₀
+    have hreg_cf₀ : cf₀.registry = registry := by
+      simpa using terminatesTo_preserves_registry ht₀
+    have hreg_cfg₀2 : cfg₀2.registry = registry := by
+      have h := terminatesTo_preserves_registry ht₀_e2
+      rw [hreg_cfg₀1] at h; exact h
+    rw [h_ret_decl, hreg_cf₀]
+    simpa [hreg_cfg₀2] using _hrd₀2
+  · -- ReservedDiscipline cf₁
+    have hreg_cf₁ : cf₁.registry = registry := by
+      simpa using terminatesTo_preserves_registry ht₁
+    have hreg_cfg₁2 : cfg₁2.registry = registry := by
+      have h := terminatesTo_preserves_registry ht₁_e2
+      rw [hreg_cfg₁1] at h; exact h
+    rw [h_ret_decl, hreg_cf₁]
+    simpa [hreg_cfg₁2] using _hrd₁2
 
 lemma stepFR_assign
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -4499,7 +4552,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
 
           { ctx with
             memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-            nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime' }
+            nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime',
+            declaredExternRefs := result1.declared' }
           e2 fuel' = .ok result2 := by
     simpa [Nat.succ_sub_one] using htc2
   have htc1' : typecheck ctx e1 fuel' = .ok result1 := by
@@ -4512,7 +4566,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctx
         (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg _hres _hrd ht hpc
   have hinv := terminatesTo_assign_inv' e1 e2
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   rcases hinv with ⟨cfg1, cfg2, aw, n, ht_e1, ht_e2, ho, hmem, hvar, _hnext, _hpm⟩
@@ -4528,11 +4582,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
     typecheckExpr_preserves_regimeConsistentWithCtxMasked
       (masked := masked) ctx e1 fuel' result1 hregCtx htc1'
   have hwfcfg1 : wfConfig cfg1 := by
-    exact (wfConfig_preserved e1 _ cfg1 (Value.loc aw) hOp ht_e1 hwfcfg).1
+    exact (wfConfig_preserved e1
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+      cfg1 (Value.loc aw) hOp _hres.toBelow ht_e1 hwfcfg).1
   rcases
     hIH1Inst.2 μ ρ θ cfg1 (Value.loc aw)
-      hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg ht_e1 hpc
-    with ⟨θ1, hθext1, hvloc1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1⟩
+      hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg _hres _hrd ht_e1 hpc
+    with ⟨θ1, hθext1, hvloc1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1, _hrd1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hmono1 := regime_monotoneExt ctx e1 fuel' result1 htc1'
   have hmasked_none1 : ∀ k, masked k → (ctxAfter ctx result1).regime.lookup? k = none := by
@@ -4563,11 +4619,22 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
     rw [← hcfg1_eq]; exact hwfcfg1
   have ht_e2' : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode, registry := registry } cfg2 (Value.num n) := by
     rw [← hcfg1_eq]; exact ht_e2
+  have _hres1 : RegistryReservedWF registry cfg1.memory cfg1.nextAddr := by
+    apply RegistryReservedWF_mono _hres
+    · exact terminatesTo_memory_contains_mono e1
+        { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+        cfg1 (Value.loc aw) hOp ht_e1
+    · exact terminatesTo_nextAddr_mono e1
+        { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+        cfg1 (Value.loc aw) hOp ht_e1
+  have _hrd1' : ReservedDiscipline registry (ctxAfter ctx result1).declaredExternRefs θ1 := by
+    simp only [ctxAfter]
+    simpa [hreg_cfg1] using _hrd1
   rcases
     (hIH2 hpredlaws1 hExtTyping hTm1 hTmBounded1).2 cfg1.memory cfg1.varEnv θ1 cfg2 (Value.num n)
       hθ1wf hwf1 hric1 hreg1 hmasked_none1 hmasked_absent1 hmasked_bounded1 hbnd1 hctxCons1
-      cfg1.nextAddr cfg1.pureMode hwfcfg1' ht_e2' hpc1
-    with ⟨θ2, hθext2, hvnum2, hric2, hctxCons2, _hvalc2, hpres2, _hfresh2⟩
+      cfg1.nextAddr cfg1.pureMode hwfcfg1' _hres1 _hrd1' ht_e2' hpc1
+    with ⟨θ2, hθext2, hvnum2, hric2, hctxCons2, _hvalc2, hpres2, _hfresh2, _hrd2⟩
   have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
   have hθ2wf : wfRealizationMap θ2 := hθext2.2 hθ1wf
   have hvloc2 : valueHasETyp θ2 (Value.loc aw) result1.qualType.etyp := by
@@ -4588,7 +4655,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
         tagEnv' := invalidateTagDeps result2.tagEnv' ls
         nextLoc' := ls.fold result2.nextLoc' (fun acc l => max acc (l + 1))
         nextTag' := result2.nextTag'
-        regime' := invalidateRegimeDeps result2.regime' result2.tagEnv' ls } = res := by
+        regime' := invalidateRegimeDeps result2.regime' result2.tagEnv' ls
+        declared' := result2.declared' } = res := by
     cases hq1 : result1.qualType with
     | mk etyp1 p1 pred1 =>
         cases hq2 : result2.qualType with
@@ -4659,7 +4727,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
         hbnd1
         hmem_res hRegime hpc hvloc1 hθext2 hθ2wf hric2 hmem hpres1 hpres2
   have hwfcfg_final : wfConfig cf := by
-    exact (wfConfig_preserved (Expr.assign e1 e2) _ cf o hOp ht hwfcfg).1
+    exact (wfConfig_preserved (Expr.assign e1 e2)
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+      cf o hOp _hres.toBelow ht hwfcfg).1
   have hfresh_final : FreshCleanLocsUnrealizedOneRun ctx res θ2 := by
     intro l qt hnotIn hlookup hclean
     have h_not_in_ls : l ∉ ls := by
@@ -4758,6 +4828,17 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
       | both_unrealized _ hout => exact hout
       | preserve_value a n_val hin _ _ _ => simp [hθ1_none] at hin
     · exact _hfresh2 l qt hcontains_mid hlookup2 hclean2
-  refine ⟨θ2, hθext, ?_, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final⟩
-  subst ho
-  simpa [hEtyp] using valueHasETyp.unit (θ := θ2)
+  refine ⟨θ2, hθext, ?_, hric_final, hctxCons_final, hvalc_final, hpres_final, hfresh_final, ?_⟩
+  · subst ho
+    simpa [hEtyp] using valueHasETyp.unit (θ := θ2)
+  · -- ReservedDiscipline cf
+    have hreg_cf : cf.registry = registry := by
+      simpa using terminatesTo_preserves_registry ht
+    have h_ret_decl : res.declared' = result2.declared' :=
+      (congrArg TypeResult.declared' hassign_eq).symm
+    rw [h_ret_decl, hreg_cf]
+    have hreg_cfg2 : cfg2.registry = registry := by
+      have := terminatesTo_preserves_registry ht_e2
+      rw [hreg_cfg1] at this
+      exact this
+    simpa [hreg_cfg2] using _hrd2

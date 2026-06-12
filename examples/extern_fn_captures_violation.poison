@@ -7,7 +7,7 @@
 -- application `set_err 42` before the extern runs.  The argument `42` itself is
 -- clean and would pass the argument precondition; it is the *capture* gate that
 -- fails — the fn-side mirror of the pfn capture-gate rejection.
-let errno   = extern val @21 : (ref int :> clean {}) in
+let errno   = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
 let bad     = extern val @5  : (int :> poisoned {}) in
 let set_err = extern fn @22 n : (int :> clean {}) -> ((unit :> clean {})) ,
                 effects:  { !errno :> (int :> clean {}) } ,

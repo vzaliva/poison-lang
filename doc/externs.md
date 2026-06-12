@@ -169,25 +169,50 @@ trusted-surface expansion (a `PredSatLaws` guard-body-evaluation law, or a
 per-spec arithmetic precondition on the boundary) — a reserved design decision.
 Until that is taken, `@19` has no trusted spec.
 
-## `@21` — `errno` (extern value)
+## `@21` — `errno` (extern reference)
 
-**Kind:** `extern val`  
-**Trust:** Missing default trusted spec
+**Kind:** `extern ref`\
+**Trust:** Trusted (`ExternProofs.builtinErrnoSpec`; program FR in
+`LeanProofs/ExternRegimeInt.lean` — `ExternRegimeInt.errnoExternRef_FR` for
+the bare declaration and `ExternRegimeInt.errnoScenario_FR` for the combined
+`@21`/`@22` declare/write/read scenario)
 
 **Canonical declaration:**
 
 ```poison
-extern val @21 : (ref int :> clean {})
+extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {})
 ```
+
+The qualifier before `points_to:` describes the returned reference value; the
+`points_to:` qualifier describes the pointed-to memory cell. The conservative
+poisoned cell assumes nothing about the external cell's initial contents;
+cleanness is re-established by writing through the reference (an assignment or
+`@22`'s `!errno` write effect). The old ref-typed `extern val` spelling is
+rejected. Clean `points_to:` cells are a documented language limitation (see
+`doc/extern-write-effects.md`, "Limitation: no clean `points_to:` cells").
+`extern ref` declarations are unique per extern id per program and may not
+appear under `fn`/`pfn` bodies. The nesting rule is enforced where a body is
+typechecked: at declaration for `pfn` (pure bodies are converted via
+`toPExpr`, which has no extern-declaration form) and at application for `fn`
+(`fn` bodies are typechecked only when applied, so a never-applied `fn` whose
+body lexically contains an `extern ref` typechecks and runs — consistent with
+the language's deferred `fn`-body typechecking, under which *any* type error
+in a never-applied body goes undetected; such a body never evaluates, so the
+declaration never takes effect).
 
 **Implementation:** Driver-supplied reference to address `1000000`, initial cell
 value `0` in `defaultInitialState`.
 
-**Boundary contract (intended, not yet proved):** Initialized ref-valued extern;
-pairs with `@22` write effects. A trusted spec also needs an initial-state /
-address-cursor story: the executable default puts `errnoAddr` above the current
-`nextAddr`, while proof-side `wfConfig` and `ExternOperationalSafe` require stored
-reference values to be below the consumer's `nextAddr`. No trusted val spec yet.
+**Boundary contract:** Complete five-field `ExternBoundarySpec`
+(`ExternProofs.builtinErrnoSpec`, axioms `propext`/`Classical.choice`/
+`Quot.sound` only). The declaration fields produce the clean reference to the
+registry-reserved address and seed the poisoned `points_to:` cell typing; the
+call fields are vacuous (a reference extern is a declaration, not a callable);
+operational safety follows from `RegistryReservedWF` (the reserved cell is
+present and below the cursor in every run). The realization-map crux —
+injectivity of the θ-insert at the declaration — is discharged by the
+`ReservedDiscipline` invariant threaded through the step theorem rather than
+by a `wfConfig` fold.
 
 ## `@22` — `set_err` (impure)
 
@@ -198,7 +223,9 @@ reference values to be below the consumer's `nextAddr`. No trusted val spec yet.
 **Canonical declaration:**
 
 ```poison
-let errno = extern val @21 : (ref int :> clean {}) in
+let errno =
+  extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {})
+in
 extern fn @22 n : (int :> clean {}) -> ((unit :> clean {})),
   effects: { !errno :> (int :> clean {}) }
 ```
@@ -216,14 +243,13 @@ does not allocate (`nextAddr` unchanged).
 fields cover the produced extern closure. The call fields cover the immediate
 `unit` return and the typed post-state of the declared `effects:` block,
 `!errno :> (int :> clean {})`. Operational safety follows from the well-formed
-captured `errno` reference and the insertion-only memory update; `@22` itself
-does not need the reserved-address fold that still blocks trusting `@21`.
+captured `errno` reference and the insertion-only memory update.
 `ExternProofs.defaultRegistry_lookup_seterr` connects the interpreter's shipped
 `defaultRegistry` entry to the proven `setErrImpl`.
 
 The combined source scenario that first declares `@21` and then declares/calls
-`@22` still depends on a trusted `@21` `extern val` spec. See
-`doc/extern-write-effects.md` for that remaining work.
+`@22` is proven end to end: `ExternRegimeInt.errnoScenario_FR` instantiates
+the top-level theorem at the two-entry trusted registry.
 
 ## `@23` — `memDeref` (pure, memory read)
 
@@ -261,7 +287,7 @@ proof/registry work.
 | `@10` | pfn | `outerMaxImpl` | `builtinMax10Spec` |
 | `@11` | pfn | `innerMaxImpl` | `builtinMax11CapturesSpec` |
 | `@12` | pfn | `absImpl` | `builtinAbsSpec` |
-| `@21` | val | ref at `errnoAddr` | **missing** |
+| `@21` | ref | ref at `errnoAddr` | `builtinErrnoSpec` |
 | `@22` | fn | `setErrImpl` | `builtinSetErrSpec` |
 | `@19` | pfn | `sqrtImpl` | **missing** |
 | `@23` | pfn | `memDerefImpl` | `builtinMemDerefSpec` |

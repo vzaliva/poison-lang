@@ -1,0 +1,4 @@
+-- Clean `points_to:` cells are a documented language limitation: a trusted
+-- initialized external cell would assert cross-run agreement that no
+-- mid-evaluation declaration can supply.  Rejected by the typechecker.
+let cell = extern ref @24 : (ref int :> clean {}), points_to: (int :> clean {}) in !cell

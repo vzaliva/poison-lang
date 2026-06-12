@@ -196,6 +196,7 @@ module.exports = grammar({
 
     extern_expr: $ => prec.right(4, choice(
       $.extern_val,
+      $.extern_ref,
       $.extern_fn,
       $.extern_pfn
     )),
@@ -208,6 +209,23 @@ module.exports = grammar({
       ":",
       field("type", $.qtyp)
 
+    )),
+
+    // Reference-valued extern declaration: the first qualifier describes the
+    // returned reference value, the points_to: qualifier the pointed-to cell.
+    // The grammar keeps both qualifier slots general; the typechecker enforces
+    // the v1 gates (clean ref, poisoned cell).
+    extern_ref: $ => prec.left(seq(
+      "extern",
+      "ref",
+      "@",
+      field("id", $.number),
+      ":",
+      field("ref_type", $.qtyp),
+      ",",
+      "points_to",
+      ":",
+      field("cell_type", $.qtyp)
     )),
 
     extern_fn: $ => prec.left(seq(

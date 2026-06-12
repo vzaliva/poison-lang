@@ -1,0 +1,5 @@
+-- `extern ref` cannot appear in pure function bodies: pure bodies are
+-- restricted to pure expressions, and a reference-valued extern declaration
+-- is not one.
+let f = pfn x : int => (let r = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in !r) : int in
+f 1

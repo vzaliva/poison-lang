@@ -154,6 +154,7 @@ private theorem declRun_output_config_eq_input
     cₒ = cᵢ := by
   cases hrun with
   | val hfacts => exact hfacts.output_config
+  | ref hfacts => exact hfacts.output_config
   | fn hfacts => exact hfacts.output_config
   | pfn hfacts => exact hfacts.output_config
 
@@ -288,7 +289,7 @@ private theorem pureUnaryCleanInt_operational
     {d : ExternDeclaration} {impl : ExternImpl}
     (hspec : PureUnaryCleanIntSpec d impl) :
     ExternOperationalSafe d impl := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro implFn himpl env vArg mem addr vRaw mem' addr' _hrun
     have hbad : ExternImpl.pfn hspec.implPfn = ExternImpl.fn implFn :=
       hspec.impl_eq.symm.trans himpl
@@ -302,6 +303,10 @@ private theorem pureUnaryCleanInt_operational
     have hbad : ExternImpl.pfn hspec.implPfn = ExternImpl.val v :=
       hspec.impl_eq.symm.trans himpl
     exact False.elim (false_of_impl_pfn_eq_val hbad)
+  · intro implFn himpl
+    have hbad : ExternImpl.pfn hspec.implPfn = ExternImpl.fn implFn :=
+      hspec.impl_eq.symm.trans himpl
+    exact False.elim (false_of_impl_pfn_eq_fn hbad)
 
 private theorem boundaryTagMeaningPost_of_parts
     {ctx : TypeContext} {res : TypeResult} {predSat : PredSat}
@@ -348,12 +353,14 @@ private theorem stepFRPost_of_parts
         res.qualType cf₁.memory θ₁' o₁)
     (hresult :
       resultAgreesIfClean predSat (ctxAfter ctx res).regime
-        cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁) :
+        cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁)
+    (hrd₀ : ReservedDiscipline cf₀.registry res.declared' θ₀')
+    (hrd₁ : ReservedDiscipline cf₁.registry res.declared' θ₁') :
     StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁ := by
   refine ⟨tm', htag, htag.2.2.2.2, htag.2.2.2.1, θ₀', θ₁', ?_⟩
   exact
     ⟨hθ₀, hθ₁, htyp₀, htyp₁, htag.2.2.1, hwfCtx, hboundedCtx, hwfCfg₀, hwfCfg₁,
-      hric₀, hric₁, hreg, hcons₀, hcons₁, hagree, hvalc₀, hvalc₁, hresult⟩
+      hric₀, hric₁, hreg, hcons₀, hcons₁, hagree, hvalc₀, hvalc₁, hresult, hrd₀, hrd₁⟩
 
 private theorem externBoundarySinglePost_of_parts
     {ctx : TypeContext} {res : TypeResult} {predSat : PredSat}
@@ -370,9 +377,10 @@ private theorem externBoundarySinglePost_of_parts
       valueConsistentWithRegime predSat (ctxAfter ctx res).regime
         res.qualType cf.memory θ' o)
     (hpres : PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ')
-    (hfresh : FreshCleanLocsUnrealizedOneRun ctx res θ') :
+    (hfresh : FreshCleanLocsUnrealizedOneRun ctx res θ')
+    (hrd : ReservedDiscipline cf.registry res.declared' θ') :
     ExternBoundarySinglePost ctx res predSat tm θ μ cf o := by
-  exact ⟨tm', htag, θ', hθ, htyp, hric, hcons, hvalc, hpres, hfresh⟩
+  exact ⟨tm', htag, θ', hθ, htyp, hric, hcons, hvalc, hpres, hfresh, hrd⟩
 
 private theorem externBoundarySinglePost_of_same_state
     {ctx : TypeContext} {res : TypeResult} {predSat : PredSat}
@@ -386,12 +394,13 @@ private theorem externBoundarySinglePost_of_same_state
     (htyp : valueHasETyp θ o res.qualType.etyp)
     (hric : runtimeInstantiatesCtx ctx μ ρ θ)
     (hcons : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
-    (hvalc : valueConsistentWithRegime predSat ctx.regime res.qualType μ θ o) :
+    (hvalc : valueConsistentWithRegime predSat ctx.regime res.qualType μ θ o)
+    (hrd : ReservedDiscipline cf.registry res.declared' θ) :
     ExternBoundarySinglePost ctx res predSat tm θ μ cf o := by
   refine
     externBoundarySinglePost_of_parts (ctx := ctx) (res := res) (predSat := predSat)
       (tm := tm) (tm' := tm') (θ := θ) (θ' := θ) (μ := μ) (cf := cf) (o := o)
-      htag ?_ htyp ?_ ?_ ?_ ?_ ?_
+      htag ?_ htyp ?_ ?_ ?_ ?_ ?_ hrd
   · exact ⟨fun _ _ hlookup => hlookup, fun hθwf => hθwf⟩
   · simpa [hctxAfter, hcf] using hric
   · simpa [hctxAfter, hcf] using hcons

@@ -87,6 +87,35 @@ theorem RegistryReservedBelow_emptyExternRegistry (n : Address) :
   intro a ⟨id, hid⟩
   simp [emptyExternRegistry] at hid
 
+/-- Registry-reserved-cell well-formedness: every registry-reserved address is
+    present in memory and below the address cursor.  This is the standalone
+    config-indexed predicate of doc/extern-write-effects.md — deliberately NOT
+    folded into `wfConfig` (which stays registry-agnostic; see the note there).
+    Both conjuncts are monotone along evaluation: memory only inserts/updates
+    and `nextAddr` only grows, so `RegistryReservedWF_mono` re-establishes the
+    invariant across any evaluation prefix. -/
+def RegistryReservedWF (reg : ExternRegistry) (μ : Memory) (next : Address) : Prop :=
+  ∀ a, ReservedAddr reg a → μ.contains a ∧ a < next
+
+theorem RegistryReservedWF.toBelow {reg : ExternRegistry} {μ : Memory} {next : Address}
+    (h : RegistryReservedWF reg μ next) : RegistryReservedBelow reg next :=
+  fun a ha => (h a ha).2
+
+/-- Monotonicity along evaluation: a memory that preserves containment and a
+    non-decreasing cursor keep the reserved cells well-formed. -/
+theorem RegistryReservedWF_mono {reg : ExternRegistry} {μ μ' : Memory} {n n' : Address}
+    (h : RegistryReservedWF reg μ n)
+    (hmem : ∀ a, μ.contains a → μ'.contains a)
+    (hle : n ≤ n') :
+    RegistryReservedWF reg μ' n' :=
+  fun a ha => ⟨hmem a (h a ha).1, Nat.lt_of_lt_of_le (h a ha).2 hle⟩
+
+/-- The empty registry reserves nothing. -/
+theorem RegistryReservedWF_emptyExternRegistry (μ : Memory) (n : Address) :
+    RegistryReservedWF emptyExternRegistry μ n := by
+  intro a ⟨id, hid⟩
+  simp [emptyExternRegistry] at hid
+
 /-- A runtime configuration is well-formed if:
     (1) all addresses in memory are below nextAddr, and
     (2) all values in varEnv only reference addresses below nextAddr.

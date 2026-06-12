@@ -236,6 +236,13 @@ inductive Expr : Type where
      `externFn`/`externPfn` carry the argument precondition as the surface
      triple `Typ → Bool → SyntaxPredicate` (after the argument name). -/
   | externVal : ExternId → Typ → Bool → SyntaxPredicate → Expr
+  /- `externRef id refPoison refPred cellPoison cellPred` is a reference-valued
+     extern declaration: `extern ref @id : (ref int :> q {p}), points_to:
+     (int :> q' {p'})`.  The first qualifier pair describes the returned
+     reference value, the `points_to:` pair the pointed-to memory cell.  The
+     surface types are fixed (`ref int` / `int`) since memory stores only
+     integers. -/
+  | externRef : ExternId → Bool → SyntaxPredicate → Bool → SyntaxPredicate → Expr
   | externFn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Effect → List Capture → Expr
   | externPfn : ExternId → Name → Typ → Bool → SyntaxPredicate → ExternReturn → List Capture → Expr
 
@@ -326,6 +333,9 @@ def beqExpr : Expr → Expr → Bool
   | Expr.app e1 e2, Expr.app e1' e2' => beqExpr e1 e1' && beqExpr e2 e2'
   | Expr.externVal id1 t1 p1 pred1, Expr.externVal id2 t2 p2 pred2 =>
       id1 == id2 && t1 == t2 && p1 == p2 && beqSyntaxPredicate pred1 pred2
+  | Expr.externRef id1 rp1 rpred1 cp1 cpred1, Expr.externRef id2 rp2 rpred2 cp2 cpred2 =>
+      id1 == id2 && rp1 == rp2 && beqSyntaxPredicate rpred1 rpred2
+        && cp1 == cp2 && beqSyntaxPredicate cpred1 cpred2
   | Expr.externFn id1 x1 t1 ap1 apred1 ret1 eff1 cap1, Expr.externFn id2 x2 t2 ap2 apred2 ret2 eff2 cap2 =>
       id1 == id2 && x1 == x2 && t1 == t2 && ap1 == ap2 && beqSyntaxPredicate apred1 apred2
         && beqExternReturn ret1 ret2 && beqEffectList eff1 eff2 && beqCaptureList cap1 cap2

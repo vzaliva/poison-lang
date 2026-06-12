@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_ref_under_fn.poison (verbose mode)
+
+Type checking error: extern ref @21: reference-valued extern declarations may not appear under fn/pfn bodies
+

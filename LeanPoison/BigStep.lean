@@ -275,6 +275,16 @@ mutual
             if valueMatchesTyp v typ then .success config v
             else .runtimeError (ExternError.format (.shapeMismatch id))
         | some _ => .runtimeError (ExternError.format (.kindMismatch id))
+      | Expr.externRef id _refPoison _refPred _cellPoison _cellPred =>
+        -- A reference-valued extern: the registry supplies a stable location
+        -- value for the external cell (e.g. `errno`).  Runtime behaviour is
+        -- identical to `extern val` at type `ref int`.
+        match config.registry.get? id with
+        | none => .runtimeError (ExternError.format (.missing id))
+        | some (ExternImpl.val v) =>
+            if valueMatchesTyp v (Typ.ref Typ.int) then .success config v
+            else .runtimeError (ExternError.format (.shapeMismatch id))
+        | some _ => .runtimeError (ExternError.format (.kindMismatch id))
       | Expr.externFn id argName argTyp argPoison argPred retSpec effects captures =>
         match config.registry.get? id with
         | none => .runtimeError (ExternError.format (.missing id))

@@ -334,6 +334,10 @@ mutual
     | Expr.externVal id typ poison pred =>
         show (id == id && typ == typ && poison == poison && beqSyntaxPredicate pred pred) = true from by
           rw [Typ_beq_refl typ, beqSyntaxPredicate_refl pred]; simp
+    | Expr.externRef id refPoison refPred cellPoison cellPred =>
+        show (id == id && refPoison == refPoison && beqSyntaxPredicate refPred refPred
+              && cellPoison == cellPoison && beqSyntaxPredicate cellPred cellPred) = true from by
+          rw [beqSyntaxPredicate_refl refPred, beqSyntaxPredicate_refl cellPred]; simp
     | Expr.externFn id arg argTyp argPoison argPred retSpec effects cap =>
         show (id == id && arg == arg && argTyp == argTyp && argPoison == argPoison && beqSyntaxPredicate argPred argPred && beqExternReturn retSpec retSpec && beqEffectList effects effects && beqCaptureList cap cap) = true from by
           rw [Typ_beq_refl argTyp, beqSyntaxPredicate_refl argPred, beqExternReturn_refl retSpec, beqEffectList_refl effects, beqCaptureList_refl cap]; simp
@@ -520,6 +524,17 @@ mutual
         have : poison1 = poison2 := of_decide_eq_true h_poison
         have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
         subst_vars; rfl
+    | Expr.externRef id1 rp1 rpred1 cp1 cpred1, Expr.externRef id2 rp2 rpred2 cp2 cpred2 => fun h => by
+        change (id1 == id2 && rp1 == rp2 && beqSyntaxPredicate rpred1 rpred2
+                && cp1 == cp2 && beqSyntaxPredicate cpred1 cpred2) = true at h
+        simp only [Bool.and_eq_true] at h
+        obtain ⟨⟨⟨⟨h_id, h_rp⟩, h_rpred⟩, h_cp⟩, h_cpred⟩ := h
+        have : id1 = id2 := of_decide_eq_true h_id
+        have : rp1 = rp2 := of_decide_eq_true h_rp
+        have : rpred1 = rpred2 := beqSyntaxPredicate_sound rpred1 rpred2 h_rpred
+        have : cp1 = cp2 := of_decide_eq_true h_cp
+        have : cpred1 = cpred2 := beqSyntaxPredicate_sound cpred1 cpred2 h_cpred
+        subst_vars; rfl
     | Expr.externFn id1 arg1 argTyp1 argPoison1 argPred1 retSpec1 effects1 cap1, Expr.externFn id2 arg2 argTyp2 argPoison2 argPred2 retSpec2 effects2 cap2 => fun h => by
         change (id1 == id2 && arg1 == arg2 && argTyp1 == argTyp2 && argPoison1 == argPoison2 && beqSyntaxPredicate argPred1 argPred2 && beqExternReturn retSpec1 retSpec2 && beqEffectList effects1 effects2 && beqCaptureList cap1 cap2) = true at h
         simp only [Bool.and_eq_true] at h
@@ -546,6 +561,44 @@ mutual
         have : cap1 = cap2 := beqCaptureList_sound cap1 cap2 h_cap
         subst_vars; rfl
     -- All mismatched constructor pairs return contradiction
+    | .unit, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .unit => fun h => by have : false = true := h; contradiction
+    | .num _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .num _ => fun h => by have : false = true := h; contradiction
+    | .bool _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .bool _ => fun h => by have : false = true := h; contradiction
+    | .str _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .str _ => fun h => by have : false = true := h; contradiction
+    | .var _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .var _ => fun h => by have : false = true := h; contradiction
+    | .op _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .op _ _ _ => fun h => by have : false = true := h; contradiction
+    | .unaryop _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .unaryop _ _ => fun h => by have : false = true := h; contradiction
+    | .ite _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .ite _ _ _ => fun h => by have : false = true := h; contradiction
+    | .newRef _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .newRef _ => fun h => by have : false = true := h; contradiction
+    | .assign _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .assign _ _ => fun h => by have : false = true := h; contradiction
+    | .deref _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .deref _ => fun h => by have : false = true := h; contradiction
+    | .seq _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .seq _ _ => fun h => by have : false = true := h; contradiction
+    | .vlet _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .vlet _ _ _ => fun h => by have : false = true := h; contradiction
+    | .fn _ _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .fn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .pfn _ _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .pfn _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .app _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
+    | .externVal _ _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .externVal _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externFn _ _ _ _ _ _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .externFn _ _ _ _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externPfn _ _ _ _ _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+    | .externRef _ _ _ _ _, .externPfn _ _ _ _ _ _ _ => fun h => by have : false = true := h; contradiction
     -- Mismatched constructor wildcards (552 total - auto-generated)
     | .unit, .num _ => fun h => by have : false = true := h; contradiction
     | .unit, .bool _ => fun h => by have : false = true := h; contradiction

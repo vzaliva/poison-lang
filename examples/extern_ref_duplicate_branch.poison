@@ -1,0 +1,10 @@
+-- The duplicate-declaration rule applies across `if` arms too: the declared
+-- set threads serially through branch typechecking (the else arm sees the
+-- then arm's declarations), so this is rejected even though only one arm
+-- would evaluate.
+let x =
+  if true then
+    let a = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in !a
+  else
+    let b = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in !b
+in x

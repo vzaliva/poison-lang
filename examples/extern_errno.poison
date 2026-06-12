@@ -1,3 +1,4 @@
--- Test: built-in extern val @21 (errno : ref int) is dereferenced to its
--- driver-supplied initial value (0).
-let errno = extern val @21 : (ref int :> clean {}) in !errno
+-- Test: built-in extern ref @21 (errno : ref int) is dereferenced to its
+-- driver-supplied initial value (0); the conservatively poisoned points_to:
+-- cell makes the result poison-qualified.
+let errno = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in !errno

@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_ref_duplicate.poison (verbose mode)
+
+Type checking error: extern ref @21: duplicate declaration; each extern id may be declared at most once per program
+

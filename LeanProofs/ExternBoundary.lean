@@ -41,6 +41,8 @@ structure BodyEntryInputsAgree
       entry₁.bodyConfig.memory entry₁.bodyConfig.varEnv θ₁
   wfConfig₀ : wfConfig entry₀.bodyConfig
   wfConfig₁ : wfConfig entry₁.bodyConfig
+  reserved₀ : ReservedDiscipline entry₀.bodyConfig.registry ctx.declaredExternRefs θ₀
+  reserved₁ : ReservedDiscipline entry₁.bodyConfig.registry ctx.declaredExternRefs θ₁
 
 namespace ExternBoundaryTyping
 
@@ -54,6 +56,15 @@ inductive Decl : ExternDeclaration → Expr → TypeContext → TypeResult → P
         { id := id, kind := .val, typ := typ, argName := none, retSpec := none,
           effects := [], preds := [pred], argPoison := false }
         (Expr.externVal id typ poison pred) ctx res
+  | ref {ctx : TypeContext} {fuel : Nat} {id : ExternId}
+      {refPoison : Bool} {refPred : SyntaxPredicate}
+      {cellPoison : Bool} {cellPred : SyntaxPredicate} {res : TypeResult} :
+      typecheck ctx (Expr.externRef id refPoison refPred cellPoison cellPred) fuel = .ok res →
+      Decl
+        { id := id, kind := .ref, typ := Typ.ref Typ.int, argName := none, retSpec := none,
+          effects := [], preds := [refPred, cellPred], argPoison := false,
+          refPoison := refPoison, cellPoison := cellPoison }
+        (Expr.externRef id refPoison refPred cellPoison cellPred) ctx res
   | fn {ctx : TypeContext} {fuel : Nat} {id : ExternId} {x : Name}
       {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate}
       {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
@@ -107,7 +118,9 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
           tagEnv := bodyState.tagEnv'
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := bodyState.regime' } →
+          regime := bodyState.regime'
+          externRefAllowed := false
+          declaredExternRefs := bodyState.declared' } →
       applyFnTClosureAtCursor (FnTClosure.extern id x retSpec effects tenv declaredArgQt captures)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res →
       Call
@@ -141,7 +154,9 @@ inductive Call : ExternDeclaration → Expr → ExternCallEntry → TypeResult �
           pureCtx := true
           nextTag := cursor.1
           nextLoc := cursor.2
-          regime := bodyState.regime' } →
+          regime := bodyState.regime'
+          externRefAllowed := false
+          declaredExternRefs := bodyState.declared' } →
       applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt captures)
         st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res →
       -- `bodyCaptures` records only the runtime closure body AST shape; it is
@@ -182,6 +197,10 @@ def ExternDeclBoundaryFR
                    registry := registry } →
         wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
                    registry := registry } →
+        RegistryReservedWF registry μ₀ a₀ →
+        RegistryReservedWF registry μ₁ a₁ →
+        ReservedDiscipline registry ctx.declaredExternRefs θ₀ →
+        ReservedDiscipline registry ctx.declaredExternRefs θ₁ →
         ExternDeclBoundaryRunForExpr postExpr d impl ctx res
           { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
             registry := registry } cf₀ o₀ →
@@ -228,7 +247,8 @@ def ExternBoundarySinglePost
     valueConsistentWithRegime predSat (ctxAfter ctx res).regime
       res.qualType cf.memory θ' o ∧
     PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
-    FreshCleanLocsUnrealizedOneRun ctx res θ'
+    FreshCleanLocsUnrealizedOneRun ctx res θ' ∧
+    ReservedDiscipline cf.registry res.declared' θ'
 
 namespace ExternBoundarySinglePost
 
@@ -257,10 +277,10 @@ theorem to_maskedRegParamPost
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
       ctx res (registry := registry) μ ρ θ cf o
       hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg := by
-  rcases h with ⟨_tm', _htag, θ', hθext, hvtyp, hric', hcwr', hvalc', hpres, hfresh⟩
+  rcases h with ⟨_tm', _htag, θ', hθext, hvtyp, hric', hcwr', hvalc', hpres, hfresh, hrd⟩
   exact
     ⟨θ', hθext, hvtyp, hric', consistentWithRegime_to_masked hcwr',
-      valueConsistentWithRegime_to_masked hvalc', hpres, hfresh⟩
+      valueConsistentWithRegime_to_masked hvalc', hpres, hfresh, hrd⟩
 
 end ExternBoundarySinglePost
 
@@ -282,6 +302,8 @@ def ExternDeclBoundarySingle
       ∀ (a : Address) (pm : Bool) (registry : ExternRegistry),
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
                    registry := registry } →
+        RegistryReservedWF registry μ a →
+        ReservedDiscipline registry ctx.declaredExternRefs θ →
         ExternDeclBoundaryRun d impl ctx res
           { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
             registry := registry } cf o →
@@ -305,6 +327,7 @@ def ExternCallBoundarySingle
       consistentWithRegime predSat ctx.regime ctx
         entry.bodyConfig.memory entry.bodyConfig.varEnv θ →
       wfConfig entry.bodyConfig →
+      ReservedDiscipline entry.bodyConfig.registry ctx.declaredExternRefs θ →
       ExternCallBoundaryRun d impl entry res cf o →
       ctx.pc = true →
       ExternBoundarySinglePost ctx res predSat tm θ entry.bodyConfig.memory
@@ -344,6 +367,8 @@ def ExternDeclBoundarySingleMaskedContract
       (hwfcfg :
         wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
                    registry := registry}) →
+      RegistryReservedWF registry μ a →
+      ReservedDiscipline registry ctx.declaredExternRefs θ →
       ExternDeclBoundaryRun d impl ctx res
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
           registry := registry } cf o →
@@ -363,7 +388,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_spec
     ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm registry
       d impl := by
   intro hpredlaws _hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-    hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun hpc
+    hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun hpc
   have hregOrd : regimeConsistentWithCtx ctx :=
     regimeConsistentWithCtxMasked_unmask hreg hmasked_absent
   have hctxConsOrd :
@@ -372,7 +397,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_spec
   have hsingle :
       ExternBoundarySinglePost ctx res predSat tm θ μ cf o :=
     hspec.declSingle postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
-      μ ρ θ cf o hθwf hwf hric hregOrd hctxConsOrd a pm registry hwfcfg hrun hpc
+      μ ρ θ cf o hθwf hwf hric hregOrd hctxConsOrd a pm registry hwfcfg hres hrd hrun hpc
   exact
     ExternBoundarySinglePost.to_maskedRegParamPost
       (masked := masked) (ctx := ctx) (res := res) (predSat := predSat)
@@ -408,6 +433,10 @@ def ExternDeclBoundaryFRContract
                  registry := registry } →
       wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
                  registry := registry } →
+      RegistryReservedWF registry μ₀ a₀ →
+      RegistryReservedWF registry μ₁ a₁ →
+      ReservedDiscipline registry ctx.declaredExternRefs θ₀ →
+      ReservedDiscipline registry ctx.declaredExternRefs θ₁ →
       ExternDeclBoundaryRunForExpr postExpr d impl₀ ctx res
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
           registry := registry } cf₀ o₀ →
@@ -425,12 +454,12 @@ theorem ExternDeclBoundaryFRContract.of_spec
       d impl impl := by
   intro hpredlaws _hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
-    a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+    a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁
   exact
     hspec.declFR postExpr ctx res predSat tm htyped hpredlaws hwfTm hTmBounded
       μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded
       hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm
-      registry hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+      registry hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁
 
 structure TrustedExternEntry where
   decl : ExternDeclaration
@@ -507,7 +536,7 @@ theorem runtime_lookup_exists
     `runtime_lookup_exists`. -/
 theorem operationalSafe (tr : TrustedRegistry) :
     RegistryOperationalSafe (TrustedRegistry.toRuntimeRegistry tr) := by
-  refine ⟨?fnMono, ?fnWf, ?pfn, ?val⟩
+  refine ⟨?fnMono, ?fnWf, ?pfn, ?val, ?fnMemMono⟩
   case fnMono =>
     intro id implFn hlookup env vArg mem addr vRaw mem' addr' himpl
     rcases runtime_lookup_exists hlookup with ⟨entry, _, himplEq⟩
@@ -530,9 +559,18 @@ theorem operationalSafe (tr : TrustedRegistry) :
     exact entry.spec.operational.2.1 implPfn himplEq
       env vArg mem addr vRaw himpl hmem hwfenv hwfarg
   case val =>
-    intro cfg hwfcfg _hreg id v hlookup
+    intro cfg hwfcfg hreg hbelow id v hlookup
     rcases runtime_lookup_exists hlookup with ⟨entry, _, himplEq⟩
-    exact entry.spec.operational.2.2 v himplEq cfg hwfcfg
+    refine entry.spec.operational.2.2.1 v himplEq cfg id hwfcfg ?_ ?_
+    · rw [hreg, himplEq]
+      exact hlookup
+    · rw [hreg]
+      exact hbelow
+  case fnMemMono =>
+    intro id implFn hlookup env vArg mem addr vRaw mem' addr' himpl a hc
+    rcases runtime_lookup_exists hlookup with ⟨entry, _, himplEq⟩
+    exact entry.spec.operational.2.2.2 implFn himplEq
+      env vArg mem addr vRaw mem' addr' himpl a hc
 
 end TrustedRegistry
 
@@ -570,6 +608,11 @@ inductive ExternDeclarationInProgram : Expr → ExternId → ExternDeclaration �
       ExternDeclarationInProgram (Expr.externVal id typ poison pred) id
         { id := id, kind := .val, typ := typ, argName := none, retSpec := none,
           effects := [], preds := [pred], argPoison := false }
+  | externRef {id refPoison refPred cellPoison cellPred} :
+      ExternDeclarationInProgram (Expr.externRef id refPoison refPred cellPoison cellPred) id
+        { id := id, kind := .ref, typ := Typ.ref Typ.int, argName := none, retSpec := none,
+          effects := [], preds := [refPred, cellPred], argPoison := false,
+          refPoison := refPoison, cellPoison := cellPoison }
   | externFn {id x argTyp argPoison argPred retSpec eff} :
       ExternDeclarationInProgram (Expr.externFn id x argTyp argPoison argPred retSpec eff cap) id
         { id := id, kind := .fn, typ := argTyp, argName := some x, retSpec := some retSpec,
@@ -670,6 +713,7 @@ theorem id_eq
     d.id = id := by
   induction h with
   | externVal => rfl
+  | externRef => rfl
   | externFn => rfl
   | externFn_return hret => exact ExternDeclarationInReturn.id_eq hret
   | externPfn => rfl

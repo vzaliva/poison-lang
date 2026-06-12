@@ -531,19 +531,25 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
     ctxᵢ (Expr.var name) res predSat tm (registry := registry) := by
   have htc' : typecheckVar ctxᵢ name = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
+  have hdeclared : res.declared' = ctxᵢ.declaredExternRefs := by
+    have htc'' := htc'
+    simp [typecheckVar] at htc''
+    split at htc'' <;>
+      (repeat (first | split at htc'' | simp [pure, Except.pure, throw] at htc'' | cases htc'' | rfl))
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter,
       typecheckVar_preserves_memEnv ctxᵢ name res htc',
       typecheckVar_preserves_tagEnv ctxᵢ name res htc',
       typecheckVar_preserves_nextLoc ctxᵢ name res htc',
       typecheckVar_preserves_nextTag ctxᵢ name res htc',
-      typecheckVar_preserves_regime ctxᵢ name res htc']
+      typecheckVar_preserves_regime ctxᵢ name res htc',
+      hdeclared]
   intro hpredlaws hExtTyping hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
         (Expr.var name) (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hmasked_absent _hmasked_bounded _hbnd hctxCons a pm hwfcfg ht _hpc
+  intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hmasked_absent _hmasked_bounded _hbnd hctxCons a pm hwfcfg _hres _hrd ht _hpc
   rcases
     terminatesTo_var_inv' name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
@@ -559,13 +565,18 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
     exact
       stepFRVar_ctxToValCons_masked masked predSat
         ctxᵢ name res μ ρ θ v htc' hlookup hctxCons
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_, ?_⟩
+  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_, ?_, ?_⟩
   · exact ⟨fun _ _ hlookup => hlookup, fun hθwf' => hθwf'⟩
   · simpa [hctxAfter] using hric
   · simpa [hctxAfter] using hctxCons
   · simpa [hctxAfter] using
       (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctxᵢ) (res := res) (ρ := ρ) hric)
   · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+  · -- ReservedDiscipline for θ'
+    have hdecl : res.declared' = ctxᵢ.declaredExternRefs := by
+      have := congrArg TypeContext.declaredExternRefs hctxAfter
+      simpa [ctxAfter] using this
+    rwa [hdecl]
 
 lemma stepFR_var
   
@@ -573,7 +584,7 @@ lemma stepFR_var
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFR ctxᵢ (Expr.var name) res predSat tm (registry := registry) := by
-  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' name
@@ -796,7 +807,7 @@ lemma stepFR_var
     · simpa [hnextTag] using hTmBounded
     · simpa [ctxAfter, hmem] using hwfTm
   refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
@@ -1447,3 +1458,17 @@ lemma stepFR_var
                             cases this
                         | guard k_guard htag_guard hreg_guard _ =>
                             simp [qtypGuardTag, hres] at htag_guard
+  · -- ReservedDiscipline for θ₀'
+    have hdecl : res.declared' = ctxᵢ.declaredExternRefs := by
+      have htcx := htc'
+      simp [typecheckVar] at htcx
+      split at htcx <;>
+        (repeat (first | split at htcx | simp [pure, Except.pure, throw] at htcx | cases htcx | rfl))
+    rwa [hdecl]
+  · -- ReservedDiscipline for θ₁'
+    have hdecl : res.declared' = ctxᵢ.declaredExternRefs := by
+      have htcx := htc'
+      simp [typecheckVar] at htcx
+      split at htcx <;>
+        (repeat (first | split at htcx | simp [pure, Except.pure, throw] at htcx | cases htcx | rfl))
+    rwa [hdecl]

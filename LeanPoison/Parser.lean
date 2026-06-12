@@ -410,6 +410,26 @@ mutual
                 | none => .error s!"Invalid extern_val id: {idStr}"
             | _ => .error "Invalid extern_val content"
 
+          | [Element.Element "extern_ref" _ externRefContent] =>
+            let contsFiltered := externRefContent.filterMap (fun
+              | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
+              | Content.Element e => some e
+              | _ => none)
+            match contsFiltered.toList with
+            | [Element.Element "number" _ #[Content.Character idStr], eRef, eCell] =>
+                match idStr.trimAscii.toString.toNat? with
+                | some id =>
+                    let (refTyp, refPoison, refPred) ← xmlToQTyp eRef
+                    let (cellTyp, cellPoison, cellPred) ← xmlToQTyp eCell
+                    if refTyp != Typ.ref Typ.int then
+                      .error "extern ref: the reference type must be 'ref int' (memory stores only integers)"
+                    else if cellTyp != Typ.int then
+                      .error "extern ref: the points_to: cell type must be 'int' (memory stores only integers)"
+                    else
+                      return Expr.externRef id refPoison refPred cellPoison cellPred
+                | none => .error s!"Invalid extern_ref id: {idStr}"
+            | _ => .error "Invalid extern_ref content"
+
 /- | externFn : Name → Typ → ExternReturn → List Effect → Expr
    | externPfn : Name → Typ → ExternReturn → Expr
    -- Effect specification for impure externs (uses SyntaxPredicate)

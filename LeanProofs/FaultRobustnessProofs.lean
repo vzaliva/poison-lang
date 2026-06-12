@@ -344,22 +344,27 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
   (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
     CtxReach ctx → CtxReach (ctxAfter ctx res))
   (hctxTagTrue :
-    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps},
-      CtxReach ctx → CtxReach { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ })
+    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {declared : List ExternId},
+      CtxReach ctx →
+        CtxReach { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                            declaredExternRefs := declared })
   (hctxTagFalseNext :
-    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {nextLoc nextTag : Nat},
+    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {nextLoc nextTag : Nat}
+      {declared : List ExternId},
       CtxReach ctx →
         CtxReach
           { ctx with
             tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
             nextLoc := nextLoc,
-            nextTag := nextTag })
+            nextTag := nextTag,
+            declaredExternRefs := declared })
   (hctxAfterPc :
     ∀ {ctx : TypeContext} {res : TypeResult} {pc : Poison},
       CtxReach ctx → CtxReach { ctxAfter ctx res with pc := pc })
   (hctxNext :
-    ∀ {ctx : TypeContext} {nextLoc nextTag : Nat},
-      CtxReach ctx → CtxReach { ctx with nextLoc := nextLoc, nextTag := nextTag })
+    ∀ {ctx : TypeContext} {nextLoc nextTag : Nat} {declared : List ExternId},
+      CtxReach ctx → CtxReach { ctx with nextLoc := nextLoc, nextTag := nextTag,
+                                         declaredExternRefs := declared })
   (hctxVletBody :
     ∀ {ctx : TypeContext} {vname : Name} {e1 : Expr} {fuel : Nat}
       {res1 : TypeResult} {bodyCtx : TypeContext},
@@ -373,7 +378,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
           tagEnv := res1.tagEnv',
           nextLoc := res1.nextLoc',
           nextTag := res1.nextTag',
-          regime := res1.regime' } : TypeContext) →
+          regime := res1.regime',
+          declaredExternRefs := res1.declared' } : TypeContext) →
       CtxReach bodyCtx)
   (hctxFnBody :
     ∀ {ctx : TypeContext} {res : TypeResult} {e1 e2 : Expr}
@@ -474,6 +480,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                 nextLoc' := ctxᵢ.nextLoc
                 nextTag' := ctxᵢ.nextTag
                 regime' := ctxᵢ.regime
+                declared' := ctxᵢ.declaredExternRefs
               }
               have hres : res = res_expected := by
                 cases htc
@@ -500,6 +507,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                 nextLoc' := ctxᵢ.nextLoc
                 nextTag' := ctxᵢ.nextTag
                 regime' := ctxᵢ.regime
+                declared' := ctxᵢ.declaredExternRefs
               }
               have hres : res = res_expected := by
                 cases htc
@@ -526,6 +534,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                 nextLoc' := ctxᵢ.nextLoc
                 nextTag' := ctxᵢ.nextTag
                 regime' := ctxᵢ.regime
+                declared' := ctxᵢ.declaredExternRefs
               }
               have hres : res = res_expected := by
                 cases htc
@@ -552,6 +561,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                 nextLoc' := ctxᵢ.nextLoc
                 nextTag' := ctxᵢ.nextTag
                 regime' := ctxᵢ.regime
+                declared' := ctxᵢ.declaredExternRefs
               }
               have hres : res = res_expected := by
                 cases htc
@@ -620,7 +630,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                   rcases hstruct with h1 | h2 | hstd
                   · rcases h1 with
                       ⟨k, deps, hmatch, hregime_true, res1, htc1, hbool, res2, _res3, htc2, _htc3,
-                        hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', _hpoison, hetyp⟩
+                        hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', hdecl', _hpoison, hetyp⟩
                     intro hpredlaws hExtTyping hwfTm hTmBounded
                     refine ⟨?_, ?_⟩
                     · exact
@@ -628,9 +638,10 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           hExtTyping predSat tm ctxᵢ (Expr.ite e1 e2 e3)
                           (Nat.succ (Nat.succ fuel')) res
                           hwfTm hTmBounded hpredlaws htc
-                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
+                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
-                    let ctxTrue : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+                    let ctxTrue : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩,
+                                                             declaredExternRefs := res1.declared' }
                     have htc1' : typecheck ctxPure e1 fuel' = .ok res1 := by
                       simpa [ctxPure, typecheck, Nat.succ_sub_one] using htc1
                     have hwfTm_pure : wfTagMeaningCtx tm ctxPure := by
@@ -669,8 +680,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf_pure hric htagR_pure hmasked_none_pure
                           hmasked_absent_pure hmasked_bounded_pure hbnd_pure hcwr_pure
-                          a pm hwfcfg ht_e1 hpc_pure
-                      with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1, _hfresh1⟩
+                          a pm hwfcfg hres hrd ht_e1 hpc_pure
+                      with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1, _hfresh1, _hrd1⟩
                     have hcwr_unmasked :
                         consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ ρ θ :=
                       consistentWithRegimeMasked_unmask
@@ -694,7 +705,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           contradiction
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
-                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp ht_e1 hwfcfg).1
+                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp hres.toBelow ht_e1 hwfcfg).1
                     have htc2' : typecheck ctxTrue e2 fuel' = .ok res2 := by
                       simpa [ctxTrue, typecheck, Nat.succ_sub_one] using htc2
                     have hwfTm_true : wfTagMeaningCtx tm ctxTrue := by
@@ -776,14 +787,25 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       rw [← hcfg1_eq_t]; exact hwfcfg1
                     have ht_e2_t : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode, registry := registry } cf o := by
                       rw [← hcfg1_eq_t]; exact ht_e2
+                    have hres_cfg1 : RegistryReservedWF registry cfg1.memory cfg1.nextAddr := by
+                      apply RegistryReservedWF_mono hres
+                      · exact terminatesTo_memory_contains_mono e1
+                          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+                          cfg1 (Value.bool b) hOp ht_e1
+                      · exact terminatesTo_nextAddr_mono e1
+                          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+                          cfg1 (Value.bool b) hOp ht_e1
+                    have hrd_true : ReservedDiscipline registry ctxTrue.declaredExternRefs θ1 := by
+                      simp only [ctxTrue]
+                      simpa [hreg_cfg1_t] using _hrd1
                     rcases
                         (hIH_e2 hpredlaws hExtTyping hwfTm_true hTmBounded_true).2
                           cfg1.memory cfg1.varEnv θ1 cf o
                           hθ1wf hwf_true hric1' htagR_true hmasked_none_true
                           hmasked_absent_true hmasked_bounded_true hbnd_true hcwr1'
-                          cfg1.nextAddr cfg1.pureMode hwfcfg1_t
+                          cfg1.nextAddr cfg1.pureMode hwfcfg1_t hres_cfg1 hrd_true
                           ht_e2_t hpc_true
-                      with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
+                      with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2, _hrd2⟩
                     have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                     have hctxAfter_memEnv : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctxTrue res2).memEnv := by
                       simp [ctxAfter, hmemEnv]
@@ -835,7 +857,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       intro l qt hnotIn hlookup hclean
                       exact _hfresh2 l qt (by simpa [ctxTrue] using hnotIn)
                         (by simpa [hmemEnv] using hlookup) (by simpa [hregime'] using hclean)
-                    refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final, hfresh_final⟩
+                    refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final, hfresh_final, ?_⟩
                     · simpa [hetyp] using hv2
                     · simp only [runtimeInstantiatesCtx, hctxAfter_memEnv, hctxAfter_varEnv]
                       exact hric2
@@ -859,9 +881,15 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           closureCapturedVarsRegimeMasked_transport_etyp
                             (qt := res2.qualType) (qt' := res.qualType)
                             hetyp.symm hcap2'
+                    · -- ReservedDiscipline: e3's (unexecuted) typechecking only grows the set
+                      rw [hdecl']
+                      exact ReservedDiscipline.mono_declared
+                        (fun id h => typecheck_declared'_mono _ e3 fuel' _res3
+                          (by simpa [typecheck] using _htc3) id h)
+                        _hrd2
                   · rcases h2 with
                       ⟨k, deps, hmatch, hregime_false, res1, htc1, hbool, _res2, res3, _htc2, htc3,
-                        hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', _hpoison, hetyp⟩
+                        hmemEnv, htagEnv, hnextLoc_max, hnextTag_max, hregime', hdecl', _hpoison, hetyp⟩
                     intro hpredlaws hExtTyping hwfTm hTmBounded
                     refine ⟨?_, ?_⟩
                     · exact
@@ -869,11 +897,13 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           hExtTyping predSat tm ctxᵢ (Expr.ite e1 e2 e3)
                           (Nat.succ (Nat.succ fuel')) res
                           hwfTm hTmBounded hpredlaws htc
-                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
+                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht hpc
                     let ctxPure : TypeContext := { ctxᵢ with pureCtx := true }
-                    let ctxFalse : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩ }
+                    let ctxFalse : TypeContext := { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨false, deps⟩,
+                                                              declaredExternRefs := res1.declared' }
                     let ctxFalse' : TypeContext :=
-                      { ctxFalse with nextLoc := _res2.nextLoc', nextTag := _res2.nextTag' }
+                      { ctxFalse with nextLoc := _res2.nextLoc', nextTag := _res2.nextTag',
+                                      declaredExternRefs := _res2.declared' }
                     have htc1' : typecheck ctxPure e1 fuel' = .ok res1 := by
                       simpa [ctxPure, typecheck, Nat.succ_sub_one] using htc1
                     have hwfTm_pure : wfTagMeaningCtx tm ctxPure := by
@@ -912,8 +942,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf_pure hric htagR_pure hmasked_none_pure
                           hmasked_absent_pure hmasked_bounded_pure hbnd_pure hcwr_pure
-                          a pm hwfcfg ht_e1 hpc
-                      with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1, _hfresh1⟩
+                          a pm hwfcfg hres hrd ht_e1 hpc
+                      with ⟨θ1, hθext1, _hv1, hric1, hcwr1, _hvalc1, hpres1, _hfresh1, _hrd1⟩
                     have hcwr_unmasked :
                         consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ ρ θ :=
                       consistentWithRegimeMasked_unmask
@@ -937,28 +967,32 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       | inr h => exact h.2
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
-                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp ht_e1 hwfcfg).1
+                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp hres.toBelow ht_e1 hwfcfg).1
                     have htc3' : typecheck ctxFalse' e3 fuel' = .ok res3 := by
                       simpa [ctxFalse', ctxFalse, typecheck, Nat.succ_sub_one] using htc3
                     have hwfTm_false : wfTagMeaningCtx tm ctxFalse' := by
                       simpa [ctxFalse', ctxFalse, wfTagMeaningCtx] using hwfTm
                     have hTmBounded_false : TagMeaningBounded tm ctxFalse'.nextTag := by
                       have htc2_tc :
-                          typecheck { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' =
+                          typecheck { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩,
+                                                declaredExternRefs := res1.declared' } e2 fuel' =
                             .ok _res2 := by
                         simpa [typecheck] using _htc2
                       have hle : ctxᵢ.nextTag ≤ _res2.nextTag' :=
                         typecheck_nextTag_mono
-                          { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ }
+                          { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩,
+                                      declaredExternRefs := res1.declared' }
                           e2 fuel' _res2 htc2_tc
                       simpa [ctxFalse', ctxFalse] using hTmBounded.mono hle
                     have hwf_false : wfTypeContext ctxFalse := by
                       simpa [ctxFalse, wfTypeContext] using hwf
                     have hwf_false' : wfTypeContext ctxFalse' := by
                       have hle : ctxᵢ.nextLoc ≤ _res2.nextLoc' := by
-                        have htc2_tc : typecheck { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' = .ok _res2 := by
+                        have htc2_tc : typecheck { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩,
+                                                              declaredExternRefs := res1.declared' } e2 fuel' = .ok _res2 := by
                           simpa [typecheck] using _htc2
-                        have := typecheck_nextLoc_mono { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' _res2 htc2_tc
+                        have := typecheck_nextLoc_mono { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩,
+                                                                   declaredExternRefs := res1.declared' } e2 fuel' _res2 htc2_tc
                         simpa using this
                       simp only [ctxFalse', wfTypeContext]
                       exact ⟨fun l hl => by simp only [ctxFalse] at hl ⊢; exact Nat.lt_of_lt_of_le (hwf_false.1 l hl) hle,
@@ -986,7 +1020,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       simpa [ctxFalse', MaskedTagsAbsentFromTrueTagEnv] using hmasked_absent_false
                     have hmono_e2 : ctxᵢ.nextTag ≤ _res2.nextTag' :=
                       typecheck_normal_nextTag_mono
-                        { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩ } e2 fuel' _res2
+                        { ctxᵢ with tagEnv := ctxᵢ.tagEnv.insert k ⟨true, deps⟩,
+                                    declaredExternRefs := res1.declared' } e2 fuel' _res2
                         (show typecheck _ e2 _ = _ from _htc2)
                     have hmasked_bounded_false' :
                         ∀ t, masked t → t < ctxFalse'.nextTag := by
@@ -1068,14 +1103,28 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       rw [← hcfg1_eq_f]; exact hwfcfg1
                     have ht_e3_f : terminatesTo e3 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode, registry := registry } cf o := by
                       rw [← hcfg1_eq_f]; exact ht_e3
+                    have hres_cfg1 : RegistryReservedWF registry cfg1.memory cfg1.nextAddr := by
+                      apply RegistryReservedWF_mono hres
+                      · exact terminatesTo_memory_contains_mono e1
+                          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+                          cfg1 (Value.bool b) hOp ht_e1
+                      · exact terminatesTo_nextAddr_mono e1
+                          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+                          cfg1 (Value.bool b) hOp ht_e1
+                    have hrd_false : ReservedDiscipline registry ctxFalse'.declaredExternRefs θ1 := by
+                      simp only [ctxFalse']
+                      exact ReservedDiscipline.mono_declared
+                        (fun id h => typecheck_declared'_mono _ e2 fuel' _res2
+                          (by simpa [typecheck] using _htc2) id h)
+                        (by simpa [hreg_cfg1_f] using _hrd1)
                     rcases
                         (hIH_e3 hpredlaws hExtTyping hwfTm_false hTmBounded_false).2
                           cfg1.memory cfg1.varEnv θ1 cf o
                           hθ1wf hwf_false' hric1'_f htagR_false' hmasked_none_false'
                           hmasked_absent_false' hmasked_bounded_false' hbnd_false' hcwr1'_f
-                          cfg1.nextAddr cfg1.pureMode hwfcfg1_f
+                          cfg1.nextAddr cfg1.pureMode hwfcfg1_f hres_cfg1 hrd_false
                           ht_e3_f hpc_false'
-                      with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
+                      with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2, _hrd2⟩
                     have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                     have hctxAfter_memEnv : (ctxAfter ctxᵢ res).memEnv = (ctxAfter ctxFalse' res3).memEnv := by
                       simp [ctxAfter, hmemEnv]
@@ -1130,7 +1179,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                       intro l qt hnotIn hlookup hclean
                       exact _hfresh2 l qt (by simpa [ctxFalse', ctxFalse] using hnotIn)
                         (by simpa [hmemEnv] using hlookup) (by simpa [hregime'] using hclean)
-                    refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final, hfresh_final⟩
+                    refine ⟨θ2, hθext, ?_, ?_, ?_, ?_, hpres_final, hfresh_final, ?_⟩
                     · simpa [hetyp] using hv2
                     · simp only [runtimeInstantiatesCtx, hctxAfter_memEnv, hctxAfter_varEnv]
                       exact hric2
@@ -1154,8 +1203,11 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           closureCapturedVarsRegimeMasked_transport_etyp
                             (qt := res3.qualType) (qt' := res.qualType)
                             hetyp.symm hcap2'
+                    · -- ReservedDiscipline: result set is exactly the executed arm's
+                      rw [hdecl']
+                      exact _hrd2
                   · obtain ⟨hstdCase, res1, htc1, hbool, res2, htc2, res3, htc3,
-                      hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hpoison, hetyp, hpred⟩ := hstd
+                      hmemEnv, htagEnv, hnextLoc, hnextTag, hregime', hdecl', hpoison, hetyp, hpred⟩ := hstd
                     intro hpredlaws hExtTyping hwfTm hTmBounded
                     refine ⟨?_, ?_⟩
                     · exact
@@ -1163,11 +1215,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           hExtTyping predSat tm ctxᵢ (Expr.ite e1 e2 e3)
                           (Nat.succ (Nat.succ fuel')) res
                           hwfTm hTmBounded hpredlaws htc
-                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg ht hpc
+                    intro μ ρ θ cf o hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg hres hrd ht hpc
                     let ctx' : TypeContext := ctxAfter ctxᵢ res1
                     let pc' := joinPoison ctxᵢ.pc res1.qualType.poison
                     let ctx'' : TypeContext := { ctx' with pc := pc' }
-                    let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag' }
+                    let ctxForE3 : TypeContext := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                                                               declaredExternRefs := res2.declared' }
                     have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
                       simpa [typecheck, Nat.succ_sub_one] using htc1
                     have hIH_e1 := IH' fuel' (by omega) tm masked e1 ctxᵢ
@@ -1188,11 +1241,19 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     rcases
                         hIH_e1_inst.2 μ ρ θ cfg1 (Value.bool b)
                           hθwf hwf hric htagR hmasked_none hmasked_absent hmasked_bounded hbnd hcwr
-                          a pm hwfcfg ht_e1 hpc
-                      with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1, _hfresh1⟩
+                          a pm hwfcfg hres hrd ht_e1 hpc
+                      with ⟨θ1, hθext1, hv1, hric1, hcwr1, hvalc1, hpres1, _hfresh1, _hrd1⟩
                     have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
                     have hwfcfg1 : wfConfig cfg1 :=
-                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp ht_e1 hwfcfg).1
+                      (wfConfig_preserved e1 _ cfg1 (Value.bool b) hOp hres.toBelow ht_e1 hwfcfg).1
+                    have hres_cfg1 : RegistryReservedWF registry cfg1.memory cfg1.nextAddr := by
+                      apply RegistryReservedWF_mono hres
+                      · exact terminatesTo_memory_contains_mono e1
+                          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+                          cfg1 (Value.bool b) hOp ht_e1
+                      · exact terminatesTo_nextAddr_mono e1
+                          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry }
+                          cfg1 (Value.bool b) hOp ht_e1
                     have hmono1 :
                         Regime.monotoneStepExt ctxᵢ.regime (ctxAfter ctxᵢ res1).regime
                           (fun k => ctxᵢ.nextTag ≤ k) :=
@@ -1432,13 +1493,16 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                 rw [← hcfg1_eq_std2]; exact hwfcfg1
                               have ht_e2_std2 : terminatesTo e2 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode, registry := registry } cf o := by
                                 rw [← hcfg1_eq_std2]; exact ht_e2
+                              have hrd_ctx'' : ReservedDiscipline registry ctx''.declaredExternRefs θ1 := by
+                                simp only [ctx'', ctx', ctxAfter]
+                                simpa [hreg_cfg1_std2] using _hrd1
                               rcases
                                   (hIH_e2 hpredlaws1 hExtTyping hwfTm_ctx'' hTmBounded_ctx'').2
                                     cfg1.memory cfg1.varEnv θ1 cf o
                                     hθ1wf hwf_ctx'' hric1_ctx'' htagR_ctx'' hmasked_none_ctx''
                                     hmasked_absent_ctx'' hmasked_bounded_ctx'' hbnd_ctx'' hcwr1_ctx''
-                                    cfg1.nextAddr cfg1.pureMode hwfcfg1_std2 ht_e2_std2 hpc''
-                                with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2⟩
+                                    cfg1.nextAddr cfg1.pureMode hwfcfg1_std2 hres_cfg1 hrd_ctx'' ht_e2_std2 hpc''
+                                with ⟨θ2, hθext2, hv2, hric2, hcwr2, hvalc2, hpres2, _hfresh2, _hrd2⟩
                               have hθext : wfExtendsMap θ θ2 := wfExtendsMap_trans hθext1 hθext2
                               have hcwr2_left :
                                   consistentWithRegimeMasked masked predSat
@@ -1613,7 +1677,12 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                     theta_not_contains_if_not_in_memEnv
                                       (ctxAfter ctx'' res2) cf.memory cf.varEnv θ2 l
                                       hric2 (by simpa [ctxAfter] using hcontains2)
-                              refine ⟨θ2, hθext, ?_, hric_final, hcwr_final, ?_, hpres_final, hfresh_final⟩
+                              have hrd_final : ReservedDiscipline cf.registry res.declared' θ2 := by
+                                rw [hdecl']
+                                exact ReservedDiscipline.mono_declared
+                                  (fun id h => typecheck_declared'_mono _ e3 fuel' res3 htc3' id h)
+                                  _hrd2
+                              refine ⟨θ2, hθext, ?_, hric_final, hcwr_final, ?_, hpres_final, hfresh_final, hrd_final⟩
                               · simpa [hetyp] using valueHasETyp_joinETyps_left hv2
                               · refine valueConsistentWithRegimeMasked.noTag ?_ ?_
                                 · simp [qtypGuardTag, hpredNo]
@@ -1692,14 +1761,19 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                 rw [← hcfg1_eq_std3]; exact hwfcfg1
                               have ht_e3_std3 : terminatesTo e3 { memory := cfg1.memory, varEnv := cfg1.varEnv, nextAddr := cfg1.nextAddr, pureMode := cfg1.pureMode, registry := registry } cf o := by
                                 rw [← hcfg1_eq_std3]; exact ht_e3
+                              have hrd_ctxForE3 : ReservedDiscipline registry ctxForE3.declaredExternRefs θ1 := by
+                                simp only [ctxForE3]
+                                exact ReservedDiscipline.mono_declared
+                                  (fun id h => typecheck_declared'_mono _ e2 fuel' res2 htc2' id h)
+                                  (by simpa [hreg_cfg1_std3] using _hrd1)
                               rcases
                                   (hIH_e3 hpredlaws1 hExtTyping hwfTm_ctxForE3 hTmBounded_ctxForE3).2
                                     cfg1.memory cfg1.varEnv θ1 cf o
                                     hθ1wf hwf_ctxForE3 hric1_ctxForE3
                                     htagR_ctxForE3 hmasked_none_ctxForE3
                                     hmasked_absent_ctxForE3 hmasked_bounded_ctxForE3 hbnd_ctxForE3 hcwr1_ctxForE3
-                                    cfg1.nextAddr cfg1.pureMode hwfcfg1_std3 ht_e3_std3 hpcForE3
-                                with ⟨θ3, hθext3, hv3, hric3, hcwr3, hvalc3, hpres3, _hfresh3⟩
+                                    cfg1.nextAddr cfg1.pureMode hwfcfg1_std3 hres_cfg1 hrd_ctxForE3 ht_e3_std3 hpcForE3
+                                with ⟨θ3, hθext3, hv3, hric3, hcwr3, hvalc3, hpres3, _hfresh3, _hrd3⟩
                               have hθext : wfExtendsMap θ θ3 := wfExtendsMap_trans hθext1 hθext3
                               have hcwr3_right :
                                   consistentWithRegimeMasked masked predSat
@@ -1874,7 +1948,10 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                                     theta_not_contains_if_not_in_memEnv
                                       (ctxAfter ctxForE3 res3) cf.memory cf.varEnv θ3 l
                                       hric3 (by simpa [ctxAfter] using hcontains3)
-                              refine ⟨θ3, hθext, ?_, hric_final, hcwr_final, ?_, hpres_final, hfresh_final⟩
+                              have hrd_final : ReservedDiscipline cf.registry res.declared' θ3 := by
+                                rw [hdecl']
+                                exact _hrd3
+                              refine ⟨θ3, hθext, ?_, hric_final, hcwr_final, ?_, hpres_final, hfresh_final, hrd_final⟩
                               · simpa [hetyp] using
                                   valueHasETyp_joinETyps_right hcompat23 hv3
                               · refine valueConsistentWithRegimeMasked.noTag ?_ ?_
@@ -2075,7 +2152,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     hExtTyping predSat tm ctxᵢ (Expr.externVal id t p pr)
                     (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
               intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm
-                    hwfcfg ht hpc
+                    hwfcfg hres hrd ht hpc
               obtain ⟨impl, hrun⟩ :=
                 ExternDeclBoundaryRun.of_terminatesTo_externVal
                   (ctx := ctxᵢ) (res := res) ht
@@ -2092,7 +2169,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           retSpec := none, effects := [], preds := [pr], argPoison := false })
                   (impl := impl) hcan ExternDeclarationInProgram.externVal
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun.run hpc
+                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun.run hpc
           | externFn id n t argPoison argPred r eff caps =>
               -- Extern declaration success is normalized to boundary-run
               -- evidence before the caller-supplied boundary provider consumes it.
@@ -2103,7 +2180,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     hExtTyping predSat tm ctxᵢ (Expr.externFn id n t argPoison argPred r eff caps)
                     (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
               intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm
-                    hwfcfg ht hpc
+                    hwfcfg hres hrd ht hpc
               obtain ⟨impl, hrun⟩ :=
                 ExternDeclBoundaryRun.of_terminatesTo_externFn
                   (ctx := ctxᵢ) (res := res) ht
@@ -2123,7 +2200,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           preds := collectExternPreds r eff, argPoison := argPoison, captures := caps })
                   (impl := impl) hcan ExternDeclarationInProgram.externFn
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun.run hpc
+                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun.run hpc
           | externPfn id n t argPoison argPred r caps =>
               -- Extern declaration success is normalized to boundary-run
               -- evidence before the caller-supplied boundary provider consumes it.
@@ -2134,7 +2211,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                     hExtTyping predSat tm ctxᵢ (Expr.externPfn id n t argPoison argPred r caps)
                     (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
               intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm
-                    hwfcfg ht hpc
+                    hwfcfg hres hrd ht hpc
               obtain ⟨impl, hrun⟩ :=
                 ExternDeclBoundaryRun.of_terminatesTo_externPfn
                   (ctx := ctxᵢ) (res := res) ht
@@ -2153,7 +2230,37 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrueMaske
                           preds := collectExternPreds r [], argPoison := argPoison, captures := caps })
                   (impl := impl) hcan ExternDeclarationInProgram.externPfn
                   hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hrun.run hpc
+                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun.run hpc
+          | externRef id rp rpred cp cpred =>
+              -- Extern ref declaration success is normalized to boundary-run
+              -- evidence before the caller-supplied boundary provider consumes it.
+              intro hpredlaws hExtTyping hwfTm hTmBounded
+              refine ⟨?_, ?_⟩
+              · exact
+                  StepFRSingleRunTagMeaningPost.of_typecheck_preserves
+                    hExtTyping predSat tm ctxᵢ (Expr.externRef id rp rpred cp cpred)
+                    (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
+              intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm
+                    hwfcfg hres hrd ht hpc
+              obtain ⟨impl, hrun⟩ :=
+                ExternDeclBoundaryRun.of_terminatesTo_externRef
+                  (ctx := ctxᵢ) (res := res) ht
+              have htyped :
+                  ExternBoundaryTyping.Decl
+                    { id := id, kind := .ref, typ := Typ.ref Typ.int, argName := none,
+                      retSpec := none, effects := [], preds := [rpred, cpred],
+                      argPoison := false, refPoison := rp, cellPoison := cp }
+                    (Expr.externRef id rp rpred cp cpred) ctxᵢ res :=
+                ExternBoundaryTyping.Decl.ref htc
+              exact
+                hdeclSingle
+                  (e := Expr.externRef id rp rpred cp cpred) (id := id)
+                  (d := { id := id, kind := .ref, typ := Typ.ref Typ.int, argName := none,
+                          retSpec := none, effects := [], preds := [rpred, cpred],
+                          argPoison := false, refPoison := rp, cellPoison := cp })
+                  (impl := impl) hcan ExternDeclarationInProgram.externRef
+                  hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
+                  hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun.run hpc
 
 private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with_contracts_canUse_ctxReach
   (registry : ExternRegistry)
@@ -2168,22 +2275,27 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
   (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
     CtxReach ctx → CtxReach (ctxAfter ctx res))
   (hctxTagTrue :
-    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps},
-      CtxReach ctx → CtxReach { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ })
+    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {declared : List ExternId},
+      CtxReach ctx →
+        CtxReach { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                            declaredExternRefs := declared })
   (hctxTagFalseNext :
-    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {nextLoc nextTag : Nat},
+    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {nextLoc nextTag : Nat}
+      {declared : List ExternId},
       CtxReach ctx →
         CtxReach
           { ctx with
             tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
             nextLoc := nextLoc,
-            nextTag := nextTag })
+            nextTag := nextTag,
+            declaredExternRefs := declared })
   (hctxAfterPc :
     ∀ {ctx : TypeContext} {res : TypeResult} {pc : Poison},
       CtxReach ctx → CtxReach { ctxAfter ctx res with pc := pc })
   (hctxNext :
-    ∀ {ctx : TypeContext} {nextLoc nextTag : Nat},
-      CtxReach ctx → CtxReach { ctx with nextLoc := nextLoc, nextTag := nextTag })
+    ∀ {ctx : TypeContext} {nextLoc nextTag : Nat} {declared : List ExternId},
+      CtxReach ctx → CtxReach { ctx with nextLoc := nextLoc, nextTag := nextTag,
+                                         declaredExternRefs := declared })
   (hctxVletBody :
     ∀ {ctx : TypeContext} {vname : Name} {e1 : Expr} {fuel : Nat}
       {res1 : TypeResult} {bodyCtx : TypeContext},
@@ -2197,7 +2309,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
           tagEnv := res1.tagEnv',
           nextLoc := res1.nextLoc',
           nextTag := res1.nextTag',
-          regime := res1.regime' } : TypeContext) →
+          regime := res1.regime',
+          declaredExternRefs := res1.declared' } : TypeContext) →
       CtxReach bodyCtx)
   (hctxFnBody :
     ∀ {ctx : TypeContext} {res : TypeResult} {e1 e2 : Expr}
@@ -2268,7 +2381,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
   intro hpredlaws hExtTyping hwfTm hTmBounded htagBnd
   have hmasked_inst := hmasked hpredlaws hExtTyping hwfTm hTmBounded
   refine ⟨hmasked_inst.1, ?_⟩
-  intro μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg ht hpc
+  intro μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg hres hrd ht hpc
   have hreg_masked :
       regimeConsistentWithCtxMasked (fun _ => False) ctxᵢ := by
     intro k deps hlookup
@@ -2300,8 +2413,8 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
     MaskedTagsAbsentFromTrueTagEnv_false ctxᵢ
   rcases
       hmasked_inst.2 μ ρ θ cf o hθwf hwf hric hreg_masked hmasked_none_init
-        hmasked_absent_init (fun k hk => hk.elim) htagBnd hcwr_masked a pm hwfcfg ht hpc
-    with ⟨θ', hθext, hvaltyp, hric', hcwr_masked', hvalc_masked', hpres, hfresh⟩
+        hmasked_absent_init (fun k hk => hk.elim) htagBnd hcwr_masked a pm hwfcfg hres hrd ht hpc
+    with ⟨θ', hθext, hvaltyp, hric', hcwr_masked', hvalc_masked', hpres, hfresh, hrd'⟩
   have hmasked_none :
       ∀ k, (fun _ => False) k → (ctxAfter ctxᵢ res).regime.lookup? k = none := by
     intro k hk
@@ -2322,7 +2435,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
       (R := (ctxAfter ctxᵢ res).regime) (qt := res.qualType)
       (μ := cf.memory) (θ := θ') (v := o)
       hmasked_none hvalc_masked'
-  exact ⟨θ', hθext, hvaltyp, hric', hcwr', hvalc', hpres, hfresh⟩
+  exact ⟨θ', hθext, hvaltyp, hric', hcwr', hvalc', hpres, hfresh, hrd'⟩
 
 -- Step theorem: proves StepFR directly.
 -- Restructured to avoid variable capture: induction is generalized over all expressions
@@ -2348,22 +2461,27 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
   (hctxAfter : ∀ {ctx : TypeContext} {res : TypeResult},
     CtxReach ctx → CtxReach (ctxAfter ctx res))
   (hctxTagTrue :
-    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps},
-      CtxReach ctx → CtxReach { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ })
+    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {declared : List ExternId},
+      CtxReach ctx →
+        CtxReach { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                            declaredExternRefs := declared })
   (hctxTagFalseNext :
-    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {nextLoc nextTag : Nat},
+    ∀ {ctx : TypeContext} {k : Tag} {deps : Deps} {nextLoc nextTag : Nat}
+      {declared : List ExternId},
       CtxReach ctx →
         CtxReach
           { ctx with
             tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
             nextLoc := nextLoc,
-            nextTag := nextTag })
+            nextTag := nextTag,
+            declaredExternRefs := declared })
   (hctxAfterPc :
     ∀ {ctx : TypeContext} {res : TypeResult} {pc : Poison},
       CtxReach ctx → CtxReach { ctxAfter ctx res with pc := pc })
   (hctxNext :
-    ∀ {ctx : TypeContext} {nextLoc nextTag : Nat},
-      CtxReach ctx → CtxReach { ctx with nextLoc := nextLoc, nextTag := nextTag })
+    ∀ {ctx : TypeContext} {nextLoc nextTag : Nat} {declared : List ExternId},
+      CtxReach ctx → CtxReach { ctx with nextLoc := nextLoc, nextTag := nextTag,
+                                         declaredExternRefs := declared })
   (hctxVletBody :
     ∀ {ctx : TypeContext} {vname : Name} {e1 : Expr} {fuel : Nat}
       {res1 : TypeResult} {bodyCtx : TypeContext},
@@ -2377,7 +2495,8 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
           tagEnv := res1.tagEnv',
           nextLoc := res1.nextLoc',
           nextTag := res1.nextTag',
-          regime := res1.regime' } : TypeContext) →
+          regime := res1.regime',
+          declaredExternRefs := res1.declared' } : TypeContext) →
       CtxReach bodyCtx)
   (hctxFnBody :
     ∀ {ctx : TypeContext} {res : TypeResult} {e1 e2 : Expr}
@@ -2466,6 +2585,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
               nextLoc' := ctxᵢ.nextLoc
               nextTag' := ctxᵢ.nextTag
               regime' := ctxᵢ.regime
+              declared' := ctxᵢ.declaredExternRefs
             }
             have hres : res = res_expected := by
               cases htc
@@ -2492,6 +2612,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
               nextLoc' := ctxᵢ.nextLoc
               nextTag' := ctxᵢ.nextTag
               regime' := ctxᵢ.regime
+              declared' := ctxᵢ.declaredExternRefs
             }
             have hres : res = res_expected := by
               cases htc
@@ -2518,6 +2639,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
               nextLoc' := ctxᵢ.nextLoc
               nextTag' := ctxᵢ.nextTag
               regime' := ctxᵢ.regime
+              declared' := ctxᵢ.declaredExternRefs
             }
             have hres : res = res_expected := by
               cases htc
@@ -2544,6 +2666,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
               nextLoc' := ctxᵢ.nextLoc
               nextTag' := ctxᵢ.nextTag
               regime' := ctxᵢ.regime
+              declared' := ctxᵢ.declaredExternRefs
             }
             have hres : res = res_expected := by
               cases htc
@@ -2576,6 +2699,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                       (ExternDeclCanUseSyntaxClosed.op_right hclosed hcan)
                       hctxCurrent
                       hctxAfter
+                      hOp
                       (fun m hm {tmᵢ} e ctx hctx hcan' _hwfTm _htagBounded res htc =>
                         IH m hm e ctx tmᵢ hctx hcan' res htc)
                       htc
@@ -2618,8 +2742,8 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                     hOp
                     hctxCurrent
                     (hctxPure hctxCurrent)
-                    (fun k deps => hctxTagTrue hctxCurrent)
-                    (fun k deps nextLoc nextTag => hctxTagFalseNext hctxCurrent)
+                    (fun k deps declared => hctxTagTrue hctxCurrent)
+                    (fun k deps nextLoc nextTag declared => hctxTagFalseNext hctxCurrent)
                     (fun {res1} _htc1 => by
                       simpa [ctxAfter] using
                         hctxAfterPc (ctx := ctxᵢ) (res := res1)
@@ -2699,6 +2823,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                       (ExternDeclCanUseSyntaxClosed.seq_right hclosed hcan)
                       hctxCurrent
                       hctxAfter
+                      hOp
                       (fun m hm {tmᵢ} e ctx hctx hcan' _hwfTm _htagBounded res htc =>
                         IH m hm e ctx tmᵢ hctx hcan' res htc)
                       htc
@@ -2781,7 +2906,7 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
             -- caller-supplied boundary provider consumes it.
             intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
                   o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁
-                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
             obtain ⟨impl₀, hrun₀⟩ :=
               ExternDeclBoundaryRun.of_terminatesTo_externVal
                 (ctx := ctxᵢ) (res := res) ht₀
@@ -2804,13 +2929,13 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 ExternDeclarationInProgram.externVal
                 hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
-                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁
         | externFn id n t argPoison argPred r eff caps =>
             -- Extern declaration success is normalized to boundary-run evidence before the
             -- caller-supplied boundary provider consumes it.
             intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
                   o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁
-                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
             obtain ⟨impl₀, hrun₀⟩ :=
               ExternDeclBoundaryRun.of_terminatesTo_externFn
                 (ctx := ctxᵢ) (res := res) ht₀
@@ -2835,13 +2960,13 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 ExternDeclarationInProgram.externFn
                 hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
-                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁
         | externPfn id n t argPoison argPred r caps =>
             -- Extern declaration success is normalized to boundary-run evidence before the
             -- caller-supplied boundary provider consumes it.
             intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
                   o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁
-                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ ht₀ ht₁
+                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
             obtain ⟨impl₀, hrun₀⟩ :=
               ExternDeclBoundaryRun.of_terminatesTo_externPfn
                 (ctx := ctxᵢ) (res := res) ht₀
@@ -2866,7 +2991,38 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctx
                 ExternDeclarationInProgram.externPfn
                 hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
                 cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
-                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hrun₀ hrun₁
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁
+        | externRef id rp rpred cp cpred =>
+            -- Extern ref declaration success is normalized to boundary-run evidence
+            -- before the caller-supplied boundary provider consumes it.
+            intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+                  o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁
+                  hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
+            obtain ⟨impl₀, hrun₀⟩ :=
+              ExternDeclBoundaryRun.of_terminatesTo_externRef
+                (ctx := ctxᵢ) (res := res) ht₀
+            obtain ⟨impl₁, hrun₁⟩ :=
+              ExternDeclBoundaryRun.of_terminatesTo_externRef
+                (ctx := ctxᵢ) (res := res) ht₁
+            have htyped :
+                ExternBoundaryTyping.Decl
+                  { id := id, kind := .ref, typ := Typ.ref Typ.int, argName := none,
+                    retSpec := none, effects := [], preds := [rpred, cpred],
+                    argPoison := false, refPoison := rp, cellPoison := cp }
+                  (Expr.externRef id rp rpred cp cpred) ctxᵢ res :=
+              ExternBoundaryTyping.Decl.ref htc
+            exact
+              hdeclFR
+                (e := Expr.externRef id rp rpred cp cpred) (id := id)
+                (d := { id := id, kind := .ref, typ := Typ.ref Typ.int, argName := none,
+                        retSpec := none, effects := [], preds := [rpred, cpred],
+                        argPoison := false, refPoison := rp, cellPoison := cp })
+                (impl₀ := impl₀) (impl₁ := impl₁)
+                hcan
+                ExternDeclarationInProgram.externRef
+                hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
+                cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
+                hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁
 
 private theorem TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
   {tr : TrustedRegistry} {root current : Expr} {ctxRoot : TypeContext}
@@ -2927,16 +3083,16 @@ private theorem TypeSystemEnforcesFaultRobustness_step_with_reachableCtx_canUse
         intro x qt hlookup
         exact hctx (by simpa using hlookup))
       (fun {ctx} {res} hctx => ContextReachableFrom.ctxAfter hctx)
-      (fun {ctx} {_k} {_deps} hctx => by
+      (fun {ctx} {_k} {_deps} {_declared} hctx => by
         intro x qt hlookup
         exact hctx (by simpa using hlookup))
-      (fun {ctx} {_k} {_deps} {_nextLoc} {_nextTag} hctx => by
+      (fun {ctx} {_k} {_deps} {_nextLoc} {_nextTag} {_declared} hctx => by
         intro x qt hlookup
         exact hctx (by simpa using hlookup))
       (fun {ctx} {_res} {_pc} hctx => by
         intro x qt hlookup
         exact ContextReachableFrom.ctxAfter hctx (by simpa using hlookup))
-      (fun {ctx} {_nextLoc} {_nextTag} hctx => by
+      (fun {ctx} {_nextLoc} {_nextTag} {_declared} hctx => by
         intro x qt hlookup
         exact hctx (by simpa using hlookup))
       (fun {ctx} {_vname} {e1} {fuel} {res1} {bodyCtx}
@@ -3042,13 +3198,13 @@ private theorem faultRobustnessSpecForCtx_of_step
       TypeSystemEnforcesFaultRobustness_step_spec e ctx predSat tm
         (registry := registry)) :
   FaultRobustnessSpecForCtx registry e s obs ctx := by
-  rintro his _hos hctx hwf _hpc hte htagBoundedInit predSat tm hwfTm hTmBounded
+  rintro his _hos hctx hwf _hpc hte hdeclEmpty htagBoundedInit predSat tm hwfTm hTmBounded
     hps hExtTyping ⟨fuel, res, htc, hobs⟩
   rcases hobs with ⟨hobs_ret, hobs_mem⟩
   intro μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ a₁ a₂ pm
   have hstep' := hstepctx hctx predSat tm
   have hstep' := hstep' fuel res htc
-  intro cf₁ cf₂ o₁ o₂ hWfRegime hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
+  intro cf₁ cf₂ o₁ o₂ hWfRegime hθ₁ hθ₂ hwfcfg₁ hwfcfg₂ hres₁ hres₂ hrdInit₁ hrdInit₂ hics₁ hics₂ hric₁ hric₂ htrustedInit₁ htrustedInit₂ hcrs₁ hcrs₂ hagree htrusted ht₁ ht₂
   set R := ctx.regime with hRdef
   have hagree_clean :
       agreeOnClean predSat R ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ :=
@@ -3082,14 +3238,14 @@ private theorem faultRobustnessSpecForCtx_of_step
   have hstep_fr :=
     hstep' hps hExtTyping hwfTm hTmBounded μ₁ μ₂ ρ₁ ρ₂ θ₁ θ₂ cf₁ cf₂ o₁ o₂
       hθ₁ hθ₂ hwf htagBounded hric₁ hric₂ hreg hcwr₁ hcwr₂ hagree_clean
-      a₁ a₂ pm hwfcfg₁ hwfcfg₂ ht₁ ht₂
+      a₁ a₂ pm hwfcfg₁ hwfcfg₂ hres₁ hres₂ hrdInit₁ hrdInit₂ ht₁ ht₂
   -- StepFR result structure: ∃ θ₁' θ₂', wfExtendsMap ∧ wfExtendsMap ∧ valueHasETyp ∧ valueHasETyp ∧
   --   wfTagMeaningCtx ∧ wfTypeContext ∧ TagBoundedCtx ∧ wfConfig ∧ wfConfig ∧ ... ∧ agreeOnClean ∧ resultAgreesIfClean
   rcases hstep_fr with ⟨_tm', _hcanon, _hpredlaws', _hresTm, hstep_fr⟩
   rcases hstep_fr with ⟨θ₁', θ₂', hwfext₁, hwfext₂, _hvtyp₁, _hvtyp₂, _hTm',
     _hwfctx', _htagBounded', _hwfcfg₁', _hwfcfg₂', _hric₁', _hric₂', _hreg',
     _hcwr₁', _hcwr₂', hagree_clean', _hval_consist₁, _hval_consist₂,
-    hret_agree⟩
+    hret_agree, _hrd₁', _hrd₂'⟩
   refine ⟨θ₁', θ₂', hwfext₁, hwfext₂, ?_⟩
   -- Bridge from post-state agreement to observables.
   simp [observablesEqual]

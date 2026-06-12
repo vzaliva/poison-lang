@@ -92,7 +92,8 @@ e :: 'E_'  ::=	           {{ com expressions }}
   | pfn x : ST1 => pe : ST2      ::   :: pfn  {{ com pure fn with return type }}
   | e1 e2                   ::   :: app
   | ( e )                   :: M :: paren  {{ ichlo ([[e]]) }}
-  | extern_val @ eid ST p SP      ::   :: extern_val {{ com extern value with mandatory identifier }} {{ tex \mathsf{extern}\,\mathsf{val}\,@[[eid]]\,[[ST]]\,[[p]]\,[[SP]] }}
+  | extern_val @ eid ST p SP      ::   :: extern_val {{ com extern value with mandatory identifier (base types only; reference-valued externs use extern\_ref) }} {{ tex \mathsf{extern}\,\mathsf{val}\,@[[eid]]\,[[ST]]\,[[p]]\,[[SP]] }}
+  | extern_ref @ eid p SP p' SP'  ::   :: extern_ref {{ com reference-valued extern with mandatory identifier; the first poison/predicate pair qualifies the returned reference value, the points\_to pair the pointed-to memory cell (surface types are fixed: ref int and int) }} {{ tex \mathsf{extern}\,\mathsf{ref}\,@[[eid]] : (\mathsf{ref}\,\mathsf{int} :> [[p]]\,[[SP]]),\,\mathsf{points\_to} : (\mathsf{int} :> [[p']]\,[[SP']]) }}
   | extern_fn @ eid x Q ER ESL CSL   ::   :: extern_fn {{ com extern impure function with mandatory identifier; the argument qualified type Q is the caller precondition; CSL lists declared environment/memory read dependencies }} {{ tex \mathsf{extern}\,\mathsf{fn}\,@[[eid]]\,[[x]]:[[Q]] \to [[ER]]\,;\,[[ESL]]\,,\,\mathsf{captures}:[[CSL]] }}
   | extern_pfn @ eid x Q ER CSL      ::   :: extern_pfn {{ com extern pure function with mandatory identifier; the argument qualified type Q is the caller precondition; CSL lists declared environment/memory read dependencies }} {{ tex \mathsf{extern}\,\mathsf{pfn}\,@[[eid]]\,[[x]]:[[Q]] \Rightarrow [[ER]]\,,\,\mathsf{captures}:[[CSL]] }}
 
@@ -367,7 +368,9 @@ formula :: formula_ ::=
   | extern_wf p SP :: :: extern_pred_wf {{ com clean types cannot carry predicates }} {{ tex [[p]] = \mathsf{poisoned} \lor [[SP]] = \bot }}
   | extern_spec_wf ER ESL :: :: extern_spec_wf {{ com all (p, SP) pairs satisfy extern\_wf; simple return types are base types }} {{ tex \mathrm{specWf}([[ER]], [[ESL]]) }}
   | base_extern_type ST :: :: base_extern_type {{ com ST is a base type (int, bool, unit, string) }} {{ tex [[ST]] \in \{ \mathsf{int}, \mathsf{bool}, \mathsf{unit}, \mathsf{string} \} }}
-  | externValConvert ST G = T G' :: :: extern_val_convert {{ com convert surface type to enriched type, possibly allocating fresh loc }} {{ tex \mathrm{externValConvert}([[ST]], [[G]]) = ([[T]], [[G']]) }}
+  | externValConvert ST G = T G' :: :: extern_val_convert {{ com convert surface base type to enriched type (T = ST, G' = G); ref types have no derivation — reference-valued externs use the extern\_ref form }} {{ tex \mathrm{externValConvert}([[ST]], [[G]]) = ([[T]], [[G']]) }}
+  | extern_ref_fresh_id eid :: :: extern_ref_fresh_id {{ com program-level uniqueness: eid was not previously declared by an extern ref; the typechecker threads a declared-id set through typing results (elided from the judgment) }} {{ tex \mathrm{freshExternRefId}([[eid]]) }}
+  | extern_ref_allowed :: :: extern_ref_allowed {{ com the declaration appears in an evaluate-at-most-once position: not under an fn/pfn body; the typechecker clears this flag for application-time body typing (elided from the judgment) }} {{ tex \mathrm{externRefAllowed} }}
   | allocReturnEffectTags SP ESL k = k' TM :: :: alloc_return_effect_tags {{ com allocate fresh tags for return pred SP and all effect preds in ESL }} {{ tex \mathrm{allocTags}([[SP]], [[ESL]], [[k]]) = ([[k']], [[TM]]) }}
   | allocEffectTags ESL k = k' TM :: :: alloc_effect_tags {{ com allocate fresh tags for effect preds only }} {{ tex \mathrm{allocEffectTags}([[ESL]], [[k]]) = ([[k']], [[TM]]) }}
   | resolveEffects ESL TM S G = G' :: :: resolve_effects {{ com resolve effect preds via TM and apply memory updates mirroring assignment: a singleton target is strong-updated, a multi-location target weak-updated (stored type joined into each member); the target reference's own poison is folded into the stored poison and erases the stored predicate when that ref is poisoned (cf. the poisoned-ref assign variants). Otherwise predicates are stored as resolved (clean effect-pc rules, gate join pc (join p1 p) clean). Like a heap update, this metafunction performs only the memory update; the guard-tag / regime dependency invalidation on the written targets is performed by the surrounding application rule (the effectTargetLocs / invalidate\_deps / invalidate\_regime\_deps\_effect premises), mirroring assignment (doc/extern-write-effects.md step 1b) }} {{ tex \mathrm{resolveEffects}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
@@ -1274,18 +1277,36 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 
 % tags, preventing one validation from incorrectly de-poisoning the other.
 
 % Extern value (base type): let x = extern val : (ST :> p { SP })
-% ST must be a base type (int, bool, unit, string). Arrow types and non-int refs are rejected.
+% ST must be a base type (int, bool, unit, string). Arrow types and ALL ref types
+% are rejected: reference-valued externs must use the explicit extern_ref form,
+% which separates the reference qualifier from the pointed-to cell contract.
 % Allocate fresh tags for SP, resolve to concrete predicate P.
-% externValConvert maps the surface type ST to the enriched type T and possibly
-% updated memory environment G'. For base types (int, bool, unit, string), T = ST
-% and G' = G. For ref int, T = ref @ {l} with a fresh l, and G' = G[l |-> clean {no_pred}].
-% Arrow types and ref T where T != int have no derivation (rejected).
+% externValConvert maps the surface base type ST to the enriched type T (T = ST,
+% G' = G); ref and arrow types have no derivation (rejected).
 extern_wf p SP
 externValConvert ST G = T G'
 freshTags SP k = k' TM
 resolve TM SP S = P
 ----------------------------------------------------------------------  :: extern_val
 pm ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L ; R
+
+% Reference-valued extern:
+%   extern ref @ eid : (ref int :> clean {}), points_to: (int :> poisoned {})
+% Allocates one fresh logical location l for the external cell, seeds it from the
+% points_to: qualifier, and returns ref @ {l}. At runtime the registry supplies a
+% stable concrete address for the cell; the fault-robustness proof realizes l to
+% that address.
+% v1 gates (doc/extern-write-effects.md): the reference value must be declared
+% clean with no predicate, and the pointed-to cell poisoned with no predicate — a
+% clean (or predicated) initial cell would assert a cross-run agreement that no
+% mid-evaluation declaration can supply ("Limitation: no clean points_to: cells").
+% extern ref may not appear under fn/pfn bodies (extern_ref_allowed) and each
+% extern id may be declared at most once per program (extern_ref_fresh_id).
+fresh l
+extern_ref_allowed
+extern_ref_fresh_id eid
+----------------------------------------------------------------------  :: extern_ref
+impure ; R ; pc ; G ; S ; L |- extern_ref @ eid clean no_pred poisoned no_pred : ref @ { l } :> clean { no_pred } -| G[l |-> poisoned { no_pred }] ; L ; R
 
 % Extern impure function: extern fn @ eid x : Q1 -> ER , effects: ESL
 % The argument qualified type Q1 is the caller-side precondition: it states what
