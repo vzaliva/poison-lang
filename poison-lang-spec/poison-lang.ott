@@ -373,12 +373,12 @@ formula :: formula_ ::=
   | extern_ref_allowed :: :: extern_ref_allowed {{ com the declaration appears in an evaluate-at-most-once position: not under an fn/pfn body; the typechecker clears this flag for application-time body typing (elided from the judgment) }} {{ tex \mathrm{externRefAllowed} }}
   | allocReturnEffectTags SP ESL k = k' TM :: :: alloc_return_effect_tags {{ com allocate fresh tags for return pred SP and all effect preds in ESL }} {{ tex \mathrm{allocTags}([[SP]], [[ESL]], [[k]]) = ([[k']], [[TM]]) }}
   | allocEffectTags ESL k = k' TM :: :: alloc_effect_tags {{ com allocate fresh tags for effect preds only }} {{ tex \mathrm{allocEffectTags}([[ESL]], [[k]]) = ([[k']], [[TM]]) }}
-  | resolveEffects ESL TM S G = G' :: :: resolve_effects {{ com resolve effect preds via TM and apply memory updates mirroring assignment: a singleton target is strong-updated, a multi-location target weak-updated (stored type joined into each member); the target reference's own poison is folded into the stored poison and erases the stored predicate when that ref is poisoned (cf. the poisoned-ref assign variants). Otherwise predicates are stored as resolved (clean effect-pc rules, gate join pc (join p1 p) clean). Like a heap update, this metafunction performs only the memory update; the guard-tag / regime dependency invalidation on the written targets is performed by the surrounding application rule (the effectTargetLocs / invalidate\_deps / invalidate\_regime\_deps\_effect premises), mirroring assignment (doc/extern-write-effects.md step 1b) }} {{ tex \mathrm{resolveEffects}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
-  | resolveEffectsPoisoned ESL TM S G = G' :: :: resolve_effects_poisoned {{ com resolve effect preds via TM and apply memory updates (singleton strong / multi-location weak) with predicate erasure (stored predicate forced to noPred); used by poisoned effect-pc extern application rules, where the gate join pc (join p1 p) is poisoned, mirroring assignment under poisoned pc. As with resolveEffects, the dependency invalidation on the written targets is performed by the surrounding application rule (doc/extern-write-effects.md step 1b) }} {{ tex \mathrm{resolveEffectsPoisoned}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
+  | resolveEffects ESL TM S G = G' :: :: resolve_effects {{ com resolve effect preds via TM and apply memory updates mirroring assignment: a singleton target is strong-updated, a multi-location target weak-updated (stored type joined into each member); the target reference's own poison is folded into the stored poison and erases the stored predicate when that ref is poisoned (cf. the poisoned-ref assign variants). Otherwise predicates are stored as resolved (clean effect-pc rules, gate join pc (join p1 p) clean). Like a heap update, this metafunction performs only the memory update; the guard-tag / regime dependency invalidation on the written targets is performed by the surrounding application rule (the effectTargetLocs / invalidate\_deps / invalidate\_regime\_deps\_effect premises), mirroring assignment }} {{ tex \mathrm{resolveEffects}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
+  | resolveEffectsPoisoned ESL TM S G = G' :: :: resolve_effects_poisoned {{ com resolve effect preds via TM and apply memory updates (singleton strong / multi-location weak) with predicate erasure (stored predicate forced to noPred); used by poisoned effect-pc extern application rules, where the gate join pc (join p1 p) is poisoned, mirroring assignment under poisoned pc. As with resolveEffects, the dependency invalidation on the written targets is performed by the surrounding application rule }} {{ tex \mathrm{resolveEffectsPoisoned}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
   | extendExternRegime eid TM R = R' :: :: extend_extern_regime {{ com call-site regime extension: insert into R the freshly generated output tags in the codomain of TM that the ambient extern-regime policy (the Ott analogue of the typechecker's ctx.externRegime, not shown in the judgment) selects for extern id eid; unselected extern ids leave R unchanged }} {{ tex [[R']] = \mathrm{extendExternRegime}([[eid]], [[TM]], [[R]]) }}
-  | effectTargetLocs ESL S = LS :: :: effect_target_locs {{ com union of the locsets of the effects' !x targets as resolved in the unified environment S (a target that does not resolve to a tracked reference contributes nothing); these are exactly the locations the effect loop writes, so the application rule invalidates guard-tag / regime dependencies on them (doc/extern-write-effects.md step 1b) }} {{ tex [[LS]] = \mathrm{effectTargetLocs}([[ESL]], [[S]]) }}
-  | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R exactly those tags that are materialised in L with a dependency set intersecting LS; tags absent from L are KEPT — unlike assignment's invalidate\_regime\_deps, which drops them — so a driver-asserted regime tag that has not yet entered the tag environment survives an unrelated write effect (doc/extern-write-effects.md step 1b) }} {{ tex [[R1]] = \mathrm{invalidate\_regime\_effect}([[R]], [[L]], [[LS]]) }}
-  | installReturnGuard L P R = L1 :: :: install_return_guard {{ com value-correct return-guard materialisation (doc/extern-write-effects.md step 1b.2): when P is a guard closure with tag k whose value the regime R determines as b — whether asserted through the initial regime or inserted by the extern-regime policy — insert k |-> (b, deps) into L, with deps extracted from the closure body; a regime-undetermined guard, a guard whose dependency extraction fails, or a non-closure P leaves L unchanged. Materialising the dependencies is what lets a later write effect (or assignment) invalidate a stale guard whose predicate reads the written cell }} {{ tex [[L1]] = \mathrm{installReturnGuard}([[L]], [[P]], [[R]]) }}
+  | effectTargetLocs ESL S = LS :: :: effect_target_locs {{ com union of the locsets of the effects' !x targets as resolved in the unified environment S (a target that does not resolve to a tracked reference contributes nothing); these are exactly the locations the effect loop writes, so the application rule invalidates guard-tag / regime dependencies on them }} {{ tex [[LS]] = \mathrm{effectTargetLocs}([[ESL]], [[S]]) }}
+  | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R exactly those tags that are materialised in L with a dependency set intersecting LS; tags absent from L are KEPT — unlike assignment's invalidate\_regime\_deps, which drops them — so a driver-asserted regime tag that has not yet entered the tag environment survives an unrelated write effect }} {{ tex [[R1]] = \mathrm{invalidate\_regime\_effect}([[R]], [[L]], [[LS]]) }}
+  | installReturnGuard L P R = L1 :: :: install_return_guard {{ com value-correct return-guard materialisation: when P is a guard closure with tag k whose value the regime R determines as b — whether asserted through the initial regime or inserted by the extern-regime policy — insert k |-> (b, deps) into L, with deps extracted from the closure body; a regime-undetermined guard, a guard whose dependency extraction fails, or a non-closure P leaves L unchanged. Materialising the dependencies is what lets a later write effect (or assignment) invalidate a stale guard whose predicate reads the written cell }} {{ tex [[L1]] = \mathrm{installReturnGuard}([[L]], [[P]], [[R]]) }}
 
 
 defns
@@ -1296,10 +1296,10 @@ pm ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L ; R
 % points_to: qualifier, and returns ref @ {l}. At runtime the registry supplies a
 % stable concrete address for the cell; the fault-robustness proof realizes l to
 % that address.
-% v1 gates (doc/extern-write-effects.md): the reference value must be declared
+% v1 gates (doc/externs.md, @21): the reference value must be declared
 % clean with no predicate, and the pointed-to cell poisoned with no predicate — a
 % clean (or predicated) initial cell would assert a cross-run agreement that no
-% mid-evaluation declaration can supply ("Limitation: no clean points_to: cells").
+% mid-evaluation declaration can supply (a documented language limitation).
 % extern ref may not appear under fn/pfn bodies (extern_ref_allowed) and each
 % extern id may be declared at most once per program (extern_ref_fresh_id).
 fresh l
@@ -1382,7 +1382,7 @@ pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tpclos
 % resolveEffects resolves each effect's predicate via TM and applies the resulting
 % memory updates to G.
 %
-% Effect dependency invalidation (doc/extern-write-effects.md step 1b): every
+% Effect dependency invalidation: every
 % impure (extern_tcl) application rule computes the written target locations
 % (effectTargetLocs ESL S_unified = LS1) and invalidates dependencies on them,
 % mirroring assignment: invalidate_deps drops tag-environment entries whose deps
@@ -1392,7 +1392,7 @@ pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tpclos
 % kept, unlike assignment's invalidate_regime_deps. The policy extension
 % (extendExternRegime) then runs on the invalidated regime.
 %
-% Return-guard materialisation (doc/extern-write-effects.md step 1b.2): the
+% Return-guard materialisation: the
 % simple-return rules (impure and pure) additionally install the resolved return
 % guard into the tag environment, value-correctly: installReturnGuard L P R' = L'
 % inserts the guard tag with the value the post-call regime R' determines for it

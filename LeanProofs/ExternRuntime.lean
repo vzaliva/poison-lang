@@ -68,8 +68,8 @@ structure ExternDeclaration where
   refPoison : Bool := false
   /-- `.ref` kind only: the declared poison of the pointed-to cell
       (`points_to: (int :> poisoned {})` ⇒ `true`).  v1 accepts only `true`
-      (see doc/extern-write-effects.md, "Limitation: no clean `points_to:`
-      cells"). -/
+      (clean `points_to:` cells are a documented language limitation; see
+      `doc/externs.md`, `@21`). -/
   cellPoison : Bool := true
 
 /-- Runtime/typechecking facts for a successful `extern val` declaration step. -/
@@ -603,7 +603,7 @@ def ExternOperationalSafe
   -- lookup-aware: for stored *location* values (reference externs) the bound
   -- comes from the registry-reserved-address invariant
   -- (`RegistryReservedBelow`), which a registry-agnostic `wfConfig` cannot
-  -- supply (see doc/extern-write-effects.md).
+  -- supply.
   (∀ (v : Value), impl = ExternImpl.val v →
     ∀ (cfg : Config) (id : ExternId),
       wfConfig cfg →

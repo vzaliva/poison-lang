@@ -188,8 +188,8 @@ The qualifier before `points_to:` describes the returned reference value; the
 poisoned cell assumes nothing about the external cell's initial contents;
 cleanness is re-established by writing through the reference (an assignment or
 `@22`'s `!errno` write effect). The old ref-typed `extern val` spelling is
-rejected. Clean `points_to:` cells are a documented language limitation (see
-`doc/extern-write-effects.md`, "Limitation: no clean `points_to:` cells").
+rejected. Clean `points_to:` cells are a documented language limitation,
+tracked as a potential extension in issue #140.
 `extern ref` declarations are unique per extern id per program and may not
 appear under `fn`/`pfn` bodies. The nesting rule is enforced where a body is
 typechecked: at declaration for `pfn` (pure bodies are converted via

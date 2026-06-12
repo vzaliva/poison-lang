@@ -526,7 +526,7 @@ closure body. A regime-undetermined guard is not materialised. A later write
 effect (or assignment) to a location such a guard reads therefore invalidates
 both the materialised tag and its regime entry, so a stale assertion cannot
 keep de-poisoning values whose guard condition the write falsified (see
-\texttt{doc/extern-write-effects.md} and the regression example
+the regression example
 \texttt{examples/extern\_set\_err\_stale\_guard.poison}).
 
 \subsubsection*{Extern read dependencies (\texttt{captures:})}

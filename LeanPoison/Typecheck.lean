@@ -161,7 +161,7 @@ def invalidateRegimeDeps (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   let invalidated := env.filter (fun _ tv => not <| tv.deps.any ls.contains)
   R.filter (fun k _ => invalidated.contains k)
 
-/-- Effect-path regime invalidation (doc/extern-write-effects.md).  Unlike
+/-- Effect-path regime invalidation.  Unlike
     `invalidateRegimeDeps` (used by assignment), this removes a regime entry ONLY
     when its tag is a *materialised* guard in `env` whose dependencies intersect the
     written locations.  Driver-asserted regime tags that are not (yet) in `env` —
@@ -308,7 +308,7 @@ structure TypeContext where
   -- Default `fun _ _ => none` recovers the pre-extern-regime behaviour and threads
   -- unchanged through every `{ ctx with … }` update.
   externRegime : ExternId → Tag → Option Bool := fun _ _ => none
-  -- Reference-valued extern discipline (doc/extern-write-effects.md): `extern
+  -- Reference-valued extern discipline (doc/externs.md, `@21`): `extern
   -- ref` may only appear in evaluate-at-most-once positions.  The flag is
   -- cleared when descending into fn/pfn bodies at application time; it flows
   -- downward only (results never restore it).
@@ -1063,7 +1063,7 @@ def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate)
     | Typ.ref _ =>
         -- Reference-valued externs must use the explicit `extern ref` form,
         -- which separates the reference qualifier from the pointed-to cell
-        -- contract (see doc/extern-write-effects.md).
+        -- contract (see doc/externs.md, `@21`).
         throw "Type error: 'extern val' cannot have a ref type; use 'extern ref @id : (ref int :> ...), points_to: (int :> ...)' instead"
     | Typ.arrow _ _ => throw "Arrow types not expected in extern specs" : TypecheckM (ETyp × TypeContext))
 
@@ -1127,12 +1127,12 @@ def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : S
     Allocates one fresh logical location for the external cell, seeds it from
     the `points_to:` qualifier, and returns a `ref` type at that location.
 
-    v1 gates (doc/extern-write-effects.md):
+    v1 gates (see `doc/externs.md`, `@21`):
     * the reference value must be declared `clean {}`;
     * the pointed-to cell must be declared `poisoned {}` — a clean (or
       predicated) initial cell would assert paired-run agreement that no
-      mid-evaluation declaration can supply (see "Limitation: no clean
-      `points_to:` cells");
+      mid-evaluation declaration can supply (a documented language
+      limitation);
     * `extern ref` may not appear under fn/pfn bodies (evaluate-at-most-once
       positions only);
     * each extern id may be declared at most once per program.
@@ -1453,7 +1453,7 @@ def applyClosuresThreaded {α : Type}
 termination_by items.length
 
 /-- Value-correct materialisation of an extern call's return guard into the tag
-    environment (doc/extern-write-effects.md).  When a simple-return
+    environment.  When a simple-return
     predicate is a guard closure whose fresh tag the post-call regime interprets
     (driver-asserted via the initial `--regime` map, or inserted by the
     `--extern-regime` policy through `applyExternRegimePolicy`), the tag is
@@ -1734,7 +1734,7 @@ def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
     `applyExternEffect` strong/weak-updates, so the typing context invalidates its
     guard-tag / regime dependencies on them after the effect loop — mirroring
     `typecheckAssign`'s `invalidateTagDeps` / `invalidateRegimeDeps` on the
-    assigned locset (doc/extern-write-effects.md). -/
+    assigned locset. -/
 def effectTargetLocs (effects : List Effect) (unifiedEnv : VarTypeEnv) : LocSet :=
   effects.foldl (fun acc effect =>
     match effect.target with

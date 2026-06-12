@@ -777,8 +777,8 @@ inductive trustedVarsClosureRegimeInit
         closureCapturedVarsRegime predSat R qt μ θ v) →
       trustedVarsClosureRegimeInit predSat R s ctx μ ρ θ
 
-/-- Reserved-address discipline for the realization map
-    (doc/extern-write-effects.md, "Why the realization map is the crux").
+/-- Reserved-address discipline for the realization map (the θ-insert
+    injectivity crux; see `doc/externs.md`, `@21`).
 
     Bundles (1) registry sanity — distinct extern ids reserve distinct
     addresses — and (2) the realization discipline: an address reserved for a
@@ -888,7 +888,7 @@ private def FaultRobustnessPointwise
     wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } →
     wfConfig { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry } →
     -- Trusted initial-state assumptions for registry-reserved external cells
-    -- (doc/extern-write-effects.md): each run's initial memory contains every
+    -- (see `doc/externs.md`, `@21`): each run's initial memory contains every
     -- reserved cell below its cursor, and neither initial realization map
     -- pre-claims a reserved address (the discipline instance at the initial
     -- context's declared set, which the spec requires to be empty).

@@ -4199,7 +4199,7 @@ private theorem wfVarEnv_lookup_loc
     reserved-address invariant and no fold of `RegistryReservedBelow` into
     `wfConfig` are required.  The call neither allocates (`addr' = addr`, so
     `addr ≤ addr'`) nor writes out of bounds, and returns a trivially well-formed
-    `unit`.  See `doc/extern-write-effects.md`. -/
+    `unit`. -/
 theorem setErrImpl_operational
     (env : VarEnv) (vArg : Value) (mem : Memory) (addr : Address)
     (vRaw : Value) (mem' : Memory) (addr' : Address)
@@ -4249,7 +4249,7 @@ theorem setErrImpl_operational
 Reusable inversions of a successful `setErrImpl` dispatch, the `@22`
 write-effect target resolution, and the non-shadowing of the captured `errno`
 target by the argument binding.  These feed the `@22` `callSingle` / `callFR`
-boundary fields (doc/extern-write-effects.md). -/
+boundary fields. -/
 
 /-- Output shape of a successful `setErrImpl` (`@22`) dispatch: the argument is a
     `Value.num n`, the runtime environment resolves `errno` to a location `a`, the

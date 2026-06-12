@@ -6,7 +6,7 @@ consumes trusted extern boundary evidence. Concrete trusted specs exist for
 `abs`, the curried-`max` pair, the explicit-argument memory-read extern
 `@23`, and the errno-style impure write-effect extern `@22` (`set_err` —
 the first trusted `.fn` entry, with the program-level capstone
-`ExternRegimeInt.setErrWriteEffect_FR`; see `doc/extern-write-effects.md`).
+`ExternRegimeInt.setErrWriteEffect_FR`; see `doc/externs.md`, `@22`).
 Read-dependency/captures support is implemented on `ffi`.
 
 Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
@@ -35,8 +35,8 @@ the shipped extern cleanup and default-registry assembly:
    with the `extern ref ... points_to: ...` form, is done:
    `ExternProofs.builtinErrnoSpec`, carried by the reserved-cell
    invariants `RegistryReservedBelow` / `RegistryReservedWF` /
-   `ReservedDiscipline`; the design and obstruction analysis live in
-   `doc/extern-write-effects.md`.)
+   `ReservedDiscipline`; see the `@21` entry in `doc/externs.md`. The
+   clean-`points_to:` extension is tracked in issue #140.)
 
    - `@19` is blocked on **predicate semantics for value-attached guards**. A
      faithful guarded-input contract must derive a value fact from an *inactive*

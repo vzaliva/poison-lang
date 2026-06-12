@@ -3489,7 +3489,7 @@ lemma typecheckVar_preserves_nextTag (ctx : TypeContext) (x : Name) (res : TypeR
 -- All branches of applyPFnTClosure for PFnTClosure.extern set
 -- memEnv'/regime-base = result2's values; the simple-return branch's tagEnv'
 -- additionally materialises the regime-determined return guard
--- (`installReturnGuard`, doc/extern-write-effects.md).
+-- (`installReturnGuard`).
 -- ==========================================================================
 
 lemma applyPFnTClosure_extern_memEnv_eq
@@ -3517,7 +3517,7 @@ lemma applyPFnTClosure_extern_memEnv_eq
 
 /-- `invalidateTagDeps` only removes entries (it is a `filter`), so a surviving entry
     keeps its original value.  Shared monotonicity fact for the effect
-    invalidation (doc/extern-write-effects.md). -/
+    invalidation. -/
 lemma invalidateTagDeps_get?_some_imp
     (env : TagEnv) (ls : LocSet) (k : Tag) (tv : TagVal)
     (h : (invalidateTagDeps env ls).get? k = some tv) :
@@ -3640,7 +3640,7 @@ lemma resolveSyntaxPred_guardClosure_tag_from_mapping
         exact ⟨idx, htageq ▸ htag⟩
     · simp at hresolve
 
-/-- `installReturnGuard` (doc/extern-write-effects.md) leaves every key other
+/-- `installReturnGuard` leaves every key other
     than the resolved return predicate's own guard tag unchanged. -/
 lemma installReturnGuard_get?_eq_of_not_guard
     (env : TagEnv) (rp : Predicate) (R : Regime) (fuel : Nat) (k : Tag)
@@ -5883,7 +5883,7 @@ lemma applyPFnTClosure_extern_regime_preserve_some
 -- memEnv may differ due to the effects loop.
 -- ==========================================================================
 
-/-- Extern-regime shape (doc/extern-write-effects.md):
+/-- Extern-regime shape:
     the applied Fn extern's `regime'` is the policy-extended `applyExternRegimePolicy` of the
     *effect-invalidated* input regime `invalidateRegimeDepsEffect r1.regime' r1.tagEnv'
     (effectTargetLocs effects …)` over a fresh tag mapping (tags `≥ r1.nextTag'`) — for both
@@ -12000,7 +12000,7 @@ lemma typecheck_nextLoc_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
 
 -- ================================================================
 -- Declared extern-ref set: monotonicity and no-declare equality
--- (serial threading; doc/extern-write-effects.md)
+-- (serial threading; see `doc/externs.md`, `@21`)
 -- ================================================================
 
 /-- Both `declared'` facts carried through the fuel induction: ids declared on

@@ -67,7 +67,7 @@ def ReservedAddr (reg : ExternRegistry) (a : Address) : Prop :=
     fixed across evaluation and `nextAddr` only grows, so this invariant is
     preserved automatically (see `RegistryReservedBelow_mono`).  Folding it into
     `wfConfig` is the eventual target, deferred until a `.val` extern is actually
-    trusted; see `doc/extern-write-effects.md`. -/
+    trusted. -/
 def RegistryReservedBelow (reg : ExternRegistry) (next : Address) : Prop :=
   ∀ a, ReservedAddr reg a → a < next
 
@@ -89,7 +89,7 @@ theorem RegistryReservedBelow_emptyExternRegistry (n : Address) :
 
 /-- Registry-reserved-cell well-formedness: every registry-reserved address is
     present in memory and below the address cursor.  This is the standalone
-    config-indexed predicate of doc/extern-write-effects.md — deliberately NOT
+    config-indexed predicate (see `doc/externs.md`, `@21`) — deliberately NOT
     folded into `wfConfig` (which stays registry-agnostic; see the note there).
     Both conjuncts are monotone along evaluation: memory only inserts/updates
     and `nextAddr` only grows, so `RegistryReservedWF_mono` re-establishes the
@@ -127,7 +127,7 @@ theorem RegistryReservedWF_emptyExternRegistry (μ : Memory) (n : Address) :
     across configs that differ only in their registry field.  The
     registry-reserved-address invariant (`RegistryReservedBelow`) is therefore
     kept *separate* from `wfConfig` for now; see
-    `wfValue_loc_of_RegistryReservedBelow` and `doc/extern-write-effects.md`. -/
+    `wfValue_loc_of_RegistryReservedBelow`. -/
 def wfConfig (cfg : Config) : Prop :=
   (∀ a, cfg.memory.contains a → a < cfg.nextAddr) ∧
   wfVarEnv cfg.nextAddr cfg.varEnv
@@ -151,8 +151,7 @@ lemma nextAddr_not_in_memory (cfg : Config) :
     It is stated standalone, taking `RegistryReservedBelow reg n` as an explicit
     hypothesis rather than reading it out of `wfConfig`, precisely so the global
     `wfConfig` can stay registry-agnostic (folding `RegistryReservedBelow` into
-    `wfConfig` would break the FR stack's registry-agnostic config coercions).
-    See `doc/extern-write-effects.md`. -/
+    `wfConfig` would break the FR stack's registry-agnostic config coercions). -/
 theorem wfValue_loc_of_RegistryReservedBelow
     {reg : ExternRegistry} {n a : Address} {id : ExternId}
     (hbelow : RegistryReservedBelow reg n)

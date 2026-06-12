@@ -298,7 +298,8 @@ theorem setErrWriteEffect_FR (s : InputSpec) (obs : ObservableSpec) :
 
 /-! ## Program-level FR for the `@21` `errno` reference extern
 
-Two scenarios (the `extern ref` capstones of doc/extern-write-effects.md):
+Two scenarios (the `extern ref` program-level capstones; see
+doc/externs.md, `@21`):
 
 * `errnoExternRef_FR` — the bare `extern ref @21` declaration node, with the
   singleton trusted registry `[@21]` (mirrors `setErrWriteEffect_FR`'s
