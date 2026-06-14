@@ -46,3 +46,7 @@ testResults/*
 
 # Container build staging
 .build-cache/
+
+# Python bytecode cache (scripts/ now imports a shared module)
+__pycache__/
+*.pyc

@@ -19,6 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lean_text import strip_lean_comments_and_strings
+
 # ANSI colors (disabled when not a TTY)
 # 256-color green (38;5;34) for net negative - distinct from yellow
 RED = "\033[0;31m" if sys.stdout.isatty() else ""
@@ -30,61 +32,6 @@ NC = "\033[0m" if sys.stdout.isatty() else ""
 
 SORRY_TOKEN_PATTERN = re.compile(r"(?<![A-Za-z0-9_!?'])sorry(?![A-Za-z0-9_!?'])")
 AXIOM_TOKEN_PATTERN = re.compile(r"(?<![A-Za-z0-9_])axiom(?![A-Za-z0-9_])")
-
-
-def strip_lean_comments_and_strings(line: str, block_comment_depth: int) -> tuple[str, int]:
-    """Return code-only text for a line and updated Lean block-comment depth.
-
-    Handles: line comments (--), nested block comments (/- -/), string literals.
-    Adopted from sorry_analyzer.py for accurate counting.
-    """
-    result: list[str] = []
-    i = 0
-    n = len(line)
-    in_string = False
-
-    while i < n:
-        ch = line[i]
-        nxt = line[i + 1] if i + 1 < n else ""
-
-        if block_comment_depth > 0:
-            if ch == "/" and nxt == "-":
-                block_comment_depth += 1
-                i += 2
-                continue
-            if ch == "-" and nxt == "/":
-                block_comment_depth -= 1
-                i += 2
-                continue
-            i += 1
-            continue
-
-        if in_string:
-            if ch == "\\" and i + 1 < n:
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-            i += 1
-            continue
-
-        if ch == '"' and block_comment_depth == 0:
-            in_string = True
-            i += 1
-            continue
-
-        if ch == "-" and nxt == "-":
-            break
-
-        if ch == "/" and nxt == "-":
-            block_comment_depth += 1
-            i += 2
-            continue
-
-        result.append(ch)
-        i += 1
-
-    return "".join(result), block_comment_depth
 
 
 def count_tokens_in_line(line: str, depth: int = 0) -> tuple[int, int, int]:
