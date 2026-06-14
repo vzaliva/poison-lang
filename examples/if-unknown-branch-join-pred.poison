@@ -1,4 +1,4 @@
--- Test: if_depoison_*_R_unknown path - joinMemEnvsStrong drops single-sided predicates
+-- Test: standard-case if (matchGuard match, R(k) unknown -> if_std_*) - joinMemEnvsStrong drops single-sided predicates
 -- frand creates guard tag; empty regime => R(k) = none => unknown-branch path
 -- Then-branch allocates a ref; else-branch does not.
 -- After join, the single-sided location should have noPred.

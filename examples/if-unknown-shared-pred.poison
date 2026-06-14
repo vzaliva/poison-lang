@@ -1,4 +1,4 @@
--- Test: if_depoison_*_R_unknown path - both-sided location preserves predicate
+-- Test: standard-case if (matchGuard match, R(k) unknown -> if_std_*) - both-sided location preserves predicate
 -- Ref allocated before if with frand value, so location 0 exists in both branch
 -- memEnvs with the same guardClosure predicate. joinMemEnvsStrong should use
 -- joinPredicates (both-sided case), preserving guardClosure -- not dropping to noPred.

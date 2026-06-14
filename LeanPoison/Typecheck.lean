@@ -511,7 +511,7 @@ def joinMemEnvs (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
     | none, none => none)
 
 /-- Strong join: like joinMemEnvs but drops predicates for single-sided entries.
-    Used for unknown-branch if joins (if_std, if_depoison_*_R_unknown) so that
+    Used for standard-case if joins (if_std_*) so that
     guardClosure from an untaken branch does not survive into the post-context. -/
 def joinMemEnvsStrong (env1 env2 : MemoryTypeEnv) : MemoryTypeEnv :=
   combineExtTreeMaps env1 env2 (fun _ oe1 oe2 =>
