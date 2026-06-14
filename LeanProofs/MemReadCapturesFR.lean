@@ -53,7 +53,7 @@ def memReadRegistry : TrustedRegistry :=
 /-- The single declaration syntactically reachable in `memReadProg` — the
     top-level `@23` `externPfn` node, `captures = [!r]` — is matched by the
     registry.  The `simple int` return carries no further nested extern. -/
-theorem memRead_agreesWithProgram :
+private theorem memRead_agreesWithProgram :
     TrustedRegistryAgreesWithProgram memReadProg memReadRegistry := by
   intro id d entry hprog hlookup
   unfold memReadProg at hprog
@@ -70,7 +70,7 @@ theorem memRead_agreesWithProgram :
       cases hret
 
 /-- Per-context trust premise at the canonical empty initial context. -/
-theorem memRead_hagrees :
+private theorem memRead_hagrees :
     TrustedRegistryAgreesWithReachable memReadProg openEmptyCtx memReadRegistry :=
   agreesWithReachable_of_emptyVarEnv (by rfl) memRead_agreesWithProgram
 
@@ -117,7 +117,7 @@ def appliedMemReadProg : Expr :=
 /-- The reachable declarations of the applied program are exactly `@23`, matched
     by its registry entry.  The function position reaches it (`@23` via
     `externPfn`); the argument `ref 3` reaches none (`newRef` of a numeral). -/
-theorem appliedMemRead_agreesWithProgram :
+private theorem appliedMemRead_agreesWithProgram :
     TrustedRegistryAgreesWithProgram appliedMemReadProg memReadRegistry := by
   intro id d entry hprog hlookup
   unfold appliedMemReadProg at hprog
@@ -138,7 +138,7 @@ theorem appliedMemRead_agreesWithProgram :
       | newRef hb2 => cases hb2
 
 /-- Per-context trust premise for the applied program at the empty context. -/
-theorem appliedMemRead_hagrees :
+private theorem appliedMemRead_hagrees :
     TrustedRegistryAgreesWithReachable appliedMemReadProg openEmptyCtx memReadRegistry :=
   agreesWithReachable_of_emptyVarEnv (by rfl) appliedMemRead_agreesWithProgram
 

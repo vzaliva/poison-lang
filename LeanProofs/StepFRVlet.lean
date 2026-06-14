@@ -352,7 +352,7 @@ lemma stepFR_vlet_with_expr_proof
     hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simp)
     e1 ctxᵢ hctxCurrent hcan1 hwfTm htagBounded res1 htc1'
-  -- Use world-free inversion lemma for vlet
+  -- Use inversion lemma for vlet
   have hstruct₀ := terminatesTo_vlet_inv' vname e1 e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, v₀1, cfg₀3, ht₀_e1, ht₀_e2, hcf₀_eq, hpm₀1, hpm₀2⟩
@@ -1672,7 +1672,6 @@ lemma stepFR_vlet
         hOp
         htc
 
--- World-free version of stepFRW_fn
 
 
 lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof

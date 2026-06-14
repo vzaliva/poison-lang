@@ -23,7 +23,7 @@ lemma stepFR_literal
   (hctxAfter : ctxAfter ctx res = ctx) :
   StepFR ctx e res predSat tm (registry := registry) := by
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
-  -- Use world-free inversion lemma for literals
+  -- Use inversion lemma for literals
   have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   have ⟨hcf₁, ho₁⟩ := terminatesTo_literal_inv' e v hval

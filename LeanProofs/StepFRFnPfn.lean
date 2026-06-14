@@ -277,7 +277,7 @@ lemma stepFR_fn
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
-  -- Use world-free inversion lemma
+  -- Use inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   have ⟨hcf₁, ho₁⟩ := terminatesTo_fn_inv' x paramType body returnType
@@ -514,7 +514,6 @@ lemma stepFR_fn
   · -- ReservedDiscipline cf₁
     simp only [hres, res_expected]
     exact hrd₁
--- World-free version of stepFRW_pfn
 
 lemma stepFR_pfn
   
@@ -552,7 +551,7 @@ lemma stepFR_pfn
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
       intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
-      -- Use world-free inversion lemma
+      -- Use inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
       have ⟨hcf₁, ho₁⟩ := terminatesTo_pfn_inv' x paramType body returnType

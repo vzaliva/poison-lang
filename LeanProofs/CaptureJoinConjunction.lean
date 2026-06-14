@@ -106,7 +106,7 @@ namespace CaptureJoinConjunction
     `mergePFnTClosures` deduplicates via `beqPFnTClosure`, which compares
     `beqCaptureList`) never coalesces two members that differ in their captures.
     No branch's capture contract is dropped, and none is weakened to `noPred`. -/
-theorem mem_mergePFnTClosures_extern_captures
+private theorem mem_mergePFnTClosures_extern_captures
     (tcls1 tcls2 : List PFnTClosure)
     (id : ExternId) (x : Name) (retSpec : ExternReturn) (tenv : CapturedVarEnv)
     (declaredArgQt : QTyp) (captures : List Capture)
@@ -122,7 +122,7 @@ theorem mem_mergePFnTClosures_extern_captures
     call gate held. The argument condition and the `captures:` contract are fused
     into one guard inside `applyPFnTClosureAtCursor`; a non-`throw` (`.ok`) result
     forces the whole guard true, hence the capture conjunct. -/
-theorem applyPFnTClosureAtCursor_extern_captures
+private theorem applyPFnTClosureAtCursor_extern_captures
     {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
     {argPred : Predicate} {ctx : TypeContext} {result2 : TypeResult}
     {cursor : Tag × Loc} {fuel : Nat}
@@ -146,7 +146,7 @@ theorem applyPFnTClosureAtCursor_extern_captures
 
 /-- A successful threaded application of a member list implies every member was
     applied successfully (at its threaded cursor). -/
-theorem applyClosuresThreaded_ok_mem {α : Type}
+private theorem applyClosuresThreaded_ok_mem {α : Type}
     {applyOne : α → Tag × Loc → TypecheckM TypeResult}
     {items : List α} {cursor : Tag × Loc} {results : List TypeResult}
     (h : applyClosuresThreaded applyOne items cursor = Except.ok results) :

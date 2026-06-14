@@ -270,7 +270,7 @@ lemma stepFR_seq_with_expr_proof
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have hIH1 := IH fuel' (by simp)
     e1 ctxᵢ hctxCurrent hcan1 hwfTm htagBounded res1 htc1'
-  -- Use world-free inversion lemma for seq
+  -- Use inversion lemma for seq
   have hstruct₀ := terminatesTo_seq_inv' e1 e2
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀1, v₀1, ht₀_e1, ht₀_e2, hpm₀1, hpm₀2⟩
@@ -431,4 +431,3 @@ lemma stepFR_seq
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
         htc
 
--- World-free version of stepFRW_vlet

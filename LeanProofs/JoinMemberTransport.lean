@@ -11,7 +11,7 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
-lemma agreeValueUnder_clean_monotoneRegime
+private lemma agreeValueUnder_clean_monotoneRegime
     {predSat : PredSat} {R R' : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
     Regime.monotoneStep R R' →
       qtypCleanUnder R' qt →

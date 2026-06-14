@@ -41,21 +41,21 @@ namespace ExternRegimeInt
 /-- The allocator on a single `guardClosure` predicate allocates exactly one fresh
     tag `nextTag` for index `idx`, advancing to `nextTag + 1`.  Contrast
     `collectAndAllocExternTags_noPred`, which yields the empty map. -/
-theorem collectAndAllocExternTags_pred (idx : TagIndex) (nm : Name) (body : Expr) (nextTag : Tag) :
+private theorem collectAndAllocExternTags_pred (idx : TagIndex) (nm : Name) (body : Expr) (nextTag : Tag) :
     collectAndAllocExternTags [SyntaxPredicate.guardClosure idx nm body] nextTag
       = .ok (({} : ExtTreeMap TagIndex Tag).insert idx nextTag, nextTag + 1) := by
   rfl
 
 /-- A singleton `ExtTreeMap` lists to a single pair (one node, no ordering
     sensitivity). -/
-theorem extTreeMap_toList_singleton (idx : TagIndex) (t : Tag) :
+private theorem extTreeMap_toList_singleton (idx : TagIndex) (t : Tag) :
     (({} : ExtTreeMap TagIndex Tag).insert idx t).toList = [(idx, t)] := by
   rfl
 
 /-- On a singleton tag mapping, the regime policy inserts exactly `freshTag ↦ b`
     when the policy says `some b` and `freshTag` is not already governed.  Contrast
     the `noPred` case, where the empty mapping leaves the regime unchanged. -/
-theorem applyExternRegimePolicy_singleton
+private theorem applyExternRegimePolicy_singleton
     (R : Regime) (id : ExternId) (policy : ExternId → Tag → Option Bool)
     (idx : TagIndex) (freshTag : Tag) (b : Bool)
     (hpolicy : policy id freshTag = some b)
@@ -70,7 +70,7 @@ theorem applyExternRegimePolicy_singleton
     de-poisons (`R(k) = some true`).  Mirror of `valueConsistentWithRegime_int_noPred`
     but landing in the `inRegimeTrue` constructor; the predicate-satisfaction
     obligation `qtypPredHolds` is supplied as a hypothesis. -/
-theorem valueConsistentWithRegime_int_inRegimeTrue
+private theorem valueConsistentWithRegime_int_inRegimeTrue
     {predSat : PredSat} {R : Regime} {qt : QTyp} {k : Tag}
     {μ : Memory} {θ : RealizationMap} {n : Int}
     (hetyp : qt.etyp = ETyp.int)
@@ -217,7 +217,7 @@ def openEmptyCtx : TypeContext :=
 /-- The single-extern program's only declaration is `openDecl`: invert
     `ExternDeclarationInProgram` on the `externFn` node.  The `externFn_return`
     branch is vacuous because `ExternReturn.simple` carries no nested extern. -/
-theorem openProg_agreesWithProgram (impl : ExternImpl)
+private theorem openProg_agreesWithProgram (impl : ExternImpl)
     (spec : ExternBoundarySpec openDecl impl) :
     TrustedRegistryAgreesWithProgram openProg [⟨openDecl, impl, spec⟩] := by
   intro id d entry hprog hlookup
@@ -236,7 +236,7 @@ theorem openProg_agreesWithProgram (impl : ExternImpl)
     canonical empty initial context.  The direct dual to
     `nonempty_registry_hagrees_unprovable` (parameterised over `impl`/`spec`,
     just like it). -/
-theorem open_empty_context_hagrees_provable (impl : ExternImpl)
+private theorem open_empty_context_hagrees_provable (impl : ExternImpl)
     (spec : ExternBoundarySpec openDecl impl) :
     TrustedRegistryAgreesWithReachable openProg openEmptyCtx [⟨openDecl, impl, spec⟩] :=
   agreesWithReachable_of_emptyVarEnv (by rfl) (openProg_agreesWithProgram impl spec)
@@ -280,7 +280,7 @@ scenario registry — adding the `errno` reference extern itself — is
 open ExternProofs (setErrProg setErrRegistry setErr_agreesWithProgram)
 
 /-- Per-context trust premise at the canonical empty initial context. -/
-theorem setErr_hagrees :
+private theorem setErr_hagrees :
     TrustedRegistryAgreesWithReachable setErrProg openEmptyCtx setErrRegistry :=
   agreesWithReachable_of_emptyVarEnv (by rfl) setErr_agreesWithProgram
 
@@ -333,7 +333,7 @@ def errnoRegistry : TrustedRegistry :=
 
 /-- The single declaration syntactically reachable in `errnoProg` — the
     top-level `@21` `externRef` node — is matched by the registry. -/
-theorem errno_agreesWithProgram :
+private theorem errno_agreesWithProgram :
     TrustedRegistryAgreesWithProgram errnoProg errnoRegistry := by
   intro id d entry hprog hlookup
   unfold errnoProg at hprog
@@ -347,7 +347,7 @@ theorem errno_agreesWithProgram :
       rfl
 
 /-- Per-context trust premise at the canonical empty initial context. -/
-theorem errno_hagrees :
+private theorem errno_hagrees :
     TrustedRegistryAgreesWithReachable errnoProg openEmptyCtx errnoRegistry :=
   agreesWithReachable_of_emptyVarEnv (by rfl) errno_agreesWithProgram
 
@@ -393,7 +393,7 @@ def errnoScenarioRegistry : TrustedRegistry :=
     `@21` `externRef` binding and the `@22` `externFn` callee — is matched by
     the registry.  The `@22` return is `simple unit`, which carries no nested
     extern, and the remaining program nodes declare nothing. -/
-theorem errnoScenario_agreesWithProgram :
+private theorem errnoScenario_agreesWithProgram :
     TrustedRegistryAgreesWithProgram errnoScenarioProg errnoScenarioRegistry := by
   intro id d entry hprog hlookup
   unfold errnoScenarioProg at hprog
@@ -428,7 +428,7 @@ theorem errnoScenario_agreesWithProgram :
           | deref h7 => cases h7
 
 /-- Per-context trust premise at the canonical empty initial context. -/
-theorem errnoScenario_hagrees :
+private theorem errnoScenario_hagrees :
     TrustedRegistryAgreesWithReachable errnoScenarioProg openEmptyCtx
       errnoScenarioRegistry :=
   agreesWithReachable_of_emptyVarEnv (by rfl) errnoScenario_agreesWithProgram

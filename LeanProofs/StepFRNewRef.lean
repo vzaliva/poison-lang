@@ -606,7 +606,7 @@ lemma stepFR_newRef_with_expr_proof
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm htagBounded res1 htc1'
-  -- Use world-free inversion lemma for newRef
+  -- Use inversion lemma for newRef
   have hstruct₀ := terminatesTo_newRef_inv' e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀', n₀, ht₀_e, ho₀, hmem₀, hnext₀, hvar₀, hpm₀⟩
@@ -1585,4 +1585,3 @@ lemma stepFR_newRef
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
         hOp htc
 
--- World-free version of stepFRW_seq

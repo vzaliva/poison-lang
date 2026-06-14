@@ -5083,31 +5083,6 @@ private lemma appTwoRunOutChoice_of_pack
     AppTwoRunOutChoice predSat ctx res θ₀ θ₁ cf₀ cf₁ o₀ o₁ :=
   ⟨θ₀_out, θ₁_out, hθ₀, hθ₁, hpack⟩
 
-private lemma regime_lookup_back_of_monotone
-    {src dst : Regime}
-    (hmono : Regime.monotoneStep src dst) :
-    ∀ k b, dst.lookup? k = some b → src.lookup? k = some b := by
-  intro k b hk_dst
-  have hdef_dst : dst.lookup? k ≠ none := by
-    intro hnone
-    rw [hk_dst] at hnone
-    contradiction
-  have hdef_src : src.lookup? k ≠ none :=
-    hmono.2 k hdef_dst
-  cases hk_src : src.lookup? k with
-  | none =>
-      exact False.elim (hdef_src hk_src)
-  | some b_src =>
-      have hcases := hmono.1 k b_src hk_src
-      cases hcases with
-      | inl hk_dst' =>
-          have hb_eq : b_src = b := by
-            have : some b_src = some b := hk_dst'.symm.trans hk_dst
-            exact Option.some.inj this
-          simp [hb_eq]
-      | inr hnone_dst =>
-          rw [hnone_dst] at hk_dst
-          cases hk_dst
 
 private lemma locsRegime_transport_lookup
     {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
@@ -6774,11 +6749,11 @@ theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
   rw [hreg_c₁₀] at hGet₀
   simp [emptyExternRegistry] at hGet₀
 
-/-- Provider-shaped adapter for the future registry lookup: a static
-    static source of the arrow closure list produces the side-0 boundary
-    contract.  The empty-registry instance below ignores the key, but populated
-    instances should use `FnTClosure.extern` membership to look up the matching
-    per-id boundary spec. -/
+/-- Provider-shaped adapter for the registry lookup: a static source of the
+    arrow closure list produces the side-0 boundary contract.  The empty-registry
+    variant discharges the key vacuously; the populated trusted-registry variants
+    below use `FnTClosure.extern` membership to look up the matching per-id
+    boundary spec. -/
 def ExternCallBoundaryFRFnSide0Provider
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
     (e1 e2 : Expr) (res : TypeResult) (tcls : List FnTClosure)

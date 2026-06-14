@@ -305,34 +305,6 @@ inductive valueConsistentWithRegime (predSat : PredSat) (R : Regime)
 -- Monotonicity lemmas for regime predicates
 -- When Regime.monotoneStep R R' and the lookup values match, we can transfer locsRegime/varsRegime
 
-lemma locsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
-    {entry : Loc × QTyp} {k : Tag} {b : Bool}
-    (h_mono : Regime.monotoneStep R R')
-    (hguard : qtypGuardTag entry.snd = some k)
-    (hkR' : R'.lookup? k = some b)
-    (h_loc : locsRegime predSat R μ θ entry) :
-    locsRegime predSat R' μ θ entry := by
-  cases h_loc with
-  | noPred_ok hpred =>
-      exact locsRegime.noPred_ok entry hpred
-  | guardOnly_ok k' hgo =>
-      exact locsRegime.guardOnly_ok entry k' hgo
-  | withPred_ok k' arg_name pred_body var_env a n b' hclos hregime hreal hmem hconsist =>
-      -- hregime : R.lookup? k' = some b' for the guard tag k' in the predicate
-      -- From hclos, qtypGuardTag entry.snd = some k', so k' = k by hguard
-      have hk_eq : k' = k := by
-        simp only [qtypGuardTag, hclos] at hguard
-        exact Option.some.inj hguard
-      -- By monotoneStep.entries_preserved: R.lookup? k' = some b' → R'.lookup? k' = some b' ∨ R'.lookup? k' = none
-      have h_cases := h_mono.1 k' b' hregime
-      cases h_cases with
-      | inl h_eq =>
-          -- R'.lookup? k' = some b', can construct the R' version
-          exact locsRegime.withPred_ok entry k' arg_name pred_body var_env a n b' hclos h_eq hreal hmem hconsist
-      | inr h_none =>
-          -- R'.lookup? k' = none contradicts hkR' since k' = k
-          rw [hk_eq] at h_none
-          simp [h_none] at hkR'
 
 lemma varsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ : VarEnv}
     {entry : Name × QTyp} {k : Tag} {b : Bool}

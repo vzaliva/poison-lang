@@ -1342,7 +1342,7 @@ def regimeConsistentWithCtxMasked
 def MaskedTagsAbsentFromTrueTagEnv (masked : Tag → Prop) (ctx : TypeContext) : Prop :=
   ∀ k deps, masked k → ctx.tagEnv.get? k = some ⟨true, deps⟩ → False
 
-lemma tagEnvConsistentWithRegimeMasked_unmask
+private lemma tagEnvConsistentWithRegimeMasked_unmask
     {masked : Tag → Prop} {tagEnv : TagEnv} {R : Regime}
     (hreg : tagEnvConsistentWithRegimeMasked masked tagEnv R)
     (habsent : ∀ k deps, masked k → tagEnv.get? k = some ⟨true, deps⟩ → False) :
@@ -1717,7 +1717,7 @@ lemma MaskedTagsAbsentFromTrueTagEnvs_join
     ⟨deps₁, _deps₂, hget₁, _hget₂⟩
   exact h₁ k deps₁ hmasked hget₁
 
-lemma masked_lookup_none_of_monotoneStep
+private lemma masked_lookup_none_of_monotoneStep
     {masked : Tag → Prop} {R R' : Regime}
     (hmasked_none : ∀ k, masked k → R.lookup? k = none)
     (h_mono : Regime.monotoneStep R R') :

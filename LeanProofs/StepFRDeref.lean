@@ -505,7 +505,7 @@ lemma stepFR_deref_with_expr_proof
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm htagBounded res1 htc1'
-  -- Invert deref evaluation (world-free)
+  -- Invert deref evaluation
   have hstruct₀ := terminatesTo_deref_inv' e
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hstruct₀ with ⟨cfg₀', a₀', n₀, ht₀_e, hlookup₀, hv₀, hmem₀, hvar₀, hnext₀, hpm₀⟩

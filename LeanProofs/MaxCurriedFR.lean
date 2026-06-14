@@ -39,7 +39,7 @@ def maxCurriedRegistry : TrustedRegistry :=
 /-- Every declaration syntactically reachable in `maxCurriedProg` is matched by
     the registry: `@10` (the `externPfn` node, `captures = []`) and `@11` (the
     nested return, `captures = [a]` via `nestedPfn_here`). -/
-theorem maxCurried_agreesWithProgram :
+private theorem maxCurried_agreesWithProgram :
     TrustedRegistryAgreesWithProgram maxCurriedProg maxCurriedRegistry := by
   intro id d entry hprog hlookup
   unfold maxCurriedProg at hprog
@@ -67,7 +67,7 @@ theorem maxCurried_agreesWithProgram :
           cases hret'
 
 /-- Per-context trust premise at the canonical empty initial context. -/
-theorem maxCurried_hagrees :
+private theorem maxCurried_hagrees :
     TrustedRegistryAgreesWithReachable maxCurriedProg openEmptyCtx maxCurriedRegistry :=
   agreesWithReachable_of_emptyVarEnv (by rfl) maxCurried_agreesWithProgram
 
@@ -103,7 +103,7 @@ def appliedMaxCurriedProg : Expr :=
     each matched by its registry entry.  The `let`-bound declaration reaches them
     (`@10` via `externPfn`, `@11` via the nested return `nestedPfn_here`); the
     `let`-body `(m 7) 2` reaches none (applications of `var`/`num`). -/
-theorem appliedMaxCurried_agreesWithProgram :
+private theorem appliedMaxCurried_agreesWithProgram :
     TrustedRegistryAgreesWithProgram appliedMaxCurriedProg maxCurriedRegistry := by
   intro id d entry hprog hlookup
   unfold appliedMaxCurriedProg at hprog
@@ -138,7 +138,7 @@ theorem appliedMaxCurried_agreesWithProgram :
       | app_arg hb1 => cases hb1
 
 /-- Per-context trust premise for the applied program at the empty context. -/
-theorem appliedMaxCurried_hagrees :
+private theorem appliedMaxCurried_hagrees :
     TrustedRegistryAgreesWithReachable appliedMaxCurriedProg openEmptyCtx maxCurriedRegistry :=
   agreesWithReachable_of_emptyVarEnv (by rfl) appliedMaxCurried_agreesWithProgram
 

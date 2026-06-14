@@ -3734,7 +3734,6 @@ lemma stepFR_assign
           IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
         hOp htc
 
--- World-free version of stepFRW_deref
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Assign single-run infrastructure (moved from FaultRobustnessProofs.lean)

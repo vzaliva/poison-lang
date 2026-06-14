@@ -252,7 +252,7 @@ def ExternBoundarySinglePost
 
 namespace ExternBoundarySinglePost
 
-theorem to_maskedRegParamPost
+private theorem to_maskedRegParamPost
     {masked : Tag → Prop} {ctx : TypeContext} {res : TypeResult}
     {predSat : PredSat} {tm : TagMeaning}
     {θ : RealizationMap} {μ : Memory} {ρ : VarEnv}
@@ -849,7 +849,7 @@ private theorem retSpec_eq
     entry.decl.retSpec = some retSpec :=
   h.2.2.2.2.1
 
-theorem captures_eq
+private theorem captures_eq
     {entry : TrustedExternEntry} {id : ExternId} {x : Name}
     {argTyp : Typ} {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
     (h : TrustedRegistryEntryMatchesFn entry id x argTyp retSpec effects captures) :
@@ -895,7 +895,7 @@ private theorem retSpec_eq
     entry.decl.retSpec = some retSpec :=
   h.2.2.2.2.1
 
-theorem captures_eq
+private theorem captures_eq
     {entry : TrustedExternEntry} {id : ExternId} {x : Name}
     {argTyp : Typ} {retSpec : ExternReturn} {captures : List Capture}
     (h : TrustedRegistryEntryMatchesPfn entry id x argTyp retSpec captures) :

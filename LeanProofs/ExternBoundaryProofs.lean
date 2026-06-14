@@ -383,7 +383,7 @@ private lemma list_lookup_mem {α β : Type} [BEq α] [LawfulBEq α]
           · simp [List.lookup, hEq] at hlookup
             exact List.mem_cons_of_mem _ (ih hlookup)
 
-theorem of_mem
+private theorem of_mem
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
     {x : Name} {qt : QTyp} {id : ExternId} {d : ExternDeclaration}
     (hmem : (x, qt) ∈ σcap)
@@ -401,7 +401,7 @@ theorem of_mem
           | tail _ htail =>
               exact ExternDeclarationReachableFromCapturedEnv.tail (ih htail)
 
-theorem of_list_lookup
+private theorem of_list_lookup
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
     {x : Name} {qt : QTyp} {id : ExternId} {d : ExternDeclaration}
     (hlookup : σcap.lookup x = some qt)
@@ -409,7 +409,7 @@ theorem of_list_lookup
     ExternDeclarationReachableFromCapturedEnv root ctxRoot σcap id d :=
   of_mem (list_lookup_mem σcap x qt hlookup) hqt
 
-theorem exists_mem
+private theorem exists_mem
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
     {id : ExternId} {d : ExternDeclaration}
     (hcap : ExternDeclarationReachableFromCapturedEnv root ctxRoot σcap id d) :
@@ -433,7 +433,7 @@ end ExternDeclarationReachableFromCapturedEnv
 
 namespace CapturedEnvReachableFrom
 
-theorem of_toCaptured
+private theorem of_toCaptured
     {root : Expr} {ctxRoot ctx : TypeContext}
     (hctx : ContextReachableFrom root ctxRoot ctx) :
     CapturedEnvReachableFrom root ctxRoot (VarTypeEnv.toCaptured ctx.varEnv) := by
@@ -443,7 +443,7 @@ theorem of_toCaptured
   have hlookup := VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv x qt hmem
   exact hctx hlookup hqt
 
-theorem qtyp_of_ofCaptured_lookup
+private theorem qtyp_of_ofCaptured_lookup
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
     (hcap : CapturedEnvReachableFrom root ctxRoot σcap)
     {x : Name} {qt : QTyp}
@@ -453,7 +453,7 @@ theorem qtyp_of_ofCaptured_lookup
   have hlist := list_lookup_of_ofCaptured_lookup σcap x qt hlookup
   exact hcap (ExternDeclarationReachableFromCapturedEnv.of_list_lookup hlist hqt)
 
-theorem context_ofCaptured
+private theorem context_ofCaptured
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
     (hcap : CapturedEnvReachableFrom root ctxRoot σcap)
     (ctx : TypeContext) :
@@ -465,7 +465,7 @@ end CapturedEnvReachableFrom
 
 namespace ContextReachableFrom
 
-theorem ofCaptured_update
+private theorem ofCaptured_update
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
     (hcap : CapturedEnvReachableFrom root ctxRoot σcap)
     (ctx : TypeContext)
@@ -480,7 +480,7 @@ end ContextReachableFrom
 
 namespace QTypReachableFrom
 
-theorem arrow_redecorate
+private theorem arrow_redecorate
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
     {p qpoison₀ qpoison₁ : Poison} {qpred₀ qpred₁ : Predicate}
     {tcls : List FnTClosure}
@@ -504,7 +504,7 @@ theorem arrow_redecorate
   | arrow_regular_extern_body hmem =>
       exact hqt (ExternDeclarationReachableFromQTyp.arrow_regular_extern_body hmem)
 
-theorem parrow_redecorate
+private theorem parrow_redecorate
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
     {p qpoison₀ qpoison₁ : Poison} {qpred₀ qpred₁ : Predicate}
     {tcls : List PFnTClosure}
@@ -526,7 +526,7 @@ theorem parrow_redecorate
   | parrow_extern_captured hmem hcap =>
       exact hqt (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmem hcap)
 
-theorem etyp_redecorate
+private theorem etyp_redecorate
     {root : Expr} {ctxRoot : TypeContext} {etyp : ETyp}
     {qpoison₀ qpoison₁ : Poison} {qpred₀ qpred₁ : Predicate}
     (hqt :
@@ -578,7 +578,7 @@ theorem fn_regular_body
     ExternDeclarationReachableFromContext root ctxRoot id d :=
   hqt (ExternDeclarationReachableFromQTyp.arrow_regular_body hmem hprog)
 
-theorem fn_regular_captured
+private theorem fn_regular_captured
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
     {p qpoison : Poison} {qpred : Predicate} {tcls : List FnTClosure}
     (hqt :
@@ -606,7 +606,7 @@ theorem fn_extern_member
         captures := captures } :=
   hqt (ExternDeclarationReachableFromQTyp.arrow_extern_member hmem)
 
-theorem fn_extern_return
+private theorem fn_extern_return
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
     {p qpoison : Poison} {qpred : Predicate} {tcls : List FnTClosure}
     (hqt :
@@ -620,7 +620,7 @@ theorem fn_extern_return
     ExternDeclarationReachableFromContext root ctxRoot nestedId d :=
   hqt (ExternDeclarationReachableFromQTyp.arrow_extern_return hmem hret)
 
-theorem fn_extern_captured
+private theorem fn_extern_captured
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
     {p qpoison : Poison} {qpred : Predicate} {tcls : List FnTClosure}
     (hqt :
@@ -633,23 +633,6 @@ theorem fn_extern_captured
   intro _id _d hcap
   exact hqt (ExternDeclarationReachableFromQTyp.arrow_extern_captured hmem hcap)
 
-theorem fn_regular_extern_body
-    {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
-    {p qpoison : Poison} {qpred : Predicate} {tcls : List FnTClosure}
-    (hqt :
-      QTypReachableFrom root ctxRoot
-        { etyp := ETyp.arrow st1 st2 p tcls, poison := qpoison, pred := qpred })
-    {id : ExternId} {x y : Name} {argTyp : Typ}
-    {argPoison : Bool} {argPred : SyntaxPredicate}
-    {retSpec : ExternReturn} {effects : List Effect} {σcap : CapturedVarEnv}
-    (hmem :
-      FnTClosure.regular x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) σcap ∈ tcls) :
-    ExternDeclarationReachableFromContext root ctxRoot id
-      { id := id, kind := .fn, typ := argTyp, argName := some x,
-        retSpec := some retSpec, effects := effects,
-        preds := collectExternPreds retSpec effects, argPoison := argPoison,
-        captures := cap } :=
-  hqt (ExternDeclarationReachableFromQTyp.arrow_regular_extern_body hmem)
 
 theorem pfn_regular_body
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
@@ -664,7 +647,7 @@ theorem pfn_regular_body
     ExternDeclarationReachableFromContext root ctxRoot id d :=
   hqt (ExternDeclarationReachableFromQTyp.parrow_regular_body hmem hprog)
 
-theorem pfn_regular_captured
+private theorem pfn_regular_captured
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
     {p qpoison : Poison} {qpred : Predicate} {tcls : List PFnTClosure}
     (hqt :
@@ -691,7 +674,7 @@ theorem pfn_extern_member
         captures := captures } :=
   hqt (ExternDeclarationReachableFromQTyp.parrow_extern_member hmem)
 
-theorem pfn_extern_return
+private theorem pfn_extern_return
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
     {p qpoison : Poison} {qpred : Predicate} {tcls : List PFnTClosure}
     (hqt :
@@ -705,7 +688,7 @@ theorem pfn_extern_return
     ExternDeclarationReachableFromContext root ctxRoot nestedId d :=
   hqt (ExternDeclarationReachableFromQTyp.parrow_extern_return hmem hret)
 
-theorem pfn_extern_captured
+private theorem pfn_extern_captured
     {root : Expr} {ctxRoot : TypeContext} {st1 st2 : Typ}
     {p qpoison : Poison} {qpred : Predicate} {tcls : List PFnTClosure}
     (hqt :
@@ -718,7 +701,7 @@ theorem pfn_extern_captured
   intro _id _d hcap
   exact hqt (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmem hcap)
 
-theorem of_fn_result
+private theorem of_fn_result
     {root : Expr} {ctxRoot ctx : TypeContext}
     {x : Name} {st1 st2 : Typ} {body : Expr}
     (hctx : ContextReachableFrom root ctxRoot ctx)
@@ -755,7 +738,7 @@ theorem of_fn_result
       | head => exact hcurrent ExternDeclarationInProgram.fn_extern_body_runtime
       | tail _ htail => cases htail
 
-theorem of_pfn_result
+private theorem of_pfn_result
     {root : Expr} {ctxRoot ctx : TypeContext}
     {x : Name} {st1 st2 : Typ} {body : PExpr}
     (hctx : ContextReachableFrom root ctxRoot ctx)
@@ -788,7 +771,7 @@ theorem of_pfn_result
       cases hmem with
       | tail _ htail => cases htail
 
-theorem of_externFn_result
+private theorem of_externFn_result
     {root : Expr} {ctxRoot ctx : TypeContext}
     {id : ExternId} {x : Name} {argTyp : Typ}
     {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp}
@@ -829,7 +812,7 @@ theorem of_externFn_result
       cases hmem with
       | tail _ htail => cases htail
 
-theorem of_externPfn_result
+private theorem of_externPfn_result
     {root : Expr} {ctxRoot ctx : TypeContext}
     {id : ExternId} {x : Name} {argTyp : Typ}
     {argPoison : Bool} {argPred : SyntaxPredicate} {argQt : QTyp}
@@ -867,7 +850,7 @@ theorem of_externPfn_result
       | head => exact CapturedEnvReachableFrom.of_toCaptured hctx hcap
       | tail _ htail => cases htail
 
-theorem of_typecheckFn
+private theorem of_typecheckFn
     {root : Expr} {ctxRoot ctx : TypeContext}
     {x : Name} {st1 st2 : Typ} {body : Expr} {res : TypeResult}
     (hctx : ContextReachableFrom root ctxRoot ctx)
@@ -885,7 +868,7 @@ theorem of_typecheckFn
       poison := ctx.pc, pred := Predicate.noPred }
   exact of_fn_result hctx hcurrent
 
-theorem of_typecheckPfn
+private theorem of_typecheckPfn
     {root : Expr} {ctxRoot ctx : TypeContext}
     {x : Name} {st1 st2 : Typ} {body : Expr} {res : TypeResult}
     (hctx : ContextReachableFrom root ctxRoot ctx)
@@ -913,7 +896,7 @@ theorem of_typecheckPfn
         ExternDeclarationReachableFromContext root ctxRoot id d
       exact of_pfn_result hctx hcurrent
 
-theorem of_typecheckExternFn
+private theorem of_typecheckExternFn
     {root : Expr} {ctxRoot ctx : TypeContext}
     {id : ExternId} {x : Name} {argTyp : Typ}
     {argPoison : Bool} {argPred : SyntaxPredicate}
@@ -936,7 +919,7 @@ theorem of_typecheckExternFn
     ExternDeclarationReachableFromContext root ctxRoot nestedId d
   exact of_externFn_result hpoison hctx hcurrent
 
-theorem of_typecheckExternPfn
+private theorem of_typecheckExternPfn
     {root : Expr} {ctxRoot ctx : TypeContext}
     {id : ExternId} {x : Name} {argTyp : Typ}
     {argPoison : Bool} {argPred : SyntaxPredicate}
@@ -959,7 +942,7 @@ theorem of_typecheckExternPfn
     ExternDeclarationReachableFromContext root ctxRoot nestedId d
   exact of_externPfn_result hpoison hctx hcurrent
 
-theorem of_non_function_etyp
+private theorem of_non_function_etyp
     {root : Expr} {ctxRoot : TypeContext} {qt : QTyp}
     (hfun : qt.etyp.isFunctionType = false) :
     QTypReachableFrom root ctxRoot qt := by
@@ -1291,7 +1274,7 @@ private theorem ETypReachableFrom.of_joinETyps
         exact h2 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmemSrc hcap)
 
-theorem of_joinETyps
+private theorem of_joinETyps
     {root : Expr} {ctxRoot : TypeContext} {qt1 qt2 : QTyp}
     (h1 : QTypReachableFrom root ctxRoot qt1)
     (h2 : QTypReachableFrom root ctxRoot qt2) :
@@ -1302,7 +1285,7 @@ theorem of_joinETyps
   exact ETypReachableFrom.of_joinETyps
     (ETypReachableFrom.of_qtyp h1) (ETypReachableFrom.of_qtyp h2)
 
-theorem of_joinTypeResults
+private theorem of_joinTypeResults
     {root : Expr} {ctxRoot : TypeContext} {ctx : TypeContext}
     {first res : TypeResult} {rest : List TypeResult}
     (hfirst : QTypReachableFrom root ctxRoot first.qualType)
@@ -1419,7 +1402,7 @@ theorem of_joinTypeResults
               intro id d hreach
               exact haccReach hreach
 
-theorem with_etyp
+private theorem with_etyp
     {root : Expr} {ctxRoot : TypeContext} {qt : QTyp}
     {qpoison : Poison} {qpred : Predicate}
     (hqt : QTypReachableFrom root ctxRoot qt) :
@@ -1427,7 +1410,7 @@ theorem with_etyp
       { etyp := qt.etyp, poison := qpoison, pred := qpred } :=
   ETypReachableFrom.of_qtyp hqt
 
-theorem of_arrow_etyp_eq
+private theorem of_arrow_etyp_eq
     {root : Expr} {ctxRoot : TypeContext} {qt : QTyp}
     {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
     (hqt : QTypReachableFrom root ctxRoot qt)
@@ -1443,7 +1426,7 @@ theorem of_arrow_etyp_eq
       intro id d hreach
       exact hqt (by simpa [hres] using hreach)
 
-theorem of_parrow_etyp_eq
+private theorem of_parrow_etyp_eq
     {root : Expr} {ctxRoot : TypeContext} {qt : QTyp}
     {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
     (hqt : QTypReachableFrom root ctxRoot qt)
@@ -1459,7 +1442,7 @@ theorem of_parrow_etyp_eq
       intro id d hreach
       exact hqt (by simpa [hres] using hreach)
 
-theorem of_typecheckVar
+private theorem of_typecheckVar
     {root : Expr} {ctxRoot ctx : TypeContext}
     {x : Name} {res : TypeResult}
     (hctx : ContextReachableFrom root ctxRoot ctx)

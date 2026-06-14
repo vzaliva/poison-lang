@@ -1557,34 +1557,6 @@ end RegimeTransport
 
 -- Weaken closureCapturedVarsRegime when the closure list grows (superset).
 -- Used when joining type results: mergeFnTClosures produces a superset.
-private lemma closureCapturedVarsRegime_weaken_fnTClosures
-  {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
-  {st1 st2 : Typ} {p : Poison} {tcls tcls' : List FnTClosure} {poison : Poison} {pred : Predicate}
-  (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
-  (h : closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
-  closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls', poison, pred⟩ μ θ v := by
-  cases h with
-  | intro hdeep =>
-      refine .intro ?_
-      cases hdeep with
-      | nonClosure hv hpe => exact .nonClosure hv hpe
-      | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec hbody =>
-          have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-          subst heq_tcls
-          exact .closure xp body ρcap σcap st1 st2 p tcls' hval rfl (hmem _ hmem_src) hP hrec hbody
-      | closure_extern id xp y argTyp retSpec effects ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
-          have heq_arg : argTyp = st1 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.1).symm
-          have heq_ret : parseReturnType retSpec = st2 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.1).symm
-          have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-          subst heq_tcls
-          exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls'
-            hval (by simp [heq_arg, heq_ret]) (hmem _ hmem_src) hP hrec
-      | peClosure _ _ _ _ _ _ _ _ _ _ hetyp_eq_parr _ _ =>
-          exfalso
-          simp at hetyp_eq_parr
-      | peClosure_extern _id _xp _y _argTyp _retSpec _ρcap _σcap _p _tcls _hval hetyp_eq_parr _hmem _hP _hrec =>
-          exfalso
-          simp at hetyp_eq_parr
 
 -- Weaken with different inner poison (joinETyps changes p to joinPoison p1 p2).
 private lemma closureCapturedVarsRegime_weaken_fnTClosures'
@@ -1617,34 +1589,6 @@ private lemma closureCapturedVarsRegime_weaken_fnTClosures'
           simp at hetyp_eq_parr
 
 -- Analogous for parrow/PFnTClosure.
-private lemma closureCapturedVarsRegime_weaken_pFnTClosures
-  {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
-  {st1 st2 : Typ} {p : Poison} {tcls tcls' : List PFnTClosure} {poison : Poison} {pred : Predicate}
-  (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
-  (h : closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
-  closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls', poison, pred⟩ μ θ v := by
-  cases h with
-  | intro hdeep =>
-      refine .intro ?_
-      cases hdeep with
-      | nonClosure hv hpe => exact .nonClosure hv hpe
-      | closure _ _ _ _ _ _ _ _ _ hetyp_eq_arr _ _ =>
-          exfalso
-          simp at hetyp_eq_arr
-      | closure_extern _id _xp _y _argTyp _retSpec _effects _ρcap _σcap _p _tcls _hval hetyp_eq_arr _hmem _hP _hrec =>
-          exfalso
-          simp at hetyp_eq_arr
-      | peClosure xp body pbody ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hpure hmem_src hP hrec =>
-          have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-          subst heq_tcls
-          exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls' hval rfl hpure (hmem _ hmem_src) hP hrec
-      | peClosure_extern id xp y argTyp retSpec ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
-          have heq_arg : argTyp = st1 := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.1).symm
-          have heq_ret : parseReturnType retSpec = st2 := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.1).symm
-          have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-          subst heq_tcls
-          exact .peClosure_extern id xp y argTyp retSpec ρcap σcap p tcls'
-            hval (by simp [heq_arg, heq_ret]) (hmem _ hmem_src) hP hrec
 
 -- Weaken parrow with different inner poison (joinETyps changes p).
 private lemma closureCapturedVarsRegime_weaken_pFnTClosures'
@@ -1956,7 +1900,7 @@ lemma closureCapturedVarsRegime_transport_pred
 
 -- When Regime.monotoneStep R R', valueConsistentWithRegime for R implies for R'
 -- (R' has fewer entries, so fewer constraints).
-lemma valueConsistentWithRegime_monotone
+private lemma valueConsistentWithRegime_monotone
   {predSat : PredSat} {R R' : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (h_mono : Regime.monotoneStep R R')
   (h : valueConsistentWithRegime predSat R qt μ θ v) :
@@ -2250,7 +2194,7 @@ private lemma capturedVarsRegimeProperty_to_masked
   intro x qt_x k_x hlookup hguard hRdef
   exact Or.inr (h x qt_x k_x hlookup hguard hRdef)
 
-lemma closureCapturedVarsRegime_to_masked
+private lemma closureCapturedVarsRegime_to_masked
   {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
   {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (h : closureCapturedVarsRegime predSat R qt μ θ v) :
@@ -2808,44 +2752,6 @@ lemma closureCapturedVarsRegimeMasked_transport_pred
   closureCapturedVarsRegimeMasked masked predSat R qt' μ θ v :=
   closureCapturedVarsRegimeMasked_transport_etyp hetyp h
 
-lemma valueConsistentWithRegimeMasked_monotone
-  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime}
-  {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
-  (h_mono : Regime.monotoneStep R R')
-  (h : valueConsistentWithRegimeMasked masked predSat R qt μ θ v) :
-  valueConsistentWithRegimeMasked masked predSat R' qt μ θ v := by
-  cases h with
-  | noTag htag hcap =>
-      exact valueConsistentWithRegimeMasked.noTag htag
-        (closureCapturedVarsRegimeMasked_monotone h_mono hcap)
-  | guardOnly_ok k hgo hcap =>
-      exact valueConsistentWithRegimeMasked.guardOnly_ok k hgo
-        (closureCapturedVarsRegimeMasked_monotone h_mono hcap)
-  | maskedTag k htag hmasked hcap =>
-      exact valueConsistentWithRegimeMasked.maskedTag k htag hmasked
-        (closureCapturedVarsRegimeMasked_monotone h_mono hcap)
-  | notInRegime k htag hknone hcap =>
-      have h' : R'.lookup? k = none := by
-        by_contra hneq
-        exact h_mono.2 k hneq hknone
-      exact valueConsistentWithRegimeMasked.notInRegime k htag h'
-        (closureCapturedVarsRegimeMasked_monotone h_mono hcap)
-  | inRegimeTrue k htag hktrue hholds hcap =>
-      have hcap' := closureCapturedVarsRegimeMasked_monotone h_mono hcap
-      have hR' := h_mono.1 k true hktrue
-      cases hR' with
-      | inl hk' =>
-          exact valueConsistentWithRegimeMasked.inRegimeTrue k htag hk' hholds hcap'
-      | inr hk'none =>
-          exact valueConsistentWithRegimeMasked.notInRegime k htag hk'none hcap'
-  | inRegimeFalse k htag hkfalse hnot hcap =>
-      have hcap' := closureCapturedVarsRegimeMasked_monotone h_mono hcap
-      have hR' := h_mono.1 k false hkfalse
-      cases hR' with
-      | inl hk' =>
-          exact valueConsistentWithRegimeMasked.inRegimeFalse k htag hk' hnot hcap'
-      | inr hk'none =>
-          exact valueConsistentWithRegimeMasked.notInRegime k htag hk'none hcap'
 
 private lemma valueConsistentWithRegimeMasked_transport_pred'
   {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
@@ -4203,7 +4109,7 @@ lemma valueHasETyp_extends
       intro y qt v hlookupT hlookupV
       exact ih y qt v hlookupT hlookupV hExt
 
-lemma capturedVarsTypingProperty_extends
+private lemma capturedVarsTypingProperty_extends
     {θ θ' : RealizationMap} {σcap : CapturedVarEnv} {ρcap : VarEnv}
     (hθ : θ.extendsMap θ')
     (h : capturedVarsTypingProperty θ σcap ρcap) :
@@ -4980,62 +4886,6 @@ lemma var_valueHasETyp_of_typecheck
 -- When Regime.monotoneStep R R', if consistentWithRegime holds for R, it holds for R'
 -- (R' has fewer entries, so fewer constraints need to be checked)
 
-lemma consistentWithRegimeMasked_monotone
-    (masked : Tag → Prop) (predSat : PredSat) (R R' : Regime) (ctx : TypeContext)
-    (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-    (h_mono : Regime.monotoneStep R R')
-    (h_cwr : consistentWithRegimeMasked masked predSat R ctx μ ρ θ) :
-    consistentWithRegimeMasked masked predSat R' ctx μ ρ θ := by
-  simp only [consistentWithRegimeMasked] at h_cwr ⊢
-  refine ⟨?_, ?_, ?_⟩
-  · intro l qt k hlookup hguard hR'def
-    cases hk' : R'.lookup? k with
-    | none => exact absurd hk' hR'def
-    | some b =>
-        have hRdef : R.lookup? k ≠ none := h_mono.2 k hR'def
-        have hmasked_or_hloc := h_cwr.1 l qt k hlookup hguard hRdef
-        cases hmasked_or_hloc with
-        | inl hmasked =>
-            exact Or.inl hmasked
-        | inr hloc =>
-            cases hk : R.lookup? k with
-            | none => exact absurd hk hRdef
-            | some b' =>
-                have h := h_mono.1 k b' hk
-                cases h with
-                | inl h_eq =>
-                    have hb_eq : b' = b := by
-                      have : some b' = some b := h_eq.symm.trans hk'
-                      exact Option.some.inj this
-                    have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
-                    exact Or.inr (locsRegime_monotone h_mono hguard hk' hloc)
-                | inr h_none =>
-                    simp [h_none] at hk'
-  · intro x qt k hlookup hguard hR'def
-    cases hk' : R'.lookup? k with
-    | none => exact absurd hk' hR'def
-    | some b =>
-        have hRdef : R.lookup? k ≠ none := h_mono.2 k hR'def
-        have hmasked_or_hvars := h_cwr.2.1 x qt k hlookup hguard hRdef
-        cases hmasked_or_hvars with
-        | inl hmasked =>
-            exact Or.inl hmasked
-        | inr hvars =>
-            cases hk : R.lookup? k with
-            | none => exact absurd hk hRdef
-            | some b' =>
-                have h := h_mono.1 k b' hk
-                cases h with
-                | inl h_eq =>
-                    have hb_eq : b' = b := by
-                      have : some b' = some b := h_eq.symm.trans hk'
-                      exact Option.some.inj this
-                    have hk_b : R.lookup? k = some b := by rw [← hb_eq]; exact hk
-                    exact Or.inr (varsRegime_monotone h_mono hguard hk' hvars)
-                | inr h_none =>
-                    simp [h_none] at hk'
-  · intro x qt v hlookup hρ
-    exact closureCapturedVarsRegimeMasked_monotone h_mono (h_cwr.2.2 x qt v hlookup hρ)
 
 -- ============================================================================
 -- Extended-regime (monotoneStepExt) transport: Masked variants.
@@ -5168,7 +5018,7 @@ lemma valueConsistentWithRegimeMasked_monotoneExt
       | inl hk' => exact valueConsistentWithRegimeMasked.inRegimeFalse k htag hk' hnot hcap'
       | inr hk'none => exact valueConsistentWithRegimeMasked.notInRegime k htag hk'none hcap'
 
-lemma memberVarsRegimeEvidence_monotoneExt
+private lemma memberVarsRegimeEvidence_monotoneExt
   {predSat : PredSat} {R R' : Regime} {μ : Memory} {newTags : Tag → Prop} {B : Tag}
   (h_mono : Regime.monotoneStepExt R R' newTags) (hnewB : ∀ k, newTags k → B ≤ k)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
@@ -5192,7 +5042,7 @@ lemma memberVarsRegimeEvidence_monotoneExt
 
 /-- Extended-regime variant of `memberCvcrEvidence_monotone`: the captured env's
     nested closure tags are below `B`, so freshness (`¬ newTags`) is discharged per member. -/
-lemma memberCvcrEvidence_monotoneExt
+private lemma memberCvcrEvidence_monotoneExt
   {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
   {newTags : Tag → Prop} {B : Tag}
   (h_mono : Regime.monotoneStepExt R R' newTags) (hnewB : ∀ k, newTags k → B ≤ k)
@@ -5330,16 +5180,6 @@ abbrev StepFR_IH (registry : ExternRegistry := emptyExternRegistry) : Prop :=
     ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res →
       StepFR ctxᵢ e res predSat tmᵢ (registry := registry)
 
-  abbrev StepFR_IH_WithExpr
-      (CanUse : Expr → Prop)
-      (registry : ExternRegistry := emptyExternRegistry) : Prop :=
-    let _tmAnchor := tm
-    ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
-      CanUse e →
-      wfTagMeaningCtx tmᵢ ctxᵢ →
-      TagBoundedCtx ctxᵢ →
-      ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res →
-        StepFR ctxᵢ e res predSat tmᵢ (registry := registry)
 
   abbrev StepFR_IH_WithExprCtx
       (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
@@ -5363,17 +5203,6 @@ abbrev StepFRSingleRunFinalCleanPcTrue_IH
       typecheck ctxᵢ e m = .ok res →
       StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
 
-  abbrev StepFRSingleRunFinalCleanPcTrue_IH_WithExpr
-      (CanUse : Expr → Prop)
-      (registry : ExternRegistry := emptyExternRegistry) : Prop :=
-    let _tmAnchor := tm
-    ∀ m < fuel, ∀ {tmᵢ : TagMeaning} (e : Expr) (ctxᵢ : TypeContext),
-      CanUse e →
-      wfTagMeaningCtx tmᵢ ctxᵢ →
-      TagMeaningBounded tmᵢ ctxᵢ.nextTag →
-      ∀ (res : TypeResult),
-        typecheck ctxᵢ e m = .ok res →
-        StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
 
   abbrev StepFRSingleRunFinalCleanPcTrue_IH_WithExprCtx
       (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
@@ -5543,7 +5372,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
       hagree
   exact hrec hclean
 
--- World-free version of ite fault-robustness
+-- ite fault-robustness
 -- Proof structure follows typecheckIf's 4 modes:
 -- Mode 1: R(k) = some true - commits to then-branch (e2)
 --   Key: uses consistentWithRegime + PredSatLaws.match_iff to show both runs take then-branch
@@ -5826,30 +5655,6 @@ lemma applyClosuresThreaded_ok_mem_output_exists_input
                   rcases ih hrest hy with ⟨x', hx', cursor', happly⟩
                   exact ⟨x', by simp [hx'], cursor', happly⟩
 
-lemma applyClosuresThreaded_ok_cons_head
-  {α : Type}
-  (applyOne : α → Tag × Loc → TypecheckM TypeResult)
-  {xs : List α} {cursor : Tag × Loc} {first : TypeResult} {rest : List TypeResult}
-  (hthread : applyClosuresThreaded applyOne xs cursor = .ok (first :: rest)) :
-  ∃ x xs', xs = x :: xs' ∧ applyOne x cursor = .ok first := by
-  cases xs with
-  | nil =>
-      simp [applyClosuresThreaded, pure, Except.pure] at hthread
-  | cons x xs =>
-      simp [applyClosuresThreaded, bind, Except.bind] at hthread
-      cases hfirst : applyOne x cursor with
-      | error _ =>
-          simp [hfirst] at hthread
-      | ok y =>
-          simp [hfirst] at hthread
-          cases hrest : applyClosuresThreaded applyOne xs (y.nextTag', y.nextLoc') with
-          | error _ =>
-              simp [hrest] at hthread
-          | ok ys =>
-              simp [hrest, pure, Except.pure] at hthread
-              have hy : y = first := by
-                exact hthread.1
-              exact ⟨x, xs, rfl, by simpa [hy] using hfirst⟩
 
 
 lemma applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bounds
@@ -5976,7 +5781,7 @@ lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_tag_bound
 
 /-- Combined tag+loc cursor-bound (output→input): each threaded output closure result comes from an
     input whose cursor satisfies both `baseTag ≤ cursor'.1` and `baseLoc ≤ cursor'.2`. -/
-lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bounds
+private lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bounds
   {α : Type}
   (applyOne : α → Tag × Loc → TypecheckM TypeResult)
   (baseTag : Tag) (baseLoc : Loc)
@@ -6422,7 +6227,7 @@ private lemma QTypRespectsTagMeaning_noPred_poison_transport
 /-- Pure extern result QTyp respects tag meaning (all `ExternReturn` cases)
     when any simple-return allocation has a structural compatibility witness.
     Nested cases use captured-env transfer and do not allocate return tags. -/
-lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
+private lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
     (tm : TagMeaning)
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -6540,7 +6345,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
 
 /-- Canonical tag-meaning extension for a successful pure extern closure with
     a simple return specification. -/
-lemma applyPFnTClosure_extern_simple_canonical_batch
+private lemma applyPFnTClosure_extern_simple_canonical_batch
     (tm : TagMeaning)
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -7237,7 +7042,7 @@ lemma applyFnTClosure_extern_ok_memEnv_guard_origin
 /-- Conjunct 2: the result QTyp of an impure extern application respects tag meaning.
     Requires `hcapTm` (captured env entries respect tm) and `hargTm` (arg QTyp respects tm)
     in addition to `hwf` and `happly`. -/
-lemma applyFnTClosure_extern_ok_qualTypeRespects_of_respects
+private lemma applyFnTClosure_extern_ok_qualTypeRespects_of_respects
     (tm : TagMeaning)
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -7356,7 +7161,7 @@ lemma applyFnTClosure_extern_ok_qualTypeRespects_of_respects
     application.  The allocated batch is `collectExternPreds retSpec effects`;
     the memory-loop and result-`QTyp` obligations are discharged by the
     structural `_of_respects` helpers above. -/
-lemma applyFnTClosure_extern_canonical_batch
+private lemma applyFnTClosure_extern_canonical_batch
     (tm : TagMeaning)
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -7491,183 +7296,8 @@ lemma applyFnTClosure_extern_canonical_batch
 -- (`resolveSyntaxPred_guardClosure_tag_from_mapping` now lives in TypeSafety.lean,
 -- shared with the `installReturnGuard` tagEnv lemmas.)
 
-/-- Helper: returnSpecToQTyp preserves the predicate of the result QTyp. -/
-private lemma returnSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (pred : Predicate)
-    (nextLoc : Loc) (qt : QTyp) (nextLoc' : Loc)
-    (h : returnSpecToQTyp typ poison pred nextLoc = .ok (qt, nextLoc')) :
-    qt.pred = pred := by
-  unfold returnSpecToQTyp at h
-  simp only [bind, Except.bind, pure, Except.pure] at h
-  cases typ with
-  | int => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact h.1 ▸ rfl
-  | bool => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact h.1 ▸ rfl
-  | unit => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact h.1 ▸ rfl
-  | string => simp only [Except.ok.injEq, Prod.mk.injEq] at h; exact h.1 ▸ rfl
-  | ref _ => simp at h
-  | arrow _ _ => simp at h
 
-/-- `FnTClosure.extern` result guard tag: with the input `tagEnv` bounded by
-    `nextTag`, the result's freshly minted return-guard tag is either absent
-    from the output tagEnv, or it is the freshly installed `installReturnGuard` entry —
-    whose value the output regime interprets identically. -/
-lemma applyFnTClosure_extern_ok_guardClosure_tag_absent_or_installed_of_tagEnvBounded
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (id : ExternId) (x : Name) (retSpec : ExternReturn) (effects : List Effect) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (hbound : tagEnvBounded result2.tagEnv' result2.nextTag')
-  (declaredArgQt : QTyp)
-  (happly : applyFnTClosure (FnTClosure.extern id x retSpec effects capturedEnv declaredArgQt captures) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
-  (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  r.tagEnv'.get? k = none ∨
-    ∃ tv, r.tagEnv'.get? k = some tv ∧ r.regime'.lookup? k = some tv.value := by
-  suffices hge : result2.nextTag' ≤ k by
-    cases hk : r.tagEnv'.get? k with
-    | none => exact Or.inl rfl
-    | some tv =>
-        refine Or.inr ⟨tv, rfl, ?_⟩
-        rcases applyFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 argEtyp argPoison argPred
-            result2 r fuel id x retSpec effects capturedEnv declaredArgQt happly k tv hk with
-          hold | ⟨_, _, hR⟩
-        · -- An (invalidated) input entry at a fresh tag contradicts boundedness.
-          have h2 := invalidateTagDeps_get?_some_imp _ _ k tv hold
-          rw [tagEnvBounded_get_none_of_ge result2.tagEnv' result2.nextTag' k hbound hge] at h2
-          simp at h2
-        · exact hR
-  unfold applyFnTClosure at happly
-  cases fuel with
-  | zero => simp at happly
-  | succ n =>
-    simp only [bind, Except.bind] at happly
-    -- Leading argument-condition gate: throw branch is impossible on .ok.
-    split at happly
-    · exact nomatch happly
-    simp only [pure, Except.pure] at happly
-    split at happly
-    · exact nomatch happly
-    · rename_i allocRes hcollect
-      split at happly
-      · exact nomatch happly
-      · rename_i memEnv' _
-        split at happly
-        · -- ExternReturn.simple
-          rename_i typ_ poison_ retpred_
-          split at happly
-          · exact nomatch happly
-          · rename_i resolvedPred hresolve
-            split at happly
-            · exact nomatch happly
-            · rename_i retQtPair hretQt
-              simp only [Except.ok.injEq] at happly
-              rw [← happly] at hpred
-              simp only [normalizeAppResultByProvenance] at hpred
-              split at hpred
-              · simp at hpred
-              · obtain ⟨tagMapping, nextTag'⟩ := allocRes
-                have hretPred : retQtPair.1.pred = resolvedPred :=
-                  returnSpecToQTyp_pred_eq typ_ poison_ resolvedPred _ _ _ hretQt
-                rw [hretPred] at hpred
-                obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
-                  retpred_ _ tagMapping resolvedPred hresolve k arg_name pred_body var_env hpred
-                exact collectAndAllocExternTags_mapping_values_ge
-                  (collectExternPreds (ExternReturn.simple typ_ poison_ retpred_) effects)
-                  result2.nextTag' tagMapping nextTag' hcollect idx k hidx
-        · -- ExternReturn.nestedFn: predicate is always noPred
-          split at happly
-          · exact nomatch happly
-          · simp only [Except.ok.injEq] at happly
-            rw [← happly] at hpred
-            simp only [normalizeAppResultByProvenance] at hpred
-            split at hpred <;> simp at hpred
-        · -- ExternReturn.nestedPfn: predicate is always noPred
-          split at happly
-          · exact nomatch happly
-          · simp only [Except.ok.injEq] at happly
-            rw [← happly] at hpred
-            simp only [normalizeAppResultByProvenance] at hpred
-            split at hpred <;> simp at hpred
 
-/-- `PFnTClosure.extern` result guard tag: with the input `tagEnv` bounded by
-    `nextTag`, the result's freshly minted return-guard tag is either absent
-    from the output tagEnv, or it is the freshly installed `installReturnGuard` entry —
-    whose value the output regime interprets identically. -/
-lemma applyPFnTClosure_extern_ok_guardClosure_tag_absent_or_installed_of_tagEnvBounded
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result2 : TypeResult) (fuel : Nat)
-  (id : ExternId) (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
-  (r : TypeResult)
-  (hbound : tagEnvBounded result2.tagEnv' result2.nextTag')
-  (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
-    argEtyp argPoison argPred ctx result2 fuel = .ok r)
-  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
-  (hpred : r.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  r.tagEnv'.get? k = none ∨
-    ∃ tv, r.tagEnv'.get? k = some tv ∧ r.regime'.lookup? k = some tv.value := by
-  suffices hge : result2.nextTag' ≤ k by
-    cases hk : r.tagEnv'.get? k with
-    | none => exact Or.inl rfl
-    | some tv =>
-        refine Or.inr ⟨tv, rfl, ?_⟩
-        rcases applyPFnTClosure_extern_tagEnv_get_cases ctx st1 st2 p p1 argEtyp argPoison argPred
-            result2 r fuel id x retSpec capturedEnv declaredArgQt happly k tv hk with
-          hold | ⟨_, _, hR⟩
-        · rw [tagEnvBounded_get_none_of_ge result2.tagEnv' result2.nextTag' k hbound hge] at hold
-          simp at hold
-        · exact hR
-  unfold applyPFnTClosure at happly
-  cases fuel with
-  | zero => simp at happly
-  | succ n =>
-    simp only [bind, Except.bind] at happly
-    -- Leading argument-condition gate: throw branch is impossible on .ok.
-    split at happly
-    · exact nomatch happly
-    simp only [pure, Except.pure] at happly
-    split at happly
-    · -- ExternReturn.simple
-      rename_i typ_ poison_ retpred_
-      split at happly
-      · exact nomatch happly
-      · rename_i allocRes hcollect
-        split at happly
-        · exact nomatch happly
-        · rename_i resolvedPred hresolve
-          split at happly
-          · exact nomatch happly
-          · rename_i retQtPair hretQt
-            simp only [Except.ok.injEq] at happly
-            rw [← happly] at hpred
-            simp only [normalizeAppResultByProvenance] at hpred
-            split at hpred
-            · simp at hpred
-            · obtain ⟨tagMapping, nextTag'⟩ := allocRes
-              have hretPred : retQtPair.1.pred = resolvedPred :=
-                returnSpecToQTyp_pred_eq typ_ poison_ resolvedPred _ _ _ hretQt
-              rw [hretPred] at hpred
-              obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
-                retpred_ _ tagMapping resolvedPred hresolve k arg_name pred_body var_env hpred
-              -- PFnTClosure.extern simple uses [retpred_] directly (not collectExternPreds)
-              exact collectAndAllocExternTags_mapping_values_ge
-                [retpred_] result2.nextTag' tagMapping nextTag' hcollect idx k hidx
-    · -- ExternReturn.nestedFn: predicate is always noPred
-      split at happly
-      · exact nomatch happly
-      · simp only [Except.ok.injEq] at happly
-        rw [← happly] at hpred
-        simp only [normalizeAppResultByProvenance] at hpred
-        split at hpred <;> simp at hpred
-    · -- ExternReturn.nestedPfn: predicate is always noPred
-      split at happly
-      · exact nomatch happly
-      · simp only [Except.ok.injEq] at happly
-        rw [← happly] at hpred
-        simp only [normalizeAppResultByProvenance] at hpred
-        split at hpred <;> simp at hpred
 
 /-- Helper: surfaceSpecToQTyp preserves EnvRespectsTagMeaning (only adds noPred int cell). -/
 private lemma surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
@@ -7883,84 +7513,7 @@ private lemma typecheckExternVal_preserves_lookup_origin
           exact ⟨fun h => ⟨qt_out, hlookup', h⟩,
                  fun k htag hreg hnotfun => ⟨qt_out, hlookup', htag, hreg, hnotfun⟩⟩
 
-/-- Helper: surfaceSpecToQTyp preserves the predicate in the first component. -/
-private lemma surfaceSpecToQTyp_pred_eq (typ : Typ) (poison : Bool) (resolvedPred : Predicate)
-    (ctx : TypeContext) (surfResult : QTyp × TypeContext)
-    (hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx = Except.ok surfResult) :
-    surfResult.1.pred = resolvedPred := by
-  simp only [surfaceSpecToQTyp] at hsurf
-  simp only [bind, Except.bind, pure, Except.pure] at hsurf
-  split at hsurf
-  all_goals first
-    | (simp only [Except.ok.injEq] at hsurf; exact (congrArg (·.1.pred) hsurf.symm))
-    | (simp at hsurf)
 
-/-- `typecheckExternVal` guard tag is absent from `tagEnv`, given that the
-    input context's `tagEnv` is bounded by `nextTag`. -/
-lemma typecheckExternVal_guardClosure_pred_implies_tag_absent_of_tagEnvBounded
-  (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-  (res : TypeResult)
-  (htc : typecheckExternVal ctx typ poison pred = .ok res)
-  (hbound : tagEnvBoundedInCtx ctx)
-  (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
-  (hpred : res.qualType.pred = Predicate.guardClosure k arg_name pred_body var_env) :
-  res.tagEnv'.get? k = none := by
-  unfold typecheckExternVal at htc
-  split at htc
-  · simp at htc
-  · simp at htc
-  · simp only [bind, Except.bind, pure, Except.pure] at htc
-    cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
-    | error err => simp [halloc] at htc
-    | ok result =>
-      rcases result with ⟨tagMapping, nextTag'⟩
-      simp only [halloc] at htc
-      cases hresolve : resolveSyntaxPred pred ctx.varEnv tagMapping with
-      | error err => simp [hresolve] at htc
-      | ok resolvedPred =>
-        simp only [hresolve] at htc
-        cases hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx with
-        | error err => simp [hsurf] at htc
-        | ok surfResult =>
-          simp only [hsurf, Except.ok.injEq] at htc
-          cases htc
-          -- After destructuring, res.tagEnv' = ctx.tagEnv and
-          -- res.qualType.pred = surfResult.1.pred = resolvedPred.
-          have hsurfpred : surfResult.1.pred = resolvedPred :=
-            surfaceSpecToQTyp_pred_eq typ poison resolvedPred ctx surfResult hsurf
-          have hresolvedEq : resolvedPred = Predicate.guardClosure k arg_name pred_body var_env :=
-            hsurfpred ▸ hpred
-          -- The tag k was allocated by collectAndAllocExternTags: k ≥ ctx.nextTag.
-          have hge : ctx.nextTag ≤ k := by
-            cases pred with
-            | noPred =>
-                simp [resolveSyntaxPred, pure, Except.pure] at hresolve
-                simp [← hresolve] at hresolvedEq
-            | guardOnly idx =>
-                simp [resolveSyntaxPred] at hresolve
-                split at hresolve
-                · simp [pure, Except.pure] at hresolve; simp [← hresolve] at hresolvedEq
-                · simp at hresolve
-            | guardClosure idx arg body =>
-                simp only [resolveSyntaxPred, bind, Except.bind] at hresolve
-                split at hresolve
-                · rename_i tag htag
-                  cases htoPExpr : body.toPExpr with
-                  | error err => simp [htoPExpr] at hresolve
-                  | ok pbody =>
-                      simp only [htoPExpr, pure, Except.pure, Except.ok.injEq] at hresolve
-                      rw [← hresolve] at hresolvedEq
-                      have htageq : tag = k :=
-                        ((Predicate.guardClosure.injEq _ _ _ _ _ _ _ _).mp hresolvedEq).1
-                      rw [htageq] at htag
-                      exact collectAndAllocExternTags_mapping_values_ge
-                        [SyntaxPredicate.guardClosure idx arg body] ctx.nextTag
-                        tagMapping nextTag' halloc idx k htag
-                · simp at hresolve
-          -- res.tagEnv' = ctx.tagEnv (from the return struct literal).
-          -- By hbound, ctx.tagEnv.get? k = none since k ≥ ctx.nextTag.
-          show ctx.tagEnv.get? k = none
-          exact tagEnvBounded_get_none_of_ge ctx.tagEnv ctx.nextTag k hbound hge
 
 -- ==========================================================================
 -- typecheckExpr preserves regimeConsistentWithCtx
@@ -9583,7 +9136,7 @@ lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv
 /-- Mix lemma: combine inVar evidence from one (σ, Γ₁) pair with inMem evidence from
     another (σ₂, Γ) pair. Works because `QTypInEnvs.inVar` only uses σ and
     `QTypInEnvs.inMem` only uses Γ. -/
-lemma EnvRespectsTagMeaning_mix
+private lemma EnvRespectsTagMeaning_mix
     (tm : TagMeaning) (σ₁ : VarTypeEnv) (Γ₁ : MemoryTypeEnv) (σ₂ : VarTypeEnv) (Γ₂ : MemoryTypeEnv)
     (h1 : EnvRespectsTagMeaning tm σ₁ Γ₁)
     (h2 : EnvRespectsTagMeaning tm σ₂ Γ₂) :
@@ -9778,7 +9331,7 @@ lemma typecheckIf_pred_noPred
 /-- Transport QTypRespectsTagMeaning across same etyp when pred becomes noPred.
     The self-descriptor vanishes (noPred → none), and nested descriptors through etyp
     are unchanged. -/
-lemma QTypRespectsTagMeaning_of_etyp_noPred
+private lemma QTypRespectsTagMeaning_of_etyp_noPred
     (tm : TagMeaning) (qt qt' : QTyp)
     (h : QTypRespectsTagMeaning tm qt)
     (hetyp : qt'.etyp = qt.etyp)
@@ -9793,7 +9346,7 @@ lemma QTypRespectsTagMeaning_of_etyp_noPred
   | inr hinq' =>
     exact h hinq' hqd
 
-lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
+private lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
     (tm : TagMeaning) (σ : VarTypeEnv) (Γ1 Γ2 : MemoryTypeEnv)
     (h1 : EnvRespectsTagMeaning tm σ Γ1) :
     EnvRespectsTagMeaning tm σ (joinMemEnvsStrong Γ1 Γ2) := by
@@ -9899,7 +9452,7 @@ lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
 -- A single join-step for QTypRespectsTagMeaning: joining two tag-meaning-respecting
 -- qualified types produces another tag-meaning-respecting qualified type.
 -- (Moved before _main because ite modes 3/4 need it.)
-lemma QTypRespectsTagMeaning_joinStep
+private lemma QTypRespectsTagMeaning_joinStep
     (tm : TagMeaning) (e1 e2 : ETyp) (p1 p2 : Poison) (pred1 pred2 : Predicate)
     (h1 : QTypRespectsTagMeaning tm ⟨e1, p1, pred1⟩)
     (h2 : QTypRespectsTagMeaning tm ⟨e2, p2, pred2⟩) :
@@ -10006,7 +9559,7 @@ lemma QTypRespectsTagMeaning_joinStep
     have hp1 := (joinPredicates_eq_guardClosure hpj).1
     exact h1 (QTypInQTyp.self _) (by simp [qtypGuardDesc?, hp1])
 
-lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
+private lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
   (_hExtTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -10120,7 +9673,7 @@ lemma applyFnTClosure_ok_wfTagMeaningCtx_byIH
     exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hbounded', hwf, hqtm⟩
 
 
-lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
+private lemma applyPFnTClosure_ok_wfTagMeaningCtx_byIH
   (_hExtTyping : ExternTypingAssumptions)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -12095,7 +11648,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Structural canonical-extension threading theorems.
 --
--- These are the public threading theorems consumed by per-operator FR proofs
+-- These are internal threading theorems used within this file
 -- to obtain a `tm'` witness for each subexpression.  Non-allocating leaves
 -- use `tm' = tm`; composite cases thread the canonical extension produced
 -- by their subexpression IHs.  The direct `app` and `externVal` branches
@@ -12105,7 +11658,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
 /-- For any successful typecheck, there is a canonical extension `tm'` of the
     input tag meaning `tm`.  Leaves are witnessed by `tm' = tm`; composites
     thread the `tm'` produced by recursive typechecks. -/
-theorem typecheck_extends_tagMeaning
+private theorem typecheck_extends_tagMeaning
     (extTyping : ExternTypingAssumptions)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
     (fuel : Nat) (res : TypeResult)
@@ -12728,7 +12281,7 @@ lemma cleanUnder_of_monotoneExt {R R' : Regime} {qt : QTyp} {newTags : Tag → P
               exact qtypCleanUnder.guard k htag hkR hnotfun
           | inr hkR'_none => simp [hkR'_none] at hkR'
 
-lemma monotoneStep_lookup_back {R R' : Regime}
+private lemma monotoneStep_lookup_back {R R' : Regime}
     (h_mono : Regime.monotoneStep R R') :
     ∀ k b, R'.lookup? k = some b → R.lookup? k = some b := by
   intro k b hkR'
@@ -12901,7 +12454,7 @@ lemma agreeValueUnder_clean_transport_by_cleanBack_ext
       hagree
   exact hrec hbound hclean
 
-lemma joinTypeResults_lookup_head_guardTag_compat
+private lemma joinTypeResults_lookup_head_guardTag_compat
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (l : Loc) (qt qt_first : QTyp) (k : Tag)
@@ -13016,7 +12569,7 @@ lemma joinTypeResults_lookup_head_guardTag_compat
                   hfold hlookup_first' hlookup_res' htag_res
 
 
-lemma joinTypeResults_lookup_head_regime_compat
+private lemma joinTypeResults_lookup_head_regime_compat
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (k : Tag) (b : Bool)
@@ -13111,7 +12664,7 @@ lemma joinTypeResults_lookup_head_regime_compat
                   hfold (by simpa [ctxAfter] using hlookup_res)
 
 
-lemma joinTypeResults_lookup_head_poison_imp
+private lemma joinTypeResults_lookup_head_poison_imp
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (l : Loc) (qt qt_first : QTyp)

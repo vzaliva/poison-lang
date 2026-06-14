@@ -1641,7 +1641,7 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
 /-- Inversion lemma for terminatesTo on app (function application).
     The body terminates to some intermediate evalConfig (not c₂), because bevalFunctionBody
     transforms the config after body evaluation. -/
-lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value)
+private lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value)
     (hreg : c₀.registry = emptyExternRegistry) :
     terminatesTo (Expr.app e₁ e₂) c₀ c₂ v →
     -- User impure closure case.  The function expression is evaluated under the

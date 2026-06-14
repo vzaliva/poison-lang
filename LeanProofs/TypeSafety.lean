@@ -310,9 +310,6 @@ theorem toExpr_toPExpr? (pe : PExpr) :
   | deref e IH =>
     simp [PExpr.toExpr, Expr.toPExpr?, IH]
 
-theorem toExpr_toPExpr (pe : PExpr) :
-  pe.toExpr.toPExpr = Except.ok pe := by
-  simp [Expr.toPExpr, toExpr_toPExpr?, pure, Except.pure]
 
 lemma Expr_toPExpr?_eq_some_of_toPExpr_ok (e : Expr) (pe : PExpr) :
   e.toPExpr = .ok pe →
@@ -415,7 +412,7 @@ private lemma list_fold_updateMemEnv_contains_eq_or_mem (xs : List Loc) (env : M
           | inr hOld => left; exact hOld
       | inr hMemTail => right; simp [hMemTail]
 
-lemma list_fold_updateMemEnv_lookup_eq_of_not_mem (xs : List Loc) (env : MemoryTypeEnv) (l' : Loc) (qt : QTyp)
+private lemma list_fold_updateMemEnv_lookup_eq_of_not_mem (xs : List Loc) (env : MemoryTypeEnv) (l' : Loc) (qt : QTyp)
   (hnot : l' ∉ xs) :
   (xs.foldl (fun acc l => updateMemEnv acc l qt) env).lookup l' = env.lookup l' := by
   induction xs generalizing env with
@@ -923,7 +920,7 @@ lemma assign_memEnv_formula_lookup_mem_props
 
 /-- The assign-shaped memEnv update keeps every location below `nl`, provided every
     pre-existing location and every target location in `ls` is below `nl`. -/
-lemma assign_memEnv_formula_wf
+private lemma assign_memEnv_formula_wf
     (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) (nl : Loc)
     (hwf : ∀ l, env.contains l → l < nl)
     (hls : ∀ l, ls.contains l → l < nl) :
@@ -2708,33 +2705,7 @@ lemma typecheckApp_arrow_structure_full
 
 -- regime_monotone_proof
 
-private lemma regimeMonotone_refl (R : Regime) :
-    Regime.monotoneStep R R := by
-  refine ⟨?_, ?_⟩
-  · intro k b hk
-    exact Or.inl hk
-  · intro k hk
-    exact hk
 
-lemma regimeMonotone_trans {R R' R'' : Regime}
-    (h₁ : Regime.monotoneStep R R')
-    (h₂ : Regime.monotoneStep R' R'') :
-    Regime.monotoneStep R R'' := by
-  refine ⟨?_, ?_⟩
-  · intro k b hkR
-    have hR' : R'.lookup? k = some b ∨ R'.lookup? k = none := h₁.1 k b hkR
-    cases hR' with
-    | inl hkR' =>
-        exact h₂.1 k b hkR'
-    | inr hkR'_none =>
-        exact Or.inr (by
-          by_contra hkR''_not_none
-          exact hkR''_not_none (by
-            have hkR'_not_none : R'.lookup? k ≠ none := h₂.2 k hkR''_not_none
-            exact False.elim (hkR'_not_none hkR'_none)))
-  · intro k hkR''_not_none
-    have hkR'_not_none : R'.lookup? k ≠ none := h₂.2 k hkR''_not_none
-    exact h₁.2 k hkR'_not_none
 
 private lemma list_mem_eraseDups_of_mem {α : Type} [BEq α] [LawfulBEq α]
     {x : α} {l : List α} (h : x ∈ l) : x ∈ l.eraseDups := by
@@ -3558,7 +3529,7 @@ lemma invalidateRegimeDepsEffect_lookup_some_imp
 
 /-- A tag surviving `invalidateTagDeps` has its dependencies disjoint from the written
     locs (that is why it survived the `filter`). -/
-lemma invalidateTagDeps_survive_get
+private lemma invalidateTagDeps_survive_get
     (env : TagEnv) (ls : LocSet) (k : Tag)
     (h : (invalidateTagDeps env ls).get? k ≠ none) :
     ∃ tv, env.get? k = some tv ∧ tv.deps.any ls.contains = false := by
@@ -3642,7 +3613,7 @@ lemma resolveSyntaxPred_guardClosure_tag_from_mapping
 
 /-- `installReturnGuard` leaves every key other
     than the resolved return predicate's own guard tag unchanged. -/
-lemma installReturnGuard_get?_eq_of_not_guard
+private lemma installReturnGuard_get?_eq_of_not_guard
     (env : TagEnv) (rp : Predicate) (R : Regime) (fuel : Nat) (k : Tag)
     (hne : ∀ an pb ve, rp ≠ Predicate.guardClosure k an pb ve) :
     (installReturnGuard env rp R fuel).get? k = env.get? k := by
@@ -3662,7 +3633,7 @@ lemma installReturnGuard_get?_eq_of_not_guard
 /-- Case analysis of a lookup in `installReturnGuard`'s output: either the key was
     already bound (and is unchanged), or it is the freshly installed return-guard tag,
     whose tag-environment value is exactly the gating regime's value at that tag. -/
-lemma installReturnGuard_get?_cases
+private lemma installReturnGuard_get?_cases
     (env : TagEnv) (rp : Predicate) (R : Regime) (fuel : Nat) (k : Tag) (tv : TagVal)
     (h : (installReturnGuard env rp R fuel).get? k = some tv) :
     env.get? k = some tv ∨
@@ -3693,25 +3664,6 @@ lemma installReturnGuard_get?_cases
     · exact Or.inl h
   · exact Or.inl h
 
-/-- `installReturnGuard` only adds entries: an existing binding stays bound (it is
-    either untouched or overwritten in place at the installed tag itself). -/
-lemma installReturnGuard_get?_ne_none_of_ne_none
-    (env : TagEnv) (rp : Predicate) (R : Regime) (fuel : Nat) (k : Tag)
-    (h : env.get? k ≠ none) :
-    (installReturnGuard env rp R fuel).get? k ≠ none := by
-  unfold installReturnGuard
-  split
-  · rename_i k' an pb ve
-    split
-    · split
-      · by_cases hcmp : compare k' k = Ordering.eq
-        · simp [Std.ExtTreeMap.get?_eq_getElem?, hcmp]
-        · simp only [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert,
-            hcmp, if_false]
-          simpa [Std.ExtTreeMap.get?_eq_getElem?] using h
-      · exact h
-    · exact h
-  · exact h
 
 -- The FnTClosure.extern tagEnv lemmas (`applyFnTClosure_extern_tagEnv_lookup_eq_of_lt`
 -- and `applyFnTClosure_extern_tagEnv_get_cases`) live below, after the
@@ -3751,15 +3703,6 @@ def predTagsBoundedInCtx (ctx : TypeContext) : Prop :=
   predTagsBoundedInVarEnv ctx.varEnv ctx.nextTag ∧
   predTagsBoundedInMemEnv ctx.memEnv ctx.nextTag
 
-/-- If all tags in tagEnv are < nextTag and k ≥ nextTag, then k is absent from tagEnv. -/
-lemma tagEnvBounded_get_none_of_ge
-    (tagEnv : TagEnv) (nextTag : Tag) (k : Tag)
-    (hbound : tagEnvBounded tagEnv nextTag)
-    (hge : k ≥ nextTag) :
-    tagEnv.get? k = none := by
-  by_contra h
-  have hlt := hbound k h
-  exact absurd hge (Nat.not_le.mpr hlt)
 
 /-- Helper: the tag-allocating forIn loop in collectAndAllocExternTags never decreases the tag counter. -/
 private lemma forIn_tag_incr_ge
@@ -3954,7 +3897,7 @@ private lemma forIn_tag_mapping_values_injective
 -- or the freshly installed guard, whose value the output regime interprets.
 -- ==========================================================================
 
-lemma applyFnTClosure_extern_tagEnv_lookup_eq_of_lt
+private lemma applyFnTClosure_extern_tagEnv_lookup_eq_of_lt
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (r1 r2 : TypeResult) (fuel : Nat)
@@ -4058,50 +4001,6 @@ lemma applyFnTClosure_extern_tagEnv_get_cases
             · exact nomatch happly
             · cases happly; exact Or.inl h
 
-lemma applyPFnTClosure_extern_tagEnv_lookup_eq_of_lt
-  (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
-  (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (r1 r2 : TypeResult) (fuel : Nat)
-  (id : ExternId) (x : Name) (retSpec : ExternReturn) (capturedEnv : CapturedVarEnv)
-  (declaredArgQt : QTyp)
-  (happly : applyPFnTClosure (PFnTClosure.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
-    argEtyp argPoison argPred ctx r1 fuel = .ok r2)
-  (k : Tag) (hk : k < r1.nextTag') :
-  r2.tagEnv'.get? k = r1.tagEnv'.get? k := by
-  unfold applyPFnTClosure at happly
-  cases fuel with
-  | zero => simp at happly
-  | succ n =>
-      simp only [bind, Except.bind] at happly
-      split at happly
-      · exact nomatch happly
-      simp only [pure, Except.pure] at happly
-      split at happly
-      · -- ExternReturn.simple
-        split at happly
-        · exact nomatch happly
-        · next tmRes hcollect =>
-          obtain ⟨tm, nt'⟩ := tmRes
-          split at happly
-          · exact nomatch happly
-          · next resolvedPred hresolve =>
-            split at happly
-            · exact nomatch happly
-            · cases happly
-              apply installReturnGuard_get?_eq_of_not_guard
-              intro an pb ve hrp
-              obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
-                _ _ tm resolvedPred hresolve k an pb ve hrp
-              exact absurd hk (Nat.not_lt.2
-                (collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx k hidx))
-      · -- ExternReturn.nestedFn
-        split at happly
-        · exact nomatch happly
-        · cases happly; rfl
-      · -- ExternReturn.nestedPfn
-        split at happly
-        · exact nomatch happly
-        · cases happly; rfl
 
 lemma applyPFnTClosure_extern_tagEnv_get_cases
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -4662,7 +4561,7 @@ private lemma applyPFnTClosure_nextTag_mono_normal
               rw [← happly]
               exact Nat.le_of_eq (resolveArgCondQTyp_snd hresolve).symm
 
-lemma foldl_max_ge_init (a : Nat) (xs : List Nat) :
+private lemma foldl_max_ge_init (a : Nat) (xs : List Nat) :
     a ≤ List.foldl max a xs := by
   induction xs generalizing a with
   | nil =>
@@ -5758,7 +5657,7 @@ private lemma applyExternRegimePolicy_lookup_spec
     existing regime entry, so every `some` entry of `R` is preserved exactly.  This makes the
     exact-preservation consumers (pure-regime bridge, regime-consistency transport) hold with no tag
     bound. -/
-lemma applyExternRegimePolicy_lookup_preserve_some
+private lemma applyExternRegimePolicy_lookup_preserve_some
     (R : Regime) (id : ExternId) (policy : ExternId → Tag → Option Bool)
     (tagMapping : TagMapping) (k : Tag) (b : Bool)
     (h : R.lookup? k = some b) :
@@ -5796,7 +5695,7 @@ lemma applyExternRegimePolicy_lookup_preserve_some
     a `monotoneStepExt` step whose fresh-tag set is exactly the policy-allocated tags.  With the
     restricted forward conjunct, a non-fresh `k` is untouched by the inserts, so no `hfresh`
     hypothesis is needed. -/
-theorem applyExternRegimePolicy_monotoneStepExt
+private theorem applyExternRegimePolicy_monotoneStepExt
     (R : Regime) (id : ExternId) (policy : ExternId → Tag → Option Bool)
     (tagMapping : TagMapping) :
     Regime.monotoneStepExt R (applyExternRegimePolicy R id policy tagMapping)
@@ -5816,7 +5715,7 @@ theorem applyExternRegimePolicy_monotoneStepExt
     over a tag mapping whose tags are all fresh (`≥ r1.nextTag'`).  This single lemma feeds both the
     regime-monotonicity chain (via `applyExternRegimePolicy_monotoneStepExt`) and the consistency
     consumers (via `applyPFnTClosure_extern_regime_old_eq`). -/
-lemma applyPFnTClosure_extern_regime_eq_or_policy
+private lemma applyPFnTClosure_extern_regime_eq_or_policy
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (r1 r2 : TypeResult) (fuel : Nat)
@@ -5889,9 +5788,9 @@ lemma applyPFnTClosure_extern_regime_preserve_some
     (effectTargetLocs effects …)` over a fresh tag mapping (tags `≥ r1.nextTag'`) — for both
     simple returns and nested returns.  The statement keeps the weaker `invalidated ∨
     policy-extended` disjunction so downstream consumers stay uniform with the PFn variant; for
-    Fn externs the left disjunct is now vacuous.  Feeds both the regime-monotonicity chain and the
+    Fn externs the left disjunct is vacuous.  Feeds both the regime-monotonicity chain and the
     consistency consumers (the inner regime is a sub-map of `r1.regime'`). -/
-lemma applyFnTClosure_extern_regime_eq_or_policy
+private lemma applyFnTClosure_extern_regime_eq_or_policy
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
   (r1 r2 : TypeResult) (fuel : Nat)
@@ -6031,7 +5930,7 @@ lemma applyPFnTClosure_extern_regime_preserve_some_back
     · exact absurd (Nat.lt_of_lt_of_le hk (hfresh idx k hidx)) (Nat.lt_irrefl k)
 
 
-lemma applyFnTClosure_regime_mono
+private lemma applyFnTClosure_regime_mono
     (tcl : FnTClosure) (ctx : TypeContext)
     (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -6064,7 +5963,7 @@ lemma applyFnTClosure_regime_mono
     -- Extern case: `regime'` is the fresh policy extension of the *effect-invalidated*
     -- input regime.  Both legs are monotone: the invalidation is a strong `monotoneStep`
     -- (sub-map), the policy a `monotoneStepExt` adding only fresh (`≥ r1.nextTag'`) tags; compose
-    -- them by `monotoneStepExt_trans`.  (The disjunction's left branch is now vacuous for Fn.)
+    -- them by `monotoneStepExt_trans`.  (The disjunction's left branch is vacuous for Fn.)
     rcases applyFnTClosure_extern_regime_eq_or_policy ctx st1 st2 p p1 argEtyp argPoison argPred
         r1 r2 fuel id x retSpec effects capturedEnv declaredArgQt happly with heq | ⟨tm, hr2, hfresh⟩
     · rw [heq]
@@ -7105,7 +7004,7 @@ private lemma predTagsBoundedInMemEnv_updateLocsetWeak
 /-- predTagsBoundedInMemEnv preserved by the assign-shaped memEnv update
     (singleton strong / non-singleton weak).  Mirrors `assign_memEnv_formula_*`;
     shared so the extern write-effect proof need not import `StepFRAssign`. -/
-lemma assign_memEnv_formula_predBounded
+private lemma assign_memEnv_formula_predBounded
     (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) (nt : Tag)
     (hb : predTagsBoundedInMemEnv env nt) (hpred : predTagBounded nt storedPred) :
     predTagsBoundedInMemEnv
@@ -8094,24 +7993,6 @@ private lemma returnSpecToQTyp_predBounded
   simp [bind, Except.bind, pure, Except.pure] at h
   cases typ <;> simp at h <;> (try (rcases h with ⟨rfl, _⟩; exact hpred))
 
-/-- LocSet.fold with updateMemEnv preserves predTagsBoundedInMemEnv when the stored QTyp is bounded. -/
-private lemma locset_fold_updateMemEnv_predBounded
-    (ls : LocSet) (memEnv : MemoryTypeEnv) (storedQt : QTyp) (nt : Tag)
-    (hb : predTagsBoundedInMemEnv memEnv nt) (hp : qtypPredTagBounded storedQt nt) :
-    predTagsBoundedInMemEnv (ls.fold memEnv (fun acc l => updateMemEnv acc l storedQt)) nt := by
-  unfold LocSet.fold
-  rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-  have : ∀ (entries : List Loc) (acc : MemoryTypeEnv),
-      predTagsBoundedInMemEnv acc nt →
-      predTagsBoundedInMemEnv (entries.foldl (fun acc l => updateMemEnv acc l storedQt) acc) nt := by
-    intro entries
-    induction entries with
-    | nil => intro acc hacc; exact hacc
-    | cons hd tl ih =>
-      intro acc hacc
-      simp [List.foldl]
-      exact ih _ (predTagsBoundedInMemEnv_update hacc hp)
-  exact this (ExtTreeSet.toList ls) memEnv hb
 
 /-- The effects forIn loop preserves predTagsBoundedInMemEnv.
     Abstract: given that each step of the loop body preserves the invariant
@@ -14562,23 +14443,6 @@ private lemma joinTypeResults_wfTypeResult
 -- Helper: LocSet.fold with updateMemEnv preserves location boundedness
 -- ==========================================================================
 
-/-- LocSet.fold with updateMemEnv preserves boundedness: if all locations in the
-    initial memEnv and all locations in the LocSet are below `nl`, then all
-    locations in the result memEnv are also below `nl`. -/
-private lemma locset_fold_updateMemEnv_wf
-    (ls : LocSet) (memEnv : MemoryTypeEnv) (storedQt : QTyp) (nl : Loc)
-    (hwf : ∀ l, memEnv.contains l → l < nl)
-    (hls : ∀ l, ls.contains l → l < nl) :
-    ∀ l, (ls.fold memEnv (fun acc l => updateMemEnv acc l storedQt)).contains l → l < nl := by
-  unfold LocSet.fold
-  rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-  intro l hl
-  have hor := list_fold_updateMemEnv_contains_eq_or_mem ls.toList memEnv l storedQt hl
-  cases hor with
-  | inl hOld => exact hwf l hOld
-  | inr hMem =>
-      have hmem : l ∈ ls := (Std.ExtTreeSet.mem_toList).1 hMem
-      exact hls l (Std.ExtTreeSet.mem_iff_contains.mp hmem)
 
 /-- If capturedEnvRefLocsBounded holds, then looking up a name in the
     ofCaptured-built VarTypeEnv yields a QTyp whose etyp is ref-loc bounded. -/

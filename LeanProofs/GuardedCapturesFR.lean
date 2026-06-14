@@ -55,7 +55,7 @@ def guardedCapturesRegistry : TrustedRegistry :=
 /-- The single declaration syntactically reachable in `guardedCapturesProg` — the
     top-level `@11` `externPfn` node, `captures = [a (guarded)]` — is matched by the
     registry.  The `simple int` return carries no further nested extern. -/
-theorem guardedCaptures_agreesWithProgram :
+private theorem guardedCaptures_agreesWithProgram :
     TrustedRegistryAgreesWithProgram guardedCapturesProg guardedCapturesRegistry := by
   intro id d entry hprog hlookup
   unfold guardedCapturesProg at hprog
@@ -72,7 +72,7 @@ theorem guardedCaptures_agreesWithProgram :
       cases hret
 
 /-- Per-context trust premise at the canonical empty initial context. -/
-theorem guardedCaptures_hagrees :
+private theorem guardedCaptures_hagrees :
     TrustedRegistryAgreesWithReachable guardedCapturesProg openEmptyCtx guardedCapturesRegistry :=
   agreesWithReachable_of_emptyVarEnv (by rfl) guardedCaptures_agreesWithProgram
 

@@ -79,13 +79,6 @@ theorem RegistryReservedBelow_mono {reg : ExternRegistry} {n n' : Address}
     RegistryReservedBelow reg n' :=
   fun a ha => Nat.lt_of_lt_of_le (h a ha) hle
 
-/-- The empty registry reserves no addresses, so `RegistryReservedBelow` holds
-    vacuously at any cursor.  Used for throwaway configs that carry the default
-    (empty) registry. -/
-theorem RegistryReservedBelow_emptyExternRegistry (n : Address) :
-    RegistryReservedBelow emptyExternRegistry n := by
-  intro a ⟨id, hid⟩
-  simp [emptyExternRegistry] at hid
 
 /-- Registry-reserved-cell well-formedness: every registry-reserved address is
     present in memory and below the address cursor.  This is the standalone
@@ -110,11 +103,6 @@ theorem RegistryReservedWF_mono {reg : ExternRegistry} {μ μ' : Memory} {n n' :
     RegistryReservedWF reg μ' n' :=
   fun a ha => ⟨hmem a (h a ha).1, Nat.lt_of_lt_of_le (h a ha).2 hle⟩
 
-/-- The empty registry reserves nothing. -/
-theorem RegistryReservedWF_emptyExternRegistry (μ : Memory) (n : Address) :
-    RegistryReservedWF emptyExternRegistry μ n := by
-  intro a ⟨id, hid⟩
-  simp [emptyExternRegistry] at hid
 
 /-- A runtime configuration is well-formed if:
     (1) all addresses in memory are below nextAddr, and
@@ -152,7 +140,7 @@ lemma nextAddr_not_in_memory (cfg : Config) :
     hypothesis rather than reading it out of `wfConfig`, precisely so the global
     `wfConfig` can stay registry-agnostic (folding `RegistryReservedBelow` into
     `wfConfig` would break the FR stack's registry-agnostic config coercions). -/
-theorem wfValue_loc_of_RegistryReservedBelow
+private theorem wfValue_loc_of_RegistryReservedBelow
     {reg : ExternRegistry} {n a : Address} {id : ExternId}
     (hbelow : RegistryReservedBelow reg n)
     (hlookup : reg.get? id = some (ExternImpl.val (Value.loc a))) :
