@@ -1,8 +1,19 @@
 Error: Unknown option: --io-free
 Usage:
   poison-interpreter --repl
-  poison-interpreter [--verbose] [--regime "100=true,101=false"] [--extern-regime "238=true"] <file>
+  poison-interpreter [--verbose] [--regime "1=true"] [--extern-regime "238=true"] <file>
   poison-interpreter --help
+
+Regime options (FR-aware typing of guarded externs):
+  --extern-regime "id=bool"  Preferred. Selects externs by id; interprets every
+                             output tag the typechecker allocates for that callable.
+                             Robust against allocation order; does not reach
+                             'extern val' declaration guards.
+  --regime "k=bool"          Low-level, concrete-tag control. Names numeric guard
+                             tags directly and is allocation-order dependent (tags
+                             are numbered in typechecker traversal order from 1,
+                             not strictly textual order). Use mainly for debugging
+                             or guards --extern-regime cannot reach.
 
 Exit Codes:
   0  Success (including successful detection of type errors)

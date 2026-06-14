@@ -302,6 +302,15 @@ counterpart is the `--extern-regime "id=bool"` CLI option;
 `examples/extern-regime-open.poison` demonstrates a selected extern-produced
 predicate de-poisoning under the executable typechecker.
 
+The interpreter also keeps a lower-level `--regime "k=bool"` option that names
+concrete guard tags. It seeds the regime before typechecking (so it can reach
+guards `--extern-regime` cannot, such as `extern val` declaration guards), but a
+tag number `k` is allocation-order dependent and names only that single tag. For
+extern return/effect guards prefer `--extern-regime`, which selects by id and
+covers every output tag the typechecker allocates for that callable;
+`examples/regime-vs-extern-regime.poison` runs one program both ways. See
+`doc/poison-interpreter.md` for the full option contrast.
+
 ## 6. Current positions
 
 - A clean-output `abs` declaration must require a clean argument. The concrete

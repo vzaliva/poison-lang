@@ -13,7 +13,7 @@ Type checking passed:
       pred={}},
      v : {type=int, poison=false, pred={}}]}},
   MemoryTypeEnv: { 0 := (false, {}) },
-  tagEnv: { 1 := { value := true, deps := [] } },
+  tagEnv: { 1 := { value := true, deps := [] }, 2 := { value := true, deps := [] } },
   nextLoc: 1
 
 Result: 5

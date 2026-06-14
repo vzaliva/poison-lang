@@ -1,0 +1,19 @@
+--! poison-interpreter --extern-regime "12=true"
+-- Issue #137: --regime (concrete tag) vs --extern-regime (id-keyed) on ONE program.
+--
+-- `read` returns a poisoned int guarded by `r >= 0`.  Asserting that guard lets
+-- the second call's clean-argument precondition accept the first result `x`, so
+-- the program typechecks and runs.
+--
+-- Robust (preferred) — select the extern by id; the typechecker inserts whatever
+-- output tag it freshly allocates for @12 (here tags 1 and 2, one per call site):
+--     poison-interpreter --extern-regime "12=true" examples/regime-vs-extern-regime.poison
+--
+-- Equivalent low-level concrete-tag form — @12's first output tag happens to be
+-- 1, so naming it directly also works.  But it is allocation-order dependent:
+-- adding any earlier guard shifts the numbering and silently breaks it, and it
+-- only names ONE tag (so the second call's result stays poisoned):
+--     poison-interpreter --regime "1=true" examples/regime-vs-extern-regime.poison
+let read = extern pfn @12 v : (int :> clean {}) -> ((int :> poisoned { 100, r => (r >= 0) })) in
+let x = read 5 in
+read x

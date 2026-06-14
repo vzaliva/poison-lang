@@ -1,0 +1,12 @@
+Evaluating file: examples/regime-vs-extern-regime.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={2, pfn r -> r >= 0, deps: [v : {type=int, poison=false, pred={}}]}},
+  MemoryTypeEnv: {},
+  tagEnv: { 1 := { value := true, deps := [] }, 2 := { value := true, deps := [] } },
+  nextLoc: 0
+
+Result: 5
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0)]

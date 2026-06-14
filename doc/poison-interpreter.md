@@ -8,7 +8,7 @@ poison-interpreter - typecheck and evaluate Poison programs
 
 ```text
 poison-interpreter --repl
-poison-interpreter [--verbose] [--regime "100=true,101=false"]
+poison-interpreter [--verbose] [--regime "1=true"]
   [--extern-regime "238=true"] <file>
 poison-interpreter --help
 ```
@@ -29,12 +29,27 @@ dispatch.
 Typecheck and evaluate with verbose output.
 
 `--regime "k=true,..."`  
-Seed the regime used for FR-aware typing. Each assignment maps a guard tag to a
-truth value. Duplicate tags use last-one-wins.
+Low-level, concrete-tag control. Each assignment maps a numeric guard tag `k`
+directly to a truth value, and the map seeds the regime *before* typechecking
+begins, so it reaches any guard tag — including `extern val` declaration guards
+that `--extern-regime` cannot. The typechecker allocates guard tags in its own
+traversal order starting from `1` — not strictly textual source order (an
+application, for instance, visits its argument before the function) — so naming
+a tag here is **allocation-order dependent**: inserting an earlier guard shifts
+every subsequent number and silently changes which guard `k` refers to. Use
+this mainly for debugging or for guards `--extern-regime` cannot reach; prefer
+`--extern-regime` for extern-produced return/effect guards. Duplicate tags use
+last-one-wins.
 
 `--extern-regime "id=true,..."`
-Seed the executable extern-regime policy by extern id. Every return/effect tag
-generated for a selected extern id receives the selected truth value.
+Id-keyed control, **preferred for extern-produced guards**. Selects externs by
+their declared id; every return/effect output tag the typechecker freshly
+allocates for a selected `extern fn`/`pfn` receives the chosen truth value.
+Because selection is by id rather than by tag number, it is robust against
+allocation order and covers *all* of a callable's output tags (one per call
+site). It does **not** affect `extern val` declarations, whose guard tags are
+reachable only through `--regime`. Tags the policy leaves unset keep the
+conservative (uninterpreted) behavior.
 
 `--repl`
 Start a REPL.
@@ -61,11 +76,18 @@ Typecheck and run:
 Verbose mode:
 `poison-interpreter --verbose examples/basic-poison-flow1.poison`
 
-Typecheck with a regime:
-`poison-interpreter --verbose --regime "100=true" examples/lp55xx-read.poison`
-
-Typecheck with an extern-regime policy:
+Assert an extern-produced return guard by id (preferred):
 `poison-interpreter --verbose --extern-regime "238=true" examples/extern-regime-open.poison`
+
+Concrete-tag control for an `extern val` guard, which `--extern-regime` cannot
+reach (here tag `1` activates the declaration guard, rejecting a later shadow):
+`poison-interpreter --verbose --regime "1=true" examples/vlet-shadow-guarded.poison`
+
+The same program two ways — id-keyed vs concrete tag. Both typecheck and run;
+`--extern-regime` interprets *both* call sites' output tags (1 and 2), while
+`--regime "1=true"` names only tag 1:
+`poison-interpreter --verbose --extern-regime "12=true" examples/regime-vs-extern-regime.poison`
+`poison-interpreter --verbose --regime "1=true" examples/regime-vs-extern-regime.poison`
 
 ## RELATED DOCUMENTS
 
