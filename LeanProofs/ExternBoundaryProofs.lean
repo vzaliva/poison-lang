@@ -12,7 +12,7 @@ import LeanProofs.ExternBoundary
 
 open Std
 
-theorem TrustedRegistryAgreesWithReachable.resolveDeclaration
+private theorem TrustedRegistryAgreesWithReachable.resolveDeclaration
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry} {id : ExternId}
     {d : ExternDeclaration} {impl : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
@@ -72,7 +72,7 @@ theorem agreesWithReachable_of_emptyVarEnv
   rw [hempty] at hlk
   simp [VarTypeEnv.lookup] at hlk
 
-theorem TrustedRegistryAgreesWithReachable.resolveFnDeclaration
+private theorem TrustedRegistryAgreesWithReachable.resolveFnDeclaration
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
     {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool}
     {retSpec : ExternReturn} {effects : List Effect} {captures : List Capture}
@@ -94,7 +94,7 @@ theorem TrustedRegistryAgreesWithReachable.resolveFnDeclaration
   refine ⟨entry, hlookup, himpl, ?_⟩
   simp [TrustedRegistryEntryMatchesFn, hdecl]
 
-theorem TrustedRegistryAgreesWithReachable.resolvePfnDeclaration
+private theorem TrustedRegistryAgreesWithReachable.resolvePfnDeclaration
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
     {id : ExternId} {x : Name} {argTyp : Typ} {argPoison : Bool}
     {retSpec : ExternReturn} {impl : ExternImpl} {memberCap : List Capture}
@@ -2819,7 +2819,7 @@ theorem of_typecheck
 end QTypReachableFrom
 
 
-theorem TrustedRegistryAgreesWithFnTClosures.resolve
+private theorem TrustedRegistryAgreesWithFnTClosures.resolve
     {tr : TrustedRegistry} {argTyp : Typ} {tcls : List FnTClosure}
     (hagrees : TrustedRegistryAgreesWithFnTClosures tr argTyp tcls)
     {id : ExternId} {x : Name} {retSpec : ExternReturn}
@@ -2836,7 +2836,7 @@ theorem TrustedRegistryAgreesWithFnTClosures.resolve
   rcases hagrees hmem with ⟨entry, hlookup, hmatch, _hargPoison⟩
   exact ⟨entry, hlookup, TrustedRegistry.lookup_toRuntimeRegistry hlookup, hmatch⟩
 
-theorem TrustedRegistryAgreesWithPFnTClosures.resolve
+private theorem TrustedRegistryAgreesWithPFnTClosures.resolve
     {tr : TrustedRegistry} {argTyp : Typ} {tcls : List PFnTClosure}
     (hagrees : TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls)
     {id : ExternId} {x : Name} {retSpec : ExternReturn}

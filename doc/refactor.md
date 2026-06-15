@@ -77,7 +77,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | ID | Task | Risk | Eff | Depends on |
 | --- | --- | --- | --- | --- |
 | T1 ✅ | Delete verified dead declarations | low | S | — |
-| T2 | Privatize file-local public decls | low | S | — |
+| T2 ✅ | Privatize file-local public decls | low | S | — |
 | T3 | Remove redundant imports; drop empty shell | low | S | — |
 | T4 | Hoist duplicated single-run skeleton | med | M | T1 |
 | T5 | Collapse Side0/Side1 mirror (StepFRApp) | low | M | T2 |
@@ -197,7 +197,13 @@ impact.
 fully-qualified reference. The only real risk is *mis-identifying* a live
 declaration as dead — mitigated by the re-grep step.
 
-### T2 — Privatize file-local public declarations
+### T2 ✅ — Privatize file-local public declarations
+
+**Status: COMPLETED.** `private` added to 12 `ExternCall*` decls and their `of_*`
+constructors in `StepFRApp`, and to the 5 resolver helpers in `ExternBoundaryProofs`
+(`resolveDeclaration`, `resolveFnDeclaration`, `resolvePfnDeclaration`,
+`TrustedRegistryAgreesWithFnTClosures.resolve`, `TrustedRegistryAgreesWithPFnTClosures.resolve`);
+`lake build` passes with 0 sorry / 0 axiom (11466 jobs).
 
 **Theme:** organization · **Risk:** low · **Effort:** small · **Deps:** —
 (do after T1 so the deleted `agreeValueUnder_same` is not double-handled)
