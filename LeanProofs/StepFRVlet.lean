@@ -5,6 +5,7 @@
   and exclusive vlet-body helpers.
 -/
 import LeanProofs.StepFR
+import LeanProofs.VarEnvPreservation
 
 open List
 open List.Mem

@@ -1,4 +1,5 @@
-import LeanProofs.MaxCurriedFR
+import LeanProofs.ExternProofs
+import LeanProofs.ExternRegimeInt
 
 /-!
 # Program-level fault-robustness for a *memory-read* (`!r`) `captures:` dependency

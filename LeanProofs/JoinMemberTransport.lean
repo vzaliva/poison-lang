@@ -5,6 +5,7 @@
   the joined result.
 -/
 import LeanProofs.StepFR
+import LeanProofs.Equality
 
 open List
 open List.Mem

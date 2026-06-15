@@ -6,6 +6,7 @@
   PredRespectsTagMeaning, and EnvRespectsTagMeaning update lemmas.
 -/
 import LeanProofs.StepFR
+import LeanProofs.VarEnvPreservation
 
 open List
 open List.Mem

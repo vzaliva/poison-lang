@@ -3,6 +3,7 @@
 -/
 import LeanProofs.StepFR
 import LeanProofs.JoinMemberTransport
+import LeanProofs.VarEnvPreservation
 
 open List
 open List.Mem

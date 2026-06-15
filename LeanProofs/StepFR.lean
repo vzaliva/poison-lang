@@ -14,11 +14,8 @@ import LeanProofs.FaultRobustness
 import LeanProofs.TypeSafety
 import LeanProofs.Aux
 import LeanProofs.SemanticsProperties
-import LeanProofs.Equality
 import LeanProofs.RegimeConsistency
 import LeanProofs.ExternTypingAssumptions
-import LeanProofs.VarEnvPreservation
-import LeanProofs.MemoryMonotonicity
 import Std.Data.ExtTreeMap.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 

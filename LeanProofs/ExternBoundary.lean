@@ -11,7 +11,6 @@
   theorem.
 -/
 import LeanProofs.StepFR
-import LeanProofs.ExternRuntime
 
 open Std
 

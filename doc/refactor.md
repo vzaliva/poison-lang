@@ -78,7 +78,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | --- | --- | --- | --- | --- |
 | T1 ✅ | Delete verified dead declarations | low | S | — |
 | T2 ✅ | Privatize file-local public decls | low | S | — |
-| T3 | Remove redundant imports; drop empty shell | low | S | — |
+| T3 ✅ | Remove redundant imports; drop empty shell | low | S | — |
 | T4 | Hoist duplicated single-run skeleton | med | M | T1 |
 | T5 | Collapse Side0/Side1 mirror (StepFRApp) | low | M | T2 |
 | T6 | Collapse pfn extern-decl machinery | med | L | — |
@@ -239,7 +239,17 @@ flag for any decl that turns out to be cross-file.
 **Verification.** `ExternCallBoundaryFR*Side*` confirmed at 0 external references
 (77 file-local refs).
 
-### T3 — Remove redundant imports; delete the empty `MemoryMonotonicity` shell
+### T3 ✅ — Remove redundant imports; delete the empty `MemoryMonotonicity` shell
+
+**Status: COMPLETED.** `MemoryMonotonicity.lean` deleted; 7 import edges removed or
+redirected: `VarEnvPreservation` moved from `StepFR` to the 4 per-operator consumers
+(`StepFRAssign`, `StepFRVlet`, `StepFRIte`, `StepFRApp`); `Equality` dropped from
+`StepFR` (still available via `TypeSafety`) and added explicitly to
+`JoinMemberTransport`; `ExternRuntime` dropped from `ExternBoundary`; `ExternBoundary`
+dropped from `StepFRApp`; `MaxCurriedFR` replaced by direct `ExternProofs` +
+`ExternRegimeInt` imports in `GuardedCapturesFR` and `MemReadCapturesFR`. `lake build`
+passes with 0 sorry / 0 axiom (11465 jobs; `GuardedCapturesFR` and `MemReadCapturesFR`
+now build before `MaxCurriedFR` confirming sibling independence).
 
 **Theme:** organization · **Risk:** low · **Effort:** small · **Deps:** —
 

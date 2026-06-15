@@ -6,9 +6,9 @@
   and joinTypeResults compatibility lemmas.
 -/
 import LeanProofs.StepFR
-import LeanProofs.ExternBoundary
 import LeanProofs.ExternBoundaryProofs
 import LeanProofs.JoinMemberTransport
+import LeanProofs.VarEnvPreservation
 
 open List
 open List.Mem
