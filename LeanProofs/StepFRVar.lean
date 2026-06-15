@@ -10,38 +10,6 @@ open scoped MemoryTypeEnv
 
 variable {registry : ExternRegistry}
 
-private def StepFRSingleRunFinalCleanPcTrueWithCtxValCons
-  (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
-  
-  (ctx : TypeContext)
-  (e : Expr)
-  (res : TypeResult)
-  (predSat : PredSat)
-  (tm : TagMeaning) : Prop :=
-    PredSatLaws predSat tm →
-    ExternTypingAssumptions →
-    wfTagMeaningCtx tm ctx →
-    ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
-      (cf : Config) (o : Value),
-      wfRealizationMap θ →
-      wfTypeContext ctx →
-      runtimeInstantiatesCtx ctx μ ρ θ →
-      regimeConsistentWithCtx ctx →
-      CtxCons ctx μ ρ θ →
-      ∀ (a : Address) (pm : Bool),
-        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } →
-        terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o →
-        ctx.pc = true →
-        ∃ (θ' : RealizationMap),
-          wfExtendsMap θ θ' ∧
-          valueHasETyp θ' o res.qualType.etyp ∧
-          runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-          CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
-          ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
-          PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
-          FreshCleanLocsUnrealizedOneRun ctx res θ'
-
 private def VarCtxToValCons
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=

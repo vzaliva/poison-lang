@@ -3489,19 +3489,3 @@ theorem TypeSystemEnforcesFaultRobustness
     FaultRobustnessSpec tr e s obs := by
   intro ctx _hExternRegime hInitTrust
   exact TypeSystemEnforcesFaultRobustness_at tr e s obs ctx hInitTrust
-
-/-- Public program-covered wrapper (the "unblocking" direction): derive the
-    per-context trust premise from a checked
-    context-admissibility condition — every context-reachable extern declaration
-    occurs in the program — together with registry/program agreement.  Callers
-    that should not prove reachability agreement by hand can discharge the
-    `InitialContextTrusted` premise this way. -/
-theorem TypeSystemEnforcesFaultRobustness_programCovered
-    (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
-    (hprog : TrustedRegistryAgreesWithProgram e tr) (ctx : TypeContext)
-    (_hExternRegime : ExternRegimeMatchesInputSpec s ctx)
-    (hcover : ∀ {id d}, ContextExternReachable e ctx id d →
-                ExternDeclarationInProgram e id d) :
-    FaultRobustnessSpecForCtx (TrustedRegistry.toRuntimeRegistry tr) e s obs ctx :=
-  TypeSystemEnforcesFaultRobustness_at tr e s obs ctx
-    (TrustedRegistryAgreesWithReachable.of_programCover hcover hprog)

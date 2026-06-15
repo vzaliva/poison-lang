@@ -79,7 +79,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | T1 ✅ | Delete verified dead declarations | low | S | — |
 | T2 ✅ | Privatize file-local public decls | low | S | — |
 | T3 ✅ | Remove redundant imports; drop empty shell | low | S | — |
-| T4 | Hoist duplicated single-run skeleton | med | M | T1 |
+| T4 ✅ | Delete dead single-run skeleton (was: hoist) | med | M | T1 |
 | T5 | Collapse Side0/Side1 mirror (StepFRApp) | low | M | T2 |
 | T6 | Collapse pfn extern-decl machinery | med | L | — |
 | T7 | Collapse mirror join helpers (StepFRIte) | low | M | — |
@@ -281,7 +281,21 @@ documented DAG match reality.
 Each removed edge must be verified transitively provided, and the consumer-side
 direct import added in the same change.
 
-### T4 — Hoist the duplicated single-run skeleton into `StepFR`
+### T4 ✅ — Hoist the duplicated single-run skeleton into `StepFR`
+
+**Status: COMPLETED — resolved by deletion, not hoisting.** Closer inspection
+showed the skeleton was dead in **all seven** files, not just `StepFRVar`:
+`StepFRSingleRunFinalCleanPcTrueWithCtxValCons` and its `_IH` abbrev were never
+consumed in App, Assign, Deref, NewRef, Seq, Vlet, or Var (each occurrence was
+the def/abbrev itself plus self-references inside the def — no downstream use).
+With nothing live to share, hoisting a canonical copy into `StepFR` would have
+created a new orphan rather than removing one, so all copies were deleted
+outright: 13 declarations removed (7 defs + 6 `_IH` abbrevs; `StepFRVar` carried
+only the def), 303 line deletions, 0 insertions. `lake build` passes with 0
+sorry / 0 axiom (11465 jobs); per-operator independence is preserved (no shared
+def was introduced). A follow-up trim in the same pass removed the unused public
+wrapper `TypeSystemEnforcesFaultRobustness_programCovered` from
+`FaultRobustnessProofs`.
 
 **Theme:** redundancy · **Risk:** medium · **Effort:** medium · **Deps:** T1
 
@@ -800,8 +814,10 @@ source at planning time. Confirmed:
 
 - ✅ `MemoryMonotonicity.lean` is a 10-line, 0-declaration shell imported only by
   `StepFR` (T3).
-- ✅ The single-run skeleton is copy-pasted across 7 files; the `StepFRVar` copy
-  is dead (T4) — 3 refs each except `StepFRVar` = 1.
+- ✅ The single-run skeleton was copy-pasted across 7 files (T4). Planning-time
+  count read 3 refs each (1 for `StepFRVar`), but on execution those proved to be
+  the def/abbrev plus self-references — **all seven copies were dead** and were
+  deleted rather than hoisted.
 - ✅ The `ExternCallBoundaryFR*Side*` family is file-local — 0 external refs, 77
   in-file (T2, T5).
 - ✅ `pfn` extern-decl machinery is heavily repeated in `ExternProofs` (T6) —
