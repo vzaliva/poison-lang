@@ -5,12 +5,6 @@
   ("open"-style) externs, plus a theorem characterising when the trusted-registry
   fault-robustness theorem can be instantiated for a program that names an extern.
 
-  - `collectAndAllocExternTags_pred` / `applyExternRegimePolicy_singleton`: a
-    single output predicate allocates exactly one fresh tag, and the regime policy
-    inserts `freshTag ↦ b` for it — so a predicate-bearing extern result changes
-    the regime, unlike the empty-mapping `noPred` case.
-  - `valueConsistentWithRegime_int_inRegimeTrue`: value-consistency for an int
-    output that the regime de-poisons (`R(k) = some true`).
   - `nonempty_registry_hagrees_unprovable`: the universal
     `TrustedRegistryAgreesWithReachable` premise used by
     `TypeSystemEnforcesFaultRobustness_allCtx` is falsifiable for any non-empty
@@ -37,51 +31,6 @@ open Std
 open LeanPoison
 
 namespace ExternRegimeInt
-
-/-- The allocator on a single `guardClosure` predicate allocates exactly one fresh
-    tag `nextTag` for index `idx`, advancing to `nextTag + 1`.  Contrast
-    `collectAndAllocExternTags_noPred`, which yields the empty map. -/
-private theorem collectAndAllocExternTags_pred (idx : TagIndex) (nm : Name) (body : Expr) (nextTag : Tag) :
-    collectAndAllocExternTags [SyntaxPredicate.guardClosure idx nm body] nextTag
-      = .ok (({} : ExtTreeMap TagIndex Tag).insert idx nextTag, nextTag + 1) := by
-  rfl
-
-/-- A singleton `ExtTreeMap` lists to a single pair (one node, no ordering
-    sensitivity). -/
-private theorem extTreeMap_toList_singleton (idx : TagIndex) (t : Tag) :
-    (({} : ExtTreeMap TagIndex Tag).insert idx t).toList = [(idx, t)] := by
-  rfl
-
-/-- On a singleton tag mapping, the regime policy inserts exactly `freshTag ↦ b`
-    when the policy says `some b` and `freshTag` is not already governed.  Contrast
-    the `noPred` case, where the empty mapping leaves the regime unchanged. -/
-private theorem applyExternRegimePolicy_singleton
-    (R : Regime) (id : ExternId) (policy : ExternId → Tag → Option Bool)
-    (idx : TagIndex) (freshTag : Tag) (b : Bool)
-    (hpolicy : policy id freshTag = some b)
-    (hnone : R.lookup? freshTag = none) :
-    applyExternRegimePolicy R id policy (({} : ExtTreeMap TagIndex Tag).insert idx freshTag)
-      = R.insert freshTag b := by
-  unfold applyExternRegimePolicy
-  rw [extTreeMap_toList_singleton]
-  simp only [List.foldl_cons, List.foldl_nil, hpolicy, hnone]
-
-/-- Value-consistency for a predicate-bearing int output that the regime
-    de-poisons (`R(k) = some true`).  Mirror of `valueConsistentWithRegime_int_noPred`
-    but landing in the `inRegimeTrue` constructor; the predicate-satisfaction
-    obligation `qtypPredHolds` is supplied as a hypothesis. -/
-private theorem valueConsistentWithRegime_int_inRegimeTrue
-    {predSat : PredSat} {R : Regime} {qt : QTyp} {k : Tag}
-    {μ : Memory} {θ : RealizationMap} {n : Int}
-    (hetyp : qt.etyp = ETyp.int)
-    (htag : qtypGuardTag qt = some k)
-    (hRk : R.lookup? k = some true)
-    (hpred : qtypPredHolds predSat qt μ (Value.num n)) :
-    valueConsistentWithRegime predSat R qt μ θ (Value.num n) :=
-  valueConsistentWithRegime.inRegimeTrue k htag hRk hpred
-    (closureCapturedVarsRegime_nonClosure_of_nonFunctionType
-      (by simpa [hetyp] using (valueHasETyp.num (θ := θ) n))
-      (by rw [hetyp]; rfl))
 
 /-! ## Universal agreement and non-empty registries
 

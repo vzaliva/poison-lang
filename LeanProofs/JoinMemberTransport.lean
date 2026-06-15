@@ -11,23 +11,7 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
-private lemma agreeValueUnder_clean_monotoneRegime
-    {predSat : PredSat} {R R' : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
-    Regime.monotoneStep R R' →
-      qtypCleanUnder R' qt →
-        agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
-          agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
-  intro h_mono hclean hagree
-  exact
-    agreeValueUnder_clean_transport_by_cleanBack
-      (fun qt hclean' => cleanUnder_of_monotone (R := R) (R' := R') h_mono hclean')
-      (fun h => memberVarsRegimeEvidence_monotone h_mono h)
-      (fun h => memberCvcrEvidence_monotone h_mono h)
-      (fun h => memberVarsRegimeEvidence_monotone h_mono h)
-      (fun h => memberCvcrEvidence_monotone h_mono h)
-      hclean hagree
-
-/-- Extended-regime (`monotoneStepExt`) variant of `agreeValueUnder_clean_monotoneRegime`.
+/-- Extended-regime (`monotoneStepExt`) variant that transports `agreeValueUnder` across a regime extension.
     The fresh-tag freshness is discharged from the closure-tag bound on `qt`. -/
 lemma agreeValueUnder_clean_monotoneRegime_ext
     {predSat : PredSat} {R R' : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}

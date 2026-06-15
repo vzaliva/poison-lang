@@ -1,7 +1,7 @@
 /-
-  StepFRApp.lean - Fault-robustness proof for function application (stepFR_app).
+  StepFRApp.lean - Fault-robustness proof for function application.
 
-  Contains the stepFR_app lemma and all helper lemmas used exclusively by it,
+  Contains stepFR_app_with_expr_proof and all helper lemmas used exclusively by it,
   including join-transport lemmas, applyFnTClosure/applyPFnTClosure infrastructure,
   and joinTypeResults compatibility lemmas.
 -/
@@ -611,22 +611,6 @@ private lemma wfTagMeaningCtx_parrow_static_body
       wfTagMeaningCtx tm { ctxCap with varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt } :=
     wfTagMeaningCtx_varEnv_ext tm ctxCap x argQt hctxCapTm hargTm
   simpa [ctxCap] using hbodyTm
-
-private lemma runtimeInstantiatesCtx_of_closure_env
-  (ctx : TypeContext) (res2 res1 : TypeResult) (μ : Memory) (env₀ ρ : VarEnv) (θ : RealizationMap)
-  (h_mem_eq : res2.memEnv' = res1.memEnv')
-  (hric : runtimeInstantiatesCtx (ctxAfter (ctxAfter ctx res2) res1) μ ρ θ)
-  (h_env : ∀ x qt, (ctxAfter ctx res2).varEnv.lookup x = some qt →
-    ∃ v, env₀.lookup x = some v ∧ valueHasETyp θ v qt.etyp) :
-  runtimeInstantiatesCtx (ctxAfter ctx res2) μ env₀ θ := by
-  unfold runtimeInstantiatesCtx at hric ⊢
-  simp only [ctxAfter] at hric ⊢
-  constructor
-  · intro l a hθ
-    obtain ⟨hctx, hμ⟩ := hric.1 l a hθ
-    rw [h_mem_eq]; exact ⟨hctx, hμ⟩
-  · intro x qt h
-    exact h_env x qt h
 
 private lemma consistentWithRegimeMasked_app_closure_body_start
   (masked : Tag → Prop) (predSat : PredSat)
@@ -23846,51 +23830,3 @@ lemma stepFR_app_with_expr_proof
                   rw [← hp1]
                   simp [hpoison1_true, joinPoison]
                 exact finish_extern_pfn_extern_pfn_p1p_true h_p1p
-
-set_option maxHeartbeats 800000 in
-lemma stepFR_app
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (registry : ExternRegistry := emptyExternRegistry)
-  (hOp : RegistryOperationalSafe registry)
-  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (singleIH :
-    StepFRSingleRunFinalCleanPcTrue_IH predSat tm (Nat.succ (Nat.succ fuel'))
-      (registry := registry))
-  (entryKey : ExternCallEntryKey := ExternCallImpossibleEntryKey)
-  (_hentryKey_unique :
-    ∀ {id : ExternId} {entry₀ entry₁ : TrustedExternEntry},
-      entryKey id entry₀ → entryKey id entry₁ → entry₀ = entry₁)
-  (_hcallFR_of_entryKey :
-    ∀ {id : ExternId} {entry : TrustedExternEntry},
-      entryKey id entry → ExternCallBoundaryFR entry.decl entry.impl)
-  (_hfnLocal :
-    ∀ {tcls : List FnTClosure},
-      (htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
-      TrustedRegistryAgreesWithProgramLocal ctxᵢ predSat tm e1 e2 res tcls
-        htyped.st1 (entryKey := entryKey) (registry := registry))
-  (_hpfnLocal :
-    ∀ {tcls : List PFnTClosure},
-      (htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res tcls) →
-      TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls
-        htyped.st1 (entryKey := entryKey) (registry := registry))
-  (htc : typecheck ctxᵢ (Expr.app e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.app e1 e2) res predSat tm (registry := registry) := by
-    exact
-      stepFR_app_with_expr_proof
-        ctxᵢ predSat tm registry hOp e1 e2 fuel' res
-        (fun _ => True) (fun _ => True) trivial trivial trivial
-        (fun {_ctx} {_res} _ => trivial)
-        (fun {_tcls} {_x} {_body} {_σcap} _ _ => trivial)
-        (fun {_tcls} {_x} {_pbody} {_σcap} _ _ => trivial)
-        (fun {_tcls} {_x} {_body} {_σcap} {_bodyCtx} {_etyp2} {_p2}
-          {_pred2} (_htyped : AppFnClosureListFromTypecheck ctxᵢ e1 e2 res _tcls) _ _ _ =>
-            trivial)
-        (fun {_tcls} {_x} {_pbody} {_σcap} {_bodyCtx} {_etyp2} {_p2}
-          {_pred2} (_htyped : AppPfnClosureListFromTypecheck ctxᵢ e1 e2 res _tcls) _ _ _ =>
-            trivial)
-        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
-          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm hTmBounded res htc =>
-          singleIH m hm (tmᵢ := tmᵢ) e ctx hwfTm hTmBounded res htc)
-        entryKey _hentryKey_unique _hcallFR_of_entryKey _hfnLocal _hpfnLocal htc

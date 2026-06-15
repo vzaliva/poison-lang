@@ -78,19 +78,6 @@ def wfRegime (R : Regime) (s : InputSpec) : Prop :=
   (∀ k, k ∈ tags → (R.lookup? k).isSome) ∧
   (∀ k, (R.lookup? k).isSome → k ∈ tags)
 
-private inductive wfRegimeForReturn (R : Regime) : QTyp → Prop where
-  | noPred (retType : QTyp)
-      (hpred : retType.pred = Predicate.noPred) :
-      wfRegimeForReturn R retType
-  | guardOnly (retType : QTyp) (k : Tag)
-      (hpred : retType.pred = Predicate.guardOnly k)
-      (hregime : R.lookup? k = some true) :
-      wfRegimeForReturn R retType
-  | guardClosure (retType : QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
-      (hpred : retType.pred = Predicate.guardClosure k arg_name pred_body var_env)
-      (hregime : R.lookup? k = some true) :
-      wfRegimeForReturn R retType
-
 -- Helper: equality of observables in the final states.
 -- For references, observability is via the logical-location set, not concrete addresses.
 def observablesEqual (obs : ObservableSpec)
@@ -149,64 +136,6 @@ lemma deep_implies_shallow {P : VarTypeEnv → Prop} {env : VarTypeEnv} :
   intro h
   cases h
   assumption
-
-mutual
-  inductive deepVarEnvProperty₂ : (VarTypeEnv → VarTypeEnv → Prop) → VarTypeEnv → VarTypeEnv → Prop
-  | intro (P : VarTypeEnv → VarTypeEnv → Prop) (env₁ env₂ : VarTypeEnv) :
-    P env₁ env₂ →
-    (forall x qt₁ qt₂,
-      env₁.lookup x = some qt₁ →
-      env₂.lookup x = some qt₂ →
-      deepQTypProperty₂ P qt₁ qt₂) →
-    deepVarEnvProperty₂ P env₁ env₂
-
-  inductive deepQTypProperty₂ : (VarTypeEnv → VarTypeEnv → Prop) → QTyp → QTyp → Prop
-  | arrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
-    (∃ st1 st2 p tcls₁,
-      qt₁.etyp = ETyp.arrow st1 st2 p tcls₁ ∧
-      (∀ tcl₁ ∈ tcls₁, match tcl₁ with
-      | FnTClosure.regular _ _ env₁ =>
-          ∃ st1' st2' p' tcls₂,
-            qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
-            (∀ tcl₂ ∈ tcls₂, match tcl₂ with
-            | FnTClosure.regular _ _ env₂ =>
-                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | FnTClosure.extern _ _ _ _ env₂ _ _ =>
-                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
-      | FnTClosure.extern _ _ _ _ env₁ _ _ =>
-          ∃ st1' st2' p' tcls₂,
-            qt₂.etyp = ETyp.arrow st1' st2' p' tcls₂ ∧
-            (∀ tcl₂ ∈ tcls₂, match tcl₂ with
-            | FnTClosure.regular _ _ env₂ =>
-                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | FnTClosure.extern _ _ _ _ env₂ _ _ =>
-                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
-    deepQTypProperty₂ P qt₁ qt₂
-  | parrow (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
-    (∃ st1 st2 p tcls₁,
-      qt₁.etyp = ETyp.parrow st1 st2 p tcls₁ ∧
-      (∀ tcl₁ ∈ tcls₁, match tcl₁ with
-      | PFnTClosure.regular _ _ env₁ =>
-          ∃ st1' st2' p' tcls₂,
-            qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
-            (∀ tcl₂ ∈ tcls₂, match tcl₂ with
-            | PFnTClosure.regular _ _ env₂ =>
-                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | PFnTClosure.extern _ _ _ env₂ _ _ =>
-                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂))
-      | PFnTClosure.extern _ _ _ env₁ _ _ =>
-          ∃ st1' st2' p' tcls₂,
-            qt₂.etyp = ETyp.parrow st1' st2' p' tcls₂ ∧
-            (∀ tcl₂ ∈ tcls₂, match tcl₂ with
-            | PFnTClosure.regular _ _ env₂ =>
-                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)
-            | PFnTClosure.extern _ _ _ env₂ _ _ =>
-                P (VarTypeEnv.ofCaptured env₁) (VarTypeEnv.ofCaptured env₂)))) →
-    deepQTypProperty₂ P qt₁ qt₂
-  | other (P : VarTypeEnv → VarTypeEnv → Prop) (qt₁ qt₂ : QTyp) :
-    (nonClosureQTyp qt₁ ∨ nonClosureQTyp qt₂) →
-    deepQTypProperty₂ P qt₁ qt₂
-end
 
 -- Well-formedness: memory stores integers at critical locations; additionally,
 -- align predicate and poison for critical inputs: no predicate ⇒ clean;

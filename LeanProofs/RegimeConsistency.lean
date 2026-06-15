@@ -1717,15 +1717,6 @@ lemma MaskedTagsAbsentFromTrueTagEnvs_join
     ⟨deps₁, _deps₂, hget₁, _hget₂⟩
   exact h₁ k deps₁ hmasked hget₁
 
-private lemma masked_lookup_none_of_monotoneStep
-    {masked : Tag → Prop} {R R' : Regime}
-    (hmasked_none : ∀ k, masked k → R.lookup? k = none)
-    (h_mono : Regime.monotoneStep R R') :
-    ∀ k, masked k → R'.lookup? k = none := by
-  intro k hk
-  by_contra hnot
-  exact h_mono.2 k hnot (hmasked_none k hk)
-
 /-- Extended-regime version of `masked_lookup_none_of_monotoneStep`:
     masked tags stay absent from the regime across a `monotoneStepExt` step,
     provided masked tags are never among the freshly-added `newTags`.  At every use site the

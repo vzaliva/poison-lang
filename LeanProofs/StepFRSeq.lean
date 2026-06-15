@@ -1,7 +1,7 @@
 /-
   StepFRSeq.lean - Fault-robustness proof for the seq case.
 
-  Contains stepFR_seq and stepFRSingleRunFinalCleanPcTrue_seq.
+  Contains stepFR_seq_with_expr_proof and stepFRSingleRunFinalCleanPcTrue_seq.
 -/
 import LeanProofs.StepFR
 
@@ -414,20 +414,4 @@ lemma stepFR_seq_with_expr_proof
     simpa [hctxAfter] using hres_agree2
   · exact _hrd₀2
   · exact _hrd₁2
-
-lemma stepFR_seq
-  (ctxᵢ : TypeContext) (predSat : PredSat)
-  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (hOp : RegistryOperationalSafe registry)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (htc : typecheck ctxᵢ (Expr.seq e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.seq e1 e2) res predSat tm (registry := registry) := by
-    exact
-      stepFR_seq_with_expr_proof
-        ctxᵢ predSat e1 e2 fuel' res tm
-        (fun _ => True) (fun _ => True) trivial trivial trivial (fun _ => trivial)
-        hOp
-        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
-          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        htc
 

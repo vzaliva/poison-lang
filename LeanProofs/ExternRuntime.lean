@@ -27,14 +27,6 @@ inductive ExternDeclarationKind where
   | pfn
   deriving Repr, BEq
 
-inductive ExternBoundaryKind where
-  | declVal
-  | declFn
-  | declPfn
-  | callFn
-  | callPfn
-  deriving Repr, BEq
-
 /-- Static declaration shape extracted from a source expression.
 
     `typ`, `argPoison`, `argPred` are the surface form of the declared argument
@@ -459,13 +451,6 @@ def ofRuntime
     argName := argName
     argValue := argValue
     unifiedEnv := VarEnv.update capturedEnv argName argValue }
-
-@[simp] theorem ofRuntime_unifiedEnv
-    (bodyCtx : TypeContext) (callConfig : Config)
-    (capturedEnv : VarEnv) (argName : Name) (argValue : Value) :
-    (ofRuntime bodyCtx callConfig capturedEnv argName argValue).unifiedEnv =
-      VarEnv.update capturedEnv argName argValue :=
-  rfl
 
 /-- Synthetic body-input config for a call boundary.
 

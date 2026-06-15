@@ -1,7 +1,7 @@
 /-
-  StepFRAssign.lean - Fault-robustness proof for assignment (stepFR_assign).
+  StepFRAssign.lean - Fault-robustness proof for assignment.
 
-  Contains the stepFR_assign lemma and all helper lemmas used exclusively by it,
+  Contains stepFR_assign_with_expr_proof and all helper lemmas used exclusively by it,
   including invalidateRegimeDeps infrastructure, assign memory formula helpers,
   PredRespectsTagMeaning, and EnvRespectsTagMeaning update lemmas.
 -/
@@ -3717,23 +3717,6 @@ lemma stepFR_assign_with_expr_proof
       rw [hreg_cfg₁1] at h; exact h
     rw [h_ret_decl, hreg_cf₁]
     simpa [hreg_cfg₁2] using _hrd₁2
-
-lemma stepFR_assign
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
-  (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (hOp : RegistryOperationalSafe registry)
-  (htc : typecheck ctxᵢ (Expr.assign e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.assign e1 e2) res predSat tm (registry := registry) := by
-    exact
-      stepFR_assign_with_expr_proof
-        ctxᵢ predSat tm e1 e2 fuel' res
-        (fun _ => True) (fun _ => True) trivial trivial trivial
-        (fun _ => trivial)
-        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
-          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        hOp htc
-
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Assign single-run infrastructure (moved from FaultRobustnessProofs.lean)

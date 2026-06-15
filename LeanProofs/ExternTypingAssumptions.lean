@@ -88,41 +88,6 @@ theorem respects
 
 end ExternBatchTagMeaningExtension
 
-/-- The "do-nothing" extension: when the mapping is empty (no guardClosures
-    to resolve, e.g. all-`noPred` preds), `tm' = tm` works trivially. -/
-theorem ExternBatchTagMeaningExtension.refl_of_empty_mapping
-    (tm : TagMeaning) (nextTag : Tag)
-    (mapping : TagMapping) (preds : List SyntaxPredicate) (env : VarTypeEnv)
-    (nextTag' : Tag)
-    (h_le : nextTag ≤ nextTag')
-    (h_bounded' : TagMeaningBounded tm nextTag')
-    (h_no_alloc : ∀ idx tag, mapping.get? idx = some tag → False) :
-    ExternBatchTagMeaningExtension tm nextTag mapping preds env nextTag' tm := by
-  refine ⟨ExtTreeMap.IsSubmap.refl tm, h_bounded', ?_, h_le⟩
-  intro idx tag hmap _ _ _ _ _
-  exact (h_no_alloc idx tag hmap).elim
-
-/-- Helper: `tm' = tm` is a valid batch extension when no mapping entry
-    triggers the respects-conjunct's hypothesis.  Used as the fallback
-    witness for the singleton bridge in cases where `pred` does not
-    contribute a `guardClosure` descriptor that needs to be mapped. -/
-private theorem ExternBatchTagMeaningExtension.refl_when_respects_vacuous
-    (tm : TagMeaning) (nextTag : Tag)
-    (mapping : TagMapping) (preds : List SyntaxPredicate) (env : VarTypeEnv)
-    (nextTag' : Tag)
-    (h_bounded : TagMeaningBounded tm nextTag)
-    (h_le : nextTag ≤ nextTag')
-    (h_vacuous : ∀ idx tag, mapping.get? idx = some tag →
-                 ∀ arg body pbody,
-                   SyntaxPredicate.guardClosure idx arg body ∈ preds →
-                   body.toPExpr = .ok pbody → False) :
-    ExternBatchTagMeaningExtension tm nextTag mapping preds env nextTag' tm := by
-  refine ⟨ExtTreeMap.IsSubmap.refl tm, ?_, ?_, h_le⟩
-  · intro k d hlookup
-    exact Nat.lt_of_lt_of_le (h_bounded k d hlookup) h_le
-  · intro idx tag hmap arg body pbody hmem hpex
-    exact (h_vacuous idx tag hmap arg body pbody hmem hpex).elim
-
 private def buildBatchTmStep (mapping : TagMapping) (env : VarTypeEnv)
     (acc : TagMeaning) (pred : SyntaxPredicate) : TagMeaning :=
   match pred with
@@ -408,119 +373,10 @@ private lemma buildBatchTm_fold_lookup_of_guard_mem
           exact h_cons (List.mem_cons_of_mem pred hmem₁) (List.mem_cons_of_mem pred hmem₂)
         exact ih (buildBatchTmStep mapping env acc pred) h_cons_tail htail
 
-/-- Singleton bridge: given a successful `collectAndAllocExternTags`
-    on a singleton predicate list, plus the input `tm` bounded by `nextTag`
-    and the standard mapping-range bounds (proved structurally by
-    `collectAndAllocExternTags_mapping_values_ge` / `_lt`), construct a
-    canonical tag-meaning extension `tm'` that satisfies the structural
-    batch-extension predicate.
-
-    Multi-predicate batches use `canonical_general`, which additionally
-    consumes the allocator success witness to recover the conflict-check
-    loop's consistency facts. -/
-theorem ExternBatchTagMeaningExtension.canonical_singleton
-    (tm : TagMeaning) (pred : SyntaxPredicate) (env : VarTypeEnv)
-    (mapping : TagMapping) (nextTag nextTag' : Tag)
-    (h_bounded : TagMeaningBounded tm nextTag)
-    (h_alloc_ge : ∀ idx tag, mapping.get? idx = some tag → nextTag ≤ tag)
-    (h_alloc_lt : ∀ idx tag, mapping.get? idx = some tag → tag < nextTag')
-    (h_le : nextTag ≤ nextTag') :
-    ∃ tm', ExternBatchTagMeaningExtension tm nextTag mapping [pred] env nextTag' tm' := by
-  cases pred with
-  | noPred =>
-      refine ⟨tm, ExternBatchTagMeaningExtension.refl_when_respects_vacuous tm nextTag mapping
-        [SyntaxPredicate.noPred] env nextTag' h_bounded h_le ?_⟩
-      intro idx tag _hmap arg body pbody hmem _hpex
-      simp at hmem
-  | guardOnly _i =>
-      refine ⟨tm, ExternBatchTagMeaningExtension.refl_when_respects_vacuous tm nextTag mapping
-        [SyntaxPredicate.guardOnly _i] env nextTag' h_bounded h_le ?_⟩
-      intro idx tag _hmap arg body pbody hmem _hpex
-      simp at hmem
-  | guardClosure idx arg body =>
-      cases hbody : body.toPExpr with
-      | error _e =>
-          refine ⟨tm, ExternBatchTagMeaningExtension.refl_when_respects_vacuous tm nextTag mapping
-            [SyntaxPredicate.guardClosure idx arg body] env nextTag' h_bounded h_le ?_⟩
-          intro idx' tag' _hmap arg' body' pbody' hmem hpex
-          rcases List.mem_singleton.mp hmem with heq
-          have h_eqs :=
-            (SyntaxPredicate.guardClosure.injEq idx' arg' body' idx arg body).mp heq
-          obtain ⟨_, _, h_body⟩ := h_eqs
-          subst h_body
-          rw [hbody] at hpex
-          cases hpex
-      | ok pbody =>
-          cases hidx : mapping.get? idx with
-          | none =>
-              refine ⟨tm, ExternBatchTagMeaningExtension.refl_when_respects_vacuous tm nextTag mapping
-                [SyntaxPredicate.guardClosure idx arg body] env nextTag' h_bounded h_le ?_⟩
-              intro idx' tag' hmap arg' body' pbody' hmem _hpex
-              rcases List.mem_singleton.mp hmem with heq
-              have h_eqs :=
-                (SyntaxPredicate.guardClosure.injEq idx' arg' body' idx arg body).mp heq
-              obtain ⟨h_idx, _, _⟩ := h_eqs
-              subst h_idx
-              rw [hidx] at hmap
-              cases hmap
-          | some tag =>
-              -- The construction case: tm' = tm.update tag desc.
-              -- Bind tag and desc explicitly so subsequent goals can refer to them.
-              have h_tag_ge : nextTag ≤ tag := h_alloc_ge idx tag hidx
-              have h_tag_lt : tag < nextTag' := h_alloc_lt idx tag hidx
-              have h_tag_fresh : tm.lookup tag = none :=
-                h_bounded.lookup_none_of_ge h_tag_ge
-              set desc : GuardDesc :=
-                { argName := arg, body := pbody, capEnv := VarTypeEnv.toCaptured env } with hdesc
-              refine ⟨tm.update tag desc, ?_, ?_, ?_, h_le⟩
-              · -- Submap.
-                exact TagMeaningExtends.of_insert_fresh tm tag desc h_tag_fresh
-              · -- Bound.
-                intro k d hlookup
-                by_cases h_eq : k = tag
-                · subst h_eq; exact h_tag_lt
-                · -- k ≠ tag: lookup falls through to tm.
-                  have h_cmp_ne : compare tag k ≠ Ordering.eq := by
-                    intro h_cmp_eq
-                    exact h_eq (LawfulEqCmp.eq_of_compare h_cmp_eq).symm
-                  have h_lookup_tm : tm.lookup k = some d := by
-                    have hstep :
-                        (tm.update tag desc).lookup k = tm.lookup k := by
-                      show (tm.insert tag desc).get? k = tm.get? k
-                      rw [ExtTreeMap.get?_eq_getElem?, ExtTreeMap.get?_eq_getElem?]
-                      rw [ExtTreeMap.getElem?_insert]
-                      simp [h_cmp_ne]
-                    rw [hstep] at hlookup
-                    exact hlookup
-                  exact Nat.lt_of_lt_of_le (h_bounded k d h_lookup_tm) h_le
-              · -- Respects.
-                intro idx' tag' hmap arg' body' pbody' hmem hpex
-                rcases List.mem_singleton.mp hmem with heq
-                have h_eqs :=
-                  (SyntaxPredicate.guardClosure.injEq idx' arg' body' idx arg body).mp heq
-                obtain ⟨h_idx, h_arg, h_body⟩ := h_eqs
-                -- Flip directions so the original variables (idx, arg, body) survive.
-                have h_idx_rev : idx = idx' := h_idx.symm
-                have h_arg_rev : arg = arg' := h_arg.symm
-                have h_body_rev : body = body' := h_body.symm
-                subst h_idx_rev; subst h_arg_rev; subst h_body_rev
-                have h_tag_eq : tag = tag' := by
-                  rw [hidx] at hmap; exact Option.some.inj hmap
-                subst h_tag_eq
-                have h_pbody_eq : pbody = pbody' := by
-                  rw [hbody] at hpex; exact Except.ok.inj hpex
-                subst h_pbody_eq
-                -- Goal: (tm.update tag desc).lookup tag = some desc.
-                show (tm.insert tag desc).get? tag = some desc
-                rw [ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert]
-                simp
-
 /-- Canonical extension for a general extern batch: given a successful
     `collectAndAllocExternTags` run and an input table bounded by the
     incoming fresh-tag cursor, construct the canonical tag-meaning table
-    for the whole batch.  `canonical_singleton` above handles the
-    singleton-pred case directly; this lemma generalizes to multi-pred
-    batches via the recursive `buildBatchTm` construction. -/
+    for the whole batch. -/
 theorem ExternBatchTagMeaningExtension.canonical_general
     (tm : TagMeaning) (preds : List SyntaxPredicate) (env : VarTypeEnv)
     (mapping : TagMapping) (nextTag nextTag' : Tag)

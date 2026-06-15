@@ -17,10 +17,6 @@ import Batteries.Data.List.Lemmas
 open Std
 open LeanPoison
 
-private lemma emptyExternRegistry_get?_eq_none (id : ExternId) :
-    emptyExternRegistry.get? id = none := by
-  simp [emptyExternRegistry]
-
 -- ================================================================
 -- Runtime VarEnv Lookup/Update Lemmas
 -- ================================================================
@@ -1638,83 +1634,6 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
 -- explicit reset configs back to the post-`e₂`/post-`e₁` configs via
 -- `beval_preserves_varEnv`, which is only available downstream of this module.
 
-/-- Inversion lemma for terminatesTo on app (function application).
-    The body terminates to some intermediate evalConfig (not c₂), because bevalFunctionBody
-    transforms the config after body evaluation. -/
-private lemma terminatesTo_app_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Value)
-    (hreg : c₀.registry = emptyExternRegistry) :
-    terminatesTo (Expr.app e₁ e₂) c₀ c₂ v →
-    -- User impure closure case.  The function expression is evaluated under the
-    -- caller's variable environment, and the result restores it.
-    (∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr) (env : VarEnv) (evalConfig : Config),
-      terminatesTo e₂ c₀ c₂' v₂ ∧
-      terminatesTo e₁ { c₂' with varEnv := c₀.varEnv } c₁ (Value.closure x body env) ∧
-      c₁.pureMode = false ∧
-      terminatesTo body { c₁ with varEnv := env.update x v₂, pureMode := false } evalConfig v ∧
-      c₂ = { c₁ with memory := evalConfig.memory, varEnv := c₀.varEnv, nextAddr := evalConfig.nextAddr, pureMode := c₁.pureMode } ∧
-      c₂'.pureMode = c₀.pureMode ∧
-      c₂.pureMode = c₀.pureMode) ∨
-    -- User pure closure case
-    (∃ (c₂' : Config) (v₂ : Value) (c₁ : Config) (x : Name) (body : Expr) (env : VarEnv) (evalConfig : Config),
-      terminatesTo e₂ c₀ c₂' v₂ ∧
-      terminatesTo e₁ { c₂' with varEnv := c₀.varEnv } c₁ (Value.peClosure x body env) ∧
-      Expr.toPExpr? body ≠ none ∧
-      terminatesTo body { c₁ with varEnv := env.update x v₂, pureMode := true } evalConfig v ∧
-      c₂ = { c₁ with varEnv := c₀.varEnv } ∧
-      c₂'.pureMode = c₀.pureMode ∧
-      c₂.pureMode = c₀.pureMode) := by
-  intro ⟨fuel, verbose, hbeval⟩
-  rcases bevalApp_structure e₁ e₂ fuel verbose c₀ c₂ v hbeval with ⟨cfg2, cfg1, v2, hcase⟩
-  have he2 : LeanPoison.beval (fuel - 1) c₀ e₂ verbose = .success cfg2 v2 := by
-    cases hcase <;> assumption
-  have hreg2 : cfg2.registry = emptyExternRegistry :=
-    (beval_preserves_registry (fuel - 1) c₀ cfg2 e₂ v2 verbose he2).trans hreg
-  cases hcase with
-  | @userFn x body env he2 he1 hNot hpureFalse hBody hpfinal =>
-    left
-    have hpure_cfg2 : cfg2.pureMode = c₀.pureMode :=
-      terminatesTo_preserves_pureMode e₂ c₀ cfg2 v2 ⟨fuel - 1, verbose, he2⟩
-    have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-      terminatesTo_preserves_pureMode e₁ { cfg2 with varEnv := c₀.varEnv } cfg1
-        (Value.closure x body env) ⟨fuel - 1, verbose, he1⟩
-    obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
-      bevalFunctionBody_to_terminatesTo (fuel - 1) verbose { cfg1 with varEnv := c₀.varEnv }
-        env x v2 body false c₂ v hBody
-    refine ⟨cfg2, v2, cfg1, x, body, env, evalConfig, ⟨fuel - 1, verbose, he2⟩, ⟨fuel - 1, verbose, he1⟩,
-      hpureFalse, hbody_terminates, (by simpa using hcfg_final), hpure_cfg2, ?_⟩
-    rw [hpfinal, hpure_cfg1, hpure_cfg2]
-  | @userPfn x body env he2 he1 hNot htp hBody hpfinal =>
-    right
-    have hpure_cfg2 : cfg2.pureMode = c₀.pureMode :=
-      terminatesTo_preserves_pureMode e₂ c₀ cfg2 v2 ⟨fuel - 1, verbose, he2⟩
-    have hpure_cfg1 : cfg1.pureMode = cfg2.pureMode :=
-      terminatesTo_preserves_pureMode e₁ { cfg2 with varEnv := c₀.varEnv } cfg1
-        (Value.peClosure x body env) ⟨fuel - 1, verbose, he1⟩
-    obtain ⟨evalConfig, hbody_terminates, hcfg_final⟩ :=
-      bevalFunctionBody_to_terminatesTo (fuel - 1) verbose { cfg1 with varEnv := c₀.varEnv }
-        env x v2 body true c₂ v hBody
-    refine ⟨cfg2, v2, cfg1, x, body, env, evalConfig, ⟨fuel - 1, verbose, he2⟩, ⟨fuel - 1, verbose, he1⟩,
-      htp, hbody_terminates, (by simpa using hcfg_final), hpure_cfg2, ?_⟩
-    rw [hpfinal, hpure_cfg1, hpure_cfg2]
-  | @externFn x y id argTyp argPoison argPred retSpec eff cap env he2 he1 hp impl hGet hArg vRaw mem' addr' hImpl hValRet hcfg =>
-    exfalso
-    have hreg1 : cfg1.registry = emptyExternRegistry :=
-      (beval_preserves_registry (fuel - 1) { cfg2 with varEnv := c₀.varEnv } cfg1 e₁
-          (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env) verbose he1).trans
-        hreg2
-    rw [hreg1] at hGet
-    rw [emptyExternRegistry_get?_eq_none id] at hGet
-    simp at hGet
-  | @externPfn x y id argTyp argPoison argPred retSpec cap env he2 he1 impl hGet hArg vRaw hImpl hValRet hcfg =>
-    exfalso
-    have hreg1 : cfg1.registry = emptyExternRegistry :=
-      (beval_preserves_registry (fuel - 1) { cfg2 with varEnv := c₀.varEnv } cfg1 e₁
-          (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) env) verbose he1).trans
-        hreg2
-    rw [hreg1] at hGet
-    rw [emptyExternRegistry_get?_eq_none id] at hGet
-    simp at hGet
-
 /-- Inversion lemma for terminatesTo on ite (if-then-else).
     Returns intermediate config after condition, which branch was taken, and preserves pureMode. -/
 lemma terminatesTo_ite_inv' (e₁ e₂ e₃ : Expr) (c₀ c₂ : Config) (v : Value) :
@@ -1819,7 +1738,6 @@ lemma terminatesTo_assign_inv' (e₁ e₂ : Expr) (c₀ c₂ : Config) (v : Valu
 -- ================================================================
 -- NextAddr Monotonicity
 -- ================================================================
-
 
 /-- Helper lemma: bevalFunctionBody preserves monotonicity of nextAddr. -/
 private lemma bevalFunctionBody_nextAddr_mono
@@ -2505,7 +2423,6 @@ lemma terminatesTo_memory_contains_mono (e : Expr) (cfg₀ cfg₁ : Config) (v :
   intro ⟨fuel, verbose, hbeval⟩
   exact beval_memory_contains_mono e fuel verbose cfg₀ cfg₁ v hOp hbeval
 
-
 -- ================================================================
 -- Pure evaluation preserves config (used for pure closures)
 -- ================================================================
@@ -2754,7 +2671,6 @@ lemma beval_pure_memory_eq (e : Expr) (fuel : Nat) (cfg₀ cfg₁ : Config) (v :
 -- ================================================================
 -- wfConfig_preserved Proof
 -- ================================================================
-
 
 -- Private lemmas for wfConfig_preserved proof
 

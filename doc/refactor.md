@@ -76,7 +76,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 
 | ID | Task | Risk | Eff | Depends on |
 | --- | --- | --- | --- | --- |
-| T1 | Delete verified dead declarations | low | S | — |
+| T1 ✅ | Delete verified dead declarations | low | S | — |
 | T2 | Privatize file-local public decls | low | S | — |
 | T3 | Remove redundant imports; drop empty shell | low | S | — |
 | T4 | Hoist duplicated single-run skeleton | med | M | T1 |
@@ -151,7 +151,14 @@ independent of the hub and schedulable opportunistically.
 
 ## Block 1 — zero-risk cleanup
 
-### T1 — Delete verified dead declarations
+### T1 ✅ — Delete verified dead declarations
+
+**Status: COMPLETED.** All dead declarations and their transitive helpers were
+deleted; `lake build` passes with 0 sorry / 0 axiom. Cascade ran 5 rounds deep
+(deleting `builtinAbsSpec` orphaned 5 field-lemmas, which cascaded further to
+~12 additional helpers including all `builtinAbs*` defs). 1675 declarations
+remain; the script's 16 flagged items are capstones or the project-memory–gated
+`wfValue_loc_of_RegistryReservedBelow`.
 
 **Theme:** redundancy · **Risk:** low · **Effort:** small · **Deps:** —
 
@@ -182,16 +189,6 @@ the most-imported foundations and misleading reviewers about the live API.
   user confirmation — project memory marks it a deliberately-kept provability
   witness for a planned val-clause bridge.
 
-> **⚠ Verification caveat.** This list is a *starting point*, not a confirmed
-> kill-list. A spot-check found that `deepVarEnvProperty2` has **zero
-> occurrences anywhere** (likely a misremembered name), and `agreeValueUnder_same`
-> shows **4 references across 2 files** (so it is **not** obviously dead).
-> `Aux`'s `List.Forall2.exists_of_mem_left` is **used** at `Aux.lean:314`.
-> **Re-grep every name** (`rg -w <name> LeanProofs LeanPoison`) immediately
-> before deleting; a name appearing only at its definition site is dead,
-> otherwise keep it. Confirmed-dead by spot-check: `ExternBoundaryKind`
-> (1 occurrence = def only).
-
 **Benefit.** Removes dead code from the most-imported foundations with zero proof
 impact.
 
@@ -217,14 +214,13 @@ be `private`. About 20 verified-zero-external declarations are currently public.
   constructors. Keep `…StaticSource`, `…Single{Fn,Pfn}Contract`, `…EntryKey`,
   and the `…ProgramLocal` names public (consumed by `FaultRobustnessProofs.lean`
   / `CaptureJoinConjunction.lean`).
-- `ExternProofs`: add `private` to the `builtinAbs` entry defs and
-  `builtinMax11Decl` (first confirm `builtinAbsImpl` / `builtinAbsDecl` are not
-  needed by interpreter-agreement lemmas).
+- `ExternProofs`: `builtinAbsDecl`, `builtinAbsImpl`, `builtinMax11Decl` were
+  deleted by T1 (cascade); no work needed here for those names.
 - `ExternBoundaryProofs`: add `private` to `resolveDeclaration`,
   `resolveFnDeclaration`, `resolvePfnDeclaration`, and the two `…TClosures`
   resolvers; keep `callBoundaryRun`, `id_eq`, and the `AgreesWithProgram`
   resolvers public.
-- `StepFR`: add `private` to `typecheck_extends_tagMeaning`.
+- `StepFR`: `typecheck_extends_tagMeaning` was deleted by T1 (cascade); no work needed here.
 
 **Benefit.** Shrinks two hubs and the boundary layer's public surface by ~20
 names, making the hub splits (T11–T13) safer because each module's API becomes an
@@ -796,19 +792,20 @@ source at planning time. Confirmed:
   `decl_shape` ×21, `decl_valueConsistent` ×25, `declSingle` ×19, `declFR` ×23.
 - ✅ `ExternBoundaryKind` is dead (T1) — 1 occurrence = def only.
 
-Did **not** cleanly verify (re-check before acting):
+**T1 is complete** — the items below were planning-time uncertainties that were
+resolved during execution and need no further action:
 
-- ⚠️ `deepVarEnvProperty2` (T1): name **not found anywhere** — re-identify the
-  intended declaration before deleting.
-- ⚠️ `agreeValueUnder_same` (T1): **4 refs across 2 files** — not obviously dead;
-  re-verify.
-- ⚠️ `Aux` `List.Forall2` cluster (T1): **partly live**
-  (`exists_of_mem_left` used at `Aux.lean:314`); needs a per-lemma check.
+- `deepVarEnvProperty2`: actual name was `deepVarEnvProperty₂` (Unicode subscript);
+  confirmed dead and deleted.
+- `agreeValueUnder_same`: the 4 references were all in comments; confirmed dead
+  and deleted along with its aux lemma.
+- `Aux` `List.Forall2` cluster: per-lemma check done; live members kept, dead
+  members (`mapM_Except_ok_implies_forall2`, `exists_of_mem_left`,
+  `mapM_Except_ok_exists_of_mem_left`) deleted.
 
 **Takeaway:** the *aggregate* findings (which clusters are duplicated, which
-modules are oversized, which families are mirrored) are reliable, but the
-*individual dead-code names in T1 must be re-grepped one by one at execution
-time*. Treat T1's list as a set of candidates, not a confirmed kill-list.
+modules are oversized, which families are mirrored) remain reliable for
+planning T2–T17.
 
 ## Execution notes
 

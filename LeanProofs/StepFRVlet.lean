@@ -1,7 +1,7 @@
 /-
   StepFRVlet.lean - Fault-robustness proof for the vlet case.
 
-  Contains stepFR_vlet, stepFRSingleRunFinalCleanPcTrue_vlet,
+  Contains stepFR_vlet_with_expr_proof, stepFRSingleRunFinalCleanPcTrue_vlet,
   and exclusive vlet-body helpers.
 -/
 import LeanProofs.StepFR
@@ -1654,23 +1654,6 @@ lemma stepFR_vlet_with_expr_proof
       simpa using terminatesTo_preserves_registry ht₁
     rw [h_ret_decl]
     simpa [hreg_cf₁, hcf₁_eq] using _hrd₁2
-
-lemma stepFR_vlet
-  (ctxᵢ : TypeContext) (predSat : PredSat)
-  (vname : Name) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (hOp : RegistryOperationalSafe registry)
-  (htc : typecheck ctxᵢ (Expr.vlet vname e1 e2) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.vlet vname e1 e2) res predSat tm (registry := registry) := by
-    exact
-      stepFR_vlet_with_expr_proof
-        ctxᵢ predSat vname e1 e2 fuel' res tm
-        (fun _ => True) (fun _ => True) trivial trivial trivial
-        (fun _ _ _ => trivial)
-        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
-          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        hOp
-        htc
 
 
 

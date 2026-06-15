@@ -1,7 +1,7 @@
 /-
   StepFRNewRef.lean - Fault-robustness proof for the newRef case.
 
-  Contains stepFR_newRef, stepFRSingleRunFinalCleanPcTrue_newRef,
+  Contains stepFR_newRef_with_expr_proof, stepFRSingleRunFinalCleanPcTrue_newRef,
   and exclusive join-lookup helpers.
 -/
 import LeanProofs.StepFR
@@ -1569,19 +1569,3 @@ lemma stepFR_newRef_with_expr_proof
     rw [hreg_cf₁, h_decl]
     have hrd₁_e' : ReservedDiscipline registry res1.declared' θ₁1 := hreg_cfg₁' ▸ _hrd₁_e
     exact ReservedDiscipline.insert_above hbelow₁ hrd₁_e'
-
-lemma stepFR_newRef
-  (ctxᵢ : TypeContext) (predSat : PredSat)
-  (e : Expr) (fuel' : Nat) (res : TypeResult)
-  (tm : TagMeaning) (IH : StepFR_IH predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry))
-  (hOp : RegistryOperationalSafe registry)
-  (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.newRef e) res predSat tm (registry := registry) := by
-    exact
-      stepFR_newRef_with_expr_proof
-        ctxᵢ predSat e fuel' res tm
-        (fun _ => True) (fun _ => True) trivial trivial
-        (fun m hm {tmᵢ} e ctx _hctx _hcan hwfTm htagBounded res htc =>
-          IH m hm (tmᵢ := tmᵢ) e ctx hwfTm htagBounded res htc)
-        hOp htc
-
