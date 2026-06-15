@@ -6581,6 +6581,263 @@ private theorem externCallBoundaryRunProvider_singlePost
       htypedCall hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
       htagRBody hcwrBody hwfcfgBody hrdBody hrun hpcBody
 
+/-- Single-run "tail" of the impure (`fn`) extern-call boundary contract.
+
+    Both `Side0`/`Side1` two-run contracts share this tail verbatim, differing
+    only in which run's `(μ ρ cf o a)` they project into it; factoring it here
+    lets the four `of_*` discharge proofs be written once (run-generic) instead
+    of mirrored across the two sides.  Each `SideKContract` is *definitionally*
+    `∀ <two-run preamble>, RunContract … <runK projection>`. -/
+private def ExternCallBoundaryFRFnRunContract
+    (e1 e2 : Expr) (tcls : List FnTClosure) (sourceArgTyp : Typ)
+    (μ : Memory) (ρ : VarEnv) (cf : Config) (o : Value) (a : Address) (pm : Bool)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
+    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
+  ∀ (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
+    (c₂' : Config) (v₂ : Value) (c₁ : Config)
+    (id : ExternId) (x y : Name) (argTyp : Typ)
+    (argPoison declaredArgPoison : Bool) (argPred : SyntaxPredicate) (retSpec : ExternReturn)
+    (eff : List Effect) (tenv : CapturedVarEnv) (memberCap cap : List Capture) (env : VarEnv)
+    (impl : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address))
+    (vRaw : Value) (mem' : Memory) (addr' : Address),
+    ExternCallBoundaryFnStaticSource tcls sourceArgTyp id x y argTyp declaredArgPoison retSpec
+      eff tenv memberCap →
+    ExternCallFnTypingProvider id x y argTyp retSpec eff callEntry result3 declaredArgPoison memberCap →
+    terminatesTo e2
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+        registry := registry } c₂' v₂ →
+    terminatesTo e1 c₂' c₁
+      (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env) →
+    c₁.pureMode = false →
+    c₁.registry.get? id = some (ExternImpl.fn impl) →
+    valueMatchesTyp v₂ argTyp = true →
+    impl (VarEnv.update env x v₂) v₂ c₁.memory c₁.nextAddr =
+      Except.ok (vRaw, mem', addr') →
+    validateExternReturn id retSpec vRaw = Except.ok o →
+    (cf =
+      { memory := mem', varEnv := c₁.varEnv, nextAddr := addr',
+        pureMode := c₁.pureMode, registry := c₁.registry }) →
+    callEntry.bodyCtx = bodyCtx →
+    callEntry.callConfig = c₁ →
+    callEntry.argName = x →
+    callEntry.argValue = v₂ →
+    callEntry.capturedEnv = env →
+    callEntry.unifiedEnv =
+      VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
+    ∃ entry : TrustedExternEntry,
+      entryKey id entry ∧
+      (∃ argPoisonAst argPredAst captures, ExternBoundaryTyping.Call entry.decl
+        (Expr.externFn id y argTyp argPoisonAst argPredAst retSpec eff captures) callEntry result3) ∧
+      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf o
+
+/-- Populated trusted-registry discharge for the single-run `fn` boundary tail. -/
+private theorem ExternCallBoundaryFRFnRunContract.of_trustedRegistry
+    {tr : TrustedRegistry}
+    {e1 e2 : Expr} {tcls : List FnTClosure} {sourceArgTyp : Typ}
+    {μ : Memory} {ρ : VarEnv} {cf : Config} {o : Value} {a : Address} {pm : Bool}
+    (hagreesExtern :
+      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithFnTClosures tr argTyp tcls) :
+    ExternCallBoundaryFRFnRunContract e1 e2 tcls sourceArgTyp μ ρ cf o a pm
+      (entryKey := ExternCallTrustedEntryKey tr)
+      (registry := TrustedRegistry.toRuntimeRegistry tr) := by
+  intro _bodyCtx result3 callEntry
+        c₂' v₂ c₁ id x y argTyp argPoison _ argPred retSpec eff
+        tenv memberCap cap env impl vRaw mem' addr' hstatic
+        htypedCall ht_e2 ht_e1 hpure hGet hArg hImpl hValRet heq_cfg
+        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
+  have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    simpa using terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
+  have hregistryCall :
+      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    rw [hcallCfg]
+    exact hreg_c₁
+  have hpureCall : callEntry.callConfig.pureMode = false := by
+    rw [hcallCfg]
+    exact hpure
+  have hGetCall :
+      callEntry.callConfig.registry.get? id = some (ExternImpl.fn impl) := by
+    rw [hcallCfg]
+    exact hGet
+  have hArgCall : valueMatchesTyp callEntry.argValue argTyp = true := by
+    rw [hargValue]
+    exact hArg
+  have hImplCall :
+      impl callEntry.unifiedEnv callEntry.argValue
+        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
+        Except.ok (vRaw, mem', addr') := by
+    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
+    exact hImpl
+  have hcfgCall :
+      cf = { callEntry.callConfig with memory := mem', nextAddr := addr' } := by
+    simpa [hcallCfg] using heq_cfg
+  rcases
+    ExternCallBoundaryFnStaticSource.callBoundaryRun
+      (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp) (tcls := tcls)
+      (hagreesExtern (argTyp := sourceArgTyp))
+      (id := id) (x := x) (y := y) (retSpec := retSpec)
+      (effects := eff) (capturedEnv := tenv) (memberCap := memberCap)
+      hstatic hargName hregistryCall hpureCall hunified hGetCall
+      hArgCall hImplCall hValRet hcfgCall with
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall entry hmatch
+        (fnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp))
+          hstatic _hlookup), hrun⟩
+
+/-- Empty-registry discharge for the single-run `fn` boundary tail: an extern
+    call against the empty registry cannot look up an implementation. -/
+private theorem ExternCallBoundaryFRFnRunContract.of_emptyExternRegistry
+    {e1 e2 : Expr} {tcls : List FnTClosure} {sourceArgTyp : Typ}
+    {μ : Memory} {ρ : VarEnv} {cf : Config} {o : Value} {a : Address} {pm : Bool}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRFnRunContract e1 e2 tcls sourceArgTyp μ ρ cf o a pm
+      (entryKey := entryKey) := by
+  intro _bodyCtx _result3 _callEntry
+        c₂' v₂ c₁ id x y argTyp _argPoison _declaredArgPoison _argPred retSpec eff
+        _tenv _memberCap _cap _env _impl _vRaw _mem' _addr' _hstatic
+        _htypedCall ht_e2 ht_e1 _hpure hGet _hArg _hImpl _hValRet _heq_cfg
+        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
+  exfalso
+  have hreg_c₂' : c₂'.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
+  rw [hreg_c₁] at hGet
+  simp [emptyExternRegistry] at hGet
+
+/-- Program-level discharge for the single-run `fn` boundary tail. -/
+private theorem ExternCallBoundaryFRFnRunContract.of_trustedProgram
+    {tr : TrustedRegistry} {root : Expr}
+    {e1 e2 : Expr} {tcls : List FnTClosure} {sourceArgTyp : Typ}
+    {μ : Memory} {ρ : VarEnv} {cf : Config} {o : Value} {a : Address} {pm : Bool}
+    (hagrees : TrustedRegistryAgreesWithProgram root tr)
+    (hsourceProgram :
+      ∀ {sourceArgTyp argTyp : Typ} {argPoison : Bool} {id : ExternId} {x y : Name}
+        {retSpec : ExternReturn} {effects : List Effect}
+        {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
+        ExternCallBoundaryFnStaticSource tcls sourceArgTyp id x y argTyp argPoison retSpec effects
+          capturedEnv memberCap →
+        ExternDeclarationInProgram root id
+          { id := id, kind := .fn, typ := argTyp, argName := some x,
+            retSpec := some retSpec, effects := effects,
+            preds := collectExternPreds retSpec effects, argPoison := argPoison,
+            captures := memberCap }) :
+    ExternCallBoundaryFRFnRunContract e1 e2 tcls sourceArgTyp μ ρ cf o a pm
+      (entryKey := ExternCallTrustedEntryKey tr)
+      (registry := TrustedRegistry.toRuntimeRegistry tr) := by
+  intro _bodyCtx result3 callEntry
+        c₂' v₂ c₁ id x y argTyp argPoison _ argPred retSpec eff
+        tenv memberCap cap env impl vRaw mem' addr' hstatic
+        htypedCall ht_e2 ht_e1 hpure hGet hArg hImpl hValRet heq_cfg
+        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
+  have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    simpa using terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
+  have hregistryCall :
+      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    rw [hcallCfg]
+    exact hreg_c₁
+  have hpureCall : callEntry.callConfig.pureMode = false := by
+    rw [hcallCfg]
+    exact hpure
+  have hGetCall :
+      callEntry.callConfig.registry.get? id = some (ExternImpl.fn impl) := by
+    rw [hcallCfg]
+    exact hGet
+  have hArgCall : valueMatchesTyp callEntry.argValue argTyp = true := by
+    rw [hargValue]
+    exact hArg
+  have hImplCall :
+      impl callEntry.unifiedEnv callEntry.argValue
+        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
+        Except.ok (vRaw, mem', addr') := by
+    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
+    exact hImpl
+  have hcfgCall :
+      cf = { callEntry.callConfig with memory := mem', nextAddr := addr' } := by
+    simpa [hcallCfg] using heq_cfg
+  rcases
+    ExternCallBoundaryFnStaticSource.callBoundaryRun_of_program
+      (tr := tr) (root := root) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp)
+      (tcls := tcls)
+      hagrees hstatic (hsourceProgram hstatic)
+      hargName hregistryCall hpureCall hunified hGetCall
+      hArgCall hImplCall hValRet hcfgCall with
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall entry hmatch
+        (congrArg ExternDeclaration.argPoison (hagrees (hsourceProgram hstatic) _hlookup)), hrun⟩
+
+/-- Reachable-declaration discharge for the single-run `fn` boundary tail. -/
+private theorem ExternCallBoundaryFRFnRunContract.of_trustedReachable
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {e1 e2 : Expr} {tcls : List FnTClosure} {sourceArgTyp : Typ}
+    {μ : Memory} {ρ : VarEnv} {cf : Config} {o : Value} {a : Address} {pm : Bool}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hsourceReachable :
+      ∀ {argTyp : Typ} {argPoison : Bool} {id : ExternId} {x y : Name}
+        {retSpec : ExternReturn} {effects : List Effect}
+        {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
+        ExternCallBoundaryFnStaticSource tcls sourceArgTyp id x y argTyp argPoison retSpec effects
+          capturedEnv memberCap →
+        ExternDeclarationReachableFromContext root ctxRoot id
+          { id := id, kind := .fn, typ := argTyp, argName := some x,
+            retSpec := some retSpec, effects := effects,
+            preds := collectExternPreds retSpec effects, argPoison := argPoison,
+            captures := memberCap }) :
+    ExternCallBoundaryFRFnRunContract e1 e2 tcls sourceArgTyp μ ρ cf o a pm
+      (entryKey := ExternCallTrustedEntryKey tr)
+      (registry := TrustedRegistry.toRuntimeRegistry tr) := by
+  intro _bodyCtx result3 callEntry
+        c₂' v₂ c₁ id x y argTyp argPoison _ argPred retSpec eff
+        tenv memberCap cap env impl vRaw mem' addr' hstatic
+        htypedCall ht_e2 ht_e1 hpure hGet hArg hImpl hValRet heq_cfg
+        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
+  have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    simpa using terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
+  have hregistryCall :
+      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    rw [hcallCfg]
+    exact hreg_c₁
+  have hpureCall : callEntry.callConfig.pureMode = false := by
+    rw [hcallCfg]
+    exact hpure
+  have hGetCall :
+      callEntry.callConfig.registry.get? id = some (ExternImpl.fn impl) := by
+    rw [hcallCfg]
+    exact hGet
+  have hArgCall : valueMatchesTyp callEntry.argValue argTyp = true := by
+    rw [hargValue]
+    exact hArg
+  have hImplCall :
+      impl callEntry.unifiedEnv callEntry.argValue
+        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
+        Except.ok (vRaw, mem', addr') := by
+    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
+    exact hImpl
+  have hcfgCall :
+      cf = { callEntry.callConfig with memory := mem', nextAddr := addr' } := by
+    simpa [hcallCfg] using heq_cfg
+  rcases
+    ExternCallBoundaryFnStaticSource.callBoundaryRun_of_reachable
+      (tr := tr) (root := root) (ctxRoot := ctxRoot)
+      (sourceArgTyp := sourceArgTyp) (argTyp := argTyp) (tcls := tcls)
+      hagrees hstatic (hsourceReachable hstatic)
+      hargName hregistryCall hpureCall hunified hGetCall
+      hArgCall hImplCall hValRet hcfgCall with
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall entry hmatch
+        (congrArg ExternDeclaration.argPoison (hagrees (hsourceReachable hstatic) _hlookup)), hrun⟩
+
 /-- Body-local boundary-run contract for the side-0 impure extern arm. -/
 private def ExternCallBoundaryFRFnSide0Contract
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -6618,68 +6875,9 @@ private def ExternCallBoundaryFRFnSide0Contract
         registry := registry } cf₀ o₀)
     (_ht₁ : terminatesTo (Expr.app e1 e2)
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
-        registry := registry } cf₁ o₁)
-    (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
-    (c₂'₀ : Config) (v₂₀ : Value) (c₁₀ : Config)
-    (id₀ : ExternId) (x₀ y₀ : Name) (argTyp₀ : Typ)
-    (argPoison₀ declaredArgPoison₀ : Bool) (argPred₀ : SyntaxPredicate) (retSpec₀ : ExternReturn)
-    (eff₀ : List Effect) (tenv₀ : CapturedVarEnv) (memberCap₀ cap₀ : List Capture) (env₀ : VarEnv)
-    (impl₀ : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address))
-    (vRaw₀ : Value) (mem'₀ : Memory) (addr'₀ : Address),
-    ExternCallBoundaryFnStaticSource tcls sourceArgTyp id₀ x₀ y₀ argTyp₀ declaredArgPoison₀ retSpec₀
-      eff₀ tenv₀ memberCap₀ →
-    ExternCallFnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ eff₀ callEntry result3 declaredArgPoison₀ memberCap₀ →
-    terminatesTo e2
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
-        registry := registry } c₂'₀ v₂₀ →
-    terminatesTo e1 c₂'₀ c₁₀
-      (Value.closure x₀ (Expr.externFn id₀ y₀ argTyp₀ argPoison₀ argPred₀ retSpec₀ eff₀ cap₀) env₀) →
-    c₁₀.pureMode = false →
-    c₁₀.registry.get? id₀ = some (ExternImpl.fn impl₀) →
-    valueMatchesTyp v₂₀ argTyp₀ = true →
-    impl₀ (VarEnv.update env₀ x₀ v₂₀) v₂₀ c₁₀.memory c₁₀.nextAddr =
-      Except.ok (vRaw₀, mem'₀, addr'₀) →
-    validateExternReturn id₀ retSpec₀ vRaw₀ = Except.ok o₀ →
-    (cf₀ =
-      { memory := mem'₀, varEnv := c₁₀.varEnv, nextAddr := addr'₀,
-        pureMode := c₁₀.pureMode, registry := c₁₀.registry }) →
-    callEntry.bodyCtx = bodyCtx →
-    callEntry.callConfig = c₁₀ →
-    callEntry.argName = x₀ →
-    callEntry.argValue = v₂₀ →
-    callEntry.capturedEnv = env₀ →
-    callEntry.unifiedEnv =
-      VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
-    ∃ entry : TrustedExternEntry,
-      entryKey id₀ entry ∧
-      (∃ argPoisonAst argPredAst captures, ExternBoundaryTyping.Call entry.decl
-        (Expr.externFn id₀ y₀ argTyp₀ argPoisonAst argPredAst retSpec₀ eff₀ captures) callEntry result3) ∧
-      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₀ o₀
-
-/-- Empty-registry discharge for the side-0 two-run extern-call contract. -/
-private theorem ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry
-    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
-    {sourceArgTyp : Typ}
-    {entryKey : ExternCallEntryKey} :
-    ExternCallBoundaryFRFnSide0Contract ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
-      (entryKey := entryKey) := by
-  intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx _result3 _callEntry
-        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ _argPoison₀ _declaredArgPoison₀ _argPred₀ retSpec₀ eff₀
-        _tenv₀ _memberCap₀ _cap₀ _env₀ _impl₀ _vRaw₀ _mem'₀ _addr'₀ _hstatic₀
-        _htypedCall₀ ht₀_e2 ht₀_e1 _hpure₀ hGet₀ _hArg₀ _hImpl₀ _hValRet₀ _heq_cfg₀
-        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
-  exfalso
-  have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
-    simpa using terminatesTo_preserves_registry ht₀_e2
-  have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
-    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-  rw [hreg_c₁₀] at hGet₀
-  simp [emptyExternRegistry] at hGet₀
+        registry := registry } cf₁ o₁),
+    ExternCallBoundaryFRFnRunContract e1 e2 tcls sourceArgTyp μ₀ ρ₀ cf₀ o₀ a₀ pm
+      (entryKey := entryKey) (registry := registry)
 
 /-- Provider-shaped adapter for the registry lookup: a static source of the
     arrow closure list produces the side-0 boundary contract.  The empty-registry
@@ -6710,7 +6908,8 @@ private theorem ExternCallBoundaryFRFnSide0Provider.of_emptyExternRegistry
     ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := entryKey) := by
   intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _eff₀ _tenv₀ _memberCap₀ _hstatic
-  exact ExternCallBoundaryFRFnSide0Contract.of_emptyExternRegistry (entryKey := entryKey)
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRFnRunContract.of_emptyExternRegistry (entryKey := entryKey)
 
 private theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -6722,58 +6921,9 @@ private theorem ExternCallBoundaryFRFnSide0Provider.of_trustedRegistry
     ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _eff₀ _tenv₀ _memberCap₀
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ argPoison₀ _ argPred₀ retSpec₀ eff₀
-        tenv₀ memberCap₀ cap₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hstatic₀
-        htypedCall₀ ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₀_e2
-  have hreg_c₁₀ : c₁₀.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₀
-  have hpureCall : callEntry.callConfig.pureMode = false := by
-    rw [hcallCfg]
-    exact hpure₀
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₀ = some (ExternImpl.fn impl₀) := by
-    rw [hcallCfg]
-    exact hGet₀
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₀ = true := by
-    rw [hargValue]
-    exact hArg₀
-  have hImplCall :
-      impl₀ callEntry.unifiedEnv callEntry.argValue
-        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
-        Except.ok (vRaw₀, mem'₀, addr'₀) := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₀
-  have hcfgCall :
-      _cf₀ = { callEntry.callConfig with memory := mem'₀, nextAddr := addr'₀ } := by
-    simpa [hcallCfg] using heq_cfg₀
-  rcases
-    ExternCallBoundaryFnStaticSource.callBoundaryRun
-      (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₀) (tcls := tcls)
-      (hagreesExtern (argTyp := sourceArgTyp))
-      (id := id₀) (x := x₀) (y := y₀) (retSpec := retSpec₀)
-      (effects := eff₀) (capturedEnv := tenv₀) (memberCap := memberCap₀)
-      hstatic₀ hargName hregistryCall hpureCall hunified hGetCall
-      hArgCall hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₀ entry hmatch
-        (fnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp))
-          hstatic₀ _hlookup), hrun⟩
+  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _eff₀ _tenv₀ _memberCap₀ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRFnRunContract.of_trustedRegistry hagreesExtern
 
 /-- Body-local boundary-run contract for the side-1 impure extern arm. -/
 private def ExternCallBoundaryFRFnSide1Contract
@@ -6812,68 +6962,9 @@ private def ExternCallBoundaryFRFnSide1Contract
         registry := registry } cf₀ o₀)
     (_ht₁ : terminatesTo (Expr.app e1 e2)
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
-        registry := registry } cf₁ o₁)
-    (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
-    (c₂'₁ : Config) (v₂₁ : Value) (c₁₁ : Config)
-    (id₁ : ExternId) (x₁ y₁ : Name) (argTyp₁ : Typ)
-    (argPoison₁ declaredArgPoison₁ : Bool) (argPred₁ : SyntaxPredicate) (retSpec₁ : ExternReturn)
-    (eff₁ : List Effect) (tenv₁ : CapturedVarEnv) (memberCap₁ cap₁ : List Capture) (env₁ : VarEnv)
-    (impl₁ : VarEnv → Value → Memory → Address → Except ExternError (Value × Memory × Address))
-    (vRaw₁ : Value) (mem'₁ : Memory) (addr'₁ : Address),
-    ExternCallBoundaryFnStaticSource tcls sourceArgTyp id₁ x₁ y₁ argTyp₁ declaredArgPoison₁ retSpec₁
-      eff₁ tenv₁ memberCap₁ →
-    ExternCallFnTypingProvider id₁ x₁ y₁ argTyp₁ retSpec₁ eff₁ callEntry result3 declaredArgPoison₁ memberCap₁ →
-    terminatesTo e2
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
-        registry := registry } c₂'₁ v₂₁ →
-    terminatesTo e1 c₂'₁ c₁₁
-      (Value.closure x₁ (Expr.externFn id₁ y₁ argTyp₁ argPoison₁ argPred₁ retSpec₁ eff₁ cap₁) env₁) →
-    c₁₁.pureMode = false →
-    c₁₁.registry.get? id₁ = some (ExternImpl.fn impl₁) →
-    valueMatchesTyp v₂₁ argTyp₁ = true →
-    impl₁ (VarEnv.update env₁ x₁ v₂₁) v₂₁ c₁₁.memory c₁₁.nextAddr =
-      Except.ok (vRaw₁, mem'₁, addr'₁) →
-    validateExternReturn id₁ retSpec₁ vRaw₁ = Except.ok o₁ →
-    (cf₁ =
-      { memory := mem'₁, varEnv := c₁₁.varEnv, nextAddr := addr'₁,
-        pureMode := c₁₁.pureMode, registry := c₁₁.registry }) →
-    callEntry.bodyCtx = bodyCtx →
-    callEntry.callConfig = c₁₁ →
-    callEntry.argName = x₁ →
-    callEntry.argValue = v₂₁ →
-    callEntry.capturedEnv = env₁ →
-    callEntry.unifiedEnv =
-      VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
-    ∃ entry : TrustedExternEntry,
-      entryKey id₁ entry ∧
-      (∃ argPoisonAst argPredAst captures, ExternBoundaryTyping.Call entry.decl
-        (Expr.externFn id₁ y₁ argTyp₁ argPoisonAst argPredAst retSpec₁ eff₁ captures) callEntry result3) ∧
-      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₁ o₁
-
-/-- Empty-registry discharge for the side-1 two-run extern-call contract. -/
-private theorem ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry
-    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List FnTClosure}
-    {sourceArgTyp : Typ}
-    {entryKey : ExternCallEntryKey} :
-    ExternCallBoundaryFRFnSide1Contract ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
-      (entryKey := entryKey) := by
-  intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx _result3 _callEntry
-        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ _argPoison₁ _declaredArgPoison₁ _argPred₁ retSpec₁ eff₁
-        _tenv₁ _memberCap₁ _cap₁ _env₁ _impl₁ _vRaw₁ _mem'₁ _addr'₁ _hstatic₁
-        _htypedCall₁ ht₁_e2 ht₁_e1 _hpure₁ hGet₁ _hArg₁ _hImpl₁ _hValRet₁ _heq_cfg₁
-        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
-  exfalso
-  have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
-    simpa using terminatesTo_preserves_registry ht₁_e2
-  have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
-    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-  rw [hreg_c₁₁] at hGet₁
-  simp [emptyExternRegistry] at hGet₁
+        registry := registry } cf₁ o₁),
+    ExternCallBoundaryFRFnRunContract e1 e2 tcls sourceArgTyp μ₁ ρ₁ cf₁ o₁ a₁ pm
+      (entryKey := entryKey) (registry := registry)
 
 /-- Provider-shaped adapter for side 1, mirroring
     `ExternCallBoundaryFRFnSide0Provider`. -/
@@ -6901,7 +6992,8 @@ private theorem ExternCallBoundaryFRFnSide1Provider.of_emptyExternRegistry
     ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := entryKey) := by
   intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _eff₁ _tenv₁ _memberCap₁ _hstatic
-  exact ExternCallBoundaryFRFnSide1Contract.of_emptyExternRegistry (entryKey := entryKey)
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRFnRunContract.of_emptyExternRegistry (entryKey := entryKey)
 
 private theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -6913,58 +7005,9 @@ private theorem ExternCallBoundaryFRFnSide1Provider.of_trustedRegistry
     ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _eff₁ _tenv₁ _memberCap₁
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ argPoison₁ declaredArgPoison₁ argPred₁ retSpec₁ eff₁
-        tenv₁ memberCap₁ cap₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hstatic₁
-        htypedCall₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₁_e2
-  have hreg_c₁₁ : c₁₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₁
-  have hpureCall : callEntry.callConfig.pureMode = false := by
-    rw [hcallCfg]
-    exact hpure₁
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₁ = some (ExternImpl.fn impl₁) := by
-    rw [hcallCfg]
-    exact hGet₁
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₁ = true := by
-    rw [hargValue]
-    exact hArg₁
-  have hImplCall :
-      impl₁ callEntry.unifiedEnv callEntry.argValue
-        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
-        Except.ok (vRaw₁, mem'₁, addr'₁) := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₁
-  have hcfgCall :
-      _cf₁ = { callEntry.callConfig with memory := mem'₁, nextAddr := addr'₁ } := by
-    simpa [hcallCfg] using heq_cfg₁
-  rcases
-    ExternCallBoundaryFnStaticSource.callBoundaryRun
-      (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₁) (tcls := tcls)
-      (hagreesExtern (argTyp := sourceArgTyp))
-      (id := id₁) (x := x₁) (y := y₁) (retSpec := retSpec₁)
-      (effects := eff₁) (capturedEnv := tenv₁) (memberCap := memberCap₁)
-      hstatic₁ hargName hregistryCall hpureCall hunified hGetCall
-      hArgCall hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₁ entry hmatch
-        (fnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp))
-          hstatic₁ _hlookup), hrun⟩
+  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _eff₁ _tenv₁ _memberCap₁ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRFnRunContract.of_trustedRegistry hagreesExtern
 
 private theorem ExternCallBoundaryFRFnSide0Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -6986,56 +7029,9 @@ private theorem ExternCallBoundaryFRFnSide0Provider.of_trustedProgram
     ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _eff₀ _tenv₀ _memberCap₀
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ argPoison₀ _ argPred₀ retSpec₀ eff₀
-        tenv₀ memberCap₀ cap₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hstatic₀
-        htypedCall₀ ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₀_e2
-  have hreg_c₁₀ : c₁₀.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₀
-  have hpureCall : callEntry.callConfig.pureMode = false := by
-    rw [hcallCfg]
-    exact hpure₀
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₀ = some (ExternImpl.fn impl₀) := by
-    rw [hcallCfg]
-    exact hGet₀
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₀ = true := by
-    rw [hargValue]
-    exact hArg₀
-  have hImplCall :
-      impl₀ callEntry.unifiedEnv callEntry.argValue
-        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
-        Except.ok (vRaw₀, mem'₀, addr'₀) := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₀
-  have hcfgCall :
-      _cf₀ = { callEntry.callConfig with memory := mem'₀, nextAddr := addr'₀ } := by
-    simpa [hcallCfg] using heq_cfg₀
-  rcases
-    ExternCallBoundaryFnStaticSource.callBoundaryRun_of_program
-      (tr := tr) (root := root) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₀)
-      (tcls := tcls)
-      hagrees hstatic₀ (hsourceProgram hstatic₀)
-      hargName hregistryCall hpureCall hunified hGetCall
-      hArgCall hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₀ entry hmatch
-        (congrArg ExternDeclaration.argPoison (hagrees (hsourceProgram hstatic₀) _hlookup)), hrun⟩
+  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _eff₀ _tenv₀ _memberCap₀ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRFnRunContract.of_trustedProgram hagrees hsourceProgram
 
 private theorem ExternCallBoundaryFRFnSide1Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -7057,56 +7053,9 @@ private theorem ExternCallBoundaryFRFnSide1Provider.of_trustedProgram
     ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _eff₁ _tenv₁ _memberCap₁
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ argPoison₁ declaredArgPoison₁ argPred₁ retSpec₁ eff₁
-        tenv₁ memberCap₁ cap₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hstatic₁
-        htypedCall₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₁_e2
-  have hreg_c₁₁ : c₁₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₁
-  have hpureCall : callEntry.callConfig.pureMode = false := by
-    rw [hcallCfg]
-    exact hpure₁
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₁ = some (ExternImpl.fn impl₁) := by
-    rw [hcallCfg]
-    exact hGet₁
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₁ = true := by
-    rw [hargValue]
-    exact hArg₁
-  have hImplCall :
-      impl₁ callEntry.unifiedEnv callEntry.argValue
-        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
-        Except.ok (vRaw₁, mem'₁, addr'₁) := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₁
-  have hcfgCall :
-      _cf₁ = { callEntry.callConfig with memory := mem'₁, nextAddr := addr'₁ } := by
-    simpa [hcallCfg] using heq_cfg₁
-  rcases
-    ExternCallBoundaryFnStaticSource.callBoundaryRun_of_program
-      (tr := tr) (root := root) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₁)
-      (tcls := tcls)
-      hagrees hstatic₁ (hsourceProgram hstatic₁)
-      hargName hregistryCall hpureCall hunified hGetCall
-      hArgCall hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₁ entry hmatch
-        (congrArg ExternDeclaration.argPoison (hagrees (hsourceProgram hstatic₁) _hlookup)), hrun⟩
+  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _eff₁ _tenv₁ _memberCap₁ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRFnRunContract.of_trustedProgram hagrees hsourceProgram
 
 private theorem ExternCallBoundaryFRFnSide0Provider.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -7128,56 +7077,9 @@ private theorem ExternCallBoundaryFRFnSide0Provider.of_trustedReachable
     ExternCallBoundaryFRFnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _eff₀ _tenv₀ _memberCap₀
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ argPoison₀ _ argPred₀ retSpec₀ eff₀
-        tenv₀ memberCap₀ cap₀ env₀ impl₀ vRaw₀ mem'₀ addr'₀ hstatic₀
-        htypedCall₀ ht₀_e2 ht₀_e1 hpure₀ hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₀_e2
-  have hreg_c₁₀ : c₁₀.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₀
-  have hpureCall : callEntry.callConfig.pureMode = false := by
-    rw [hcallCfg]
-    exact hpure₀
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₀ = some (ExternImpl.fn impl₀) := by
-    rw [hcallCfg]
-    exact hGet₀
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₀ = true := by
-    rw [hargValue]
-    exact hArg₀
-  have hImplCall :
-      impl₀ callEntry.unifiedEnv callEntry.argValue
-        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
-        Except.ok (vRaw₀, mem'₀, addr'₀) := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₀
-  have hcfgCall :
-      _cf₀ = { callEntry.callConfig with memory := mem'₀, nextAddr := addr'₀ } := by
-    simpa [hcallCfg] using heq_cfg₀
-  rcases
-    ExternCallBoundaryFnStaticSource.callBoundaryRun_of_reachable
-      (tr := tr) (root := root) (ctxRoot := ctxRoot)
-      (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₀) (tcls := tcls)
-      hagrees hstatic₀ (hsourceReachable hstatic₀)
-      hargName hregistryCall hpureCall hunified hGetCall
-      hArgCall hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₀ entry hmatch
-        (congrArg ExternDeclaration.argPoison (hagrees (hsourceReachable hstatic₀) _hlookup)), hrun⟩
+  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _eff₀ _tenv₀ _memberCap₀ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRFnRunContract.of_trustedReachable hagrees hsourceReachable
 
 private theorem ExternCallBoundaryFRFnSide1Provider.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -7199,56 +7101,248 @@ private theorem ExternCallBoundaryFRFnSide1Provider.of_trustedReachable
     ExternCallBoundaryFRFnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _eff₁ _tenv₁ _memberCap₁
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ argPoison₁ declaredArgPoison₁ argPred₁ retSpec₁ eff₁
-        tenv₁ memberCap₁ cap₁ env₁ impl₁ vRaw₁ mem'₁ addr'₁ hstatic₁
-        htypedCall₁ ht₁_e2 ht₁_e1 hpure₁ hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
+  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _eff₁ _tenv₁ _memberCap₁ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRFnRunContract.of_trustedReachable hagrees hsourceReachable
+
+/-- Run-generic single-run `pfn` boundary tail shared by both side-0/side-1
+    two-run contracts.
+
+    The pure-extern analogue of `ExternCallBoundaryFRFnRunContract`: no effects,
+    a pure `impl` (no address threading), and `cf = c₁` rather than a record
+    update.  Each `PfnSideKContract` is *definitionally*
+    `∀ <two-run preamble>, RunContract … <runK projection>`, so the four `of_*`
+    discharge proofs below are written once instead of mirrored across sides. -/
+private def ExternCallBoundaryFRPfnRunContract
+    (e1 e2 : Expr) (tcls : List PFnTClosure) (sourceArgTyp : Typ)
+    (μ : Memory) (ρ : VarEnv) (cf : Config) (o : Value) (a : Address) (pm : Bool)
+    (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
+    (registry : ExternRegistry := emptyExternRegistry) : Prop :=
+  ∀ (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
+    (c₂' : Config) (v₂ : Value) (c₁ : Config)
+    (id : ExternId) (x y : Name) (argTyp : Typ)
+    (argPoison declaredArgPoison : Bool) (argPred : SyntaxPredicate) (retSpec : ExternReturn)
+    (tenv : CapturedVarEnv) (memberCap captures : List Capture) (env : VarEnv)
+    (impl : VarEnv → Value → Memory → Except ExternError Value)
+    (vRaw : Value),
+    ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id x y argTyp declaredArgPoison retSpec
+      tenv memberCap →
+    ExternCallPfnTypingProvider id x y argTyp retSpec callEntry result3 declaredArgPoison memberCap →
+    terminatesTo e2
+      { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+        registry := registry } c₂' v₂ →
+    terminatesTo e1 c₂' c₁
+      (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec captures) env) →
+    c₁.registry.get? id = some (ExternImpl.pfn impl) →
+    valueMatchesTyp v₂ argTyp = true →
+    impl (VarEnv.update env x v₂) v₂ c₁.memory = Except.ok vRaw →
+    validateExternReturn id retSpec vRaw = Except.ok o →
+    cf = c₁ →
+    callEntry.bodyCtx = bodyCtx →
+    callEntry.callConfig = c₁ →
+    callEntry.argName = x →
+    callEntry.argValue = v₂ →
+    callEntry.capturedEnv = env →
+    callEntry.unifiedEnv =
+      VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
+    ∃ entry : TrustedExternEntry,
+      entryKey id entry ∧
+      (∃ argPoisonAst argPredAst captures, ExternBoundaryTyping.Call entry.decl
+        (Expr.externPfn id y argTyp argPoisonAst argPredAst retSpec captures) callEntry result3) ∧
+      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf o
+
+/-- Populated trusted-registry discharge for the single-run `pfn` boundary tail. -/
+private theorem ExternCallBoundaryFRPfnRunContract.of_trustedRegistry
+    {tr : TrustedRegistry}
+    {e1 e2 : Expr} {tcls : List PFnTClosure} {sourceArgTyp : Typ}
+    {μ : Memory} {ρ : VarEnv} {cf : Config} {o : Value} {a : Address} {pm : Bool}
+    (hagreesExtern :
+      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls) :
+    ExternCallBoundaryFRPfnRunContract e1 e2 tcls sourceArgTyp μ ρ cf o a pm
+      (entryKey := ExternCallTrustedEntryKey tr)
+      (registry := TrustedRegistry.toRuntimeRegistry tr) := by
+  intro _bodyCtx result3 callEntry
+        c₂' v₂ c₁ id x y argTyp argPoison _ argPred retSpec
+        tenv memberCap captures env impl vRaw hstatic htypedCall ht_e2 ht_e1
+        hGet hArg hImpl hValRet heq_cfg
         _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₁_e2
-  have hreg_c₁₁ : c₁₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
+  have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    simpa using terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
   have hregistryCall :
       callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
     rw [hcallCfg]
-    exact hreg_c₁₁
-  have hpureCall : callEntry.callConfig.pureMode = false := by
-    rw [hcallCfg]
-    exact hpure₁
+    exact hreg_c₁
   have hGetCall :
-      callEntry.callConfig.registry.get? id₁ = some (ExternImpl.fn impl₁) := by
+      callEntry.callConfig.registry.get? id = some (ExternImpl.pfn impl) := by
     rw [hcallCfg]
-    exact hGet₁
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₁ = true := by
+    exact hGet
+  have hArgCall : valueMatchesTyp callEntry.argValue argTyp = true := by
     rw [hargValue]
-    exact hArg₁
+    exact hArg
   have hImplCall :
-      impl₁ callEntry.unifiedEnv callEntry.argValue
-        callEntry.callConfig.memory callEntry.callConfig.nextAddr =
-        Except.ok (vRaw₁, mem'₁, addr'₁) := by
+      impl callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
+        Except.ok vRaw := by
     rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₁
-  have hcfgCall :
-      _cf₁ = { callEntry.callConfig with memory := mem'₁, nextAddr := addr'₁ } := by
-    simpa [hcallCfg] using heq_cfg₁
+    exact hImpl
+  have hcfgCall : cf = callEntry.callConfig := by
+    simpa [hcallCfg] using heq_cfg
   rcases
-    ExternCallBoundaryFnStaticSource.callBoundaryRun_of_reachable
-      (tr := tr) (root := root) (ctxRoot := ctxRoot)
-      (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₁) (tcls := tcls)
-      hagrees hstatic₁ (hsourceReachable hstatic₁)
-      hargName hregistryCall hpureCall hunified hGetCall
-      hArgCall hImplCall hValRet₁ hcfgCall with
+    ExternCallBoundaryPfnStaticSource.callBoundaryRun
+      (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp) (tcls := tcls)
+      (hagreesExtern (argTyp := sourceArgTyp))
+      (id := id) (x := x) (y := y) (retSpec := retSpec)
+      (capturedEnv := tenv)
+      hstatic hargName hregistryCall hunified hGetCall hArgCall
+      hImplCall hValRet hcfgCall with
     ⟨entry, _hlookup, hmatch, hrun⟩
+  have hentryPoison :=
+    pfnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp)) hstatic _hlookup
   exact
     ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₁ entry hmatch
-        (congrArg ExternDeclaration.argPoison (hagrees (hsourceReachable hstatic₁) _hlookup)), hrun⟩
+      htypedCall entry hmatch hentryPoison, hrun⟩
+
+/-- Empty-registry discharge for the single-run `pfn` boundary tail: an extern
+    call against the empty registry cannot look up an implementation. -/
+private theorem ExternCallBoundaryFRPfnRunContract.of_emptyExternRegistry
+    {e1 e2 : Expr} {tcls : List PFnTClosure} {sourceArgTyp : Typ}
+    {μ : Memory} {ρ : VarEnv} {cf : Config} {o : Value} {a : Address} {pm : Bool}
+    {entryKey : ExternCallEntryKey} :
+    ExternCallBoundaryFRPfnRunContract e1 e2 tcls sourceArgTyp μ ρ cf o a pm
+      (entryKey := entryKey) := by
+  intro _bodyCtx _result3 _callEntry
+        c₂' v₂ c₁ id x y argTyp _argPoison _declaredArgPoison _argPred retSpec
+        _tenv _memberCap _captures _env _impl _vRaw _hstatic _htypedCall ht_e2 ht_e1
+        hGet _hArg _hImpl _hValRet _heq_cfg
+        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
+  exfalso
+  have hreg_c₂' : c₂'.registry = emptyExternRegistry := by
+    simpa using terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = emptyExternRegistry :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
+  rw [hreg_c₁] at hGet
+  simp [emptyExternRegistry] at hGet
+
+/-- Program-level discharge for the single-run `pfn` boundary tail. -/
+private theorem ExternCallBoundaryFRPfnRunContract.of_trustedProgram
+    {tr : TrustedRegistry} {root : Expr}
+    {e1 e2 : Expr} {tcls : List PFnTClosure} {sourceArgTyp : Typ}
+    {μ : Memory} {ρ : VarEnv} {cf : Config} {o : Value} {a : Address} {pm : Bool}
+    (hagrees : TrustedRegistryAgreesWithProgram root tr)
+    (hsourceProgram :
+      ∀ {sourceArgTyp argTyp : Typ} {argPoison : Bool} {id : ExternId} {x y : Name}
+        {retSpec : ExternReturn} {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
+        ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id x y argTyp argPoison retSpec
+          capturedEnv memberCap →
+        ExternDeclarationInProgram root id
+          { id := id, kind := .pfn, typ := argTyp, argName := some x,
+            retSpec := some retSpec, effects := [],
+            preds := collectExternPreds retSpec [], argPoison := argPoison,
+            captures := memberCap }) :
+    ExternCallBoundaryFRPfnRunContract e1 e2 tcls sourceArgTyp μ ρ cf o a pm
+      (entryKey := ExternCallTrustedEntryKey tr)
+      (registry := TrustedRegistry.toRuntimeRegistry tr) := by
+  intro _bodyCtx result3 callEntry
+        c₂' v₂ c₁ id x y argTyp argPoison _ argPred retSpec
+        tenv memberCap captures env impl vRaw hstatic htypedCall ht_e2 ht_e1
+        hGet hArg hImpl hValRet heq_cfg
+        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
+  have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    simpa using terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
+  have hregistryCall :
+      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    rw [hcallCfg]
+    exact hreg_c₁
+  have hGetCall :
+      callEntry.callConfig.registry.get? id = some (ExternImpl.pfn impl) := by
+    rw [hcallCfg]
+    exact hGet
+  have hArgCall : valueMatchesTyp callEntry.argValue argTyp = true := by
+    rw [hargValue]
+    exact hArg
+  have hImplCall :
+      impl callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
+        Except.ok vRaw := by
+    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
+    exact hImpl
+  have hcfgCall : cf = callEntry.callConfig := by
+    simpa [hcallCfg] using heq_cfg
+  rcases
+    ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_program
+      (tr := tr) (root := root) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp)
+      (tcls := tcls)
+      hagrees hstatic (hsourceProgram hstatic)
+      hargName hregistryCall hunified hGetCall hArgCall
+      hImplCall hValRet hcfgCall with
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  have hentryPoison :=
+    congrArg ExternDeclaration.argPoison (hagrees (hsourceProgram hstatic) _hlookup)
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall entry hmatch hentryPoison, hrun⟩
+
+/-- Reachable-declaration discharge for the single-run `pfn` boundary tail. -/
+private theorem ExternCallBoundaryFRPfnRunContract.of_trustedReachable
+    {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
+    {e1 e2 : Expr} {tcls : List PFnTClosure} {sourceArgTyp : Typ}
+    {μ : Memory} {ρ : VarEnv} {cf : Config} {o : Value} {a : Address} {pm : Bool}
+    (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
+    (hsourceReachable :
+      ∀ {argTyp : Typ} {argPoison : Bool} {id : ExternId} {x y : Name}
+        {retSpec : ExternReturn} {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
+        ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id x y argTyp argPoison retSpec
+          capturedEnv memberCap →
+        ExternDeclarationReachableFromContext root ctxRoot id
+          { id := id, kind := .pfn, typ := argTyp, argName := some x,
+            retSpec := some retSpec, effects := [],
+            preds := collectExternPreds retSpec [], argPoison := argPoison,
+            captures := memberCap }) :
+    ExternCallBoundaryFRPfnRunContract e1 e2 tcls sourceArgTyp μ ρ cf o a pm
+      (entryKey := ExternCallTrustedEntryKey tr)
+      (registry := TrustedRegistry.toRuntimeRegistry tr) := by
+  intro _bodyCtx result3 callEntry
+        c₂' v₂ c₁ id x y argTyp argPoison _ argPred retSpec
+        tenv memberCap captures env impl vRaw hstatic htypedCall ht_e2 ht_e1
+        hGet hArg hImpl hValRet heq_cfg
+        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
+  have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    simpa using terminatesTo_preserves_registry ht_e2
+  have hreg_c₁ : c₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
+    (terminatesTo_preserves_registry ht_e1).trans hreg_c₂'
+  have hregistryCall :
+      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
+    rw [hcallCfg]
+    exact hreg_c₁
+  have hGetCall :
+      callEntry.callConfig.registry.get? id = some (ExternImpl.pfn impl) := by
+    rw [hcallCfg]
+    exact hGet
+  have hArgCall : valueMatchesTyp callEntry.argValue argTyp = true := by
+    rw [hargValue]
+    exact hArg
+  have hImplCall :
+      impl callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
+        Except.ok vRaw := by
+    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
+    exact hImpl
+  have hcfgCall : cf = callEntry.callConfig := by
+    simpa [hcallCfg] using heq_cfg
+  rcases
+    ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_reachable
+      (tr := tr) (root := root) (ctxRoot := ctxRoot)
+      (sourceArgTyp := sourceArgTyp) (argTyp := argTyp) (tcls := tcls)
+      hagrees hstatic (hsourceReachable hstatic)
+      hargName hregistryCall hunified hGetCall hArgCall
+      hImplCall hValRet hcfgCall with
+    ⟨entry, _hlookup, hmatch, hrun⟩
+  have hentryPoison :=
+    congrArg ExternDeclaration.argPoison (hagrees (hsourceReachable hstatic) _hlookup)
+  exact
+    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
+      htypedCall entry hmatch hentryPoison, hrun⟩
 
 /-- Body-local boundary-run contract for the side-0 pure extern arm. -/
 private def ExternCallBoundaryFRPfnSide0Contract
@@ -7287,63 +7381,9 @@ private def ExternCallBoundaryFRPfnSide0Contract
         registry := registry } cf₀ o₀)
     (_ht₁ : terminatesTo (Expr.app e1 e2)
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
-        registry := registry } cf₁ o₁)
-    (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
-    (c₂'₀ : Config) (v₂₀ : Value) (c₁₀ : Config)
-    (id₀ : ExternId) (x₀ y₀ : Name) (argTyp₀ : Typ)
-    (argPoison₀ declaredArgPoison₀ : Bool) (argPred₀ : SyntaxPredicate) (retSpec₀ : ExternReturn)
-    (tenv₀ : CapturedVarEnv) (memberCap₀ captures₀ : List Capture) (env₀ : VarEnv)
-    (impl₀ : VarEnv → Value → Memory → Except ExternError Value)
-    (vRaw₀ : Value),
-    ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id₀ x₀ y₀ argTyp₀ declaredArgPoison₀ retSpec₀
-      tenv₀ memberCap₀ →
-    ExternCallPfnTypingProvider id₀ x₀ y₀ argTyp₀ retSpec₀ callEntry result3 declaredArgPoison₀ memberCap₀ →
-    terminatesTo e2
-      { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
-        registry := registry } c₂'₀ v₂₀ →
-    terminatesTo e1 c₂'₀ c₁₀
-      (Value.peClosure x₀ (Expr.externPfn id₀ y₀ argTyp₀ argPoison₀ argPred₀ retSpec₀ captures₀) env₀) →
-    c₁₀.registry.get? id₀ = some (ExternImpl.pfn impl₀) →
-    valueMatchesTyp v₂₀ argTyp₀ = true →
-    impl₀ (VarEnv.update env₀ x₀ v₂₀) v₂₀ c₁₀.memory = Except.ok vRaw₀ →
-    validateExternReturn id₀ retSpec₀ vRaw₀ = Except.ok o₀ →
-    cf₀ = c₁₀ →
-    callEntry.bodyCtx = bodyCtx →
-    callEntry.callConfig = c₁₀ →
-    callEntry.argName = x₀ →
-    callEntry.argValue = v₂₀ →
-    callEntry.capturedEnv = env₀ →
-    callEntry.unifiedEnv =
-      VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
-    ∃ entry : TrustedExternEntry,
-      entryKey id₀ entry ∧
-      (∃ argPoisonAst argPredAst captures, ExternBoundaryTyping.Call entry.decl
-        (Expr.externPfn id₀ y₀ argTyp₀ argPoisonAst argPredAst retSpec₀ captures) callEntry result3) ∧
-      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₀ o₀
-
-private theorem ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry
-    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
-    {sourceArgTyp : Typ}
-    {entryKey : ExternCallEntryKey} :
-    ExternCallBoundaryFRPfnSide0Contract ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
-      (entryKey := entryKey) := by
-  intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx _result3 _callEntry
-        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ argPoison₀ _ argPred₀ retSpec₀
-        _tenv₀ _memberCap₀ _captures₀ _env₀ _impl₀ _vRaw₀ _hstatic₀ _htypedCall₀ ht₀_e2 ht₀_e1
-        hGet₀ _hArg₀ _hImpl₀ _hValRet₀ _heq_cfg₀
-        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
-  exfalso
-  have hreg_c₂'₀ : c₂'₀.registry = emptyExternRegistry := by
-    simpa using terminatesTo_preserves_registry ht₀_e2
-  have hreg_c₁₀ : c₁₀.registry = emptyExternRegistry :=
-    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-  rw [hreg_c₁₀] at hGet₀
-  simp [emptyExternRegistry] at hGet₀
+        registry := registry } cf₁ o₁),
+    ExternCallBoundaryFRPfnRunContract e1 e2 tcls sourceArgTyp μ₀ ρ₀ cf₀ o₀ a₀ pm
+      (entryKey := entryKey) (registry := registry)
 
 private def ExternCallBoundaryFRPfnSide0Provider
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -7366,7 +7406,8 @@ private theorem ExternCallBoundaryFRPfnSide0Provider.of_emptyExternRegistry
     ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := entryKey) := by
   intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _tenv₀ _memberCap₀ _hstatic
-  exact ExternCallBoundaryFRPfnSide0Contract.of_emptyExternRegistry (entryKey := entryKey)
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRPfnRunContract.of_emptyExternRegistry (entryKey := entryKey)
 
 private theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -7378,53 +7419,9 @@ private theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry
     ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _tenv₀ _memberCap₀
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ argPoison₀ _ argPred₀ retSpec₀
-        tenv₀ memberCap₀ captures₀ env₀ impl₀ vRaw₀ hstatic₀ htypedCall₀ ht₀_e2 ht₀_e1
-        hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₀_e2
-  have hreg_c₁₀ : c₁₀.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₀
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₀ = some (ExternImpl.pfn impl₀) := by
-    rw [hcallCfg]
-    exact hGet₀
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₀ = true := by
-    rw [hargValue]
-    exact hArg₀
-  have hImplCall :
-      impl₀ callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
-        Except.ok vRaw₀ := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₀
-  have hcfgCall : _cf₀ = callEntry.callConfig := by
-    simpa [hcallCfg] using heq_cfg₀
-  rcases
-    ExternCallBoundaryPfnStaticSource.callBoundaryRun
-      (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₀) (tcls := tcls)
-      (hagreesExtern (argTyp := sourceArgTyp))
-      (id := id₀) (x := x₀) (y := y₀) (retSpec := retSpec₀)
-      (capturedEnv := tenv₀)
-      hstatic₀ hargName hregistryCall hunified hGetCall hArgCall
-      hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  have hentryPoison :=
-    pfnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp)) hstatic₀ _hlookup
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₀ entry hmatch hentryPoison, hrun⟩
+  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _tenv₀ _memberCap₀ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRPfnRunContract.of_trustedRegistry hagreesExtern
 
 /-- Body-local boundary-run contract for the side-1 pure extern arm. -/
 private def ExternCallBoundaryFRPfnSide1Contract
@@ -7463,63 +7460,9 @@ private def ExternCallBoundaryFRPfnSide1Contract
         registry := registry } cf₀ o₀)
     (_ht₁ : terminatesTo (Expr.app e1 e2)
       { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
-        registry := registry } cf₁ o₁)
-    (bodyCtx : TypeContext) (result3 : TypeResult) (callEntry : ExternCallEntry)
-    (c₂'₁ : Config) (v₂₁ : Value) (c₁₁ : Config)
-    (id₁ : ExternId) (x₁ y₁ : Name) (argTyp₁ : Typ)
-    (argPoison₁ declaredArgPoison₁ : Bool) (argPred₁ : SyntaxPredicate) (retSpec₁ : ExternReturn)
-    (tenv₁ : CapturedVarEnv) (memberCap₁ captures₁ : List Capture) (env₁ : VarEnv)
-    (impl₁ : VarEnv → Value → Memory → Except ExternError Value)
-    (vRaw₁ : Value),
-    ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id₁ x₁ y₁ argTyp₁ declaredArgPoison₁ retSpec₁
-      tenv₁ memberCap₁ →
-    ExternCallPfnTypingProvider id₁ x₁ y₁ argTyp₁ retSpec₁ callEntry result3 declaredArgPoison₁ memberCap₁ →
-    terminatesTo e2
-      { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
-        registry := registry } c₂'₁ v₂₁ →
-    terminatesTo e1 c₂'₁ c₁₁
-      (Value.peClosure x₁ (Expr.externPfn id₁ y₁ argTyp₁ argPoison₁ argPred₁ retSpec₁ captures₁) env₁) →
-    c₁₁.registry.get? id₁ = some (ExternImpl.pfn impl₁) →
-    valueMatchesTyp v₂₁ argTyp₁ = true →
-    impl₁ (VarEnv.update env₁ x₁ v₂₁) v₂₁ c₁₁.memory = Except.ok vRaw₁ →
-    validateExternReturn id₁ retSpec₁ vRaw₁ = Except.ok o₁ →
-    cf₁ = c₁₁ →
-    callEntry.bodyCtx = bodyCtx →
-    callEntry.callConfig = c₁₁ →
-    callEntry.argName = x₁ →
-    callEntry.argValue = v₂₁ →
-    callEntry.capturedEnv = env₁ →
-    callEntry.unifiedEnv =
-      VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
-    ∃ entry : TrustedExternEntry,
-      entryKey id₁ entry ∧
-      (∃ argPoisonAst argPredAst captures, ExternBoundaryTyping.Call entry.decl
-        (Expr.externPfn id₁ y₁ argTyp₁ argPoisonAst argPredAst retSpec₁ captures) callEntry result3) ∧
-      ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf₁ o₁
-
-private theorem ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry
-    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
-    {sourceArgTyp : Typ}
-    {entryKey : ExternCallEntryKey} :
-    ExternCallBoundaryFRPfnSide1Contract ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
-      (entryKey := entryKey) := by
-  intro _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx _result3 _callEntry
-        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ argPoison₁ declaredArgPoison₁ argPred₁ retSpec₁
-        _tenv₁ _memberCap₁ _captures₁ _env₁ _impl₁ _vRaw₁ _hstatic₁ _htypedCall₁ ht₁_e2 ht₁_e1
-        hGet₁ _hArg₁ _hImpl₁ _hValRet₁ _heq_cfg₁
-        _hbodyCtx _hcallCfg _hargName _hargValue _hcaptured _hunified
-  exfalso
-  have hreg_c₂'₁ : c₂'₁.registry = emptyExternRegistry := by
-    simpa using terminatesTo_preserves_registry ht₁_e2
-  have hreg_c₁₁ : c₁₁.registry = emptyExternRegistry :=
-    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-  rw [hreg_c₁₁] at hGet₁
-  simp [emptyExternRegistry] at hGet₁
+        registry := registry } cf₁ o₁),
+    ExternCallBoundaryFRPfnRunContract e1 e2 tcls sourceArgTyp μ₁ ρ₁ cf₁ o₁ a₁ pm
+      (entryKey := entryKey) (registry := registry)
 
 private def ExternCallBoundaryFRPfnSide1Provider
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -7542,7 +7485,8 @@ private theorem ExternCallBoundaryFRPfnSide1Provider.of_emptyExternRegistry
     ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := entryKey) := by
   intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _tenv₁ _memberCap₁ _hstatic
-  exact ExternCallBoundaryFRPfnSide1Contract.of_emptyExternRegistry (entryKey := entryKey)
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRPfnRunContract.of_emptyExternRegistry (entryKey := entryKey)
 
 private theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry
     {tr : TrustedRegistry}
@@ -7554,53 +7498,9 @@ private theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry
     ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _tenv₁ _memberCap₁
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ argPoison₁ declaredArgPoison₁ argPred₁ retSpec₁
-        tenv₁ memberCap₁ captures₁ env₁ impl₁ vRaw₁ hstatic₁ htypedCall₁ ht₁_e2 ht₁_e1
-        hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₁_e2
-  have hreg_c₁₁ : c₁₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₁
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₁ = some (ExternImpl.pfn impl₁) := by
-    rw [hcallCfg]
-    exact hGet₁
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₁ = true := by
-    rw [hargValue]
-    exact hArg₁
-  have hImplCall :
-      impl₁ callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
-        Except.ok vRaw₁ := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₁
-  have hcfgCall : _cf₁ = callEntry.callConfig := by
-    simpa [hcallCfg] using heq_cfg₁
-  rcases
-    ExternCallBoundaryPfnStaticSource.callBoundaryRun
-      (tr := tr) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₁) (tcls := tcls)
-      (hagreesExtern (argTyp := sourceArgTyp))
-      (id := id₁) (x := x₁) (y := y₁) (retSpec := retSpec₁)
-      (capturedEnv := tenv₁)
-      hstatic₁ hargName hregistryCall hunified hGetCall hArgCall
-      hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  have hentryPoison :=
-    pfnStaticSource_entry_argPoison (hagreesExtern (argTyp := sourceArgTyp)) hstatic₁ _hlookup
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₁ entry hmatch hentryPoison, hrun⟩
+  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _tenv₁ _memberCap₁ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRPfnRunContract.of_trustedRegistry hagreesExtern
 
 private theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -7621,52 +7521,9 @@ private theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedProgram
     ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _tenv₀ _memberCap₀
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ argPoison₀ _ argPred₀ retSpec₀
-        tenv₀ memberCap₀ captures₀ env₀ impl₀ vRaw₀ hstatic₀ htypedCall₀ ht₀_e2 ht₀_e1
-        hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₀_e2
-  have hreg_c₁₀ : c₁₀.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₀
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₀ = some (ExternImpl.pfn impl₀) := by
-    rw [hcallCfg]
-    exact hGet₀
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₀ = true := by
-    rw [hargValue]
-    exact hArg₀
-  have hImplCall :
-      impl₀ callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
-        Except.ok vRaw₀ := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₀
-  have hcfgCall : _cf₀ = callEntry.callConfig := by
-    simpa [hcallCfg] using heq_cfg₀
-  rcases
-    ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_program
-      (tr := tr) (root := root) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₀)
-      (tcls := tcls)
-      hagrees hstatic₀ (hsourceProgram hstatic₀)
-      hargName hregistryCall hunified hGetCall hArgCall
-      hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  have hentryPoison :=
-    congrArg ExternDeclaration.argPoison (hagrees (hsourceProgram hstatic₀) _hlookup)
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₀ entry hmatch hentryPoison, hrun⟩
+  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _tenv₀ _memberCap₀ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRPfnRunContract.of_trustedProgram hagrees hsourceProgram
 
 private theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedProgram
     {tr : TrustedRegistry} {root : Expr}
@@ -7687,52 +7544,9 @@ private theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedProgram
     ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _tenv₁ _memberCap₁
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ argPoison₁ declaredArgPoison₁ argPred₁ retSpec₁
-        tenv₁ memberCap₁ captures₁ env₁ impl₁ vRaw₁ hstatic₁ htypedCall₁ ht₁_e2 ht₁_e1
-        hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₁_e2
-  have hreg_c₁₁ : c₁₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₁
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₁ = some (ExternImpl.pfn impl₁) := by
-    rw [hcallCfg]
-    exact hGet₁
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₁ = true := by
-    rw [hargValue]
-    exact hArg₁
-  have hImplCall :
-      impl₁ callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
-        Except.ok vRaw₁ := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₁
-  have hcfgCall : _cf₁ = callEntry.callConfig := by
-    simpa [hcallCfg] using heq_cfg₁
-  rcases
-    ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_program
-      (tr := tr) (root := root) (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₁)
-      (tcls := tcls)
-      hagrees hstatic₁ (hsourceProgram hstatic₁)
-      hargName hregistryCall hunified hGetCall hArgCall
-      hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  have hentryPoison :=
-    congrArg ExternDeclaration.argPoison (hagrees (hsourceProgram hstatic₁) _hlookup)
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₁ entry hmatch hentryPoison, hrun⟩
+  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _tenv₁ _memberCap₁ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRPfnRunContract.of_trustedProgram hagrees hsourceProgram
 
 private theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -7753,52 +7567,9 @@ private theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedReachable
     ExternCallBoundaryFRPfnSide0Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _tenv₀ _memberCap₀
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        μ₀ _μ₁ ρ₀ _ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree a₀ _a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₀ v₂₀ c₁₀ id₀ x₀ y₀ argTyp₀ argPoison₀ _ argPred₀ retSpec₀
-        tenv₀ memberCap₀ captures₀ env₀ impl₀ vRaw₀ hstatic₀ htypedCall₀ ht₀_e2 ht₀_e1
-        hGet₀ hArg₀ hImpl₀ hValRet₀ heq_cfg₀
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₀ : c₂'₀.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₀_e2
-  have hreg_c₁₀ : c₁₀.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₀_e1).trans hreg_c₂'₀
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₀
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₀ = some (ExternImpl.pfn impl₀) := by
-    rw [hcallCfg]
-    exact hGet₀
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₀ = true := by
-    rw [hargValue]
-    exact hArg₀
-  have hImplCall :
-      impl₀ callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
-        Except.ok vRaw₀ := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₀
-  have hcfgCall : _cf₀ = callEntry.callConfig := by
-    simpa [hcallCfg] using heq_cfg₀
-  rcases
-    ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_reachable
-      (tr := tr) (root := root) (ctxRoot := ctxRoot)
-      (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₀) (tcls := tcls)
-      hagrees hstatic₀ (hsourceReachable hstatic₀)
-      hargName hregistryCall hunified hGetCall hArgCall
-      hImplCall hValRet₀ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  have hentryPoison :=
-    congrArg ExternDeclaration.argPoison (hagrees (hsourceReachable hstatic₀) _hlookup)
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₀ entry hmatch hentryPoison, hrun⟩
+  intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _tenv₀ _memberCap₀ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRPfnRunContract.of_trustedReachable hagrees hsourceReachable
 
 private theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -7819,52 +7590,9 @@ private theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedReachable
     ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
-  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _tenv₁ _memberCap₁
-        _hstaticProvider
-        _hpredlaws _hExtTyping _hwfTm _hTmBounded
-        _μ₀ μ₁ _ρ₀ ρ₁ _θ₀ _θ₁ _cf₀ _cf₁ _o₀ _o₁
-        _hθ₀ _hθ₁ _hwf _htagBounded _hric₀ _hric₁ _htagR
-        _hcwr₀ _hcwr₁ _hagree _a₀ a₁ pm _hwfcfg₀ _hwfcfg₁
-        _ht₀ _ht₁ _bodyCtx result3 callEntry
-        c₂'₁ v₂₁ c₁₁ id₁ x₁ y₁ argTyp₁ argPoison₁ declaredArgPoison₁ argPred₁ retSpec₁
-        tenv₁ memberCap₁ captures₁ env₁ impl₁ vRaw₁ hstatic₁ htypedCall₁ ht₁_e2 ht₁_e1
-        hGet₁ hArg₁ hImpl₁ hValRet₁ heq_cfg₁
-        _hbodyCtx hcallCfg hargName hargValue hcaptured hunified
-  have hreg_c₂'₁ : c₂'₁.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    simpa using terminatesTo_preserves_registry ht₁_e2
-  have hreg_c₁₁ : c₁₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
-    (terminatesTo_preserves_registry ht₁_e1).trans hreg_c₂'₁
-  have hregistryCall :
-      callEntry.callConfig.registry = TrustedRegistry.toRuntimeRegistry tr := by
-    rw [hcallCfg]
-    exact hreg_c₁₁
-  have hGetCall :
-      callEntry.callConfig.registry.get? id₁ = some (ExternImpl.pfn impl₁) := by
-    rw [hcallCfg]
-    exact hGet₁
-  have hArgCall : valueMatchesTyp callEntry.argValue argTyp₁ = true := by
-    rw [hargValue]
-    exact hArg₁
-  have hImplCall :
-      impl₁ callEntry.unifiedEnv callEntry.argValue callEntry.callConfig.memory =
-        Except.ok vRaw₁ := by
-    rw [hunified, hcaptured, hargName, hargValue, hcallCfg]
-    exact hImpl₁
-  have hcfgCall : _cf₁ = callEntry.callConfig := by
-    simpa [hcallCfg] using heq_cfg₁
-  rcases
-    ExternCallBoundaryPfnStaticSource.callBoundaryRun_of_reachable
-      (tr := tr) (root := root) (ctxRoot := ctxRoot)
-      (sourceArgTyp := sourceArgTyp) (argTyp := argTyp₁) (tcls := tcls)
-      hagrees hstatic₁ (hsourceReachable hstatic₁)
-      hargName hregistryCall hunified hGetCall hArgCall
-      hImplCall hValRet₁ hcfgCall with
-    ⟨entry, _hlookup, hmatch, hrun⟩
-  have hentryPoison :=
-    congrArg ExternDeclaration.argPoison (hagrees (hsourceReachable hstatic₁) _hlookup)
-  exact
-    ⟨entry, by simpa [ExternCallTrustedEntryKey] using _hlookup,
-      htypedCall₁ entry hmatch hentryPoison, hrun⟩
+  intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _tenv₁ _memberCap₁ _hstaticProvider
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ExternCallBoundaryFRPfnRunContract.of_trustedReachable hagrees hsourceReachable
 
 /-- Local registry-agreement-shaped adapter for the two impure arrow sides.
 

@@ -80,7 +80,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | T2 ✅ | Privatize file-local public decls | low | S | — |
 | T3 ✅ | Remove redundant imports; drop empty shell | low | S | — |
 | T4 ✅ | Delete dead single-run skeleton (was: hoist) | med | M | T1 |
-| T5 | Collapse Side0/Side1 mirror (StepFRApp) | low | M | T2 |
+| T5 ✅ | Collapse Side0/Side1 mirror (StepFRApp) | low | M | T2 |
 | T6 | Collapse pfn extern-decl machinery | med | L | — |
 | T7 | Collapse mirror join helpers (StepFRIte) | low | M | — |
 | T8 | Collapse run0/run1 mirrors (mem ops) | med | L | — |
@@ -329,7 +329,25 @@ module.
 
 ## Block 2 — mechanical mirror-collapse
 
-### T5 — Collapse the `Side0`/`Side1` two-run extern-call mirror in `StepFRApp`
+### T5 ✅ — Collapse the `Side0`/`Side1` two-run extern-call mirror in `StepFRApp`
+
+**Status: COMPLETED — resolved by delegation to a shared run-generic core, not a
+`Bool`/`Side` selector.** Took the plan's "*or*" branch: a run-generic
+`ExternCallBoundaryFR{Fn,Pfn}RunContract` was added, its four `of_*` discharge
+proofs (`of_trustedRegistry`, `of_emptyExternRegistry`, `of_trustedProgram`,
+`of_trustedReachable`) written **once**, and the eight
+`…Side{0,1}{Contract,Provider}` defs (kept `private` per T2) reduced to thin
+delegations. The collapse is definitional: `SideKContract ≡ ∀ <two-run
+preamble>, RunContract <run-K projection>` holds by delta+beta, so each `Side`
+Contract reduces to the shared `RunContract` and each `Side` Provider `of_*`
+becomes a one-line `exact RunContract.of_X …` wrapper; the duplicated `Side*`
+`of_*` bodies and both `Side*Contract.of_emptyExternRegistry` members were
+deleted. No statement is weakened (defeq-only), so the in-file consumers —
+`appTwoRunOutChoice_from_independent_single_posts_dirty` and
+`…_single_boundary_posts_dirty` — resolve unchanged. `lake build` passes with 0
+sorry / 0 axiom (11465 jobs; `StepFRApp` alone 8495 jobs); net **−272 lines** in
+`StepFRApp.lean` (540 insertions / 812 deletions), the ~812 deletions being the
+collapsed `Side0`/`Side1` subscript mirror, exceeding the ~600-line target.
 
 **Theme:** redundancy · **Risk:** low · **Effort:** medium · **Deps:** T2
 
