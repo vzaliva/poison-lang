@@ -9,9 +9,9 @@ literals are stripped before matching names (shared parser in ``lean_text``).
 Without this, a declaration mentioned only in prose would look referenced and
 be wrongly hidden from the unused report (issue #142).
 
-Dotted names (e.g. ``X.foo``) are skipped by default because ref-count by
-substring match cannot detect dot-notation usages like ``x.foo`` where ``x : X``.
-Pass --include-dotted to report them anyway.
+Dotted names (e.g. ``X.foo``) are included by default. Ref-count by substring
+match cannot detect dot-notation usages like ``x.foo`` where ``x : X``, so
+pass --skip-dotted to omit them and avoid false positives.
 """
 import argparse
 import re
@@ -57,7 +57,7 @@ def collect_declarations():
     return decls, "\n".join(code_chunks)
 
 
-def compute_unused(decls, code_text, include_dotted=False):
+def compute_unused(decls, code_text, skip_dotted=False):
     """Return (unused, skipped_dotted) given declarations and the code corpus.
 
     A declaration is unused when its only whole-word occurrence in code is its
@@ -66,7 +66,7 @@ def compute_unused(decls, code_text, include_dotted=False):
     unused = []
     skipped_dotted = 0
     for rel_path, name in decls:
-        if "." in name and not include_dotted:
+        if "." in name and skip_dotted:
             skipped_dotted += 1
             continue
         if count_references(name, code_text) <= 1:
@@ -77,20 +77,20 @@ def compute_unused(decls, code_text, include_dotted=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--include-dotted",
+        "--skip-dotted",
         action="store_true",
-        help="Report dotted names too (may yield false positives from dot notation).",
+        help="Omit dotted names (avoids false positives from dot notation).",
     )
     args = parser.parse_args()
 
     decls, code_text = collect_declarations()
     print(f"Found {len(decls)} declarations")
-    unused, skipped_dotted = compute_unused(decls, code_text, args.include_dotted)
+    unused, skipped_dotted = compute_unused(decls, code_text, args.skip_dotted)
     for rel_path, name in sorted(unused):
         print(f"  {rel_path}: {name}")
     print(f"\nTotal unused: {len(unused)}")
-    if skipped_dotted and not args.include_dotted:
-        print(f"(skipped {skipped_dotted} dotted names; pass --include-dotted to inspect)")
+    if skipped_dotted:
+        print(f"(skipped {skipped_dotted} dotted names)")
 
 
 if __name__ == "__main__":
