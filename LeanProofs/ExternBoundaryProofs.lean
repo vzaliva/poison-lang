@@ -42,19 +42,6 @@ theorem TrustedRegistryAgreesWithReachable.of_programCover
   | ast hp => exact hprog hp hlookup
   | var hlk hqt => exact hprog (hcover ⟨_, _, hlk, hqt⟩) hlookup
 
-/-- Registry-covered admissibility bridge: agreement against the initial context
-    (covering context-supplied closures) plus agreement against the program AST
-    yields full reachable agreement. -/
-theorem TrustedRegistryAgreesWithReachable.of_registryCover
-    {e : Expr} {ctx : TypeContext} {tr : TrustedRegistry}
-    (hctx : TrustedRegistryAgreesWithInitialContext e ctx tr)
-    (hprog : TrustedRegistryAgreesWithProgram e tr) :
-    TrustedRegistryAgreesWithReachable e ctx tr := by
-  intro id d entry hreach hlookup
-  cases hreach with
-  | ast hp => exact hprog hp hlookup
-  | var hlk hqt => exact hctx ⟨_, _, hlk, hqt⟩ hlookup
-
 /-- At the canonical empty initial context (`ctx.varEnv = {}`), reachability
     collapses to the program AST: the `var` constructor cannot fire (no variable
     is bound), so registry agreement with the program implies agreement with

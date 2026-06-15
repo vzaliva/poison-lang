@@ -51,9 +51,6 @@ private theorem LocSet.beq_refl (ls : LocSet) : BEq.beq ls ls = true := by
     ReflBEq.rfl (a := ExtTreeSet.toList ls)
   simpa [BEq.beq] using h
 
-private theorem LocSet.rfl (ls : LocSet) : ls = ls := by
-  rfl
-
 private theorem LocSet.sound (a b : LocSet) : BEq.beq a b = true → a = b := by
   intro h
   have hList : ExtTreeSet.toList a = ExtTreeSet.toList b := by

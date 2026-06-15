@@ -1196,19 +1196,6 @@ def InitialContextTrusted
     (tr : TrustedRegistry) (e : Expr) (ctx : TypeContext) : Prop :=
   TrustedRegistryAgreesWithReachable e ctx tr
 
-/-- Registry-covered admissibility (the "unblocking" direction): the trusted
-    registry agrees with every *context-reachable*
-    extern declaration.  Combined with `TrustedRegistryAgreesWithProgram` this
-    yields the full `TrustedRegistryAgreesWithReachable` (see
-    `TrustedRegistryAgreesWithReachable.of_registryCover`).  It also supports
-    extern closures supplied only by the context. -/
-def TrustedRegistryAgreesWithInitialContext
-    (e : Expr) (ctx : TypeContext) (tr : TrustedRegistry) : Prop :=
-  ∀ {id d entry},
-    ContextExternReachable e ctx id d →
-    TrustedRegistry.lookup? tr id = some entry →
-    entry.decl = d
-
 /-- Every syntactic extern declaration in `current` is covered by the initial
     reachable trust domain.  This keeps the proof spine's expression-indexed
     `CanUse` shape while allowing the public trust premise to be scoped to the

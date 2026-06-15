@@ -59,47 +59,6 @@ theorem TagMeaningExtends.lookup {tm tm' : TagMeaning} (h : tm ⊑ tm') {k : Tag
 def TagMeaningBounded (tm : TagMeaning) (bound : Tag) : Prop :=
   ∀ k d, tm.lookup k = some d → k < bound
 
-theorem TagMeaningBounded.empty {bound : Tag} :
-    TagMeaningBounded (∅ : TagMeaning) bound := by
-  intro k d hlookup
-  simp [TagMeaning.lookup] at hlookup
-
-/-- A bounded `tm` does not have a key at or above its bound. -/
-theorem TagMeaningBounded.lookup_none_of_ge
-    {tm : TagMeaning} {bound : Tag} (h : TagMeaningBounded tm bound)
-    {k : Tag} (hk : bound ≤ k) : tm.lookup k = none := by
-  by_contra hne
-  cases h_lookup : tm.lookup k with
-  | none => exact hne h_lookup
-  | some d =>
-      have hlt := h k d h_lookup
-      exact absurd (Nat.lt_of_lt_of_le hlt hk) (Nat.lt_irrefl _)
-
-/-- Inserting at a fresh key `≥ bound` yields a submap. -/
-theorem TagMeaningExtends.of_insert_fresh
-    (tm : TagMeaning) (k : Tag) (d : GuardDesc)
-    (h_fresh : tm.lookup k = none) :
-    tm ⊑ tm.update k d := by
-  unfold TagMeaning.update
-  exact ExtTreeMap.IsSubmap_of_insert_fresh tm k d h_fresh
-
-/-- After inserting at fresh tag `bound`, the new bound is `bound + 1`. -/
-theorem TagMeaningBounded.insert_succ
-    {tm : TagMeaning} {bound : Tag} (h : TagMeaningBounded tm bound) (d : GuardDesc) :
-    TagMeaningBounded (tm.update bound d) (bound + 1) := by
-  intro k d' hlookup
-  unfold TagMeaning.update TagMeaning.lookup at hlookup
-  rw [ExtTreeMap.get?_eq_getElem?] at hlookup
-  simp only [ExtTreeMap.getElem?_insert] at hlookup
-  by_cases h_eq : compare bound k = Ordering.eq
-  · have h_k_eq : bound = k := LawfulEqCmp.eq_of_compare h_eq
-    subst h_k_eq
-    exact Nat.lt_succ_self _
-  · simp [h_eq] at hlookup
-    rw [← ExtTreeMap.get?_eq_getElem?] at hlookup
-    have hlt := h k d' hlookup
-    exact Nat.lt_succ_of_lt hlt
-
 /-- Boundedness is monotone in the bound (a tighter bound implies a looser one). -/
 theorem TagMeaningBounded.mono {tm : TagMeaning} {b₁ b₂ : Tag}
     (h : TagMeaningBounded tm b₁) (hle : b₁ ≤ b₂) :

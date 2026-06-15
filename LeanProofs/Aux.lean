@@ -80,16 +80,6 @@ lemma List_lookup_cons_ne {α β : Type} [BEq α] [LawfulBEq α] (l : List (α �
 theorem Except.error_ne_ok {ε α : Type} (err : ε) (a : α) : Except.error err ≠ Except.ok a :=
   fun h => nomatch h
 
-private theorem Except.bind_eq_ok {ε α β : Type} (x : Except ε α) (f : α → Except ε β) (b : β)
-    (h : Except.bind x f = Except.ok b) :
-    ∃ a, x = Except.ok a ∧ f a = Except.ok b := by
-  cases x with
-  | error e =>
-    simp [Except.bind] at h
-  | ok a =>
-    refine ⟨a, rfl, ?_⟩
-    simpa [Except.bind] using h
-
 -- ================================================================
 -- ExtTreeMap
 -- ================================================================
@@ -149,29 +139,6 @@ theorem ExtTreeMap.IsSubmap.trans
     ExtTreeMap.IsSubmap m₁ m₃ :=
   fun k v h => h₂ k v (h₁ k v h)
 
-theorem ExtTreeMap.IsSubmap_of_insert_fresh
-    {α : Type} {compare : α → α → Ordering} [TransCmp compare] [LawfulEqCmp compare]
-    {β : Type} (m : ExtTreeMap α β compare) (k : α) (v : β)
-    (h_fresh : m.get? k = none) :
-    ExtTreeMap.IsSubmap m (m.insert k v) := by
-  intro k' v' hlookup
-  by_cases h_eq : compare k k' = Ordering.eq
-  · have h_k_eq : k = k' := LawfulEqCmp.eq_of_compare h_eq
-    subst h_k_eq
-    rw [hlookup] at h_fresh
-    exact nomatch h_fresh
-  · rw [ExtTreeMap.get?_eq_getElem?]
-    simp only [ExtTreeMap.getElem?_insert, h_eq, if_false]
-    rw [← ExtTreeMap.get?_eq_getElem?]
-    exact hlookup
-
-theorem ExtTreeMap.IsSubmap.lookup_preserved
-    {α : Type} {compare : α → α → Ordering} [TransCmp compare]
-    {β : Type} {m m' : ExtTreeMap α β compare}
-    (h : ExtTreeMap.IsSubmap m m') {k : α} {v : β}
-    (hlookup : m.get? k = some v) : m'.get? k = some v :=
-  h k v hlookup
-
 -- ================================================================
 -- List + Except: foldlM / mapM preserve properties
 -- ================================================================
@@ -213,40 +180,3 @@ theorem List.foldlM_Except_preserves_property
   intro result h_fold
   refine List.foldlM_Except_preserves_property_of_forall_mem xs init f P (fun _ => True)
     h_init (fun x _ => trivial) (fun acc x hP _ => h_preserve acc x hP) result h_fold
-
-theorem List.mapM_Except_preserves_property
-    (xs : List α) (f : α → Except ε β)
-    (P : β → Prop)
-    (h_preserve : ∀ (x : α) (y : β), f x = Except.ok y → P y) :
-    ∀ (results : List β), List.mapM f xs = Except.ok results → ∀ y ∈ results, P y := by
-  induction xs with
-  | nil =>
-    intro results h_map
-    simp [List.mapM_nil, pure, Except.pure] at h_map
-    cases h_map
-    intro y h_mem
-    cases h_mem
-  | cons x xs ih =>
-    intro results h_map
-    simp [List.mapM_cons, bind, Except.bind] at h_map
-    cases h_fx : f x with
-    | error e =>
-      simp [h_fx] at h_map
-    | ok y_val =>
-      simp [h_fx] at h_map
-      cases h_map_results : List.mapM f xs with
-      | error e =>
-        simp [h_map_results] at h_map
-      | ok rest_results =>
-        simp [h_map_results] at h_map
-        injection h_map with h_list_eq
-        subst h_list_eq
-        intro z h_mem
-        simp [List.mem_cons] at h_mem
-        cases h_mem with
-        | inl h_eq =>
-          subst h_eq
-          have h_fx_z : f x = Except.ok z := h_fx
-          exact h_preserve x z h_fx_z
-        | inr h_mem_rest =>
-          exact ih rest_results h_map_results z h_mem_rest
