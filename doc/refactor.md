@@ -8,10 +8,11 @@ organized** (smaller modules, fewer dependencies), (2) **less redundant**
 
 ## How to read this document
 
-- Tasks are labelled `T14`–`T17` — the remaining work. `T1`–`T13` are
-  **complete** (see git history) and have been removed from this plan.
+- Tasks are labelled `T16`–`T17` — the remaining work. `T1`–`T13` and `T15`
+  are **complete** (see git history) and `T14` (split `ExternProofs`) was dropped
+  by decision (see the *Dropped* section); all have been removed from this plan.
 - Each task is **independent** unless a `Depends on:` line names a prerequisite;
-  the only named prerequisites (`T6`, `T9`) are themselves complete.
+  the only named prerequisite (`T9`) is itself complete.
 - Every task records **Benefit**, **Risk**, **Effort**, and a **Verification**
   note for which claims were confirmed against the source at planning time.
 - Line and reference counts are heuristic (ripgrep-based) and should be
@@ -46,21 +47,18 @@ abandoned, not forced.
 | Modules | 38 |
 | Total lines | ~101,000 |
 | `sorry` / `axiom` | 0 / 0 |
-| Largest | `StepFRApp` 21.3k, `TypeSafety` 18.9k, `TypecheckInduction` 7.1k |
+| Largest | `StepFRApp` 21.3k, `TypeSafety` 18.9k, `StepFRIte` 7.3k |
 
 The organization, redundancy, and simplification problems that motivated this
 plan were resolved by `T1`–`T13`: verified dead-code / `private` / import
 cleanup; the `fn`/`pfn`, `Side0`/`Side1`, and `arrow`/`parrow` mirror collapses;
 the shared induction-scaffold factoring; and the `StepFR` hub split into
 `ExternTagMeaning`, `TypecheckInduction`, `StepFRClosureApply`, and
-`ExternCallBoundarySides`. The remaining, concentrated targets:
+`ExternCallBoundarySides` — and by `T15`, which relocated the inlined ~1.4k-line
+`ite` arm into `StepFRIte` and bundled the FR contracts preamble into the
+`FRCtxContracts` / `FRStepContracts` structures. The remaining, concentrated
+targets:
 
-- **`ExternProofs` monolith (T14)** — a flat concatenation of seven
-  self-contained trusted entries with near-zero cross-builtin coupling, ripe for
-  a per-builtin split sharing a small base.
-- **`FaultRobustnessProofs` inlined `ite` arm (T15)** — ~1.4k lines inlined
-  where every other operator delegates out in ~15 lines; `StepFRIte` is the
-  only operator exporting zero single-run lemma.
 - **`JoinMemberTransport` scope (T16)** — several public lemmas are
   single-consumer despite the module's `StepFRApp`∩`StepFRIte` justification.
 - **Grab-bag golf (T17)** — small self-contained simplifications across
@@ -72,101 +70,31 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 
 | ID | Task | Risk | Eff | Depends on |
 | --- | --- | --- | --- | --- |
-| T14 | Split ExternProofs per builtin | med | L | T6 |
-| T15 | Factor inlined ite arm + boilerplate | med | L | — |
 | T16 | Trim JoinMemberTransport | high | L | T9 |
 | T17 | Low-risk proof golf (grab-bag) | low | M | — |
 
 ## Recommended ordering
 
-`T1`–`T13` are complete. The four remaining tasks are largely independent —
-their only prerequisites (`T6` for `T14`, `T9` for `T16`) are already done — so
-they can be scheduled opportunistically:
+`T1`–`T13` and `T15` are complete (and `T14` was dropped). The two remaining
+tasks are largely independent — their only prerequisite (`T9` for `T16`) is
+already done — so they can be scheduled opportunistically:
 
 ```mermaid
 graph LR
-  T14[T14: split ExternProofs]
-  T15[T15: FaultRobustnessProofs ite arm]
   T16[T16: trim JoinMemberTransport]
   T17[T17: golf, anytime]
 ```
 
-- **T14** (`ExternProofs` per-builtin split) is a disjoint subtree; its
-  prerequisite T6 (shared `pfn`-decl / operational helpers) is done.
-- **T15** (`FaultRobustnessProofs` `ite` arm → `StepFRIte`) is independent.
 - **T16** (`JoinMemberTransport` trim) follows the completed T9; **high risk**
   via a shared `guardClosure` base that must stay in `JoinMemberTransport`.
 - **T17** (golf grab-bag) is per-file and schedulable any time.
 
-`T15` and `T16` touch per-operator / shared modules, so honour the
+`T16` touches per-operator / shared modules, so honour the
 **per-operator independence** invariant and serialize `lake` builds.
 
 ---
 
 ## Remaining tasks
-
-### T14 — Split `ExternProofs` along the per-builtin seam
-
-**Theme:** organization · **Risk:** medium · **Effort:** large · **Deps:** T6
-
-**Motivation.** `ExternProofs` is a flat 6.2k-line concatenation of seven
-self-contained trusted entries under one namespace; cross-builtin coupling is
-near-zero (Max10 and MemDeref reference no other-builtin helper; only Max11Guarded
-reuses Max11Captures defs); downstream consumers import only per-entry
-`Spec`/`Decl`/`Impl` names. SetErr alone is ~1,777 lines.
-
-**Steps.**
-
-- After T6 has extracted the shared `pfn`-decl and operational helpers, place those
-  helpers in one small base module the per-entry files import.
-- Carve per-entry files (`ExternProofsAbs`, `ExternProofsMax` keeping the
-  curried-max pair together, `ExternProofsMemDeref`, `ExternProofsSetErr`,
-  `ExternProofsErrno`), reproducing the `ExternProofs` namespace and the
-  `ExternRefDecl` sub-namespace; repoint the downstream imports (`MaxCurriedFR`,
-  `ExternRegimeInt`, `GuardedCapturesFR`, `MemReadCapturesFR`); consolidate the
-  split `ExternRefDecl` namespace. Preserve all `Spec`/`Decl`/`Impl` names.
-
-**Benefit.** Turns a 6.2k-line monolith into focused per-entry modules sharing a
-small base, improving the module-API read and isolating the 1.8k-line SetErr entry.
-
-**Risk.** Mechanically low-risk (the blocks are independent) but touches the import
-graph: the `ExternProofs` namespace and `ExternRefDecl` sub-namespace must be
-reproduced and downstream imports repointed. Pure relocation preserves
-0-sorry/0-axiom. Disjoint from the `StepFR` hub block (separate subtree), so
-schedulable around it.
-
-### T15 — Factor the inlined `ite` arm and boilerplate in `FaultRobustnessProofs`
-
-**Theme:** organization · **Risk:** medium · **Effort:** large · **Deps:** —
-
-**Motivation.** `FaultRobustnessProofs` inlines the entire ~1,400-line `ite` arm
-of the masked single-run proof, while every other operator delegates in ~15 lines
-to a `stepFRSingleRunFinalCleanPcTrue…maskedReg` lemma in its own `StepFR*` file;
-`StepFRIte` is the only operator exporting **zero** such lemma. Secondary: a
-~95-line contracts hypothesis preamble copy-pasted across 3 theorems; the 4
-literal arms are ~27-line near-clones; the 4 extern-declaration arms are a
-~28-line near-identical family.
-
-**Steps.**
-
-- Extract the inlined `ite` body into a new
-  `stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof` in
-  `StepFRIte.lean` (which imports only `StepFR` and `JoinMemberTransport` — both
-  permitted), threading the closed-over locals as explicit parameters; replace the
-  inlined arm with a ~20-line delegating arm mirroring the `op`/`seq` arms.
-- Bundle the contracts preamble into a `private structure FRCtxContracts` (+ an
-  `FRStepContracts` extension) so the 3 theorems project fields; collapse the 4
-  literal arms and the 4 extern-declaration arms into one `private` helper each.
-
-**Benefit.** Relocates ~1,380 lines into the topic-appropriate `StepFRIte`
-(`FaultRobustnessProofs` ~3,507 → ~2,150 lines; a uniform masked single-run across
-all operators) and removes ~250+ lines of preamble/arm boilerplate.
-
-**Risk.** Pure relocation + boilerplate factoring; no statement weakens. The
-`ite`-arm extraction closes over many locals that must become explicit parameters
-(a signature mismatch fails the build, but the blast radius is `StepFRIte` + the
-one call site). The contracts-structure change must reproduce implicit-binder field
-types exactly. Independent of the hub block.
 
 ### T16 — Trim `JoinMemberTransport` to genuinely-shared lemmas
 
@@ -241,6 +169,11 @@ splittable per file.
 
 These were considered and rejected; recording them prevents re-litigation.
 
+- **Split `ExternProofs` along the per-builtin seam (was T14):** dropped by
+  decision. The seven trusted entries are independent, but carving them into
+  per-builtin files buys only an import-graph reshuffle (reproduce the
+  `ExternProofs` namespace + the `ExternRefDecl` sub-namespace, repoint the
+  downstream imports) with no proof-surface reduction — not worth the churn.
 - **Bundle `TypeSafety`'s giant main inductions into conjunctions**
   (`combined_main` style): high risk of case-discharge interactions in the
   structural core feeding the whole FR stack, for modest savings. The leaf-arm and
