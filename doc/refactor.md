@@ -85,7 +85,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | T7 ✅ | Collapse mirror join helpers (StepFRIte) | low | M | — |
 | T8 ✅ | Collapse run0/run1 mirrors (mem ops) | med | L | — |
 | T9 ✅ | Factor arrow/parrow mirrors (JMT) | med | M | — |
-| T10 | Factor induction scaffolds (foundations) | high | L | — |
+| T10 ✅ | Factor induction scaffolds (foundations) | high | L | — |
 | T11 | Extract closure machinery from hub | med | L | T2, T4 |
 | T12 | Extract extern/typecheck clusters from hub | med | L | T2, T11 |
 | T13 | Relocate residual hub lemmas + Side family | high | L | T5, T11, T12 |
@@ -656,9 +656,62 @@ so the public surface and both consumers (App, Ite) are unaffected. The
 shape-generic cases must not break the `joinETyps_preserves_dirty` rewrites. Do
 this **before** T16 so soon-to-be-merged copies are not relocated first.
 
-### T10 — Factor shared induction scaffolds in the foundations
+### T10 ✅ — Factor shared induction scaffolds in the foundations
 
 **Theme:** simplification · **Risk:** high · **Effort:** large · **Deps:** —
+
+**Status: COMPLETED — low/medium-risk tier only; the high-risk combinator +
+`of_toPExpr` skeleton deliberately not pursued (Dropped tier).** Net −206 lines
+(`SemanticsProperties` 3,462 → 3,401; `TypeSafety` 19,015 → 18,870). Public
+declaration set byte-identical to HEAD (the only deleted signatures are the four
+`private terminatesTo_{num,bool,unit,str}_inv'` sub-helpers); 0 `sorry`/`admit`;
+axiom-clean (`[propext, Classical.choice, Quot.sound]` on the two edited
+`SemanticsProperties` publics and on **all eight** edited `TypeSafety` `_main`
+lemmas, verified directly via in-file `#print axioms`); `lake build` green
+(11,466 jobs), no warnings.
+
+- **`SemanticsProperties` (done, −61).** The four byte-identical literal
+  inversion helpers were deleted; `terminatesTo_literal_inv'` was rewritten as a
+  *self-contained* 3-line proof (kill non-literals via the
+  `Expr.toValue? = none` contradiction **before** `beval` is unfolded, then one
+  `beval` step on the four literal arms) — so the dedup is a real removal, not
+  duplication relocated into the combined lemma. Its two call sites (incl. the
+  merged `terminatesTo_preserves_pureMode` literal arm) now route through it.
+- **`TypeSafety` (done, −145).** All **eight** main proofs' four-way literal leaf
+  clusters collapsed to one alternation arm each
+  (`| num _ | bool _ | unit | str _ =>`), across both the `unfold`-flavor proofs
+  (`typecheck_nextTag/nextLoc/regime/declared'` mono) and the
+  `simp [typecheckX]`-flavor proofs (`combined`, `tagEnvBounded`, `refLocs`,
+  `mem_contains_preserved`). The **stale axiom banner** was corrected to describe
+  two *proven* contract lemmas (the file declares 0 axioms). The two anonymous
+  "Probe Lemma" `example`s at the file tail — `valueHasETyp` extern-closure
+  constructor smoke-tests unrelated to any T10-edited path — were **removed** per
+  the plan's "relocate or remove" (anonymous ⇒ zero public surface; the
+  constructors they exercised are already covered by production proofs in the
+  extern boundary stack).
+- **Key technique (the warning-clean crux).** The merge is only warning-clean
+  when the four literal-typechecker `unfold`s are **hoisted above `cases e`** —
+  where `typecheckExpr`'s unreduced match still contains all four calls, so each
+  `unfold` fires exactly once and none is unused — leaving a *uniform* residual
+  tail (`simp at htc; …`) per merged arm. Every naive post-`cases` combinator
+  breaks the alternation linter or the unfolder: `first | unfold … | …` emits
+  `unreachableTactic`/`unusedTactic`; multi-arg `simp only [typecheckInt, …]`
+  emits `unusedSimpArgs`; and `unfold a b c d at h` *errors* (`failed to unfold`)
+  because it processes targets sequentially and only one is present post-split.
+  The `simp`-flavor proofs posed no extra hazard once converted to the
+  unfold-hoist form (only the four literal defs are unfolded, never the match).
+- **Documented skips (assessed, intentionally not done).** (1) The
+  `SemanticsProperties` "share the `bevalFunctionBody` wfConfig opening via a
+  prefix helper" sub-step — the two lemma openings diverge after one line, so a
+  prefix helper is net-negative. (2) The "`private` fuel-step lemma to kill
+  repeated `omega`" sub-step is a no-op in both files: `SemanticsProperties`
+  contains **0** `omega`; in `TypeSafety` the `m < fuel'+1` idiom appears only 3×
+  with a call site (`Nat.lt_succ_of_lt h_lt`) the same length as a named-lemma
+  call, and its 49 `omega`s are heterogeneous goals, not one duplicated copy.
+  (3) The high-risk `beval`-success recursion combinator and `P`-parametrized
+  `of_toPExpr` skeleton (the 73 `IH_fuel` P-parametrized conversion blocks) were
+  left in place per the plan's "optional / or not at all" and the Dropped-section
+  guidance against bundling the giant main inductions.
 
 **Motivation.** `TypeSafety`'s eight main proofs each re-walk all `Expr`
 constructors with the same strong-induction-on-fuel + `cases` scaffold (40

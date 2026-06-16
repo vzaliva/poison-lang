@@ -5116,6 +5116,7 @@ private lemma typecheck_nextTag_mono_normal_main : ∀ (ctx : TypeContext) (e : 
           simp at htc
       | succ fuel' =>
           unfold typecheckExpr at htc
+          unfold typecheckInt typecheckBool typecheckUnit typecheckString at htc
           have IH_fuel' : ∀ m < fuel', ∀ (e' : Expr) (ctx' : TypeContext) (res' : TypeResult),
             typecheck ctx' e' m = .ok res' →
             ctx'.nextTag ≤ res'.nextTag' := by
@@ -5123,26 +5124,7 @@ private lemma typecheck_nextTag_mono_normal_main : ∀ (ctx : TypeContext) (e : 
             have h_lt' : m < fuel' + 1 := Nat.lt_of_lt_of_le h_lt (Nat.le_succ fuel')
             exact IH_converted m h_lt' e' ctx' res' htc'
           cases e with
-          | num _n =>
-              unfold typecheckInt at htc
-              simp at htc
-              injection htc with h_eq
-              subst h_eq
-              exact le_rfl
-          | bool _b =>
-              unfold typecheckBool at htc
-              simp at htc
-              injection htc with h_eq
-              subst h_eq
-              exact le_rfl
-          | unit =>
-              unfold typecheckUnit at htc
-              simp at htc
-              injection htc with h_eq
-              subst h_eq
-              exact le_rfl
-          | str _s =>
-              unfold typecheckString at htc
+          | num _n | bool _b | unit | str _s =>
               simp at htc
               injection htc with h_eq
               subst h_eq
@@ -6343,27 +6325,9 @@ private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (f
             intro m h_lt e' ctx' res' htc'
             have h_lt' : m < fuel' + 1 := Nat.lt_of_lt_of_le h_lt (Nat.le_succ fuel')
             exact IH_converted m h_lt' e' ctx' res' htc'
+          unfold typecheckInt typecheckBool typecheckUnit typecheckString at htc
           cases e with
-          | num _n =>
-              unfold typecheckInt at htc
-              simp at htc
-              injection htc with h_eq
-              subst h_eq
-              exact Regime.monotoneStepExt_refl ctx.regime _
-          | bool _b =>
-              unfold typecheckBool at htc
-              simp at htc
-              injection htc with h_eq
-              subst h_eq
-              exact Regime.monotoneStepExt_refl ctx.regime _
-          | unit =>
-              unfold typecheckUnit at htc
-              simp at htc
-              injection htc with h_eq
-              subst h_eq
-              exact Regime.monotoneStepExt_refl ctx.regime _
-          | str _s =>
-              unfold typecheckString at htc
+          | num _n | bool _b | unit | str _s =>
               simp at htc
               injection htc with h_eq
               subst h_eq
@@ -8814,18 +8778,10 @@ private lemma typecheckExpr_preserves_combined_main :
       | zero => simp [typecheckExpr] at htc
       | succ fuel' =>
           unfold typecheckExpr at htc
+          unfold typecheckInt typecheckBool typecheckUnit typecheckString at htc
           cases e with
-          | num _n =>
-              simp [typecheckInt] at htc; cases htc
-              exact ⟨hpred.2, predTagBounded_noPred _, trivial⟩
-          | bool _b =>
-              simp [typecheckBool] at htc; cases htc
-              exact ⟨hpred.2, predTagBounded_noPred _, trivial⟩
-          | unit =>
-              simp [typecheckUnit] at htc; cases htc
-              exact ⟨hpred.2, predTagBounded_noPred _, trivial⟩
-          | str _s =>
-              simp [typecheckString] at htc; cases htc
+          | num _n | bool _b | unit | str _s =>
+              simp at htc; cases htc
               exact ⟨hpred.2, predTagBounded_noPred _, trivial⟩
           | fn _x _st1 _body _st2 =>
               have hfn := typecheckFn_ok_eq htc; subst hfn
@@ -10168,15 +10124,10 @@ private lemma typecheckExpr_preserves_tagEnvBounded_main :
       | zero => simp [typecheckExpr] at htc
       | succ fuel' =>
           unfold typecheckExpr at htc
+          unfold typecheckInt typecheckBool typecheckUnit typecheckString at htc
           cases e with
-          | num _n =>
-              simp [typecheckInt] at htc; cases htc; exact hbound
-          | bool _b =>
-              simp [typecheckBool] at htc; cases htc; exact hbound
-          | unit =>
-              simp [typecheckUnit] at htc; cases htc; exact hbound
-          | str _s =>
-              simp [typecheckString] at htc; cases htc; exact hbound
+          | num _n | bool _b | unit | str _s =>
+              simp at htc; cases htc; exact hbound
           | var x =>
               have hnext := typecheckVar_preserves_nextTag ctx x res htc
               have htagEnv : res.tagEnv' = ctx.tagEnv :=
@@ -11486,27 +11437,9 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
           intro m h_lt e' ctx' res' htc'
           have h_lt' : m < fuel' + 1 := Nat.lt_of_lt_of_le h_lt (Nat.le_succ fuel')
           exact IH_converted m h_lt' e' ctx' res' htc'
+        unfold typecheckInt typecheckBool typecheckUnit typecheckString at htc
         cases e with
-        | num _n =>
-            unfold typecheckInt at htc
-            simp at htc
-            injection htc with h_eq
-            subst h_eq
-            exact le_rfl
-        | bool _b =>
-            unfold typecheckBool at htc
-            simp at htc
-            injection htc with h_eq
-            subst h_eq
-            exact le_rfl
-        | unit =>
-            unfold typecheckUnit at htc
-            simp at htc
-            injection htc with h_eq
-            subst h_eq
-            exact le_rfl
-        | str _s =>
-            unfold typecheckString at htc
+        | num _n | bool _b | unit | str _s =>
             simp at htc
             injection htc with h_eq
             subst h_eq
@@ -12305,27 +12238,9 @@ private lemma typecheck_declared'_main : ∀ (ctx : TypeContext) (e : Expr) (fue
         unfold typecheckExpr at htc
         have hlt : fuel' - 1 < fuel' + 1 := by omega
         have hlt' : fuel' < fuel' + 1 := Nat.lt_succ_self fuel'
+        unfold typecheckInt typecheckBool typecheckUnit typecheckString at htc
         cases e with
-        | num _n =>
-            unfold typecheckInt at htc
-            simp at htc
-            injection htc with h_eq
-            subst h_eq
-            exact ⟨fun id hid => hid, fun _ => rfl⟩
-        | bool _b =>
-            unfold typecheckBool at htc
-            simp at htc
-            injection htc with h_eq
-            subst h_eq
-            exact ⟨fun id hid => hid, fun _ => rfl⟩
-        | unit =>
-            unfold typecheckUnit at htc
-            simp at htc
-            injection htc with h_eq
-            subst h_eq
-            exact ⟨fun id hid => hid, fun _ => rfl⟩
-        | str _s =>
-            unfold typecheckString at htc
+        | num _n | bool _b | unit | str _s =>
             simp at htc
             injection htc with h_eq
             subst h_eq
@@ -14211,8 +14126,10 @@ private lemma effects_forIn_wfMemEnv
         exact ih hBounded hloop
 
 -- ==========================================================================
--- Extern behavioral contract axioms for TypeSafety
--- These are irreducible assumptions about extern type-checking behavior.
+-- Extern behavioral contract lemmas for TypeSafety
+-- These are proven properties of extern type-checking behavior: the extern
+-- closure-application path preserves wfTypeResult and mem-containment. They are
+-- discharged below (this file declares no axioms).
 -- ==========================================================================
 
 /-- FnTClosure.extern preserves wfTypeResult when the captured environment's
@@ -15316,20 +15233,12 @@ private lemma typecheckExpr_preserves_refLocs_main :
     | zero => unfold typecheckExpr at htc; simp at htc
     | succ fuel' =>
       unfold typecheckExpr at htc
+      unfold typecheckInt typecheckBool typecheckUnit typecheckString at htc
       have h_fuel : fuel' < fuel'.succ := Nat.lt_succ_self fuel'
       cases e with
       -- ────────────────── Trivial cases: result etyp is int/bool/unit/string ──────────────────
-      | num _ =>
-        unfold typecheckInt at htc; simp [pure, Except.pure] at htc; cases htc
-        exact ⟨hwfMem, trivial, trivial⟩
-      | bool _ =>
-        unfold typecheckBool at htc; simp [pure, Except.pure] at htc; cases htc
-        exact ⟨hwfMem, trivial, trivial⟩
-      | unit =>
-        unfold typecheckUnit at htc; simp [pure, Except.pure] at htc; cases htc
-        exact ⟨hwfMem, trivial, trivial⟩
-      | str _ =>
-        unfold typecheckString at htc; simp [pure, Except.pure] at htc; cases htc
+      | num _ | bool _ | unit | str _ =>
+        simp [pure, Except.pure] at htc; cases htc
         exact ⟨hwfMem, trivial, trivial⟩
 
       -- ────────────────── var: etyp from varEnv lookup ──────────────────
@@ -16479,24 +16388,9 @@ private lemma typecheckExpr_mem_contains_preserved_main :
               ∀ l, ctx'.memEnv.contains l → res'.memEnv'.contains l := by
             intro m hm
             exact IH' m (Nat.lt_trans hm h_fuel)
+          unfold typecheckInt typecheckBool typecheckUnit typecheckString at htc
           cases e with
-          | num _ =>
-              unfold typecheckInt at htc
-              simp [pure, Except.pure] at htc
-              cases htc
-              simpa using hcontains
-          | bool _ =>
-              unfold typecheckBool at htc
-              simp [pure, Except.pure] at htc
-              cases htc
-              simpa using hcontains
-          | unit =>
-              unfold typecheckUnit at htc
-              simp [pure, Except.pure] at htc
-              cases htc
-              simpa using hcontains
-          | str _ =>
-              unfold typecheckString at htc
+          | num _ | bool _ | unit | str _ =>
               simp [pure, Except.pure] at htc
               cases htc
               simpa using hcontains
@@ -18974,42 +18868,3 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                 result1.memEnv'.lookup l = some qt :=
               ih (fuel' - 1) hltSub ctx e1 pe1 result1 hpe1 htc1 l qt k hlookup hguard hRdef
             simpa [h_mem] using hlookup1
-
--- ================================================================
--- Probe Lemmas
--- ================================================================
--- These lemmas validate that the `closure_extern` and
--- `peClosure_extern` constructors of `valueHasETyp` admit concrete
--- extern closures.  They exercise constructor wiring + membership
--- reasoning + the empty-`tenv` path that production extern emit
--- sites hit most often.
-
-/-- Probe (peClosure): an extern peClosure with id 42, no captured vars, is typable. -/
-example (θ : RealizationMap) :
-    valueHasETyp θ
-      (Value.peClosure "x"
-        (Expr.externPfn 42 "x" Typ.int false SyntaxPredicate.noPred
-          (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []) [])
-      (ETyp.parrow Typ.int Typ.int false
-        [PFnTClosure.extern 42 "x"
-          (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) []
-          ⟨ETyp.int, false, Predicate.noPred⟩ []]) := by
-  refine valueHasETyp.peClosure_extern (tenv := []) (memberCap := []) (argQTyp := ⟨ETyp.int, false, Predicate.noPred⟩) ?_ ?_ ?_
-  · exact List.mem_singleton.mpr rfl
-  · intro y qt v hlk _; cases hlk
-  · intro y qt hlk; cases hlk
-
-/-- Probe (closure): an extern impure closure with id 13, no captured vars, is typable. -/
-example (θ : RealizationMap) :
-    valueHasETyp θ
-      (Value.closure "x"
-        (Expr.externFn 13 "x" Typ.int false SyntaxPredicate.noPred
-          (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] []) [])
-      (ETyp.arrow Typ.int Typ.int false
-        [FnTClosure.extern 13 "x"
-          (ExternReturn.simple Typ.int false SyntaxPredicate.noPred) [] []
-          ⟨ETyp.int, false, Predicate.noPred⟩ []]) := by
-  refine valueHasETyp.closure_extern (tenv := []) (memberCap := []) (argQTyp := ⟨ETyp.int, false, Predicate.noPred⟩) ?_ ?_ ?_
-  · exact List.mem_singleton.mpr rfl
-  · intro y qt v hlk _; cases hlk
-  · intro y qt hlk; cases hlk

@@ -1313,69 +1313,17 @@ lemma bevalFunctionBody_to_terminatesTo
 -- terminatesTo inversion lemmas
 -- ================================================================
 
-/-- Inversion lemma for terminatesTo on number literals. -/
-private lemma terminatesTo_num_inv' (n : Int) (c₀ c₁ : Config) (v : Value) :
-    terminatesTo (Expr.num n) c₀ c₁ v → c₁ = c₀ ∧ v = Value.num n := by
-  intro ⟨fuel, _verbose, hbeval⟩
-  cases fuel with
-  | zero => simp [LeanPoison.beval] at hbeval
-  | succ fuel' =>
-      simp [LeanPoison.beval] at hbeval
-      exact ⟨hbeval.1.symm, hbeval.2.symm⟩
-
-/-- Inversion lemma for terminatesTo on boolean literals. -/
-private lemma terminatesTo_bool_inv' (b : Bool) (c₀ c₁ : Config) (v : Value) :
-    terminatesTo (Expr.bool b) c₀ c₁ v → c₁ = c₀ ∧ v = Value.bool b := by
-  intro ⟨fuel, _verbose, hbeval⟩
-  cases fuel with
-  | zero => simp [LeanPoison.beval] at hbeval
-  | succ fuel' =>
-      simp [LeanPoison.beval] at hbeval
-      exact ⟨hbeval.1.symm, hbeval.2.symm⟩
-
-/-- Inversion lemma for terminatesTo on unit. -/
-private lemma terminatesTo_unit_inv' (c₀ c₁ : Config) (v : Value) :
-    terminatesTo Expr.unit c₀ c₁ v → c₁ = c₀ ∧ v = Value.unit := by
-  intro ⟨fuel, _verbose, hbeval⟩
-  cases fuel with
-  | zero => simp [LeanPoison.beval] at hbeval
-  | succ fuel' =>
-      simp [LeanPoison.beval] at hbeval
-      exact ⟨hbeval.1.symm, hbeval.2.symm⟩
-
-/-- Inversion lemma for terminatesTo on string literals. -/
-private lemma terminatesTo_str_inv' (s : String) (c₀ c₁ : Config) (v : Value) :
-    terminatesTo (Expr.str s) c₀ c₁ v → c₁ = c₀ ∧ v = Value.str s := by
-  intro ⟨fuel, _verbose, hbeval⟩
-  cases fuel with
-  | zero => simp [LeanPoison.beval] at hbeval
-  | succ fuel' =>
-      simp [LeanPoison.beval] at hbeval
-      exact ⟨hbeval.1.symm, hbeval.2.symm⟩
-
-/-- Combined inversion lemma for terminatesTo on any literal expression. -/
+/-- Combined inversion lemma for terminatesTo on any literal expression.
+    Self-contained: the non-literal constructors are discharged by the `hval`
+    contradiction (`Expr.toValue? e = none` there) before `beval` is ever
+    unfolded; only the four literal arms reach the evaluator, where `beval`
+    reduces in a single step. -/
 lemma terminatesTo_literal_inv' (e : Expr) (v_expected : Value)
     (hval : Expr.toValue? e = some v_expected) (c₀ c₁ : Config) (v : Value) :
     terminatesTo e c₀ c₁ v → c₁ = c₀ ∧ v = v_expected := by
-  intro ht
-  cases e with
-  | unit =>
-      simp [Expr.toValue?] at hval
-      cases hval
-      exact terminatesTo_unit_inv' c₀ c₁ v ht
-  | num n =>
-      simp [Expr.toValue?] at hval
-      cases hval
-      exact terminatesTo_num_inv' n c₀ c₁ v ht
-  | bool b =>
-      simp [Expr.toValue?] at hval
-      cases hval
-      exact terminatesTo_bool_inv' b c₀ c₁ v ht
-  | str s =>
-      simp [Expr.toValue?] at hval
-      cases hval
-      exact terminatesTo_str_inv' s c₀ c₁ v ht
-  | _ => simp [Expr.toValue?] at hval
+  rintro ⟨fuel, _verbose, hbeval⟩
+  cases e <;> simp only [Expr.toValue?] at hval <;>
+    cases fuel <;> simp_all [LeanPoison.beval]
 
 /-- Inversion lemma for terminatesTo on variable lookup. -/
 lemma terminatesTo_var_inv' (x : Name) (c₀ c₁ : Config) (v : Value) :
@@ -1490,17 +1438,8 @@ lemma terminatesTo_preserves_pureMode (e : Expr) (c₀ c₁ : Config) (v : Value
       | succ fuel' =>
         have ht : terminatesTo e c₀ c₁ v := ⟨fuel' + 1, verbose, hpure⟩
         cases e with
-        | num n =>
-          have h := terminatesTo_num_inv' n c₀ c₁ v ht
-          rw [h.1]
-        | bool b =>
-          have h := terminatesTo_bool_inv' b c₀ c₁ v ht
-          rw [h.1]
-        | unit =>
-          have h := terminatesTo_unit_inv' c₀ c₁ v ht
-          rw [h.1]
-        | str s =>
-          have h := terminatesTo_str_inv' s c₀ c₁ v ht
+        | num _ | bool _ | unit | str _ =>
+          have h := terminatesTo_literal_inv' _ _ (by rfl) c₀ c₁ v ht
           rw [h.1]
         | var x =>
           have h := terminatesTo_var_inv' x c₀ c₁ v ht
