@@ -1209,116 +1209,97 @@ def ExternDeclarationReachableFromExpr
 namespace ExternDeclarationReachableFromExpr
 
 theorem root (root : Expr) (ctxRoot : TypeContext) :
-    ExternDeclarationReachableFromExpr root ctxRoot root := by
-  intro _id _d hprog
-  exact ExternDeclarationReachableFromContext.ast hprog
+    ExternDeclarationReachableFromExpr root ctxRoot root :=
+  fun hprog => ExternDeclarationReachableFromContext.ast hprog
 
 theorem op_left {root ctxRoot e1 e2 op}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.op e1 op e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e1 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.op_left hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e1 :=
+  fun hprog => h (ExternDeclarationInProgram.op_left hprog)
 
 theorem op_right {root ctxRoot e1 e2 op}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.op e1 op e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e2 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.op_right hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e2 :=
+  fun hprog => h (ExternDeclarationInProgram.op_right hprog)
 
 theorem unaryop {root ctxRoot e op}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.unaryop op e)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.unaryop hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e :=
+  fun hprog => h (ExternDeclarationInProgram.unaryop hprog)
 
 theorem ite_cond {root ctxRoot e1 e2 e3}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.ite e1 e2 e3)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e1 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.ite_cond hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e1 :=
+  fun hprog => h (ExternDeclarationInProgram.ite_cond hprog)
 
 theorem ite_then {root ctxRoot e1 e2 e3}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.ite e1 e2 e3)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e2 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.ite_then hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e2 :=
+  fun hprog => h (ExternDeclarationInProgram.ite_then hprog)
 
 theorem ite_else {root ctxRoot e1 e2 e3}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.ite e1 e2 e3)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e3 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.ite_else hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e3 :=
+  fun hprog => h (ExternDeclarationInProgram.ite_else hprog)
 
 theorem newRef {root ctxRoot e}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.newRef e)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.newRef hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e :=
+  fun hprog => h (ExternDeclarationInProgram.newRef hprog)
 
 theorem assign_left {root ctxRoot e1 e2}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.assign e1 e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e1 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.assign_left hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e1 :=
+  fun hprog => h (ExternDeclarationInProgram.assign_left hprog)
 
 theorem assign_right {root ctxRoot e1 e2}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.assign e1 e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e2 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.assign_right hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e2 :=
+  fun hprog => h (ExternDeclarationInProgram.assign_right hprog)
 
 theorem deref {root ctxRoot e}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.deref e)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.deref hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e :=
+  fun hprog => h (ExternDeclarationInProgram.deref hprog)
 
 theorem seq_left {root ctxRoot e1 e2}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.seq e1 e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e1 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.seq_left hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e1 :=
+  fun hprog => h (ExternDeclarationInProgram.seq_left hprog)
 
 theorem seq_right {root ctxRoot e1 e2}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.seq e1 e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e2 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.seq_right hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e2 :=
+  fun hprog => h (ExternDeclarationInProgram.seq_right hprog)
 
 theorem vlet_bound {root ctxRoot x e1 e2}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.vlet x e1 e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e1 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.vlet_bound hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e1 :=
+  fun hprog => h (ExternDeclarationInProgram.vlet_bound hprog)
 
 theorem vlet_body {root ctxRoot x e1 e2}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.vlet x e1 e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e2 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.vlet_body hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e2 :=
+  fun hprog => h (ExternDeclarationInProgram.vlet_body hprog)
 
 theorem fn_body {root ctxRoot x argTyp body retTyp}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.fn x argTyp body retTyp)) :
-    ExternDeclarationReachableFromExpr root ctxRoot body := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.fn_body hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot body :=
+  fun hprog => h (ExternDeclarationInProgram.fn_body hprog)
 
 theorem pfn_body {root ctxRoot x argTyp body retTyp}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.pfn x argTyp body retTyp)) :
-    ExternDeclarationReachableFromExpr root ctxRoot body := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.pfn_body hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot body :=
+  fun hprog => h (ExternDeclarationInProgram.pfn_body hprog)
 
 theorem app_fun {root ctxRoot e1 e2}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e1 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.app_fun hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e1 :=
+  fun hprog => h (ExternDeclarationInProgram.app_fun hprog)
 
 theorem app_arg {root ctxRoot e1 e2}
     (h : ExternDeclarationReachableFromExpr root ctxRoot (Expr.app e1 e2)) :
-    ExternDeclarationReachableFromExpr root ctxRoot e2 := by
-  intro _id _d hprog
-  exact h (ExternDeclarationInProgram.app_arg hprog)
+    ExternDeclarationReachableFromExpr root ctxRoot e2 :=
+  fun hprog => h (ExternDeclarationInProgram.app_arg hprog)
 
 end ExternDeclarationReachableFromExpr

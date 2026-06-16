@@ -9,11 +9,12 @@
     `TrustedRegistryAgreesWithReachable` premise used by
     `TypeSystemEnforcesFaultRobustness_allCtx` is falsifiable for any non-empty
     registry, so it is not the shape used for concrete non-empty registries.
-  - `open_empty_context_hagrees_provable`: the positive dual. The public
+  - `emptyCtx_FR_of_agreesWithProgram`: the positive dual. The public
     per-context theorem shape (`TypeSystemEnforcesFaultRobustness` /
     `TypeSystemEnforcesFaultRobustness_at`) is provable for a non-empty registry
     at the canonical empty initial context, where reachability collapses to the
-    program AST. Trusted guarded-value producer/routing remains separate example
+    program AST: a program-level `TrustedRegistryAgreesWithProgram` witness then
+    suffices. Trusted guarded-value producer/routing remains separate example
     coverage.
   - `open_empty_context_FR_instantiable`: the capstone — composing the witness
     with `TypeSystemEnforcesFaultRobustness_at` yields the FR conclusion itself
@@ -51,7 +52,7 @@ namespace ExternRegimeInt
     The theorem below proves this concretely. The public
     `TypeSystemEnforcesFaultRobustness` takes trust per initial context, which is
     provable for non-empty registries at suitable contexts; see
-    `open_empty_context_hagrees_provable` /
+    `emptyCtx_FR_of_agreesWithProgram` /
     `open_empty_context_FR_instantiable` further down. -/
 
 /-- Registered declaration: a `fn` extern @238 returning a clean int. -/
@@ -163,6 +164,17 @@ def openEmptyCtx : TypeContext :=
   { pc := false, regime := {}, memEnv := {}, varEnv := {},
     tagEnv := {}, nextLoc := 0, nextTag := 0, pureCtx := false }
 
+/-- Fuse the empty-context registry-agreement bridge with the top-level FR
+    theorem: at the canonical empty initial context (`openEmptyCtx`), a
+    program-level `TrustedRegistryAgreesWithProgram` witness suffices to conclude
+    `FaultRobustnessSpecForCtx`.  Replaces the per-capstone `*_hagrees` glue. -/
+private theorem emptyCtx_FR_of_agreesWithProgram
+    (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
+    (hprog : TrustedRegistryAgreesWithProgram e tr) :
+    FaultRobustnessSpecForCtx (TrustedRegistry.toRuntimeRegistry tr) e s obs openEmptyCtx :=
+  TypeSystemEnforcesFaultRobustness_at tr e s obs openEmptyCtx
+    (agreesWithReachable_of_emptyVarEnv (by rfl) hprog)
+
 /-- The single-extern program's only declaration is `openDecl`: invert
     `ExternDeclarationInProgram` on the `externFn` node.  The `externFn_return`
     branch is vacuous because `ExternReturn.simple` carries no nested extern. -/
@@ -180,29 +192,19 @@ private theorem openProg_agreesWithProgram (impl : ExternImpl)
       rfl
   | externFn_return hret => cases hret
 
-/-- Provability witness: for a NON-EMPTY registry containing `@238`, the
-    per-context trust premise `TrustedRegistryAgreesWithReachable` holds at the
-    canonical empty initial context.  The direct dual to
-    `nonempty_registry_hagrees_unprovable` (parameterised over `impl`/`spec`,
-    just like it). -/
-private theorem open_empty_context_hagrees_provable (impl : ExternImpl)
-    (spec : ExternBoundarySpec openDecl impl) :
-    TrustedRegistryAgreesWithReachable openProg openEmptyCtx [⟨openDecl, impl, spec⟩] :=
-  agreesWithReachable_of_emptyVarEnv (by rfl) (openProg_agreesWithProgram impl spec)
-
 /-- Capstone: the reshaped FR theorem is *instantiable* for a NON-EMPTY registry.
-    Composing the witness with `TypeSystemEnforcesFaultRobustness_at` discharges
-    the per-context trust premise and yields the FR conclusion itself
-    (`FaultRobustnessSpecForCtx`) at the canonical empty context. Still
-    parameterised over `impl`/`spec`: no concrete guarded producer extern boundary
-    spec is built here. -/
+    Composing the program-agreement witness with the top-level FR theorem (via
+    `emptyCtx_FR_of_agreesWithProgram`) discharges the per-context trust premise
+    and yields the FR conclusion itself (`FaultRobustnessSpecForCtx`) at the
+    canonical empty context. Still parameterised over `impl`/`spec`: no concrete
+    guarded producer extern boundary spec is built here. -/
 theorem open_empty_context_FR_instantiable (impl : ExternImpl)
     (spec : ExternBoundarySpec openDecl impl) (s : InputSpec) (obs : ObservableSpec) :
     FaultRobustnessSpecForCtx
       (TrustedRegistry.toRuntimeRegistry [⟨openDecl, impl, spec⟩])
       openProg s obs openEmptyCtx :=
-  TypeSystemEnforcesFaultRobustness_at [⟨openDecl, impl, spec⟩] openProg s obs openEmptyCtx
-    (open_empty_context_hagrees_provable impl spec)
+  emptyCtx_FR_of_agreesWithProgram [⟨openDecl, impl, spec⟩] openProg s obs
+    (openProg_agreesWithProgram impl spec)
 
 /-! ## Program-level fault-robustness for the `set_err` write effect
 
@@ -228,22 +230,16 @@ scenario registry — adding the `errno` reference extern itself — is
 
 open ExternProofs (setErrProg setErrRegistry setErr_agreesWithProgram)
 
-/-- Per-context trust premise at the canonical empty initial context. -/
-private theorem setErr_hagrees :
-    TrustedRegistryAgreesWithReachable setErrProg openEmptyCtx setErrRegistry :=
-  agreesWithReachable_of_emptyVarEnv (by rfl) setErr_agreesWithProgram
-
 /-- **Program-level fault-robustness for the `set_err` write effect.**
-    Composing the registry-agreement witness with the top-level FR theorem
-    yields the FR conclusion for the `[@22 set_err]` registry at the empty
-    context — the first program-level FR result whose trusted registry contains
-    a memory-writing extern. -/
+    Composing the program-agreement witness with the top-level FR theorem (via
+    `emptyCtx_FR_of_agreesWithProgram`) yields the FR conclusion for the
+    `[@22 set_err]` registry at the empty context — the first program-level FR
+    result whose trusted registry contains a memory-writing extern. -/
 theorem setErrWriteEffect_FR (s : InputSpec) (obs : ObservableSpec) :
     FaultRobustnessSpecForCtx
       (TrustedRegistry.toRuntimeRegistry setErrRegistry)
       setErrProg s obs openEmptyCtx :=
-  TypeSystemEnforcesFaultRobustness_at setErrRegistry setErrProg s obs openEmptyCtx
-    setErr_hagrees
+  emptyCtx_FR_of_agreesWithProgram setErrRegistry setErrProg s obs setErr_agreesWithProgram
 
 /-! ## Program-level FR for the `@21` `errno` reference extern
 
@@ -295,11 +291,6 @@ private theorem errno_agreesWithProgram :
       cases hlookup
       rfl
 
-/-- Per-context trust premise at the canonical empty initial context. -/
-private theorem errno_hagrees :
-    TrustedRegistryAgreesWithReachable errnoProg openEmptyCtx errnoRegistry :=
-  agreesWithReachable_of_emptyVarEnv (by rfl) errno_agreesWithProgram
-
 /-- **Program-level fault-robustness for the bare `extern ref @21`
     declaration** — the first program-level FR result for a reference-valued
     extern. -/
@@ -307,8 +298,7 @@ theorem errnoExternRef_FR (s : InputSpec) (obs : ObservableSpec) :
     FaultRobustnessSpecForCtx
       (TrustedRegistry.toRuntimeRegistry errnoRegistry)
       errnoProg s obs openEmptyCtx :=
-  TypeSystemEnforcesFaultRobustness_at errnoRegistry errnoProg s obs openEmptyCtx
-    errno_hagrees
+  emptyCtx_FR_of_agreesWithProgram errnoRegistry errnoProg s obs errno_agreesWithProgram
 
 /-! ## Combined declare/write/read scenario -/
 
@@ -376,12 +366,6 @@ private theorem errnoScenario_agreesWithProgram :
           cases h6 with
           | deref h7 => cases h7
 
-/-- Per-context trust premise at the canonical empty initial context. -/
-private theorem errnoScenario_hagrees :
-    TrustedRegistryAgreesWithReachable errnoScenarioProg openEmptyCtx
-      errnoScenarioRegistry :=
-  agreesWithReachable_of_emptyVarEnv (by rfl) errnoScenario_agreesWithProgram
-
 /-- **Program-level fault-robustness for the combined errno scenario**:
     declare the `@21` reference, write through the `@22` `set_err` effect,
     dereference — under the two-entry trusted registry. -/
@@ -389,7 +373,7 @@ theorem errnoScenario_FR (s : InputSpec) (obs : ObservableSpec) :
     FaultRobustnessSpecForCtx
       (TrustedRegistry.toRuntimeRegistry errnoScenarioRegistry)
       errnoScenarioProg s obs openEmptyCtx :=
-  TypeSystemEnforcesFaultRobustness_at errnoScenarioRegistry errnoScenarioProg
-    s obs openEmptyCtx errnoScenario_hagrees
+  emptyCtx_FR_of_agreesWithProgram errnoScenarioRegistry errnoScenarioProg s obs
+    errnoScenario_agreesWithProgram
 
 end ExternRegimeInt

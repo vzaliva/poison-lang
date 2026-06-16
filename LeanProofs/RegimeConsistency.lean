@@ -430,16 +430,25 @@ lemma QTypRespectsTagMeaning_transport_etyp_pred
   | inr hinq' =>
       exact hqt hinq' hqd
 
+/-- Shared core: a qtyp deeply reachable in `(σ, Γ)` via the supplied membership
+    builder respects tag meaning whenever the environment does. -/
+private lemma qtypRespectsTagMeaning_of_envRespects
+    {tm : TagMeaning} {σ : VarTypeEnv} {Γ : MemoryTypeEnv} {qt : QTyp}
+    (h : EnvRespectsTagMeaning tm σ Γ)
+    (mk : ∀ qt', QTypInQTyp qt' qt → QTypInEnvs qt' σ Γ) :
+    QTypRespectsTagMeaning tm qt := by
+  intro qt' k d hinq hqd
+  exact h.1 (GuardDescInEnvsDeep.intro qt' k d (mk qt' hinq) hqd)
+
 /-- Any top-level variable type in a tag-meaning-respecting context also
     respects tag meaning for all of its deep descendants. -/
 lemma wfTagMeaningCtx_var_lookup_qtyp
     (tm : TagMeaning) (ctx : TypeContext) (x : Name) (qt : QTyp)
     (h : wfTagMeaningCtx tm ctx)
     (hlookup : ctx.varEnv.lookup x = some qt) :
-    QTypRespectsTagMeaning tm qt := by
-  intro qt' k d hinq hqd
-  exact h.1 (GuardDescInEnvsDeep.intro qt' k d
-    (QTypInEnvs.inVar ctx.varEnv ctx.memEnv x qt' qt hlookup hinq) hqd)
+    QTypRespectsTagMeaning tm qt :=
+  qtypRespectsTagMeaning_of_envRespects h
+    (fun qt' hinq => QTypInEnvs.inVar ctx.varEnv ctx.memEnv x qt' qt hlookup hinq)
 
 /-- Any top-level memory type in an environment that respects tag meaning
     also respects tag meaning for all of its deep descendants. -/
@@ -447,10 +456,9 @@ lemma EnvRespectsTagMeaning_mem_lookup_qtyp
     (tm : TagMeaning) (σ : VarTypeEnv) (Γ : MemoryTypeEnv) (l : Loc) (qt : QTyp)
     (h : EnvRespectsTagMeaning tm σ Γ)
     (hlookup : Γ.lookup l = some qt) :
-    QTypRespectsTagMeaning tm qt := by
-  intro qt' k d hinq hqd
-  exact h.1 (GuardDescInEnvsDeep.intro qt' k d
-    (QTypInEnvs.inMem σ Γ l qt' qt hlookup hinq) hqd)
+    QTypRespectsTagMeaning tm qt :=
+  qtypRespectsTagMeaning_of_envRespects h
+    (fun qt' hinq => QTypInEnvs.inMem σ Γ l qt' qt hlookup hinq)
 
 /-- Any top-level memory type in a tag-meaning-respecting context also
     respects tag meaning for all of its deep descendants. -/
@@ -458,10 +466,9 @@ lemma wfTagMeaningCtx_mem_lookup_qtyp
     (tm : TagMeaning) (ctx : TypeContext) (l : Loc) (qt : QTyp)
     (h : wfTagMeaningCtx tm ctx)
     (hlookup : ctx.memEnv.lookup l = some qt) :
-    QTypRespectsTagMeaning tm qt := by
-  intro qt' k d hinq hqd
-  exact h.1 (GuardDescInEnvsDeep.intro qt' k d
-    (QTypInEnvs.inMem ctx.varEnv ctx.memEnv l qt' qt hlookup hinq) hqd)
+    QTypRespectsTagMeaning tm qt :=
+  qtypRespectsTagMeaning_of_envRespects h
+    (fun qt' hinq => QTypInEnvs.inMem ctx.varEnv ctx.memEnv l qt' qt hlookup hinq)
 
 /-- Transport `QTypRespectsTagMeaning` across qualified types with the same
     expression type when the target has no guard descriptor at the root. -/
@@ -1247,6 +1254,14 @@ def regimeConsistentWithCtx (ctx : TypeContext) : Prop :=
 --     (insertion, invalidation, joins), and
 --   * typechecking preserves the invariant when starting from a consistent context.
 
+/-- Lookups at a key other than the just-inserted one are unaffected by `insert`. -/
+private lemma tagEnv_get_insert_of_ne
+    {tagEnv : TagEnv} {k k' : Tag} {v res : TagVal}
+    (hcmp : compare k k' ≠ Ordering.eq)
+    (hget : (tagEnv.insert k v).get? k' = some res) :
+    tagEnv.get? k' = some res := by
+  simpa [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] using hget
+
 section TagEnvConsistentWithRegimeInsert
 variable (tagEnv : TagEnv) (R : Regime) (k : Tag) (deps : Deps)
 
@@ -1265,11 +1280,7 @@ lemma tagEnvConsistentWithRegime_insert_true
       intro hce
       have : k = k' := (Nat.compare_eq_eq).1 hce
       exact hkk' this.symm
-    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
-      -- `insert` at a different key does not affect lookups.
-      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
-      exact hget
-    exact h k' deps' hget'
+    exact h k' deps' (tagEnv_get_insert_of_ne hcmp hget)
 
 lemma tagEnvConsistentWithRegime_insert_false
     (h : tagEnvConsistentWithRegime tagEnv R) :
@@ -1283,10 +1294,7 @@ lemma tagEnvConsistentWithRegime_insert_false
       intro hce
       have : k = k' := (Nat.compare_eq_eq).1 hce
       exact hkk' this.symm
-    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
-      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
-      exact hget
-    exact h k' deps' hget'
+    exact h k' deps' (tagEnv_get_insert_of_ne hcmp hget)
 
 end TagEnvConsistentWithRegimeInsert
 
@@ -1346,10 +1354,7 @@ lemma tagEnvConsistentWithRegimeMasked_insert_true
       intro hce
       have : k = k' := (Nat.compare_eq_eq).1 hce
       exact hkk' this.symm
-    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
-      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
-      exact hget
-    exact h k' deps' hget'
+    exact h k' deps' (tagEnv_get_insert_of_ne hcmp hget)
 
 lemma MaskedTagsAbsentFromTrueTagEnv_insert_true
     {ctx : TypeContext} {k : Tag} {deps : Deps}
@@ -1365,10 +1370,7 @@ lemma MaskedTagsAbsentFromTrueTagEnv_insert_true
       intro hce
       have : k = k' := (Nat.compare_eq_eq).1 hce
       exact hkk' this.symm
-    have hget' : ctx.tagEnv.get? k' = some ⟨true, deps'⟩ := by
-      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
-      exact hget
-    exact habsent k' deps' hmasked hget'
+    exact habsent k' deps' hmasked (tagEnv_get_insert_of_ne hcmp hget)
 
 lemma tagEnvConsistentWithRegimeMasked_insert_false
     (k : Tag) (deps : Deps)
@@ -1382,10 +1384,7 @@ lemma tagEnvConsistentWithRegimeMasked_insert_false
       intro hce
       have : k = k' := (Nat.compare_eq_eq).1 hce
       exact hkk' this.symm
-    have hget' : tagEnv.get? k' = some ⟨true, deps'⟩ := by
-      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
-      exact hget
-    exact h k' deps' hget'
+    exact h k' deps' (tagEnv_get_insert_of_ne hcmp hget)
 
 lemma MaskedTagsAbsentFromTrueTagEnv_insert_false
     {ctx : TypeContext} {k : Tag} {deps : Deps}
@@ -1400,10 +1399,7 @@ lemma MaskedTagsAbsentFromTrueTagEnv_insert_false
       intro hce
       have : k = k' := (Nat.compare_eq_eq).1 hce
       exact hkk' this.symm
-    have hget' : ctx.tagEnv.get? k' = some ⟨true, deps'⟩ := by
-      simp [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert, hcmp] at hget
-      exact hget
-    exact habsent k' deps' hmasked hget'
+    exact habsent k' deps' hmasked (tagEnv_get_insert_of_ne hcmp hget)
 
 lemma invalidateRegimeDeps_preserves_true_masked
     (ls : LocSet)

@@ -33,6 +33,19 @@
 -- The `LawfulBEq` typeclass requires both properties, ensuring that boolean
 -- equality is sound (only equal values compare to true) and reflexive (every
 -- value compares equal to itself).
+--
+-- ============================================================================
+-- Design note: why not `deriving DecidableEq`?
+-- ============================================================================
+--
+-- These instances are written by hand rather than synthesized via
+-- `deriving DecidableEq`, for two structural reasons:
+--   1. `LocSet` is an `ExtTreeSet` (a quotient-backed set); the deriving
+--      handler cannot synthesize structural equality through that field.
+--   2. `Expr`/`Value` are mutually recursive, and the `DecidableEq` deriving
+--      handler does not support deriving across a mutual block.
+-- Both force the manual BEq/LawfulBEq + DecidableEq route taken below; this note
+-- exists to prevent re-attempting `deriving` and rediscovering the obstruction.
 
 import Mathlib
 import Std.Data.ExtTreeSet.Lemmas

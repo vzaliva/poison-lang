@@ -234,6 +234,17 @@ inductive valueConsistentWithRegime (predSat : PredSat) (R : Regime)
 -- Monotonicity lemmas for regime predicates
 -- When Regime.monotoneStep R R' and the lookup values match, we can transfer locsRegime/varsRegime
 
+/-- The guard tag recorded in a `withPred_ok` closure (`hclos`) equals the tag
+    read off the qtyp's guard tag (`hguard`): both name the same `guardClosure`
+    key. Shared by the `locsRegime`/`varsRegime` monotone-transport proofs. -/
+private lemma guardTag_inj_of_guardClosure
+    {qt : QTyp} {k k' : Tag} {arg_name : Name} {pred_body : PExpr}
+    {var_env : CapturedVarEnv}
+    (hclos : qt.pred = Predicate.guardClosure k' arg_name pred_body var_env)
+    (hguard : qtypGuardTag qt = some k) :
+    k' = k := by
+  simp only [qtypGuardTag, hclos] at hguard
+  exact Option.some.inj hguard
 
 lemma varsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ : VarEnv}
     {entry : Name × QTyp} {k : Tag} {b : Bool}
@@ -248,9 +259,7 @@ lemma varsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ 
   | guardOnly_ok k' hgo =>
       exact varsRegime.guardOnly_ok entry k' hgo
   | withPred_ok k' arg_name pred_body var_env v b' hclos hregime hvar hconsist =>
-      have hk_eq : k' = k := by
-        simp only [qtypGuardTag, hclos] at hguard
-        exact Option.some.inj hguard
+      have hk_eq : k' = k := guardTag_inj_of_guardClosure hclos hguard
       have h_cases := h_mono.1 k' b' hregime
       cases h_cases with
       | inl h_eq =>
@@ -274,8 +283,7 @@ lemma locsRegime_monotoneExt {predSat : PredSat} {R R' : Regime} {μ : Memory} {
   | noPred_ok hpred => exact locsRegime.noPred_ok entry hpred
   | guardOnly_ok k' hgo => exact locsRegime.guardOnly_ok entry k' hgo
   | withPred_ok k' arg_name pred_body var_env a n b' hclos hregime hreal hmem hconsist =>
-      have hk_eq : k' = k := by
-        simp only [qtypGuardTag, hclos] at hguard; exact Option.some.inj hguard
+      have hk_eq : k' = k := guardTag_inj_of_guardClosure hclos hguard
       cases h_mono.1 k' b' (by rw [hk_eq]; exact hknew) hregime with
       | inl h_eq =>
           exact locsRegime.withPred_ok entry k' arg_name pred_body var_env a n b'
@@ -294,8 +302,7 @@ lemma varsRegime_monotoneExt {predSat : PredSat} {R R' : Regime} {μ : Memory} {
   | noPred_ok hpred => exact varsRegime.noPred_ok entry hpred
   | guardOnly_ok k' hgo => exact varsRegime.guardOnly_ok entry k' hgo
   | withPred_ok k' arg_name pred_body var_env v b' hclos hregime hvar hconsist =>
-      have hk_eq : k' = k := by
-        simp only [qtypGuardTag, hclos] at hguard; exact Option.some.inj hguard
+      have hk_eq : k' = k := guardTag_inj_of_guardClosure hclos hguard
       cases h_mono.1 k' b' (by rw [hk_eq]; exact hknew) hregime with
       | inl h_eq =>
           exact varsRegime.withPred_ok entry k' arg_name pred_body var_env v b'
