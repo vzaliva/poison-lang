@@ -125,6 +125,10 @@ proof (`builtinAbs_cleanPost_obstruction`). Under the clean-input precondition,
 equal clean arguments yield equal absolute values, satisfying clean output
 agreement. No `captures:` or `effects:`.
 
+**Program FR:** A program-level capstone, `AbsFR.abs_FR` (`LeanProofs/AbsFR.lean`),
+instantiates the top-level fault-robustness theorem at the singleton `[@12]`
+trusted registry, making `builtinAbsSpec` a mechanically-consumed registry entry.
+
 ## `@19` — integer `sqrt` (pure)
 
 **Kind:** `extern pfn`  

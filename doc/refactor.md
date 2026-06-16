@@ -81,7 +81,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | T3 ✅ | Remove redundant imports; drop empty shell | low | S | — |
 | T4 ✅ | Delete dead single-run skeleton (was: hoist) | med | M | T1 |
 | T5 ✅ | Collapse Side0/Side1 mirror (StepFRApp) | low | M | T2 |
-| T6 | Collapse pfn extern-decl machinery | med | L | — |
+| T6 ✅ | Collapse pfn extern-decl machinery | med | L | — |
 | T7 | Collapse mirror join helpers (StepFRIte) | low | M | — |
 | T8 | Collapse run0/run1 mirrors (mem ops) | med | L | — |
 | T9 | Factor arrow/parrow mirrors (JMT) | med | M | — |
@@ -160,6 +160,21 @@ deleted; `lake build` passes with 0 sorry / 0 axiom. Cascade ran 5 rounds deep
 remain; the script's 16 flagged items are capstones or the project-memory–gated
 `wfValue_loc_of_RegistryReservedBelow`.
 
+**Note (post-T1 restoration of `@12`).** The `builtinAbs*` (`@12`) cluster was
+removed here only because the code-reference scan saw `builtinAbsSpec` with no
+Lean consumer. That was too aggressive: `builtinAbsSpec` is a *documented* trust
+deliverable (`doc/externs.md`, `@12` — the shipped pure `abs` builtin still runs
+as `LeanPoison.ExternBuiltins.absImpl`), not dead code. It has been restored
+(public `builtinAbsRetSpec`/`builtinAbsDecl`/`builtinAbsImpl`/`builtinAbsSpec`,
+plus the `builtinAbs_cleanPost_obstruction` guardrail), reusing the T6 generic
+`pfn` declaration/operational machinery so only the call-boundary proofs are
+`abs`-specific. A subsequent program-level capstone, `AbsFR.abs_FR`
+(`LeanProofs/AbsFR.lean`), now consumes `builtinAbsSpec` by placing it in a
+singleton `[@12]` trusted registry, so the scan no longer flags it. Only the
+negative `builtinAbs_cleanPost_obstruction` guardrail (a design-justification
+theorem with no Lean consumer) remains exempt, by the same project-memory gate as
+`wfValue_loc_of_RegistryReservedBelow`.
+
 **Theme:** redundancy · **Risk:** low · **Effort:** small · **Deps:** —
 
 **Motivation.** Roughly 700 lines are declarations referenced nowhere, inflating
@@ -220,8 +235,10 @@ be `private`. About 20 verified-zero-external declarations are currently public.
   constructors. Keep `…StaticSource`, `…Single{Fn,Pfn}Contract`, `…EntryKey`,
   and the `…ProgramLocal` names public (consumed by `FaultRobustnessProofs.lean`
   / `CaptureJoinConjunction.lean`).
-- `ExternProofs`: `builtinAbsDecl`, `builtinAbsImpl`, `builtinMax11Decl` were
-  deleted by T1 (cascade); no work needed here for those names.
+- `ExternProofs`: `builtinMax11Decl` was deleted by T1 (cascade); no work needed
+  here for it. `builtinAbsDecl`/`builtinAbsImpl` were also deleted by T1 but have
+  since been restored (public, with `builtinAbsSpec`) as the documented `@12`
+  trust deliverable — see the T1 restoration note above.
 - `ExternBoundaryProofs`: add `private` to `resolveDeclaration`,
   `resolveFnDeclaration`, `resolvePfnDeclaration`, and the two `…TClosures`
   resolvers; keep `callBoundaryRun`, `id_eq`, and the `AgreesWithProgram`
@@ -374,7 +391,39 @@ build-cost-dominant file at the lowest risk of the dedup family.
 faithful subscript copies, so parameterization is mechanical and cannot weaken a
 statement. Single file, but still a sequential build.
 
-### T6 — Collapse copy-pasted `pfn` extern-decl machinery in `ExternProofs`
+### T6 ✅ — Collapse copy-pasted `pfn` extern-decl machinery in `ExternProofs`
+
+**Status: COMPLETED — generic `private` family + thin defeq wrappers; the stale
+five-builtin / Abs framing in the Motivation below is corrected here.** At the
+time T6 ran, T1 had deleted the `builtinAbs*` (`@12`) entries, so T6 collapsed the
+**four** then-surviving clusters. `@12 abs` has since been restored as the
+documented trust deliverable (see the T1 restoration note above) and reuses this
+generic machinery, so the family now covers **five** builtins — `@10` (curried
+`max`, no captures), `@11` captures-`[a]`, `@11` guarded-`[a]`, `@23` (memory
+read, captures `[!r]`), and `@12 abs` (no captures). `setErr` (`@22`) is an `fn`
+and `errno` (`@21`) a `val`, so neither shares it. A generic family — three defs
+(`pfnExternDecl`, `pfnExternClosure`, `pfnDeclResult`) and seven lemmas named
+`pfnExternDecl_{shape,postExpr,valueHasETyp,valueConsistent,declRun_shape,declSingle,declFR}`
+over `(id, argName, argTyp, retSpec, memberCap)` — replaces the four per-builtin
+clusters (and, after restoration, also backs `@12 abs`); each builtin's
+`declSingle`/`declFR` is now a one-line instantiation
+that unifies with its concrete `*Decl`/`*Impl` literal by **defeq** (a record
+omitting the defaulted `captures` field is kernel-identical to one that sets it).
+One `private pfnReturnsNum_operationalSafe` abstracts the `ok_shape`→`num`
+witness; the **four** `num`-returning `operational` proofs (`@11` captures, `@11`
+guarded, `@23`, and the restored `@12 abs`) collapse to ~4 lines each — three at
+T6 time, plus `@12 abs` once restored. `@10`'s `operationalSafe` returns a
+closure, not `num`, so it stays separate — there were never six `num` skeletons.
+The `collectAndAllocExternTags_noPred`/`_noPred₂` unification was **dropped**:
+both are one-line `:= rfl`, so a `List.replicate` generalization would add
+indirection for zero saving. `lake build` passes 0-sorry/0-axiom (11465 jobs;
+`ExternProofs` alone 8493); the four touched `Spec`s depend only on `[propext,
+Classical.choice, Quot.sound]`. Net **−673 lines** in `ExternProofs.lean` (1,091
+deletions / 418 insertions) — short of the stale ~1,150 estimate, which
+double-counted the already-deleted Abs block. (These T6 diff stats are the record
+of the T6 commit, when `@12 abs` was still deleted; the later abs restoration
+reuses this generic machinery and reintroduces no separate decl cluster, so the
+T6 net is unaffected.)
 
 **Theme:** redundancy · **Risk:** medium · **Effort:** large · **Deps:** —
 

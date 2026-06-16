@@ -111,8 +111,8 @@ structurally from input cleanness alone.
 
 - **`abs`** — executable examples declare a clean argument and clean return,
   which is the trusted surface contract for successful calls. It has a concrete
-  trusted boundary spec (`builtinAbsSpec`) and validates the pure-unary clean-int
-  path.
+  trusted boundary spec (`builtinAbsSpec`), a program-level FR capstone
+  (`AbsFR.abs_FR`), and validates the pure-unary clean-int path.
 
 - **`max`** — executable examples declare clean arguments at both curried levels
   and a clean return. The output depends on both the captured outer argument and

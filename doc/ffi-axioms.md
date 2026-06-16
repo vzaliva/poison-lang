@@ -2,9 +2,10 @@
 
 Status: the registry-aware extern-boundary path is in place. The
 clean-input/clean-output `abs` entry (`@12`) is a complete trusted entry
-(`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields), and the
-curried-`max` entries and memory-read `@23` have concrete trusted specs and
-program-level FR artifacts. Declaration runs are expression-coupled through
+(`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields) with a
+program-level FR capstone (`AbsFR.abs_FR`); the curried-`max` entries and
+memory-read `@23` likewise have concrete trusted specs and program-level FR
+artifacts. Declaration runs are expression-coupled through
 `ExternDeclBoundaryRunForExpr`; nested returned extern callables are covered by
 the same id-indexed trusted boundary.
 
@@ -759,7 +760,7 @@ details.
 ## Coverage Reference
 
 Concrete trusted specs and program-level FR artifacts live with the Lean proof
-files, especially `LeanProofs/ExternProofs.lean`,
+files, especially `LeanProofs/ExternProofs.lean`, `LeanProofs/AbsFR.lean`,
 `LeanProofs/MaxCurriedFR.lean`, and `LeanProofs/MemReadCapturesFR.lean`.
 Current coverage includes:
 
