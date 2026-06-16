@@ -83,7 +83,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | T5 ✅ | Collapse Side0/Side1 mirror (StepFRApp) | low | M | T2 |
 | T6 ✅ | Collapse pfn extern-decl machinery | med | L | — |
 | T7 ✅ | Collapse mirror join helpers (StepFRIte) | low | M | — |
-| T8 | Collapse run0/run1 mirrors (mem ops) | med | L | — |
+| T8 ✅ | Collapse run0/run1 mirrors (mem ops) | med | L | — |
 | T9 | Factor arrow/parrow mirrors (JMT) | med | M | — |
 | T10 | Factor induction scaffolds (foundations) | high | L | — |
 | T11 | Extract closure machinery from hub | med | L | T2, T4 |
@@ -504,7 +504,50 @@ parameterization is mechanical. Masked wrappers preserve signatures, so
 `FaultRobustnessProofs` is untouched. No `JoinMemberTransport`/`StepFR` edit
 needed. Parallel-authorable with T8.
 
-### T8 — Collapse `run0`/`run1` mirror blocks in the Assign/Deref/NewRef proofs
+### T8 ✅ — Collapse `run0`/`run1` mirror blocks in the Assign/Deref/NewRef proofs
+
+**Status: COMPLETED — three per-operator leaves collapsed to one shared proof
+text each, no statement change.** The `run0`/`run1` mirrors were deduped in every
+file, and the Assign term-level repetition was additionally factored into named
+`private` defs (step 1).
+
+- **Assign.** Step 1 landed: the memory-update formula and `storedPred` are named
+  via three `@[reducible] private def`s — `assignMemEnvFormula` (the
+  `match`-on-locset update, was 21 spellings), `assignStoredPred` (the
+  `noPred`-vs-`res2.pred` guard, 73 spellings), and `assignStoredPoison` (the
+  shared `joinPoison` factor of both) — so both runs reference one formula.
+  `@[reducible]` preserves definitional equality, so `exact`/helper applications
+  unify through the defs untouched; only structure-matching tactics
+  (`simp`/`cases`/`split`) needed the def name added to re-expose the literal
+  `if`/`match`. Step 2 landed as a **theorem-local `have one_run`** applied twice
+  (conjuncts 6 and 7), **not** a top-level
+  `private assign_consistentWithRegime_one_run`: the `have` captures the ambient
+  hypothesis context, sidestepping the re-statement of the wide, "fiddly"
+  hypothesis surface as explicit lemma parameters; the single-proof-text dedup is
+  identical, only narrower (theorem-local) in scope. Net **−640 lines**.
+- **Deref.** Extracted the planned top-level `private lemma
+  deref_valueConsistentWithRegime_one_run`, derived from the existing masked
+  helper via `valueConsistentWithRegimeMasked_unmask` at the vacuous
+  `masked := fun _ => False` (the plan's suggested route); the bilateral
+  ref-extraction stays in the caller. This is the one operator whose `one_run` is
+  small enough to live as a top-level lemma. Net **−570 lines**.
+- **NewRef.** The `cf1` `some b` subtree was dedented two spaces (the
+  whitespace-standard fix) and the mirror collapsed to a **theorem-local
+  `have one_run`** applied twice — again **not** a top-level
+  `private newRef_consistentWithRegime_one_run`, for the same hypothesis-surface
+  reason as Assign; the intricate `pc = false` `guardClosure` subtree is covered
+  by the shared `have`. Net **−291 lines**.
+
+Total **−1,501 lines** across three mutually-independent per-operator leaves.
+Public signatures are byte-for-byte identical to HEAD (Deref's only delta is the
+*added* private helper; no existing public lemma is deleted, renamed, or
+retyped). Full `lake build` is green (11466 jobs), 0 sorry, warning-clean. The
+change is axiom-inert: the `stepFR_assign_with_expr_proof` and
+`stepFR_deref_with_expr_proof` leaves verify
+`[propext, Classical.choice, Quot.sound]`, and NewRef's **pre-existing**
+`native_decide` axioms (carried up through the top-level
+`TypeSystemEnforcesFaultRobustness`) are unchanged — the naming and
+`have`-collapse introduce no `decide`/`native_decide`.
 
 **Theme:** redundancy · **Risk:** medium · **Effort:** large · **Deps:** —
 
