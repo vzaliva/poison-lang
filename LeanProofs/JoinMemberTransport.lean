@@ -1070,12 +1070,95 @@ private lemma joinETyps_preserves_dirty_parrow_right
       simp [beqETypSignature] at hcompat
 
 
-private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_arrow
+/-- Shape facts shared by the `arrow`/`parrow` mirror in the join-member transport
+    lemmas below. The four per-shape lemmas (`…getInternalPoison_true_from_member_{arrow,parrow}`
+    and `…{arrow,parrow}_member_from_member`) are statement-preserving thin wrappers over the
+    two shape-generic lemmas, instantiated at `arrowFacts` / `parrowFacts`. The `shape_inv`
+    field replaces the constructor `cases` that structurally swaps between the two shapes; the
+    remaining fields just bundle the existing per-shape structural lemmas so each is discharged
+    once per instance rather than re-threaded through every call site. -/
+private structure FunctionShapeFacts where
+  Cls : Type
+  mkE : Typ → Typ → Poison → List Cls → ETyp
+  isShape : ETyp → Bool
+  merge : List Cls → List Cls → List Cls
+  getIP_mk : ∀ {st1 st2 : Typ} {p : Poison} {tcls : List Cls},
+    getInternalPoison (mkE st1 st2 p tcls) = some p
+  isShape_mk : ∀ {st1 st2 : Typ} {p : Poison} {tcls : List Cls},
+    isShape (mkE st1 st2 p tcls) = true
+  sig_mk_mk : ∀ {st1 st2 : Typ} {p1 : Poison} {t1 : List Cls}
+                {st1' st2' : Typ} {p2 : Poison} {t2 : List Cls},
+    beqETypSignature (mkE st1 st2 p1 t1) (mkE st1' st2' p2 t2) = (st1 == st1' && st2 == st2')
+  joinETyps_mk_mk : ∀ {st1 st2 : Typ} {p1 : Poison} {t1 : List Cls}
+                      {p2 : Poison} {t2 : List Cls} {p1' p2' : Poison},
+    joinETyps (mkE st1 st2 p1 t1) (mkE st1 st2 p2 t2) p1' p2'
+      = mkE st1 st2 (joinPoison p1 p2) (merge t1 t2)
+  shape_inv : ∀ {t : ETyp}, isShape t = true →
+    ∃ (st1 st2 : Typ) (p : Poison) (tcls : List Cls), t = mkE st1 st2 p tcls
+  isShape_eq_of_sig : ∀ {t1 t2 : ETyp}, beqETypSignature t1 t2 = true →
+    isShape t1 = isShape t2
+  dirty_pres : ∀ {st1 st2 : Typ} {p : Poison} {tcls : List Cls}
+                 {t2 : ETyp} {p1' p2' : Poison},
+    p = true → getInternalPoison (joinETyps (mkE st1 st2 p tcls) t2 p1' p2') = some true
+  dirty_right : ∀ {t1 : ETyp} {st1 st2 : Typ} {tcls : List Cls} {p1' p2' : Poison},
+    beqETypSignature t1 (mkE st1 st2 true tcls) = true →
+    getInternalPoison (joinETyps t1 (mkE st1 st2 true tcls) p1' p2') = some true
+  joinETyps_struct : ∀ {st1 st2 : Typ} {p1 : Poison} {tcls1 : List Cls}
+                       {t2 : ETyp} {p1' p2' : Poison},
+    isShape t2 = true → beqETypSignature (mkE st1 st2 p1 tcls1) t2 = true →
+    ∃ (p' : Poison) (tcls' : List Cls),
+      joinETyps (mkE st1 st2 p1 tcls1) t2 p1' p2' = mkE st1 st2 p' tcls' ∧
+      (∀ tcl, tcl ∈ tcls1 → tcl ∈ tcls')
+  mem_merge_right : ∀ {a b : List Cls} {x : Cls}, x ∈ b → x ∈ merge a b
+
+private def arrowFacts : FunctionShapeFacts where
+  Cls := FnTClosure
+  mkE := ETyp.arrow
+  isShape := ETyp.isArrow
+  merge := mergeFnTClosures
+  getIP_mk := by intros; rfl
+  isShape_mk := by intros; rfl
+  sig_mk_mk := by intros; rfl
+  joinETyps_mk_mk := by intros; simp [joinETyps]
+  shape_inv := by
+    intro t ht
+    cases t with
+    | arrow st1 st2 p tcls => exact ⟨st1, st2, p, tcls, rfl⟩
+    | int | bool | unit | string | ref _ | parrow _ _ _ _ => simp [ETyp.isArrow] at ht
+  isShape_eq_of_sig := etyp_isArrow_eq_of_beqSignature_true
+  dirty_pres := joinETyps_preserves_dirty_arrow
+  dirty_right := fun h => joinETyps_preserves_dirty_arrow_right h rfl
+  joinETyps_struct := joinETyps_arrow_structure
+  mem_merge_right := fun {a b x} h => mem_mergeFnTClosures_right a b x h
+
+private def parrowFacts : FunctionShapeFacts where
+  Cls := PFnTClosure
+  mkE := ETyp.parrow
+  isShape := ETyp.isParrow
+  merge := mergePFnTClosures
+  getIP_mk := by intros; rfl
+  isShape_mk := by intros; rfl
+  sig_mk_mk := by intros; rfl
+  joinETyps_mk_mk := by intros; simp [joinETyps]
+  shape_inv := by
+    intro t ht
+    cases t with
+    | parrow st1 st2 p tcls => exact ⟨st1, st2, p, tcls, rfl⟩
+    | int | bool | unit | string | ref _ | arrow _ _ _ _ => simp [ETyp.isParrow] at ht
+  isShape_eq_of_sig := etyp_isParrow_eq_of_beqSignature_true
+  dirty_pres := joinETyps_preserves_dirty_parrow
+  dirty_right := fun h => joinETyps_preserves_dirty_parrow_right h rfl
+  joinETyps_struct := joinETyps_parrow_structure
+  mem_merge_right := fun {a b x} h => mem_mergePFnTClosures_right a b x h
+
+
+private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_shape
+  (S : FunctionShapeFacts)
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (_hmem_src : src ∈ first :: rest)
-  {st1 st2 : Typ} {tcls : List FnTClosure}
-  (hetyp_src : src.qualType.etyp = ETyp.arrow st1 st2 true tcls) :
+  {st1 st2 : Typ} {tcls : List S.Cls}
+  (hetyp_src : src.qualType.etyp = S.mkE st1 st2 true tcls) :
   getInternalPoison res.qualType.etyp = some true := by
   let joinStep : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
       TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
@@ -1092,10 +1175,10 @@ private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_arrow
           ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
         (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
         List.foldlM joinStep acc rs' = .ok acc' →
-        acc.1.isArrow = true →
+        S.isShape acc.1 = true →
         getInternalPoison acc.1 = some true →
         getInternalPoison acc'.1 = some true := by
-    intro rs' acc acc' hcompat hfold hisArrow_acc hdirty_acc
+    intro rs' acc acc' hcompat hfold hisShape_acc hdirty_acc
     induction rs' generalizing acc with
     | nil =>
         simp [List.foldlM_nil, pure, Except.pure] at hfold
@@ -1132,26 +1215,23 @@ private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_arrow
                   (p1 := acc.2.2.1) (p2 := resPoison) hcompat_x
               have hself : beqETypSignature acc.1 acc.1 = true := beqETypSignature_refl acc.1
               simpa [acc1, hself] using htmp
-            have hisArrow_acc1 : acc1.1.isArrow = true := by
-              have hEq := etyp_isArrow_eq_of_beqSignature_true hsig_acc1_acc
+            have hisShape_acc1 : S.isShape acc1.1 = true := by
+              have hEq := S.isShape_eq_of_sig hsig_acc1_acc
               calc
-                acc1.1.isArrow = acc.1.isArrow := by simpa using hEq
-                _ = true := hisArrow_acc
+                S.isShape acc1.1 = S.isShape acc.1 := by simpa using hEq
+                _ = true := hisShape_acc
             have hdirty_acc1 : getInternalPoison acc1.1 = some true := by
-              cases hacc : acc.1 with
-              | arrow st1' st2' p' tcls' =>
-                  have hptrue : p' = true := by
-                    simpa [hacc, getInternalPoison] using hdirty_acc
-                  have hdirty' :
-                      getInternalPoison
-                        (joinETyps (ETyp.arrow st1' st2' p' tcls') resEtyp acc.2.2.1 resPoison) = some true :=
-                    joinETyps_preserves_dirty_arrow
-                      (st1 := st1') (st2 := st2') (p1 := p') (tcls1 := tcls')
-                      (t2 := resEtyp) (p1' := acc.2.2.1) (p2' := resPoison) hptrue
-                  simpa [acc1, hacc] using hdirty'
-              | int | bool | unit | string | ref _ | parrow _ _ _ _ =>
-                  simp [ETyp.isArrow, hacc] at hisArrow_acc
-            exact ih (acc := acc1) hcompat_tail hfold_tail hisArrow_acc1 hdirty_acc1
+              obtain ⟨st1', st2', p', tcls', hacc⟩ := S.shape_inv hisShape_acc
+              have hptrue : p' = true := by
+                have h := hdirty_acc
+                rw [hacc, S.getIP_mk] at h
+                simpa using h
+              have hdirty' :
+                  getInternalPoison
+                    (joinETyps (S.mkE st1' st2' p' tcls') resEtyp acc.2.2.1 resPoison) = some true :=
+                S.dirty_pres hptrue
+              simpa [acc1, hacc] using hdirty'
+            exact ih (acc := acc1) hcompat_tail hfold_tail hisShape_acc1 hdirty_acc1
   have h_fold_member_dirty :
       ∀ (rs' : List TypeResult) (acc acc' :
           ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag)
@@ -1159,7 +1239,7 @@ private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_arrow
         (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
         List.foldlM joinStep acc rs' = .ok acc' →
         src' ∈ rs' →
-        src'.qualType.etyp = ETyp.arrow st1 st2 true tcls →
+        src'.qualType.etyp = S.mkE st1 st2 true tcls →
         getInternalPoison acc'.1 = some true := by
     intro rs' acc acc' src' hcompat hfold hmem_src' hetyp_src'
     induction rs' generalizing acc acc' src' with
@@ -1189,35 +1269,32 @@ private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_arrow
               exact hcomp
             rcases (List.mem_cons.mp hmem_src') with hsrc_eq | hsrc_tail
             · subst src'
-              have hetyp_resEtyp : resEtyp = ETyp.arrow st1 st2 true tcls := by
+              have hetyp_resEtyp : resEtyp = S.mkE st1 st2 true tcls := by
                 simpa [hqx] using hetyp_src'
               have hdirty_acc1 :
                   getInternalPoison acc1.1 = some true := by
                 have hdirty' :
-                    getInternalPoison (joinETyps acc.1 (ETyp.arrow st1 st2 true tcls) acc.2.2.1 resPoison) = some true :=
-                  joinETyps_preserves_dirty_arrow_right
-                    (t1 := acc.1) (st1 := st1) (st2 := st2) (tcls2 := tcls)
-                    (p1 := true) (p1' := acc.2.2.1) (p2' := resPoison)
-                    (by simpa [hetyp_resEtyp] using hcompat_x) rfl
+                    getInternalPoison (joinETyps acc.1 (S.mkE st1 st2 true tcls) acc.2.2.1 resPoison) = some true :=
+                  S.dirty_right (by simpa [hetyp_resEtyp] using hcompat_x)
                 simpa [acc1, hqx, hetyp_resEtyp] using hdirty'
               exact h_fold_left_dirty xs acc1 acc' hcompat_tail hfold_tail
                 (by
-                  have hsig_acc1_src : beqETypSignature acc1.1 (ETyp.arrow st1 st2 true tcls) = true := by
+                  have hsig_acc1_src : beqETypSignature acc1.1 (S.mkE st1 st2 true tcls) = true := by
                     have htmp :
-                        beqETypSignature acc.1 (ETyp.arrow st1 st2 true tcls) =
+                        beqETypSignature acc.1 (S.mkE st1 st2 true tcls) =
                           beqETypSignature
-                            (joinETyps acc.1 (ETyp.arrow st1 st2 true tcls) acc.2.2.1 resPoison)
-                            (ETyp.arrow st1 st2 true tcls) :=
+                            (joinETyps acc.1 (S.mkE st1 st2 true tcls) acc.2.2.1 resPoison)
+                            (S.mkE st1 st2 true tcls) :=
                       beqETypSignature_joinETyps_left
-                        (t1 := acc.1) (t2 := ETyp.arrow st1 st2 true tcls)
-                        (t3 := ETyp.arrow st1 st2 true tcls)
+                        (t1 := acc.1) (t2 := S.mkE st1 st2 true tcls)
+                        (t3 := S.mkE st1 st2 true tcls)
                         (p1 := acc.2.2.1) (p2 := resPoison)
                         (by simpa [hetyp_resEtyp] using hcompat_x)
-                    have hlhs : beqETypSignature acc.1 (ETyp.arrow st1 st2 true tcls) = true := by
+                    have hlhs : beqETypSignature acc.1 (S.mkE st1 st2 true tcls) = true := by
                       simpa [hetyp_resEtyp] using hcompat_x
                     simpa [hqx, hetyp_resEtyp, acc1, hlhs] using htmp
-                  have hEq := etyp_isArrow_eq_of_beqSignature_true hsig_acc1_src
-                  simpa [ETyp.isArrow] using hEq)
+                  have hEq := S.isShape_eq_of_sig hsig_acc1_src
+                  simpa [S.isShape_mk] using hEq)
                 hdirty_acc1
             · exact ih (acc := acc1) (acc' := acc') (src' := src') hcompat_tail hfold_tail hsrc_tail hetyp_src'
   cases hqt : first.qualType with
@@ -1255,18 +1332,18 @@ private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_arrow
               have hcompat := joinTypeResults_compat_ok etyp rest hcheck
               rcases (List.mem_cons.mp _hmem_src) with hsrc | hsrc_rest
               · subst src
-                have hetyp_first : etyp = ETyp.arrow st1 st2 true tcls := by
+                have hetyp_first : etyp = S.mkE st1 st2 true tcls := by
                   simpa [hqt] using hetyp_src
-                have hisArrow_first : etyp.isArrow = true := by
-                  simp [hetyp_first, ETyp.isArrow]
+                have hisShape_first : S.isShape etyp = true := by
+                  rw [hetyp_first]; exact S.isShape_mk
                 have hdirty_first : getInternalPoison etyp = some true := by
-                  simp [hetyp_first, getInternalPoison]
+                  rw [hetyp_first]; exact S.getIP_mk
                 exact
                   h_fold_left_dirty
                     rest
                     (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
                       first.nextTag')
-                    a hcompat hfold hisArrow_first hdirty_first
+                    a hcompat hfold hisShape_first hdirty_first
               · exact
                   h_fold_member_dirty
                     rest
@@ -1275,210 +1352,25 @@ private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_arrow
                     a src hcompat hfold hsrc_rest
                     (by simpa [ctxAfter] using hetyp_src)
 
+private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_arrow
+  (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (_hmem_src : src ∈ first :: rest)
+  {st1 st2 : Typ} {tcls : List FnTClosure}
+  (hetyp_src : src.qualType.etyp = ETyp.arrow st1 st2 true tcls) :
+  getInternalPoison res.qualType.etyp = some true :=
+  joinTypeResults_qualType_getInternalPoison_true_from_member_shape arrowFacts
+    ctx first src rest res _h_join _hmem_src hetyp_src
+
 private lemma joinTypeResults_qualType_getInternalPoison_true_from_member_parrow
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (_hmem_src : src ∈ first :: rest)
   {st1 st2 : Typ} {tcls : List PFnTClosure}
   (hetyp_src : src.qualType.etyp = ETyp.parrow st1 st2 true tcls) :
-  getInternalPoison res.qualType.etyp = some true := by
-  let joinStep : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
-      TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
-    fun acc result =>
-      match result.qualType with
-      | ⟨resEtyp, resPoison, resPred⟩ =>
-          Except.ok (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-            joinMemEnvsStrong acc.2.1 result.memEnv', joinPoison acc.2.2.1 resPoison,
-            joinPredicates acc.2.2.2.1 resPred, joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
-            joinRegimes acc.2.2.2.2.2.1 result.regime',
-            max acc.2.2.2.2.2.2.1 result.nextLoc', max acc.2.2.2.2.2.2.2 result.nextTag')
-  have h_fold_left_dirty :
-      ∀ (rs' : List TypeResult) (acc acc' :
-          ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
-        (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
-        List.foldlM joinStep acc rs' = .ok acc' →
-        acc.1.isParrow = true →
-        getInternalPoison acc.1 = some true →
-        getInternalPoison acc'.1 = some true := by
-    intro rs' acc acc' hcompat hfold hisParrow_acc hdirty_acc
-    induction rs' generalizing acc with
-    | nil =>
-        simp [List.foldlM_nil, pure, Except.pure] at hfold
-        subst acc'
-        simpa using hdirty_acc
-    | cons x xs ih =>
-        cases hqx : x.qualType with
-        | mk resEtyp resPoison resPred =>
-            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
-            have hcompat_x : beqETypSignature acc.1 resEtyp = true := by
-              have hx := hcompat x (by simp)
-              simpa [hqx] using hx
-            let acc1 :
-                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
-              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-                joinMemEnvsStrong acc.2.1 x.memEnv', joinPoison acc.2.2.1 resPoison,
-                joinPredicates acc.2.2.2.1 resPred, joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
-                joinRegimes acc.2.2.2.2.2.1 x.regime',
-                max acc.2.2.2.2.2.2.1 x.nextLoc', max acc.2.2.2.2.2.2.2 x.nextTag')
-            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
-              simpa [acc1] using hfold
-            have hcompat_tail : ∀ r ∈ xs, beqETypSignature acc1.1 r.qualType.etyp = true := by
-              intro r hr
-              have hcomp := hcompat r (List.Mem.tail _ hr)
-              rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison by rfl]
-              rw [← beqETypSignature_joinETyps_left hcompat_x]
-              exact hcomp
-            have hsig_acc1_acc : beqETypSignature acc1.1 acc.1 = true := by
-              have htmp :
-                  beqETypSignature acc.1 acc.1 =
-                    beqETypSignature (joinETyps acc.1 resEtyp acc.2.2.1 resPoison) acc.1 :=
-                beqETypSignature_joinETyps_left
-                  (t1 := acc.1) (t2 := resEtyp) (t3 := acc.1)
-                  (p1 := acc.2.2.1) (p2 := resPoison) hcompat_x
-              have hself : beqETypSignature acc.1 acc.1 = true := beqETypSignature_refl acc.1
-              simpa [acc1, hself] using htmp
-            have hisParrow_acc1 : acc1.1.isParrow = true := by
-              have hEq := etyp_isParrow_eq_of_beqSignature_true hsig_acc1_acc
-              calc
-                acc1.1.isParrow = acc.1.isParrow := by simpa using hEq
-                _ = true := hisParrow_acc
-            have hdirty_acc1 : getInternalPoison acc1.1 = some true := by
-              cases hacc : acc.1 with
-              | parrow st1' st2' p' tcls' =>
-                  have hptrue : p' = true := by
-                    simpa [hacc, getInternalPoison] using hdirty_acc
-                  have hdirty' :
-                      getInternalPoison
-                        (joinETyps (ETyp.parrow st1' st2' p' tcls') resEtyp acc.2.2.1 resPoison) = some true :=
-                    joinETyps_preserves_dirty_parrow
-                      (st1 := st1') (st2 := st2') (p1 := p') (tcls1 := tcls')
-                      (t2 := resEtyp) (p1' := acc.2.2.1) (p2' := resPoison) hptrue
-                  simpa [acc1, hacc] using hdirty'
-              | int | bool | unit | string | ref _ | arrow _ _ _ _ =>
-                  simp [ETyp.isParrow, hacc] at hisParrow_acc
-            exact ih (acc := acc1) hcompat_tail hfold_tail hisParrow_acc1 hdirty_acc1
-  have h_fold_member_dirty :
-      ∀ (rs' : List TypeResult) (acc acc' :
-          ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag)
-        (src' : TypeResult),
-        (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
-        List.foldlM joinStep acc rs' = .ok acc' →
-        src' ∈ rs' →
-        src'.qualType.etyp = ETyp.parrow st1 st2 true tcls →
-        getInternalPoison acc'.1 = some true := by
-    intro rs' acc acc' src' hcompat hfold hmem_src' hetyp_src'
-    induction rs' generalizing acc acc' src' with
-    | nil =>
-        cases hmem_src'
-    | cons x xs ih =>
-        cases hqx : x.qualType with
-        | mk resEtyp resPoison resPred =>
-            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
-            have hcompat_x : beqETypSignature acc.1 resEtyp = true := by
-              have hx := hcompat x (by simp)
-              simpa [hqx] using hx
-            let acc1 :
-                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
-              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-                joinMemEnvsStrong acc.2.1 x.memEnv', joinPoison acc.2.2.1 resPoison,
-                joinPredicates acc.2.2.2.1 resPred, joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
-                joinRegimes acc.2.2.2.2.2.1 x.regime',
-                max acc.2.2.2.2.2.2.1 x.nextLoc', max acc.2.2.2.2.2.2.2 x.nextTag')
-            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
-              simpa [acc1] using hfold
-            have hcompat_tail : ∀ r ∈ xs, beqETypSignature acc1.1 r.qualType.etyp = true := by
-              intro r hr
-              have hcomp := hcompat r (List.Mem.tail _ hr)
-              rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison by rfl]
-              rw [← beqETypSignature_joinETyps_left hcompat_x]
-              exact hcomp
-            rcases (List.mem_cons.mp hmem_src') with hsrc_eq | hsrc_tail
-            · subst src'
-              have hetyp_resEtyp : resEtyp = ETyp.parrow st1 st2 true tcls := by
-                simpa [hqx] using hetyp_src'
-              have hdirty_acc1 :
-                  getInternalPoison acc1.1 = some true := by
-                have hdirty' :
-                    getInternalPoison (joinETyps acc.1 (ETyp.parrow st1 st2 true tcls) acc.2.2.1 resPoison) = some true :=
-                  joinETyps_preserves_dirty_parrow_right
-                    (t1 := acc.1) (st1 := st1) (st2 := st2) (tcls2 := tcls)
-                    (p1 := true) (p1' := acc.2.2.1) (p2' := resPoison)
-                    (by simpa [hetyp_resEtyp] using hcompat_x) rfl
-                simpa [acc1, hqx, hetyp_resEtyp] using hdirty'
-              exact h_fold_left_dirty xs acc1 acc' hcompat_tail hfold_tail
-                (by
-                  have hsig_acc1_src : beqETypSignature acc1.1 (ETyp.parrow st1 st2 true tcls) = true := by
-                    have htmp :
-                        beqETypSignature acc.1 (ETyp.parrow st1 st2 true tcls) =
-                          beqETypSignature
-                            (joinETyps acc.1 (ETyp.parrow st1 st2 true tcls) acc.2.2.1 resPoison)
-                            (ETyp.parrow st1 st2 true tcls) :=
-                      beqETypSignature_joinETyps_left
-                        (t1 := acc.1) (t2 := ETyp.parrow st1 st2 true tcls)
-                        (t3 := ETyp.parrow st1 st2 true tcls)
-                        (p1 := acc.2.2.1) (p2 := resPoison)
-                        (by simpa [hetyp_resEtyp] using hcompat_x)
-                    have hlhs : beqETypSignature acc.1 (ETyp.parrow st1 st2 true tcls) = true := by
-                      simpa [hetyp_resEtyp] using hcompat_x
-                    simpa [hqx, hetyp_resEtyp, acc1, hlhs] using htmp
-                  have hEq := etyp_isParrow_eq_of_beqSignature_true hsig_acc1_src
-                  simpa [ETyp.isParrow] using hEq)
-                hdirty_acc1
-            · exact ih (acc := acc1) (acc' := acc') (src' := src') hcompat_tail hfold_tail hsrc_tail hetyp_src'
-  cases hqt : first.qualType with
-  | mk etyp poison pred =>
-      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
-        MonadExceptOf.throw, TypecheckM] at _h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-      | ok _ =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                  first.nextTag') rest with
-          | error err =>
-              erw [hfold] at _h_join
-              simp at _h_join
-          | ok a =>
-              erw [hfold] at _h_join
-              simp at _h_join
-              subst res
-              have hcompat := joinTypeResults_compat_ok etyp rest hcheck
-              rcases (List.mem_cons.mp _hmem_src) with hsrc | hsrc_rest
-              · subst src
-                have hetyp_first : etyp = ETyp.parrow st1 st2 true tcls := by
-                  simpa [hqt] using hetyp_src
-                have hisParrow_first : etyp.isParrow = true := by
-                  simp [hetyp_first, ETyp.isParrow]
-                have hdirty_first : getInternalPoison etyp = some true := by
-                  simp [hetyp_first, getInternalPoison]
-                exact
-                  h_fold_left_dirty
-                    rest
-                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                      first.nextTag')
-                    a hcompat hfold hisParrow_first hdirty_first
-              · exact
-                  h_fold_member_dirty
-                    rest
-                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                      first.nextTag')
-                    a src hcompat hfold hsrc_rest
-                    (by simpa [ctxAfter] using hetyp_src)
+  getInternalPoison res.qualType.etyp = some true :=
+  joinTypeResults_qualType_getInternalPoison_true_from_member_shape parrowFacts
+    ctx first src rest res _h_join _hmem_src hetyp_src
 
 private lemma joinTypeResults_qualType_ref_membership_from_member
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -1649,14 +1541,15 @@ private lemma joinTypeResults_qualType_ref_membership_from_member
                   with ⟨ls_res, hetyp_res, hin_res⟩
                 exact ⟨ls_res, by simpa [ctxAfter] using hetyp_res, hin_res⟩
 
-private lemma joinTypeResults_qualType_arrow_member_from_member
+private lemma joinTypeResults_qualType_member_from_member_shape
+  (S : FunctionShapeFacts)
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (_hmem_src : src ∈ first :: rest)
-  {st1 st2 : Typ} {p_src : Poison} {tcls_src : List FnTClosure} {tcl : FnTClosure}
-  (hetyp_src : src.qualType.etyp = ETyp.arrow st1 st2 p_src tcls_src)
+  {st1 st2 : Typ} {p_src : Poison} {tcls_src : List S.Cls} {tcl : S.Cls}
+  (hetyp_src : src.qualType.etyp = S.mkE st1 st2 p_src tcls_src)
   (htcl_src : tcl ∈ tcls_src) :
-  ∃ p_res tcls_res, res.qualType.etyp = ETyp.arrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
+  ∃ p_res tcls_res, res.qualType.etyp = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
   let joinStep : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
       TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
     fun acc result =>
@@ -1667,19 +1560,19 @@ private lemma joinTypeResults_qualType_arrow_member_from_member
             joinPredicates acc.2.2.2.1 resPred, joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
             joinRegimes acc.2.2.2.2.2.1 result.regime',
             max acc.2.2.2.2.2.2.1 result.nextLoc', max acc.2.2.2.2.2.2.2 result.nextTag')
-  have h_fold_left_arrow :
+  have h_fold_left_shape :
       ∀ (rs' : List TypeResult) (acc acc' :
           ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
         (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
         List.foldlM joinStep acc rs' = .ok acc' →
-        (∃ p_acc tcls_acc, acc.1 = ETyp.arrow st1 st2 p_acc tcls_acc ∧ tcl ∈ tcls_acc) →
-        ∃ p_res tcls_res, acc'.1 = ETyp.arrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
-    intro rs' acc acc' hcompat hfold harrow_acc
+        (∃ p_acc tcls_acc, acc.1 = S.mkE st1 st2 p_acc tcls_acc ∧ tcl ∈ tcls_acc) →
+        ∃ p_res tcls_res, acc'.1 = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
+    intro rs' acc acc' hcompat hfold hshape_acc
     induction rs' generalizing acc with
     | nil =>
         simp [List.foldlM_nil, pure, Except.pure] at hfold
         subst acc'
-        exact harrow_acc
+        exact hshape_acc
     | cons x xs ih =>
         cases hqx : x.qualType with
         | mk resEtyp resPoison resPred =>
@@ -1705,36 +1598,34 @@ private lemma joinTypeResults_qualType_arrow_member_from_member
               rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison by rfl]
               rw [← beqETypSignature_joinETyps_left hcompat_x]
               exact hcomp
-            rcases harrow_acc with ⟨p_acc, tcls_acc, hacc_arrow, htcl_acc⟩
-            have hisArrow_x : resEtyp.isArrow = true := by
-              have hEq := etyp_isArrow_eq_of_beqSignature_true hcompat_x
+            rcases hshape_acc with ⟨p_acc, tcls_acc, hacc_shape, htcl_acc⟩
+            have hisShape_x : S.isShape resEtyp = true := by
+              have hEq := S.isShape_eq_of_sig hcompat_x
               calc
-                resEtyp.isArrow = acc.1.isArrow := by
-                  symm
-                  simpa using hEq
-                _ = true := by simp [hacc_arrow, ETyp.isArrow]
+                S.isShape resEtyp = S.isShape acc.1 := hEq.symm
+                _ = true := by rw [hacc_shape]; exact S.isShape_mk
             rcases
-                (joinETyps_arrow_structure
+                (S.joinETyps_struct
                   (st1 := st1) (st2 := st2) (p1 := p_acc) (tcls1 := tcls_acc)
                   (t2 := resEtyp) (p1' := acc.2.2.1) (p2' := resPoison)
-                  (by simpa [hacc_arrow] using hisArrow_x)
-                  (by simpa [hacc_arrow] using hcompat_x))
+                  hisShape_x
+                  (by rw [← hacc_shape]; exact hcompat_x))
               with ⟨p_acc1, tcls_acc1, hjoin_acc1, hmem_pres_left⟩
-            have harrow_acc1 :
-                ∃ p_mid tcls_mid, acc1.1 = ETyp.arrow st1 st2 p_mid tcls_mid ∧ tcl ∈ tcls_mid := by
+            have hshape_acc1 :
+                ∃ p_mid tcls_mid, acc1.1 = S.mkE st1 st2 p_mid tcls_mid ∧ tcl ∈ tcls_mid := by
               refine ⟨p_acc1, tcls_acc1, ?_, ?_⟩
-              · simpa [acc1, hacc_arrow] using hjoin_acc1
+              · simpa [acc1, hacc_shape] using hjoin_acc1
               · exact hmem_pres_left tcl htcl_acc
-            exact ih (acc := acc1) hcompat_tail hfold_tail harrow_acc1
-  have h_fold_member_arrow :
+            exact ih (acc := acc1) hcompat_tail hfold_tail hshape_acc1
+  have h_fold_member_shape :
       ∀ (rs' : List TypeResult) (acc acc' :
           ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag)
         (src' : TypeResult),
         (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
         List.foldlM joinStep acc rs' = .ok acc' →
         src' ∈ rs' →
-        src'.qualType.etyp = ETyp.arrow st1 st2 p_src tcls_src →
-        ∃ p_res tcls_res, acc'.1 = ETyp.arrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
+        src'.qualType.etyp = S.mkE st1 st2 p_src tcls_src →
+        ∃ p_res tcls_res, acc'.1 = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
     intro rs' acc acc' src' hcompat hfold hmem_src' hetyp_src'
     induction rs' generalizing acc acc' src' with
     | nil =>
@@ -1766,29 +1657,28 @@ private lemma joinTypeResults_qualType_arrow_member_from_member
               exact hcomp
             rcases (List.mem_cons.mp hmem_src') with hsrc_eq | hsrc_tail
             · subst src'
-              have hsrc_resEtyp : resEtyp = ETyp.arrow st1 st2 p_src tcls_src := by
+              have hsrc_resEtyp : resEtyp = S.mkE st1 st2 p_src tcls_src := by
                 simpa [hqx] using hetyp_src'
-              have hisArrow_acc : acc.1.isArrow = true := by
-                have hEq := etyp_isArrow_eq_of_beqSignature_true hcompat_x
+              have hisShape_acc : S.isShape acc.1 = true := by
+                have hEq := S.isShape_eq_of_sig hcompat_x
                 calc
-                  acc.1.isArrow = resEtyp.isArrow := by
-                    simpa using hEq
-                  _ = true := by simp [hsrc_resEtyp, ETyp.isArrow]
-              have harrow_acc1 :
-                  ∃ p_mid tcls_mid, acc1.1 = ETyp.arrow st1 st2 p_mid tcls_mid ∧ tcl ∈ tcls_mid := by
-                cases hacc : acc.1 with
-                | arrow st1l st2l pl tclsl =>
-                    have hshape : (st1l == st1 && st2l == st2) = true := by
-                      simpa [hacc, hsrc_resEtyp, beqETypSignature] using hcompat_x
-                    have hshape_eq : st1l = st1 ∧ st2l = st2 := by
-                      simpa using hshape
-                    rcases hshape_eq with ⟨rfl, rfl⟩
-                    refine ⟨joinPoison pl p_src, mergeFnTClosures tclsl tcls_src, ?_, ?_⟩
-                    · simp [acc1, hacc, hsrc_resEtyp, joinETyps]
-                    · exact mem_mergeFnTClosures_right tclsl tcls_src tcl htcl_src
-                | int | bool | unit | string | ref _ | parrow _ _ _ _ =>
-                    simp [ETyp.isArrow, hacc] at hisArrow_acc
-              exact h_fold_left_arrow xs acc1 acc' hcompat_tail hfold_tail harrow_acc1
+                  S.isShape acc.1 = S.isShape resEtyp := hEq
+                  _ = true := by rw [hsrc_resEtyp]; exact S.isShape_mk
+              have hshape_acc1 :
+                  ∃ p_mid tcls_mid, acc1.1 = S.mkE st1 st2 p_mid tcls_mid ∧ tcl ∈ tcls_mid := by
+                obtain ⟨st1l, st2l, pl, tclsl, hacc⟩ := S.shape_inv hisShape_acc
+                have hshape : (st1l == st1 && st2l == st2) = true := by
+                  have h := hcompat_x
+                  rw [hacc, hsrc_resEtyp, S.sig_mk_mk] at h
+                  exact h
+                have hshape_eq : st1l = st1 ∧ st2l = st2 := by simpa using hshape
+                rcases hshape_eq with ⟨rfl, rfl⟩
+                refine ⟨joinPoison pl p_src, S.merge tclsl tcls_src, ?_, ?_⟩
+                · rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison from rfl,
+                      hacc, hsrc_resEtyp]
+                  exact S.joinETyps_mk_mk
+                · exact S.mem_merge_right htcl_src
+              exact h_fold_left_shape xs acc1 acc' hcompat_tail hfold_tail hshape_acc1
             · exact ih (acc := acc1) (acc' := acc') (src' := src') hcompat_tail hfold_tail hsrc_tail hetyp_src'
   cases hqt : first.qualType with
   | mk etyp poison pred =>
@@ -1825,26 +1715,37 @@ private lemma joinTypeResults_qualType_arrow_member_from_member
               have hcompat := joinTypeResults_compat_ok etyp rest hcheck
               rcases (List.mem_cons.mp _hmem_src) with hsrc_head | hsrc_tail
               · subst src
-                have harrow_a :
-                    ∃ p_res tcls_res, a.1 = ETyp.arrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
-                  h_fold_left_arrow
+                have hshape_a :
+                    ∃ p_res tcls_res, a.1 = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
+                  h_fold_left_shape
                     rest
                     (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
                       first.nextTag')
                     a hcompat hfold
                     ⟨p_src, tcls_src, by simpa [hqt] using hetyp_src, htcl_src⟩
-                rcases harrow_a with ⟨p_res, tcls_res, hetyp_a, htcl_res⟩
+                rcases hshape_a with ⟨p_res, tcls_res, hetyp_a, htcl_res⟩
                 exact ⟨p_res, tcls_res, by simpa [ctxAfter] using hetyp_a, htcl_res⟩
-              · have harrow_a :
-                    ∃ p_res tcls_res, a.1 = ETyp.arrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
-                  h_fold_member_arrow
+              · have hshape_a :
+                    ∃ p_res tcls_res, a.1 = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
+                  h_fold_member_shape
                     rest
                     (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
                       first.nextTag')
                     a src hcompat hfold hsrc_tail
                     (by simpa [ctxAfter] using hetyp_src)
-                rcases harrow_a with ⟨p_res, tcls_res, hetyp_a, htcl_res⟩
+                rcases hshape_a with ⟨p_res, tcls_res, hetyp_a, htcl_res⟩
                 exact ⟨p_res, tcls_res, by simpa [ctxAfter] using hetyp_a, htcl_res⟩
+
+private lemma joinTypeResults_qualType_arrow_member_from_member
+  (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
+  (_h_join : joinTypeResults ctx first rest = .ok res)
+  (_hmem_src : src ∈ first :: rest)
+  {st1 st2 : Typ} {p_src : Poison} {tcls_src : List FnTClosure} {tcl : FnTClosure}
+  (hetyp_src : src.qualType.etyp = ETyp.arrow st1 st2 p_src tcls_src)
+  (htcl_src : tcl ∈ tcls_src) :
+  ∃ p_res tcls_res, res.qualType.etyp = ETyp.arrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
+  joinTypeResults_qualType_member_from_member_shape arrowFacts
+    ctx first src rest res _h_join _hmem_src hetyp_src htcl_src
 
 private lemma joinTypeResults_qualType_parrow_member_from_member
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -1853,195 +1754,9 @@ private lemma joinTypeResults_qualType_parrow_member_from_member
   {st1 st2 : Typ} {p_src : Poison} {tcls_src : List PFnTClosure} {tcl : PFnTClosure}
   (hetyp_src : src.qualType.etyp = ETyp.parrow st1 st2 p_src tcls_src)
   (htcl_src : tcl ∈ tcls_src) :
-  ∃ p_res tcls_res, res.qualType.etyp = ETyp.parrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
-  let joinStep : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
-      TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
-    fun acc result =>
-      match result.qualType with
-      | ⟨resEtyp, resPoison, resPred⟩ =>
-          Except.ok (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-            joinMemEnvsStrong acc.2.1 result.memEnv', joinPoison acc.2.2.1 resPoison,
-            joinPredicates acc.2.2.2.1 resPred, joinTagEnvs acc.2.2.2.2.1 result.tagEnv',
-            joinRegimes acc.2.2.2.2.2.1 result.regime',
-            max acc.2.2.2.2.2.2.1 result.nextLoc', max acc.2.2.2.2.2.2.2 result.nextTag')
-  have h_fold_left_parrow :
-      ∀ (rs' : List TypeResult) (acc acc' :
-          ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
-        (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
-        List.foldlM joinStep acc rs' = .ok acc' →
-        (∃ p_acc tcls_acc, acc.1 = ETyp.parrow st1 st2 p_acc tcls_acc ∧ tcl ∈ tcls_acc) →
-        ∃ p_res tcls_res, acc'.1 = ETyp.parrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
-    intro rs' acc acc' hcompat hfold hparrow_acc
-    induction rs' generalizing acc with
-    | nil =>
-        simp [List.foldlM_nil, pure, Except.pure] at hfold
-        subst acc'
-        exact hparrow_acc
-    | cons x xs ih =>
-        cases hqx : x.qualType with
-        | mk resEtyp resPoison resPred =>
-            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
-            have hcompat_x : beqETypSignature acc.1 resEtyp = true := by
-              have hx := hcompat x (by simp)
-              simpa [hqx] using hx
-            let acc1 :
-                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
-              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-                joinMemEnvsStrong acc.2.1 x.memEnv',
-                joinPoison acc.2.2.1 resPoison,
-                joinPredicates acc.2.2.2.1 resPred,
-                joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
-                joinRegimes acc.2.2.2.2.2.1 x.regime',
-                max acc.2.2.2.2.2.2.1 x.nextLoc',
-                max acc.2.2.2.2.2.2.2 x.nextTag')
-            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
-              simpa [acc1] using hfold
-            have hcompat_tail : ∀ r ∈ xs, beqETypSignature acc1.1 r.qualType.etyp = true := by
-              intro r hr
-              have hcomp := hcompat r (List.Mem.tail _ hr)
-              rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison by rfl]
-              rw [← beqETypSignature_joinETyps_left hcompat_x]
-              exact hcomp
-            rcases hparrow_acc with ⟨p_acc, tcls_acc, hacc_parrow, htcl_acc⟩
-            have hisParrow_x : resEtyp.isParrow = true := by
-              have hEq := etyp_isParrow_eq_of_beqSignature_true hcompat_x
-              calc
-                resEtyp.isParrow = acc.1.isParrow := by
-                  symm
-                  simpa using hEq
-                _ = true := by simp [hacc_parrow, ETyp.isParrow]
-            rcases
-                (joinETyps_parrow_structure
-                  (st1 := st1) (st2 := st2) (p1 := p_acc) (tcls1 := tcls_acc)
-                  (t2 := resEtyp) (p1' := acc.2.2.1) (p2' := resPoison)
-                  (by simpa [hacc_parrow] using hisParrow_x)
-                  (by simpa [hacc_parrow] using hcompat_x))
-              with ⟨p_acc1, tcls_acc1, hjoin_acc1, hmem_pres_left⟩
-            have hparrow_acc1 :
-                ∃ p_mid tcls_mid, acc1.1 = ETyp.parrow st1 st2 p_mid tcls_mid ∧ tcl ∈ tcls_mid := by
-              refine ⟨p_acc1, tcls_acc1, ?_, ?_⟩
-              · simpa [acc1, hacc_parrow] using hjoin_acc1
-              · exact hmem_pres_left tcl htcl_acc
-            exact ih (acc := acc1) hcompat_tail hfold_tail hparrow_acc1
-  have h_fold_member_parrow :
-      ∀ (rs' : List TypeResult) (acc acc' :
-          ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag)
-        (src' : TypeResult),
-        (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
-        List.foldlM joinStep acc rs' = .ok acc' →
-        src' ∈ rs' →
-        src'.qualType.etyp = ETyp.parrow st1 st2 p_src tcls_src →
-        ∃ p_res tcls_res, acc'.1 = ETyp.parrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
-    intro rs' acc acc' src' hcompat hfold hmem_src' hetyp_src'
-    induction rs' generalizing acc acc' src' with
-    | nil =>
-        cases hmem_src'
-    | cons x xs ih =>
-        cases hqx : x.qualType with
-        | mk resEtyp resPoison resPred =>
-            simp [List.foldlM_cons, joinStep, hqx, bind, Except.bind] at hfold
-            have hcompat_x : beqETypSignature acc.1 resEtyp = true := by
-              have hx := hcompat x (by simp)
-              simpa [hqx] using hx
-            let acc1 :
-                ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag :=
-              (joinETyps acc.1 resEtyp acc.2.2.1 resPoison,
-                joinMemEnvsStrong acc.2.1 x.memEnv',
-                joinPoison acc.2.2.1 resPoison,
-                joinPredicates acc.2.2.2.1 resPred,
-                joinTagEnvs acc.2.2.2.2.1 x.tagEnv',
-                joinRegimes acc.2.2.2.2.2.1 x.regime',
-                max acc.2.2.2.2.2.2.1 x.nextLoc',
-                max acc.2.2.2.2.2.2.2 x.nextTag')
-            have hfold_tail : List.foldlM joinStep acc1 xs = .ok acc' := by
-              simpa [acc1] using hfold
-            have hcompat_tail : ∀ r ∈ xs, beqETypSignature acc1.1 r.qualType.etyp = true := by
-              intro r hr
-              have hcomp := hcompat r (List.Mem.tail _ hr)
-              rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison by rfl]
-              rw [← beqETypSignature_joinETyps_left hcompat_x]
-              exact hcomp
-            rcases (List.mem_cons.mp hmem_src') with hsrc_eq | hsrc_tail
-            · subst src'
-              have hsrc_resEtyp : resEtyp = ETyp.parrow st1 st2 p_src tcls_src := by
-                simpa [hqx] using hetyp_src'
-              have hisParrow_acc : acc.1.isParrow = true := by
-                have hEq := etyp_isParrow_eq_of_beqSignature_true hcompat_x
-                calc
-                  acc.1.isParrow = resEtyp.isParrow := by
-                    simpa using hEq
-                  _ = true := by simp [hsrc_resEtyp, ETyp.isParrow]
-              have hparrow_acc1 :
-                  ∃ p_mid tcls_mid, acc1.1 = ETyp.parrow st1 st2 p_mid tcls_mid ∧ tcl ∈ tcls_mid := by
-                cases hacc : acc.1 with
-                | parrow st1l st2l pl tclsl =>
-                    have hshape : (st1l == st1 && st2l == st2) = true := by
-                      simpa [hacc, hsrc_resEtyp, beqETypSignature] using hcompat_x
-                    have hshape_eq : st1l = st1 ∧ st2l = st2 := by
-                      simpa using hshape
-                    rcases hshape_eq with ⟨rfl, rfl⟩
-                    refine ⟨joinPoison pl p_src, mergePFnTClosures tclsl tcls_src, ?_, ?_⟩
-                    · simp [acc1, hacc, hsrc_resEtyp, joinETyps]
-                    · exact mem_mergePFnTClosures_right tclsl tcls_src tcl htcl_src
-                | int | bool | unit | string | ref _ | arrow _ _ _ _ =>
-                    simp [ETyp.isParrow, hacc] at hisParrow_acc
-              exact h_fold_left_parrow xs acc1 acc' hcompat_tail hfold_tail hparrow_acc1
-            · exact ih (acc := acc1) (acc' := acc') (src' := src') hcompat_tail hfold_tail hsrc_tail hetyp_src'
-  cases hqt : first.qualType with
-  | mk etyp poison pred =>
-      simp [joinTypeResults, hqt, bind, Except.bind, pure, Except.pure, throw, throwThe,
-        MonadExceptOf.throw, TypecheckM] at _h_join
-      cases hcheck :
-          (List.foldlM
-            (fun x result =>
-              match result.qualType with
-              | { etyp := resEtyp, poison := _resP, pred := _resPred } =>
-                if beqETypSignature etyp resEtyp = false then
-                  Except.error
-                    (toString "Closure alternatives produced incompatible result types: " ++
-                      toString (repr etyp) ++ toString " vs " ++ toString (repr resEtyp))
-                else Except.ok ())
-            () rest : Except String Unit) with
-      | error err =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-      | ok _ =>
-          erw [hcheck] at _h_join
-          simp at _h_join
-          cases hfold :
-              List.foldlM joinStep
-                (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                  first.nextTag') rest with
-          | error err =>
-              erw [hfold] at _h_join
-              simp at _h_join
-          | ok a =>
-              erw [hfold] at _h_join
-              simp at _h_join
-              subst res
-              have hcompat := joinTypeResults_compat_ok etyp rest hcheck
-              rcases (List.mem_cons.mp _hmem_src) with hsrc_head | hsrc_tail
-              · subst src
-                have hparrow_a :
-                    ∃ p_res tcls_res, a.1 = ETyp.parrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
-                  h_fold_left_parrow
-                    rest
-                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                      first.nextTag')
-                    a hcompat hfold
-                    ⟨p_src, tcls_src, by simpa [hqt] using hetyp_src, htcl_src⟩
-                rcases hparrow_a with ⟨p_res, tcls_res, hetyp_a, htcl_res⟩
-                exact ⟨p_res, tcls_res, by simpa [ctxAfter] using hetyp_a, htcl_res⟩
-              · have hparrow_a :
-                    ∃ p_res tcls_res, a.1 = ETyp.parrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
-                  h_fold_member_parrow
-                    rest
-                    (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
-                      first.nextTag')
-                    a src hcompat hfold hsrc_tail
-                    (by simpa [ctxAfter] using hetyp_src)
-                rcases hparrow_a with ⟨p_res, tcls_res, hetyp_a, htcl_res⟩
-                exact ⟨p_res, tcls_res, by simpa [ctxAfter] using hetyp_a, htcl_res⟩
+  ∃ p_res tcls_res, res.qualType.etyp = ETyp.parrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
+  joinTypeResults_qualType_member_from_member_shape parrowFacts
+    ctx first src rest res _h_join _hmem_src hetyp_src htcl_src
 
 lemma joinTypeResults_transport_resultAgreesIfClean_from_member
   (predSat : PredSat)
@@ -3554,6 +3269,48 @@ lemma joinTypeResults_transport_valueConsistentWithRegimeMasked_from_member
                 exact valueConsistentWithRegimeMasked.inRegimeTrue k htag_res hlookupR hholds_res hcap_res
 
 
+-- Shared `some`-case core for the `joinMemEnvs` guardClosure left/right pair:
+-- when both sides have a binding at `l`, the joined predicate is exactly the
+-- `joinPredicates` of the two side predicates. Symmetric in `qt1`/`qt2`, so it
+-- lifts both wrappers without an asymmetry hypothesis.
+private lemma joinMemEnvs_lookup_pred_eq_joinPredicates
+  (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt1 qt2 : QTyp)
+  (hlookup_join : (joinMemEnvs env1 env2).lookup l = some qt)
+  (hlookup1 : env1.lookup l = some qt1)
+  (hlookup2 : env2.lookup l = some qt2) :
+  qt.pred = joinPredicates qt1.pred qt2.pred := by
+  have he1 : env1.get? l = some ⟨qt1.poison, qt1.pred⟩ := memEnv_get_eq_of_lookup env1 l qt1 hlookup1
+  have he2 : env2.get? l = some ⟨qt2.poison, qt2.pred⟩ := memEnv_get_eq_of_lookup env2 l qt2 hlookup2
+  have hmem1 : l ∈ env1 := memEnv_contains_of_lookup_some env1 l qt1 hlookup1
+    |> (Std.ExtTreeMap.contains_iff_mem).mp
+  have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
+    have hkeys1 : l ∈ env1.keys := by rw [Std.ExtTreeMap.mem_keys]; exact hmem1
+    exact List.mem_eraseDups_of_mem (List.mem_append_left _ hkeys1)
+  let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
+    match oe1, oe2 with
+    | some e1, none => some e1
+    | none, some e2 => some e2
+    | some e1, some e2 =>
+      some ⟨joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩
+    | none, none => none
+  have hgo := combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
+    ({} : MemoryTypeEnv) l h_in
+  have hjoin_get : (joinMemEnvs env1 env2).get? l = some ⟨qt.poison, qt.pred⟩ :=
+    memEnv_get_eq_of_lookup (joinMemEnvs env1 env2) l qt hlookup_join
+  have hmatch : f l (env1.get? l) (env2.get? l) = some ⟨qt.poison, qt.pred⟩ := by
+    have hjoin_go : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
+      ({} : MemoryTypeEnv))[l]? = some ⟨qt.poison, qt.pred⟩ := by
+      simpa [joinMemEnvs, combineExtTreeMaps, Std.ExtTreeMap.get?_eq_getElem?] using hjoin_get
+    have h_go_eq_f : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
+      ({} : MemoryTypeEnv))[l]? = f l (env1.get? l) (env2.get? l) := by
+      cases hopt : f l (env1.get? l) (env2.get? l) with
+      | none => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
+      | some v => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
+    rw [← h_go_eq_f]; exact hjoin_go
+  erw [he1, he2] at hmatch
+  have heq := (Option.some.inj hmatch).symm
+  exact congr_arg MemEntry.pred heq
+
 private lemma joinMemEnvs_lookup_guardClosure_left
   (env1 env2 : MemoryTypeEnv) (l : Loc) (qt qt1 : QTyp)
   (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
@@ -3574,40 +3331,9 @@ private lemma joinMemEnvs_lookup_guardClosure_left
           _ = some qt1 := hlookup1
       exact (Option.some.inj hqeq_opt).symm
     simpa [hqt_eq] using hpred_join
-  · have hlookup2_some : env2.lookup l ≠ none := hlookup2_none
-    rcases Option.ne_none_iff_exists'.1 hlookup2_some with ⟨qt2, hlookup2⟩
-    have he1 : env1.get? l = some ⟨qt1.poison, qt1.pred⟩ := memEnv_get_eq_of_lookup env1 l qt1 hlookup1
-    have he2 : env2.get? l = some ⟨qt2.poison, qt2.pred⟩ := memEnv_get_eq_of_lookup env2 l qt2 hlookup2
-    have hmem1 : l ∈ env1 := memEnv_contains_of_lookup_some env1 l qt1 hlookup1
-      |> (Std.ExtTreeMap.contains_iff_mem).mp
-    have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
-      have hkeys1 : l ∈ env1.keys := by rw [Std.ExtTreeMap.mem_keys]; exact hmem1
-      exact List.mem_eraseDups_of_mem (List.mem_append_left _ hkeys1)
-    let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
-      match oe1, oe2 with
-      | some e1, none => some e1
-      | none, some e2 => some e2
-      | some e1, some e2 =>
-        some ⟨joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩
-      | none, none => none
-    have hgo := combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
-      ({} : MemoryTypeEnv) l h_in
-    have hjoin_get : (joinMemEnvs env1 env2).get? l = some ⟨qt.poison, qt.pred⟩ :=
-      memEnv_get_eq_of_lookup (joinMemEnvs env1 env2) l qt hlookup_join
-    have hmatch : f l (env1.get? l) (env2.get? l) = some ⟨qt.poison, qt.pred⟩ := by
-      have hjoin_go : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
-        ({} : MemoryTypeEnv))[l]? = some ⟨qt.poison, qt.pred⟩ := by
-        simpa [joinMemEnvs, combineExtTreeMaps, Std.ExtTreeMap.get?_eq_getElem?] using hjoin_get
-      have h_go_eq_f : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
-        ({} : MemoryTypeEnv))[l]? = f l (env1.get? l) (env2.get? l) := by
-        cases hopt : f l (env1.get? l) (env2.get? l) with
-        | none => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
-        | some v => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
-      rw [← h_go_eq_f]; exact hjoin_go
-    have hqt_pred : qt.pred = joinPredicates qt1.pred qt2.pred := by
-      erw [he1, he2] at hmatch
-      have heq := (Option.some.inj hmatch).symm
-      exact congr_arg MemEntry.pred heq
+  · rcases Option.ne_none_iff_exists'.1 hlookup2_none with ⟨qt2, hlookup2⟩
+    have hqt_pred : qt.pred = joinPredicates qt1.pred qt2.pred :=
+      joinMemEnvs_lookup_pred_eq_joinPredicates env1 env2 l qt qt1 qt2 hlookup_join hlookup1 hlookup2
     have hsplit := joinPredicates_eq_guardClosure
       (p := qt1.pred) (q := qt2.pred) (k := k) (arg_name := arg_name)
       (pred_body := pred_body) (var_env := var_env)
@@ -3634,40 +3360,9 @@ private lemma joinMemEnvs_lookup_guardClosure_right
           _ = some qt2 := hlookup2
       exact (Option.some.inj hqeq_opt).symm
     simpa [hqt_eq] using hpred_join
-  · have hlookup1_some : env1.lookup l ≠ none := hlookup1_none
-    rcases Option.ne_none_iff_exists'.1 hlookup1_some with ⟨qt1, hlookup1⟩
-    have he1 : env1.get? l = some ⟨qt1.poison, qt1.pred⟩ := memEnv_get_eq_of_lookup env1 l qt1 hlookup1
-    have he2 : env2.get? l = some ⟨qt2.poison, qt2.pred⟩ := memEnv_get_eq_of_lookup env2 l qt2 hlookup2
-    have hmem1 : l ∈ env1 := memEnv_contains_of_lookup_some env1 l qt1 hlookup1
-      |> (Std.ExtTreeMap.contains_iff_mem).mp
-    have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
-      have hkeys1 : l ∈ env1.keys := by rw [Std.ExtTreeMap.mem_keys]; exact hmem1
-      exact List.mem_eraseDups_of_mem (List.mem_append_left _ hkeys1)
-    let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
-      match oe1, oe2 with
-      | some e1, none => some e1
-      | none, some e2 => some e2
-      | some e1, some e2 =>
-        some ⟨joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩
-      | none, none => none
-    have hgo := combineExtTreeMaps_go_get_mem env1 env2 f (env1.keys ++ env2.keys).eraseDups
-      ({} : MemoryTypeEnv) l h_in
-    have hjoin_get : (joinMemEnvs env1 env2).get? l = some ⟨qt.poison, qt.pred⟩ :=
-      memEnv_get_eq_of_lookup (joinMemEnvs env1 env2) l qt hlookup_join
-    have hmatch : f l (env1.get? l) (env2.get? l) = some ⟨qt.poison, qt.pred⟩ := by
-      have hjoin_go : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
-        ({} : MemoryTypeEnv))[l]? = some ⟨qt.poison, qt.pred⟩ := by
-        simpa [joinMemEnvs, combineExtTreeMaps, Std.ExtTreeMap.get?_eq_getElem?] using hjoin_get
-      have h_go_eq_f : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
-        ({} : MemoryTypeEnv))[l]? = f l (env1.get? l) (env2.get? l) := by
-        cases hopt : f l (env1.get? l) (env2.get? l) with
-        | none => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
-        | some v => have hgo' := hgo; rw [hopt] at hgo'; exact hgo'
-      rw [← h_go_eq_f]; exact hjoin_go
-    have hqt_pred : qt.pred = joinPredicates qt1.pred qt2.pred := by
-      erw [he1, he2] at hmatch
-      have heq := (Option.some.inj hmatch).symm
-      exact congr_arg MemEntry.pred heq
+  · rcases Option.ne_none_iff_exists'.1 hlookup1_none with ⟨qt1, hlookup1⟩
+    have hqt_pred : qt.pred = joinPredicates qt1.pred qt2.pred :=
+      joinMemEnvs_lookup_pred_eq_joinPredicates env1 env2 l qt qt1 qt2 hlookup_join hlookup1 hlookup2
     have hsplit := joinPredicates_eq_guardClosure
       (p := qt1.pred) (q := qt2.pred) (k := k) (arg_name := arg_name)
       (pred_body := pred_body) (var_env := var_env)

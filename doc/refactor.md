@@ -84,7 +84,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | T6 ✅ | Collapse pfn extern-decl machinery | med | L | — |
 | T7 ✅ | Collapse mirror join helpers (StepFRIte) | low | M | — |
 | T8 ✅ | Collapse run0/run1 mirrors (mem ops) | med | L | — |
-| T9 | Factor arrow/parrow mirrors (JMT) | med | M | — |
+| T9 ✅ | Factor arrow/parrow mirrors (JMT) | med | M | — |
 | T10 | Factor induction scaffolds (foundations) | high | L | — |
 | T11 | Extract closure machinery from hub | med | L | T2, T4 |
 | T12 | Extract extern/typecheck clusters from hub | med | L | T2, T11 |
@@ -583,9 +583,51 @@ mechanical re-plumbing. No statement changes. Each file is a per-operator leaf
 importing only `StepFR`, so independence is preserved. The three files are
 mutually independent — author in parallel, build sequentially.
 
-### T9 — Factor the `arrow`/`parrow` mirror families in `JoinMemberTransport`
+### T9 ✅ — Factor the `arrow`/`parrow` mirror families in `JoinMemberTransport`
 
 **Theme:** redundancy · **Risk:** medium · **Effort:** medium · **Deps:** —
+
+**Status: COMPLETED — arrow/parrow pairs collapsed via a `FunctionShapeFacts`
+structure-of-facts; the `guardClosure` cluster via common-core extraction (not a
+side selector), no statement change.** File shrank 4,294 → 3,989 lines; public
+declaration set (12 names) and both `StepFRIte`-consumed signatures
+(`joinMemEnvsStrong_lookup_guardClosure_implies_left`/`_right`) byte-identical to
+HEAD; 0 `sorry`; axiom-clean (`[propext, Classical.choice, Quot.sound]`);
+`lake build` green (11466 jobs).
+
+- **arrow/parrow (the headline, ~−280 lines).** Introduced one `private structure
+  FunctionShapeFacts` carrying the shape's element type (`Cls`), constructor
+  (`mkE`), `isShape`/`merge`, and the per-shape proof facts as fields, with two
+  instances `arrowFacts`/`parrowFacts`. The two ~205-line internal-poison lemmas
+  and the two ~197-line member-from-member lemmas each collapse to one
+  shape-generic lemma over `FunctionShapeFacts` plus four thin defeq wrappers
+  preserving the original `private` names. The constructor-swap `cases` that drove
+  the mirror is replaced by the structure's `shape_inv` field; the
+  member-from-member collapse additionally needed a `joinETyps_mk_mk` field
+  because over an abstract `S.mkE` the closure merge is no longer definitionally
+  exposed to `simp`. The `etyp_is`/`dirty` twin pairs were **kept standalone** and
+  referenced through structure fields rather than deleted — two of them
+  (`etyp_isArrow_eq`, `etyp_isParrow_eq`) have live capstone consumers, so deleting
+  them would have been a (C)-trap dead-code removal that wasn't actually dead.
+- **`guardClosure` cluster (~−21 lines).** Collapsed by **common-core
+  extraction**, not the plan's suggested "side selector (or `symm`)":
+  `joinMemEnvs`/`joinMemEnvsStrong` are **not commutative** and no cheap `symm`
+  exists, so a side selector would have had to thread the genuinely-distinct
+  `…_of_right_none` / `…_of_left_none` lemmas as hypotheses — wide, fiddly
+  indirection that *adds* the kind of plumbing the refactor removes. Instead the
+  single byte-identical block — the `some`-case `combineExtTreeMaps` machinery
+  proving `qt.pred = joinPredicates qt1.pred qt2.pred` — was lifted into one new
+  `private lemma joinMemEnvs_lookup_pred_eq_joinPredicates` (symmetric in
+  `qt1`/`qt2`, so it lifts without an asymmetry hypothesis). Both
+  `joinMemEnvs_lookup_guardClosure_left`/`_right` now call it; their
+  genuinely-distinct `none`-cases and `.1`/`.2` projections stay inline. The
+  optional `qt = ⟨_,_,noPred⟩ → False` contradiction helper (4 sites) was
+  **skipped**: the `hq` derivations differ per site, leaving only ~2 trivial
+  shared lines, so a helper would have been awkward threading for a net wash.
+- **`section` grouping skipped** as cosmetic (it does not affect `private`
+  file-scoping); deferred to avoid expanding the change surface.
+- Done before **T16** as required, so the soon-to-be-merged copies are collapsed
+  before any relocation.
 
 **Motivation.** Two `private` lemma pairs are character-identical after
 normalizing `arrow`↔`parrow` and `FnTClosure`↔`PFnTClosure`: the internal-poison
