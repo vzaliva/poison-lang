@@ -8,11 +8,11 @@ organized** (smaller modules, fewer dependencies), (2) **less redundant**
 
 ## How to read this document
 
-- Tasks are labelled `T16`–`T17` — the remaining work. `T1`–`T13` and `T15`
-  are **complete** (see git history) and `T14` (split `ExternProofs`) was dropped
-  by decision (see the *Dropped* section); all have been removed from this plan.
+- The remaining task is `T17`. `T1`–`T13`, `T15`, and `T16` are **complete**
+  (see git history) and `T14` (split `ExternProofs`) was dropped by decision
+  (see the *Dropped* section); all have been removed from this plan.
 - Each task is **independent** unless a `Depends on:` line names a prerequisite;
-  the only named prerequisite (`T9`) is itself complete.
+  `T17` has none.
 - Every task records **Benefit**, **Risk**, **Effort**, and a **Verification**
   note for which claims were confirmed against the source at planning time.
 - Line and reference counts are heuristic (ripgrep-based) and should be
@@ -47,20 +47,20 @@ abandoned, not forced.
 | Modules | 38 |
 | Total lines | ~101,000 |
 | `sorry` / `axiom` | 0 / 0 |
-| Largest | `StepFRApp` 21.3k, `TypeSafety` 18.9k, `StepFRIte` 7.3k |
+| Largest | `StepFRApp` 22.2k, `TypeSafety` 18.9k, `StepFRIte` 7.3k |
 
 The organization, redundancy, and simplification problems that motivated this
 plan were resolved by `T1`–`T13`: verified dead-code / `private` / import
 cleanup; the `fn`/`pfn`, `Side0`/`Side1`, and `arrow`/`parrow` mirror collapses;
 the shared induction-scaffold factoring; and the `StepFR` hub split into
 `ExternTagMeaning`, `TypecheckInduction`, `StepFRClosureApply`, and
-`ExternCallBoundarySides` — and by `T15`, which relocated the inlined ~1.4k-line
+`ExternCallBoundarySides`; by `T15`, which relocated the inlined ~1.4k-line
 `ite` arm into `StepFRIte` and bundled the FR contracts preamble into the
-`FRCtxContracts` / `FRStepContracts` structures. The remaining, concentrated
-targets:
+`FRCtxContracts` / `FRStepContracts` structures; and by `T16`, which trimmed
+`JoinMemberTransport` to genuinely-shared transport by relocating its
+App-exclusive lemmas (~940 lines) into `StepFRApp` as `private`. The remaining,
+concentrated target:
 
-- **`JoinMemberTransport` scope (T16)** — several public lemmas are
-  single-consumer despite the module's `StepFRApp`∩`StepFRIte` justification.
 - **Grab-bag golf (T17)** — small self-contained simplifications across
   otherwise-clean files.
 
@@ -70,61 +70,24 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 
 | ID | Task | Risk | Eff | Depends on |
 | --- | --- | --- | --- | --- |
-| T16 | Trim JoinMemberTransport | high | L | T9 |
 | T17 | Low-risk proof golf (grab-bag) | low | M | — |
 
 ## Recommended ordering
 
-`T1`–`T13` and `T15` are complete (and `T14` was dropped). The two remaining
-tasks are largely independent — their only prerequisite (`T9` for `T16`) is
-already done — so they can be scheduled opportunistically:
+`T1`–`T13`, `T15`, and `T16` are complete (and `T14` was dropped). Only `T17`
+remains:
 
 ```mermaid
 graph LR
-  T16[T16: trim JoinMemberTransport]
   T17[T17: golf, anytime]
 ```
 
-- **T16** (`JoinMemberTransport` trim) follows the completed T9; **high risk**
-  via a shared `guardClosure` base that must stay in `JoinMemberTransport`.
-- **T17** (golf grab-bag) is per-file and schedulable any time.
-
-`T16` touches per-operator / shared modules, so honour the
-**per-operator independence** invariant and serialize `lake` builds.
+- **T17** (golf grab-bag) is per-file and schedulable any time; it has no
+  prerequisites.
 
 ---
 
 ## Remaining tasks
-
-### T16 — Trim `JoinMemberTransport` to genuinely-shared lemmas
-
-**Theme:** organization · **Risk:** high · **Effort:** large · **Deps:** T9
-
-**Motivation.** `JoinMemberTransport` exists for lemmas shared by **both**
-`StepFRApp` and `StepFRIte`, but 7 of its 12 public lemmas violate that (5
-App-only, 2 Ite-only), and several `private` helpers are reachable only from
-App-only roots. Some `private` bases are genuinely shared between an App path and
-an Ite path and must stay.
-
-**Steps.**
-
-- Move App-only `agreeValueUnder_clean_monotoneRegime_ext` (10 App uses, no
-  JMT-private deps) into `StepFRApp` and mark `private`. Move the App-exclusive
-  `consistentWithRegime` and masked-transport trio plus their App-only `private`
-  helpers into `StepFRApp` — **but keep the `guardClosure` private base in JMT**
-  because it is also used by an Ite path; the App-side wrapper imports it.
-- Optionally move the two Ite-only public wrappers
-  (`joinMemEnvsStrong_lookup_guardClosure_implies_left`/`_right`) to `StepFRIte`
-  and privatize, leaving JMT exporting only the shared base.
-
-**Benefit.** Refocuses `JoinMemberTransport` on genuinely-shared transport,
-removing ~460 App-exclusive lines from a module justified as App∩Ite shared.
-
-**Risk.** Relocation crosses a shared base: the `guardClosure` private base is
-consumed by both an App-only and an Ite-only path, so it must stay in JMT — and
-per-operator independence forbids `StepFRApp` importing `StepFRIte`, so any helper
-Ite also needs must remain in JMT. Do this only **after** T9 so merged (not
-duplicated) lemmas are relocated. High risk due to the shared-base entanglement.
 
 ### T17 — Low-risk proof golf and shared-helper extraction (grab-bag)
 
@@ -169,6 +132,17 @@ splittable per file.
 
 These were considered and rejected; recording them prevents re-litigation.
 
+- **Move the `joinMemEnvsStrong_lookup_guardClosure_implies_left`/`_right`
+  wrappers (and the `closureCapturedVarsRegimeMasked_joinETyps_step`/`_step_right`
+  pair) to `StepFRIte` during T16:** the T16 plan flagged these as "Ite-only," but
+  execution found them genuinely **shared** — they are consumed both by `StepFRIte`
+  *and* by App-bound JMT code (`joinTypeResults_lookup_member_guardClosure_lookup_compat`
+  and `joinTypeResults_closure_cvcr_masked_transport_from_member`, which T16 relocated
+  into `StepFRApp`). Since per-operator independence forbids `StepFRApp` importing
+  `StepFRIte`, they must stay in `JoinMemberTransport`. T16 therefore moved only
+  the App-exclusive lemmas; these wrappers (and the two de-privatized shared bases
+  `qtypCleanUnder_lookup_true_back` / `joinTypeResults_pred_eq_guardClosure_from_member`)
+  remain in JMT as genuinely-shared transport.
 - **Split `ExternProofs` along the per-builtin seam (was T14):** dropped by
   decision. The seven trusted entries are independent, but carving them into
   per-builtin files buys only an import-graph reshuffle (reproduce the
