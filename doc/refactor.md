@@ -82,7 +82,7 @@ Effort: S = small, M = medium, L = large. Theme is shown per-task below.
 | T4 ✅ | Delete dead single-run skeleton (was: hoist) | med | M | T1 |
 | T5 ✅ | Collapse Side0/Side1 mirror (StepFRApp) | low | M | T2 |
 | T6 ✅ | Collapse pfn extern-decl machinery | med | L | — |
-| T7 | Collapse mirror join helpers (StepFRIte) | low | M | — |
+| T7 ✅ | Collapse mirror join helpers (StepFRIte) | low | M | — |
 | T8 | Collapse run0/run1 mirrors (mem ops) | med | L | — |
 | T9 | Factor arrow/parrow mirrors (JMT) | med | M | — |
 | T10 | Factor induction scaffolds (foundations) | high | L | — |
@@ -455,7 +455,26 @@ leaving every trusted-entry `Spec` statement intact.
 preserved; only proof terms change. `ExternProofs` is mid-DAG with capstone
 consumers (sequential build), but the imported `Spec` names are unchanged.
 
-### T7 — Collapse mirror join-consistency helper pairs in `StepFRIte`
+### T7 ✅ — Collapse mirror join-consistency helper pairs in `StepFRIte`
+
+**Status: COMPLETED — two `private` side-neutral skeletons + thin wrappers, no
+statement change.** Both mirror pairs were collapsed by passing the two
+side-selected facts as hypotheses rather than a `Bool`/`Side` selector, so each
+skeleton's proof term is byte-identical to the original left body: `hlookup_back`
+(the `joinRegimes` back-lookup) and `hguard_implies` (the `joinMemEnvsStrong`
+`guardClosure` implication), with `resSide` the operand transported back from.
+The non-masked pair now wraps `consistentWithRegime_join_from_side`; the masked
+pair wraps `consistentWithRegimeMasked_join_from_side`. The four original names
+survive as wrappers — two `private` (`consistentWithRegime_join_from_{left,right}`)
+and the two **public** theorems (`consistentWithRegimeMasked_join_from_{left,right}`)
+with their **exact** signatures preserved, so the `FaultRobustnessProofs` call
+sites (12-arg) are untouched. The "stray docstring" was already on
+`matchGuard_ok_extract_owner_in_ctx`, so that sub-step was a no-op. `StepFRIte`
+builds at 8493 jobs and its consumer `FaultRobustnessProofs` at 8506; both public
+masked theorems verify `[propext, Classical.choice, Quot.sound]` (0 sorry / 0
+custom axiom), warning-clean. Net **−186 lines** in `StepFRIte.lean` (185
+insertions / 371 deletions), within one per-operator file with no cross-file
+impact.
 
 **Theme:** redundancy · **Risk:** low · **Effort:** medium · **Deps:** —
 

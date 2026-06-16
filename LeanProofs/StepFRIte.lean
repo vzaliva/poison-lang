@@ -1151,27 +1151,34 @@ theorem consistentWithRegimeMasked_transport_ctxAfter_pure_to_ctx_insert_true
           simpa [ctxAfter] using hreg_bridge k b hk)
         hcapRes
 
-private lemma consistentWithRegime_join_from_left
+/-- Side-neutral skeleton for `consistentWithRegime_join_from_{left,right}`.
+The two divergence points between the mirror lemmas are abstracted as
+hypotheses: `hlookup_back` (the `joinRegimes` back-lookup) and `hguard_implies`
+(the `joinMemEnvsStrong` `guardClosure` membership transport). `resSide` is the
+operand we transport back from (`resLeft` for the left wrapper, `resRight` for
+the right). -/
+private lemma consistentWithRegime_join_from_side
   (predSat : PredSat) (ctx : TypeContext)
-  (resLeft resRight res : TypeResult)
+  (resLeft resRight res resSide : TypeResult)
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (hmemEnv : res.memEnv' = joinMemEnvsStrong resLeft.memEnv' resRight.memEnv')
-  (hregime : res.regime' = joinRegimes resLeft.regime' resRight.regime')
+  (hlookup_back :
+    ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
+      (ctxAfter ctx resSide).regime.lookup? k = some b)
+  (hguard_implies :
+    ∀ (l : Loc) (qt : QTyp) (k' : Tag) (arg_name : Name)
+      (pred_body : PExpr) (var_env : CapturedVarEnv),
+      (joinMemEnvsStrong resLeft.memEnv' resRight.memEnv').lookup l = some qt →
+      qt.pred = Predicate.guardClosure k' arg_name pred_body var_env →
+      ∃ qtSide, resSide.memEnv'.lookup l = some qtSide ∧
+        qtSide.pred = Predicate.guardClosure k' arg_name pred_body var_env)
   (hcwr :
     consistentWithRegime predSat
-      (ctxAfter ctx resLeft).regime
-      (ctxAfter ctx resLeft) μ ρ θ) :
+      (ctxAfter ctx resSide).regime
+      (ctxAfter ctx resSide) μ ρ θ) :
   consistentWithRegime predSat
     (ctxAfter ctx res).regime
     (ctxAfter ctx res) μ ρ θ := by
-  have hlookup_back :
-      ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
-        (ctxAfter ctx resLeft).regime.lookup? k = some b := by
-    intro k b hk
-    have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
-      simpa [ctxAfter, hregime] using hk
-    simpa [ctxAfter] using
-      joinRegimes_lookup_some_left resLeft.regime' resRight.regime' k b hk'
   unfold consistentWithRegime at hcwr ⊢
   refine ⟨?_, ?_, ?_⟩
   · intro l qt k hlookup hguard hRdef
@@ -1188,56 +1195,55 @@ private lemma consistentWithRegime_join_from_left
               _ = some k := hguard
           exact Option.some.inj this
         rcases
-            joinMemEnvsStrong_lookup_guardClosure_implies_left
-              resLeft.memEnv' resRight.memEnv' l qt k' arg_name pred_body var_env
+            hguard_implies l qt k' arg_name pred_body var_env
               (by simpa [ctxAfter, hmemEnv] using hlookup)
               hpred
-          with ⟨qtLeft, hlookupLeft, hpredLeft⟩
-        have hRdef_left : (ctxAfter ctx resLeft).regime.lookup? k' ≠ none := by
+          with ⟨qtSide, hlookupSide, hpredSide⟩
+        have hRdef_side : (ctxAfter ctx resSide).regime.lookup? k' ≠ none := by
           intro hnone
           cases hkres : (ctxAfter ctx res).regime.lookup? k' with
           | none =>
               exact hRdef (by simpa [ctxAfter, hk_eq] using hkres)
           | some b =>
-              have hk_left : (ctxAfter ctx resLeft).regime.lookup? k' = some b :=
+              have hk_side : (ctxAfter ctx resSide).regime.lookup? k' = some b :=
                 hlookup_back k' b hkres
-              rw [hk_left] at hnone
+              rw [hk_side] at hnone
               contradiction
-        have hguard_left : qtypGuardTag qtLeft = some k' := by
-          simp [qtypGuardTag, hpredLeft]
-        have hloc_left :=
-          hcwr.1 l qtLeft k'
-            (by simpa [ctxAfter] using hlookupLeft)
-            hguard_left
-            hRdef_left
-        cases hloc_left with
+        have hguard_side : qtypGuardTag qtSide = some k' := by
+          simp [qtypGuardTag, hpredSide]
+        have hloc_side :=
+          hcwr.1 l qtSide k'
+            (by simpa [ctxAfter] using hlookupSide)
+            hguard_side
+            hRdef_side
+        cases hloc_side with
         | noPred_ok hnp =>
-            simp [qtypGuardTag, hpredLeft] at hnp
+            simp [qtypGuardTag, hpredSide] at hnp
         | guardOnly_ok _ hgo =>
-            simp [hpredLeft] at hgo
-        | withPred_ok kLeft arg_name' pred_body' var_env' a n b hclos hreg hreal hmem hcons =>
+            simp [hpredSide] at hgo
+        | withPred_ok kSide arg_name' pred_body' var_env' a n b hclos hreg hreal hmem hcons =>
             have hpred_ctor_eq :
-                Predicate.guardClosure kLeft arg_name' pred_body' var_env' =
+                Predicate.guardClosure kSide arg_name' pred_body' var_env' =
                   Predicate.guardClosure k' arg_name pred_body var_env := by
               calc
-                Predicate.guardClosure kLeft arg_name' pred_body' var_env' = qtLeft.pred := by
+                Predicate.guardClosure kSide arg_name' pred_body' var_env' = qtSide.pred := by
                   simpa using hclos.symm
-                _ = Predicate.guardClosure k' arg_name pred_body var_env := hpredLeft
+                _ = Predicate.guardClosure k' arg_name pred_body var_env := hpredSide
             cases hpred_ctor_eq
-            have hpred_eq : qtLeft.pred = qt.pred := by
-              simp [hpredLeft, hpred]
+            have hpred_eq : qtSide.pred = qt.pred := by
+              simp [hpredSide, hpred]
             have hreg_res : (ctxAfter ctx res).regime.lookup? k' = some b := by
               cases hkres : (ctxAfter ctx res).regime.lookup? k' with
               | none =>
                   exact False.elim (hRdef (by simpa [ctxAfter, hk_eq] using hkres))
               | some b' =>
-                  have hk_left : (ctxAfter ctx resLeft).regime.lookup? k' = some b' :=
+                  have hk_side : (ctxAfter ctx resSide).regime.lookup? k' = some b' :=
                     hlookup_back k' b' hkres
                   have hb_eq : b = b' := by
                     have : some b = some b' := by
                       calc
-                        some b = (ctxAfter ctx resLeft).regime.lookup? k' := by symm; exact hreg
-                        _ = some b' := hk_left
+                        some b = (ctxAfter ctx resSide).regime.lookup? k' := by symm; exact hreg
+                        _ = some b' := hk_side
                     exact Option.some.inj this
                   exact congrArg some hb_eq.symm
             have hcons_res :
@@ -1247,12 +1253,12 @@ private lemma consistentWithRegime_join_from_left
               · intro hb
                 exact
                   qtypPredHolds_transport_pred
-                    (predSat := predSat) (qt := qtLeft) (qt' := qt)
+                    (predSat := predSat) (qt := qtSide) (qt' := qt)
                     (μ := μ) (v := Value.num n) hpred_eq (hcons.1 hb)
               · intro hb
                 exact
                   qtypPredHolds_transport_pred_not
-                    (predSat := predSat) (qt := qtLeft) (qt' := qt)
+                    (predSat := predSat) (qt := qtSide) (qt' := qt)
                     (μ := μ) (v := Value.num n) hpred_eq (hcons.2 hb)
             exact
               locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a n b
@@ -1262,27 +1268,27 @@ private lemma consistentWithRegime_join_from_left
     | none =>
         exact False.elim (hRdef hkres)
     | some b =>
-        have hRdef_left : (ctxAfter ctx resLeft).regime.lookup? k ≠ none := by
+        have hRdef_side : (ctxAfter ctx resSide).regime.lookup? k ≠ none := by
           intro hnone
-          have hk_left := hlookup_back k b hkres
-          rw [hk_left] at hnone
+          have hk_side := hlookup_back k b hkres
+          rw [hk_side] at hnone
           contradiction
-        have hvar_left :=
+        have hvar_side :=
           hcwr.2.1 x qt k
             (by simpa [ctxAfter] using hlookup)
             hguard
-            hRdef_left
+            hRdef_side
         exact
           varsRegime_transport_active_lookup_back
             (predSat := predSat)
-            (R := (ctxAfter ctx resLeft).regime)
+            (R := (ctxAfter ctx resSide).regime)
             (R' := (ctxAfter ctx res).regime)
             (μ := μ) (ρ := ρ) (entry := (x, qt))
-            hlookup_back hguard hkres hvar_left
+            hlookup_back hguard hkres hvar_side
   · intro x qt v hlookup hlookup_v
-    have hcap_left :
+    have hcap_side :
         closureCapturedVarsRegime predSat
-          (ctxAfter ctx resLeft).regime
+          (ctxAfter ctx resSide).regime
           qt μ θ v :=
       hcwr.2.2 x qt v
         (by simpa [ctxAfter] using hlookup)
@@ -1290,10 +1296,34 @@ private lemma consistentWithRegime_join_from_left
     exact
       closureCapturedVarsRegime_transport_lookup_back
         (predSat := predSat)
-        (R := (ctxAfter ctx resLeft).regime)
+        (R := (ctxAfter ctx resSide).regime)
         (R' := (ctxAfter ctx res).regime)
         (qt := qt) (μ := μ) (θ := θ) (v := v)
-        hlookup_back hcap_left
+        hlookup_back hcap_side
+
+private lemma consistentWithRegime_join_from_left
+  (predSat : PredSat) (ctx : TypeContext)
+  (resLeft resRight res : TypeResult)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong resLeft.memEnv' resRight.memEnv')
+  (hregime : res.regime' = joinRegimes resLeft.regime' resRight.regime')
+  (hcwr :
+    consistentWithRegime predSat
+      (ctxAfter ctx resLeft).regime
+      (ctxAfter ctx resLeft) μ ρ θ) :
+  consistentWithRegime predSat
+    (ctxAfter ctx res).regime
+    (ctxAfter ctx res) μ ρ θ :=
+  consistentWithRegime_join_from_side
+    predSat ctx resLeft resRight res resLeft μ ρ θ hmemEnv
+    (by
+      intro k b hk
+      have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
+        simpa [ctxAfter, hregime] using hk
+      simpa [ctxAfter] using
+        joinRegimes_lookup_some_left resLeft.regime' resRight.regime' k b hk')
+    (joinMemEnvsStrong_lookup_guardClosure_implies_left resLeft.memEnv' resRight.memEnv')
+    hcwr
 
 private lemma consistentWithRegime_join_from_right
   (predSat : PredSat) (ctx : TypeContext)
@@ -1307,137 +1337,17 @@ private lemma consistentWithRegime_join_from_right
       (ctxAfter ctx resRight) μ ρ θ) :
   consistentWithRegime predSat
     (ctxAfter ctx res).regime
-    (ctxAfter ctx res) μ ρ θ := by
-  have hlookup_back :
-      ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
-        (ctxAfter ctx resRight).regime.lookup? k = some b := by
-    intro k b hk
-    have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
-      simpa [ctxAfter, hregime] using hk
-    simpa [ctxAfter] using
-      joinRegimes_lookup_some_right resLeft.regime' resRight.regime' k b hk'
-  unfold consistentWithRegime at hcwr ⊢
-  refine ⟨?_, ?_, ?_⟩
-  · intro l qt k hlookup hguard hRdef
-    cases hpred : qt.pred with
-    | noPred =>
-        simp [qtypGuardTag, hpred] at hguard
-    | guardOnly k' =>
-        exact locsRegime.guardOnly_ok (l, qt) k' hpred
-    | guardClosure k' arg_name pred_body var_env =>
-        have hk_eq : k' = k := by
-          have : some k' = some k := by
-            calc
-              some k' = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
-              _ = some k := hguard
-          exact Option.some.inj this
-        rcases
-            joinMemEnvsStrong_lookup_guardClosure_implies_right
-              resLeft.memEnv' resRight.memEnv' l qt k' arg_name pred_body var_env
-              (by simpa [ctxAfter, hmemEnv] using hlookup)
-              hpred
-          with ⟨qtRight, hlookupRight, hpredRight⟩
-        have hRdef_right : (ctxAfter ctx resRight).regime.lookup? k' ≠ none := by
-          intro hnone
-          cases hkres : (ctxAfter ctx res).regime.lookup? k' with
-          | none =>
-              exact hRdef (by simpa [ctxAfter, hk_eq] using hkres)
-          | some b =>
-              have hk_right : (ctxAfter ctx resRight).regime.lookup? k' = some b :=
-                hlookup_back k' b hkres
-              rw [hk_right] at hnone
-              contradiction
-        have hguard_right : qtypGuardTag qtRight = some k' := by
-          simp [qtypGuardTag, hpredRight]
-        have hloc_right :=
-          hcwr.1 l qtRight k'
-            (by simpa [ctxAfter] using hlookupRight)
-            hguard_right
-            hRdef_right
-        cases hloc_right with
-        | noPred_ok hnp =>
-            simp [qtypGuardTag, hpredRight] at hnp
-        | guardOnly_ok _ hgo =>
-            simp [hpredRight] at hgo
-        | withPred_ok kRight arg_name' pred_body' var_env' a n b hclos hreg hreal hmem hcons =>
-            have hpred_ctor_eq :
-                Predicate.guardClosure kRight arg_name' pred_body' var_env' =
-                  Predicate.guardClosure k' arg_name pred_body var_env := by
-              calc
-                Predicate.guardClosure kRight arg_name' pred_body' var_env' = qtRight.pred := by
-                  simpa using hclos.symm
-                _ = Predicate.guardClosure k' arg_name pred_body var_env := hpredRight
-            cases hpred_ctor_eq
-            have hpred_eq : qtRight.pred = qt.pred := by
-              simp [hpredRight, hpred]
-            have hreg_res : (ctxAfter ctx res).regime.lookup? k' = some b := by
-              cases hkres : (ctxAfter ctx res).regime.lookup? k' with
-              | none =>
-                  exact False.elim (hRdef (by simpa [ctxAfter, hk_eq] using hkres))
-              | some b' =>
-                  have hk_right : (ctxAfter ctx resRight).regime.lookup? k' = some b' :=
-                    hlookup_back k' b' hkres
-                  have hb_eq : b = b' := by
-                    have : some b = some b' := by
-                      calc
-                        some b = (ctxAfter ctx resRight).regime.lookup? k' := by symm; exact hreg
-                        _ = some b' := hk_right
-                    exact Option.some.inj this
-                  exact congrArg some hb_eq.symm
-            have hcons_res :
-                (b = true → qtypPredHolds predSat qt μ (Value.num n)) ∧
-                (b = false → ¬ qtypPredHolds predSat qt μ (Value.num n)) := by
-              refine ⟨?_, ?_⟩
-              · intro hb
-                exact
-                  qtypPredHolds_transport_pred
-                    (predSat := predSat) (qt := qtRight) (qt' := qt)
-                    (μ := μ) (v := Value.num n) hpred_eq (hcons.1 hb)
-              · intro hb
-                exact
-                  qtypPredHolds_transport_pred_not
-                    (predSat := predSat) (qt := qtRight) (qt' := qt)
-                    (μ := μ) (v := Value.num n) hpred_eq (hcons.2 hb)
-            exact
-              locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a n b
-                hpred hreg_res hreal hmem hcons_res
-  · intro x qt k hlookup hguard hRdef
-    cases hkres : (ctxAfter ctx res).regime.lookup? k with
-    | none =>
-        exact False.elim (hRdef hkres)
-    | some b =>
-        have hRdef_right : (ctxAfter ctx resRight).regime.lookup? k ≠ none := by
-          intro hnone
-          have hk_right := hlookup_back k b hkres
-          rw [hk_right] at hnone
-          contradiction
-        have hvar_right :=
-          hcwr.2.1 x qt k
-            (by simpa [ctxAfter] using hlookup)
-            hguard
-            hRdef_right
-        exact
-          varsRegime_transport_active_lookup_back
-            (predSat := predSat)
-            (R := (ctxAfter ctx resRight).regime)
-            (R' := (ctxAfter ctx res).regime)
-            (μ := μ) (ρ := ρ) (entry := (x, qt))
-            hlookup_back hguard hkres hvar_right
-  · intro x qt v hlookup hlookup_v
-    have hcap_right :
-        closureCapturedVarsRegime predSat
-          (ctxAfter ctx resRight).regime
-          qt μ θ v :=
-      hcwr.2.2 x qt v
-        (by simpa [ctxAfter] using hlookup)
-        hlookup_v
-    exact
-      closureCapturedVarsRegime_transport_lookup_back
-        (predSat := predSat)
-        (R := (ctxAfter ctx resRight).regime)
-        (R' := (ctxAfter ctx res).regime)
-        (qt := qt) (μ := μ) (θ := θ) (v := v)
-        hlookup_back hcap_right
+    (ctxAfter ctx res) μ ρ θ :=
+  consistentWithRegime_join_from_side
+    predSat ctx resLeft resRight res resRight μ ρ θ hmemEnv
+    (by
+      intro k b hk
+      have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
+        simpa [ctxAfter, hregime] using hk
+      simpa [ctxAfter] using
+        joinRegimes_lookup_some_right resLeft.regime' resRight.regime' k b hk')
+    (joinMemEnvsStrong_lookup_guardClosure_implies_right resLeft.memEnv' resRight.memEnv')
+    hcwr
 
 private lemma ite_join_transport_runtimeInstantiatesCtx
   (ctx : TypeContext) (first : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -1619,27 +1529,32 @@ private lemma ite_join_transport_agreeOnClean_from_member
             hclean hagree
         exact agreeVarUnder.agree_values x qt v₀ v₁ hlookup₀ hlookup₁ hagree'
 
-theorem consistentWithRegimeMasked_join_from_left
+/-- Side-neutral skeleton for `consistentWithRegimeMasked_join_from_{left,right}`,
+the masked counterpart of `consistentWithRegime_join_from_side`. Same two
+divergence hypotheses (`hlookup_back`, `hguard_implies`) and `resSide` operand;
+each conjunct additionally threads the `Or.inl masked | Or.inr …` alternative. -/
+private lemma consistentWithRegimeMasked_join_from_side
   (masked : Tag → Prop) (predSat : PredSat) (ctx : TypeContext)
-  (resLeft resRight res : TypeResult)
+  (resLeft resRight res resSide : TypeResult)
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (hmemEnv : res.memEnv' = joinMemEnvsStrong resLeft.memEnv' resRight.memEnv')
-  (hregime : res.regime' = joinRegimes resLeft.regime' resRight.regime')
+  (hlookup_back :
+    ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
+      (ctxAfter ctx resSide).regime.lookup? k = some b)
+  (hguard_implies :
+    ∀ (l : Loc) (qt : QTyp) (k' : Tag) (arg_name : Name)
+      (pred_body : PExpr) (var_env : CapturedVarEnv),
+      (joinMemEnvsStrong resLeft.memEnv' resRight.memEnv').lookup l = some qt →
+      qt.pred = Predicate.guardClosure k' arg_name pred_body var_env →
+      ∃ qtSide, resSide.memEnv'.lookup l = some qtSide ∧
+        qtSide.pred = Predicate.guardClosure k' arg_name pred_body var_env)
   (hcwr :
     consistentWithRegimeMasked masked predSat
-      (ctxAfter ctx resLeft).regime
-      (ctxAfter ctx resLeft) μ ρ θ) :
+      (ctxAfter ctx resSide).regime
+      (ctxAfter ctx resSide) μ ρ θ) :
   consistentWithRegimeMasked masked predSat
     (ctxAfter ctx res).regime
     (ctxAfter ctx res) μ ρ θ := by
-  have hlookup_back :
-      ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
-        (ctxAfter ctx resLeft).regime.lookup? k = some b := by
-    intro k b hk
-    have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
-      simpa [ctxAfter, hregime] using hk
-    simpa [ctxAfter] using
-      joinRegimes_lookup_some_left resLeft.regime' resRight.regime' k b hk'
   rcases hcwr with ⟨hlocs, hvars, hclos⟩
   refine ⟨?_, ?_, ?_⟩
   · intro l qt k hlookup hguard hRdef
@@ -1656,58 +1571,57 @@ theorem consistentWithRegimeMasked_join_from_left
               _ = some k := hguard
           exact Option.some.inj this
         rcases
-            joinMemEnvsStrong_lookup_guardClosure_implies_left
-              resLeft.memEnv' resRight.memEnv' l qt k' arg_name pred_body var_env
+            hguard_implies l qt k' arg_name pred_body var_env
               (by simpa [ctxAfter, hmemEnv] using hlookup)
               hpred
-          with ⟨qtLeft, hlookupLeft, hpredLeft⟩
-        have hRdef_left : (ctxAfter ctx resLeft).regime.lookup? k' ≠ none := by
+          with ⟨qtSide, hlookupSide, hpredSide⟩
+        have hRdef_side : (ctxAfter ctx resSide).regime.lookup? k' ≠ none := by
           intro hnone
           cases hkres : (ctxAfter ctx res).regime.lookup? k' with
           | none =>
               exact hRdef (by simpa [ctxAfter, hk_eq] using hkres)
           | some b =>
-              have hk_left : (ctxAfter ctx resLeft).regime.lookup? k' = some b :=
+              have hk_side : (ctxAfter ctx resSide).regime.lookup? k' = some b :=
                 hlookup_back k' b hkres
-              rw [hk_left] at hnone
+              rw [hk_side] at hnone
               contradiction
-        have hguard_left : qtypGuardTag qtLeft = some k' := by
-          simp [qtypGuardTag, hpredLeft]
-        have hloc_left :=
-          hlocs l qtLeft k'
-            (by simpa [ctxAfter] using hlookupLeft)
-            hguard_left
-            hRdef_left
-        rcases hloc_left with hmasked | hloc_left
+        have hguard_side : qtypGuardTag qtSide = some k' := by
+          simp [qtypGuardTag, hpredSide]
+        have hloc_side :=
+          hlocs l qtSide k'
+            (by simpa [ctxAfter] using hlookupSide)
+            hguard_side
+            hRdef_side
+        rcases hloc_side with hmasked | hloc_side
         · exact Or.inl (by simpa [hk_eq] using hmasked)
-        · cases hloc_left with
+        · cases hloc_side with
           | noPred_ok hnp =>
-              simp [qtypGuardTag, hpredLeft] at hnp
+              simp [qtypGuardTag, hpredSide] at hnp
           | guardOnly_ok _ hgo =>
-              simp [hpredLeft] at hgo
-          | withPred_ok kLeft arg_name' pred_body' var_env' a n b hclos_left hreg hreal hmem hcons =>
+              simp [hpredSide] at hgo
+          | withPred_ok kSide arg_name' pred_body' var_env' a n b hclos_side hreg hreal hmem hcons =>
               have hpred_ctor_eq :
-                  Predicate.guardClosure kLeft arg_name' pred_body' var_env' =
+                  Predicate.guardClosure kSide arg_name' pred_body' var_env' =
                     Predicate.guardClosure k' arg_name pred_body var_env := by
                 calc
-                  Predicate.guardClosure kLeft arg_name' pred_body' var_env' = qtLeft.pred := by
-                    simpa using hclos_left.symm
-                  _ = Predicate.guardClosure k' arg_name pred_body var_env := hpredLeft
+                  Predicate.guardClosure kSide arg_name' pred_body' var_env' = qtSide.pred := by
+                    simpa using hclos_side.symm
+                  _ = Predicate.guardClosure k' arg_name pred_body var_env := hpredSide
               cases hpred_ctor_eq
-              have hpred_eq : qtLeft.pred = qt.pred := by
-                simp [hpredLeft, hpred]
+              have hpred_eq : qtSide.pred = qt.pred := by
+                simp [hpredSide, hpred]
               have hreg_res : (ctxAfter ctx res).regime.lookup? k' = some b := by
                 cases hkres : (ctxAfter ctx res).regime.lookup? k' with
                 | none =>
                     exact False.elim (hRdef (by simpa [ctxAfter, hk_eq] using hkres))
                 | some b' =>
-                    have hk_left : (ctxAfter ctx resLeft).regime.lookup? k' = some b' :=
+                    have hk_side : (ctxAfter ctx resSide).regime.lookup? k' = some b' :=
                       hlookup_back k' b' hkres
                     have hb_eq : b = b' := by
                       have : some b = some b' := by
                         calc
-                          some b = (ctxAfter ctx resLeft).regime.lookup? k' := by symm; exact hreg
-                          _ = some b' := hk_left
+                          some b = (ctxAfter ctx resSide).regime.lookup? k' := by symm; exact hreg
+                          _ = some b' := hk_side
                       exact Option.some.inj this
                     exact congrArg some hb_eq.symm
               have hcons_res :
@@ -1717,12 +1631,12 @@ theorem consistentWithRegimeMasked_join_from_left
                 · intro hb
                   exact
                     qtypPredHolds_transport_pred
-                      (predSat := predSat) (qt := qtLeft) (qt' := qt)
+                      (predSat := predSat) (qt := qtSide) (qt' := qt)
                       (μ := μ) (v := Value.num n) hpred_eq (hcons.1 hb)
                 · intro hb
                   exact
                     qtypPredHolds_transport_pred_not
-                      (predSat := predSat) (qt := qtLeft) (qt' := qt)
+                      (predSat := predSat) (qt := qtSide) (qt' := qt)
                       (μ := μ) (v := Value.num n) hpred_eq (hcons.2 hb)
               exact Or.inr <|
                 locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a n b
@@ -1732,29 +1646,29 @@ theorem consistentWithRegimeMasked_join_from_left
     | none =>
         exact Or.inr <| False.elim (hRdef hkres)
     | some b =>
-        have hRdef_left : (ctxAfter ctx resLeft).regime.lookup? k ≠ none := by
+        have hRdef_side : (ctxAfter ctx resSide).regime.lookup? k ≠ none := by
           intro hnone
-          have hk_left := hlookup_back k b hkres
-          rw [hk_left] at hnone
+          have hk_side := hlookup_back k b hkres
+          rw [hk_side] at hnone
           contradiction
-        have hvar_left :=
+        have hvar_side :=
           hvars x qt k
             (by simpa [ctxAfter] using hlookup)
             hguard
-            hRdef_left
-        rcases hvar_left with hmasked | hvar_left
+            hRdef_side
+        rcases hvar_side with hmasked | hvar_side
         · exact Or.inl hmasked
         · exact Or.inr <|
             varsRegime_transport_active_lookup_back
               (predSat := predSat)
-              (R := (ctxAfter ctx resLeft).regime)
+              (R := (ctxAfter ctx resSide).regime)
               (R' := (ctxAfter ctx res).regime)
               (μ := μ) (ρ := ρ) (entry := (x, qt))
-              hlookup_back hguard hkres hvar_left
+              hlookup_back hguard hkres hvar_side
   · intro x qt v hlookup hlookup_v
-    have hcap_left :
+    have hcap_side :
         closureCapturedVarsRegimeMasked masked predSat
-          (ctxAfter ctx resLeft).regime
+          (ctxAfter ctx resSide).regime
           qt μ θ v :=
       hclos x qt v
         (by simpa [ctxAfter] using hlookup)
@@ -1762,10 +1676,34 @@ theorem consistentWithRegimeMasked_join_from_left
     exact
       closureCapturedVarsRegimeMasked_transport_lookup_back
         (masked := masked) (predSat := predSat)
-        (R := (ctxAfter ctx resLeft).regime)
+        (R := (ctxAfter ctx resSide).regime)
         (R' := (ctxAfter ctx res).regime)
         (qt := qt) (μ := μ) (θ := θ) (v := v)
-        hlookup_back hcap_left
+        hlookup_back hcap_side
+
+theorem consistentWithRegimeMasked_join_from_left
+  (masked : Tag → Prop) (predSat : PredSat) (ctx : TypeContext)
+  (resLeft resRight res : TypeResult)
+  (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
+  (hmemEnv : res.memEnv' = joinMemEnvsStrong resLeft.memEnv' resRight.memEnv')
+  (hregime : res.regime' = joinRegimes resLeft.regime' resRight.regime')
+  (hcwr :
+    consistentWithRegimeMasked masked predSat
+      (ctxAfter ctx resLeft).regime
+      (ctxAfter ctx resLeft) μ ρ θ) :
+  consistentWithRegimeMasked masked predSat
+    (ctxAfter ctx res).regime
+    (ctxAfter ctx res) μ ρ θ :=
+  consistentWithRegimeMasked_join_from_side
+    masked predSat ctx resLeft resRight res resLeft μ ρ θ hmemEnv
+    (by
+      intro k b hk
+      have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
+        simpa [ctxAfter, hregime] using hk
+      simpa [ctxAfter] using
+        joinRegimes_lookup_some_left resLeft.regime' resRight.regime' k b hk')
+    (joinMemEnvsStrong_lookup_guardClosure_implies_left resLeft.memEnv' resRight.memEnv')
+    hcwr
 
 theorem consistentWithRegimeMasked_join_from_right
   (masked : Tag → Prop) (predSat : PredSat) (ctx : TypeContext)
@@ -1779,141 +1717,17 @@ theorem consistentWithRegimeMasked_join_from_right
       (ctxAfter ctx resRight) μ ρ θ) :
   consistentWithRegimeMasked masked predSat
     (ctxAfter ctx res).regime
-    (ctxAfter ctx res) μ ρ θ := by
-  have hlookup_back :
-      ∀ k b, (ctxAfter ctx res).regime.lookup? k = some b →
-        (ctxAfter ctx resRight).regime.lookup? k = some b := by
-    intro k b hk
-    have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
-      simpa [ctxAfter, hregime] using hk
-    simpa [ctxAfter] using
-      joinRegimes_lookup_some_right resLeft.regime' resRight.regime' k b hk'
-  rcases hcwr with ⟨hlocs, hvars, hclos⟩
-  refine ⟨?_, ?_, ?_⟩
-  · intro l qt k hlookup hguard hRdef
-    cases hpred : qt.pred with
-    | noPred =>
-        simp [qtypGuardTag, hpred] at hguard
-    | guardOnly k' =>
-        exact Or.inr (locsRegime.guardOnly_ok (l, qt) k' hpred)
-    | guardClosure k' arg_name pred_body var_env =>
-        have hk_eq : k' = k := by
-          have : some k' = some k := by
-            calc
-              some k' = qtypGuardTag qt := by simp [qtypGuardTag, hpred]
-              _ = some k := hguard
-          exact Option.some.inj this
-        rcases
-            joinMemEnvsStrong_lookup_guardClosure_implies_right
-              resLeft.memEnv' resRight.memEnv' l qt k' arg_name pred_body var_env
-              (by simpa [ctxAfter, hmemEnv] using hlookup)
-              hpred
-          with ⟨qtRight, hlookupRight, hpredRight⟩
-        have hRdef_right : (ctxAfter ctx resRight).regime.lookup? k' ≠ none := by
-          intro hnone
-          cases hkres : (ctxAfter ctx res).regime.lookup? k' with
-          | none =>
-              exact hRdef (by simpa [ctxAfter, hk_eq] using hkres)
-          | some b =>
-              have hk_right : (ctxAfter ctx resRight).regime.lookup? k' = some b :=
-                hlookup_back k' b hkres
-              rw [hk_right] at hnone
-              contradiction
-        have hguard_right : qtypGuardTag qtRight = some k' := by
-          simp [qtypGuardTag, hpredRight]
-        have hloc_right :=
-          hlocs l qtRight k'
-            (by simpa [ctxAfter] using hlookupRight)
-            hguard_right
-            hRdef_right
-        rcases hloc_right with hmasked | hloc_right
-        · exact Or.inl (by simpa [hk_eq] using hmasked)
-        · cases hloc_right with
-          | noPred_ok hnp =>
-              simp [qtypGuardTag, hpredRight] at hnp
-          | guardOnly_ok _ hgo =>
-              simp [hpredRight] at hgo
-          | withPred_ok kRight arg_name' pred_body' var_env' a n b hclos_right hreg hreal hmem hcons =>
-              have hpred_ctor_eq :
-                  Predicate.guardClosure kRight arg_name' pred_body' var_env' =
-                    Predicate.guardClosure k' arg_name pred_body var_env := by
-                calc
-                  Predicate.guardClosure kRight arg_name' pred_body' var_env' = qtRight.pred := by
-                    simpa using hclos_right.symm
-                  _ = Predicate.guardClosure k' arg_name pred_body var_env := hpredRight
-              cases hpred_ctor_eq
-              have hpred_eq : qtRight.pred = qt.pred := by
-                simp [hpredRight, hpred]
-              have hreg_res : (ctxAfter ctx res).regime.lookup? k' = some b := by
-                cases hkres : (ctxAfter ctx res).regime.lookup? k' with
-                | none =>
-                    exact False.elim (hRdef (by simpa [ctxAfter, hk_eq] using hkres))
-                | some b' =>
-                    have hk_right : (ctxAfter ctx resRight).regime.lookup? k' = some b' :=
-                      hlookup_back k' b' hkres
-                    have hb_eq : b = b' := by
-                      have : some b = some b' := by
-                        calc
-                          some b = (ctxAfter ctx resRight).regime.lookup? k' := by symm; exact hreg
-                          _ = some b' := hk_right
-                      exact Option.some.inj this
-                    exact congrArg some hb_eq.symm
-              have hcons_res :
-                  (b = true → qtypPredHolds predSat qt μ (Value.num n)) ∧
-                  (b = false → ¬ qtypPredHolds predSat qt μ (Value.num n)) := by
-                refine ⟨?_, ?_⟩
-                · intro hb
-                  exact
-                    qtypPredHolds_transport_pred
-                      (predSat := predSat) (qt := qtRight) (qt' := qt)
-                      (μ := μ) (v := Value.num n) hpred_eq (hcons.1 hb)
-                · intro hb
-                  exact
-                    qtypPredHolds_transport_pred_not
-                      (predSat := predSat) (qt := qtRight) (qt' := qt)
-                      (μ := μ) (v := Value.num n) hpred_eq (hcons.2 hb)
-              exact Or.inr <|
-                locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a n b
-                  hpred hreg_res hreal hmem hcons_res
-  · intro x qt k hlookup hguard hRdef
-    cases hkres : (ctxAfter ctx res).regime.lookup? k with
-    | none =>
-        exact Or.inr <| False.elim (hRdef hkres)
-    | some b =>
-        have hRdef_right : (ctxAfter ctx resRight).regime.lookup? k ≠ none := by
-          intro hnone
-          have hk_right := hlookup_back k b hkres
-          rw [hk_right] at hnone
-          contradiction
-        have hvar_right :=
-          hvars x qt k
-            (by simpa [ctxAfter] using hlookup)
-            hguard
-            hRdef_right
-        rcases hvar_right with hmasked | hvar_right
-        · exact Or.inl hmasked
-        · exact Or.inr <|
-            varsRegime_transport_active_lookup_back
-              (predSat := predSat)
-              (R := (ctxAfter ctx resRight).regime)
-              (R' := (ctxAfter ctx res).regime)
-              (μ := μ) (ρ := ρ) (entry := (x, qt))
-              hlookup_back hguard hkres hvar_right
-  · intro x qt v hlookup hlookup_v
-    have hcap_right :
-        closureCapturedVarsRegimeMasked masked predSat
-          (ctxAfter ctx resRight).regime
-          qt μ θ v :=
-      hclos x qt v
-        (by simpa [ctxAfter] using hlookup)
-        hlookup_v
-    exact
-      closureCapturedVarsRegimeMasked_transport_lookup_back
-        (masked := masked) (predSat := predSat)
-        (R := (ctxAfter ctx resRight).regime)
-        (R' := (ctxAfter ctx res).regime)
-        (qt := qt) (μ := μ) (θ := θ) (v := v)
-        hlookup_back hcap_right
+    (ctxAfter ctx res) μ ρ θ :=
+  consistentWithRegimeMasked_join_from_side
+    masked predSat ctx resLeft resRight res resRight μ ρ θ hmemEnv
+    (by
+      intro k b hk
+      have hk' : (joinRegimes resLeft.regime' resRight.regime').lookup? k = some b := by
+        simpa [ctxAfter, hregime] using hk
+      simpa [ctxAfter] using
+        joinRegimes_lookup_some_right resLeft.regime' resRight.regime' k b hk')
+    (joinMemEnvsStrong_lookup_guardClosure_implies_right resLeft.memEnv' resRight.memEnv')
+    hcwr
 
 /-- Extract a context-level guard owner from successful `matchGuard`. -/
 private lemma matchGuard_ok_extract_owner_in_ctx
