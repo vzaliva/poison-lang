@@ -38,6 +38,7 @@ config.json
 node_modules/
 package-lock.json
 package.json
+parser/tree-sitter-poison/poison.dylib
 
 # test results
 examples/*.result
