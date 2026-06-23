@@ -1,0 +1,32 @@
+--! poison-interpreter --extern-regime "238=false"
+-- lp55xx_read example (fixed variant) under the FAILED-READ regime.
+--
+-- This is the same program as `lp55xx-read.poison`, but with R(@238) = false, so
+-- the outer `if ret >= 0` takes the else branch: the read is treated as failed,
+-- `ret` and `status` are NOT de-poisoned, and the else branch stops the engine
+-- (`eng := NOT_READY`) and returns `ERROR`. It pins the cleanup path that the
+-- `238=true` fixture does not exercise: both observable outputs (the engine cell
+-- `eng` and the return code) are still clean, while the critical `status` cell
+-- stays poisoned with tag 100, as expected.
+let status = ref 0 in
+let eng = extern ref @234 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
+let ENG_STATUS_MASK = extern val @235 : (int :> clean {}) in
+let NOT_READY = extern val @236 : (int :> clean {}) in
+let READY = extern val @237 : (int :> clean {}) in
+let ERROR = extern val @239 : (int :> clean {}) in
+let OK = extern val @240 : (int :> clean {}) in
+
+let lp55xx_read =
+  extern fn @238 r : (ref int :> clean {}) -> ( (int :> poisoned { 100, ret => (ret >= 0) }) ) ,
+    effects: { !r :> (int :> poisoned { 100 }) }
+in
+
+let ret = lp55xx_read status in
+if ret >= 0 then
+  (status := !status & ENG_STATUS_MASK;
+   if !status != ENG_STATUS_MASK then
+     (eng := NOT_READY; ERROR)
+   else
+     (eng := READY; OK))
+else
+  (eng := NOT_READY; ERROR)

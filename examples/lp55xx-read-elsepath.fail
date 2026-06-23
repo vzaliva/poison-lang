@@ -1,0 +1,9 @@
+Evaluating file: examples/lp55xx-read-elsepath.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=false, pred={}},
+  MemoryTypeEnv: { 0 := (true, {1}), 1 := (false, {}) },
+  tagEnv: { 1 := { value := false, deps := [] } },
+  nextLoc: 2
+
+Runtime error: extern id 234 not registered

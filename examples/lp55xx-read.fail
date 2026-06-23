@@ -6,4 +6,4 @@ Type checking passed:
   tagEnv: { 1 := { value := true, deps := [] } },
   nextLoc: 2
 
-Runtime error: extern id 233 not registered
+Runtime error: extern id 234 not registered

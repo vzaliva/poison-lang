@@ -1,0 +1,30 @@
+-- lp55xx_read example (buggy variant), the pre-patch code that ignores the
+-- read's return value. This is the companion to `lp55xx-read.poison` (the fixed
+-- variant) and corresponds to Listing 1 in the paper.
+--
+-- There is no `if ret >= 0` guard, so the read's tag-100 result is never
+-- validated: the de-poisoning never fires. Branching on the (still poisoned)
+-- `!status` poisons the control flow, so both observable outputs---the engine
+-- cell `eng` and the returned code (OK / ERROR)---come out poisoned. No
+-- `--extern-regime` directive is used, so the typechecker analyses the code
+-- conservatively (the realistic case where we do not know the read succeeded);
+-- the program is well-typed but NOT fault-robust.
+let status = ref 0 in
+let eng = extern ref @234 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
+let ENG_STATUS_MASK = extern val @235 : (int :> clean {}) in
+let NOT_READY = extern val @236 : (int :> clean {}) in
+let READY = extern val @237 : (int :> clean {}) in
+let ERROR = extern val @239 : (int :> clean {}) in
+let OK = extern val @240 : (int :> clean {}) in
+
+let lp55xx_read =
+  extern fn @238 r : (ref int :> clean {}) -> ( (int :> poisoned { 100, ret => (ret >= 0) }) ) ,
+    effects: { !r :> (int :> poisoned { 100 }) }
+in
+
+let _ = lp55xx_read status in
+  (status := !status & ENG_STATUS_MASK;
+   if !status != ENG_STATUS_MASK then
+     (eng := NOT_READY; ERROR)
+   else
+     (eng := READY; OK))
