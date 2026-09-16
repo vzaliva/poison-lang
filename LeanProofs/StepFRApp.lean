@@ -1040,7 +1040,7 @@ lemma applyFnTClosure_regular_inv_of_threaded_mem
         regime := bodyState.regime'
         externRefAllowed := false
         declaredExternRefs := bodyState.declared' } body fuelBody = .ok result3 ∧
-    isSubtype st2 result3.qualType = true ∧
+    isErasureOf st2 result3.qualType = true ∧
     first =
       { result3 with
         qualType :=
@@ -2794,7 +2794,7 @@ private lemma applyPFnTClosure_regular_structure
       exact ⟨fuelBody, rfl⟩
 
 -- Inversion for regular pure-closures: successful application exposes the body typing
--- derivation and successful return-type subtype check.
+-- derivation and successful return-type erasure check.
 
 -- Specialized extraction for pure-closure application maps used in `stepFR_app`.
 
@@ -2835,7 +2835,7 @@ private lemma applyPFnTClosure_regular_inv_of_threaded_mem
         regime := bodyState.regime'
         externRefAllowed := false
         declaredExternRefs := bodyState.declared' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
-    isSubtype st2 result3.qualType = true ∧
+    isErasureOf st2 result3.qualType = true ∧
     first =
       { result3 with
         qualType :=
@@ -3604,13 +3604,13 @@ private lemma applyFnTClosure_ok_poison_pred_of_p1p_true
               simp [htc] at happly
               cases hq3 : result3.qualType with
               | mk et3 p3 pred3 =>
-                  cases hsub : isSubtype st2 result3.qualType with
+                  cases hsub : isErasureOf st2 result3.qualType with
                   | false =>
-                      have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                      have hsub' : isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
                         simpa [hq3] using hsub
                       simp [hsub', hq3] at happly
                   | true =>
-                      have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+                      have hsub' : isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
                         simpa [hq3] using hsub
                       have happly' :
                           (Except.ok
@@ -3701,13 +3701,13 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
               simp [htc] at happly
               cases hq3 : result3.qualType with
               | mk et3 p3 pred3 =>
-                  cases hsub : isSubtype st2 result3.qualType with
+                  cases hsub : isErasureOf st2 result3.qualType with
                   | false =>
-                      have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                      have hsub' : isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
                         simpa [hq3] using hsub
                       simp [hsub', hq3] at happly
                   | true =>
-                      have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+                      have hsub' : isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
                         simpa [hq3] using hsub
                       have happly' :
                           (Except.ok
@@ -10948,7 +10948,7 @@ lemma stepFR_app_with_expr_proof
                         regime := result1.regime'
                         externRefAllowed := false
                         declaredExternRefs := result1.declared' } body₀ fuelBody = .ok result3Shared ∧
-                    isSubtype st2 result3Shared.qualType = true ∧
+                    isErasureOf st2 result3Shared.qualType = true ∧
                     firstShared =
                       { result3Shared with
                         qualType :=
@@ -16832,7 +16832,7 @@ lemma stepFR_app_with_expr_proof
                         regime := result1.regime'
                         externRefAllowed := false
                         declaredExternRefs := result1.declared' } (PExpr.toExpr pbody) fuelBody = .ok result3Shared ∧
-                    isSubtype st2 result3Shared.qualType = true ∧
+                    isErasureOf st2 result3Shared.qualType = true ∧
                     firstShared =
                       { result3Shared with
                         qualType :=

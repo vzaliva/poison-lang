@@ -1784,7 +1784,7 @@ private theorem of_applyFnTClosureAtCursor
               | mk bodyEtyp bodyPoison bodyPred =>
                   simp [hbodyQt] at happly
                   cases hsub :
-                      isSubtype st2
+                      isErasureOf st2
                         { etyp := bodyEtyp, poison := bodyPoison, pred := bodyPred }
                   · simp [hsub] at happly
                   · simp [hsub, pure, Except.pure] at happly
@@ -2098,7 +2098,7 @@ private theorem of_applyPFnTClosureAtCursor
               | mk bodyEtyp bodyPoison bodyPred =>
                   simp [hbodyQt] at happly
                   cases hsub :
-                      isSubtype st2
+                      isErasureOf st2
                         { etyp := bodyEtyp, poison := bodyPoison, pred := bodyPred }
                   · simp [hsub] at happly
                   · simp [hsub, pure, Except.pure] at happly

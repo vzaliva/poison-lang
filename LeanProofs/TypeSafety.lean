@@ -1628,12 +1628,12 @@ private lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
       (∃ (tcls : List FnTClosure), result1.qualType.etyp = ETyp.arrow st1 st2 p tcls) ∧
       result1.qualType.poison = p1 ∧
       (¬ ctx.pureCtx) ∧
-      (isSubtype st1 result2.qualType))
+      (isErasureOf st1 result2.qualType))
      ∨
      (isArrow = false ∧
       (∃ (tcls_p : List PFnTClosure), result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p) ∧
       result1.qualType.poison = p1 ∧
-      (isSubtype st1 result2.qualType))) := by
+      (isErasureOf st1 result2.qualType))) := by
   intro h_typecheck
   cases fuel with
   | zero =>
@@ -1675,7 +1675,7 @@ private lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
                             · next h_notEmpty =>
                               split at h_typecheck
                               · simp at h_typecheck
-                              · next h_subtype =>
+                              · next h_erase =>
                                 have h_arrow : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls := by
                                   simp [h_qt1]
                                 refine ⟨result2, result1, st1, st2, p, p1, true, ?_, ?_, ?_⟩
@@ -1691,7 +1691,7 @@ private lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
                                   constructor
                                   · exact h_notPureCtx
                                   · rw [h_qt2]
-                                    simp [h_subtype]
+                                    simp [h_erase]
                       | parrow st1 st2 p tcls_p =>
                           simp at h_typecheck
                           split at h_typecheck
@@ -1699,7 +1699,7 @@ private lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
                           · next h_notEmpty =>
                             split at h_typecheck
                             · simp at h_typecheck
-                            · next h_subtype =>
+                            · next h_erase =>
                               have h_parrow : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls_p := by
                                 simp [h_qt1]
                               refine ⟨result2, result1, st1, st2, p, p1, false, ?_, ?_, ?_⟩
@@ -1713,7 +1713,7 @@ private lemma typecheckApp_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : 
                                 constructor
                                 · simp [h_qt1]
                                 · rw [h_qt2]
-                                  simp [h_subtype]
+                                  simp [h_erase]
                       | _ =>
                           simp at h_typecheck
               | error _msg =>
@@ -2350,7 +2350,7 @@ lemma typecheckApp_arrow_structure_full
         result1.qualType.poison = p1 ∧
         ¬ ctx.pureCtx ∧
         tcls ≠ [] ∧
-        isSubtype st1 result2.qualType = true ∧
+        isErasureOf st1 result2.qualType = true ∧
         applyClosuresThreaded
           (fun tcl cursor =>
             applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel')
@@ -2364,7 +2364,7 @@ lemma typecheckApp_arrow_structure_full
         result1.qualType.etyp = ETyp.parrow st1 st2 p tcls ∧
         result1.qualType.poison = p1 ∧
         tcls ≠ [] ∧
-        isSubtype st1 result2.qualType = true ∧
+        isErasureOf st1 result2.qualType = true ∧
         applyClosuresThreaded
           (fun tcl cursor =>
             applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel')
@@ -2407,14 +2407,14 @@ lemma typecheckApp_arrow_structure_full
                   by_cases h_empty : tcls = []
                   · subst h_empty
                     simp at htc
-                  · cases h_sub_val : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } with
+                  · cases h_sub_val : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } with
                     | false =>
                         simp [h_sub_val] at htc
                         simp [h_empty] at htc
                     | true =>
-                        have h_sub0 : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
+                        have h_sub0 : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
                           simp [h_sub_val]
-                        have h_sub : isSubtype st1 result2.qualType = true := by
+                        have h_sub : isErasureOf st1 result2.qualType = true := by
                           simpa [h_qt2] using h_sub0
                         simp [h_sub_val] at htc
                         cases h_thread :
@@ -2461,14 +2461,14 @@ lemma typecheckApp_arrow_structure_full
               by_cases h_empty : tcls = []
               · subst h_empty
                 simp at htc
-              · cases h_sub_val : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } with
+              · cases h_sub_val : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } with
                 | false =>
                     simp [h_empty, h_sub_val] at htc
                     cases htc
                 | true =>
-                    have h_sub0 : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
+                    have h_sub0 : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
                       simp [h_sub_val]
-                    have h_sub : isSubtype st1 result2.qualType = true := by
+                    have h_sub : isErasureOf st1 result2.qualType = true := by
                       simpa [h_qt2] using h_sub0
                     simp [h_sub_val] at htc
                     cases h_thread :
@@ -4141,7 +4141,7 @@ private lemma applyFnTClosure_nextTag_mono_normal
             <;> simp at happly
           rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
           simp [hqt] at happly
-          cases hsub : isSubtype st2 _ with
+          cases hsub : isErasureOf st2 _ with
           | false =>
               rw [hsub] at happly
               simp at happly
@@ -4218,7 +4218,7 @@ private lemma applyPFnTClosure_nextTag_mono_normal
             <;> simp at happly
           rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
           simp [hqt] at happly
-          cases hsub : isSubtype st2 _ with
+          cases hsub : isErasureOf st2 _ with
           | false =>
               rw [hsub] at happly
               simp at happly
@@ -4330,7 +4330,7 @@ private lemma typecheckApp_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Expr
     <;> simp at htc
   · rcases hctxPure : ctx.pureCtx <;> simp [hctxPure] at htc
     rcases fs with _ | ⟨f, fs'⟩ <;> simp at htc
-    rcases hsub1 : isSubtype t1 _
+    rcases hsub1 : isErasureOf t1 _
       <;> rw [hsub1] at htc
       <;> simp at htc
     rcases happly :
@@ -4382,7 +4382,7 @@ private lemma typecheckApp_nextTag_mono_normal (ctx : TypeContext) (e1 e2 : Expr
     simpa [h_join] using h_ctx_le_max
   · rename_i st1 st2 p tcls
     rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htc
-    rcases hsub1 : isSubtype st1 _
+    rcases hsub1 : isErasureOf st1 _
       <;> rw [hsub1] at htc
       <;> simp at htc
     rcases happly :
@@ -5649,7 +5649,7 @@ private lemma applyFnTClosure_regime_mono
       <;> simp at happly
     rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
     simp [hqt] at happly
-    rcases hsub : isSubtype st2 _
+    rcases hsub : isErasureOf st2 _
       <;> rw [hsub] at happly
       <;> simp at happly
     · simp [Functor.map, Except.map] at happly
@@ -5700,7 +5700,7 @@ lemma applyPFnTClosure_regime_mono
         simp at happly
         rcases hq3 : r3.qualType with ⟨etyp3, poison3, pred3⟩
         simp [hq3] at happly
-        rcases hsub : isSubtype st2 { etyp := etyp3, poison := poison3, pred := pred3 }
+        rcases hsub : isErasureOf st2 { etyp := etyp3, poison := poison3, pred := pred3 }
         · rw [hsub] at happly
           simp [Functor.map, Except.map] at happly
         · rw [hsub] at happly
@@ -8026,7 +8026,7 @@ private lemma applyFnTClosure_predTagsBounded
         <;> rw [htc] at happly <;> simp at happly
       rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
       simp [hqt] at happly
-      cases hsub : isSubtype st2 _ with
+      cases hsub : isErasureOf st2 _ with
       | false => rw [hsub] at happly; simp at happly
       | true =>
         rw [hsub] at happly; simp [pure, Except.pure] at happly; subst r2
@@ -8107,7 +8107,7 @@ private lemma applyPFnTClosure_predTagsBounded
         <;> rw [htc] at happly <;> simp at happly
       rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
       simp [hqt] at happly
-      cases hsub : isSubtype st2 _ with
+      cases hsub : isErasureOf st2 _ with
       | false => rw [hsub] at happly; simp at happly
       | true =>
         rw [hsub] at happly; simp [pure, Except.pure] at happly; subst r2
@@ -9301,7 +9301,7 @@ private lemma typecheckExpr_preserves_combined_main :
                 · -- arrow case
                   rcases hctxPure : ctx.pureCtx <;> simp [hctxPure] at htcApp
                   rcases fs with _ | ⟨f, fs'⟩ <;> simp at htcApp
-                  rcases hsub1 : isSubtype t1 _
+                  rcases hsub1 : isErasureOf t1 _
                     <;> rw [hsub1] at htcApp <;> simp at htcApp
                   rcases happly :
                       applyFnTClosureAtCursor f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1
@@ -9373,7 +9373,7 @@ private lemma typecheckExpr_preserves_combined_main :
                 · -- parrow case
                   rename_i st1 st2 p tcls
                   rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htcApp
-                  rcases hsub1 : isSubtype st1 _
+                  rcases hsub1 : isErasureOf st1 _
                     <;> rw [hsub1] at htcApp <;> simp at htcApp
                   rcases happly :
                       applyPFnTClosureAtCursor f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1
@@ -9679,7 +9679,7 @@ private lemma applyFnTClosure_tagEnvBounded_normal
           <;> rw [htc] at happly <;> simp at happly
         rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
         simp [hqt] at happly
-        cases hsub : isSubtype st2 _ with
+        cases hsub : isErasureOf st2 _ with
         | false => rw [hsub] at happly; simp at happly
         | true =>
             rw [hsub] at happly
@@ -9794,7 +9794,7 @@ private lemma applyPFnTClosure_tagEnvBounded_normal
           <;> rw [htc] at happly <;> simp at happly
         rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
         simp [hqt] at happly
-        cases hsub : isSubtype st2 _ with
+        cases hsub : isErasureOf st2 _ with
         | false => rw [hsub] at happly; simp at happly
         | true =>
             rw [hsub] at happly
@@ -10011,7 +10011,7 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
     <;> simp at htc
   · rcases hctxPure : ctx.pureCtx <;> simp [hctxPure] at htc
     rcases fs with _ | ⟨f, fs'⟩ <;> simp at htc
-    rcases hsub1 : isSubtype t1 _
+    rcases hsub1 : isErasureOf t1 _
       <;> rw [hsub1] at htc <;> simp at htc
     rcases happly :
         applyFnTClosureAtCursor f t1 t2 p poison1 etyp2 poison2 pred2 ctx res1
@@ -10056,7 +10056,7 @@ private lemma typecheckApp_tagEnvBounded_normal (ctx : TypeContext) (e1 e2 : Exp
     exact Nat.lt_of_lt_of_le (hboundJoin k hk) (h_join_next ▸ h_r_le_max)
   · rename_i st1 st2 p tcls
     rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htc
-    rcases hsub1 : isSubtype st1 _
+    rcases hsub1 : isErasureOf st1 _
       <;> rw [hsub1] at htc <;> simp at htc
     rcases happly :
         applyPFnTClosureAtCursor f st1 st2 p poison1 etyp2 poison2 pred2 ctx res1
@@ -11102,7 +11102,7 @@ private lemma applyFnTClosure_nextLoc_mono
       <;> simp at happly
     rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
     simp [hqt] at happly
-    rcases hsub : isSubtype st2 _
+    rcases hsub : isErasureOf st2 _
       <;> rw [hsub] at happly
       <;> simp at happly
     · simp [Functor.map, Except.map] at happly
@@ -11183,7 +11183,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
     <;> simp at htc
   · rcases hctx : ctx.pureCtx <;> simp [hctx] at htc
     rcases fs with _ | ⟨f, fs'⟩ <;> simp at htc
-    rcases hsub1 : isSubtype t1 _
+    rcases hsub1 : isErasureOf t1 _
       <;> rw [hsub1] at htc
       <;> simp at htc
     rcases happly :
@@ -11244,7 +11244,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
       _ ≤ res.nextLoc' := h_r_le_res
   · rename_i st1 st2 p tcls
     rcases tcls with _ | ⟨f, fs'⟩ <;> simp at htc
-    rcases hsub1 : isSubtype st1 _
+    rcases hsub1 : isErasureOf st1 _
       <;> rw [hsub1] at htc
       <;> simp at htc
     rcases happly :
@@ -11295,7 +11295,7 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                   simp at happly_old
                   rcases hq3 : r3.qualType with ⟨etyp3, poison3, pred3⟩
                   simp [hq3] at happly_old
-                  cases hsub : isSubtype st2 { etyp := etyp3, poison := poison3, pred := pred3 } with
+                  cases hsub : isErasureOf st2 { etyp := etyp3, poison := poison3, pred := pred3 } with
                   | false =>
                       rw [hsub] at happly_old
                       simp at happly_old
@@ -12025,7 +12025,7 @@ private lemma applyFnTClosure_declared'_eq
       <;> simp at happly
     rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
     simp [hqt] at happly
-    rcases hsub : isSubtype st2 _
+    rcases hsub : isErasureOf st2 _
       <;> rw [hsub] at happly
       <;> simp at happly
     · simp [Functor.map, Except.map] at happly
@@ -12109,7 +12109,7 @@ private lemma applyPFnTClosure_declared'_eq
         simp at happly
         rcases hq3 : r3.qualType with ⟨etyp3, poison3, pred3⟩
         simp [hq3] at happly
-        rcases hsub : isSubtype st2 { etyp := etyp3, poison := poison3, pred := pred3 }
+        rcases hsub : isErasureOf st2 { etyp := etyp3, poison := poison3, pred := pred3 }
         · rw [hsub] at happly
           simp [Functor.map, Except.map] at happly
         · rw [hsub] at happly
@@ -14390,7 +14390,7 @@ private lemma applyFnTClosure_wfTypeResult
         cases h_qt3 : result3.qualType with
         | mk etyp3 p3 pred3 =>
           simp [h_qt3] at htc
-          cases hsub : isSubtype st2 { etyp := etyp3, poison := p3, pred := pred3 } with
+          cases hsub : isErasureOf st2 { etyp := etyp3, poison := p3, pred := pred3 } with
           | false => simp [hsub] at htc
           | true =>
             simp [hsub, pure, Except.pure] at htc
@@ -14460,7 +14460,7 @@ private lemma applyPFnTClosure_wfTypeResult
         cases h_qt3 : result3.qualType with
         | mk etyp3 p3 pred3 =>
           simp [h_qt3] at htc
-          cases hsub : isSubtype st2 { etyp := etyp3, poison := p3, pred := pred3 } with
+          cases hsub : isErasureOf st2 { etyp := etyp3, poison := p3, pred := pred3 } with
           | false => simp [hsub] at htc
           | true =>
             simp [hsub, pure, Except.pure] at htc
@@ -14509,7 +14509,7 @@ private lemma applyPFnTClosure_nextLoc_mono
       <;> simp at happly
     rcases hqt : r.qualType with ⟨etyp, poison, pred⟩
     simp [hqt] at happly
-    rcases hsub : isSubtype st2 _
+    rcases hsub : isErasureOf st2 _
       <;> rw [hsub] at happly
       <;> simp at happly
     · simp [Functor.map, Except.map] at happly
@@ -14800,7 +14800,7 @@ private lemma applyFnTClosure_refLocsResultOutputs
           simp [hqt3] at htc hIH3
           simp [normalizeAppResultByProvenance] at htc
           split at htc
-          · simp at htc  -- isSubtype fails → error → contradiction
+          · simp at htc  -- isErasureOf fails → error → contradiction
           · simp [pure, Except.pure] at htc
             have hrl3 : etypRefLocsBounded etyp3 result3.nextLoc' := by
               have := hIH3.2.1; rw [hqt3] at this; exact this
@@ -14897,7 +14897,7 @@ private lemma applyPFnTClosure_refLocsResultOutputs
             have := hIH3.2.2; rw [hqt3] at this; exact this
           simp [normalizeAppResultByProvenance] at htc
           split at htc
-          · simp at htc  -- isSubtype false → error
+          · simp at htc  -- isErasureOf false → error
           · simp [pure, Except.pure] at htc
             split at htc <;> (subst htc; exact ⟨hrl3, hcl3⟩)
     | extern id x retSpec capturedEnv declaredArgQt captures =>
@@ -15596,7 +15596,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
                     by_cases hempty : tcls = []
                     · simp [hempty] at htc
                     · simp [hempty] at htc
-                      by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
+                      by_cases hsub : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                       · simp [hsub] at htc
                       · push Not at hsub
                         simp [hsub] at htc
@@ -15682,7 +15682,7 @@ private lemma typecheckExpr_preserves_refLocs_main :
                   by_cases hempty : tcls_p = []
                   · simp [hempty] at htc
                   · simp [hempty] at htc
-                    by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
+                    by_cases hsub : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                     · simp [hsub] at htc
                     · push Not at hsub; simp [hsub] at htc
                       cases tcls_p with
@@ -15970,7 +15970,7 @@ private lemma applyFnTClosure_mem_contains_preserved
               cases h_qt3 : result3.qualType with
               | mk etyp3 p3 pred3 =>
                   simp [h_qt3] at htc
-                  cases hsub : isSubtype st2 { etyp := etyp3, poison := p3, pred := pred3 } with
+                  cases hsub : isErasureOf st2 { etyp := etyp3, poison := p3, pred := pred3 } with
                   | false =>
                       simp [hsub] at htc
                   | true =>
@@ -16036,7 +16036,7 @@ private lemma applyPFnTClosure_mem_contains_preserved
               cases h_qt3 : result3.qualType with
               | mk etyp3 p3 pred3 =>
                   simp [h_qt3] at htc
-                  cases hsub : isSubtype st2 { etyp := etyp3, poison := p3, pred := pred3 } with
+                  cases hsub : isErasureOf st2 { etyp := etyp3, poison := p3, pred := pred3 } with
                   | false =>
                       simp [hsub] at htc
                   | true =>
@@ -16121,7 +16121,7 @@ private lemma typecheckApp_mem_contains_preserved
                             by_cases hempty : tcls = []
                             · simp [hempty] at htc
                             · simp [hempty] at htc
-                              by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
+                              by_cases hsub : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                               · simp [hsub] at htc
                               · push Not at hsub
                                 simp [hsub] at htc
@@ -16172,7 +16172,7 @@ private lemma typecheckApp_mem_contains_preserved
                           · simp [hempty] at htc
                           · simp [hempty] at htc
                             simp [pure, Except.pure] at htc
-                            by_cases hsub : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
+                            by_cases hsub : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = false
                             · simp [hsub] at htc
                             · push Not at hsub
                               simp [hsub] at htc
@@ -17159,11 +17159,11 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                   exact hsub_arg l hl2
                 cases hcases with
                 | inl harrow =>
-                    rcases harrow with ⟨_hisArrow, _hArrow, _hp1eq, hnotPure, _hsubtype⟩
+                    rcases harrow with ⟨_hisArrow, _hArrow, _hp1eq, hnotPure, _herase⟩
                     simp at hnotPure
                 | inr hparrow =>
                     rcases hparrow with
-                      ⟨_hisArrowFalse, ⟨tcls, het1⟩, _hp1eq, hsubtype⟩
+                      ⟨_hisArrowFalse, ⟨tcls, het1⟩, _hp1eq, herase⟩
                     cases hq2 : result2.qualType with
                     | mk etyp2 p2 pred2 =>
                         cases fuel' with
@@ -17191,9 +17191,9 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                 simp at htcApp'
                                 by_cases htclsNil : tcls = []
                                 · simp [htclsNil] at htcApp'
-                                · have hsubtype' : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
-                                    simpa [hq2] using hsubtype
-                                  simp [htclsNil, hsubtype'] at htcApp'
+                                · have herase' : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
+                                    simpa [hq2] using herase
+                                  simp [htclsNil, herase'] at htcApp'
                                   cases tcls with
                                   | nil =>
                                       exact False.elim (htclsNil rfl)
@@ -17263,12 +17263,12 @@ lemma typecheckExpr_pure_mem_subset_of_toPExpr
                                                       simp [ctxBody, htcBody] at happly
                                                   | ok result3 =>
                                                       simp [ctxBody, htcBody] at happly
-                                                      cases hsubBodyRet : isSubtype st2 result3.qualType with
+                                                      cases hsubBodyRet : isErasureOf st2 result3.qualType with
                                                       | false =>
                                                           cases hq3 : result3.qualType with
                                                           | mk et3 p3 pred3 =>
                                                               have hsubBodyRet' :
-                                                                  isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                                                                  isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
                                                                 simpa [hq3] using hsubBodyRet
                                                               have hcontra : False := by
                                                                 simp [hsubBodyRet', hq3] at happly
@@ -17628,11 +17628,11 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                   ih (fuel' - 1) hltSub ctxFun e1 pe1 result1 hpe1 htc1' k b hkFun
                 cases hcases with
                 | inl harrow =>
-                    rcases harrow with ⟨_hisArrow, _hArrow, _hp1eq, hnotPure, _hsubtype⟩
+                    rcases harrow with ⟨_hisArrow, _hArrow, _hp1eq, hnotPure, _herase⟩
                     simp at hnotPure
                 | inr hparrow =>
                     rcases hparrow with
-                      ⟨_hisArrowFalse, ⟨tcls, het1⟩, _hp1eq, hsubtype⟩
+                      ⟨_hisArrowFalse, ⟨tcls, het1⟩, _hp1eq, herase⟩
                     cases hq2 : result2.qualType with
                     | mk etyp2 p2 pred2 =>
                         cases fuel' with
@@ -17660,9 +17660,9 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                 simp at htcApp'
                                 by_cases htclsNil : tcls = []
                                 · simp [htclsNil] at htcApp'
-                                · have hsubtype' : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
-                                    simpa [hq2] using hsubtype
-                                  simp [htclsNil, hsubtype'] at htcApp'
+                                · have herase' : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
+                                    simpa [hq2] using herase
+                                  simp [htclsNil, herase'] at htcApp'
                                   cases tcls with
                                   | nil =>
                                       exact False.elim (htclsNil rfl)
@@ -17732,12 +17732,12 @@ lemma typecheckExpr_pure_regime_bridge_of_toPExpr
                                                       simp [ctxBody, htcBody] at happly
                                                   | ok result3 =>
                                                       simp [ctxBody, htcBody] at happly
-                                                      cases hsubBodyRet : isSubtype st2 result3.qualType with
+                                                      cases hsubBodyRet : isErasureOf st2 result3.qualType with
                                                       | false =>
                                                           cases hq3 : result3.qualType with
                                                           | mk et3 p3 pred3 =>
                                                               have hsubBodyRet' :
-                                                                  isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                                                                  isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
                                                                 simpa [hq3] using hsubBodyRet
                                                               have hcontra : False := by
                                                                 simp [hsubBodyRet', hq3] at happly
@@ -18065,11 +18065,11 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                   ih (fuel' - 1) hltSub ctxFun e1 pe1 result1 hpe1 htc1' l qt hlookupFunCtx
                 cases hcases with
                 | inl harrow =>
-                    rcases harrow with ⟨_hisArrow, _hArrow, _hp1eq, hnotPure, _hsubtype⟩
+                    rcases harrow with ⟨_hisArrow, _hArrow, _hp1eq, hnotPure, _herase⟩
                     simp at hnotPure
                 | inr hparrow =>
                     rcases hparrow with
-                      ⟨_hisArrowFalse, ⟨tcls, het1⟩, _hp1eq, hsubtype⟩
+                      ⟨_hisArrowFalse, ⟨tcls, het1⟩, _hp1eq, herase⟩
                     cases hq2 : result2.qualType with
                     | mk etyp2 p2 pred2 =>
                         cases fuel' with
@@ -18097,9 +18097,9 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                 simp at htcApp'
                                 by_cases htclsNil : tcls = []
                                 · simp [htclsNil] at htcApp'
-                                · have hsubtype' : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
-                                    simpa [hq2] using hsubtype
-                                  simp [htclsNil, hsubtype'] at htcApp'
+                                · have herase' : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
+                                    simpa [hq2] using herase
+                                  simp [htclsNil, herase'] at htcApp'
                                   cases tcls with
                                   | nil =>
                                       exact False.elim (htclsNil rfl)
@@ -18169,12 +18169,12 @@ lemma typecheckExpr_pure_mem_lookup_bridge_of_toPExpr
                                                       simp [ctxBody, htcBody] at happly
                                                   | ok result3 =>
                                                       simp [ctxBody, htcBody] at happly
-                                                      cases hsubBodyRet : isSubtype st2 result3.qualType with
+                                                      cases hsubBodyRet : isErasureOf st2 result3.qualType with
                                                       | false =>
                                                           cases hq3 : result3.qualType with
                                                           | mk et3 p3 pred3 =>
                                                               have hsubBodyRet' :
-                                                                  isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                                                                  isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
                                                                 simpa [hq3] using hsubBodyRet
                                                               have hcontra : False := by
                                                                 simp [hsubBodyRet', hq3] at happly
@@ -18551,11 +18551,11 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                     hpe1 htc1' k b hkFun
                 cases hcases with
                 | inl harrow =>
-                    rcases harrow with ⟨_hisArrow, _hArrow, _hp1eq, hnotPure, _hsubtype⟩
+                    rcases harrow with ⟨_hisArrow, _hArrow, _hp1eq, hnotPure, _herase⟩
                     simp at hnotPure
                 | inr hparrow =>
                     rcases hparrow with
-                      ⟨_hisArrowFalse, ⟨tcls, het1⟩, _hp1eq, hsubtype⟩
+                      ⟨_hisArrowFalse, ⟨tcls, het1⟩, _hp1eq, herase⟩
                     cases hq2 : result2.qualType with
                     | mk etyp2 p2 pred2 =>
                         cases fuel' with
@@ -18583,9 +18583,9 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                 simp at htcApp'
                                 by_cases htclsNil : tcls = []
                                 · simp [htclsNil] at htcApp'
-                                · have hsubtype' : isSubtype st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
-                                    simpa [hq2] using hsubtype
-                                  simp [htclsNil, hsubtype'] at htcApp'
+                                · have herase' : isErasureOf st1 { etyp := etyp2, poison := p2, pred := pred2 } = true := by
+                                    simpa [hq2] using herase
+                                  simp [htclsNil, herase'] at htcApp'
                                   cases tcls with
                                   | nil =>
                                       exact False.elim (htclsNil rfl)
@@ -18655,12 +18655,12 @@ lemma typecheckExpr_pure_guarded_mem_bridge_of_toPExpr
                                                       simp [ctxBody, htcBody] at happly
                                                   | ok result3 =>
                                                       simp [ctxBody, htcBody] at happly
-                                                      cases hsubBodyRet : isSubtype st2 result3.qualType with
+                                                      cases hsubBodyRet : isErasureOf st2 result3.qualType with
                                                       | false =>
                                                           cases hq3 : result3.qualType with
                                                           | mk et3 p3 pred3 =>
                                                               have hsubBodyRet' :
-                                                                  isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+                                                                  isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
                                                                 simpa [hq3] using hsubBodyRet
                                                               have hcontra : False := by
                                                                 simp [hsubBodyRet', hq3] at happly

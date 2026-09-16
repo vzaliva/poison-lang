@@ -218,7 +218,7 @@ conservatively track poison propagation through qualified types.
 The three type levels are related through systematic transformations:
 
 \begin{itemize}
-    \item \textbf{Surface $\to$ Runtime:} Subtyping relation \texttt{ST <: T} (surface type erasure) adds region and closure information
+    \item \textbf{Surface $\to$ Runtime:} a runtime type $T$ refines the surface type $ST$ with region, poison, and closure information; erasure $\lfloor T \rfloor = ST$ recovers $ST$
     \item \textbf{Runtime $\to$ Qualified:} Wrapping with poison status and optional predicates: \texttt{T $\triangleright$ p} or \texttt{T $\triangleright$ p \{P\}}
     \item \textbf{Function definitions:} Surface types in user syntax become enriched types in type checker (with singleton closure sets), then qualified types in poison-propagating environments
     \item \textbf{Function applications:} Function types store surface types for interface and merged typing-closure sets for implementation; all alternatives are re-typechecked and their results joined
@@ -1118,8 +1118,8 @@ context extended with the actual argument's qualified type (including its
 predicate) and under the current logical environment $\mathcal{L}$, enabling
 predicate-based de-poisoning inside function bodies. The arrow-internal poison,
 the function's outer poison, and the caller's \texttt{pc} are joined into the
-body context. The subtyping checks $ST_1 \!<:\! T_1$ and $ST_2 \!<:\! T_2$ ensure
-the surface parameter and return types are compatible with the actual argument
+body context. The erasure checks $\lfloor T_1 \rfloor = ST_1$ and $\lfloor T_2 \rfloor = ST_2$ ensure
+the surface parameter and return types are the erasures of the actual argument
 and body types respectively. The Ott rules \textsc{app\_fn\_*} and
 \textsc{app\_pfn\_*} spell out the precise case split.
 
@@ -1127,7 +1127,7 @@ Applying an extern callable adds one further premise to each application rule:
 the actual argument's qualified type must satisfy the closure's declared argument
 condition (\(Q_{\mathit{actual}} \vDash_{\mathcal{R}} Q_{\mathit{declared}}\),
 Section~\ref{sec:extern-arg-conditions}). This precondition gate is complementary
-to the surface-erasure check $ST_1 \!<:\! T_1$: the latter matches the runtime
+to the surface-erasure check $\lfloor T_1 \rfloor = ST_1$: the latter matches the runtime
 base type, while the former checks cleanness under the regime and predicate shape.
 An unsatisfied precondition makes the application ill-typed, so the gate is
 present (with the same declared-condition test) in all nine extern application

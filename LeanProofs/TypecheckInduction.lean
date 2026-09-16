@@ -466,7 +466,7 @@ lemma applyFnTClosure_regular_structure
       exact ⟨fuelBody, rfl⟩
 
 -- Inversion for regular closures: successful application exposes the body typing
--- derivation and successful return-type subtype check.
+-- derivation and successful return-type erasure check.
 lemma applyFnTClosure_regular_inv
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -489,7 +489,7 @@ lemma applyFnTClosure_regular_inv
         regime := result2.regime'
         externRefAllowed := false
         declaredExternRefs := result2.declared' } body fuelBody = .ok result3 ∧
-    isSubtype st2 result3.qualType = true ∧
+    isErasureOf st2 result3.qualType = true ∧
     first =
       { result3 with
         qualType :=
@@ -514,17 +514,17 @@ lemma applyFnTClosure_regular_inv
       simp [htc_body] at happly
   | ok result3 =>
       simp [htc_body] at happly
-      cases hsub : isSubtype st2 result3.qualType with
+      cases hsub : isErasureOf st2 result3.qualType with
       | false =>
           cases hq3 : result3.qualType with
           | mk et3 p3 pred3 =>
-              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+              have hsub' : isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
                 simpa [hq3] using hsub
               simp [hq3, hsub'] at happly
       | true =>
           cases hq3 : result3.qualType with
           | mk et3 p3 pred3 =>
-              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+              have hsub' : isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
                 simpa [hq3] using hsub
               have happly' :
                   (Except.ok first : Except String TypeResult) =
@@ -4623,7 +4623,7 @@ lemma applyPFnTClosure_regular_inv
         regime := result2.regime'
         externRefAllowed := false
         declaredExternRefs := result2.declared' } (PExpr.toExpr pbody) fuelBody = .ok result3 ∧
-    isSubtype st2 result3.qualType = true ∧
+    isErasureOf st2 result3.qualType = true ∧
     first =
       { result3 with
         qualType :=
@@ -4649,17 +4649,17 @@ lemma applyPFnTClosure_regular_inv
       simp [htc_body] at happly
   | ok result3 =>
       simp [htc_body] at happly
-      cases hsub : isSubtype st2 result3.qualType with
+      cases hsub : isErasureOf st2 result3.qualType with
       | false =>
           cases hq3 : result3.qualType with
           | mk et3 p3 pred3 =>
-              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
+              have hsub' : isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = false := by
                 simpa [hq3] using hsub
               simp [hq3, hsub'] at happly
       | true =>
           cases hq3 : result3.qualType with
           | mk et3 p3 pred3 =>
-              have hsub' : isSubtype st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
+              have hsub' : isErasureOf st2 { etyp := et3, poison := p3, pred := pred3 } = true := by
                 simpa [hq3] using hsub
               have happly' :
                   (Except.ok first : Except String TypeResult) =

@@ -611,18 +611,20 @@ def PExpr.toExpr (pe : PExpr) : Expr :=
   | .vlet x e1 e2 => Expr.vlet x (e1.toExpr) (e2.toExpr)
   | .app e1 e2 => Expr.app (e1.toExpr) (e2.toExpr)
 
-/-- Convert qualified type to surface type by stripping poison and preducate info -/
+/-- Erase a qualified type to its surface type: drop the poison and predicate,
+    then erase the enriched type (`ETyp.toTyp`). -/
 private def QTyp.toTyp (qt : QTyp) : Typ :=
   qt.etyp.toTyp
 
-/-- Check if a surface type is a subtype of a qualified type. This implements ST
-      <: T by comparing surface types.
-
-    This is as strict comparsion by discarding poison and closure information.
-    We can consider implementing proper subtyping relation with contravariance
-    for the parameter type and covariance for the return type in the future.
+/-- Check that the surface type `st` is the erasure of the qualified type `qt`:
+    `qt`'s enriched type with its location sets and the poison and closure
+    sets of arrows dropped must equal `st`. Pure and impure arrows both erase
+    to `Typ.arrow`, and a reference erases to `ref int`, since `ETyp.ref`
+    carries no referent type. This implements the side condition
+    `erase T = ST` (rendered ⌊T⌋ = ST) of the application rules. The
+    comparison is syntactic equality after erasure.
 -/
-def isSubtype (st : Typ) (qt : QTyp) : Bool :=
+def isErasureOf (st : Typ) (qt : QTyp) : Bool :=
   qt.toTyp == st
 
 -- Typing judgement for operations
@@ -1785,8 +1787,8 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
         let result3 ← typecheckExpr ctx'' body fuel
         let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
 
-        -- Check subtyping
-        if not (isSubtype st2 result3.qualType) then
+        -- Check surface-type erasure
+        if not (isErasureOf st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Issue #111: taint app result by function poison (p, p1)
@@ -1901,8 +1903,8 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         let result3 ← typecheckExpr ctx'' body fuel
         let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
 
-        -- Check subtyping
-        if not (isSubtype st2 result3.qualType) then
+        -- Check surface-type erasure
+        if not (isErasureOf st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Issue #111: taint app result by function poison (p, p1)
@@ -2019,8 +2021,8 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
         let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
         let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
 
-        -- Check subtyping
-        if not (isSubtype st2 result3.qualType) then
+        -- Check surface-type erasure
+        if not (isErasureOf st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Issue #111: taint app result by function poison (p, p1)
@@ -2118,8 +2120,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         let result3 ← typecheckExpr ctx'' (PExpr.toExpr body) fuel
         let ⟨_etyp3, _p3, _pred3⟩ := result3.qualType
 
-        -- Check subtyping
-        if not (isSubtype st2 result3.qualType) then
+        -- Check surface-type erasure
+        if not (isErasureOf st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
         -- Issue #111: taint app result by function poison (p, p1)
@@ -2220,8 +2222,8 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if tcls.isEmpty then
         throw "Function type has empty closure set"
 
-      -- Premise 3: ST1 <: T1 (check subtyping)
-      if not (isSubtype st1 result2.qualType) then
+      -- Premise 3: erase T1 = ST1 (surface-type erasure check)
+      if not (isErasureOf st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       let results ← applyClosuresThreaded
@@ -2238,8 +2240,8 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       if tcls.isEmpty then
         throw "Function type has empty closure set"
 
-      -- Premise 3: ST1 <: T1 (check subtyping)
-      if not (isSubtype st1 result2.qualType) then
+      -- Premise 3: erase T1 = ST1 (surface-type erasure check)
+      if not (isErasureOf st1 result2.qualType) then
         throw s!"Type mismatch in function application: parameter type {repr st1} is not compatible with argument type {repr (QTyp.toTyp result2.qualType)}"
 
       let results ← applyClosuresThreaded
