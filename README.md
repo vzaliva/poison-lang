@@ -54,14 +54,34 @@ lake exe poison-interpreter --verbose examples/basic-poison-flow1.poison
 # Run repl
 lake exe poison-interpreter --repl
 
-# Run tests
+# Run tests (typechecks and evaluates every examples/*.poison and compares
+# with the expected output next to it)
 make test
+```
 
-# Run tests with different modes
-lake exe poison-tests --typecheck    # Type checking only
-lake exe poison-tests --eval         # Evaluation only  
-lake exe poison-tests --eval -v      # Evaluation only with verbose output
-lake exe poison-tests # both evaluation and typchecking
+### Regimes
+
+Guarded extern values and functions are typechecked under a *regime*: an
+assumption, per guard tag, that the tag's check holds (`true`) or fails
+(`false`). The typechecker runs once per regime; two flags select one:
+
+```bash
+# Preferred: select an extern by its id (@238 in the source). Every output tag
+# the typechecker allocates for that extern's applications is set to the value.
+lake exe poison-interpreter --extern-regime "238=true" examples/extern_captures_guarded.poison
+
+# Low-level: name a concrete guard tag. Tags are numbered from 1 in the
+# typechecker's traversal order, so this depends on allocation order; use it
+# for debugging, and for guards --extern-regime cannot reach, such as those of
+# `extern val` declarations (tags fixed at the declaration).
+lake exe poison-interpreter --regime "1=true" examples/vlet-shadow-guarded.poison
+```
+
+A test file can pin its flags in a first-line directive, which `make test`
+passes to the interpreter:
+
+```
+--! poison-interpreter --extern-regime "238=true"
 ```
 
 ## Project Structure
