@@ -743,7 +743,7 @@ The language includes a predicate system that allows selective de-poisoning base
     syntactically matches a guard's test (via \texttt{match\_guard}), values are
     de-poisoned in the true branch and poisoned in the false branch
     \item \textbf{Logical environment}: Environment $\mathcal{L}$ tracks guard
-    valuations with dependency sets (\texttt{k : bool using LS}) to enable
+    valuations with dependency sets (\texttt{k : bool using deps}) to enable
     predicate evaluation for both guard closure and guard-only predicates
 \end{itemize}
 
@@ -894,7 +894,7 @@ applied, the result inherits this poison.
 \begin{itemize}
     \item \textbf{Arithmetic/Logic}: $e_1 \text{ op } e_2 \rightarrow \text{pc} \sqcup \text{poison}(e_1) \sqcup \text{poison}(e_2)$
     \item \textbf{Conditionals}: Both branches get $\text{pc} \sqcup \text{poison}(\text{condition})$, but predicate-based rules can enable de-poisoning
-    \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k \text{ with } LS$ (returning a tag and a dependency locset), the guard is typed in pure mode, branches use $\mathcal{L}[k \mapsto \text{true using } LS]$ and $\mathcal{L}[k \mapsto \text{false using } LS]$, and guard poison does not flow to the branches
+    \item \textbf{Predicate conditionals}: When $\text{match\_guard}(e_1, \Gamma, \sigma) = k \text{ with } deps$ (returning a tag and a dependency locset), the guard is typed in pure mode, branches use $\mathcal{L}[k \mapsto \text{true using } deps]$ and $\mathcal{L}[k \mapsto \text{false using } deps]$, and guard poison does not flow to the branches
     \item \textbf{Variable access}: De-poisoning when guard evaluates to true, definite poisoning when false, standard propagation when guard unknown
     \item \textbf{Assignment}: Operation reliability = $\text{pc} \sqcup \text{poison}(\text{ref})$, Data = $\text{pc} \sqcup \text{poison}(\text{ref}) \sqcup \text{poison}(\text{value})$, invalidates $\mathcal{L}$ entries whose dependency locsets intersect the written reference's locset; for non-singleton locsets, updates are weak (the stored poison/predicate is joined with the pre-existing cell information). When the reference itself is poisoned, the stored predicate is \texttt{no\_pred} regardless of the value's predicate, mirroring \texttt{deref\_poisoned}.
     \item \textbf{Dereference}: For a clean reference, the result poison is $\text{pc} \sqcup \text{poison}(\text{data\_at\_LS})$ where $\text{data\_at\_LS}$ conservatively joins over all logical locations in the reference's locset and predicates are merged similarly; if the merged guard is known true/false in $\mathcal{L}$, the result is de-poisoned/poisoned accordingly.
@@ -929,7 +929,7 @@ Addresses and closures are runtime-only and do not appear in the surface syntax.
     \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
     \item $\Gamma$: Memory typing environment $l : p \{ P \}$ (logical location $\mapsto$ poison and predicate; stored type is always int)
     \item $\sigma$: Variable typing environment $x : Q$ (variable qualified types)
-    \item $\mathcal{L}$: Logical environment $k : bool \text{ using } LS$ (predicate guard evaluations with dependency tracking)
+    \item $\mathcal{L}$: Logical environment $k : bool \text{ using } deps$ (predicate guard evaluations with dependency tracking)
     \item $\text{pc}$: Program counter poison (current context reliability)
 \end{itemize}
 
@@ -988,11 +988,11 @@ locations to concrete addresses at runtime.
 When variables have associated predicates, the typing rule checks the logical environment $\mathcal{L}$ to determine if de-poisoning can occur. Both guard closures and guard-only predicates behave identically when checking $\mathcal{L}$:
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true using } LS}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{true using } deps}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{pc} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
 
 \[
-\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false using } LS}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
+\frac{\sigma(x) = T \triangleright p \{ \text{guard } k \text{ [pred\_closure] } (y, pe, r) \} \quad \mathcal{L}(k) = \text{false using } deps}{\pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash x : T \triangleright \text{poisoned} \{ \text{no\_pred} \} \dashv \Gamma ; \mathcal{L}}
 \]
 
 where \texttt{[pred\_closure]} denotes that the predicate may be either \texttt{guard k pred\_closure (y, pe, r)} or simply \texttt{guard k}. The presence or absence of the closure does not affect the typing behaviour when the guard tag is known in $\mathcal{L}$.
@@ -1195,10 +1195,10 @@ result is clean in the branch where both guards hold.
 The specification provides two families of conditional typing rules:
 \begin{itemize}
     \item \textbf{Predicate-matched case} (\textsc{if\_depoison\_*}): when
-    $\text{match\_guard}(e_1, \Gamma, \sigma) = k$ with dependencies $LS$, the
+    $\text{match\_guard}(e_1, \Gamma, \sigma) = (k, deps)$, the
     guard is typed in pure mode and does not contribute poison to the branches.
-    The branches are typed under $\mathcal{L}_1[k \mapsto \text{true using } LS]$
-    and $\mathcal{L}_1[k \mapsto \text{false using } LS]$. Result types are joined
+    The branches are typed under $\mathcal{L}_1[k \mapsto \text{true using } deps]$
+    and $\mathcal{L}_1[k \mapsto \text{false using } deps]$. Result types are joined
     with shape-specific rules: closure sets are unioned for functions, locsets are
     unioned for references, and base types must agree.
     \item \textbf{Standard case} (\textsc{if\_std\_*}): when no matching predicate

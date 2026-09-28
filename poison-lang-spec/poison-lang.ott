@@ -36,7 +36,7 @@ metavar extern_id, eid ::=
 
 grammar
 
-locset, LS :: 'LS_' ::= {{ com location sets }}
+locset, LS, deps :: 'LS_' ::= {{ com location sets }}
   | { }                      ::   :: empty
   | { l }                    ::   :: singleton
   | LS1 U LS2                ::   :: union {{ com union (dedup) }} {{ tex [[LS1]] \cup [[LS2]] }}
@@ -64,13 +64,13 @@ unary_op :: 'UnaryOp_' ::=      {{ com operations }}
   | not                     ::   :: not 
 
 % Surface types for annotations (no runtime info)
-styp, ST :: 'ST_' ::=      {{ com surface types }}
+styp, ST {{ tex \tau }} :: 'ST_' ::=      {{ com surface types }}
   | int                    ::   :: int
   | bool                   ::   :: bool
   | unit                   ::   :: unit
   | string                 ::   :: string 
   | ref ST                 ::   :: ref
-  | ST1 -> ST2             ::   :: arrow
+  | ST1 -> ST2             ::   :: arrow {{ tex [[ST1]] \rightarrow [[ST2]] }}
 
 
 
@@ -134,12 +134,12 @@ typ, T :: 'T_' ::=         {{ com enriched types }}
   | unit                    ::   :: unit
   | string                  ::   :: string
   | ref @ LS                 ::   :: ref {{ tex \mathsf{ref}\,@\,[[LS]] }}
-  | ST1 -> ST2 # p tclosures tcls ::   :: arrow {{ tex [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tclosures}\, [[tcls]] }}
-  | ST1 -> ST2 # p tpclosures ptcls ::   :: parrow {{ tex [[ST1]] \Rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tpclosures}\, [[ptcls]] }}
+  | ST1 -> ST2 # p tclosures tcls ::   :: arrow {{ tex [[ST1]] \rightarrow [[ST2]] \,\triangleright\, ([[p]],\, [[tcls]]) }}
+  | ST1 -> ST2 # p tpclosures ptcls ::   :: parrow {{ tex [[ST1]] \Rightarrow [[ST2]] \,\triangleright\, ([[p]],\, [[ptcls]]) }}
 
 % Predicate closure contents (for cleaner syntax)
 pcl :: 'PCL_' ::= {{ com predicate closure }}
-  | ( x , pe , S )          ::   :: pred_closure
+  | ( x , pe , S )          ::   :: pred_closure {{ tex [[x]] \Rightarrow [[pe]] \;[\,[[S]]\,] }}
 
 % Typing closures (separate for impure fn and pure pfn)
 tcl :: 'TCL_' ::= {{ com impure fn closure }}
@@ -162,10 +162,10 @@ ptcls :: 'PTCLS_' ::= {{ com pure closure set }}
   | ptcls1 U ptcls2         ::   :: union {{ com closure set union }} {{ tex [[ptcls1]] \cup [[ptcls2]] }}
 
 predicate, P :: 'P_' ::= {{ com predicate }}
-  | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{tex \mathsf{guard}\,[[k]]\,\mathsf{pred\_closure}\,[[pcl]] }}
-  | guard k                   ::   :: guard_only {{ com guard tag only }} {{tex \mathsf{guard}\,[[k]] }}
-  | no_pred                   ::   :: no_pred {{ com no predicate }} {{tex \bot }}
-  | AppPred p P              ::   :: app_pred {{ com provenance gate }} {{ tex \mathrm{AppPred}([[p]], [[P]]) }}
+  | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{ tex [[k]],\, [[pcl]] }}
+  | guard k                   ::   :: guard_only {{ com guard tag only }} {{ tex [[k]] }}
+  | no_pred                   ::   :: no_pred {{ com no predicate }} {{ tex \, }}
+  | AppPred p P              ::   :: app_pred {{ com provenance gate }} {{ tex (\text{if } [[p]] = \mathsf{clean} \text{ then } [[P]] \text{ else } \{\}) }}
 
 qualified_type, Q :: 'Q_' ::= {{ com qualified type }}
   | T :> p                  ::   :: qualified {{ tex [[T]] \triangleright [[p]] }}
@@ -196,11 +196,11 @@ S {{ tex \sigma }} :: S_ ::=     {{ com variable typing environments }} {{ phant
 
 % Tag valuation environment
 tag_valuation, tv :: 'TV_' ::= {{ com tag valuation }}
-  | k : b using LS     ::   :: tag_deps {{ com tag with deps }}
+  | k : b using deps     ::   :: tag_deps {{ com tag with dependency set }} {{ tex [[k]] \mapsto ([[b]],\, [[deps]]) }}
 
 L {{ tex \mathcal{L} }} :: L_ ::=     {{ com logical environment (tag valuation) }} {{ phantom }} {{ coq list tag_valuation }}
   | empty                   ::   :: empty {{ coq [] }}
-  | L [ k |-> b using LS ] ::   :: UpdateL {{ tex [[L]] [ k \mapsto [[b]] \text{ using } [[LS]] ] }}
+  | L [ k |-> b using deps ] ::   :: UpdateL {{ tex [[L]] [ [[k]] \mapsto ([[b]],\, [[deps]]) ] }}
   | JoinL L1 L2             ::   :: JoinL {{ com agreement-only tag join }} {{ tex [[L1]] \sqcup [[L2]] }}
 
 % Regime (partial map from tags to booleans)
@@ -231,9 +231,9 @@ pure_mode, pm :: 'PM_' ::= {{ com pure mode }} {{ tex \pi }}
 
 % Syntax-level predicate (symbolic tags, before resolution)
 syntax_predicate, SP :: 'SP_' ::= {{ com syntax predicate (symbolic) }}
-  | guard_closure ki x pe    ::   :: guard_closure {{ com symbolic guard closure }} {{ tex \mathsf{guard}\,[[ki]]\,\mathsf{closure}\,([[x]],[[pe]]) }}
-  | guard_only ki            ::   :: guard_only {{ com symbolic guard only }} {{ tex \mathsf{guard}\,[[ki]] }}
-  | no_pred                  ::   :: no_pred {{ com no predicate }} {{ tex \bot }}
+  | guard_closure ki x pe    ::   :: guard_closure {{ com symbolic guard closure }} {{ tex [[ki]],\, [[x]] \Rightarrow [[pe]] }}
+  | guard_only ki            ::   :: guard_only {{ com symbolic guard only }} {{ tex [[ki]] }}
+  | no_pred                  ::   :: no_pred {{ com no predicate }} {{ tex \, }}
 
 % Effect specification (target is always a named variable reference)
 effect_spec, ES :: 'ES_' ::= {{ com effect specification }}
@@ -323,7 +323,7 @@ formula :: formula_ ::=
   | G ( l ) = me       :: :: mem_lookup {{ coq (lookup_location_mem [[l]] [[G]] = Some ([[me]])) }}   
   | S ( x ) = Q        :: :: var_type_lookup {{ coq (lookup_var_type [[x]] [[S]] = Some ([[Q]])) }}   
   | r ( x ) = v           :: :: var_lookup {{ coq (lookup_var [[x]] [[r]] = Some ([[v]])) }}   
-  | L ( k ) = b using LS :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]], [[LS]])) }}   
+  | L ( k ) = b using deps :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]], [[deps]])) }} {{ tex [[L]]([[k]]) = ([[b]],\, [[deps]]) }}   
   | R ( k ) = b           :: :: regime_lookup {{ coq (lookup_regime [[k]] [[R]] = Some ([[b]])) }}
   | R ( k ) = none        :: :: regime_none {{ coq (lookup_regime [[k]] [[R]] = None) }}
   | p1 = p2                :: :: poison_eq   {{ coq ([[p1]] = [[p2]]) }}   
@@ -336,14 +336,14 @@ formula :: formula_ ::=
   | fresh k                :: :: fresh_tag       {{ com k is fresh }}
   | fresh x S              :: :: fresh_var       {{ com x is fresh in S }}
   | n0 = random n1         :: :: random_gen     {{ com n0 is a random number in [0, n1] range }}
-  | match_guard e G S = k with LS  :: :: match_guard  {{ com find guard k with deps LS for condition e }}  {{ tex match\_guard([[e]], [[G]], [[S]]) = [[k]] \text{ with } [[LS]] }}
-  | if_guard_case e G S R = true  :: :: if_guard_case_true  {{ com conditional guard case is known true }}  {{ tex \mathrm{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{true\_case} }}
-  | if_guard_case e G S R = false :: :: if_guard_case_false {{ com conditional guard case is known false }} {{ tex \mathrm{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{false\_case} }}
-  | if_guard_case e G S R = none  :: :: if_guard_case_std   {{ com conditional guard case is standard: no match or unknown regime }} {{ tex \mathrm{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{std} }}
-  | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com remove from L entries whose deps intersect LS }}  {{ tex [[L1]] = [[L]] \mathbin{\restriction} \bigl(\mathrm{dom}([[L]]) \setminus [[LS]]\bigr) }}
-  | invalidate_regime_deps R L LS = R1 :: :: invalidate_regime_deps {{ com remove from R tags whose deps in L intersect LS }}  {{ tex [[R1]] = \mathrm{invalidate\_regime}([[R]], [[L]], [[LS]]) }}
-  | erase T = ST           :: :: erase        {{ com ST is the erasure of T: location sets and the poison and closure sets of arrows are dropped }} {{ tex \lfloor [[T]] \rfloor = [[ST]] }}
-  | base_of Q = ST         :: :: base_of      {{ com ST is the surface base type underlying the qualified type Q (drops the poison flag and predicate, then erases the enriched type); rendered with the erasure glyph since it is erasure lifted to qualified types }} {{ tex \lfloor [[Q]] \rfloor = [[ST]] }}
+  | match_guard e G S = k with deps  :: :: match_guard  {{ com find guard k with dependency set deps for condition e }}  {{ tex \texttt{match\_guard}([[e]], [[G]], [[S]]) = ([[k]],\, [[deps]]) }}
+  | if_guard_case e G S R = true  :: :: if_guard_case_true  {{ com conditional guard case is known true }}  {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{true} }}
+  | if_guard_case e G S R = false :: :: if_guard_case_false {{ com conditional guard case is known false }} {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{false} }}
+  | if_guard_case e G S R = none  :: :: if_guard_case_std   {{ com conditional guard case is standard: no match or unknown regime }} {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{std} }}
+  | invalidate_deps L LS = L1 :: :: invalidate_deps {{ com remove from L entries whose deps intersect LS }}  {{ tex \texttt{invalidate\_deps}([[L]], [[LS]]) = [[L1]] }}
+  | invalidate_regime_deps R L LS = R1 :: :: invalidate_regime_deps {{ com remove from R tags whose deps in L intersect LS }}  {{ tex \texttt{invalidate\_regime\_deps}([[R]], [[L]], [[LS]]) = [[R1]] }}
+  | erase T = ST           :: :: erase        {{ com $\tau$ is the erasure of T: location sets and the poison and closure sets of arrows are dropped }} {{ tex \lfloor [[T]] \rfloor = [[ST]] }}
+  | base_of Q = ST         :: :: base_of      {{ com $\tau$ is the surface base type underlying the qualified type Q (drops the poison flag and predicate, then erases the enriched type); rendered with the erasure glyph since it is erasure lifted to qualified types }} {{ tex \lfloor [[Q]] \rfloor = [[ST]] }}
   | satisfiesArgCond R Q1 Q2 :: :: arg_cond_sat {{ com actual argument qualified type Q1 satisfies the declared extern argument precondition Q2 under regime R: base types match; a declared-clean Q2 forces Q1 clean under R (literally clean, or its guard tag is active in R); a declared no-predicate Q2 imposes no match; a declared predicate forces Q1 to carry the same guard shape modulo tag, binder, and captured environment (no logical implication) }} {{ tex [[Q1]] \vDash_{[[R]]} [[Q2]] }}
   | capturesSatisfied R CSL S G :: :: captures_sat {{ com the call-site read-dependency gate: every declared capture target in CSL resolves to a qualified type that satisfies the declared one under regime R, exactly as satisfiesArgCond gates the argument precondition.  A bare-variable target resolves directly in the callable environment S; a bang target resolves its reference variable in S (a captured reference or the explicit reference-typed argument) to a ref type, then checks each cell it points to in the memory typing G.  In particular a declared-clean dependency may be guarded, accepting a poisoned actual whose guard tag is active in R (clean under the regime), with predicate-shape matching modulo tag --- a call-time decision, so an inactive guard at the call site rejects the trusted result.  For a bang target the reference's own argument condition forces both runs to a common cell and the cell-contents capture forces the read clean, so both facts are load-bearing (a clean reference may point to a poisoned cell).  A trusted clean result is available only when both the argument condition and all captures hold; the two are fused into a single gate at the call site.  Across branch joins, capture preconditions combine by conjunction: a joined closure keeps each branch's member distinct (member equality compares the captures, so members differing only in their captures are not coalesced) and capture contracts never pass through the predicate join that collapses to noPred, so applying the join gates on every branch's captures and rejects incompatible predicate shapes rather than weakening them }} {{ tex \mathrm{capturesSat}([[R]], [[CSL]], [[S]], [[G]]) }}
   | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 signature-compatible }} {{ tex [[T1]] \approx [[T2]] }}
@@ -352,8 +352,8 @@ formula :: formula_ ::=
   | ptcl in ptcls          :: :: ptcl_member {{ com ptcl member of ptcls }} {{ tex [[ptcl]] \in [[ptcls]] }}
   | l in LS                 :: :: loc_member {{ com logical location membership }} {{ tex [[l]] \in [[LS]] }}
   | LS = LS1 U LS2          :: :: ls_union {{ com locset union binding }} {{ tex [[LS]] = [[LS1]] \cup [[LS2]] }}
-  | T = ST1 -> ST2 # p tclosures tcls   :: :: type_eq_arrow  {{ com impure arrow type }} {{ tex [[T]] = [[ST1]] \rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tclosures}\, [[tcls]] }}
-  | T = ST1 -> ST2 # p tpclosures ptcls :: :: type_eq_parrow {{ com T is a pure arrow type with the given components }} {{ tex [[T]] = [[ST1]] \Rightarrow [[ST2]] \, \triangleright [[p]]\, \mathsf{tpclosures}\, [[ptcls]] }}
+  | T = ST1 -> ST2 # p tclosures tcls   :: :: type_eq_arrow  {{ com impure arrow type }} {{ tex [[T]] = [[ST1]] \rightarrow [[ST2]] \,\triangleright\, ([[p]],\, [[tcls]]) }}
+  | T = ST1 -> ST2 # p tpclosures ptcls :: :: type_eq_parrow {{ com T is a pure arrow type with the given components }} {{ tex [[T]] = [[ST1]] \Rightarrow [[ST2]] \,\triangleright\, ([[p]],\, [[ptcls]]) }}
   | T = ref @ LS                   :: :: type_eq_ref {{ com ref type with locset LS }} {{ tex [[T]] = \mathsf{ref}\,@\,[[LS]] }}
   | tcls = tcls1 U tcls2  :: :: tcls_union  {{ com closure set union binding }} {{ tex [[tcls]] = [[tcls1]] \cup [[tcls2]] }}
   | ptcls = ptcls1 U ptcls2 :: :: ptcls_union {{ com closure set union binding }} {{ tex [[ptcls]] = [[ptcls1]] \cup [[ptcls2]] }}
@@ -367,10 +367,10 @@ formula :: formula_ ::=
   | resolve TM SP S = P     :: :: resolve_pred {{ com resolve symbolic predicate via tag map }} {{ tex \mathrm{resolve}([[TM]], [[SP]], [[S]]) = [[P]] }}
   | TM ( ki ) = k           :: :: tag_map_lookup {{ com tag map lookup }} {{ tex [[TM]]([[ki]]) = [[k]] }}
   | returnType ER = ST      :: :: return_type {{ com extract surface return type from extern spec }} {{ tex \mathrm{returnType}([[ER]]) = [[ST]] }}
-  | extern_wf p SP :: :: extern_pred_wf {{ com clean types cannot carry predicates }} {{ tex [[p]] = \mathsf{poisoned} \lor [[SP]] = \bot }}
+  | extern_wf p SP :: :: extern_pred_wf {{ com clean types cannot carry predicates }} {{ tex [[p]] = \mathsf{poisoned} \lor [[SP]] = \{\} }}
   | extern_spec_wf ER ESL :: :: extern_spec_wf {{ com all (p, SP) pairs satisfy extern\_wf; simple return types are base types }} {{ tex \mathrm{specWf}([[ER]], [[ESL]]) }}
-  | base_extern_type ST :: :: base_extern_type {{ com ST is a base type (int, bool, unit, string) }} {{ tex [[ST]] \in \{ \mathsf{int}, \mathsf{bool}, \mathsf{unit}, \mathsf{string} \} }}
-  | externValConvert ST G = T G' :: :: extern_val_convert {{ com convert surface base type to enriched type (T = ST, G' = G); ref types have no derivation — reference-valued externs use the extern\_ref form }} {{ tex \mathrm{externValConvert}([[ST]], [[G]]) = ([[T]], [[G']]) }}
+  | base_extern_type ST :: :: base_extern_type {{ com $\tau$ is a base type (int, bool, unit, string) }} {{ tex [[ST]] \in \{ \mathsf{int}, \mathsf{bool}, \mathsf{unit}, \mathsf{string} \} }}
+  | externValConvert ST G = T G' :: :: extern_val_convert {{ com convert surface base type to enriched type (T = $\tau$, G' = G); ref types have no derivation — reference-valued externs use the extern\_ref form }} {{ tex \mathrm{externValConvert}([[ST]], [[G]]) = ([[T]], [[G']]) }}
   | extern_ref_fresh_id eid :: :: extern_ref_fresh_id {{ com program-level uniqueness: eid was not previously declared by an extern ref; the typechecker threads a declared-id set through typing results (elided from the judgment) }} {{ tex \mathrm{freshExternRefId}([[eid]]) }}
   | extern_ref_allowed :: :: extern_ref_allowed {{ com the declaration appears in an evaluate-at-most-once position: not under an fn/pfn body; the typechecker clears this flag for application-time body typing (elided from the judgment) }} {{ tex \mathrm{externRefAllowed} }}
   | allocReturnEffectTags SP ESL k = k' TM :: :: alloc_return_effect_tags {{ com allocate fresh tags for return pred SP and all effect preds in ESL }} {{ tex \mathrm{allocTags}([[SP]], [[ESL]], [[k]]) = ([[k']], [[TM]]) }}
@@ -379,7 +379,7 @@ formula :: formula_ ::=
   | resolveEffectsPoisoned ESL TM S G = G' :: :: resolve_effects_poisoned {{ com resolve effect preds via TM and apply memory updates (singleton strong / multi-location weak) with predicate erasure (stored predicate forced to noPred); used by poisoned effect-pc extern application rules, where the gate join pc (join p1 p) is poisoned, mirroring assignment under poisoned pc. As with resolveEffects, the dependency invalidation on the written targets is performed by the surrounding application rule }} {{ tex \mathrm{resolveEffectsPoisoned}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
   | extendExternRegime eid TM R = R' :: :: extend_extern_regime {{ com call-site regime extension: insert into R the freshly generated output tags in the codomain of TM that the ambient extern-regime policy (the Ott analogue of the typechecker's ctx.externRegime, not shown in the judgment) selects for extern id eid; unselected extern ids leave R unchanged }} {{ tex [[R']] = \mathrm{extendExternRegime}([[eid]], [[TM]], [[R]]) }}
   | effectTargetLocs ESL S = LS :: :: effect_target_locs {{ com union of the locsets of the effects' !x targets as resolved in the unified environment S (a target that does not resolve to a tracked reference contributes nothing); these are exactly the locations the effect loop writes, so the application rule invalidates guard-tag / regime dependencies on them }} {{ tex [[LS]] = \mathrm{effectTargetLocs}([[ESL]], [[S]]) }}
-  | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R exactly those tags that are materialised in L with a dependency set intersecting LS; tags absent from L are KEPT — unlike assignment's invalidate\_regime\_deps, which drops them — so a driver-asserted regime tag that has not yet entered the tag environment survives an unrelated write effect }} {{ tex [[R1]] = \mathrm{invalidate\_regime\_effect}([[R]], [[L]], [[LS]]) }}
+  | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R exactly those tags that are materialised in L with a dependency set intersecting LS; tags absent from L are KEPT — unlike assignment's invalidate\_regime\_deps, which drops them — so a driver-asserted regime tag that has not yet entered the tag environment survives an unrelated write effect }} {{ tex \texttt{invalidate\_regime\_deps\_effect}([[R]], [[L]], [[LS]]) = [[R1]] }}
   | installReturnGuard L P R = L1 :: :: install_return_guard {{ com value-correct return-guard materialisation: when P is a guard closure with tag k whose value the regime R determines as b — whether asserted through the initial regime or inserted by the extern-regime policy — insert k |-> (b, deps) into L, with deps extracted from the closure body; a regime-undetermined guard, a guard whose dependency extraction fails, or a non-closure P leaves L unchanged. Materialising the dependencies is what lets a later write effect (or assignment) invalidate a stale guard whose predicate reads the written cell }} {{ tex [[L1]] = \mathrm{installReturnGuard}([[L]], [[P]], [[R]]) }}
 
 
@@ -391,7 +391,7 @@ Jop :: '' ::=
 % --- Big-step (natural) semantics below ---
 
 defn
-< pm , e , m , r > ==> < v , m1 , r1 > :: :: beval :: ''  {{ com Big-step evaluation }} by
+< pm , e , m , r > ==> < v , m1 , r1 > :: :: beval :: ''  {{ com Big-step evaluation }} {{ tex \langle [[e]], ([[pm]], [[m]], [[r]]) \rangle \Downarrow \langle [[v]], ([[pm]], [[m1]], [[r1]]) \rangle }} by
 
 % Literals
 ----------------------   :: b_lit_num
@@ -566,7 +566,7 @@ m1(a) = n
 %% --- Typing rules below ---
 
 defn
-pm ; R ; pc ; G ; S ; L |- e : Q -| G1 ; L1 ; R1 :: :: typing :: Ty_ by
+pm ; R ; pc ; G ; S ; L |- e : Q -| G1 ; L1 ; R1 :: :: typing :: Ty_ {{ tex [[pm]] ; [[pc]] ; [[S]] ; [[G]] ; [[L]] ; [[R]] \vdash [[e]] : [[Q]] \dashv [[G1]] ; [[L1]] ; [[R1]] }} by
 
 ------------------  :: int
 pm ; R ; pc ; G ; S ; L |- n : int :> clean { no_pred } -| G ; L ; R
@@ -580,28 +580,28 @@ pm ; R ; pc ; G ; S ; L |- s : string :> clean { no_pred } -| G ; L ; R
 % Variable typing - with guarded predicate that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
 not_fun T
-L(k) = true using LS
+L(k) = true using deps
 ------------------  :: var_guard_true
 pm ; R ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L ; R
 
 % Variable typing - with guard only that evaluates to true triggering de-poisoning.
 S(x) = T :> p { guard k }
 not_fun T
-L(k) = true using LS
+L(k) = true using deps
 ------------------  :: var_guard_only_true
 pm ; R ; pc ; G ; S ; L |- x : T :> pc { no_pred } -| G ; L ; R
 
 % Variable typing - with guarded predicate that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k pred_closure pcl }
 not_fun T
-L(k) = false using LS
+L(k) = false using deps
 ------------------  :: var_guard_false
 pm ; R ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L ; R
 
 % Variable typing - with guard only that evaluates to false, triggering poisoning.
 S(x) = T :> p { guard k }
 not_fun T
-L(k) = false using LS
+L(k) = false using deps
 ------------------  :: var_guard_only_false
 pm ; R ; pc ; G ; S ; L |- x : T :> poisoned { no_pred } -| G ; L ; R
 
@@ -772,28 +772,28 @@ pm ; R ; pc ; G ; S ; L |- !e : int :> join pc p { no_pred } -| G1 ; L1 ; R1
 % Guarded predicate evaluates to true after merging across LS0 (de-poison).
 pm ; R ; pc ; G ; S ; L |- e : ref @ LS0 :> clean { P } -| G1 ; L1 ; R1
   MergePreds G1 LS0 = guard k pred_closure pcl
-  L1(k) = true using LS
+  L1(k) = true using deps
 ----------------------- :: deref_guard_true
 pm ; R ; pc ; G ; S ; L |- !e : int :> pc { no_pred } -| G1 ; L1 ; R1
 
 % Guard-only predicate evaluates to true after merging.
 pm ; R ; pc ; G ; S ; L |- e : ref @ LS0 :> clean { P } -| G1 ; L1 ; R1
   MergePreds G1 LS0 = guard k
-  L1(k) = true using LS
+  L1(k) = true using deps
 ----------------------- :: deref_guard_only_true
 pm ; R ; pc ; G ; S ; L |- !e : int :> pc { no_pred } -| G1 ; L1 ; R1
 
 % Guarded predicate evaluates to false after merging (forces poisoning).
 pm ; R ; pc ; G ; S ; L |- e : ref @ LS0 :> clean { P } -| G1 ; L1 ; R1
   MergePreds G1 LS0 = guard k pred_closure pcl
-  L1(k) = false using LS
+  L1(k) = false using deps
 ----------------------- :: deref_guard_false
 pm ; R ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1 ; R1
 
 % Guard-only predicate evaluates to false after merging.
 pm ; R ; pc ; G ; S ; L |- e : ref @ LS0 :> clean { P } -| G1 ; L1 ; R1
   MergePreds G1 LS0 = guard k
-  L1(k) = false using LS
+  L1(k) = false using deps
 ----------------------- :: deref_guard_only_false
 pm ; R ; pc ; G ; S ; L |- !e : int :> poisoned { no_pred } -| G1 ; L1 ; R1
 
@@ -1080,11 +1080,11 @@ pm ; R ; pc ; G ; S ; L |- let x = e1 in e2 : T2 :> join pc p2 { P2 } -| G2 ; L2
 
 % Conditional typing with predicate-based de-poisoning - impure function result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
-match_guard e1 G S = k with LS
+match_guard e1 G S = k with deps
 if_guard_case e1 G S R = true
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
 T2 = ST1 -> ST2 # p' tclosures tcls2
 T3 = ST1 -> ST2 # p'' tclosures tcls3
 ----------------------------------  :: if_depoison_fn_R_true
@@ -1092,11 +1092,11 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p' tclosures tcl
 
 % Conditional typing with predicate-based de-poisoning - impure function result - R(k) = false
 % When R fixes the guard outcome to false, only the else-branch is effective
-match_guard e1 G S = k with LS
+match_guard e1 G S = k with deps
 if_guard_case e1 G S R = false
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
 T2 = ST1 -> ST2 # p' tclosures tcls2
 T3 = ST1 -> ST2 # p'' tclosures tcls3
 ----------------------------------  :: if_depoison_fn_R_false
@@ -1104,11 +1104,11 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p'' tclosures tc
 
 % Conditional typing with predicate-based de-poisoning - pure function result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
-match_guard e1 G S = k with LS
+match_guard e1 G S = k with deps
 if_guard_case e1 G S R = true
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
 T2 = ST1 -> ST2 # p' tpclosures ptcls2
 T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 ----------------------------------  :: if_depoison_pfn_R_true
@@ -1116,11 +1116,11 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p' tpclosures pt
 
 % Conditional typing with predicate-based de-poisoning - pure function result - R(k) = false
 % When R fixes the guard outcome to false, only the else-branch is effective
-match_guard e1 G S = k with LS
+match_guard e1 G S = k with deps
 if_guard_case e1 G S R = false
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T2 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T3 :> p3 { P3 } -| G3 ; L3 ; R3
 T2 = ST1 -> ST2 # p' tpclosures ptcls2
 T3 = ST1 -> ST2 # p'' tpclosures ptcls3
 ----------------------------------  :: if_depoison_pfn_R_false
@@ -1128,41 +1128,41 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ST1 -> ST2 # p'' tpclosures p
 
 % Conditional typing with predicate-based de-poisoning - reference result - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
-match_guard e1 G S = k with LS
+match_guard e1 G S = k with deps
 if_guard_case e1 G S R = true
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L[k |-> true using deps] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L[k |-> false using deps] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_depoison_ref_R_true
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref @ LS1 :> join pc p2 { no_pred } -| G2 ; L2 ; R2
 
 % Conditional typing with predicate-based de-poisoning - reference result - R(k) = false
 % When R fixes the guard outcome to false, only the else-branch is effective
-match_guard e1 G S = k with LS
+match_guard e1 G S = k with deps
 if_guard_case e1 G S R = false
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L[k |-> true using deps] |- e2 : ref @ LS1 :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L[k |-> false using deps] |- e3 : ref @ LS2 :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_depoison_ref_R_false
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : ref @ LS2 :> join pc p3 { no_pred } -| G3 ; L3 ; R3
 
 % Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) = true
 % When R fixes the guard outcome to true, only the then-branch is effective
-match_guard e1 G S = k with LS
+match_guard e1 G S = k with deps
 if_guard_case e1 G S R = true
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_depoison_R_true
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc p2 { no_pred } -| G2 ; L2 ; R2
 
 % Conditional typing with predicate-based de-poisoning - general non-reference case - R(k) = false
 % When R fixes the guard outcome to false, only the else-branch is effective
-match_guard e1 G S = k with LS
+match_guard e1 G S = k with deps
 if_guard_case e1 G S R = false
 pure ; R ; pc ; G ; S ; L |- e1 : bool :> p1 { P1 } -| G ; L ; R
-pm ; R ; pc ; G ; S ; L[k |-> true using LS] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
-pm ; R ; pc ; G ; S ; L[k |-> false using LS] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
+pm ; R ; pc ; G ; S ; L[k |-> true using deps] |- e2 : T :> p2 { P2 } -| G2 ; L2 ; R2
+pm ; R ; pc ; G ; S ; L[k |-> false using deps] |- e3 : T :> p3 { P3 } -| G3 ; L3 ; R3
 ----------------------------------  :: if_depoison_R_false
 pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc p3 { no_pred } -| G3 ; L3 ; R3
 
