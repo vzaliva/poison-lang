@@ -272,7 +272,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
       cases hetyp : etyp with
       | int =>
         rw [hetyp] at htc'
-        simp only [show (ETyp.int != ETyp.int) = false from by native_decide,
+        simp only [show (ETyp.int != ETyp.int) = false from by simp,
           Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc'
         cases htc'; rfl
       | bool | unit | string | ref _ | arrow _ _ | parrow _ _ =>
@@ -555,7 +555,7 @@ lemma stepFR_newRef_with_expr_proof
       cases hetyp : etyp with
       | int =>
         rw [hetyp] at htc'
-        simp only [show (ETyp.int != ETyp.int) = false from by native_decide,
+        simp only [show (ETyp.int != ETyp.int) = false from by simp,
           Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at htc'
         cases htc'; rfl
       | bool | unit | string | ref _ | arrow _ _ | parrow _ _ =>

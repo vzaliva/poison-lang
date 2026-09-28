@@ -6289,7 +6289,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                   joinRegimes_lookup_some_left res2.regime' res3.regime' k true hk_join
                 have hnotfun2 : qt2.etyp.isFunctionType = false := by
                   rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                  native_decide
+                  decide
                 rcases ih (fuel' - 1) hltSub ctx'' e2 res2
                     (by simpa [ctx'', ctx', pc', ctxAfter] using htc2) hwf_ctx'' hbnd_ctx'' hpc'' l qt2 hlookup2
                     (by simpa [ctx'', ctx', ctxAfter] using hpre_r1) with
@@ -6309,7 +6309,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                   joinRegimes_lookup_some_right res2.regime' res3.regime' k true hk_join
                 have hnotfun3 : qt3.etyp.isFunctionType = false := by
                   rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                  native_decide
+                  decide
                 rcases ih (fuel' - 1) hltSub ctxForE3 e3 res3
                     (by simpa [ctxForE3, ctx'', ctx', pc', ctxAfter] using htc3)
                     hwf_ctxE3 hbnd_ctxE3 (by simp [ctxForE3, ctx'', pc', hpc, joinPoison]) l qt3 hlookup3

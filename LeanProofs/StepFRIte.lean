@@ -4270,7 +4270,7 @@ private lemma stepFR_ite_standard
                             res2.regime' res3.regime' k true hk_join
                         have hnotfun2 : qt2.etyp.isFunctionType = false := by
                           rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                          native_decide
+                          decide
                         exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                   rcases
                       typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
@@ -4324,7 +4324,7 @@ private lemma stepFR_ite_standard
                           res2.regime' res3.regime' k true hk_join
                       have hnotfun2 : qt2.etyp.isFunctionType = false := by
                         rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                        native_decide
+                        decide
                       exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                 have hclean3 : qtypCleanUnder res3.regime' qt3 := by
                   cases hclean with
@@ -4353,7 +4353,7 @@ private lemma stepFR_ite_standard
                           res2.regime' res3.regime' k true hk_join
                       have hnotfun3 : qt3.etyp.isFunctionType = false := by
                         rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                        native_decide
+                        decide
                       exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                 have hlookup_mid_ctx'' : ctx''.memEnv.lookup l = some qt_mid := by
                   simpa [ctx'', ctx'] using hlookup_mid
@@ -4421,7 +4421,7 @@ private lemma stepFR_ite_standard
                               simp at hls
                             have hnotfun_mid : qt_mid.etyp.isFunctionType = false := by
                               rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid]
-                              native_decide
+                              decide
                             have hEq_vals : Value.num n₀ = Value.num n₁ :=
                               agreeValueUnder_nonref_eq_of_clean
                                 hclean_mid hnotref_mid hnotfun_mid hagreeVmid
@@ -4436,7 +4436,7 @@ private lemma stepFR_ite_standard
                               | clean hpoison =>
                                   have hnotfun_final : qt.etyp.isFunctionType = false := by
                                     rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup]
-                                    native_decide
+                                    decide
                                   exact
                                     agreeValueUnder.clean_eq_nonref_nonarrow
                                       hpoison hnotfun_final hnotref_final hEq_vals
@@ -4485,7 +4485,7 @@ private lemma stepFR_ite_standard
                               res2.regime' res3.regime' k true hk_join
                           have hnotfun2 : qt2.etyp.isFunctionType = false := by
                             rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                            native_decide
+                            decide
                           exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                     exact _hfresh₂ l qt2 hnotContains_ctx'' hlookup2 hclean2
                   · -- l ∉ res2: θ₀2 can't map l
@@ -4524,7 +4524,7 @@ private lemma stepFR_ite_standard
                               res2.regime' res3.regime' k true hk_join
                           have hnotfun3 : qt3.etyp.isFunctionType = false := by
                             rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                            native_decide
+                            decide
                           exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                     exact _hfresh₃ l qt3 hnotContains_ctxForE3 hlookup3 hclean3
                   · -- l ∉ res3: θ₁3 can't map l
@@ -4927,7 +4927,7 @@ private lemma stepFR_ite_standard
                             res2.regime' res3.regime' k true hk_join
                         have hnotfun3 : qt3.etyp.isFunctionType = false := by
                           rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                          native_decide
+                          decide
                         exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                   rcases
                       typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
@@ -4981,7 +4981,7 @@ private lemma stepFR_ite_standard
                           res2.regime' res3.regime' k true hk_join
                       have hnotfun2 : qt2.etyp.isFunctionType = false := by
                         rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                        native_decide
+                        decide
                       exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                 have hclean3 : qtypCleanUnder res3.regime' qt3 := by
                   cases hclean with
@@ -5010,7 +5010,7 @@ private lemma stepFR_ite_standard
                           res2.regime' res3.regime' k true hk_join
                       have hnotfun3 : qt3.etyp.isFunctionType = false := by
                         rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                        native_decide
+                        decide
                       exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                 have hlookup_mid_ctx'' : ctx''.memEnv.lookup l = some qt_mid := by
                   simpa [ctx'', ctx'] using hlookup_mid
@@ -5078,7 +5078,7 @@ private lemma stepFR_ite_standard
                               simp at hls
                             have hnotfun_mid : qt_mid.etyp.isFunctionType = false := by
                               rw [memEnv_lookup_etyp_int res1.memEnv' l qt_mid hlookup_mid]
-                              native_decide
+                              decide
                             have hEq_vals : Value.num n₀ = Value.num n₁ :=
                               agreeValueUnder_nonref_eq_of_clean
                                 hclean_mid hnotref_mid hnotfun_mid hagreeVmid
@@ -5093,7 +5093,7 @@ private lemma stepFR_ite_standard
                               | clean hpoison =>
                                   have hnotfun_final : qt.etyp.isFunctionType = false := by
                                     rw [memEnv_lookup_etyp_int (ctxAfter ctxᵢ res).memEnv l qt hlookup]
-                                    native_decide
+                                    decide
                                   exact
                                     agreeValueUnder.clean_eq_nonref_nonarrow
                                       hpoison hnotfun_final hnotref_final hEq_vals
@@ -5142,7 +5142,7 @@ private lemma stepFR_ite_standard
                               res2.regime' res3.regime' k true hk_join
                           have hnotfun3 : qt3.etyp.isFunctionType = false := by
                             rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                            native_decide
+                            decide
                           exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                     exact _hfresh₃ l qt3 hnotContains_ctxForE3 hlookup3 hclean3
                   · -- l ∉ res3: θ₀3 can't map l
@@ -5181,7 +5181,7 @@ private lemma stepFR_ite_standard
                               res2.regime' res3.regime' k true hk_join
                           have hnotfun2 : qt2.etyp.isFunctionType = false := by
                             rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                            native_decide
+                            decide
                           exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                     exact _hfresh₂ l qt2 hnotContains_ctx'' hlookup2 hclean2
                   · -- l ∉ res2: θ₁2 can't map l
@@ -6771,7 +6771,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof
                                     res2.regime' res3.regime' k true hk_join
                                 have hnotfun2 : qt2.etyp.isFunctionType = false := by
                                   rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                                  native_decide
+                                  decide
                                 exact
                                   typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
                                     ctx'' e2 fuel' res2 htc2' hwf_ctx'' hbnd_ctx'' hpc''
@@ -6789,7 +6789,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof
                                     res2.regime' res3.regime' k true hk_join
                                 have hnotfun3 : qt3.etyp.isFunctionType = false := by
                                   rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                                  native_decide
+                                  decide
                                 exact
                                   typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
                                     ctxForE3 e3 fuel' res3 htc3' hwf_ctxForE3 hbnd_ctxForE3 hpcForE3
@@ -6918,7 +6918,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof
                                           res2.regime' res3.regime' k true hk_join
                                       have hnotfun2 : qt2.etyp.isFunctionType = false := by
                                         rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                                        native_decide
+                                        decide
                                       exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                                 exact
                                   PreservesInheritedFinalCleanLocsOneRun.apply
@@ -6973,7 +6973,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof
                                             res2.regime' res3.regime' k true hk_join
                                         have hnotfun2 : qt2.etyp.isFunctionType = false := by
                                           rw [memEnv_lookup_etyp_int res2.memEnv' l qt2 hlookup2]
-                                          native_decide
+                                          decide
                                         exact qtypCleanUnder.guard k htag2 hk2 hnotfun2
                                   by_cases hcontains_mid : ctx''.memEnv.contains l
                                   · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
@@ -7189,7 +7189,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof
                                           res2.regime' res3.regime' k true hk_join
                                       have hnotfun3 : qt3.etyp.isFunctionType = false := by
                                         rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                                        native_decide
+                                        decide
                                       exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                                 exact
                                   PreservesInheritedFinalCleanLocsOneRun.apply
@@ -7244,7 +7244,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof
                                             res2.regime' res3.regime' k true hk_join
                                         have hnotfun3 : qt3.etyp.isFunctionType = false := by
                                           rw [memEnv_lookup_etyp_int res3.memEnv' l qt3 hlookup3]
-                                          native_decide
+                                          decide
                                         exact qtypCleanUnder.guard k htag3 hk3 hnotfun3
                                   by_cases hcontains_mid : ctxForE3.memEnv.contains l
                                   · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
