@@ -743,7 +743,7 @@ The language includes a predicate system that allows selective de-poisoning base
     syntactically matches a guard's test (via \texttt{match\_guard}), values are
     de-poisoned in the true branch and poisoned in the false branch
     \item \textbf{Logical environment}: Environment $\mathcal{L}$ tracks guard
-    valuations with dependency sets (\texttt{k : bool using deps}) to enable
+    valuations with dependency sets (\texttt{k : b using deps}) to enable
     predicate evaluation for both guard closure and guard-only predicates
 \end{itemize}
 
@@ -929,7 +929,7 @@ Addresses and closures are runtime-only and do not appear in the surface syntax.
     \item $\pi$: Pure-mode flag (\textit{pure} or \textit{impure})
     \item $\Gamma$: Memory typing environment $l : p \{ P \}$ (logical location $\mapsto$ poison and predicate; stored type is always int)
     \item $\sigma$: Variable typing environment $x : Q$ (variable qualified types)
-    \item $\mathcal{L}$: Logical environment $k : bool \text{ using } deps$ (predicate guard evaluations with dependency tracking)
+    \item $\mathcal{L}$: Logical environment $k : b \text{ using } deps$ (predicate guard evaluations with dependency tracking)
     \item $\text{pc}$: Program counter poison (current context reliability)
 \end{itemize}
 
@@ -1195,7 +1195,7 @@ result is clean in the branch where both guards hold.
 The specification provides two families of conditional typing rules:
 \begin{itemize}
     \item \textbf{Predicate-matched case} (\textsc{if\_depoison\_*}): when
-    $\text{match\_guard}(e_1, \Gamma, \sigma) = (k, deps)$, the
+    $\text{match\_guard}(e_1, \Gamma, \sigma) = k \text{ with } deps$, the
     guard is typed in pure mode and does not contribute poison to the branches.
     The branches are typed under $\mathcal{L}_1[k \mapsto \text{true using } deps]$
     and $\mathcal{L}_1[k \mapsto \text{false using } deps]$. Result types are joined
