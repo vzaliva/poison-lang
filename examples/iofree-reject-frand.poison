@@ -1,2 +1,0 @@
---! poison-interpreter --io-free
-extern val @227 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) })

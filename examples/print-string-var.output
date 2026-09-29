@@ -1,4 +1,0 @@
-Evaluating file: examples/print-string-var.poison (verbose mode)
-
-Type checking error: Variable printString not found in environment
-

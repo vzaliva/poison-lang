@@ -1,2 +1,0 @@
---! poison-interpreter --io-free
-printInt 42

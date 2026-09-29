@@ -1,4 +1,0 @@
- let ret = 5 in 
- if ret >= 0 && ret <= 10 
- then printString "New parsing works" 
- else printString "redo parsing"

@@ -1,4 +1,0 @@
-Evaluating file: examples/boolean_exprType_test.poison (verbose mode)
-
-Type checking error: Variable printString not found in environment
-

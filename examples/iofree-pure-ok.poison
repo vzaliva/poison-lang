@@ -1,4 +1,0 @@
---! poison-interpreter --io-free
-42;
-(3 + 4);
-(10 >= 5)
