@@ -73,12 +73,14 @@ parser-clean:
 	$(MAKE) -C parser clean
 	rm -f config.json
 
+# The tests run one at a time: with a cold tree-sitter cache, concurrent first
+# parses race to compile the grammar and a test can fail spuriously.
 test: cache parser
 	lake build poison-interpreter
 	chmod +x scripts/run_tests.sh
 	echo "Running tests"
 	rm -rf testResults
-	./scripts/run_tests.sh
+	./scripts/run_tests.sh -j 1
 
 clean: lean-clean parser-clean
 	$(MAKE) -C poison-lang-spec clean
