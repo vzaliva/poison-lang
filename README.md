@@ -33,7 +33,8 @@ Ott specification in
   toolchain version is pinned in `lean-toolchain` and is downloaded
   automatically.
 - The [tree-sitter CLI](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html),
-  version 0.25 or later, and a C compiler (used by `tree-sitter build`).
+  version 0.27 or later (tested with 0.27.2), and a C compiler (used by
+  `tree-sitter build`).
 - [Ott](https://github.com/ott-lang/ott), LaTeX and `latexmk`. These are
   needed only to regenerate the PDFs (`make poison-lang-spec`, `make doc`).
 - GNU Make and Bash.
