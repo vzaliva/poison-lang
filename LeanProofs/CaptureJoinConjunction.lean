@@ -51,7 +51,8 @@ The lemmas below make this explicit:
   capture preconditions combine by conjunction across branch joins.
 
 Fault-robustness of the merged capture contract is then **inherited** from the
-generic FR step theorem: `stepFR_app` reads the applied member's `captures` (its
+generic FR step theorem: the application case (`stepFR_app_with_expr_proof` in
+`StepFRApp.lean`) reads the applied member's `captures` (its
 `memberCap`) directly from membership in the function-position `parrow`'s
 (merged) member list — `ExternCallBoundaryPfnStaticSource.externMember` carries
 `PFnTClosure.extern … memberCap ∈ tcls`, which threads through
@@ -88,8 +89,9 @@ Two clarifications on scope.
 
 The lemmas in this module are illustrative anchors that verify the structural and
 operational conjunction facts in isolation; they are intentionally *not* on the
-FR proof path (which uses the threaded-application member lemmas in `StepFR.lean`
-and the membership machinery already consumed by `stepFR_app`). Together with the
+FR proof path (which uses the `applyClosuresThreaded_ok_mem_*` threaded-application
+member lemmas of `TypecheckInduction.lean`, `StepFR.lean` and `StepFRApp.lean`, and
+the membership machinery consumed by the application case). Together with the
 generic FR theorem they are the soundness story for the merge itself.
 -/
 

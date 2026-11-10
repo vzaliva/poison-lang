@@ -13,7 +13,7 @@ declares a *bang* read dependency on the cell behind it:
 
 The trusted contract is `builtinMemDerefSpec` (a complete five-field
 `ExternBoundarySpec`).  Its relational `callFR` field, `builtinMemDeref_callFR`,
-is the only genuinely new obligation: it composes the *argument condition*
+carries the memory-read-specific obligation: it composes the *argument condition*
 `(ref int :> clean {})` — which forces the two runs to realise `r` to a **common
 logical cell** (`agreeValueUnder_ref_common_loc`) — with the *capture*
 `!r :> (int :> clean {})` — which forces that cell's **contents** clean, so the
@@ -99,7 +99,7 @@ argument ⇒ common cell; `!r`-clean capture ⇒ agreeing contents).  Crucially,
 *clean* memory cell is trivially materialisable with `ref`, so — unlike the
 guarded environment-capture path, which needs a trusted guarded-value producer —
 the memory-read call boundary can be routed through a real application here,
-reaching the environment-capture gold standard (`appliedMaxCurried_FR`).
+as for the environment capture in `MaxCurriedFR.appliedMaxCurried_FR`.
 
 The reachable declarations are exactly `@23`: the function position is the
 `externPfn` node; the argument `ref 3` is a `newRef` of a numeral, which carries

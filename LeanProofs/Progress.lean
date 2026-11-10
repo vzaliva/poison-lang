@@ -1,8 +1,11 @@
--- Progress Property for the Poison Language
+-- Statement of the Progress property for the Poison Language
 --
 -- The Progress property states that well-typed programs don't get stuck:
 -- they either terminate (return .success) or diverge (return .outOfFuel),
 -- but never encounter runtime errors (return .runtimeError).
+--
+-- This file only defines the property (`Progress`, a `Prop`); it contains no
+-- proof of it.
 
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
@@ -11,10 +14,10 @@ import LeanProofs.TypeSafety
 import LeanProofs.SemanticsProperties
 
 -- ================================================================
--- Progress Property
+-- Progress Property (definition)
 -- ================================================================
 
--- Progress property: well-typed programs either terminate or diverge (never stuck)
+-- Definition of the Progress property: well-typed programs either terminate or diverge (never stuck)
 -- For any well-typed expression with sufficient fuel, evaluation produces either:
 -- - .success (termination)
 -- - .outOfFuel (divergence)

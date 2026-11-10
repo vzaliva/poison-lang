@@ -1,13 +1,12 @@
 /-
-  TypecheckInduction.lean — typecheck-preservation and lookup-origin inductions (relocated, T12).
+  TypecheckInduction.lean — typecheck-preservation and lookup-origin inductions.
 
   Heavy `typecheckExpr` structural inductions that sit BELOW `StepFR` in the import
   graph: `joinTypeResults`/`typecheckExpr` preservation of `regimeConsistentWithCtx`
   (+ masked / MaskedTagsAbsent variants), `typecheck_preserves_predSatLaws`, the
   `*_byIH` closure-application bridges, the `joinTypeResults_lookup_member_*`
-  transport lemmas, and the clean lookup-origin family. Pure relocation from
-  `StepFR.lean` — no statement changes. Imports `ExternTagMeaning` because the
-  `*_byIH` and lookup-origin lemmas consume the relocated captured-extern
+  transport lemmas, and the clean lookup-origin family. Imports `ExternTagMeaning`
+  because the `*_byIH` and lookup-origin lemmas consume its captured-extern
   `QTypRespectsTagMeaning` machinery.
 -/
 
@@ -33,7 +32,7 @@ open Std
 open scoped MemoryTypeEnv
 
 
--- ── plain-zone movers (explicit binders, relocated from StepFR, T12) ──
+-- ── Standalone helper lemmas (explicit binders) ──
 
 lemma List_lookup_some_mem
     {α β : Type} [BEq α] [LawfulBEq α]
@@ -451,7 +450,7 @@ lemma typecheckDeref_qtypRespects
 section TypecheckInductionSig
 variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
 
--- Moved from StepFRApp: shared typecheck preservation lemmas for tag meaning/regime consistency.
+-- Shared typecheck preservation lemmas for tag meaning/regime consistency.
 lemma applyFnTClosure_regular_structure
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate) (result2 : TypeResult) (fuel : Nat)
@@ -2747,7 +2746,6 @@ private lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
 
 -- A single join-step for QTypRespectsTagMeaning: joining two tag-meaning-respecting
 -- qualified types produces another tag-meaning-respecting qualified type.
--- (Moved before _main because ite modes 3/4 need it.)
 private lemma QTypRespectsTagMeaning_joinStep
     (tm : TagMeaning) (e1 e2 : ETyp) (p1 p2 : Poison) (pred1 pred2 : Predicate)
     (h1 : QTypRespectsTagMeaning tm ⟨e1, p1, pred1⟩)
@@ -6820,7 +6818,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                             simpa [rCursor] using happly_src
                           -- Structural backward trace: under `pc = true`,
                           -- `applyFnTClosure` (extern) cannot install a guard
-                          -- tag (predicate-erasure fix in `applyExternEffect`),
+                          -- tag (predicate erasure in `applyExternEffect`),
                           -- so the guard-tagged post-cell traces back to the
                           -- same `qt_src` in the pre-extern memEnv (rCursor's
                           -- memEnv = result1's memEnv).

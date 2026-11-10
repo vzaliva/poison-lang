@@ -1,5 +1,8 @@
 /-
-  Auto-extracted from FaultRobustnessProofs.lean during StepFR operator refactor.
+  StepFRFnPfn.lean - Fault-robustness proofs for the fn and pfn cases.
+
+  Contains stepFR_fn, stepFR_pfn, stepFRSingleRunFinalCleanPcTrue_fn_maskedReg,
+  and stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg.
 -/
 import LeanProofs.StepFR
 

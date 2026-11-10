@@ -30,13 +30,13 @@ def emptyVarEnv : VarEnv := []
 
 namespace VarEnv
 
--- helper function to lookup a variable in the variable typing environment
+-- helper function to lookup a variable in the runtime variable environment
 @[inline] def lookup (env : VarEnv) (x : Name) : Option Value :=
   List.lookup x env
 
--- helper function to update a variable in the variable typing environment the
+-- helper function to update a variable in the runtime variable environment. The
 -- implementation is not very efficient as mappings with existing keys are just
--- added to the front of the list. However this is sound, as lookupVarEnv always
+-- added to the front of the list. However this is sound, as `VarEnv.lookup` always
 -- returns the first mapping with a given key.
 @[inline] def update (env : VarEnv) (x : Name) (v : Value) : VarEnv :=
   (x, v) :: env
@@ -52,8 +52,8 @@ end VarEnv
 -- ----------------------------------------------------------------------------
 
 /-- Errors surfaced by the extern dispatcher. All five cases travel through
-    `EvalResult.runtimeError` with a formatted message; no new top-level
-    result case is introduced. -/
+    `EvalResult.runtimeError` with a formatted message; `EvalResult` has no
+    dedicated extern-error case. -/
 inductive ExternError where
   | missing              (id : ExternId)
   | kindMismatch         (id : ExternId)
@@ -71,11 +71,13 @@ def ExternError.format : ExternError → String
   | .implFailure id m        => s!"extern id {id} impl failure: {m}"
 
 /-- Lean-side implementation of one extern declaration. The three variants
-    correspond exactly to the three extern declaration kinds. Functions are
-    opaque (no `Repr`/`BEq`). -/
+    cover the extern declaration kinds: `val` serves `extern val` and
+    `extern ref`, `pfn` serves `extern pfn`, and `fn` serves `extern fn`.
+    Functions are opaque (no `Repr`/`BEq`). -/
 inductive ExternImpl where
-  /-- Registered value for an `extern val @id`. Returned directly (and
-      shape-checked against the declared `Typ`) on dispatch. -/
+  /-- Registered value for an `extern val @id`, or the location of the external
+      cell for an `extern ref @id`. Returned directly (and shape-checked against
+      the declared `Typ`, respectively `ref int`) on dispatch. -/
   | val : Value → ExternImpl
   /-- Pure extern: receives the unified runtime env (captured env plus the
       current argument binding), the current argument value, and a read-only
@@ -88,8 +90,10 @@ inductive ExternImpl where
             Except ExternError (Value × Memory × Address)) → ExternImpl
 
 /-- Flat, globally-keyed registry: one entry per extern id covering both
-    top-level and nested callable externs. Built once by the driver
-    (`Main.lean`) before evaluation starts. -/
+    top-level and nested callable externs. Built once before evaluation
+    starts: the shipped registry is `defaultInitialState.registry`
+    (`LeanPoison/ExternBuiltins.lean`), which the driver (`Main.lean`) places
+    in the initial `Config`. -/
 abbrev ExternRegistry := Std.HashMap ExternId ExternImpl
 
 /-- Canonical empty registry, useful as a placeholder in proof-side `Config`

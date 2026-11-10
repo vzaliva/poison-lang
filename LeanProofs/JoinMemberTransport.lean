@@ -1,8 +1,8 @@
 /-
   Shared join-member transport machinery: lemmas about how `joinTypeResults`
-  transports per-member properties (consistentWithRegime, agreeOnClean,
-  signatures, member-of-arrow/parrow, ref membership, internal-poison) to
-  the joined result.
+  transports per-member properties (valueConsistentWithRegime,
+  resultAgreesIfClean, signatures, member-of-arrow/parrow, ref membership,
+  internal-poison) to the joined result.
 -/
 import LeanProofs.StepFR
 import LeanProofs.Equality
@@ -454,8 +454,6 @@ lemma joinTypeResults_pred_eq_guardClosure_from_member
                   a src hfold hsrc_tail hpred_a
 
 -- Member-oriented companions for `joinTypeResults` lookup compatibility.
--- These are the target interface for `stepFR_app`; proofs are staged and can be
--- completed incrementally after wiring.
 lemma joinTypeResults_transport_valueConsistentWithRegime_from_member
   (predSat : PredSat)
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)

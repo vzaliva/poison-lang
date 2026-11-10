@@ -105,8 +105,8 @@ private partial def captureInline : Capture → Std.Format
       Std.Format.text " :> " ++
       qtypSurfaceInline typ poison pred
 
-/-- A `, captures: { … }` suffix, emitted only for a non-empty dependency list
-    so that the common (empty) case prints exactly as before. -/
+/-- A `, captures: { … }` suffix, emitted only for a non-empty dependency list,
+    so that an extern without read dependencies prints no `captures:` clause. -/
 private partial def capturesSuffix (caps : List Capture) : Std.Format :=
   if caps.isEmpty then Std.Format.text ""
   else Std.Format.text ", captures: " ++ formatBracedEntries (caps.map captureInline)

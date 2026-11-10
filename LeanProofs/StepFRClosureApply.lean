@@ -1,14 +1,17 @@
 /-
-  App-only closure-application machinery extracted from the `StepFR` hub (refactor T11).
+  StepFRClosureApply.lean - Closure-application machinery for the function
+  application case of the fault-robustness proof.
 
-  This module holds `StepFR` lemmas that are consumed only by `StepFRApp` (the function
-  application case proof) and have no consumer inside `StepFR` itself. Relocating them here
-  shrinks the `StepFR` hub so edits to this machinery no longer trigger rebuilds of the
-  other per-operator FR case files, `JoinMemberTransport`, the boundary layer, and the
-  orchestration module.
+  Contains the closure-consistency transport and extended-regime monotonicity
+  lemmas (`closureCapturedVarsRegime_transport_pred`,
+  `valueConsistentWithRegime_monotoneExt`, and their masked variants) and the
+  closure-body entry lemmas (`agreeOnClean_closure_body_start`,
+  `consistentWithRegime_closure_body_start`). These are step-machinery lemmas
+  that have no consumer inside `StepFR` itself.
 
-  It imports `StepFR` and is imported only by `StepFRApp`, preserving per-operator
-  independence (no sibling `StepFR*` file imports another).
+  It imports `StepFR` and is imported only by `StepFRApp` and
+  `ExternCallBoundarySides`, preserving per-operator independence (no sibling
+  `StepFR*` case file imports another).
 -/
 import LeanProofs.StepFR
 
@@ -34,10 +37,10 @@ lemma wfValue_mono_of_le_nextAddr {n m : Address} (h : n ≤ m) (x : Name) (v : 
   | cons _ _ _ hv' _ =>
       simpa using hv'
 
--- ── Closure-consistency transport / monotonicity leaves (T11, App-only) ──
+-- ── Closure-consistency transport / monotonicity lemmas ──
 
--- Transport closureCapturedVarsRegime across qt.pred equality.
--- Since the new definition is indexed by qt.etyp, we need an additional
+-- Transport closureCapturedVarsRegime across a change of qt.pred.
+-- The definition is indexed by qt.etyp, so the transport takes an
 -- etyp equality (defaults to rfl for the common case where only pred changes).
 lemma closureCapturedVarsRegime_transport_pred
   {predSat : PredSat} {R : Regime} {qt qt' : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
@@ -46,7 +49,8 @@ lemma closureCapturedVarsRegime_transport_pred
   closureCapturedVarsRegime predSat R qt' μ θ v :=
   closureCapturedVarsRegime_transport_etyp hetyp h
 
-/-- Extended-regime variant of `valueConsistentWithRegime_monotone`.
+/-- Monotonicity of `valueConsistentWithRegime` across an extended-regime step
+    (`Regime.monotoneStepExt`).
     Freshness for the value's own guard tag is discharged from `hqtbound : qtypPredTagBounded qt B`,
     and for the closure-captured tags from `hbound : etypClosuresFullBounded qt.etyp B`. -/
 lemma valueConsistentWithRegime_monotoneExt

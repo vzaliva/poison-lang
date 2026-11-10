@@ -1,10 +1,31 @@
 /-
-  ExternProofs.lean - Concrete validation attempts for built-in externs.
+  ExternProofs.lean - Trusted boundary specs for the built-in externs.
 
-  This file is intentionally not a public constructor framework.  It records
-  direct proof-side evidence for the interpreter's built-in externs and, when a
-  declaration is too strong, the smallest failed FR obligation exposed by the
-  direct validation attempt.
+  This file is intentionally not a public constructor framework.  It contains
+  the direct proof-side evidence for the interpreter's built-in externs: a
+  complete five-field `ExternBoundarySpec` for each trusted entry, stated
+  against the implementation the interpreter itself runs
+  (`LeanPoison/ExternBuiltins.lean`):
+
+  * `builtinAbsSpec` — `abs` (`@12`), together with the negative theorem
+    `builtinAbs_cleanPost_obstruction` (a clean-result post cannot be produced
+    for a dirty argument), which justifies the clean argument precondition;
+  * `builtinMax10Spec` — outer curried `max` (`@10`), returning the `@11`
+    closure;
+  * `builtinMax11CapturesSpec` / `builtinMax11GuardedSpec` — inner curried
+    `max` (`@11`) with a clean, respectively guarded, `captures:` read
+    dependency on the outer argument;
+  * `builtinMemDerefSpec` — memory read (`@23`) with a `!r` read dependency;
+  * `builtinSetErrSpec` — `set_err` (`@22`), an impure `fn` extern with a
+    write effect, plus the program/registry agreement witness (`setErrProg`,
+    `setErrRegistry`, `setErr_agreesWithProgram`) consumed by
+    `ExternRegimeInt.setErrWriteEffect_FR`;
+  * `builtinErrnoSpec` — the `errno` reference extern (`@21`).
+
+  Shared machinery: the generic `pfn` declaration-boundary family
+  (`pfnExternDecl_declSingle` / `pfnExternDecl_declFR`) and the `extern ref`
+  declaration-boundary posts (`externRef_declSinglePost` /
+  `externRef_declFRPost`).  Everything lives in the `ExternProofs` namespace.
 -/
 import LeanPoison.ExternBuiltins
 import LeanProofs.ExternBoundary
@@ -13,7 +34,7 @@ open Std
 
 namespace ExternProofs
 
-/-! ### Argument equality from clean agreement (Helper 2 core)
+/-! ### Argument equality from clean agreement
 
 These lemmas are independent of any extern boundary plumbing.  Together they
 say: at a call boundary whose body context binds the argument to a *clean
@@ -79,7 +100,7 @@ private theorem agreeValueUnder_ref_common_loc
   | clean_internal_parrow_extern _hci het _ _ _ _ _ _ _ _ _ _ _ => rw [hetyp] at het; simp at het
   | dirty_internal_parrow _hci hisP _ _ => rw [hetyp] at hisP; simp [ETyp.isParrow] at hisP
 
-/-- Helper 2: clean agreement at a call-body entry forces the two integer
+/-- Clean agreement at a call-body entry forces the two integer
     arguments to be equal.  Given two clean-agreeing runs whose shared body
     context binds `x` to a clean integer type, and whose runtime environments
     bind `x` to `Value.num n₀` / `Value.num n₁`, we get `n₀ = n₁`. -/
@@ -176,9 +197,10 @@ private theorem resultAgreesIfClean_int_noPred_of_eq
 
 /-! ## Generic `pfn` extern declaration-boundary machinery
 
-The shipped `pfn` externs — `@10` (curried `max`, `captures []`), `@11` (inner
-`max`, `captures [a]` and its guarded variant), and `@23` (memory read,
-`captures [!r]`) — share byte-identical declaration-boundary machinery: each is
+The trusted `pfn` externs — `@12` (`abs`, `captures []`), `@10` (curried `max`,
+`captures []`), `@11` (inner `max`, `captures [a]` and its guarded variant), and
+`@23` (memory read, `captures [!r]`) — share byte-identical declaration-boundary
+machinery: each is
 an `extern pfn` evaluating to a `Value.peClosure` of `parrow` etyp over the
 declaration's captured environment, regime-consistent and clean-internal.  The
 only per-builtin variation is the tuple `(id, argName, argTyp, retSpec,
@@ -516,7 +538,7 @@ private theorem pfnReturnsNum_operationalSafe
 /-! ## Built-in `abs` (`@12`) — trusted boundary spec
 
 `abs` is a shipped pure builtin (`LeanPoison.ExternBuiltins.absImpl`, registered
-at `@12` in `defaultInitialState`).  This section reconstructs its complete
+at `@12` in `defaultInitialState`).  This section constructs its complete
 trusted `ExternBoundarySpec` (`builtinAbsSpec`, all five fields).  The
 declaration is clean-input to clean-output:
 
@@ -536,15 +558,13 @@ call-boundary FR/single proofs are `abs`-specific.
 (`LeanProofs/AbsFR.lean`), which places it in a singleton `[@12]` `TrustedRegistry`
 and instantiates the top-level FR theorem — the `abs` analogue of the `max`
 capstones.  `builtinAbs_cleanPost_obstruction`, by contrast, is a *negative*
-design-justification theorem with no Lean consumer, so
-`scripts/find_unused_lemmas.py` flags it; it is exempt by the project-memory
-gate. -/
+design-justification theorem: it has no Lean consumer by design. -/
 
-/-- The return type currently declared by examples for built-in `abs` (`@12`). -/
+/-- The return type declared for built-in `abs` (`@12`): a clean integer. -/
 def builtinAbsReturnQTyp : QTyp :=
   { etyp := ETyp.int, poison := false, pred := Predicate.noPred }
 
-/-- The return descriptor currently used by the built-in `abs` declaration. -/
+/-- The return descriptor of the built-in `abs` declaration. -/
 def builtinAbsRetSpec : ExternReturn :=
   .simple .int false .noPred
 
@@ -609,13 +629,14 @@ private theorem not_resultAgreesIfClean_builtinAbsReturn_num_ne
   exact not_agreeValueUnder_builtinAbsReturn_num_ne hne
     (hresult (qtypCleanUnder.clean (qt := builtinAbsReturnQTyp) rfl))
 
-/-- Current `abs` declaration obstruction.
+/-- Dirty-input obstruction for `abs`.
 
 If the `abs` result is typed as a clean integer, `StepFRPost` requires clean
 output agreement.  But the implementation is input-sensitive, and dirty
 integer inputs are not required to agree.  In particular, `abs (-1) = 1` and
 `abs 2 = 2`, so the clean-result post demanded by `ExternBoundarySpec.callFR`
-cannot be produced for the current declaration.
+cannot be produced for a declaration that admits a dirty argument.  This is
+why `builtinAbsDecl` requires a clean argument.
 -/
 theorem builtinAbs_cleanPost_obstruction
     {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
@@ -925,9 +946,8 @@ def builtinMax11RetSpec : ExternReturn :=
     the read dependency `captures: { a :> (int :> clean {}) }` (`doc/ffi-proposal.md`).
     This is the trusted contract under which `@11`'s clean `max a b` result is
     fault-robust: the captured `a` is a declared clean integer dependency.
-    A captures=`[]` variant cannot close the relational call boundary (that was the gap),
-    and a top-level declaration with this `captures` list is not produced by the current AST
-    (`doc/ffi-proposal.md`), so only the call-boundary field is proved here. -/
+    A captures=`[]` variant cannot close the relational call boundary: without the
+    declared dependency nothing forces the captured `a` to agree across the two runs. -/
 def builtinMax11CapturesDecl : ExternDeclaration :=
   { id := 11
     kind := .pfn
@@ -965,26 +985,12 @@ private theorem innerMaxImpl_ok_shape
           | _ => rw [ha] at h; simp at h
   | _ => simp [innerMaxImpl] at h
 
-/-! ### `@11` declaration-boundary fields (generic `pfnExternDecl_*` family)
-
-`@11`'s clean-int `pfn` declaration-boundary fields are one-line instantiations of
-the generic `pfnExternDecl_*` family (every underlying extern-closure lemma is
-`retSpec`-generic), assembled at `builtinMax11CapturesSpec` below. -/
-
-/-! ### `@11` call-boundary fields
-
-`@11`'s call output is `Value.num (max a b)`, reading the captured `a`.  The
-clean-int result shape and clean argument binding mirror `abs`; the relational
-`callFR` additionally needs the captured `a` to agree.  That dependency is not
-expressible by the current extern summary alone; the precise model should add an
-explicit captured-dependency contract rather than tainting by the whole captured
-environment. -/
-
 /-! ### `@11` call-boundary FR field — the captured-`a` dependency (the crux)
 
 `builtinMax11_callFR` proves `ExternCallBoundaryFR builtinMax11CapturesDecl
 builtinMax11Impl`: the inner curried-`max` call returns the clean integer
-`max a b`, reading the captured outer argument `a`.  The relational obligation
+`max a b`, reading the captured outer argument `a`.  The clean-int result shape
+and clean argument binding mirror `abs`.  The relational obligation
 needs both the explicit argument `b` (clean via the argument-condition gate) and
 the captured `a` (clean via the `captures: { a :> (int :> clean {}) }` contract).
 Inverting `Call.pfnExternMember` for `builtinMax11CapturesDecl` pins
@@ -992,7 +998,8 @@ Inverting `Call.pfnExternMember` for `builtinMax11CapturesDecl` pins
 that the captured `a` is clean in the body-entry environment.  Body-entry
 `agreeOnClean` then forces `a₀ = a₁`, the argument gate forces `b₀ = b₁`, and
 `max a₀ b₀ = max a₁ b₁` discharges the only content-bearing `StepFRPost`
-conjunct.  This is what the plain `@11` summary (captures `[]`) could not do. -/
+conjunct.  The explicit captured-dependency contract is what makes this
+provable: a captures-`[]` declaration gives no handle on the captured `a`. -/
 
 /-- Output of a successful `@11` capture-decl call: `Value.num (max a b)`. -/
 private theorem builtinMax11Captures_call_output
@@ -1245,13 +1252,12 @@ private theorem builtinMax11_callFR : ExternCallBoundaryFR builtinMax11CapturesD
 
 The capture-bearing declaration `builtinMax11CapturesDecl` (captures `[a]`) needs
 all five `ExternBoundarySpec` fields.  The relational `callFR` field is the crux
-proved above (`builtinMax11_callFR`).  The remaining four fields are verbatim
-mirrors of the captures-`[]` `builtinMax11_*` machinery with the member/type-level
-captures list `[]` replaced by `[a] = [⟨CaptureTarget.bareVar "a", Typ.int, false,
-SyntaxPredicate.noPred⟩]`.  The `[a]`-threading through `peClosure_extern` /
-`deepValueQTypProperty.peClosure_extern` mirrors the `@10` call helpers
-(`builtinMax10_call_valueHasETyp` / `_call_valueConsistent`), which thread the same
-member list at the call boundary. -/
+proved above (`builtinMax11_callFR`).  The two declaration-boundary fields are
+one-line instantiations of the generic `pfnExternDecl_*` family at the
+member/type-level captures list `[a] = [⟨CaptureTarget.bareVar "a", Typ.int, false,
+SyntaxPredicate.noPred⟩]`; `callSingle` is the single-run counterpart of the
+call-boundary proof, and the operational field follows from
+`pfnReturnsNum_operationalSafe`. -/
 
 private theorem builtinMax11Captures_declSingle :
     ExternDeclBoundarySingle builtinMax11CapturesDecl builtinMax11Impl :=
@@ -1296,10 +1302,11 @@ private theorem builtinMax11Captures_callSingle :
   · rw [hboc]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
   · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter'
 
-/-- `builtinMax11Impl`'s operational-safety contract restated against the
-    capture-bearing declaration `builtinMax11CapturesDecl`.  The proof body only
-    discriminates on `builtinMax11Impl`'s constructor shape and never mentions the
-    declaration, so it is a verbatim copy of `builtinMax11Impl_operationalSafe`. -/
+/-- `builtinMax11Impl`'s operational-safety contract, stated against the
+    capture-bearing declaration `builtinMax11CapturesDecl`.  The proof only
+    discriminates on `builtinMax11Impl`'s constructor shape and never inspects the
+    declaration: `innerMaxImpl` returns a `Value.num` on success, so the generic
+    num-returning operational lemma applies. -/
 private theorem builtinMax11CapturesImpl_operationalSafe :
     ExternOperationalSafe builtinMax11CapturesDecl builtinMax11Impl := by
   apply pfnReturnsNum_operationalSafe (implFn := innerMaxImpl)
@@ -1310,7 +1317,8 @@ private theorem builtinMax11CapturesImpl_operationalSafe :
 /-- The complete trusted-extern-entry boundary contract for the capture-bearing
     inner curried-`max` extern (`@11`, captures `[a]`): all five
     `ExternBoundarySpec` fields.  The relational `callFR` field is the crux
-    (`builtinMax11_callFR`); the other four mirror the captures-`[]` machinery. -/
+    (`builtinMax11_callFR`); the declaration-boundary and operational fields
+    reuse the generic `pfn` machinery. -/
 theorem builtinMax11CapturesSpec :
     ExternBoundarySpec builtinMax11CapturesDecl builtinMax11Impl where
   declFR := builtinMax11Captures_declFR
@@ -1327,24 +1335,26 @@ satisfaction relation used by extern argument conditions: a declared-clean
 dependency is satisfied when the actual is clean *under the call-site regime*
 (literally clean, or its guard tag is active in `R`).  `builtinMax11GuardedDecl`
 declares the read dependency `captures: { a :> (int :> clean { 5, v => v >= 0 }) }`
-— the same inner-`max` shape and `innerMaxImpl`, but the capture now carries a guard
+— the same inner-`max` shape and `innerMaxImpl`, but the capture carries a guard
 predicate, so the call gate `capturesSatisfied` admits the dependency only when the
 actual `a` is clean *under the regime* and carries a matching guard shape.
 
-The call-boundary proof is the curried-`max` proof with the gate-extraction
-(`capturesSatisfied_singleton_bareVar_guarded`) generalised to the guarded shape;
-the agreement core is unchanged — it was already guard-capable
+The call-boundary proof is the captures-`[a]` proof (`builtinMax11_callFR`) with the
+gate-extraction (`capturesSatisfied_singleton_bareVar_guarded`) generalised to the
+guarded shape;
+the agreement core is the same — it is guard-capable
 (`qtypCleanUnder_of_cleanUnderRegime` emits `qtypCleanUnder.guard`, and
 `agreeValueUnder_num_int_imp_eq` closes the `withPred_true_eq` arm).  The
 declaration-boundary fields carry the capture only as data (threaded as the
-closure's member capture list) and never inspect its predicate, so they mirror the
-captures-`[a]` machinery verbatim with the member capture list updated. -/
+closure's member capture list) and never inspect its predicate, so they are the
+same generic `pfnExternDecl_*` instantiations as for the captures-`[a]`
+declaration, at the guarded member capture list. -/
 
 /-- Gate-extraction for a singleton *guarded* bare `captures:` dependency
     `[⟨a, ty, clean, guardClosure ..⟩]`: the dependency target resolves in the
     callable environment to a qualified type that is clean under the regime (the
     declared guard-shape requirement is the third gate conjunct; the conclusion only
-    needs the clean-under-regime fact, which the existing agreement chain consumes). -/
+    needs the clean-under-regime fact, which the agreement chain consumes). -/
 private theorem capturesSatisfied_singleton_bareVar_guarded
     {v name : Name} {ty : Typ} {idx : TagIndex} {body : Expr}
     {u : VarTypeEnv} {m : MemoryTypeEnv} {r : Regime}
@@ -1396,7 +1406,7 @@ typing witness for `builtinMax11GuardedDecl` runs the fused gate
 `argConditionSatisfied … && capturesSatisfied [a :> clean { 5, v => v >= 0 }] …`,
 and the guarded gate-extraction (`capturesSatisfied_singleton_bareVar_guarded`)
 yields the clean-under-regime fact for the captured `a`.  From there the proof is
-identical to curried `max`: the agreement core consumes the clean-under-regime fact
+the same as for `builtinMax11_callFR`: the agreement core consumes the clean-under-regime fact
 through `qtypCleanUnder_of_cleanUnderRegime` (which produces `qtypCleanUnder.guard`
 for an actually-guarded `a`) and `agreeValueUnder.withPred_true_eq`, forcing
 `a₀ = a₁`. -/
@@ -1582,7 +1592,7 @@ private theorem builtinMax11Guarded_callRun_bEq
     `max a b`, reading the captured `a` whose declared dependency is *guarded*.  The
     captured-`a` equality is sourced through the guarded gate (the declared
     `clean { 5, v => v >= 0 }` requirement is satisfied because the actual `a` is
-    clean under the call-site regime), then the already-guard-capable agreement core
+    clean under the call-site regime), then the guard-capable agreement core
     forces `a₀ = a₁`.  This is what makes `captures:` support de-poisoned read
     dependencies at extern call time. -/
 theorem builtinMax11Guarded_callFR : ExternCallBoundaryFR builtinMax11GuardedDecl builtinMax11Impl := by
@@ -1685,7 +1695,7 @@ private theorem builtinMax11GuardedImpl_operationalSafe :
     inner curried-`max` extern (`@11`, `captures: { a :> (int :> clean { 5, v => v >= 0 }) }`):
     all five `ExternBoundarySpec` fields.  The relational `callFR` field
     (`builtinMax11Guarded_callFR`) is the crux — it discharges the captured-`a`
-    agreement through the guarded gate; the other four mirror the captures-`[a]`
+    agreement through the guarded gate; the other four reuse the generic `pfn`
     machinery (the capture is carried as data and its predicate never inspected). -/
 theorem builtinMax11GuardedSpec :
     ExternBoundarySpec builtinMax11GuardedDecl builtinMax11Impl where
@@ -1700,9 +1710,10 @@ theorem builtinMax11GuardedSpec :
 `@10` is the outer stage of curried `max`: `extern pfn @10 a : (int :> clean {}) ->
 (extern pfn @11 b : (int :> clean {}) -> ((int :> clean {})))`.  Applying `@10` to a
 clean integer `a` returns the inner `@11` pure closure, capturing `a` in its runtime
-environment.  `@10` is the first *nested-returning* extern spec, but every
-declaration-boundary helper is `retSpec`-generic, so its fields mirror `@11`'s with the
-nested return descriptor `builtinMax10RetSpec`. -/
+environment.  `@10` is a *nested-returning* extern (its return descriptor is itself
+an extern `pfn`); every declaration-boundary helper is `retSpec`-generic, so its
+declaration-boundary fields are the same generic `pfnExternDecl_*` instantiations
+as `@11`'s, at the nested return descriptor `builtinMax10RetSpec`. -/
 
 /-- The nested return descriptor for outer `max` (`@10`): returns the `@11` pure closure
     (a clean integer `pfn`), matching the inner `@11` node produced by the shared
@@ -1775,8 +1786,8 @@ Calling `@10` on a clean integer `a` returns the inner `@11` pure closure
 environment is the `@10` call's unified environment (holding `a`).  The
 result is therefore a *closure value* of `parrow` type, so the content-bearing
 `StepFRPost` conjunct is a closure agreement (`agreeValueUnder.clean_internal_parrow_extern`,
-exercised at `captures = []`, exactly as in `builtinMax10_declFR`) rather than the
-integer equality used by `@11`/`abs`. -/
+at body captures `[]` and member captures `[a]`, following the generic
+`pfnExternDecl_declFR` pattern) rather than the integer equality used by `@11`/`abs`. -/
 
 /-- Output of a successful `@10` call: the `@11` pure closure over the unified
     environment.  This exercises `validateExternReturn`'s `nestedPfn` branch — the
@@ -1940,7 +1951,8 @@ private lemma QTypRespectsTagMeaning_pfn_extern_anyPoison
 
 /-- `valueHasETyp` for the `@11` closure returned by an `@10` call, at the inner
     `parrow` type recorded in `res` (pc-generic: the recorded function `pc` is the
-    outer call's, not the body context's, so this cannot reuse the decl helper).
+    outer call's, not the body context's, so this cannot reuse
+    `pfnExternDecl_valueHasETyp`).
     The closure's captured runtime environment is `entry.unifiedEnv`, related to the
     body context's type-env via the body-entry instantiation `hric`. -/
 private theorem builtinMax10_call_valueHasETyp
@@ -1972,8 +1984,8 @@ private theorem builtinMax10_call_valueHasETyp
     exact ⟨v', hvlookup⟩
 
 /-- `valueConsistentWithRegime` for the `@11` closure returned by an `@10` call
-    (concrete qualified type, `pc`/`poison`-generic).  Mirrors the decl-boundary
-    `valueConsistent`, instantiated at the body context. -/
+    (concrete qualified type, `pc`/`poison`-generic).  Parallels
+    `pfnExternDecl_valueConsistent`, instantiated at the body context. -/
 private theorem builtinMax10_call_valueConsistent
     {predSat : PredSat} {entry : ExternCallEntry} {μ : Memory} {θ : RealizationMap}
     {pc poison : Poison} {innerArgQt : QTyp}
@@ -2065,10 +2077,11 @@ private theorem builtinMax10_callSingle : ExternCallBoundarySingle builtinMax10D
 /-- `@10` relational call-boundary field (the curried-`max` outer crux): two `@10`
     calls produce two `@11` pure closures that agree.  The content-bearing
     `StepFRPost` conjunct is the *closure* agreement
-    `agreeValueUnder.clean_internal_parrow_extern` (exercised at `captures = []`),
-    whose captured-environment agreement comes from the body-entry `agreeOnClean`
-    over the shared body context — exactly the decl-boundary pattern transported to
-    the call boundary (`ctx := entry₀.bodyCtx`, `hric := hbody.runtime₀/₁`). -/
+    `agreeValueUnder.clean_internal_parrow_extern` (at body captures `[]` and
+    member captures `[a]`), whose captured-environment agreement comes from the
+    body-entry `agreeOnClean` over the shared body context — the declaration-boundary
+    pattern transported to the call boundary (`ctx := entry₀.bodyCtx`,
+    `hric := hbody.runtime₀/₁`). -/
 private theorem builtinMax10_callFR : ExternCallBoundaryFR builtinMax10Decl builtinMax10Impl := by
   intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
     htyped₀ htyped₁ hpredlaws hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
@@ -2188,7 +2201,7 @@ private theorem builtinMax10_callFR : ExternCallBoundaryFR builtinMax10Decl buil
         simp [qtypGuardTag, hpred] at htag
 
 /-- The complete trusted-extern-entry boundary contract for the outer curried-`max`
-    extern (`@10`): all five `ExternBoundarySpec` fields.  This is the first
+    extern (`@10`): all five `ExternBoundarySpec` fields.  This is the
     *nested-returning* trusted entry — its call returns the inner `@11` pure
     closure rather than a base value. -/
 theorem builtinMax10Spec : ExternBoundarySpec builtinMax10Decl builtinMax10Impl where
@@ -2291,19 +2304,20 @@ private theorem capturesSatisfied_singleton_memVar
       | arrow _ _ _ _ => simp [het] at h
       | parrow _ _ _ _ => simp [het] at h
 
-/-! ### Trusted memory-read extern `@23` (the `!r` read-dependency demonstrator)
+/-! ### Trusted memory-read extern `@23` (the `!r` read dependency)
 
 `builtinMemDerefDecl` is `@23 r : (ref int :> clean {}) -> (int :> clean {})`
 with `captures: { !r :> (int :> clean {}) }`.  Its implementation
 (`memDerefImpl`) dereferences the reference argument and returns the cell
-contents.  The relational `callFR` is the new content: it composes the argument
-condition (reference clean ⇒ a *common* logical cell via
+contents.  The relational `callFR` carries the memory-read-specific content: it
+composes the argument condition (reference clean ⇒ a *common* logical cell via
 `agreeValueUnder_ref_common_loc`) with the `!r` capture (cell contents clean ⇒
-the two reads agree via `agreeOnClean` on the location side).  The four
-non-relational fields mirror the captures-`[]`/`[a]` machinery; the only
-declaration-level novelty is the reference-typed argument
-(`argTypToETyp (ref int) = ETyp.ref ∅`, a signature placeholder compared
-modulo locset). -/
+the two reads agree via `agreeOnClean` on the location side).  The
+declaration-boundary fields are instantiations of the generic `pfnExternDecl_*`
+family and the operational field follows from `pfnReturnsNum_operationalSafe`,
+as for the other `pfn` externs; the only declaration-level difference is the
+reference-typed argument (`argTypToETyp (ref int) = ETyp.ref ∅`, a signature
+placeholder compared modulo locset). -/
 
 def builtinMemDerefRetSpec : ExternReturn :=
   .simple .int false .noPred
@@ -2671,17 +2685,16 @@ private theorem wfVarEnv_lookup_loc
                 exact ih h_wf_tail h_lookup
 
 /-- Operational safety of `setErrImpl` (`@22`), the `set_err` impure extern —
-    the `fn`-clause content of `ExternOperationalSafe`, and the key Path-2 payoff.
+    the `fn`-clause content of `ExternOperationalSafe`.
 
     Because `set_err` writes the location it resolves from the captured `errno`
     binding (rather than a fixed reserved address), its well-formedness obligation
     discharges *directly* from the `wfVarEnv addr env` hypothesis the boundary
     already supplies: the resolved cell `a` satisfies `a < addr` because
     `(errno, Value.loc a)` lives in the well-formed environment.  No
-    reserved-address invariant and no fold of `RegistryReservedBelow` into
-    `wfConfig` are required.  The call neither allocates (`addr' = addr`, so
-    `addr ≤ addr'`) nor writes out of bounds, and returns a trivially well-formed
-    `unit`. -/
+    reserved-address invariant (`RegistryReservedBelow`) is required.  The call
+    neither allocates (`addr' = addr`, so `addr ≤ addr'`) nor writes out of bounds,
+    and returns a trivially well-formed `unit`. -/
 private theorem setErrImpl_operational
     (env : VarEnv) (vArg : Value) (mem : Memory) (addr : Address)
     (vRaw : Value) (mem' : Memory) (addr' : Address)
@@ -2728,9 +2741,8 @@ private theorem setErrImpl_operational
 
 /-! ### `@22` (`set_err`) runtime shape lemmas
 
-Reusable inversions of a successful `setErrImpl` dispatch, the `@22`
-write-effect target resolution, and the non-shadowing of the captured `errno`
-target by the argument binding.  These feed the `@22` `callSingle` / `callFR`
+Reusable inversions of a successful `setErrImpl` dispatch and of the `@22`
+write-effect target resolution.  These feed the `@22` `callSingle` / `callFR`
 boundary fields. -/
 
 /-- Output shape of a successful `setErrImpl` (`@22`) dispatch: the argument is a
@@ -2786,8 +2798,8 @@ private theorem setErrImpl_errno_target_wf
     resolves, and the resulting `memEnv'` is the assignment-shaped update of `ls`
     (singleton strong / multi-location weak), with the target reference's own
     poison `qt.poison` folded into the stored poison/predicate.  Parameterized
-    over the effect, so the `@22` clean-singleton `!errno` instantiation is a
-    later specialization. -/
+    over the effect; the `@22` clean-singleton `!errno` case is obtained by
+    instantiation at the use sites. -/
 private theorem applyExternEffect_errno_shape
     {effect : Effect} {unifiedEnv : VarTypeEnv} {tagMapping : TagMapping}
     {pc : Poison} {memEnv memEnv' : MemoryTypeEnv}
@@ -2830,11 +2842,11 @@ private theorem applyExternEffect_errno_shape
 
 /-! ### `@22` (`set_err`) proof-side declaration
 
-Mirrors the interpreter's `regInsert r4 22 (.fn setErrImpl)`
-(`LeanPoison.ExternBuiltins`): an impure `fn` extern taking an `int` argument
-`n`, returning `unit`, with the single declared effect `!errno :> (int :> clean
-{})`.  Authored here (rather than at the spec-assembly step) because the
-call-boundary fields are stated against this declaration. -/
+Mirrors the interpreter's registration of `setErrImpl` at `@22`
+(`LeanPoison.ExternBuiltins.defaultInitialState`): an impure `fn` extern taking
+an `int` argument `n`, returning `unit`, with the single declared effect
+`!errno :> (int :> clean {})`.  It precedes the call-boundary fields because
+they are stated against this declaration. -/
 
 /-- Return spec of `@22`: `unit`, clean, no predicate. -/
 def builtinSetErrRetSpec : ExternReturn :=
@@ -2980,7 +2992,7 @@ private theorem builtinSetErr_call_clean_shape
             · rw [hbody]
               exact argConditionSatisfied_cleanRegime_of_declClean hcond hpin'
 
-/-- The single-run call-boundary field for `@22` (`set_err`): the first `.fn`
+/-- The single-run call-boundary field for `@22` (`set_err`): a `.fn`
     (memory-writing) `callSingle`.  Under `ctx.pc = true` the effect poisons the
     written errno cell (`storedPoison = true`, `storedPred = noPred`), so the
     memory post conjuncts go through: unwritten cells transport, the written cell
@@ -3253,8 +3265,10 @@ hypothesis: the written cells always store `noPred` — the effect predicate is
   (`agreeValueUnder_ref_common_loc`); a dirty target poisons the written cells
   and the corresponding agreement obligations are vacuous. -/
 
--- Local mirrors of `StepFRAssign`-private regime/memory transport compositions
--- (built from the public `StepFR` primitives).
+-- Local copies of the `private` `StepFRAssign` lemmas `qtypCleanUnder_of_monotone`
+-- and the composition of `agreeValueUnder_transport_memory` with
+-- `agreeValueUnder_clean_monotoneRegime_public` (regime-monotone, memory-changing
+-- agreement transport), built from the public `StepFR` primitives.
 
 private lemma setErr_qtypCleanUnder_of_monotone
     {R R' : Regime} (hmono : Regime.monotoneStep R R') {qt : QTyp} :
@@ -3367,7 +3381,7 @@ private theorem builtinSetErr_callRun_argEq
     qtypCleanUnder_of_cleanUnderRegime hcleanB (by rw [hInt]; rfl)
   exact builtinAbs_arg_eq_of_bodyAgree hbody hbind hcleanP hInt hrv₀ hrv₁
 
-/-- The two-run call-boundary FR field for `@22` (`set_err`): the first `.fn`
+/-- The two-run call-boundary FR field for `@22` (`set_err`): a `.fn`
     (memory-writing) `callFR`.  See the section header for the proof shape. -/
 private theorem builtinSetErr_callFR :
     ExternCallBoundaryFR builtinSetErrDecl builtinSetErrImpl := by
@@ -4024,9 +4038,10 @@ private theorem builtinSetErr_callFR :
 
 /-! ## The `set_err` operational field
 
-`setErrImpl_operational` already matches the `fn` clause of
+`setErrImpl_operational` matches the first `fn` clause of
 `ExternOperationalSafe` verbatim; the `pfn`/`val` clauses are impossible by
-constructor mismatch. -/
+constructor mismatch, and the `fn` memory-monotonicity clause holds because
+`setErrImpl` only overwrites one cell. -/
 
 private theorem builtinSetErrImpl_operationalSafe :
     ExternOperationalSafe builtinSetErrDecl builtinSetErrImpl := by
@@ -4080,10 +4095,10 @@ private theorem builtinSetErrImpl_operationalSafe :
 The declaration `extern fn @22 …` typechecks (via `typecheckExternFn`) to an
 extern *closure* type: an `arrow` whose single `FnTClosure.extern` carries the
 declared effects and captures the declaration context's type environment — the
-first `.fn` declaration realization (every prior one is `.pfn`).  No tags or
-locations are allocated, so `ctxAfter ctx res = ctx` and both posts collapse
-exactly as in the `abs` declaration fields, with the `fn`-flavored extern
-constructors (`valueHasETyp.closure_extern`,
+only `.fn` declaration among the trusted entries (the others are `.pfn` or
+`.ref`).  No tags or locations are allocated, so `ctxAfter ctx res = ctx` and
+both posts collapse exactly as in the generic `pfn` declaration fields, with
+the `fn`-flavored extern constructors (`valueHasETyp.closure_extern`,
 `deepValueQTypProperty.closure_extern`, `QTypRespectsTagMeaning_fn_extern`,
 `agreeValueUnder.clean_internal_arrow_extern`). -/
 
@@ -4366,7 +4381,7 @@ private theorem builtinSetErr_declFR :
 
 /-- The complete trusted-extern-entry boundary contract for the built-in
     `set_err` extern (`@22`): all five `ExternBoundarySpec` fields.  This is the
-    first fully proven `.fn` (write-effect) trusted entry. -/
+    `.fn` (write-effect) trusted entry. -/
 theorem builtinSetErrSpec : ExternBoundarySpec builtinSetErrDecl builtinSetErrImpl where
   declFR := builtinSetErr_declFR
   callFR := builtinSetErr_callFR
@@ -4936,7 +4951,7 @@ private theorem externRef_declFRPost
 
 /-! ## The trusted `@21` (`errno`) reference-extern entry
 
-The first trusted `extern ref` boundary spec.  The declaration fields are the
+The trusted `extern ref` boundary spec.  The declaration fields are the
 two theorems above instantiated at the `@21` shape; the call fields are
 vacuous (a reference extern is a declaration, not a callable); the
 operational field's stored-location clause is discharged from the
@@ -4962,7 +4977,7 @@ def builtinErrnoImpl : ExternImpl := ExternImpl.val (Value.loc errnoAddr)
 
 namespace ExternRefDecl
 
-/-- Inversion of a successful `typecheckExternRef`: the v1 gates passed, so
+/-- Inversion of a successful `typecheckExternRef`: its gates passed, so
     the result is exactly `externRefDeclResult` and the id was undeclared. -/
 private theorem typecheckExternRef_ok_inv
     {ctx : TypeContext} {id : ExternId}
@@ -5101,7 +5116,7 @@ private theorem builtinErrno_operational :
     exact absurd himpl (by simp [builtinErrnoImpl])
 
 /-- The complete trusted boundary spec for the `@21` `errno` reference extern:
-    the first trusted `extern ref` entry. -/
+    the trusted `extern ref` entry. -/
 theorem builtinErrnoSpec : ExternBoundarySpec builtinErrnoDecl builtinErrnoImpl where
   declFR := builtinErrno_declFR
   callFR := builtinErrno_callFR

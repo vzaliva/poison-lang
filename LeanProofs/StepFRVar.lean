@@ -1,5 +1,7 @@
 /-
-  Auto-extracted from FaultRobustnessProofs.lean during StepFR operator refactor.
+  StepFRVar.lean - Fault-robustness proof for the variable case.
+
+  Contains stepFR_var and stepFRSingleRunFinalCleanPcTrue_var_maskedReg.
 -/
 import LeanProofs.StepFR
 

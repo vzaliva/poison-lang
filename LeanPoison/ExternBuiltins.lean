@@ -28,9 +28,9 @@ See `doc/ffi-proposal.md` and `doc/poison-lang-description.tex`.
 
 open Std
 
-/-- Driver-chosen runtime address for the `errno` cell (`@21`). Placed high
-    so the driver-supplied cell is visually distinct from program-allocated
-    ones in test goldens; `Config.nextAddr` still starts at `0`. -/
+/-- Driver-chosen runtime address for the `errno` cell (`@21`). The shipped
+    initial state starts `Config.nextAddr` at `errnoAddr + 1`, so
+    program-allocated cells follow it (see `DefaultInitialState`). -/
 def errnoAddr : Address := 1000000
 
 /-- Outer curried-`max` stage (`@10`): on a clean integer argument, return the

@@ -1,5 +1,10 @@
 /-
-  Auto-extracted from FaultRobustnessProofs.lean during StepFR operator refactor.
+  StepFRIte.lean - Fault-robustness proof for the ite (conditional) case.
+
+  Contains stepFR_ite_with_expr_proof (which dispatches on the typechecking
+  mode: known-true guard, known-false guard, or standard conservative join),
+  stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof, and the
+  matchGuard structure lemmas and branch-join transport lemmas they use.
 -/
 import LeanProofs.StepFR
 import LeanProofs.JoinMemberTransport
@@ -5883,11 +5888,11 @@ lemma stepFR_ite_with_expr_proof
 
 /-- Masked single-run fault-robustness, `ite` case.
 
-Extracted from the masked single-run theorem in `FaultRobustnessProofs`
-(refactor T15). The closed-over locals — `CanUse`, `CtxReach`, the `CtxReach`
-navigation contracts, and the strong-induction hypothesis `IH'` — are threaded
-as explicit parameters; the three `CanUse` sub-expression facts (`hcan1`/`hcan2`/
-`hcan3`) are supplied directly by the caller, mirroring the `op`/`seq` arms. -/
+Used by the masked single-run theorem in `FaultRobustnessProofs`. `CanUse`,
+`CtxReach`, the `CtxReach` navigation contracts, and the strong-induction
+hypothesis `IH'` are explicit parameters; the three `CanUse` sub-expression
+facts (`hcan1`/`hcan2`/`hcan3`) are supplied directly by the caller, mirroring
+the `op`/`seq` arms. -/
 lemma stepFRSingleRunFinalCleanPcTrue_ite_maskedReg_with_expr_proof
     (masked : Tag → Prop)
     (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)

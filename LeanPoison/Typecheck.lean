@@ -70,7 +70,7 @@ namespace MemoryTypeEnv
   @[inline] def update (m : MemoryTypeEnv) (l : Loc) (qt : QTyp) : MemoryTypeEnv :=
     m.insert l ⟨qt.poison, qt.pred⟩
 
-  /-- `m` contains a binding for `a`. -/
+  /-- `m` contains a binding for `l`. -/
   def hasKey (m : MemoryTypeEnv) (l : Loc) : Prop :=
     m.contains l
 
@@ -168,9 +168,9 @@ def invalidateRegimeDeps (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
     e.g. an extern's shared return guard supplied via `--regime`, before it enters
     the tag environment at a later `if`/deref — are KEPT, and a guard the effect's
     own predicate re-establishes is not spuriously dropped (it survives via its
-    cell type).  Targeted soundness fix: a materialised guard whose predicate reads
-    a written effect target is invalidated, while legitimate driver assertions
-    persist (see `examples/lp55xx-read.poison`). -/
+    cell type).  In short: a materialised guard whose predicate reads a written
+    effect target is invalidated, while legitimate driver assertions persist
+    (see `examples/lp55xx-read.poison`). -/
 def invalidateRegimeDepsEffect (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   R.filter (fun k _ =>
     match env.get? k with
@@ -300,13 +300,14 @@ structure TypeContext where
   varEnv : VarTypeEnv    -- σ
   tagEnv : TagEnv        -- ℒ
   nextLoc : Loc  -- for fresh logical location generation
-  nextTag : Tag  -- for fresh location generation
+  nextTag : Tag  -- for fresh tag generation
   pureCtx : Bool -- whether we are inside a pure function body typing
   -- Extern-regime policy: for a selected extern id and
   -- a freshly-allocated output guard tag, the scenario chooses `some b` (insert
   -- `tag ↦ b` into `regime'`) or `none` (leave the tag out → conservative path).
-  -- Default `fun _ _ => none` recovers the pre-extern-regime behaviour and threads
-  -- unchanged through every `{ ctx with … }` update.
+  -- The default `fun _ _ => none` selects no extern (the policy then inserts
+  -- nothing into the regime) and threads unchanged through every
+  -- `{ ctx with … }` update.
   externRegime : ExternId → Tag → Option Bool := fun _ _ => none
   -- Reference-valued extern discipline (doc/externs.md, `@21`): `extern
   -- ref` may only appear in evaluate-at-most-once positions.  The flag is
@@ -326,7 +327,7 @@ structure TypeResult where
   memEnv' : MemoryTypeEnv -- Updated memory typing environment
   tagEnv' : TagEnv  -- Updated logical environment
   nextLoc' : Loc -- Updated next logical location
-  nextTag' : Tag -- Updated next location
+  nextTag' : Tag -- Updated next tag
   regime' : Regime -- Updated regime after typing step
   declared' : List ExternId -- Updated declared `extern ref` ids (no default: every result must thread it)
 
@@ -397,7 +398,7 @@ def extractDepsFromPred (pred : Predicate) (fuel : Nat) : TypecheckM Deps :=
 def freshTLoc (ctx : TypeContext): (Loc × TypeContext) :=
   (ctx.nextLoc, { ctx with nextLoc := ctx.nextLoc + 1 })
 
--- Allocate a fresh location and return it along with updated typing context
+-- Allocate a fresh location and return it along with updated typing result
 def freshTLocRes (result : TypeResult): (Loc × TypeResult) :=
   (result.nextLoc', { result with nextLoc' := result.nextLoc' + 1 })
 
@@ -483,11 +484,11 @@ def updateMemEnv (env : MemoryTypeEnv) (l : Loc) (qt : QTyp) : MemoryTypeEnv :=
     This implements the weak update semantics for assign_locset in the Ott spec.
 
     A locset member that is NOT tracked by the memory environment (possible after
-    conservative if/while typing) degrades the joined predicate to `noPred`: a
+    conservative `if` typing) degrades the joined predicate to `noPred`: a
     symbolic guard claim is only kept when every written cell is tracked, since an
     untracked cell has no prior type (and, in a well-formed run, no realization)
-    against which the claim could be justified.  The poison join is unchanged
-    (still conservative). -/
+    against which the claim could be justified.  The poison join is unaffected by
+    untracked members (still conservative). -/
 def updateLocsetWeak (env : MemoryTypeEnv) (ls : LocSet) (storedPoison : Poison) (storedPred : Predicate) : MemoryTypeEnv :=
   -- First pass: compute joined poison and predicate from existing entries
   let (joinedPoison, joinedPred) := LocSet.fold ls (storedPoison, storedPred) (fun (accP, accPred) l =>
@@ -547,7 +548,7 @@ def joinETyps (t1 t2 : ETyp) (_p1 _p2 : Poison) : ETyp :=
       -- Signature compatibility already checked; merge closures and join arrow-internal poisons
       if st1 == st1' && st2 == st2' then
         let mergedClosures := mergeFnTClosures tcls1 tcls2
-        -- Join arrow-internal poisons: p = join p' p'' (Ott spec lines 908, 956)
+        -- Join arrow-internal poisons: p = join p' p'' (Ott rules: if_std_fn, app_fn_cons_arrow)
         ETyp.arrow st1 st2 (joinPoison p1' p2') mergedClosures
       else
         t1  -- Fallback (should not happen if beqETypSignature passed)
@@ -555,7 +556,7 @@ def joinETyps (t1 t2 : ETyp) (_p1 _p2 : Poison) : ETyp :=
       -- Signature compatibility already checked; merge closures and join arrow-internal poisons
       if st1 == st1' && st2 == st2' then
         let mergedClosures := mergePFnTClosures tcls1 tcls2
-        -- Join arrow-internal poisons: p = join p' p'' (Ott spec lines 926, 975)
+        -- Join arrow-internal poisons: p = join p' p'' (Ott rules: if_std_pfn, app_pfn_cons_arrow)
         ETyp.parrow st1 st2 (joinPoison p1' p2') mergedClosures
       else
         t1  -- Fallback (should not happen if beqETypSignature passed)
@@ -669,14 +670,13 @@ def opUnaryEType? : UnaryOp → ETyp → Option ETyp
 
 /--
  Helper function to check if two PExprs are syntactically equal modulo
- environment differences. This handles variable substitution and type
- compatibility checking during structural comparison. Variables are substituted
- in the first argument only.
+ environment differences. This handles variable substitution during structural
+ comparison. Variables are substituted in the first argument only.
 
- The `fuel` parameter is used to prove termination. Normally we should be able
- should be able to prove termination on structure of pe1 and pe2 arguments but
- this is does not work in case of substitution. In fact, unless isValidSubstitution
- is ensured in matchGuard, we will get infinite recursion.
+ The `fuel` parameter is used to prove termination. Structural recursion on the
+ pe1 and pe2 arguments does not work in case of substitution: the substituted
+ value is compared again under the same substitution, so recursion is bounded
+ by fuel instead.
 
  The `substitution` parameter is an optional (variable, value) pair for
  substitution.
@@ -760,7 +760,7 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) (fuel : Nat) : Ty
     | Predicate.guardOnly _tag => return none  -- Guard-only cannot be matched syntactically
     | Predicate.guardClosure tag arg_name pred_body var_env =>
         if PExpr.usesArg arg_name pred_body then
-          -- Parameterised: proceed with substitution + equality as today
+          -- Parameterised: proceed with substitution + equality
           if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) fuel then do
             let deps ← extractDepsFromPred qt.pred fuel
             return some (tag, deps)
@@ -882,7 +882,7 @@ def typecheckVar (x : Name) : TypecheckM TypeResult := do
   | none => throw s!"Variable {x} not found in environment"
 
 
-/-- Rule: location (Ott rule: location)
+/-- Rule: location (no corresponding Ott rule: locations are not surface expressions)
 -- G(l) = p { P }
 -- ------------------
 -- pc ; G ; S ; L |- l : ref @ {l} :> clean { no_pred } -| G ; L
@@ -912,8 +912,9 @@ def typecheckString (_s : String) : TypecheckM TypeResult := do
 end TypecheckPrimitives
 
 /-- Rule: fn_abs (Ott rule: fn_abs)
+  not_extern_fn e
 ----------------------------------------------------------------------  :: fn_abs
-  pc ; G ; S ; L |- fn x : ST1 => e : ST1 -> ST2 # pc typing_closure ( x , e , S ) :> pc { no_pred } -| G ; L
+  pc ; G ; S ; L |- fn x : ST1 => e : ST2 : ST1 -> ST2 # pc tclosures ( x , e , S ) :> pc { no_pred } -| G ; L
 -/
 def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) : TypecheckM TypeResult := do
   -- A regular `fn` may not wrap a bare `extern fn` declaration as its body.  Such
@@ -971,7 +972,7 @@ theorem typecheckFn_ok_eq {ctx : TypeContext} {x : Name} {st1 : Typ} {body : Exp
 
 /-- Rule: pfn_abs (Ott rule: pfn_abs)
 ----------------------------------------------------------------------  :: pfn_abs
-  pc ; G ; S ; L |- pfn x : ST1 => pe : ST1 -> ST2 # pc typing_closure ( x , pe , S ) :> pc { no_pred } -| G ; L
+  pc ; G ; S ; L |- pfn x : ST1 => pe : ST2 : ST1 -> ST2 # pc tpclosures ( x , pe , S ) :> pc { no_pred } -| G ; L
 -/
 def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : Typ) : TypecheckM TypeResult := do
   -- Simply record the body and return type without typechecking the body
@@ -1050,13 +1051,14 @@ def collectExternPreds (retSpec : ExternReturn) (effects : List Effect) : List S
 
 /-- Convert (Typ, Bool, Predicate) to QTyp for EXTERN VALUES.
     Used only for extern val declarations at definition time.
-    May allocate fresh locations for reference types and update Γ.
-    NOTE: Memory can only store integers - reject ref T unless T = int.
+    Only base types are accepted: reference types are rejected (reference-valued
+    externs use the `extern ref` form), as are arrow types, so no location is
+    allocated and the context is returned as given.
     The predicate must already be resolved (concrete Tag, not TagIndex).
 -/
 def surfaceSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate)
     (ctx : TypeContext) : TypecheckM (QTyp × TypeContext) := do
-  -- Convert Typ to ETyp, allocating locations for references
+  -- Convert Typ to ETyp (base types only)
   let (etyp, ctx') ← (match typ with
     | Typ.int => pure (ETyp.int, ctx)
     | Typ.bool => pure (ETyp.bool, ctx)
@@ -1105,7 +1107,7 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate)
 
 -- Type checking functions for extern expressions
 
-/-- Typecheck extern value: let x = extern val : (T :> p { SP })
+/-- Typecheck extern value: let x = extern val @id : (T :> p { SP })
     Allocates fresh tags for TagIndex values in the SyntaxPredicate, resolves
     to a concrete Predicate, then converts the surface type.
 -/
@@ -1129,7 +1131,7 @@ def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : S
     Allocates one fresh logical location for the external cell, seeds it from
     the `points_to:` qualifier, and returns a `ref` type at that location.
 
-    v1 gates (see `doc/externs.md`, `@21`):
+    Restrictions (see `doc/externs.md`, `@21`):
     * the reference value must be declared `clean {}`;
     * the pointed-to cell must be declared `poisoned {}` — a clean (or
       predicated) initial cell would assert paired-run agreement that no
@@ -1192,9 +1194,7 @@ def argTypToETyp (argTyp : Typ) : TypecheckM ETyp :=
 /-- Core of `resolveArgCondQTyp`: build the concrete `QTyp` precondition from the
     surface triple WITHOUT allocating fresh tags.  The declared argument predicate's
     tag is never inserted into the regime or tag environment — it is only compared
-    *modulo tag* by `predShapeMatches` — so we reuse the source `TagIndex` directly.
-    (A possible future refactor mirrors the return-spec idiom of storing the surface
-    form and resolving at the application site.) -/
+    *modulo tag* by `predShapeMatches` — so we reuse the source `TagIndex` directly. -/
 def resolveArgCondQTyp' (argTyp : Typ) (argPoison : Bool) (argPred : SyntaxPredicate)
     (varEnv : VarTypeEnv) : TypecheckM QTyp := do
   let resolvedPred ← (match argPred with
@@ -1235,7 +1235,7 @@ def predShapeMatches (declared actual : Predicate) (fuel : Nat) : Bool :=
   | Predicate.guardOnly _ =>
       -- A bare declared guard requires the actual to carry the SAME (bare) guard
       -- shape — not an arbitrary guard-closure (that would be implication, not
-      -- shape matching.
+      -- shape matching).
       match actual with
       | Predicate.guardOnly _ => true
       | _ => false
@@ -1400,7 +1400,7 @@ termination_by fuel
 def joinTypeResults (ctx : TypeContext) (firstResult : TypeResult) (restResults : List TypeResult) : TypecheckM TypeResult := do
   let ⟨firstEtyp, _firstP, _firstPred⟩ := firstResult.qualType
 
-  -- Check that all results have signature-compatible types (Section 5.3) using foldlM
+  -- Check that all results have signature-compatible types using foldlM
   let _ ← List.foldlM (fun () result => do
     let ⟨resEtyp, _resP, _resPred⟩ := result.qualType
     if not (beqETypSignature firstEtyp resEtyp) then
@@ -1408,7 +1408,7 @@ def joinTypeResults (ctx : TypeContext) (firstResult : TypeResult) (restResults 
     else
       pure ()) () restResults
 
-  -- Join all results (Section 5.4) using foldlM.
+  -- Join all results using foldlM.
   -- For closure-alternative joins (app/papp), use the *strong* memory join:
   -- single-sided memory entries keep type/poison but drop predicates. This
   -- ensures the post-join context retains only predicate facts stable across
@@ -1519,15 +1519,14 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
         typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures
 termination_by fuel
 
-/- Function to typecheck expressions in a binary-operation Expression, ensuring
-   both expressions in a binary-op expression must be Integers .
--/
-/-- Rule: op
--- pc ; G ; S ; L |- e1 : int :> p' { P1 } -| G' ; L'
--- pc ; G' ; S ; L' |- e2 : int :> p'' { P2 } -| G'' ; L''
--- op ∈ {+,-,*,/,>,>=,<,<=,==}
+/-- Rules: op_* (Ott rules: op_plus, op_minus, op_mult, op_div, op_bitwise_and,
+--   op_gteq, op_lteq, op_gt, op_lt, op_eq, op_neq, op_and, op_or)
+-- pc ; G ; S ; L |- e1 : T1 :> p' { P1 } -| G' ; L'
+-- pc ; G' ; S ; L' |- e2 : T2 :> p'' { P2 } -| G'' ; L''
+-- T1, T2 and the result type T are fixed by op (see `opEType?`):
+--   +,-,*,/,& : int, int -> int;  >=,<=,>,<,==,!= : int, int -> bool;  &&,|| : bool, bool -> bool
 -- --------------------------------
--- pc ; G ; S ; L |- e1 op e2 : int :> join pc join p' p'' { no_pred } -| G'' ; L''
+-- pc ; G ; S ; L |- e1 op e2 : T :> join pc join p' p'' { no_pred } -| G'' ; L''
 -/
 def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : TypecheckM TypeResult :=
   match fuel with
@@ -1609,11 +1608,11 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
 
       let resultPoison := joinPoison ctx.pc p1
       let qt : QTyp := ⟨ETyp.unit, resultPoison, Predicate.noPred⟩
-      -- Invalidate dependencies on write (Ott rule: assign)
+      -- Invalidate dependencies on write (Ott rules: assign_*, premise invalidate_deps)
       let tagEnv' := invalidateTagDeps result2.tagEnv' ls
       let regime' := invalidateRegimeDeps result2.regime' result2.tagEnv' ls
       -- Bump nextLoc' past all locations in ls to ensure wfTypeResult holds
-      -- (locations may not be in memEnv due to conservative if/while typing)
+      -- (locations may not be in memEnv due to conservative if typing)
       let nextLoc' := LocSet.fold ls result2.nextLoc' (fun acc l => max acc (l + 1))
       return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := result2.nextTag', regime' := regime', declared' := result2.declared' }
     | _ => throw "Left operand of assignment must be a reference"
@@ -1676,7 +1675,7 @@ termination_by fuel
 -- pc ; G ; S ; L |- e1 : T1 :> p' { P' } -| G' ; L'
 -- pc ; G' ; S ; L' |- e2 : T2 :> p'' { P'' } -| G'' ; L''
 -- --------------------------------
--- pc ; G ; S ; L |- e1 ; e2 : T2 :> join p' p'' { P'' } -| G'' ; L''
+-- pc ; G ; S ; L |- e1 ; e2 : T2 :> p'' { P'' } -| G'' ; L''
 -/
 def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   match fuel with
@@ -1695,9 +1694,10 @@ def normalizeAppResultByProvenance (p1p : Poison) (qt : QTyp) : QTyp :=
   if p1p then { qt with poison := true, pred := Predicate.noPred } else qt
 
 /-- Resolve one extern effect and write the result to memory at the
-    locations referenced by the effect target.  Extracted from the
-    inline loop in `applyFnTClosure` to enable per-effect reasoning
-    in the fault-robustness proof. -/
+    locations referenced by the effect target.  A standalone function
+    (called from the effect loop of `applyFnTClosure` and
+    `applyFnTClosureAtCursor`) to enable per-effect reasoning in the
+    fault-robustness proof. -/
 def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
     (tagMapping : TagMapping) (pc : Poison)
     (memEnv : MemoryTypeEnv) : TypecheckM MemoryTypeEnv := do
@@ -1708,7 +1708,7 @@ def applyExternEffect (effect : Effect) (unifiedEnv : VarTypeEnv)
           match qt.etyp with
           | ETyp.ref ls =>
               -- The effect is typed exactly as `typecheckAssign` types an
-              -- assignment through this reference (Typecheck.lean:1471).  `p1` is
+              -- assignment through this reference.  `p1` is
               -- the captured target reference's own poison; a poisoned target
               -- (`p1`) or a control-poisoned write (`pc`) poisons the written
               -- cells and erases their predicates, mirroring assignment.  A
@@ -1776,7 +1776,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
     match tcl with
     | FnTClosure.regular x body env =>
         -- Type the body with the closure's captured environment
-        -- pc = join p join p1 pc (Ott spec line 733: app_fn_singleton)
+        -- pc = join p join p1 pc (Ott rule: app_fn_singleton)
         let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let envMap := VarTypeEnv.ofCaptured env
         let env' := VarTypeEnv.update envMap x argQt
@@ -1892,7 +1892,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
     match tcl with
     | FnTClosure.regular x body env =>
         -- Type the body with the closure's captured environment
-        -- pc = join p join p1 pc (Ott spec line 733: app_fn_singleton)
+        -- pc = join p join p1 pc (Ott rule: app_fn_singleton)
         let argQt : QTyp := ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
         let envMap := VarTypeEnv.ofCaptured env
         let env' := VarTypeEnv.update envMap x argQt
@@ -2044,8 +2044,8 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
         -- Single trusted-result gate: the actual argument must satisfy the declared
         -- precondition AND each declared `captures:` read dependency must satisfy its
         -- qualified type in the callable environment / current memory.  Fusing both
-        -- into one guard keeps the per-branch structural proofs over
-        -- `applyPFnTClosure` (which split once on this gate) unaffected.
+        -- into one guard lets the per-branch structural proofs over
+        -- `applyPFnTClosure` split just once on this gate.
         if !(argConditionSatisfied declaredArgQt argQt result2.regime' fuel
               && capturesSatisfied captures unifiedEnv result2.memEnv' result2.regime') then
           throw s!"extern @{id}: argument precondition or a captures: read dependency not satisfied (arg runtime type {repr (QTyp.toTyp argQt)}, poison={argQt.poison}; declared poison={declaredArgQt.poison})"
@@ -2143,8 +2143,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         -- Single trusted-result gate: the actual argument must satisfy the declared
         -- precondition AND each declared `captures:` read dependency must satisfy its
         -- qualified type in the callable environment / current memory.  Fusing both
-        -- into one guard keeps the per-branch structural proofs over
-        -- `applyPFnTClosure` (which split once on this gate) unaffected.
+        -- into one guard lets the per-branch structural proofs over
+        -- `applyPFnTClosure` split just once on this gate.
         if !(argConditionSatisfied declaredArgQt argQt result2.regime' fuel
               && capturesSatisfied captures unifiedEnv result2.memEnv' result2.regime') then
           throw s!"extern @{id}: argument precondition or a captures: read dependency not satisfied (arg runtime type {repr (QTyp.toTyp argQt)}, poison={argQt.poison}; declared poison={declaredArgQt.poison})"
@@ -2268,7 +2268,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
   match fuel with
   | 0 => throw "Out of fuel"
   | fuel + 1 => do
-    -- Check for harmful shadowing (Option B): reject if outer binding has guardClosure with interpreted tag
+    -- Check for harmful shadowing (Ott premise: not_harmful_shadow): reject if outer binding has guardClosure with interpreted tag
     match ctx.varEnv.lookup x with
     | none => pure ()
     | some qt_outer =>
@@ -2294,9 +2294,6 @@ termination_by fuel
 
 
 /-- Rule: if_depoison_* and if_std_* (Ott rules with regime awareness)
--- When matchGuard succeeds: consult R(k) for regime-aware typing.
--- If the regime is unknown, fall back to the same conservative typing path
--- used by the standard if rules; no branch-local tag or regime fact is added.
 -- When matchGuard succeeds: consult R(k) for regime-aware typing.
 -- If the regime is unknown, fall back to the same conservative typing path
 -- used by the standard if rules; no branch-local tag or regime fact is added.
@@ -2431,11 +2428,11 @@ termination_by fuel
 
 
 
-/- Rule: not_expr_typing (Ott rule: not_expr_typing)
+/- Rule: unary_op_not_typing (Ott rule: unary_op_not_typing)
 
 pm ; pc ; G ; S ; L |- e : bool :> p { P } -| G' ; L'
-----------------------------------------------------------------------  :: not_expr_typing
-pm ; pc ; G ; S ; L |- not_expr e : bool :> join pc p { no_pred } -| G' ; L'
+----------------------------------------------------------------------  :: unary_op_not_typing
+pm ; pc ; G ; S ; L |- not e : bool :> join pc p { no_pred } -| G' ; L'
 
 -/
 
@@ -2460,13 +2457,14 @@ lemma normalizeAppResultByProvenance_etyp (p1p : Poison) (qt : QTyp) :
   (normalizeAppResultByProvenance p1p qt).etyp = qt.etyp := by
   simp only [normalizeAppResultByProvenance]; split_ifs <;> rfl
 
-/-- Public typecheck entry point.  Thin wrapper over `typecheckExpr` preserved
+/-- Public typecheck entry point.  Thin wrapper over `typecheckExpr`
     for callers outside the recursive kernel.  The language-level rule that
     executable extern callables must have first-order input types is enforced
     per-declaration inside `typecheckExpr` (at the `Expr.externFn` /
     `Expr.externPfn` dispatch).  Global extern-id uniqueness is NOT enforced
-    here — the driver's `register` already rejects duplicate ids at
-    registration time, and any mismatch between a declared type and a
+    here (only duplicate `extern ref` declarations are rejected, by
+    `typecheckExternRef`) — the driver's `register` already rejects duplicate
+    ids at registration time, and any mismatch between a declared type and a
     registered value is caught by `valueMatchesTyp` at runtime. -/
 def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   typecheckExpr ctx e fuel

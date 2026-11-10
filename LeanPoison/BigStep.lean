@@ -1,5 +1,6 @@
-/- Big-step interpreter for LeanPoison (mirrors Ott big-step rules)
-   Uses Except for errors; no dependency on SmallStep.StepResult. -/
+/- Big-step interpreter for LeanPoison (mirrors the Ott big-step rules).
+   Evaluation is fuel-bounded and returns an `EvalResult` (success, out of
+   fuel, or runtime error). -/
 
 import LeanPoison.Syntax
 import LeanPoison.Runtime
@@ -19,7 +20,7 @@ inductive EvalResult : Type where
 private def bsTraceEnter (fuel : Nat) (verbose : Bool) (_config : Config) (expr : Expr) : Unit :=
   if verbose then dbg_trace s!"→ BS [{fuel}]:\t⟨{repr expr}⟩"; () else ()
 
--- Operation evaluator (local copy to avoid depending on SmallStep)
+-- Binary operation evaluator
 def evalOp (op : Op) (v1 v2 : Value) : Option Value :=
   match op, v1, v2 with
   | Op.add, Value.num n1, Value.num n2 => some (Value.num (n1 + n2))

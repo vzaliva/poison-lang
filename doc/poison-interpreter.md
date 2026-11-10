@@ -25,7 +25,7 @@ dispatch.
 
 ## OPTIONS
 
-`--verbose`
+`--verbose`  
 Typecheck and evaluate with verbose output.
 
 `--regime "k=true,..."`  
@@ -41,7 +41,7 @@ this mainly for debugging or for guards `--extern-regime` cannot reach; prefer
 `--extern-regime` for extern-produced return/effect guards. Duplicate tags use
 last-one-wins.
 
-`--extern-regime "id=true,..."`
+`--extern-regime "id=true,..."`  
 Id-keyed control, **preferred for extern-produced guards**. Selects externs by
 their declared id; every return/effect output tag the typechecker freshly
 allocates for a selected `extern fn`/`pfn` receives the chosen truth value.
@@ -51,10 +51,10 @@ site). It does **not** affect `extern val` declarations, whose guard tags are
 reachable only through `--regime`. Tags the policy leaves unset keep the
 conservative (uninterpreted) behavior.
 
-`--repl`
+`--repl`  
 Start a REPL.
 
-`--help`
+`--help`  
 Print usage.
 
 ## EXIT CODES
@@ -91,7 +91,9 @@ The same program two ways — id-keyed vs concrete tag. Both typecheck and run;
 
 ## RELATED DOCUMENTS
 
-- `doc/ffi-proposal.md` gives the FFI branch roadmap/status and records the
+- `doc/externs.md` lists the shipped built-in externs, their canonical
+  declarations, and their trusted-boundary status.
+- `doc/ffi-proposal.md` gives the FFI design and status and records the
   `captures:` read-dependency model for externs.
 - `doc/extern-poison.md` explains extern argument conditions, regimes, and
   trusted/untrusted extern contracts.

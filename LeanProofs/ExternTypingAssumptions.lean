@@ -2,7 +2,7 @@
   ExternTypingAssumptions.lean — the semantic contract floor for extern
   typechecking in the fault-robustness proof.
 
-  Extern type-checking has one remaining semantic obligation supplied at the
+  Extern type-checking has a single semantic obligation supplied at the
   fault-robustness trust boundary:
 
   * `PredSatLaws` preservation across one structural extern allocation batch
@@ -11,7 +11,7 @@
   Guard-origin provenance is derived structurally: the typechecker erases
   predicates on extern effect writes under poisoned `pc` (mirroring assignment),
   making the guard-origin trace provable via
-  `applyFnTClosure_extern_ok_memEnv_guard_origin` in `StepFR.lean`.  See
+  `applyFnTClosure_extern_ok_memEnv_guard_origin` in `ExternTagMeaning.lean`.  See
   `doc/ffi-axioms.md` for the broader extern-boundary design.
 
   The contract lives as a field of `ExternTypingAssumptions`, threaded
@@ -428,7 +428,7 @@ theorem ExternBatchTagMeaningExtension.canonical_general
     (mirroring assignment), making the guard-origin trace structurally provable
     via `applyFnTClosure_extern_ok_memEnv_guard_origin`. -/
 structure ExternTypingAssumptions where
-  /-- **Contract B: PredSat extension across one extern allocation batch.**
+  /-- **PredSat extension across one extern allocation batch.**
       When `tm` extends to `tm'` via a single extern batch (the structural
       `ExternBatchTagMeaningExtension` predicate) and `predSat` already satisfies
       `PredSatLaws` against `tm`, those laws survive in the extended table.

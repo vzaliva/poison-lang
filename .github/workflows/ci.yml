@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -25,17 +25,16 @@ jobs:
           opam install -y ott
           echo "$HOME/.opam/default/bin" >> $GITHUB_PATH
 
-
       # Set up Lean with cache (handled by lean-action)
       - uses: leanprover/lean-action@v1
         with:
-          build: true   
-          test: false   
+          build: true
+          test: false
 
       # Build the project
       - name: Build all
         run: make all
 
-      # Run tests  
+      # Run tests
       - name: Run tests
         run: make test

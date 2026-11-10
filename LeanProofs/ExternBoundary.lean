@@ -168,7 +168,7 @@ end ExternBoundaryTyping
 
 /-- Paired extern-declaration boundary runs produce the same post as `StepFR`.
 
-    `postExpr` is explicit because the current `StepFRPost` remains indexed by
+    `postExpr` is explicit because `StepFRPost` is indexed by
     the expression whose typechecking produced the result. -/
 def ExternDeclBoundaryFR
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
@@ -1180,8 +1180,7 @@ def TrustedRegistryAgreesWithReachable
     extern declaration reachable from a variable bound in `ctxRoot.varEnv`, via
     that variable's qualified-type closures / captured environments.  Unlike
     `ExternDeclarationReachableFromContext`, this does NOT fold in the program AST
-    declarations — it is exactly the `var` constructor's premise
-    (the "unblocking" direction). -/
+    declarations — it is exactly the `var` constructor's premise. -/
 def ContextExternReachable
     (root : Expr) (ctxRoot : TypeContext) (id : ExternId) (d : ExternDeclaration) : Prop :=
   ∃ (x : Name) (qt : QTyp),

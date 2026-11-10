@@ -1,49 +1,60 @@
 # Poison Language
 
-A simple imperative programming language with built-in fault tracking via a type
-system that models data corruption as "poison" propagation.
+A simple imperative programming language with built-in fault tracking via a
+type system that models data corruption as "poison" propagation.
 
 ## Overview
 
-The Poison Language is designed to track faults modelled as "poison" throughout
-program execution. The key feature is **de-poisoning** via predicates, allowing
+The Poison Language tracks faults, modelled as "poison", throughout program
+execution. Its key feature is **de-poisoning** via predicates, which allows
 selective recovery from faults based on runtime conditions. The language
-provides a fail-safe-integrity guarantee: any fault propagates conservatively
+provides a fail-safe integrity guarantee: any fault propagates conservatively
 through both data and control paths.
 
-For detailed language features and syntax, see the formal documentation in `doc/poison-lang-description.tex` and the Ott specification in `poison-lang-spec/poison-lang.ott`.
+This repository contains:
+
+- an interpreter and type checker for the language, written in Lean 4;
+- a machine-checked Lean 4 proof that the type system enforces *fault
+  robustness*, a refinement of non-interference;
+- an Ott specification of the syntax, the typing rules and the big-step
+  semantics;
+- a tree-sitter grammar for `.poison` source files.
+
+For the language features and syntax, see the language description in
+[`doc/poison-lang-description.pdf`](doc/poison-lang-description.pdf) and the
+Ott specification in
+[`poison-lang-spec/poison-lang.pdf`](poison-lang-spec/poison-lang.pdf).
 
 ## Building and Running
 
 ### Prerequisites
-- [Lean 4](https://leanprover.github.io/lean4/doc/quickstart.html)
-- LaTeX and latexmk (for building documentation)
-- [tree-sitter](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html)  version 0.25.10
-- [ott](https://github.com/ott-lang/ott)
 
-### Note on Tree-sitter configuration
-
-If you see:
-
-```
-Warning: You have not configured any parser directories!
-```
-
-initialise a minimal config, for example:
-
-```bash
-tree-sitter init-config
-# then edit ~/.config/tree-sitter/config.json to include this repository, e.g.
-# { "parser-directories": ["./parser"] }
-```
+- [Lean 4](https://lean-lang.org/install/), installed through `elan`. The
+  toolchain version is pinned in `lean-toolchain` and is downloaded
+  automatically.
+- The [tree-sitter CLI](https://tree-sitter.github.io/tree-sitter/creating-parsers/1-getting-started.html),
+  version 0.25 or later, and a C compiler (used by `tree-sitter build`).
+- [Ott](https://github.com/ott-lang/ott), LaTeX and `latexmk`. These are
+  needed only to regenerate the PDFs (`make poison-lang-spec`, `make doc`).
+- GNU Make and Bash.
 
 ### Build
 
 ```bash
-make
+make             # everything: Ott spec, Lean code and proofs, parser, docs
+make lean-build  # Lean only: interpreter, type checker and proofs
+make parser      # tree-sitter parser only
 ```
 
+The first build downloads a precompiled Mathlib cache. Building `LeanProofs`
+checks every proof and takes a while.
+
 ### Run Examples
+
+The interpreter needs the parser (`make parser`) and must be started from the
+repository root: it finds the grammar through the `config.json` that `make`
+generates there.
+
 ```bash
 # Run a specific file
 lake exe poison-interpreter examples/arithmetic.poison
@@ -51,13 +62,16 @@ lake exe poison-interpreter examples/arithmetic.poison
 # Run with verbose output
 lake exe poison-interpreter --verbose examples/basic-poison-flow1.poison
 
-# Run repl
+# Run the REPL
 lake exe poison-interpreter --repl
 
-# Run tests (typechecks and evaluates every examples/*.poison and compares
-# with the expected output next to it)
+# Run the tests (typechecks and evaluates every examples/*.poison and
+# compares with the expected output next to it)
 make test
 ```
+
+[`doc/poison-interpreter.md`](doc/poison-interpreter.md) documents all
+options and exit codes.
 
 ### Regimes
 
@@ -80,35 +94,59 @@ lake exe poison-interpreter --regime "1=true" examples/vlet-shadow-guarded.poiso
 A test file can pin its flags in a first-line directive, which `make test`
 passes to the interpreter:
 
-```
+```text
 --! poison-interpreter --extern-regime "238=true"
 ```
 
+## Proofs
+
+The main result is the theorem `TypeSystemEnforcesFaultRobustness` in
+`LeanProofs/FaultRobustnessProofs.lean`: a well-typed program satisfies the
+fault-robustness specification defined in `LeanProofs/FaultRobustness.lean`,
+relative to a registry of trusted extern functions. The specification takes
+the extern typing assumptions packaged as `ExternTypingAssumptions`
+(`LeanProofs/ExternTypingAssumptions.lean`) as a hypothesis. `lake build`
+checks the whole development. It contains no `sorry`, and the main theorem
+depends only on Lean's standard axioms (`propext`, `Classical.choice`,
+`Quot.sound`), as `#print axioms TypeSystemEnforcesFaultRobustness` confirms.
+
+`LeanProofs/` also contains fault-robustness theorems for concrete programs
+that use the shipped externs (`AbsFR.lean`, `MaxCurriedFR.lean`,
+`MemReadCapturesFR.lean`, `GuardedCapturesFR.lean`, `ExternRegimeInt.lean`).
+
 ## Project Structure
 
-- `LeanPoison/` - Core language implementation and operational semantics
-- `LeanProofs/` - Proofs of non-inference and other properties
-- `parser/`     - Contains grammar and packages to generate parser
-- `examples/` - Sample programs demonstrating language features
-- `doc/` - Documentation
-- `poison-lang-spec/` - Ott specification of language big and small step semantics, and typing rule
-- `Main.lean` - Main interpreter entry point
-
-## Formal Specification
-
-The language is formally specified using Ott in `poison-lang-spec/poison-lang.ott`. The complete formal definitions and documentation are available in `doc/poison-lang-description.tex`.
+- `LeanPoison/` - Language implementation: syntax, big-step semantics, type
+  checker, parser front end
+- `LeanProofs/` - Proofs of fault robustness and supporting properties
+- `Main.lean` - Interpreter entry point
+- `parser/` - tree-sitter grammar and parser packaging
+- `examples/` - Sample programs with their expected output; they double as
+  the test suite
+- `poison-lang-spec/` - Ott specification of the syntax, the typing rules and
+  the big-step semantics
+- `doc/` - Language description (`poison-lang-description.tex`), the
+  interpreter manual, and design notes on the extern (FFI) boundary
+- `scripts/` - Test runner and maintenance scripts
 
 ## Research Context
 
-This language implements a novel approach to fault tracking that combines:
+This language implements an approach to fault tracking that combines:
+
 1. Region-parameterised reference types
 2. Flow-sensitive typestate tracking
 3. Predicate-based de-poisoning
 4. Higher-order function support with captured typing context
 
-The system provides a uniform type system for tracking faults through both data and control paths, even in the presence of aliasing and higher-order code.
+The system provides a uniform type system for tracking faults through both
+data and control paths, even in the presence of aliasing and higher-order
+code.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE)
+file for details.
 
+The XML parser in `LeanPoison/Xml/` is vendored from the Lean 4 core library
+and remains under the Apache 2.0 license; see
+[`LeanPoison/Xml/LICENSE`](LeanPoison/Xml/LICENSE).

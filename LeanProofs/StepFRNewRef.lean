@@ -1,8 +1,9 @@
 /-
   StepFRNewRef.lean - Fault-robustness proof for the newRef case.
 
-  Contains stepFR_newRef_with_expr_proof, stepFRSingleRunFinalCleanPcTrue_newRef,
-  and exclusive join-lookup helpers.
+  Contains stepFR_newRef_with_expr_proof,
+  stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof,
+  and exclusive masked regime-consistency helpers for the allocated location.
 -/
 import LeanProofs.StepFR
 

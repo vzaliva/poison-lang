@@ -1,9 +1,14 @@
 /-
   StepFRApp.lean - Fault-robustness proof for function application.
 
-  Contains stepFR_app_with_expr_proof and all helper lemmas used exclusively by it,
-  including join-transport lemmas, applyFnTClosure/applyPFnTClosure infrastructure,
-  and joinTypeResults compatibility lemmas.
+  Contains stepFR_app_with_expr_proof,
+  stepFRSingleRunFinalCleanPcTrue_app_maskedReg_with_expr_proof_ctxReach, and the
+  helper lemmas used exclusively by them, including application-specific
+  join-transport lemmas, applyFnTClosure/applyPFnTClosure infrastructure, and
+  joinTypeResults compatibility lemmas. The shared closure-application machinery
+  is in StepFRClosureApply.lean, the shared join-member transport lemmas in
+  JoinMemberTransport.lean, and the extern-call boundary contracts in
+  ExternCallBoundarySides.lean.
 -/
 import LeanProofs.StepFR
 import LeanProofs.StepFRClosureApply
@@ -17,7 +22,7 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
--- ── lemmas relocated from JoinMemberTransport (App-only consumers), T16 ──
+-- ── Application-specific join-member transport lemmas ──
 
 /-- Extended-regime (`monotoneStepExt`) variant that transports `agreeValueUnder` across a regime extension.
     The fresh-tag freshness is discharged from the closure-tag bound on `qt`. -/
@@ -961,8 +966,8 @@ private lemma joinTypeResults_transport_consistentWithRegimeMasked_from_member
         (qt := qt) (μ := μ) (θ := θ) (v := v)
         hlookup_back hcap_src
 
--- ── lemmas relocated from StepFR (App-only consumers), T13 Part A ──
-section StepFRApp_relocatedFromStepFR
+-- ── Threaded closure-application and typecheck-structure helper lemmas ──
+section StepFRApp_closureApplyHelpers
 variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
 
 private lemma applyClosuresThreaded_ok_mem_input_exists_output_with_cursor_bounds_pre
@@ -1168,7 +1173,7 @@ lemma typecheckExpr_lookup_clean_back_of_pc_true
   subst hqt
   exact hclean_in'
 
-end StepFRApp_relocatedFromStepFR
+end StepFRApp_closureApplyHelpers
 
 
 
@@ -1346,7 +1351,7 @@ private def AppJoinValConsFromMember
     ValCons (ctxAfter ctx src).regime src.qualType μ θ v →
     ValCons (ctxAfter ctx res).regime res.qualType μ θ v
 
--- Helper lemmas for stepFR_app: join-lifting and body-context bridges.
+-- Helper lemmas for `stepFR_app_with_expr_proof`: join-lifting and body-context bridges.
 --
 -- Join-transport lemmas: when `joinTypeResults ctx first rest = .ok res`, transport
 -- properties from `(ctxAfter ctx first)` to `(ctxAfter ctx res)`. Used by both peClosure
@@ -2427,13 +2432,6 @@ private lemma consistentWithRegimeMasked_app_parrow_extern_body_start
           (μ := μ) (θ := θ) (ρpre := ρpre) (ρcap := ρcap)
           (vArg := vArg) (cursor := cursor) hcwr hP.1 hσcap_rec hvars_arg harg_cvcr
 
--- Inversion for regular closures: from
--- `applyFnTClosure (FnTClosure.regular x body tenv) ... fuel = .ok first`,
--- extract that the application ran with positive fuel.
---
--- Suggested proof strategy:
--- unfold `applyFnTClosure` and split on fuel.
-
 private lemma applyFnTClosure_ok_regimeConsistentWithCtx
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -2776,7 +2774,6 @@ private lemma joinTypeResults_tagEnvConsistentWithRegime
   tagEnvConsistentWithRegime (ctxAfter ctx res).tagEnv (ctxAfter ctx res).regime :=
   joinTypeResults_tagEnvConsistentWithRegime' ctx first rest res h_join h_first h_rest
 
--- Any deep sub-type of a tag-meaning-respecting type also respects tag meaning.
 -- Inversion for regular pure-closures: from
 -- `applyPFnTClosure (PFnTClosure.regular x pbody tenv) ... fuel = .ok first`,
 -- extract that the application ran with positive fuel.
@@ -2793,12 +2790,7 @@ private lemma applyPFnTClosure_regular_structure
   | succ fuelBody =>
       exact ⟨fuelBody, rfl⟩
 
--- Inversion for regular pure-closures: successful application exposes the body typing
--- derivation and successful return-type erasure check.
-
--- Specialized extraction for pure-closure application maps used in `stepFR_app`.
-
--- Combined extraction for regular pure-closures from a successful application map.
+-- Combined extraction for regular pure-closures from a successful threaded application.
 -- Gives the selected closure's successful application together with body-typing inversion.
 
 
@@ -2990,10 +2982,6 @@ private lemma applyPFnTClosure_ok_wfTypeResult
             · -- happly: Except.ok { memEnv' = result1.memEnv', nextLoc' = retQtPair.2 } = Except.ok r
               -- Extract r = { ... } from happly, then use returnSpecToQTyp to get nextLoc'
               have hr := Except.ok.inj happly
-              -- Get the returnSpecToQTyp equation from the split context
-              -- It's in context as something like heq✝ : returnSpecToQTyp typ₀ poi pred nextLoc' = ok retQtPair
-              -- Use 'next' with wildcards to find the right hypothesis name
-              -- and show retQtPair.2 = result1.nextLoc'
               simp only [wfTypeResult] at hwf1 ⊢
               intro l hl
               -- r.memEnv' = result1.memEnv' (from hr, since both sides have result1.memEnv')
@@ -3001,8 +2989,6 @@ private lemma applyPFnTClosure_ok_wfTypeResult
                 have := congrArg TypeResult.memEnv' hr.symm; simpa using this
               -- r.nextLoc' = retQtPair.2 (from hr.symm)
               have hnlocr : r.nextLoc' = _ := congrArg TypeResult.nextLoc' hr.symm
-              -- retQtPair.2 = result1.nextLoc' from the returnSpecToQTyp equation
-              -- All equations in scope; use simp_all after case-split on Typ
               rw [← hr]; simp only []
               -- Now goal is l < retQtPair.2; use hwf1 l and hnloc
               -- We need: forall non-ref Typ, returnSpecToQTyp returns nextLoc unchanged
@@ -3261,18 +3247,11 @@ private lemma threaded_applyPFnTClosure_member_nextLoc_mono
     (fun m hm e c res htc => typecheck_nextLoc_mono c e m res htc)
     happly
 
--- Body context instantiation: establishing runtimeInstantiatesCtx for the closure body
--- context. Requires strengthening valueHasETyp.closure (henv) to existential form.
---
--- Suggested proof strategy:
--- use `valueHasETyp.closure` to recover captured-env typing, then build the two
--- conjuncts of `runtimeInstantiatesCtx` for the body context:
--- 1) location/memory part is inherited from `_hric` (memEnv is `result2.memEnv'`);
--- 2) variable part combines captured bindings + updated argument binding.
---
--- Helpful already-proven ingredients:
--- * `runtimeInstantiatesCtx_of_closure_env` in this file (for env substitution),
--- * var-env update lookup lemmas from `RegimeConsistency.lean`.
+-- Body context instantiation: establishes runtimeInstantiatesCtx for the closure body
+-- context.  The two conjuncts of `runtimeInstantiatesCtx` for the body context:
+-- 1) location/memory part is inherited from `hric` (memEnv is `result2.memEnv'`);
+-- 2) variable part combines captured bindings (`hcap`, in existential form) with
+--    the updated argument binding.
 private lemma runtimeInstantiatesCtx_closure_body
   (ctx : TypeContext) (result2 : TypeResult) (x : Name) (tenv : CapturedVarEnv)
   (argQt : QTyp) (argVal : Value) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
@@ -3381,18 +3360,9 @@ private lemma tagBoundedCtx_closure_body
   · exact predTagsBoundedInMemEnv_mono
       (by simpa [ctxAfter] using hb_predM1) hcursorTag
 
--- Bridge from closure typing's captured-env implication (`henv`) to the existential
--- payload required by `runtimeInstantiatesCtx_closure_body`, under an explicit
--- captured-env domain coverage assumption.
---
--- This isolates the known blocker:
--- `valueHasETyp.closure` gives only
---   `tenv.lookup y = some qt → env.lookup y = some v → valueHasETyp ...`
--- whereas runtime instantiation needs
---   `tenv.lookup y = some qt → ∃ v, env.lookup y = some v ∧ valueHasETyp ...`.
---
--- The missing ingredient is exactly `_hcover`: every typed captured binding is
--- actually present in the runtime captured environment.
+-- From `closureCapturedVarsRegime` on a regular (non-extern) closure value, extract the
+-- matching type-level member `σcap` together with its captured-variable regime and
+-- typing properties.
 private lemma closureCapturedVarsRegime_closure_extract
     {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap}
     {x : Name} {body : Expr} {env : VarEnv}
@@ -3499,8 +3469,6 @@ private lemma resultAgreesIfClean_transport_normalizeAppResultByProvenance
     convert hagree using 1
     cases qt; rfl
 
--- Join-compatibility helpers for transporting clean location agreement from the
--- join result back to the head seed `first` in app-closure proofs.
 private lemma valueConsistentWithRegimeMasked_app_body_result_member
   (masked : Tag → Prop) (predSat : PredSat)
   (ctx bodyCtx : TypeContext) (src result3 : TypeResult)
@@ -4070,8 +4038,8 @@ private lemma applyPFnClosuresThreaded_join_regime_mono
       h_join
 
 -- Synchronization helper for app/arrow clean branch: from clean output agreement on
--- closure values, recover either a shared regular-closure witness (with shared x/body)
--- or an explicit dirty-internal fallback.
+-- closure values, recover a shared regular-closure witness (with shared x/body),
+-- a shared extern-closure witness, or an explicit dirty-internal fallback.
 private lemma stepFR_app_arrow_sync_from_clean_with_extern
   (predSat : PredSat) (ctx : TypeContext) (res1 : TypeResult)
   (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure)
@@ -4378,8 +4346,6 @@ private lemma stepFR_app_parrow_runtime_extern_source_from_internal_clean
           htyping₁⟩
   · exact False.elim (hdirty hinternal)
 
-
--- Pure-arrow analog of shared-member extraction.
 
 private def StepFRAppClosureBodyStart
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
@@ -10974,8 +10940,8 @@ lemma stepFR_app_with_expr_proof
           -- htc_body₀ : typecheckExpr bodyCtx body₀ fuelBody₀ = .ok result3₀
           -- hfuel₀ : fuel' = Nat.succ fuelBody₀
           -- Phase E-G: Body IH application and final assembly.
-          -- Option 2 (in progress): choose output realization maps before assembling
-          -- the existential package, then discharge remaining fields under that choice.
+          -- Choose output realization maps before assembling the existential package,
+          -- then discharge the remaining fields under that choice.
           have hOutMapChoice :
               AppTwoRunOutChoice predSat ctxᵢ res θ₀ θ₁ cf₀ cf₁ o₀ o₁ := by
             have hOutMapChoice_p1p_true
@@ -13210,7 +13176,7 @@ lemma stepFR_app_with_expr_proof
                 have h_p1p : joinPoison p1 p = true := by
                   simp [hptrue, joinPoison]
                 exact hOutMapChoice_p1p_true h_p1p
-            · -- Fallback: ¬ qtypCleanUnder result1.qualType. resultAgreesIfClean is vacuous (arrow ⇒ p1=true ⇒ res poison/noPred); rest needs unary member-evidence helper.
+            · -- Fallback: ¬ qtypCleanUnder result1.qualType. resultAgreesIfClean is vacuous (arrow ⇒ p1=true ⇒ res poison/noPred); the remaining fields come from the per-run body witnesses (`hOutMapChoice_p1p_true`).
               have hpoison1_true : result1.qualType.poison = true := by
                 by_contra hfalse
                 have hpoison_false : result1.qualType.poison = false := Bool.eq_false_iff.mpr hfalse
@@ -18942,7 +18908,7 @@ lemma stepFR_app_with_expr_proof
                         (R' := (ctxAfter ctxᵢ res).regime)
                         (μ := cf₁.memory)
                         hlookup_back_res_to_src h)
-              -- Phase 10: Pack elements (mirroring arrow case lines 24871-25234)
+              -- Phase 10: Pack elements (mirroring the arrow case)
               have hOutPack_body :
                   valueHasETyp θ₀_body o₀ res.qualType.etyp ∧
                   valueHasETyp θ₁_body o₁ res.qualType.etyp ∧
@@ -19248,7 +19214,7 @@ lemma stepFR_app_with_expr_proof
                   hpredlawsOut, hresTmOut, hrest⟩
           · -- ===== Fallback: not qtypCleanUnder result1.qualType =====
             -- resultAgreesIfClean is vacuous (parrow => p1=true => res poison/noPred);
-            -- rest needs unary member-evidence helper.
+            -- the remaining fields come from the per-run body witnesses (`hOutPack_p1p_true`).
             have hpoison1_true : result1.qualType.poison = true := by
               by_contra hfalse
               have hpoison_false : result1.qualType.poison = false := Bool.eq_false_iff.mpr hfalse

@@ -1,8 +1,12 @@
 /-
   StepFR.lean - Shared definitions and utility lemmas for fault-robustness proofs.
 
-  Core definitions (StepFR, resultAgreesIfClean, tagEnvConsistentWithRegime, etc.)
-  and helper lemmas used by multiple stepFR_* case proofs.
+  Core definitions (StepFR, StepFRPost, resultAgreesIfClean, the single-run
+  StepFRSingleRunFinalCleanPcTrue family, the *_IH_WithExprCtx induction
+  hypotheses, etc.), the bridge lemma
+  consistentRegimeSpec_implies_consistentWithRegime, and helper lemmas used by
+  multiple stepFR_* case proofs. Imports ExternTagMeaning and TypecheckInduction,
+  whose lemmas are thereby available to every per-operator case file.
 -/
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
@@ -32,8 +36,8 @@ def resultAgreesIfClean (predSat : PredSat) (R : Regime) (μ₀ μ₁ : Memory)
     agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt o₀ o₁
 
 /-- Rewrite a configuration as an explicit record while preserving an arbitrary
-    extern registry.  This is the registry-parametric counterpart of the older
-    default-registry coercion used by recursive IH calls. -/
+    extern registry.  Used to put intermediate configurations into the shape
+    expected by recursive IH calls. -/
 lemma config_eq_of_registry (cfg : Config) (registry : ExternRegistry)
     (h : cfg.registry = registry) :
   cfg = { memory := cfg.memory, varEnv := cfg.varEnv,
@@ -267,7 +271,7 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
   · -- Third conjunct: closureCapturedVarsRegime for all variable-value pairs.
     intro x qt v hlookup hlookup_v
     by_cases hkey : s.vars.hasKey x
-    · -- Critical input variable: `wfInputSpec` now restricts `s.vars` to first-order types,
+    · -- Critical input variable: `wfInputSpec` restricts `s.vars` to first-order types,
       -- so closureCapturedVarsRegime follows from runtime typing via the non-closure case.
       have hcontains : s.vars.contains x = true := by
         simpa [VarTypeEnv.hasKey] using hkey
@@ -323,10 +327,6 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
             | peClosure_extern =>
                 simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
     · exact htrusted_init x qt v hlookup hkey hlookup_v
-
--- Regime boundedness (imported from `FaultRobustness.lean`): tags at or above the initial
--- `nextTag` supply are outside the regime's domain (model faulty inputs only).
--- We restate it locally for convenience in this file.
 
 -- Step theorem (context-driven, no input/output specs).
 -- It assumes agreement on clean items in the initial context and preserves it
@@ -391,7 +391,7 @@ lemma VarTypeEnv_lookup_of_toCaptured_lookup
     List_lookup_some_mem x qt (VarTypeEnv.toCaptured σ) (by simpa [CapturedVarEnv.lookup_eq] using hlookup)
   exact VarTypeEnv_lookup_of_toCaptured_mem σ x qt hmem
 
-/-- Path D helper: build direct member `varsRegime` facts for the singleton closure captured env
+/-- Build direct member `varsRegime` facts for the singleton closure captured env
 created at lambda typing sites, from the enclosing `consistentWithRegime`. -/
 lemma memberVarsRegimeEvidence_of_toCaptured
   (predSat : PredSat) (R : Regime) (ctx : TypeContext)
@@ -406,7 +406,7 @@ lemma memberVarsRegimeEvidence_of_toCaptured
     (VarTypeEnv_lookup_of_toCaptured_lookup ctx.varEnv y qt_y hlookup_list)
     hguard hkR
 
-/-- Path D helper: build direct member `closureCapturedVarsRegime` facts for the singleton closure
+/-- Build direct member `closureCapturedVarsRegime` facts for the singleton closure
 captured env created at lambda typing sites, from the enclosing `consistentWithRegime`. -/
 lemma memberCvcrEvidence_of_toCaptured
   (predSat : PredSat) (R : Regime) (ctx : TypeContext)
@@ -760,8 +760,6 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
         StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
           masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
           hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg
-
--- Helper proof utilities for top-level fault-robustness orchestration.
 
 -- Helper lemmas: transport predicate-based properties across qualified types
 -- that differ only in irrelevant fields (e.g. poison), but share the same predicate.
@@ -1983,7 +1981,6 @@ lemma closureCapturedVarsRegime_transport_μ
         hdeep)
 
 -- Monotonicity of valueHasETyp under θ extension.
--- Moved before transport lemmas so they can use it.
 private lemma valueHasETyp_extends'
   {θ₀ θ₁ : RealizationMap} {v : Value} {t : ETyp} :
   θ₀.extendsMap θ₁ →
@@ -2317,7 +2314,7 @@ private lemma nonClosure_of_nonFunctionType
     | peClosure_extern => simp [ETyp.isFunctionType, ETyp.isParrow] at hnotfun
 
 -- Helper: construct closureCapturedVarsRegime for non-closure values using
--- typeHasETyp evidence.
+-- valueHasETyp evidence.
 lemma closureCapturedVarsRegime_nonClosure_of_nonFunctionType
   {predSat : PredSat} {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value}
   (hvet : valueHasETyp θ v qt.etyp)
@@ -2625,9 +2622,6 @@ lemma valueHasETyp_num_etyp {θ : RealizationMap} {n : Int} {t : ETyp} :
   rfl
 
 
--- If result is clean, condition must be clean (for standard mode ite)
--- From h_poison: res.qualType.poison = joinPoison ctx.pc (joinPoison res1.poison (joinPoison res2.poison res3.poison))
--- If res is clean, then the join is false, so all components are false
 def predGuardTag (p : Predicate) : Option Tag :=
   match p with
   | Predicate.guardClosure k _ _ _ => some k
@@ -3060,8 +3054,6 @@ lemma agreeOnCriticalAndTrusted_implies_agreeOnClean
     · -- Trusted variable: use trusted-input agreement.
       exact htrusted_vars x qt hctx_lookup hkey hclean
 
--- TypeSystemEnforcesFaultRobustness_step_proof
-
 lemma agreeValueUnder_of_agreeVarUnder
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv}
   {θ₀ θ₁ : RealizationMap} {x : Name} {qt : QTyp} {v₀ v₁ : Value} :
@@ -3268,10 +3260,8 @@ lemma agreeValueUnder_clean_extends
       hagree
   exact htransport hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
 
--- Explicit memory-transport interface (with predicate-compatibility witnesses).
--- The current proof still delegates to the stronger selector-based lemma; this
--- wrapper is the call-site API we will keep when Path D removes selector
--- polymorphism.
+-- Explicit memory-transport interface (with predicate-compatibility witnesses):
+-- a call-site wrapper around `agreeValueUnder_clean_extends`.
 lemma agreeValueUnder_clean_extends_transport_mem
   {predSat : PredSat} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
   {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {qt : QTyp} {v₀ v₁ : Value}
@@ -3654,13 +3644,9 @@ lemma var_valueHasETyp_of_typecheck
           repeat (first | split at htc | simp [pure, Except.pure] at htc | cases htc | rfl)
       rw [← heq, hetyp]; exact htyp
 
--- Transfer consistentWithRegime using monotoneStep
--- When Regime.monotoneStep R R', if consistentWithRegime holds for R, it holds for R'
--- (R' has fewer entries, so fewer constraints need to be checked)
-
 -- ============================================================================
 -- Extended-regime (monotoneStepExt) transport: Masked variants.
--- Generic deep-bounded transport + Masked mirrors of the non-masked `_ext` lemmas.
+-- Generic deep-bounded transport + Masked mirrors of the non-masked `*_monotoneExt` lemmas.
 -- ============================================================================
 
 /-- Generic: transport a deep captured-env property across closure nesting, supplying at each
@@ -4081,26 +4067,6 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
       hagree
   exact hrec hclean
 
--- ite fault-robustness
--- Proof structure follows typecheckIf's 4 modes:
--- Mode 1: R(k) = some true - commits to then-branch (e2)
---   Key: uses consistentWithRegime + PredSatLaws.match_iff to show both runs take then-branch
--- Mode 2: R(k) = some false - commits to else-branch (e3)
---   Key: symmetric to mode 1
--- Mode 3: R(k) = none - conservative join of both branches
---   Requires case analysis on which branch each run actually takes
--- Mode 4: matchGuard fails - standard conservative join
---   Similar to mode 3
--- The branch-commit modes rely on `consistentWithRegime` to align runtime guard outcomes.
-
--- Mode 1: R(k) = some true (then-branch effective)
-
-
--- Forall₂ gives an existence for membership on the right.
-
--- If `List.mapM f xs` succeeds and `y ∈ ys`, then some `x ∈ xs` maps to `y`.
-
-
 lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bound
   {α : Type}
   (applyOne : α → Tag × Loc → TypecheckM TypeResult)
@@ -4139,9 +4105,6 @@ lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bound
                   have hbase' : base ≤ first.nextLoc' := hmono x cursor first hbase hfirst
                   rcases ih hbase' hrest hy with ⟨x', hx', cursor', hcursor', happly⟩
                   exact ⟨x', by simp [hx'], cursor', hcursor', happly⟩
-
-
--- Helper lemmas for wfTagMeaningCtx in closure body contexts.
 
 
 lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
@@ -4224,8 +4187,8 @@ lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Structural canonical-extension threading: boundary adapters.
 --
--- These wrap the relocated `typecheck_preserves_predSatLaws` induction
--- (now in `TypecheckInduction.lean`) into `StepFRSingleRunTagMeaningPost`,
+-- These wrap the `typecheck_preserves_predSatLaws` induction
+-- (in `TypecheckInduction.lean`) into `StepFRSingleRunTagMeaningPost`,
 -- obtaining a `tm'` witness for each subexpression.
 -- ═══════════════════════════════════════════════════════════════════════════
 

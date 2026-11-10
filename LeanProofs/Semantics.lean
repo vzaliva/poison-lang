@@ -4,7 +4,8 @@
 -- `SemanticsProperties.lean` (proof bodies for evaluation invariants) and
 -- `ExternRuntime.lean` (runtime extern event predicates).
 --
--- Definitions only — no proof bodies beyond trivial corollaries of `wfConfig`.
+-- Definitions only — no proof bodies beyond trivial corollaries of the
+-- definitions.
 
 import LeanPoison.Syntax
 import LeanPoison.Runtime
@@ -24,7 +25,7 @@ def terminatesTo (e : Expr) (c₀ c₁ : Config) (out : Value): Prop :=
   ∃ (fuel : Nat) (verbose : Bool),
     LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.success c₁ out
 
-/-- Divergence relation: program raises a runtime error. -/
+/-- Stuck relation: evaluation raises a runtime error. -/
 def stuck (e : Expr) (c₀ : Config)  : Prop :=
   ∃ (fuel : Nat) (verbose : Bool) (msg : String),
     LeanPoison.beval fuel c₀ e verbose = LeanPoison.EvalResult.runtimeError msg
@@ -61,13 +62,12 @@ def ReservedAddr (reg : ExternRegistry) (a : Address) : Prop :=
   ∃ id, reg.get? id = some (ExternImpl.val (Value.loc a))
 
 /-- Registry/cursor compatibility: every registry-reserved address is below the
-    address cursor `next`.  Kept *separate* from `wfConfig` for now (which stays
-    registry-agnostic — see the `wfConfig` note below) and consumed only via the
-    standalone witness `wfValue_loc_of_RegistryReservedBelow`.  The registry is
-    fixed across evaluation and `nextAddr` only grows, so this invariant is
-    preserved automatically (see `RegistryReservedBelow_mono`).  Folding it into
-    `wfConfig` is the eventual target, deferred until a `.val` extern is actually
-    trusted. -/
+    address cursor `next`.  Kept *separate* from `wfConfig` (which stays
+    registry-agnostic — see the `wfConfig` note below) and supplied as an
+    explicit hypothesis where it is needed (the `val` clauses of
+    `ExternOperationalSafe` / `RegistryOperationalSafe` in `ExternRuntime.lean`).
+    The registry is fixed across evaluation and `nextAddr` only grows, so this
+    invariant is preserved automatically (see `RegistryReservedBelow_mono`). -/
 def RegistryReservedBelow (reg : ExternRegistry) (next : Address) : Prop :=
   ∀ a, ReservedAddr reg a → a < next
 
@@ -114,7 +114,7 @@ theorem RegistryReservedWF_mono {reg : ExternRegistry} {μ μ' : Memory} {n n' :
     `cfg.registry`.  The FR proof stack relies on this to coerce `wfConfig` freely
     across configs that differ only in their registry field.  The
     registry-reserved-address invariant (`RegistryReservedBelow`) is therefore
-    kept *separate* from `wfConfig` for now; see
+    kept *separate* from `wfConfig`; see
     `wfValue_loc_of_RegistryReservedBelow`. -/
 def wfConfig (cfg : Config) : Prop :=
   (∀ a, cfg.memory.contains a → a < cfg.nextAddr) ∧
@@ -132,9 +132,10 @@ lemma nextAddr_not_in_memory (cfg : Config) :
 
     If a registry reserves address `a` (exposes it as a stored `.val (Value.loc a)`
     entry) and the cursor `n` bounds every reserved address, then `Value.loc a` is
-    well formed at `n`.  This is exactly the step a future `val`-clause bridge needs
-    to discharge `wfValue cfg.nextAddr (Value.loc a)` for a trusted `.val` extern
-    such as `errno`.
+    well formed at `n`.  This is exactly the step the `val` clause of the
+    operational-safety contract needs to discharge
+    `wfValue cfg.nextAddr (Value.loc a)` for a trusted `.val` extern such as
+    `errno`.
 
     It is stated standalone, taking `RegistryReservedBelow reg n` as an explicit
     hypothesis rather than reading it out of `wfConfig`, precisely so the global

@@ -18,7 +18,7 @@ The trusted contract is `builtinMax11GuardedSpec` (a complete five-field
 `ExternBoundarySpec`).  Its relational `callFR` field, `builtinMax11Guarded_callFR`,
 discharges the captured-`a` agreement through the guarded gate: the gate-extraction
 `capturesSatisfied_singleton_bareVar_guarded` yields the clean-under-regime fact,
-and the (already guard-capable) agreement core — `qtypCleanUnder_of_cleanUnderRegime`
+and the guard-capable agreement core — `qtypCleanUnder_of_cleanUnderRegime`
 producing `qtypCleanUnder.guard`, then `agreeValueUnder.withPred_true_eq` — forces
 `a₀ = a₁`.
 
@@ -29,12 +29,12 @@ fault-robustness for the registry `[@11 guarded]` at the empty context.
 The program here is the bare guarded `@11` declaration (mirroring
 `MaxCurriedFR.maxCurried_FR`, the declaration-node form): it establishes that the
 guarded-capture trusted spec is a registry entry that agrees with the program's
-reachable declarations.  Routing the guarded `callFR` through an *applied* program
-that materialises a genuinely de-poisoned captured value additionally requires a
-trusted guarded-value producer/routing example (the same dependency the
-extern-argument guarded path carries — see
-`ExternRegimeInt.open_empty_context_FR_instantiable`, which is still parameterised
-over `impl`/`spec`).
+reachable declarations.  No *applied* counterpart is given here: routing the
+guarded `callFR` through a program that materialises a genuinely de-poisoned
+captured value would additionally require a trusted guarded-value producer,
+which this development does not include (the extern-argument guarded path has
+the same dependency — see `ExternRegimeInt.open_empty_context_FR_instantiable`,
+which is parameterised over `impl`/`spec`).
 -/
 
 open Std LeanPoison ExternProofs ExternRegimeInt

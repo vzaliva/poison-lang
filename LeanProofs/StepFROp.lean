@@ -1,5 +1,9 @@
 /-
-  Auto-extracted from FaultRobustnessProofs.lean during StepFR operator refactor.
+  StepFROp.lean - Fault-robustness proofs for the binary and unary operator cases.
+
+  Contains stepFR_op_with_expr_proof, stepFR_unaryop_with_expr_proof,
+  stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof, and
+  stepFRSingleRunFinalCleanPcTrue_unaryop_maskedReg_with_expr_proof.
 -/
 import LeanProofs.StepFR
 

@@ -169,8 +169,8 @@ lemma beval_preserves_varEnv (e : Expr) (fuel : Nat) (verbose : Bool)
   exact hmain fuel e verbose config₀ config₁ v hEval
 
 /-- Full inversion lemma for successful application evaluation.  This exposes the
-    four extern dispatch branches and therefore remains valid for populated
-    registries.
+    four application branches (user and extern, `fn` and `pfn`) and therefore
+    remains valid for populated registries.
 
     It lives here, rather than in `SemanticsProperties`, because the `Expr.app`
     evaluator evaluates the function expression under the caller's variable

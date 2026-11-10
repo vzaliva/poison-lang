@@ -364,8 +364,7 @@ lemma bevalIte_structure (e1 e2 e3 : Expr) (fuel : Nat) (verbose : Bool)
 
     The `fuel'` parameter matches `fuel - 1` when the outer `beval` consumed one
     fuel unit for the `Expr.app` node itself. Captures the four-way dispatch
-    (user fn / user pfn / extern fn / extern pfn) introduced with the FFI
-    registry. -/
+    (user fn / user pfn / extern fn / extern pfn). -/
 inductive BevalAppSuccess (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool)
     (config₀ config₁ config₂ config_final : Config) (v₂ v : Value) : Prop where
   | userFn {x : Name} {body : Expr} {env : VarEnv}
@@ -431,9 +430,8 @@ inductive BevalAppSuccess (e1 e2 : Expr) (fuel' : Nat) (verbose : Bool)
       BevalAppSuccess e1 e2 fuel' verbose config₀ config₁ config₂ config_final v₂ v
 
 /-- `terminatesTo`-level view of the four successful application dispatch
-    paths.  Unlike `terminatesTo_app_inv'`, this is not restricted to the
-    empty-registry convention; successful extern dispatch is exposed as a real
-    branch. -/
+    paths.  It is not restricted to the empty-registry convention; successful
+    extern dispatch is exposed as a real branch. -/
 inductive TerminatesToAppSuccess (e1 e2 : Expr) (c₀ cf : Config) (v : Value) : Prop where
   | userFn {c₂' : Config} {v₂ : Value} {c₁ : Config}
       {x : Name} {body : Expr} {env : VarEnv} {evalConfig : Config}
@@ -1091,7 +1089,7 @@ private lemma bevalApp_preserves_registry (fuel' : Nat) (verbose : Bool)
     `.nextAddr`, and `.pureMode` via explicit record updates; no branch writes
     to `.registry`.
 
-    Proof strategy: leverage the existing `beval_*_structure` lemmas for each
+    Proof: uses the `beval*_structure` lemmas for each
     expression form, strengthened by the observation that in the `beval`
     implementation every `.success` return carries a config that is either
     (a) `config` (unchanged), (b) `{ cfg with m := ..., n := ... }` for
@@ -1354,7 +1352,7 @@ lemma terminatesTo_fn_inv' (x : Name) (paramType : Typ) (body : Expr) (returnTyp
       simp [LeanPoison.beval] at hbeval
       exact ⟨hbeval.1.symm, hbeval.2.symm⟩
 
-/-- Inversion lemma for terminatesTo on pfn (predicated function). -/
+/-- Inversion lemma for terminatesTo on pfn (pure function). -/
 lemma terminatesTo_pfn_inv' (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
     (c₀ c₁ : Config) (v : Value) :
     terminatesTo (Expr.pfn x paramType body returnType) c₀ c₁ v →
@@ -3127,7 +3125,7 @@ lemma wfConfig_preserved (e : Expr) (cfg₀ cfg₁ : Config) (v : Value)
       | app e1 e2 =>
           -- Decompose hbeval via bevalApp_structure into four sub-cases
           -- (userFn, userPfn, externFn, externPfn).  User cases recurse
-          -- through `bevalFunctionBody_preserves_wfConfig`; extern cases
+          -- through `bevalFunctionBody_{impure,pure}_preserves_wfConfig`; extern cases
           -- discharge via `hOp`'s fn/pfn clauses.
           have hstruct :=
             bevalApp_structure e1 e2 (fuel + 1) verbose cfg₀ cfg₁ v hbeval

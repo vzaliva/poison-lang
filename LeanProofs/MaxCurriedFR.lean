@@ -15,9 +15,9 @@ the reachable declarations* (`@10` with `captures = []`, `@11` with
 agreement witness with `TypeSystemEnforcesFaultRobustness_at` discharges the
 per-context trust premise and yields program-level fault-robustness.
 
-This is the capstone of the `captures:` work: the nested-captures program-FR
-obstruction (the reachable `@11` decl carrying `[a]` so the strong, capture-aware
-`@11` spec is the registry entry) is removed.
+Because the reachable `@11` declaration carries `captures = [a]`, the registry
+entry that agrees with it is the strong, capture-aware `@11` spec
+(`builtinMax11CapturesSpec`).
 -/
 
 open Std LeanPoison ExternProofs ExternRegimeInt
@@ -84,8 +84,8 @@ theorem maxCurried_FR (s : InputSpec) (obs : ObservableSpec) :
 
 /-! ## Fully exercised: the applied program `let m = @10 in (m 7) 2`
 
-`maxCurried_FR` above is over the bare `@10` declaration node (it removes the
-registry-agreement obstruction).  The *applied* program below additionally
+`maxCurried_FR` above is over the bare `@10` declaration node (it establishes
+registry agreement for the reachable declarations).  The *applied* program below additionally
 applies `@10` (producing the `@11` closure) and applies that to `2` — so the
 generic FR theorem routes the `@11` application through the registry's
 `builtinMax11CapturesSpec.callFR`, the captured-`a` cleanness gate.  The reachable

@@ -1,7 +1,8 @@
 /-
   StepFRSeq.lean - Fault-robustness proof for the seq case.
 
-  Contains stepFR_seq_with_expr_proof and stepFRSingleRunFinalCleanPcTrue_seq.
+  Contains stepFR_seq_with_expr_proof and
+  stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof.
 -/
 import LeanProofs.StepFR
 

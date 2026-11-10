@@ -3,7 +3,7 @@ set -u
 
 # Run from project root (derived from script location, no hardcoded paths)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
+cd "$SCRIPT_DIR/.." || exit 1
 
 EXAMPLES_DIR="examples"
 
@@ -59,6 +59,7 @@ cleanup() {
   local pids
   pids=$(jobs -pr)
   if [[ -n "$pids" ]]; then
+    # shellcheck disable=SC2086  # one pid per word, split on purpose
     kill $pids 2>/dev/null || true
   fi
   rm -rf "$TEMP_DIR"
@@ -83,6 +84,7 @@ run_single_test() {
   local pass
   local directive_line
   local directive
+  local directive_arg
   local -a extra_args
   local -a directive_args
 
@@ -112,15 +114,18 @@ run_single_test() {
     directive="${directive_line#--!}"
     directive="${directive# }"
     if [[ -n "$directive" ]]; then
-      mapfile -t directive_args < <(printf '%s\n' "$directive" | xargs -n1)
+      directive_args=()
+      while IFS= read -r directive_arg; do
+        directive_args+=("$directive_arg")
+      done < <(printf '%s\n' "$directive" | xargs -n1)
       if [[ ${#directive_args[@]} -gt 0 && "${directive_args[0]}" == "poison-interpreter" ]]; then
         directive_args=("${directive_args[@]:1}")
       fi
-      extra_args=("${directive_args[@]}")
+      extra_args=(${directive_args[@]+"${directive_args[@]}"})
     fi
   fi
 
-  lake exe poison-interpreter --verbose "${extra_args[@]}" "$poison_file" > "$result_file" 2>&1
+  lake exe poison-interpreter --verbose ${extra_args[@]+"${extra_args[@]}"} "$poison_file" > "$result_file" 2>&1
   exit_code=$?
 
   if diff -q "$result_file" "$expected" >/dev/null; then
@@ -202,19 +207,25 @@ else
   poison_files=("$EXAMPLES_DIR"/*.poison)
 fi
 
+# Wait for a free job slot. `wait -n` needs bash >= 4.3; older shells (the
+# stock macOS bash 3.2) wait for the whole running batch instead.
+if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 3) )); then
+  wait_for_job() { wait -n; active_jobs=$((active_jobs - 1)); }
+else
+  wait_for_job() { wait; active_jobs=0; }
+fi
+
 active_jobs=0
 for poison_file in "${poison_files[@]}"; do
   run_single_test "$poison_file" &
-  ((active_jobs++))
+  active_jobs=$((active_jobs + 1))
   if (( active_jobs >= JOBS )); then
-    wait -n
-    ((active_jobs--))
+    wait_for_job
   fi
 done
 
 while (( active_jobs > 0 )); do
-  wait -n
-  ((active_jobs--))
+  wait_for_job
 done
 
 for status_file in "$TEMP_DIR"/*.status; do
@@ -222,9 +233,9 @@ for status_file in "$TEMP_DIR"/*.status; do
   status=$(cat "$status_file")
   base_name=$(basename "$status_file" .status)
   if [[ "$status" == "pass" ]]; then
-    ((PASS_COUNT++))
+    PASS_COUNT=$((PASS_COUNT + 1))
   elif [[ "$status" == "fail" ]]; then
-    ((FAIL_COUNT++))
+    FAIL_COUNT=$((FAIL_COUNT + 1))
     FAILED_TESTS+=("$base_name")
   fi
 done
@@ -237,4 +248,5 @@ echo "Failed: $FAIL_COUNT"
 if (( FAIL_COUNT > 0 )); then
   echo "Failed tests:"
   printf ' - %s\n' "${FAILED_TESTS[@]}"
+  exit 1
 fi

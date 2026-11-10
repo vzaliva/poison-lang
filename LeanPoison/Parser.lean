@@ -24,7 +24,7 @@ partial def flattenTypeExpr (fuel:Nat ) (content : Array Content) : Except Strin
     | _ => none
 
     match contents with
-    -- Embedded only Base Types - int , bool , unit
+    -- Embedded only Base Types - int , bool , unit , string
     | #[Content.Element (Element.Element "base_type" _ #[Content.Character name])] =>
           let typ <- strToBasicType (name.trimAscii.toString)
           return typ
@@ -430,20 +430,6 @@ mutual
                 | none => .error s!"Invalid extern_ref id: {idStr}"
             | _ => .error "Invalid extern_ref content"
 
-/- | externFn : Name → Typ → ExternReturn → List Effect → Expr
-   | externPfn : Name → Typ → ExternReturn → Expr
-   -- Effect specification for impure externs (uses SyntaxPredicate)
-    structure Effect where
-      target : EffectTarget
-      poison : Bool  -- true for "poisoned", false for "clean"
-      pred : SyntaxPredicate
-
-    -- Return specification for extern functions (simple or nested)
-    inductive ExternReturn where
-      | simple : Typ → Bool → SyntaxPredicate → ExternReturn
-      | nestedFn : Name → Typ → ExternReturn → List Effect → ExternReturn
-      | nestedPfn : Name → Typ → ExternReturn → ExternReturn
- -/
           | [Element.Element "extern_fn" _ externFnContent] =>
               let contsFiltered := externFnContent.filterMap (fun
               | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
@@ -516,6 +502,18 @@ mutual
           | #[]       => .error "Empty source file"
           | _         => .error "Expected exactly one top-level <expr> in <source_file>"
 
+    -- Recent tree-sitter releases (seen with 0.27) wrap the tree as
+    -- `<sources><source name="FILE"><source_file>…`, whereas 0.25 emits
+    -- `<source_file>` at the top level. Unwrap either layer.
+    | Element.Element "sources" _ children
+    | Element.Element "source" _ children => do
+        let elements := children.filterMap fun
+        | Content.Element el => some el
+        | _ => none
+        match elements with
+        | #[inner] => xmlToExpr inner
+        | _ => .error "Expected exactly one element inside the tree-sitter <sources>/<source> wrapper"
+
     | _ => .error s!"Unrecognized XML element: {x}"
 
   ------------------XML To QTyp Functions---------------------------------------
@@ -542,13 +540,6 @@ mutual
       | Content.Element (Element.Element "pexpr" attr cont) =>
         some (Element.Element "pexpr" attr cont)
       | _ => none
-
- /-
- inductive SyntaxPredicate : Type where
-  | guardClosure: Tag → Name → Expr → SyntaxPredicate  -- tag, arg name, predicate body (as Expr)
-  | guardOnly : Tag → SyntaxPredicate
-  | noPred : SyntaxPredicate
- -/
 
     match contents.toList with
       | [Element.Element "number" _ #[Content.Character tag], Element.Element "pexpr" _ pexprContents] =>
@@ -580,7 +571,7 @@ mutual
           | Content.Element (Element.Element "comment" _ _) => none  -- skip comments
           | Content.Element el => some el
           | _ => none
-  --   $.type_expr , ":>", field("poison", choice("poisoned","clean")) ,
+  --   Grammar rule: "(" , $.type_expr , ":>" , field("poison", $.poison) ,
     --    $.predicate_clause , ")"
         match elems.toList with
         | [(Element.Element "type_expr" _ typeExprConts),(Element.Element "poison" _ #[Content.Character poison]),

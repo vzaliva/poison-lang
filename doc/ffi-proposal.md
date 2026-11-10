@@ -4,14 +4,14 @@ Status: working document. The runtime side is implemented and is treated here
 as a baseline. The fault-robustness proof has a populated-registry theorem that
 consumes trusted extern boundary evidence. Concrete trusted specs exist for
 `abs`, the curried-`max` pair, the explicit-argument memory-read extern
-`@23`, and the errno-style impure write-effect extern `@22` (`set_err` —
-the first trusted `.fn` entry, with the program-level capstone
-`ExternRegimeInt.setErrWriteEffect_FR`; see `doc/externs.md`, `@22`).
-Read-dependency/captures support is implemented on `ffi`.
+`@23`, the `errno` reference extern `@21`, and the errno-style impure
+write-effect extern `@22` (`set_err` — the trusted `.fn` entry, with the
+program-level capstone `ExternRegimeInt.setErrWriteEffect_FR`; see
+`doc/externs.md`, `@22`). Read-dependency/captures support is implemented.
 
-Goal: give `extern val`, `extern fn`, and `extern pfn` intended semantics
-while keeping implementations outside Poison and making the fault-robustness
-(FR) boundary explicit.
+Goal: give `extern val`, `extern ref`, `extern fn`, and `extern pfn` intended
+semantics while keeping implementations outside Poison and making the
+fault-robustness (FR) boundary explicit.
 
 Related documents:
 
@@ -70,8 +70,9 @@ Deliberately deferred:
   cross-language FFI.
 - "FFI" is used loosely: the goal is a model of an extern boundary rich
   enough to study what FR requires.
-- Executable extern behaviour is supplied by surrounding Lean code (for
-  example from `Main.lean`) and passed into the semantics as a registry.
+- Executable extern behaviour is supplied by surrounding Lean code (the
+  built-in set in `LeanPoison/ExternBuiltins.lean`, wired in by `Main.lean`)
+  and passed into the semantics as a registry.
 - The same interface is also intended to support reasoning about
   separately verified Poison components treated abstractly as externs;
   building the actual separate-compilation pipeline is out of scope.
@@ -124,8 +125,9 @@ The runtime side is in place. The source of truth is the code:
 - Extern identity is explicit through mandatory `@id` syntax, including
   on nested callable return descriptors.
 - Source programs should not reuse the same id across multiple extern
-  declarations; this is not enforced by the compiler, but `register`
-  rejects duplicate id registrations at driver-setup time.
+  declarations; the typechecker enforces this only for `extern ref` (each id
+  may be declared at most once per program), and `register` rejects
+  duplicate id registrations at driver-setup time.
 - Runtime dispatch uses a flat registry keyed by extern id, stored in
   `Config`, and fixed for the duration of evaluation.
 - `extern val` dispatch returns a registered value after shallow shape
@@ -141,7 +143,7 @@ The runtime side is in place. The source of truth is the code:
 - Executable extern input types are restricted to the first-order surface
   types `{ int, bool, unit, string, ref int }`; function-typed inputs and
   reference-typed returns are rejected. Higher-order callbacks are
-  therefore out of scope in the current phase.
+  therefore out of scope.
 - Each extern invocation consumes one evaluator step in the fuel story.
 - `beval` remains a total pure Lean function; executable extern behaviour
   is computable Lean-level data, not I/O.
@@ -202,8 +204,8 @@ Impure-callable contracts (`ExternImpl.fn`):
   `varEnv` well-formed with respect to the post-call `nextAddr`.
 
 Reference-valued `extern ref` contracts (`ExternImpl.val (Value.loc a)` for
-an `extern ref` declaration; the old ref-typed `extern val` spelling is
-rejected by the typechecker):
+an `extern ref` declaration; a ref-typed `extern val` is rejected by the
+typechecker):
 
 - `D-REF-1`: The registered `Value.loc a` satisfies `a < Config.nextAddr`
   in the initial configuration. `Config.nextAddr` must be initialised
@@ -216,13 +218,15 @@ rejected by the typechecker):
   resolve to distinct addresses, so the registry never introduces
   aliasing. Sharing of an extern reference across multiple Poison names
   must be expressed through ordinary `let` binding, not by repeating the
-  extern declaration — the typechecker now enforces this (each extern id
+  extern declaration — the typechecker enforces this (each extern id
   may be declared by `extern ref` at most once per program).
 
-These contracts are the evidence interface the proof layer consumes. The
-`wfConfig` preservation gap for `ExternImpl.fn` consumes `D-FN-1` /
-`D-FN-2`; the `externVal` well-formedness gap for `ref int` consumes
-`D-REF-1`. See the proof interface section for where they feed in.
+These contracts are the evidence interface the proof layer consumes.
+`wfConfig` preservation for `ExternImpl.fn` consumes `D-FN-1` / `D-FN-2`
+(the `fn` clauses of `ExternOperationalSafe`); well-formedness of
+reference-valued externs consumes `D-REF-1` / `D-REF-2`
+(`RegistryReservedBelow` / `RegistryReservedWF`). See the proof interface
+section for where they feed in.
 
 ### Typing Baseline
 
@@ -233,8 +237,9 @@ which exposes the `ExternTypingAssumptions` structure with a single field:
   extern allocation batch.
 
 Guard-origin provenance is derived structurally via
-`applyFnTClosure_extern_ok_memEnv_guard_origin` in `StepFR.lean`; extern effect
-writes under poisoned `pc` erase predicates in the same style as assignment.
+`applyFnTClosure_extern_ok_memEnv_guard_origin` in `ExternTagMeaning.lean`;
+extern effect writes under poisoned `pc` erase predicates in the same style as
+assignment.
 
 The fault-robustness theorem is relative to a witness of
 `ExternTypingAssumptions`: callers must supply (or postulate) one to
@@ -348,7 +353,7 @@ Current coverage:
 - branch-join capture conjunction preservation is proved in
   `LeanProofs/CaptureJoinConjunction.lean`; and
 - fn-side captures are operationally/typecheck-supported, with accepted/rejected
-  examples. `@22`'s real `effects:` post-state is now proved
+  examples. `@22`'s `effects:` post-state is proved
   (`builtinSetErrSpec` / `setErrWriteEffect_FR`); a trusted
   captures-bearing `fn` example should be revisited only if a shipped
   implementation actually reads captures.
@@ -423,10 +428,14 @@ shape.
 
 Primarily on the proof side:
 
-- `LeanProofs/ExternBoundary.lean` — trusted registry, extern boundary runs,
+- `LeanProofs/ExternRuntime.lean` — extern boundary runs and the operational
+  safety contracts.
+- `LeanProofs/ExternBoundary.lean` — trusted registry, FR boundary contracts,
   reachable-domain trust, and the future constructor API.
-- `LeanProofs/ExternProofs.lean` and `LeanProofs/MaxCurriedFR.lean` — concrete
-  builtin trusted specs and program-level validation artifacts.
+- `LeanProofs/ExternProofs.lean` — concrete builtin trusted specs.
+- `LeanProofs/AbsFR.lean`, `LeanProofs/MaxCurriedFR.lean`,
+  `LeanProofs/MemReadCapturesFR.lean`, `LeanProofs/GuardedCapturesFR.lean`,
+  and `LeanProofs/ExternRegimeInt.lean` — program-level validation artifacts.
 - `LeanProofs/ExternTypingAssumptions.lean` — possible future localization of
   `externPredSatDelta` into per-extern evidence.
 - `LeanProofs/SemanticsProperties.lean` — consumes `RegistryOperationalSafe`

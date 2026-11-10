@@ -1,4 +1,4 @@
--- General-purpose lemmas (lists, Except, Forall₂, ExtTreeMap).
+-- General-purpose lemmas (lists, Except, ExtTreeMap).
 -- This module is self-contained: no LeanPoison or other LeanProofs imports.
 
 import Mathlib.Tactic
@@ -12,7 +12,7 @@ import Std.Data.ExtTreeMap.Lemmas
 open Std
 
 -- ================================================================
--- List: removeAll, eraseDups, membership
+-- List: eraseDups membership
 -- ================================================================
 
 lemma List.mem_eraseDups_of_mem {α : Type*} [BEq α] [LawfulBEq α] {x : α} {l : List α}
@@ -140,7 +140,7 @@ theorem ExtTreeMap.IsSubmap.trans
   fun k v h => h₂ k v (h₁ k v h)
 
 -- ================================================================
--- List + Except: foldlM / mapM preserve properties
+-- List + Except: foldlM preserves properties
 -- ================================================================
 
 private theorem List.foldlM_Except_preserves_property_of_forall_mem

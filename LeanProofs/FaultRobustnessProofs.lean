@@ -365,7 +365,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_literalArm_maskedReg
 declaration descriptor `d`, the `ExternDeclarationInProgram` witness, the boundary-typing
 derivation `htyped`, and the kind-specific boundary-run obtainer `hBoundaryRun`; this lemma
 runs the common normalize-then-delegate scaffold against the caller's `hdeclSingle`
-contract.  Factored out of the masked single-run theorem (refactor T15). -/
+contract. -/
 private lemma stepFRSingleRunFinalCleanPcTrue_externDeclArm_maskedReg
     (registry : ExternRegistry) (CanUse : Expr → Prop)
     (masked : Tag → Prop) (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
@@ -407,7 +407,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_externDeclArm_maskedReg
 
 /-- Bundle of the reachability/boundary contract hypotheses shared verbatim by the
 masked and non-masked single-run FR theorems.  Projecting (or `obtain`-destructuring)
-this record restores the individual hypotheses exactly as before. -/
+this record yields the individual hypotheses. -/
 private structure FRCtxContracts (registry : ExternRegistry)
     (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop) where
   hcallSingleFn : ExternCallSingleFnProviderCtx registry CanUse CtxReach
@@ -898,7 +898,7 @@ private theorem TypeSystemEnforcesFaultRobustness_singleRunFinalCleanPcTrue_with
   exact ⟨θ', hθext, hvaltyp, hric', hcwr', hvalc', hpres, hfresh, hrd'⟩
 
 -- Step theorem: proves StepFR directly.
--- Restructured to avoid variable capture: induction is generalized over all expressions
+-- The induction on fuel is generalized over all expressions and contexts.
 private theorem TypeSystemEnforcesFaultRobustness_step_with_contracts_canUse_ctxReach
   (registry : ExternRegistry)
   (hOp : RegistryOperationalSafe registry)
@@ -1624,7 +1624,7 @@ private theorem faultRobustnessSpecForCtx_of_step
     obtain ⟨qt, hlookup_mem, _het_eq, hpoison⟩ := hobs_mem l et hobs_lookup
     have hctx_lookup : (ctxAfter ctx res).memEnv.lookup l = some qt := by
       simpa [ctxAfter] using hlookup_mem
-    -- Use output regime since hagree_clean' now uses (ctxAfter ctx res).regime
+    -- Use output regime since hagree_clean' uses (ctxAfter ctx res).regime
     have hclean : qtypCleanUnder (ctxAfter ctx res).regime qt := by
       exact qtypCleanUnder.clean hpoison
     have hlocEntry : agreeLocUnder predSat (ctxAfter ctx res).regime cf₁.memory cf₂.memory θ₁' θ₂' (l, qt) :=
@@ -1682,7 +1682,7 @@ private theorem faultRobustnessSpecForCtx_of_step
         rcases hobs_ret _ hretOpt with ⟨hret_et, hret_poison⟩
         have hret_notfun_obs : et.isFunctionType = false := by
           simpa [wfObsSpec, hretOpt] using _hos
-        -- Use output regime since hret_agree now uses (ctxAfter ctx res).regime
+        -- Use output regime since hret_agree uses (ctxAfter ctx res).regime
         have hret_clean : qtypCleanUnder (ctxAfter ctx res).regime res.qualType :=
           qtypCleanUnder.clean hret_poison
         have hret_agree' :

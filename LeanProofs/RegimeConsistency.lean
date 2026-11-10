@@ -1,5 +1,9 @@
--- Regime consistency definitions shared by Preservation and FaultRobustness.
--- Extracted for Issue #112 fix to avoid circular imports.
+-- Regime-consistency definitions for the fault-robustness proofs: abstract
+-- predicate satisfaction (`PredSat`, `PredSatLaws`), tag meaning and guard
+-- descriptors, runtime regime consistency (`consistentWithRegime`), and the
+-- `tagEnvConsistentWithRegime*` / masked-regime machinery (definitions and
+-- insert/invalidate/join lemmas). Sits below `FaultRobustness.lean` and
+-- `StepFR.lean` in the import graph.
 
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
@@ -1189,8 +1193,7 @@ def capturedVarsRegimeProperty (predSat : PredSat) (R : Regime) (μ : Memory)
 -- Typing property for captured variables: each binding in σcap is realised in
 -- ρcap with a value whose ETyp is justified by θ.  Carried alongside the
 -- regime property inside closureCapturedVarsRegime so that a single σcap
--- member witnesses both regime and typing evidence (fixing the member-matching
--- problem in agreeValueUnder_same).
+-- member witnesses both regime and typing evidence.
 def capturedVarsTypingProperty (θ : RealizationMap)
     (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
   List.Nodup (σcap.map Prod.fst) ∧
@@ -1221,7 +1224,7 @@ inductive closureCapturedVarsRegime (predSat : PredSat) (R : Regime)
 -- Context-indexed runtime-regime consistency: constrains only tags the regime
 -- interprets.  The third conjunct carries closureCapturedVarsRegime for every
 -- variable-value pair, enabling evidence to persist through variable storage
--- (stepFR_vlet) and retrieval (stepFR_var).
+-- (stepFR_vlet_with_expr_proof) and retrieval (stepFR_var).
 def consistentWithRegime (predSat : PredSat) (R : Regime) (ctx : TypeContext)
     (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   (∀ l qt k, ctx.memEnv.lookup l = some qt →
@@ -1250,9 +1253,10 @@ def regimeConsistentWithCtx (ctx : TypeContext) : Prop :=
 -- TagEnv/Regime consistency preservation lemmas
 --
 -- These are proof-only facts about the typechecker infrastructure:
---   * `tagEnvConsistentWithRegime` is stable under the TagEnv operations used by typing
---     (insertion, invalidation, joins), and
---   * typechecking preserves the invariant when starting from a consistent context.
+-- `tagEnvConsistentWithRegime` is stable under the TagEnv operations used by typing
+-- (insertion, invalidation, joins).  The induction showing that typechecking
+-- preserves the invariant from a consistent context is
+-- `typecheckExpr_preserves_regimeConsistentWithCtx` in `TypecheckInduction.lean`.
 
 /-- Lookups at a key other than the just-inserted one are unaffected by `insert`. -/
 private lemma tagEnv_get_insert_of_ne
@@ -1672,8 +1676,7 @@ lemma MaskedTagsAbsentFromTrueTagEnvs_join
     ⟨deps₁, _deps₂, hget₁, _hget₂⟩
   exact h₁ k deps₁ hmasked hget₁
 
-/-- Extended-regime version of `masked_lookup_none_of_monotoneStep`:
-    masked tags stay absent from the regime across a `monotoneStepExt` step,
+/-- Masked tags stay absent from the regime across a `monotoneStepExt` step,
     provided masked tags are never among the freshly-added `newTags`.  At every use site the
     discharge is `masked k → k < ctx.nextTag` while `newTags = fun k => ctx.nextTag ≤ k`. -/
 lemma masked_lookup_none_of_monotoneStepExt

@@ -1,7 +1,8 @@
 /-
   StepFRVlet.lean - Fault-robustness proof for the vlet case.
 
-  Contains stepFR_vlet_with_expr_proof, stepFRSingleRunFinalCleanPcTrue_vlet,
+  Contains stepFR_vlet_with_expr_proof,
+  stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof,
   and exclusive vlet-body helpers.
 -/
 import LeanProofs.StepFR
@@ -372,7 +373,7 @@ lemma stepFR_vlet_with_expr_proof
     simpa [ctxAfter] using hric₀1
   have hric₁1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
     simpa [ctxAfter] using hric₁1
-  -- hv₀1_typed, hv₁1_typed come from IH1 (StepFR now includes valueHasETyp)
+  -- hv₀1_typed, hv₁1_typed come from IH1 (StepFR includes valueHasETyp)
   -- wfValue from wfConfig_preserved (needs terminatesTo)
   have ht₀_e1_w : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cfg₀1 v₀1 :=
     ht₀_e1
@@ -1006,7 +1007,7 @@ lemma stepFR_vlet_with_expr_proof
       have hvtyp' : valueHasETyp θ₁2 v qt.etyp := valueHasETyp_extends hθext₁2.1 hvtyp
       exact ⟨v, hvlookup', hvtyp'⟩
   -- ctx'.regime = res1.regime' (not ctxᵢ.regime)
-  -- With new StepFR using output regime, we need (ctxAfter ctxᵢ res).regime
+  -- StepFR is stated over the output regime, so we need (ctxAfter ctxᵢ res).regime
   have hreg'' : regimeConsistentWithCtx (ctxAfter ctxᵢ res) := by
     -- IH2 gives regimeConsistentWithCtx (ctxAfter ctx' res2) (ctxAfter ctx' res2).regime
     -- The relevant fields match by structure lemma

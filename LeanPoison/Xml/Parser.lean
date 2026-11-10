@@ -8,6 +8,7 @@ Vendored from Lean core `Lean.Data.Xml.Parser` (as of Lean v4.27.0). The
 carries its own copy. Adapted from the core module-system syntax to ordinary
 Lean; the only functional change is repointing the basic-types import at the
 vendored `LeanPoison.Xml.Basic`.
+The Apache 2.0 license text referred to above is in `LeanPoison/Xml/LICENSE`.
 -/
 import Std.Internal.Parsec
 import LeanPoison.Xml.Basic

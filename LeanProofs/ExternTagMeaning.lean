@@ -1,12 +1,14 @@
 /-
-  ExternTagMeaning.lean - Extern-regime tag-meaning machinery, relocated below StepFR (T12).
+  ExternTagMeaning.lean - Extern-regime tag-meaning machinery.
 
   Lemmas about `resolveSyntaxPred`, `surfaceSpecToQTyp`, `typecheckExternVal`,
-  `applyFnTClosure`/`applyPFnTClosure` extern effects, and `forIn_effects` loops
+  `applyFnTClosure`/`applyPFnTClosure` extern effects, and the `forIn` effect loops
   establishing `QTypRespectsTagMeaning` / `wfTagMeaningCtx` / lookup-origin facts.
-  These reason only about Typecheck functions and below-DAG predicates
+  These reason only about Typecheck functions and the tag-meaning predicates
   (`QTypRespectsTagMeaning`, `wfTagMeaningCtx`, `EnvRespectsTagMeaning` from
-  RegimeConsistency), so they sit between {TypeSafety, ExternRuntime} and StepFR.
+  RegimeConsistency), so the module sits below StepFR in the import graph: above
+  {TypeSafety, SemanticsProperties, RegimeConsistency, ExternTypingAssumptions},
+  and imported by TypecheckInduction and StepFR.
 -/
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
@@ -28,7 +30,7 @@ open List.Mem
 open Std
 open scoped MemoryTypeEnv
 
--- ── lookup / ofCaptured helpers + captured-extern QTypRespectsTagMeaning (relocated, T12) ──
+-- ── lookup / ofCaptured helpers + captured-extern QTypRespectsTagMeaning ──
 private lemma foldr_insert_domain (tenv : List (Name × QTyp)) (y : Name) (qt : QTyp) :
     (tenv.foldr (fun entry (acc : Std.ExtTreeMap Name QTyp varTypeEnvCmp) =>
       acc.insert entry.1 entry.2) ∅)[y]? = some qt →
@@ -115,7 +117,7 @@ private lemma list_lookup_mem {α β : Type} [BEq α] [LawfulBEq α]
     `capturedEnv` or the arg binding respect `tm`.  Uses `list_lookup_of_ofCaptured_lookup`
     and `VarTypeEnv` update semantics.
     Note: QTyp poison is `p` (matching the arrow's internal poison) for compatibility
-    with `QTypInQTyp_fn_extern_root_or_self`; callers use `QTypRespectsTagMeaning_of_etyp_noPred`
+    with `QTypInQTyp_fn_extern_root_or_self`; callers use `QTypRespectsTagMeaning_noPred_poison_transport`
     to transport to other poisons. -/
 private lemma QTypRespectsTagMeaning_fn_extern_ofCaptured
     (tm : TagMeaning)
@@ -178,7 +180,7 @@ private lemma QTypRespectsTagMeaning_pfn_extern_ofCaptured
       have hlistLookup := list_lookup_of_ofCaptured_lookup capturedEnv y qtRoot hlookup
       exact (hcapTm y qtRoot (list_lookup_mem capturedEnv y qtRoot hlistLookup)) hInRoot hqd
 
--- ── extern-regime tag-meaning cluster (relocated from StepFR.lean, T12) ──
+-- ── extern-regime tag-meaning cluster ──
 section ExternTagMeaningSig
 variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
 
@@ -380,7 +382,7 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
     simp only [pure, Except.pure] at happly
     cases retSpec with
     | simple typ poison spred =>
-      -- Simple return: use the unified axiom
+      -- Simple return: use the structural compatibility witness `hcompatSimple`
       -- Reduce the ExternReturn match after cases
       simp only [] at happly
       split at happly
@@ -577,8 +579,8 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
 
 /-- The assign-shaped memEnv update (singleton strong / non-singleton weak)
     preserves "all cells respect tag meaning", given the stored predicate respects
-    tag meaning.  Mirrors `locset_fold_updateMemEnv_allCellsRespect` for the
-    assignment-shaped update now used by `applyExternEffect`. -/
+    tag meaning.  This is the assignment-shaped update used by
+    `applyExternEffect`. -/
 private lemma assign_memEnv_formula_allCellsRespect
     (tm : TagMeaning) (env : MemoryTypeEnv) (ls : LocSet)
     (storedPoison : Poison) (storedPred : Predicate)
@@ -988,7 +990,7 @@ lemma applyFnTClosure_extern_ok_memEnv_poison_origin_of_effect_pc_true
         exact forIn_effects_loop_preserves_clean_lookup effects unifiedEnv allocRes.1
           result2.memEnv' memEnvLoop hloop' l qt_out hlookup hpoison
 
-/-- Compatibility wrapper for existing callers that know the caller pc is dirty. -/
+/-- Specialisation for callers that know the caller pc is dirty (`ctx.pc = true`). -/
 lemma applyFnTClosure_extern_ok_memEnv_poison_origin
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -1112,7 +1114,7 @@ lemma applyFnTClosure_extern_ok_memEnv_guard_origin_of_effect_pc_true
         exact forIn_effects_loop_preserves_guard_lookup effects unifiedEnv allocRes.1
           result2.memEnv' memEnvLoop hloop' l qt_out k hlookup htag
 
-/-- Compatibility wrapper for existing callers that know the caller pc is dirty. -/
+/-- Specialisation for callers that know the caller pc is dirty (`ctx.pc = true`). -/
 lemma applyFnTClosure_extern_ok_memEnv_guard_origin
     (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
     (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -1385,9 +1387,6 @@ lemma applyFnTClosure_extern_canonical_batch
             (effects := effects) (capturedEnv := capturedEnv) (r := r) (declaredArgQt := declaredArgQt)
             hwf' hcapTm' hargTm' hcompatBatch happly0
 
--- (`resolveSyntaxPred_guardClosure_tag_from_mapping` now lives in TypeSafety.lean,
--- shared with the `installReturnGuard` tagEnv lemmas.)
-
 /-- Helper: surfaceSpecToQTyp preserves EnvRespectsTagMeaning (only adds noPred int cell). -/
 private lemma surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
     (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : Predicate)
@@ -1455,8 +1454,8 @@ private lemma typecheckExternVal_preserves_wfTagMeaningCtx
             tm ctx typ poison resolvedPred qt ctx' hwf hsurface
 
 /-- `typecheckExternVal` constructs a genuine post-allocation tag table for
-    its successful result.  This is the extern-value case needed by the
-    non-axiomatic `typecheck_extends_tagMeaning` proof. -/
+    its successful result.  This is the extern-value case needed by
+    `typecheck_preserves_predSatLaws` (`TypecheckInduction.lean`). -/
 lemma typecheckExternVal_canonical_batch
     (tm : TagMeaning) (ctx : TypeContext) (id : ExternId)
     (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)

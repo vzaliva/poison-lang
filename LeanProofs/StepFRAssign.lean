@@ -1,9 +1,10 @@
 /-
   StepFRAssign.lean - Fault-robustness proof for assignment.
 
-  Contains stepFR_assign_with_expr_proof and all helper lemmas used exclusively by it,
-  including invalidateRegimeDeps infrastructure, assign memory formula helpers,
-  PredRespectsTagMeaning, and EnvRespectsTagMeaning update lemmas.
+  Contains stepFR_assign_with_expr_proof,
+  stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof, and the helper
+  lemmas used exclusively by them, including invalidateRegimeDeps infrastructure
+  and assign memory formula helpers.
 -/
 import LeanProofs.StepFR
 import LeanProofs.VarEnvPreservation
@@ -450,9 +451,6 @@ private lemma tagEnvConsistentWithRegimeMasked_invalidateRegimeDeps
         invalidateRegimeDeps_preserves_lookup_of_surviving_tag
           R tagEnv ls k true hkR hcontains
 
--- updateLocsetWeak_contains_eq_or_mem: moved to TypeSafety.lean
--- assign_memEnv_formula_contains_eq_or_mem: moved to TypeSafety.lean
-
 /--
 If every `tagEnv` entry at tag `k` depends on locations from `ls`, then
 `invalidateRegimeDeps` drops `k` from the regime.
@@ -596,8 +594,6 @@ private lemma assign_mem_formula_guardClosure_lookup_implies_rhs_pred
           by_cases hwrite : res1.qualType.poison = true ∨ ctxᵢ.pc = true
           · simp [assignStoredPred, hwrite] at hstored
           · simpa [assignStoredPred, hwrite] using hstored
-
--- locset_fold_max_succ_ge_of_mem: moved to TypeSafety.lean
 
 /-- Per-member companion of `fold_joinPred_guardClosure_init`: if the
     weak-update predicate join produces a guard closure, every folded member was
@@ -1461,7 +1457,7 @@ lemma stepFR_assign_with_expr_proof
                   · -- A materialised, regime-live stored guard — the written
                     -- cell genuinely satisfies the regime (RHS value evidence at the
                     -- written member, pre-assign cell consistency elsewhere).  Both
-                    -- parallel runs share this proof text; the collapsed `one_run`
+                    -- parallel runs share this proof text; `one_run`
                     -- proves it once against the abstract run binders.
                     exact assign_stored_guard_locsRegime hpredlaws2 ctxᵢ res1 res2 res ls
                       θ₀1 θ₀2 cfg₀2.memory cf₀.memory a₀w n₀ l qt k' arg_name pred_body var_env
@@ -1628,7 +1624,7 @@ lemma stepFR_assign_with_expr_proof
                 · -- A materialised, regime-live stored guard — the written
                   -- cell genuinely satisfies the regime (RHS value evidence at the
                   -- written member, pre-assign cell consistency elsewhere).  Both
-                  -- parallel runs share this proof text; the collapsed `one_run`
+                  -- parallel runs share this proof text; `one_run`
                   -- proves it once against the abstract run binders.
                   exact assign_stored_guard_locsRegime hpredlaws2 ctxᵢ res1 res2 res ls
                     θ₀1 θ₀2 cfg₀2.memory cf₀.memory a₀w n₀ l qt k' arg_name pred_body var_env
@@ -3136,7 +3132,7 @@ lemma stepFR_assign_with_expr_proof
     simpa [hreg_cfg₁2] using _hrd₁2
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- Assign single-run infrastructure (moved from FaultRobustnessProofs.lean)
+-- Assign single-run infrastructure
 -- ═══════════════════════════════════════════════════════════════════════════
 
 private lemma assign_lookup_not_clean_of_pc_true_of_mem

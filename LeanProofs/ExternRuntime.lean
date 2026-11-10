@@ -1,11 +1,12 @@
 /-
   ExternRuntime.lean — Implementation-facing runtime extern boundary data.
 
-  This module holds the runtime-event predicates and the strengthened
-  operational safety contract used to discharge `SemanticsProperties.lean`
-  obligations.  It is intentionally below the FR boundary contract layer
-  (`ExternBoundary.lean`) so that `SemanticsProperties.lean` can talk about
-  raw extern runtime safety without importing FR-shaped machinery.
+  This module holds the runtime-event predicates and the operational safety
+  contracts (`ExternOperationalSafe`, `RegistryOperationalSafe`) used to
+  discharge `SemanticsProperties.lean` obligations.  It is intentionally below
+  the FR boundary contract layer (`ExternBoundary.lean`) so that
+  `SemanticsProperties.lean` can talk about raw extern runtime safety without
+  importing FR-shaped machinery.
 
   Definitions here do not depend on `StepFRPost`, `BoundaryTagMeaningPost`,
   or any other FR proof concept.
@@ -51,7 +52,7 @@ structure ExternDeclaration where
   argPoison : Bool
   argPred   : SyntaxPredicate := .noPred
   /-- Declared `captures:` read dependencies (`doc/ffi-proposal.md`).  Defaults
-      to `[]` so existing declarations are unaffected; populated for externs whose
+      to `[]` (no read dependencies); populated for externs whose
       trusted clean result depends on environment or memory read targets. -/
   captures  : List Capture := []
   /-- `.ref` kind only: the declared poison of the reference value itself
@@ -553,7 +554,7 @@ inductive ExternBoundaryWFRun
     `ExternBoundarySpec.operational : ExternOperationalSafe d impl`, but the
     contract is determined entirely by `impl`'s constructor.
 
-    Three clauses, one per `ExternImpl` constructor:
+    The clauses are grouped by `ExternImpl` constructor:
 
     * `fn` (impure): unconditional `nextAddr` monotonicity plus conditional
       memory/value well-formedness preservation.
@@ -609,14 +610,14 @@ def ExternOperationalSafe
 
 /-- Registry-level operational safety contract.
 
-    Consumed by the `_safe` variants of `beval_nextAddr_mono` and
+    Consumed by `beval_nextAddr_mono`, `terminatesTo_nextAddr_mono` and
     `wfConfig_preserved` in `SemanticsProperties.lean`.  The predicate is
     stated over raw `ExternImpl` payloads (`VarEnv → Value → Memory → ...`)
     rather than `ExternDeclaration` shapes, because `beval` exposes only the
     registry lookup `reg.get? id = some impl` — it does not have a
     syntactic declaration in scope.
 
-    Three clauses, one per `ExternImpl` constructor:
+    The clauses are grouped by `ExternImpl` constructor:
 
     * `fn` — successful impure dispatch preserves the memory address bound,
       pushes `nextAddr` forward (monotonicity), and returns a `wfValue` at

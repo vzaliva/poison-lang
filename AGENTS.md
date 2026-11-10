@@ -7,7 +7,7 @@ This file provides guidance to AI agents when working with code in this reposito
 The Poison Language is a research implementation of a simple imperative programming language with built-in fault tracking via a type system that models data corruption as "poison" propagation. This Lean 4 project combines:
 
 1. **Core implementation** (`LeanPoison/`) - operational semantics, type system, parser integration
-2. **Formal proofs** (`LeanProofs/`) - type safety properties (preservation subsumed into fault-robustness, progress, fault-robustness, memory monotonicity)
+2. **Formal proofs** (`LeanProofs/`) - fault-robustness of the type system (which subsumes preservation) and its supporting properties; the progress property is stated but not proved
 3. **Parser** (`parser/`) - tree-sitter grammar for `.poison` files
 4. **Formal specification** (`poison-lang-spec/`) - Ott specification with LaTeX documentation
 
@@ -84,13 +84,15 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `ExternRuntime.lean` - Runtime extern event predicates living below the FR proof stack: `ExternDeclaration`, `ExternDeclBoundaryRun`, `ExternCallEntry`, `ExternCallBoundaryRun`, `ExternBoundaryWFRun`, and the operational safety contracts `ExternOperationalSafe` (per trusted entry, per-kind shape) and `RegistryOperationalSafe` (per runtime registry, consumed by `SemanticsProperties.lean`).
 - `ExternBoundary.lean` - Theorem-facing FR boundary contract layer (small, readable API): `BodyEntryInputsAgree`, `ExternBoundarySpec` (with `declFR`, `callFR`, `declSingle`, `callSingle`, `operational` fields), `TrustedExternEntry`, `TrustedRegistry` (with `toRuntimeRegistry`, `runtime_lookup_exists`, and the `operationalSafe` bridge proving `RegistryOperationalSafe` from `entry.spec.operational`), `TrustedRegistryAgreesWithReachable`, and reachability-domain inductives + navigation theorems.
 - `ExternBoundaryProofs.lean` - Proof-heavy adapters and reachability integration theorems split off from `ExternBoundary.lean` (kept above it in the import graph). Resolution variants of `TrustedRegistryAgreesWithReachable`, captured-environment/QTyp reachability namespaces, and call-boundary integration. Consumers needing these proof bodies (e.g. `FaultRobustnessProofs.lean`, `StepFRApp.lean`) import this file in addition to `ExternBoundary.lean`.
-- `ExternProofs.lean` - Concrete trusted entries for the shipped externs: the complete `ExternBoundarySpec`s (`builtinMax10Spec`, `builtinMax11CapturesSpec`, `builtinAbsSpec`, `builtinSetErrSpec`, `builtinErrnoSpec`, `builtinMemDerefSpec`, …), the `extern ref` declaration-boundary machinery, spec-level scenario programs/registries, and the interpreter↔proof registry agreement lemmas. Everything lives in the `ExternProofs` namespace; implementations are shared definitionally with the interpreter via `LeanPoison/ExternBuiltins.lean`.
-- `ExternRegimeInt.lean` - Extern-regime typechecking lemmas plus the program-level FR capstones that instantiate the top-level theorem at concrete trusted registries (`setErrWriteEffect_FR`, `errnoExternRef_FR`, `errnoScenario_FR`, all in the `ExternRegimeInt` namespace). Imports `FaultRobustnessProofs` and `ExternProofs`, so it sits at the very top of the proof stack.
+- `ExternProofs.lean` - Concrete trusted entries for the shipped externs: the complete `ExternBoundarySpec`s (`builtinMax10Spec`, `builtinMax11CapturesSpec`, `builtinAbsSpec`, `builtinSetErrSpec`, `builtinErrnoSpec`, `builtinMemDerefSpec`, …), the generic `pfn` and `extern ref` declaration-boundary machinery, and the `set_err` program/registry agreement witness (`setErrProg`, `setErrRegistry`, `setErr_agreesWithProgram`). Everything lives in the `ExternProofs` namespace; implementations are shared definitionally with the interpreter via `LeanPoison/ExternBuiltins.lean`.
+- `ExternRegimeInt.lean` - Extern-regime typechecking lemmas plus the program-level FR capstones that instantiate the top-level theorem at concrete trusted registries (`setErrWriteEffect_FR`, `errnoExternRef_FR`, `errnoScenario_FR`, all in the `ExternRegimeInt` namespace). Imports `FaultRobustnessProofs` and `ExternProofs`, so it sits above the whole general proof stack; only the per-builtin capstone modules below import it.
+- `AbsFR.lean`, `MaxCurriedFR.lean`, `MemReadCapturesFR.lean`, `GuardedCapturesFR.lean` - Program-level FR capstones for the shipped builtins (`abs_FR`, `maxCurried_FR` / `appliedMaxCurried_FR`, `memReadCaptures_FR` / `appliedMemReadCaptures_FR`, `guardedCaptures_FR`): each places the builtin's `ExternBoundarySpec` in a concrete `TrustedRegistry` and instantiates the top-level theorem. Leaves of the import graph.
+- `CaptureJoinConjunction.lean` - Branch-join behaviour of extern `captures:` contracts (`mergedParrow_apply_captures_conjunction`): merged closure members keep their captures verbatim, and applying the merged type requires every member's contract. Imports only `TypeSafety`; illustrative, not on the FR proof path.
 - `ExternTypingAssumptions.lean` - Semantic contracts for extern typechecking (the typing-side contract floor) used in fault-robustness.
 
 **Main properties:**
 - `RegimeConsistency.lean` - Regime-consistency definitions (tag meaning, guard descriptors) plus the masked-regime / `tagEnvConsistentWithRegime*` machinery (definitions, insert/invalidate/join lemmas) shared by `StepFR` and downstream FR proofs
-- `FaultRobustness.lean` - Top-level fault-robustness definitions (`FaultRobustnessSpec`, `agreeOnClean`, `agreeValueUnder`, etc.)
+- `FaultRobustness.lean` - Top-level fault-robustness definitions (`FaultRobustnessSpecForCtx`, `FaultRobustnessSpecForRegistry`, `agreeOnClean`, `agreeValueUnder`, etc.)
 - `StepFR.lean` - Shared step-based machinery (`StepFR`, `StepFR_IH`, `resultAgreesIfClean`, `consistentRegimeSpec_implies_consistentWithRegime` bridge lemma, and helper lemmas for value/captured/closure consistency) used by every per-operator FR proof. Its heavy IH-free clusters were factored out into the hub-split support modules below (`ExternTagMeaning`, `TypecheckInduction`); `StepFR` re-imports them.
 - `ExternTagMeaning.lean` - extern-tagMeaning cluster factored out of `StepFR` (hub split): `resolveSyntaxPred`, `surfaceSpec`, `typecheckExternVal`, `applyFnTClosure_extern`, `applyExternEffect`, `forIn_effects`, and the captured-extern `QTypRespectsTagMeaning` origin lemmas. Sits below `StepFR`; imported by `StepFR` (re-export) and `TypecheckInduction.lean`.
 - `TypecheckInduction.lean` - the heavy `typecheckExpr`-preservation structural inductions factored out of `StepFR` (hub split): `typecheckExpr_preserves_regimeConsistentWithCtx` (+ masked / `MaskedTagsAbsent` variants), `typecheck_preserves_predSatLaws`, the `*_byIH` closure-application bridges, and the clean lookup-origin cluster. Sits below `StepFR`; imports `ExternTagMeaning.lean`.
@@ -106,9 +108,8 @@ Formal correctness proofs establishing type safety and semantic properties. **No
   - `StepFRDeref.lean`, `StepFRNewRef.lean` - memory operations
   - `StepFRSeq.lean` - sequencing
   - `StepFRVlet.lean` - `vlet`
-- `FaultRobustnessProofs.lean` - Orchestration: imports all `StepFR*` case modules and proves the step theorem (`TypeSystemEnforcesFaultRobustness_step`), the implementation bridge (`TypeSystemEnforcesFaultRobustness_impl`), and the top-level statement (`TypeSystemEnforcesFaultRobustness`). The public top-level theorem derives `RegistryOperationalSafe` internally via `TrustedRegistry.operationalSafe tr` — no separate public operational-safety hypothesis.
-- `Progress.lean` - Progress (well-typed expressions evaluate or diverge, never get stuck)
-- `MemoryMonotonicity.lean` - Memory monotonicity (evaluation only adds locations, never removes)
+- `FaultRobustnessProofs.lean` - Orchestration: imports all `StepFR*` case modules and proves the step theorem (the private `TypeSystemEnforcesFaultRobustness_step_*` family), the bridge from the step theorem to the specification (`faultRobustnessSpec_of_step`), the per-context theorem `TypeSystemEnforcesFaultRobustness_at` with its all-context corollary `TypeSystemEnforcesFaultRobustness_allCtx`, and the top-level statement (`FaultRobustnessSpec`, `TypeSystemEnforcesFaultRobustness`). The public top-level theorem derives `RegistryOperationalSafe` internally via `TrustedRegistry.operationalSafe tr` — no separate public operational-safety hypothesis.
+- `Progress.lean` - Statement of the progress property (well-typed expressions evaluate or diverge, never get stuck). Definition only; the repository contains no proof of it.
 
 **Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`
 
@@ -120,11 +121,13 @@ Semantics → ExternRuntime → SemanticsProperties → StepFR → ExternBoundar
                                                                 │     FaultRobustnessProofs (orchestration)
                                                                 ↓                     ↓
                                                           ExternProofs  →  ExternRegimeInt (program capstones)
+                                                                                      ↓
+                                              AbsFR, MaxCurriedFR, MemReadCapturesFR, GuardedCapturesFR
 ```
 
 The split puts runtime extern event predicates and `RegistryOperationalSafe` *below* `StepFR` so `SemanticsProperties.lean` can consume them without an import cycle. FR-shaped contracts (`StepFRPost`-producing) live above `StepFR` in `ExternBoundary.lean`.
 
-**Hub-split modules (T11–T13).** To decouple builds, `StepFR`'s heavy IH-free clusters and `StepFRApp`'s boundary-contract family were factored into dedicated modules without statement changes. Below `StepFR` (re-imported by it): `SemanticsProperties → ExternTagMeaning → TypecheckInduction → StepFR` (the extern-tagMeaning and `typecheckExpr`-preservation/lookup-origin clusters). Between `StepFR` and `StepFRApp`: `StepFR → StepFRClosureApply → ExternCallBoundarySides → StepFRApp` (closure-application machinery, then the parametrized Side / boundary-contract family). Editing any of these no longer rebuilds the other per-operator files.
+**Hub-split modules.** To decouple builds, `StepFR`'s heavy IH-free clusters and `StepFRApp`'s boundary-contract family were factored into dedicated modules without statement changes. Below `StepFR` (re-imported by it): `SemanticsProperties → ExternTagMeaning → TypecheckInduction → StepFR` (the extern-tagMeaning and `typecheckExpr`-preservation/lookup-origin clusters). Between `StepFR` and `StepFRApp`: `StepFR → StepFRClosureApply → ExternCallBoundarySides → StepFRApp` (closure-application machinery, then the parametrized Side / boundary-contract family). Editing any of these no longer rebuilds the other per-operator files.
 
 **Module visibility / `private` discipline:** declarations used only within their declaring file are marked `private`. The `private` keyword scopes the binding to the file, which keeps the public surface of each module small and gives reviewers a quick read of "what is this module's API." When adding a new helper, default to `private` until another file actually needs it.
 
@@ -215,7 +218,9 @@ When modifying type rules or evaluation in `LeanPoison/`:
 3. Use `sorry` only if proof is complex and fixing it is not immediately feasible
 4. Document any new `sorry` statements and plan to eliminate them
 
-- **Repository**: Project hosted on GitHub in private repository `vzaliva/poison-lang`
+## Git and GitHub
+
+- **Repository**: Project hosted on GitHub as `vzaliva/poison-lang`
 - **Read-only git operations**: You may use `git` commands to review commit history, compare branches, and inspect changes
 - **No repository modifications**: Never execute commands that modify the repository (e.g., `git commit`, `git push`, `git merge`)
 - **GitHub CLI**: You may use `gh` commands to view or create issues or sub-issues (e.g. `gh sub-issue add <parent-issue-url> <sub-issue-url-or-number>`) but be wary of shell backtick handling (you may want to use `--body-file` to avoid issues with them)

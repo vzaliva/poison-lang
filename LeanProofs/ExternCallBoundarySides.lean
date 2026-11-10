@@ -1,18 +1,18 @@
 /-
-  ExternCallBoundarySides.lean — parametrized extern-call boundary contracts (relocated, T13).
+  ExternCallBoundarySides.lean — parametrized extern-call boundary contracts.
 
-  The Side / boundary-contract family for runtime extern dispatch, factored out of
-  `StepFRApp.lean` to the architecturally correct boundary layer (below `StepFRApp`,
-  above its dependencies). These contracts are PARAMETRIZED: they take the per-run
+  The Side / boundary-contract family for runtime extern dispatch. The module sits
+  below `StepFRApp.lean` (which imports it) and above `StepFRClosureApply.lean` and
+  `ExternBoundaryProofs.lean`. These contracts are PARAMETRIZED: they take the per-run
   results as hypotheses rather than referencing the application case proof, so the
-  whole family is downward-closed and relocates as pure text (no statement changes).
+  whole family is downward-closed.
 
   Contents: the `ExternCallBoundary{Fn,Pfn}StaticSource` provenance inductives and
   their navigation theorems, the `ExternCallBoundarySingle{Fn,Pfn}Contract` single-run
   contracts (+ `of_emptyExternRegistry`/`of_trustedRegistry`/`of_trustedProgram`/
   `of_trustedReachable`), the `ExternCallBoundaryFR{Fn,Pfn}{Run,Side0,Side1}` FR
-  contracts/providers, the `ExternCallEntryKey` discriminators, and
-  `TrustedRegistryAgreesWithProgramLocal`. Pure relocation from `StepFRApp.lean`.
+  contracts/providers, the `ExternCall{No,Impossible,Trusted}EntryKey` discriminators,
+  and `TrustedRegistryAgreesWithProgramLocal`.
 -/
 
 import LeanProofs.StepFR

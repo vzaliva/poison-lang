@@ -1,5 +1,8 @@
 /-
-  Auto-extracted from FaultRobustnessProofs.lean during StepFR operator refactor.
+  StepFRDeref.lean - Fault-robustness proof for the deref case.
+
+  Contains stepFR_deref_with_expr_proof and
+  stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof.
 -/
 import LeanProofs.StepFR
 
@@ -420,7 +423,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
 this proof: the unmasked statement is recovered from the (more general) masked
 case analysis in `deref_valueConsistentWithRegimeMasked_of_typecheck` via
 `valueConsistentWithRegimeMasked_unmask` at `masked := fun _ => False` (vacuous
-masking).  This replaces the two ~300-line run0/run1 mirror blocks. -/
+masking). -/
 private lemma deref_valueConsistentWithRegime_one_run
   (ctxᵢ : TypeContext) (predSat : PredSat)
   (e : Expr) (res res1 : TypeResult) (fuel' : Nat)

@@ -1,9 +1,11 @@
 /-
   ExternRegimeInt.lean
 
-  Lemmas about the extern-regime typechecking primitives for predicate-bearing
-  ("open"-style) externs, plus a theorem characterising when the trusted-registry
-  fault-robustness theorem can be instantiated for a program that names an extern.
+  Theorems characterising when the trusted-registry fault-robustness theorem can
+  be instantiated for a program that names an extern, plus the program-level FR
+  capstones for the `set_err` (`@22`) and `errno` (`@21`) externs.  Imports
+  `FaultRobustnessProofs` and `ExternProofs`, so it sits at the top of the proof
+  stack.
 
   - `nonempty_registry_hagrees_unprovable`: the universal
     `TrustedRegistryAgreesWithReachable` premise used by
@@ -14,16 +16,20 @@
     `TypeSystemEnforcesFaultRobustness_at`) is provable for a non-empty registry
     at the canonical empty initial context, where reachability collapses to the
     program AST: a program-level `TrustedRegistryAgreesWithProgram` witness then
-    suffices. Trusted guarded-value producer/routing remains separate example
-    coverage.
-  - `open_empty_context_FR_instantiable`: the capstone — composing the witness
+    suffices. A trusted guarded-value producer is not covered here.
+  - `open_empty_context_FR_instantiable`: composing the witness
     with `TypeSystemEnforcesFaultRobustness_at` yields the FR conclusion itself
     (`FaultRobustnessSpecForCtx`) for a NON-EMPTY registry at the empty context,
-    so the reshaped theorem is *instantiable* (still parameterised over
+    so the per-context theorem is *instantiable* (parameterised over
     `impl`/`spec`; no concrete extern boundary spec is constructed).
   - `setErrWriteEffect_FR`: the concrete counterpart for the memory-writing
     extern `@22` (`set_err`) — program-level FR for the registry
     `[@22 set_err]` backed by the fully proven `ExternProofs.builtinSetErrSpec`.
+  - `errnoExternRef_FR`: program-level FR for the bare `extern ref @21`
+    (`errno`) declaration with the registry `[@21 errno]`, backed by
+    `ExternProofs.builtinErrnoSpec`.
+  - `errnoScenario_FR`: program-level FR for the combined declare-`@21` /
+    call-`@22` / dereference program with the two-entry registry `[@21, @22]`.
 -/
 import LeanProofs.FaultRobustnessProofs
 import LeanProofs.ExternProofs
@@ -143,8 +149,8 @@ theorem nonempty_registry_hagrees_unprovable
     for the actual initial context (`InitialContextTrusted`/per-context
     `TrustedRegistryAgreesWithReachable`).  At the canonical empty initial context
     (`varEnv = {}`) reachability collapses to the program AST (the `var` branch
-    cannot fire), so the premise is provable for a non-empty registry. Trusted
-    guarded-value producer/routing remains separate example coverage. -/
+    cannot fire), so the premise is provable for a non-empty registry. A trusted
+    guarded-value producer is not covered here. -/
 
 /-- A minimal program declaring extern `@238` (a `fn` over `int`). -/
 def openProg : Expr :=
@@ -167,7 +173,8 @@ def openEmptyCtx : TypeContext :=
 /-- Fuse the empty-context registry-agreement bridge with the top-level FR
     theorem: at the canonical empty initial context (`openEmptyCtx`), a
     program-level `TrustedRegistryAgreesWithProgram` witness suffices to conclude
-    `FaultRobustnessSpecForCtx`.  Replaces the per-capstone `*_hagrees` glue. -/
+    `FaultRobustnessSpecForCtx`.  Shared by the program-level capstones in this
+    file. -/
 private theorem emptyCtx_FR_of_agreesWithProgram
     (tr : TrustedRegistry) (e : Expr) (s : InputSpec) (obs : ObservableSpec)
     (hprog : TrustedRegistryAgreesWithProgram e tr) :
@@ -192,11 +199,11 @@ private theorem openProg_agreesWithProgram (impl : ExternImpl)
       rfl
   | externFn_return hret => cases hret
 
-/-- Capstone: the reshaped FR theorem is *instantiable* for a NON-EMPTY registry.
+/-- Capstone: the per-context FR theorem is *instantiable* for a NON-EMPTY registry.
     Composing the program-agreement witness with the top-level FR theorem (via
     `emptyCtx_FR_of_agreesWithProgram`) discharges the per-context trust premise
     and yields the FR conclusion itself (`FaultRobustnessSpecForCtx`) at the
-    canonical empty context. Still parameterised over `impl`/`spec`: no concrete
+    canonical empty context. Parameterised over `impl`/`spec`: no concrete
     guarded producer extern boundary spec is built here. -/
 theorem open_empty_context_FR_instantiable (impl : ExternImpl)
     (spec : ExternBoundarySpec openDecl impl) (s : InputSpec) (obs : ObservableSpec) :
@@ -213,9 +220,9 @@ dependencies of pure externs, the impure extern `@22` declares the write effect
 `effects: { !errno :> (int :> clean {}) }`: a successful call writes its (clean,
 gated) integer argument through the declaration-captured `errno` reference.
 
-The trusted contract is `ExternProofs.builtinSetErrSpec` — the first complete
+The trusted contract is `ExternProofs.builtinSetErrSpec` — a complete
 five-field `ExternBoundarySpec` for a `.fn` (memory-writing) extern.  Its
-relational `callFR` field is the genuinely new obligation: the clean argument
+relational `callFR` field carries the write-specific obligation: the clean argument
 condition forces the two runs' written values to agree, the clean captured
 `errno` reference forces them to write a **common logical cell**
 (`agreeValueUnder_ref_common_loc`), and every other clean location is untouched
@@ -233,7 +240,7 @@ open ExternProofs (setErrProg setErrRegistry setErr_agreesWithProgram)
 /-- **Program-level fault-robustness for the `set_err` write effect.**
     Composing the program-agreement witness with the top-level FR theorem (via
     `emptyCtx_FR_of_agreesWithProgram`) yields the FR conclusion for the
-    `[@22 set_err]` registry at the empty context — the first program-level FR
+    `[@22 set_err]` registry at the empty context — a program-level FR
     result whose trusted registry contains a memory-writing extern. -/
 theorem setErrWriteEffect_FR (s : InputSpec) (obs : ObservableSpec) :
     FaultRobustnessSpecForCtx
@@ -252,9 +259,8 @@ doc/externs.md, `@21`):
 * `errnoScenario_FR` — the combined declare-`@21` / call-`@22` / deref
   program with the two-entry trusted registry `[@21, @22]`: the
   conservatively poisoned external cell is written through `set_err`'s
-  declared `!errno` effect and then dereferenced.  This is the first
-  program-level FR result whose trusted registry contains a
-  reference-valued extern.
+  declared `!errno` effect and then dereferenced.  Its trusted registry
+  contains both a reference-valued extern and a memory-writing extern.
 
 The reserved-address distinctness demanded by `ReservedDiscipline`'s first
 conjunct is trivial for these registries: `errnoAddr` is the only reserved
@@ -292,7 +298,7 @@ private theorem errno_agreesWithProgram :
       rfl
 
 /-- **Program-level fault-robustness for the bare `extern ref @21`
-    declaration** — the first program-level FR result for a reference-valued
+    declaration** — a program-level FR result for a reference-valued
     extern. -/
 theorem errnoExternRef_FR (s : InputSpec) (obs : ObservableSpec) :
     FaultRobustnessSpecForCtx

@@ -36,15 +36,16 @@ for the tool.
 
 -- Default fuel amount for evaluation and typechecking
 def defaultFuel : Nat := 1000
--- Language Version No
+-- Language version number
 def versionNo := "1.0"
 
 -- Built-in extern implementations and the default initial runtime state
 -- (`errnoAddr`, `outerMaxImpl`, `innerMaxImpl`, `absImpl`, `sqrtImpl`,
--- `setErrImpl`, `DefaultInitialState`, `defaultInitialState`, `defaultRegistry`)
--- live in `LeanPoison.ExternBuiltins`, a shared core module imported above so the
--- interpreter and the proof-side trusted boundary specs reference the *same*
--- runtime functions. See that module for the per-id documentation.
+-- `memDerefImpl`, `setErrImpl`, `DefaultInitialState`, `defaultInitialState`,
+-- `defaultRegistry`) live in `LeanPoison.ExternBuiltins`, a shared core module
+-- imported above so the interpreter and the proof-side trusted boundary specs
+-- reference the *same* runtime functions. See that module for the per-id
+-- documentation.
 
 private def initialTypeContext (regime : Regime)
     (externRegime : ExternId → Tag → Option Bool := fun _ _ => none) : TypeContext :=
@@ -300,19 +301,28 @@ def runFile (filename : String) (verbose : Bool) (regime : Regime)
     IO.println s!"Error reading file {filename}: {e}"
     return (5 : UInt32)  -- Exit code 5: File I/O error
 -------------------------------------------------------------------------------
-partial def readMultiline (acc : String := "") : IO String := do
+-- Read one REPL entry: the lines up to the next blank line. Returns `none` at
+-- end of input (Ctrl-D) when nothing has been entered.
+partial def readMultiline (acc : String := "") : IO (Option String) := do
   IO.print " > "
   let unline ← IO.getStdin
   let line <- unline.getLine
   let newAcc := acc ++ "\n" ++ line
   if line.trimAscii.toString.isEmpty then
-    return newAcc.trimAscii.toString
+    let entry := newAcc.trimAscii.toString
+    -- `getLine` returns the empty string only at end of input; a blank line is "\n".
+    if line.isEmpty && entry.isEmpty then
+      return none
+    else
+      return some entry
   else
     readMultiline newAcc
   ----------------------------------------------------------------------------
 partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
 
-  let trimmed ← readMultiline
+  let some trimmed ← readMultiline
+    | IO.println ""
+      return (0 : UInt32)
   if trimmed == ":quit" then
     IO.println "Goodbye!"
     return (0 : UInt32)
@@ -321,17 +331,17 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
     IO.FS.writeFile tmpPath trimmed
     try
       let expr ← parsePoisonFile tmpPath
-      -- Run the same typechecker as the file path: this enforces extern
-      -- identifier uniqueness, first-order-input rules, and reports any type
-      -- error visibly to the user before evaluation.
+      -- Run the same typechecker as the file path: this enforces the extern
+      -- declaration rules (`extern ref` identifier uniqueness, first-order
+      -- inputs) and reports any type error visibly to the user before evaluation.
       match typecheckExprSimple expr with
       | .error msg =>
           IO.println s!"Type checking error: {msg}"
           IO.FS.removeFile tmpPath
           replLoop config tmpPath
       | .ok _ =>
-        -- Evaluate using the REPL's persistent config (seeded with
-        -- `defaultRegistry`) so built-in externs are available.
+        -- Evaluate using the REPL's persistent config (seeded from
+        -- `defaultInitialState`) so built-in externs are available.
         match LeanPoison.beval defaultFuel config expr false with
         | .success newConfig v =>
           IO.println s!"Result: {v}"
@@ -401,11 +411,13 @@ def main (args : List String) : IO UInt32 := do
         IO.println s!"Poison {versionNo} - Tufts University."
         IO.println "Type :quit to exit."
         IO.println "Enter a blank line after an expression to evaluate it."
-        let tmp ← IO.Process.output { cmd := "mktemp", args := #["--tmpdir", "repl-XXXXXX.poison"] }
-        let tmpPath := tmp.stdout.trimAscii.toString
         let st := defaultInitialState
         let initialConfig := ⟨ st.memory, emptyVarEnv, st.nextAddr, false, st.registry ⟩
-        replLoop initialConfig tmpPath
+        -- Each entry is written to a file for tree-sitter, which selects the
+        -- grammar by the `.poison` extension. The file lives in a fresh
+        -- temporary directory that is removed when the REPL exits.
+        IO.FS.withTempDir fun tmpDir =>
+          replLoop initialConfig (tmpDir / "repl.poison").toString
       else
         let regime := opts.regime.getD emptyRegime
         let externRegime := opts.externRegime

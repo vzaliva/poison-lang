@@ -1,7 +1,21 @@
--- Common type safety definitions for the Poison Language
+-- Common type safety definitions and typechecker lemmas for the Poison Language
 --
--- This file contains shared definitions used by both Progress and Preservation
--- properties, including evaluation relations and runtime context instantiation.
+-- This file contains the static-side definitions and lemmas shared by the
+-- fault-robustness proofs and the Progress statement:
+--   * basic lemmas about type environments (lookup/update, joins, `updateMemEnv`);
+--   * realisation maps (`RealizationMap`), the value-typing relation
+--     (`valueHasETyp`) and runtime context instantiation
+--     (`runtimeInstantiatesCtx`);
+--   * well-formedness of typing contexts and results (`wfTypeContext`,
+--     `wfTypeResult`) and the tag-boundedness invariant (`TagBoundedCtx`);
+--   * structure (inversion) lemmas for the typechecker, one per construct;
+--   * typechecker monotonicity and preservation lemmas: `nextTag` / `nextLoc`
+--     monotonicity, regime monotonicity (`regime_monotoneExt`), tag- and
+--     ref-location boundedness, the declared extern-ref set, memory-containment
+--     preservation, and the pure-expression (`toPExpr?`) bridge lemmas.
+--
+-- It contains no evaluation semantics: the evaluation relations
+-- (`terminatesTo`, `stuck`) live in `LeanProofs/Semantics.lean`.
 
 import LeanPoison.Syntax
 import LeanProofs.Equality
@@ -16,7 +30,7 @@ import Std.Data.ExtTreeMap.Lemmas
 open Std
 
 -- ================================================================
--- OpEType / opEType? (moved from Properties for type-safety use)
+-- OpEType / opEType? and basic type-environment lookup lemmas
 -- ================================================================
 
 theorem OpEType.complete {o t₁ t₂ r}
@@ -251,7 +265,7 @@ lemma VarTypeEnv_lookup_update_ne (env : VarTypeEnv) (x y : Name) (qt : QTyp) (h
   · simp [VarTypeEnv.update, VarTypeEnv.lookup, ExtTreeMap.getElem?_insert, h_eq]
 
 -- ================================================================
--- MemoryTypeEnv equiv and joinMemEnv idempotency
+-- Join idempotency, PExpr round-trip, and typecheckExpr unfolding lemmas
 -- ================================================================
 
 private lemma joinPoison_idempotent (p : Poison) : joinPoison p p = p := by
@@ -1015,10 +1029,9 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
       {env : VarEnv} {tcl : List PFnTClosure} {p : Bool}
       {tenv : CapturedVarEnv}
       -- `memberCap` (the type member's captures = the call-site read-dependency
-      -- gate) is INDEPENDENT of `cap` (the closure body's AST captures).  This
-      -- preserves the freed `value_shape` decoupling: the body captures stays
-      -- free, while the member may carry a `captures:` gate (e.g. the inner `@11`
-      -- of curried `max` reads the captured `a`).
+      -- gate) is INDEPENDENT of `cap` (the closure body's AST captures): the
+      -- body captures stay free, while the member may carry a `captures:` gate
+      -- (e.g. the inner `@11` of curried `max` reads the captured `a`).
       (htcl : PFnTClosure.extern id x retSpec tenv argQTyp memberCap ∈ tcl)
       (henv : ∀ n qt v, tenv.lookup n = some qt →
         env.lookup n = some v → valueHasETyp θ v qt.etyp)
@@ -1036,8 +1049,8 @@ inductive valueHasETyp (θ : RealizationMap) : Value → ETyp → Prop where
 -- location.
 --
 -- Note on memory type matching: We want heap
--- cells have qualified types matching Γ(l). This is implicitly satisfied because:
--- (1) Memory only stores integers (Memory := HashMap Address Int)
+-- cells to have qualified types matching Γ(l). This is implicitly satisfied because:
+-- (1) Memory only stores integers (Memory := ExtTreeMap Address Int)
 -- (2) Well-typed programs only store values of type int in memory
 -- (3) Therefore, for any l ∈ dom(Γ) with θ(l) = a, the value μ(a) : Int
 --     matches the stored type Γ(l).etyp which must be ETyp.int.
@@ -1085,7 +1098,7 @@ lemma var_has_correct_type (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ :
 -- ================================================================
 
 -- LocSet.foldM preserves a property P when the fold function preserves P
--- (uses List.foldlM_Except_preserves_property from Properties)
+-- (uses List.foldlM_Except_preserves_property from `LeanProofs/Aux.lean`)
 private theorem LocSet.foldM_Except_preserves_property
     (s : LocSet) (init : β) (f : β → Loc → Except ε β)
     (P : β → Prop)
@@ -1191,8 +1204,6 @@ lemma freshLoc_not_realized (ctx : TypeContext) (μ : Memory) (ρ : VarEnv) (θ 
 -- ================================================================
 -- Typechecker structure lemmas
 -- ================================================================
-
--- typecheck_structure_lemmas
 
 -- Structure lemma for unary-op typechecking.
 lemma typecheckUnaryOp_structure (ctx : TypeContext) (op : UnaryOp) (e1 : Expr) (fuel : Nat)
@@ -1494,11 +1505,8 @@ lemma typecheckVlet_structure (ctx : TypeContext) (x : Name) (e1 e2 : Expr) (fue
               | error _err =>
                   simp [h_tc1] at h_typecheck
 
--- Helper lemma: declared' field from typecheckVlet
--- Allows callers to avoid dependent elimination on pred when extracting declared'.
-
 -- Helper lemma: extract structure from typecheckNewRef
--- NOTE: Now requires etyp = ETyp.int (heap stores only integers)
+-- Note: the operand's etyp must be ETyp.int (heap stores only integers)
 lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckNewRef ctx e1 fuel = .ok res →
   ∃ (result1 : TypeResult) (l : Loc),
@@ -1531,7 +1539,7 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
       | mk etyp poison pred =>
         rw [h_qt1] at h_typecheck
         simp at h_typecheck
-        -- The new code checks if etyp = ETyp.int
+        -- The typechecker checks whether etyp = ETyp.int
         split at h_typecheck
         · -- Case: etyp = ETyp.int (the only successful case)
           rename_i h_int
@@ -1584,7 +1592,7 @@ lemma typecheckNewRef_structure (ctx : TypeContext) (e1 : Expr) (fuel : Nat) (re
             simp at this
             exact this
           -- Now we have all the field equalities
-          -- Construct the existential with the new signature (no etyp, it's always ETyp.int)
+          -- Construct the existential (no etyp witness: it is always ETyp.int)
           simp only [Nat.add_sub_cancel]
           use result1, result1.nextLoc'
           refine ⟨h_tc1, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -2009,9 +2017,9 @@ lemma typecheckIf_structure (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) (
                 simp
         · simp only [hbool, bne_iff_ne, ne_eq] at htc; cases htc
 
-/-- In standard mode (when matchGuard fails), typecheckIf produces a result with noPred. -/
--- Structure lemma for assign typechecking
--- NOTE: Now requires both reference and RHS to be int type (heap stores only integers)
+/-- Structure lemma for assign typechecking.
+    The left-hand side must be a reference and the right-hand side must have int type
+    (heap stores only integers). -/
 lemma typecheckAssign_structure (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult) :
   typecheckAssign ctx e1 e2 fuel = .ok res →
   ∃ (result1 result2 : TypeResult) (ls : LocSet),
@@ -2324,10 +2332,9 @@ lemma typecheckDeref_structure (ctx : TypeContext) (e : Expr) (fuel : Nat) (res 
       | error _err =>
           simp [h_tc1] at h_typecheck
 
-  -- A stronger arrow-case structure lemma for `typecheckApp` that exposes the closure traversal and the
--- subsequent `joinTypeResults` call. This is designed to support fault-robustness proofs for `app`.
--- Full application structure: successful `typecheckApp` must go through either the `.arrow` or `.parrow`
-  -- branch, exposing the closure traversal and the final `joinTypeResults`.
+-- Full application structure lemma for `typecheckApp`: a successful `typecheckApp` must go through
+-- either the `.arrow` or the `.parrow` branch; the lemma exposes the closure traversal and the final
+-- `joinTypeResults` call. This is designed to support fault-robustness proofs for `app`.
 lemma typecheckApp_arrow_structure_full
   (ctx : TypeContext) (e1 e2 : Expr) (fuel' : Nat) (res : TypeResult) :
   typecheckApp ctx e1 e2 (Nat.succ fuel') = .ok res →
@@ -2519,7 +2526,7 @@ lemma typecheckApp_arrow_structure_full
 -- Typechecker monotonicity and preservation lemmas
 -- ================================================================
 
--- regime_monotone_proof
+-- Regime join and invalidation lemmas (inputs to the regime-monotonicity proof below)
 
 private lemma list_mem_eraseDups_of_mem {α : Type} [BEq α] [LawfulBEq α]
     {x : α} {l : List α} (h : x ∈ l) : x ∈ l.eraseDups := by
@@ -2858,7 +2865,7 @@ lemma invalidateRegimeDeps_monotone
       simp [hmapFilteredNone]
     exact hkInv hnone
 
--- Helper lemmas for advanceNextTag functions monotonicity
+-- Helper lemmas for nextTag monotonicity (argument-condition resolution, extern declarations, join)
 
 private lemma TypecheckM_pure_eq {α} (a : α) : (Pure.pure a : TypecheckM α) = Except.ok a := rfl
 
@@ -3163,8 +3170,8 @@ lemma joinTypeResults_nextTag_eq_max
               simpa [List.max] using h_fold
 
 -- ================================================================
-
--- Exact next-tag preservation is proved below.
+-- Exact next-tag preservation for variables
+-- ================================================================
 
 lemma typecheckVar_preserves_nextTag (ctx : TypeContext) (x : Name) (res : TypeResult) :
   typecheckVar ctx x = .ok res →
@@ -3435,8 +3442,8 @@ private lemma installReturnGuard_get?_cases
     · exact Or.inl h
   · exact Or.inl h
 
--- The FnTClosure.extern tagEnv lemmas (`applyFnTClosure_extern_tagEnv_lookup_eq_of_lt`
--- and `applyFnTClosure_extern_tagEnv_get_cases`) live below, after the
+-- The extern tagEnv shape lemmas (`applyFnTClosure_extern_tagEnv_get_cases`
+-- and `applyPFnTClosure_extern_tagEnv_get_cases`) live below, after the
 -- `collectAndAllocExternTags` freshness lemmas they depend on.
 
 /-- All tags in the tagEnv are strictly below nextTag. This is a typechecker invariant
@@ -3660,10 +3667,9 @@ private lemma forIn_tag_mapping_values_injective
 -- ==========================================================================
 -- FnTClosure.extern / PFnTClosure.extern tagEnv shape lemmas (installReturnGuard).
 -- The extern output tagEnv is the (fn: effect-invalidated) input tagEnv with
--- the regime-determined return guard installed (`installReturnGuard`).  Two
--- consumer-ready forms: lookups strictly below the call's fresh-tag base are
--- unchanged, and any output binding is either an (invalidated) input binding
--- or the freshly installed guard, whose value the output regime interprets.
+-- the regime-determined return guard installed (`installReturnGuard`): any
+-- output binding is either an (invalidated) input binding or the freshly
+-- installed guard, whose value the output regime interprets.
 -- ==========================================================================
 
 lemma applyFnTClosure_extern_tagEnv_get_cases
@@ -4068,7 +4074,7 @@ private lemma resolveSyntaxPred_predTagBounded
     simp [pure, Except.pure] at htc_resolve
     rw [← htc_resolve]; trivial
 
--- typecheck_nextTag_normal_mono_proof
+-- nextTag monotonicity: per-construct lemmas and the main induction (`typecheck_nextTag_mono`)
 
 private lemma typecheckExternVal_nextTag_mono
     (ctx : TypeContext) (typ : Typ)
@@ -5202,7 +5208,7 @@ lemma typecheck_nextTag_mono (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : 
   intro htc
   exact typecheck_normal_nextTag_mono ctx e fuel res htc
 
-/-- Extended-regime version of `joinRegimes_monotone_of_monotone`: the conservative join keeps
+/-- Extended-regime monotonicity of the regime join: the conservative join keeps
     agreeing entries, so `monotoneStepExt` with a shared `newTags` set transports through it. -/
 private lemma joinRegimes_monotoneExt_of_monotoneExt
     (R R1 R2 : Regime) (newTags : Tag → Prop)
@@ -5413,7 +5419,7 @@ private theorem applyExternRegimePolicy_monotoneStepExt
     unchanged (nested returns) or the policy-extended `applyExternRegimePolicy` of `r1.regime'`
     over a tag mapping whose tags are all fresh (`≥ r1.nextTag'`).  This single lemma feeds both the
     regime-monotonicity chain (via `applyExternRegimePolicy_monotoneStepExt`) and the consistency
-    consumers (via `applyPFnTClosure_extern_regime_old_eq`). -/
+    consumers (via `applyPFnTClosure_extern_regime_preserve_some`). -/
 private lemma applyPFnTClosure_extern_regime_eq_or_policy
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
@@ -5476,9 +5482,10 @@ lemma applyPFnTClosure_extern_regime_preserve_some
     exact applyExternRegimePolicy_lookup_preserve_some r1.regime' id ctx.externRegime tm k b hk
 
 -- ==========================================================================
--- FnTClosure.extern structural lemmas
--- tagEnv and regime are preserved (all return branches use result2's values).
--- memEnv may differ due to the effects loop.
+-- FnTClosure.extern regime lemmas
+-- The output regime is the effect-invalidated input regime extended by the
+-- extern-regime policy (fresh tags only); entries that survive the effect
+-- invalidation keep their values.
 -- ==========================================================================
 
 /-- Extern-regime shape:
@@ -6296,8 +6303,8 @@ private lemma typecheckUnaryOp_regime_mono (ctx : TypeContext) (op : UnaryOp) (e
       have hm1 := IH fuel' h_fuel e ctx result1 htc1_simp
       simpa [hregime] using hm1
 
--- Regime monotonicity: Typechecking can only drop regime entries (never change values or add new entries)
--- Replaces regime_immutability which becomes false once typing invalidates R
+-- Regime monotonicity: typechecking can only drop pre-existing regime entries (never change their
+-- values); the only new entries are fresh tags `≥ ctx.nextTag` (`Regime.monotoneStepExt`).
 
 private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
     typecheck ctx e fuel = .ok res →
@@ -6402,8 +6409,8 @@ private lemma typecheck_regime_mono_main : ∀ (ctx : TypeContext) (e : Expr) (f
               exact typecheckApp_regime_mono ctx e1 e2 fuel' res IH_fuel' htc
 
 /-- Regime evolution through a typing step: monotone for old tags,
-    but selected extern calls may add fresh tags `≥ ctx.nextTag`.  This replaces the old
-    `regime_monotone` (`monotoneStep`), which became false once extern typing inserts regime
+    but selected extern calls may add fresh tags `≥ ctx.nextTag`.  The stronger
+    `Regime.monotoneStep` does not hold for typing, because extern typing inserts regime
     entries.  Consumers use this `monotoneStepExt` form together with a tag bound to transport
     old-tag facts. -/
 lemma regime_monotoneExt (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) :
@@ -6412,9 +6419,7 @@ lemma regime_monotoneExt (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : Type
   intro htc
   simpa [ctxAfter] using typecheck_regime_mono_main ctx e fuel res htc
 
--- typecheck_tagEnvBounded_proof
-
--- predTagBounded helper lemmas and infrastructure
+-- Tag boundedness: predTagBounded helper lemmas and infrastructure
 
 section PredTagBoundMono
 variable {nt nt' : Tag}
@@ -7167,7 +7172,7 @@ def TagBoundedCtx (ctx : TypeContext) : Prop :=
 
 /-- Public extractors from `TagBoundedCtx`: discharge freshness
     `¬ newTags k = k < ctx.nextTag` for memEnv/varEnv guard tags and supply the deep closure
-    bound for varEnv values.  Used pervasively by the extended-regime consumer retargeting. -/
+    bound for varEnv values.  Used pervasively by the extended-regime (`monotoneStepExt`) consumers. -/
 lemma TagBoundedCtx_memEnv_guardTag_lt {ctx : TypeContext} {l : Loc} {qt : QTyp} {k : Tag}
     (h : TagBoundedCtx ctx) (hlook : ctx.memEnv.lookup l = some qt)
     (hg : qtypGuardTag qt = some k) : k < ctx.nextTag :=
@@ -7343,8 +7348,6 @@ lemma varEnvClosuresCapturedBounded_update {x : Name} {qt : QTyp}
   · exact hb y qt' (by simp only [VarTypeEnv.lookup, Std.ExtTreeMap.get?_eq_getElem?]; exact hlookup)
 
 end ClosureCapturedBoundedness
-
--- typecheckExpr_preserves_closureCapturedBounded: now a projection from typecheckExpr_preserves_combined_main
 
 /-- Generic: List.foldl preserves tag boundedness given a step invariant. -/
 private theorem foldl_tags_bounded {bound : Tag}
@@ -7779,7 +7782,7 @@ private lemma applyFnTClosure_extern_predTagsBounded
                   simp [pure, Except.pure] at happlyEffect; subst happlyEffect
                   have hResBounded := resolveSyntaxPred_predTagBounded_of_mapping
                     eff.pred unifiedEnv tagMapping nextTag' resolvedPred_eff hmapping hresolve_eff
-                  -- The effect update now mirrors assignment (singleton strong /
+                  -- The effect update mirrors assignment (singleton strong /
                   -- non-singleton weak); the stored predicate is `noPred` under a
                   -- poisoned target/pc, otherwise the resolved effect predicate.
                   apply assign_memEnv_formula_predBounded r _ _ _ nextTag' hr
@@ -8594,7 +8597,7 @@ private lemma joinTypeResults_etypClosuresFullBounded
               subst res; simp
               exact h_fold_inv rs _ _ hAllRs hfold (by rw [hqt] at hClosR; exact hClosR)
 
-/-- closureEnvBoundedInCtx is preserved through updateCtxFromResult (early version). -/
+/-- closureEnvBoundedInCtx is preserved through updateCtxFromResult. -/
 private lemma closureEnvBoundedInCtx_of_update
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (r : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok r)
@@ -9517,7 +9520,7 @@ private lemma predTagsBoundedInCtx_of_updateCtxFromResult
 
 /-- typecheckExpr preserves etypClosuresFullBounded.
     All closures in the result ETyp have fully bounded captured environments.
-    Now a simple projection from the combined induction. -/
+    A projection from the combined induction (`typecheckExpr_preserves_combined_main`). -/
 lemma typecheckExpr_preserves_closureCapturedBounded
     (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
     (htc : typecheckExpr ctx e fuel = .ok res)
@@ -10643,8 +10646,6 @@ lemma typecheckExpr_TagBoundedCtx_varEnv_update
   · -- closureEnvBoundedInCtx: varEnv component needs update
     exact varEnvClosuresCapturedBounded_update (varEnvClosuresCapturedBounded_mono hclosure hmono) hclosureRes
 
--- typecheck_nextLoc_mono_proof
-
 -- Helper lemmas for typecheck_nextLoc_mono proof
 
 private lemma typecheckVar_nextLoc_mono (ctx : TypeContext) (x : Name) (res : TypeResult) :
@@ -11410,7 +11411,7 @@ private lemma surfaceSpecToQTyp_nextLoc_mono
   | arrow _ _ =>
       simp [bind, Except.bind] at h
 
--- Helper lemma for typecheckExternVal: nextLoc is monotone.
+-- Main induction for `typecheck_nextLoc_mono`: nextLoc is monotone.
 private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult),
   typecheck ctx e fuel = .ok res →
   ctx.nextLoc ≤ res.nextLoc' := by
@@ -12413,7 +12414,7 @@ lemma joinPoison_eq_false {p1 p2 : Poison} :
   cases p1 <;> cases p2
   all_goals simp [joinPoison] at h ⊢
 
-/-- joinETyps preserves non-function property when BOTH args are non-function/non-ref. -/
+/-- Helper: adding unique elements from a list preserves membership from the accumulator. -/
 private lemma foldl_addUnique_mem_of_acc {α : Type} [BEq α] [LawfulBEq α]
     (xs : List α) (acc : List α) (x : α) :
     x ∈ acc → x ∈ xs.foldl (fun acc' y => if acc'.contains y then acc' else acc' ++ [y]) acc := by
@@ -13383,7 +13384,7 @@ private lemma joinMemEnvs_lookup_clean_right (env1 env2 : MemoryTypeEnv) (l : Lo
         rw [hjoin'] at hgo
         exact nomatch hgo
 
-/-- wfTypeContext property is preserved under joinMemEnvs with max nextLoc. -/
+/-- typecheckVar preserves memEnv (all branches return ctx.memEnv). -/
 lemma typecheckVar_preserves_memEnv (ctx : TypeContext) (x : Name) (res : TypeResult) :
   typecheckVar ctx x = .ok res →
   res.memEnv' = ctx.memEnv := by
@@ -13415,8 +13416,6 @@ lemma typecheckVar_preserves_regime (ctx : TypeContext) (x : Name) (res : TypeRe
   simp [typecheckVar] at h_typecheck
   split at h_typecheck <;>
     (repeat (first | split at h_typecheck | simp [pure, Except.pure, throw] at h_typecheck | cases h_typecheck | rfl))
-
--- When typecheckVar succeeds, the variable is in the context and its value has the result's etyp
 
 lemma joinMemEnvsStrong_contains_implies_or
     (env1 env2 : MemoryTypeEnv) (l : Loc) :
@@ -13877,11 +13876,11 @@ lemma joinTypeResults_mem_contains_head_or_rest
                   a
                   hfold l (by simpa using hcontains)
 
--- If the input context is well-formed (all tracked locations are below nextLoc),
--- then successful typechecking produces a well-formed result (same invariant).
+-- wfTypeResult preservation: if the input context is well-formed (all tracked locations are
+-- below nextLoc), then successful typechecking produces a well-formed result (same invariant).
 -- This is purely a static bookkeeping property with no runtime semantics.
-
--- wfTypeResult_preservation
+-- The per-construct lemmas follow; the main induction (`typecheckExpr_preserves_refLocs_main`)
+-- and the public `typecheckExpr_preserves_wfTypeResult` come after the ref-location lemmas below.
 
 /-- LocSet.fold for nextLoc computation is ≥ initial value -/
 lemma locset_fold_max_ge_init (ls : LocSet) (n : Nat) :
@@ -14126,10 +14125,9 @@ private lemma effects_forIn_wfMemEnv
         exact ih hBounded hloop
 
 -- ==========================================================================
--- Extern behavioral contract lemmas for TypeSafety
--- These are proven properties of extern type-checking behavior: the extern
--- closure-application path preserves wfTypeResult and mem-containment. They are
--- discharged below (this file declares no axioms).
+-- Extern closure-application lemmas
+-- Properties of extern type-checking behavior: the extern closure-application
+-- path preserves wfTypeResult and mem-containment.
 -- ==========================================================================
 
 /-- FnTClosure.extern preserves wfTypeResult when the captured environment's
@@ -14243,8 +14241,8 @@ private lemma applyFnTClosure_extern_wfTypeResult
             cases happly
             intro l hl; exact hWfLoop l hl
 
-/-- Extern contract: FnTClosure.extern preserves mem_contains (existing locations are kept).
-    Proved: the effects loop applies `LocSet.fold ... updateMemEnv` which only inserts/updates
+/-- FnTClosure.extern preserves memory containment (existing locations are kept):
+    the effects loop applies `LocSet.fold ... updateMemEnv` which only inserts/updates
     entries (never removes), so containment is monotone. -/
 private lemma applyFnTClosure_extern_mem_contains_preserved
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -14588,8 +14586,6 @@ lemma mapM_applyFnTClosure_forall_wfTypeResult
           exact applyFnTClosure_wfTypeResult fuel_top IH st1 st2 p p1 argEtyp argPoison argPred ctx result_fn fuel_call h_call_lt tcl _ hwf_fn (hcaptLocs tcl (.head tcls')) hargLocs hargClosLocs h1
         | inr htail =>
           exact ih rs' (fun t ht => hcaptLocs t (.tail tcl ht)) h2 r htail
-
--- typecheckExpr_preserves_wfTypeResult_main and public API moved to after refLocs_preservation section
 
 -- ═══════════════════════════════════════════════════════════════════
 -- Combined ref-location boundedness preservation
@@ -15206,12 +15202,12 @@ private abbrev refLocsCtxInputs (ctx : TypeContext) : Prop :=
 private lemma typecheck_of_typecheckExpr {ctx : TypeContext} {e : Expr} {fuel : Nat} {res : TypeResult}
     (h : typecheckExpr ctx e fuel = .ok res) : typecheck ctx e fuel = .ok res := h
 
-/-- Main theorem: typechecking preserves ref-location boundedness for result etyp.
-    Strong induction on fuel, parallel to typecheckExpr_preserves_wfTypeResult_main.
+/-- Main theorem: typechecking preserves `wfTypeResult` and ref-location boundedness for
+    result etyp.  Strong induction on fuel.
     Hypotheses: the context's memEnv is well-formed, and varEnv entries and their
     closures have ref-locations bounded by nextLoc.
-    Conclusion: the result etyp's ref-locations and closure captured-env ref-locations
-    are bounded by the result's nextLoc'. -/
+    Conclusion: the result is well-formed (`wfTypeResult`), and the result etyp's
+    ref-locations and closure captured-env ref-locations are bounded by the result's nextLoc'. -/
 private lemma typecheckExpr_preserves_refLocs_main :
     ∀ (fuel : Nat) (ctx : TypeContext) (e : Expr) (res : TypeResult),
     refLocsCtxInputs ctx →

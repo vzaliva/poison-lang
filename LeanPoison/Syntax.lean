@@ -50,7 +50,7 @@ namespace LeanPoison
 
 end LeanPoison
 
--- Surface types (corresponds to typ, ST in Ott)
+-- Surface types (corresponds to styp, ST in Ott)
 inductive Typ : Type where
   | int : Typ
   | bool : Typ
@@ -94,11 +94,11 @@ inductive UnaryOp : Type where
   | not : UnaryOp   -- unary boolean negation
   deriving Repr, BEq, DecidableEq
 
--- Predicate tags (moved here for use in SyntaxPredicate)
+-- Predicate tags
 abbrev Tag := Nat
 
 
--- TagIndex definitions and instaces requiered for ExtTreeMap TagIndex Tag
+-- TagIndex definition and the instances required for `ExtTreeMap TagIndex Tag`
 
 /-- Symbolic tag index used in extern specifications.
     At each extern use site, `TagIndex` values are collected and mapped to fresh
@@ -222,7 +222,7 @@ inductive Expr : Type where
   /- expressions -/
   | var : Name → Expr                           -- x
   | op : Expr → Op → Expr → Expr                -- e1 op e2
-  | unaryop :  UnaryOp → Expr → Expr             -- e op
+  | unaryop :  UnaryOp → Expr → Expr             -- op e
   | ite : Expr → Expr → Expr → Expr             -- if e1 then e2 else e3
   | newRef : Expr → Expr                        -- ref e
   | assign : Expr → Expr → Expr                 -- e1 := e2
@@ -280,13 +280,13 @@ inductive Expr.IsExternPfnAst : Expr → Prop where
       Expr.IsExternPfnAst (Expr.externPfn id x argTyp argPoison argPred retSpec cap)
 
 -- Values (corresponds to v in Ott)
--- Note: In Ott, values are: n | b | unit | closure(x,e,r) | pe_closure(x,pe,r)
+-- Note: In Ott, values are: n | b | s | unit | a | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where
   | num : Int → Value           -- n
   | bool : Bool → Value         -- b
   | unit : Value                -- unit
-  | str : String -> Value       -- str
-  | loc : Address → Value           -- l (locations are values in the operational semantics)
+  | str : String -> Value       -- s
+  | loc : Address → Value           -- a (runtime addresses are values in the operational semantics)
   | closure : Name → Expr → List (Name × Value) → Value      -- closure(x,e,r)
   | peClosure : Name → Expr → List (Name × Value) → Value    -- pe_closure(x,pe,r)
 
@@ -296,7 +296,6 @@ inductive Value : Type where
 -- inductive type definitions (inside pe_closure)
 abbrev VarEnv := List (Name × Value)
 
--- Literals are direct constructors, so no helper functions are needed.
 -- Locations cannot be created as expressions - they only exist at runtime
 
 -- Extract value from expression if it's a literal
@@ -309,9 +308,9 @@ def Expr.toValue? : Expr → Option Value
 
 -- BEq instances
 
--- First define beqExpr (used by Value closures)
--- For extern constructors, we avoid circular dependencies by directly comparing
--- Tag/Name/Bool fields instead of calling helper beq functions
+-- First define beqExpr (used by Value closures).  It is mutually recursive with
+-- the equality helpers for the extern components (syntax predicates, effects,
+-- captures, return specs), since those embed expressions.
 mutual
 
 def beqExpr : Expr → Expr → Bool
@@ -432,10 +431,6 @@ instance : BEq Effect where
 instance : BEq ExternReturn where
   beq := beqExternReturn
 
--- Note: We cannot convert arbitrary values to expressions
--- Only literals (num, bool, unit) can appear in both
--- Locations and closures are runtime-only
-
 -- Helper function to convert string to type
 def strToBasicType (str : String) : Except String Typ :=
  match str with
@@ -467,10 +462,10 @@ inductive PExpr : Type where
   | str : String → PExpr                           -- string
   | var : Name → PExpr                             -- x
   | op : PExpr → Op → PExpr → PExpr                -- e1 op e2
-  | unaryop :  UnaryOp → PExpr → PExpr             -- e op
+  | unaryop :  UnaryOp → PExpr → PExpr             -- op e
   | ite : PExpr → PExpr → PExpr → PExpr            -- if e1 then e2 else e3
   | deref : PExpr → PExpr                          -- ! e
-  | vlet : Name → PExpr → PExpr → PExpr            -- let x : T = e1 in e2
+  | vlet : Name → PExpr → PExpr → PExpr            -- let x = e1 in e2
   | app : PExpr → PExpr → PExpr                    -- e1 e2
 
 def PExpr.usesArg (x : Name) : PExpr → Bool
@@ -622,7 +617,7 @@ def beqPExpr : PExpr → PExpr → Bool
 instance : BEq PExpr where
   beq := beqPExpr
 
--- Manual BEq instances for ETyp and related types (updated to do full structural comparison)
+-- Manual BEq instances for ETyp and related types (full structural comparison)
 --
 -- IMPORTANT NOTE on closure list equality:
 -- Closure lists semantically represent SETS (order-independent, no duplicates).

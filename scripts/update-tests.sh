@@ -7,7 +7,7 @@ set -euo pipefail
 
 # Run from project root (derived from script location, no hardcoded paths)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
+cd "$SCRIPT_DIR/.." || exit 1
 
 # Check if lake and poison-interpreter are available
 if ! command -v lake &> /dev/null; then
@@ -62,6 +62,7 @@ process_single_file() {
     local temp_output
     local directive_line
     local directive
+    local directive_arg
     local -a extra_args
     local -a directive_args
 
@@ -74,16 +75,19 @@ process_single_file() {
         directive="${directive_line#--!}"
         directive="${directive# }"
         if [[ -n "$directive" ]]; then
-            mapfile -t directive_args < <(printf '%s\n' "$directive" | xargs -n1)
+            directive_args=()
+            while IFS= read -r directive_arg; do
+                directive_args+=("$directive_arg")
+            done < <(printf '%s\n' "$directive" | xargs -n1)
             if [[ ${#directive_args[@]} -gt 0 && "${directive_args[0]}" == "poison-interpreter" ]]; then
                 directive_args=("${directive_args[@]:1}")
             fi
-            extra_args=("${directive_args[@]}")
+            extra_args=(${directive_args[@]+"${directive_args[@]}"})
         fi
     fi
 
     temp_output=$(mktemp)
-    if lake exe poison-interpreter --verbose "${extra_args[@]}" "$poison_file" > "$temp_output" 2>&1; then
+    if lake exe poison-interpreter --verbose ${extra_args[@]+"${extra_args[@]}"} "$poison_file" > "$temp_output" 2>&1; then
         rm -f "examples/${base_name}.fail"
         mv "$temp_output" "examples/${base_name}.output"
         echo "  ✓ Success: saved to examples/${base_name}.output"
@@ -94,19 +98,25 @@ process_single_file() {
     fi
 }
 
+# Wait for a free job slot. `wait -n` needs bash >= 4.3; older shells (the
+# stock macOS bash 3.2) wait for the whole running batch instead.
+if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 3) )); then
+    wait_for_job() { wait -n; active_jobs=$((active_jobs - 1)); }
+else
+    wait_for_job() { wait; active_jobs=0; }
+fi
+
 active_jobs=0
 for poison_file in examples/*.poison; do
     process_single_file "$poison_file" &
     active_jobs=$((active_jobs + 1))
     if (( active_jobs >= JOBS )); then
-        wait -n
-        active_jobs=$((active_jobs - 1))
+        wait_for_job
     fi
 done
 
 while (( active_jobs > 0 )); do
-    wait -n
-    active_jobs=$((active_jobs - 1))
+    wait_for_job
 done
 
 echo "All tests updated!"

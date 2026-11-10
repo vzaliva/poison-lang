@@ -10,7 +10,8 @@ qualified annotations, the typechecker rejects calls that do not satisfy the
 declared argument condition, curried extern levels are checked uniformly, and
 the proof stack threads the clean/poison part of the condition through trusted
 boundary reachability. Concrete trusted specs exist for `abs`, the curried
-`max` pair, and the memory-read `@23`. Read-dependency work is complete on `ffi`:
+`max` pair, the memory-read `@23`, the `errno` reference `@21`, and the
+write-effect `set_err` `@22`. Read-dependency work is complete:
 guarded `captures:` are complete at the typecheck/trusted-call-boundary level,
 memory-read `!r` captures are complete for the representative
 explicit-reference-argument path, and branch-join capture conjunction merging is
@@ -62,9 +63,8 @@ the Ott application rules:
   (`Typ`, clean/poison flag, syntax predicate); typechecking resolves them to a
   concrete `QTyp` stored on the extern closure summary used at application.
 - **Extern return** is `qtyp` — full qualified type. `(int :> clean {})`,
-  `(int :> poisoned { p(x) })`, etc. Return semantics are unchanged: the
-  predicate body can reference the argument name and is a latent depoisoning
-  marker on the produced value.
+  `(int :> poisoned { p(x) })`, etc. The predicate body can reference the
+  argument name and is a latent depoisoning marker on the produced value.
 
 At an extern call, the typechecker compares the actual argument `QTyp` with the
 declared extern argument condition. The relation is deliberately structural:
@@ -125,13 +125,19 @@ structurally from input cleanness alone.
   (`LeanProofs/CaptureJoinConjunction.lean`).
 
 - **`sqrt`-style externs** — candidate for the unified model with input
-  precondition `x >= 0`. Implementation `if x >= 0 then Lean.sqrt x else 0`
-  has a defensive runtime branch, but the FR cleanness comes from the
+  precondition `x >= 0`. The shipped implementation (`sqrtImpl`, `@19`)
+  computes `Nat.sqrt n.toNat`, so a negative input yields `0` without an
+  explicit runtime branch; the FR cleanness comes from the
   input precondition (which constrains the inputs across two runs to
-  agree by depoisoning), not from the runtime branch. The executable
+  agree by depoisoning), not from that runtime behaviour. The executable
   `extern_arg_precond_sqrt` example validates the argument-condition mechanism;
   a separate trusted spec would still be needed to make `@19` a live trusted
-  entry.
+  entry (see the `@19` blocker in `doc/externs.md`).
+
+- **`errno` (`@21`), `set_err` (`@22`), `memDeref` (`@23`)** — each has a
+  concrete trusted boundary spec (`builtinErrnoSpec`, `builtinSetErrSpec`,
+  `builtinMemDerefSpec`) and a program-level FR capstone; see `doc/externs.md`
+  for the per-extern contracts.
 
 ## 5. Analysis
 
@@ -368,10 +374,10 @@ exercise the call gate.
 ### 7.4 Trusted extern spec coverage
 
 The proof stack has concrete trusted specs for `abs`, the curried `max` entries,
-and the memory-read `@23`. Interpreter builtins such as `@19`, `@21`, and `@22`
-contribute to the public FR theorem only through explicit trusted-registry
-instantiations; the meaningful shipped `kind = .fn` trusted example should be
-`set_err`-style effecting behavior rather than a no-effect identity shim.
+the memory-read `@23`, the `errno` reference `@21`, and `set_err` (`@22`), the
+effecting `kind = .fn` trusted example. Of the shipped builtins only `@19` has
+no trusted spec (see `doc/externs.md`). A builtin contributes to the public FR
+theorem only through an explicit trusted-registry instantiation.
 
 ## 8. Next steps
 

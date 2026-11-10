@@ -1,12 +1,13 @@
 /-
   ExternBoundaryProofs.lean — Proof-heavy adapters and reachability theorems
-  split off from `LeanProofs/ExternBoundary.lean`.
+  for the FR boundary contract layer of `LeanProofs/ExternBoundary.lean`.
 
   This module carries the resolution, integration, and reachability
   navigation theorems consumed by the FR proof orchestration but not part
-  of the public theorem-facing surface of `ExternBoundary.lean`.  Consumers
-  should import this file in place of `ExternBoundary.lean` when they need
-  these proof bodies.
+  of the public theorem-facing surface of `ExternBoundary.lean`.  It imports
+  `ExternBoundary.lean` and sits directly above it in the import graph;
+  consumers that need these proof bodies (`ExternCallBoundarySides.lean`,
+  `StepFRApp.lean`, `FaultRobustnessProofs.lean`) import this file.
 -/
 import LeanProofs.ExternBoundary
 
@@ -25,7 +26,7 @@ private theorem TrustedRegistryAgreesWithReachable.resolveDeclaration
   rcases TrustedRegistry.runtime_lookup_exists hlookupRuntime with ⟨entry, hlookup, himpl⟩
   exact ⟨entry, hlookup, himpl, hagrees hreachable hlookup⟩
 
-/-- Program-covered admissibility bridge (the "unblocking" direction): if every
+/-- Program-covered admissibility bridge: if every
     context-reachable extern declaration also occurs in the
     program and the registry agrees with the program, then it agrees with
     everything reachable from `(e, ctx)`.  The two reachability constructors

@@ -1,5 +1,6 @@
 -- Equality proofs for Poison language types
--- All BEq, LawfulBEq, and DecidableEq instances and their supporting proofs
+-- LawfulBEq and DecidableEq instances (for the BEq instances defined in
+-- `LeanPoison/Syntax.lean`) and their supporting proofs
 --
 -- ============================================================================
 -- API Overview
@@ -7,19 +8,21 @@
 --
 -- **Public API (accessible from other files):**
 --   All typeclass instances are public and provide the complete interface:
---   - `LawfulBEq` instances for: Typ, Op, UnaryOp, PExpr, Expr, Value, ETyp,
+--   - `LawfulBEq` instances for: LocSet, Typ, Op, UnaryOp, PExpr, EffectTarget,
+--     CaptureTarget, SyntaxPredicate, Effect, ExternReturn, Expr, Value, ETyp,
 --     FnTClosure, PFnTClosure, Predicate, QTyp
---   - `DecidableEq` instances for: ETyp, FnTClosure, PFnTClosure, Predicate, QTyp
+--   - `DecidableEq` instances for: LocSet, ETyp, FnTClosure, PFnTClosure,
+--     Predicate, QTyp
+--   - `beqETypSignature_refl`: reflexivity of signature-based `ETyp` equality
 --
 --   Users access equality properties through the instances:
 --   - Soundness: `LawfulBEq.eq_of_beq` proves `(a == b) = true → a = b`
 --   - Reflexivity: `LawfulBEq.rfl` proves `(a == a) = true`
 --
 -- **Private Implementation (internal to this file):**
---   All supporting proofs are private implementation details:
+--   The proofs supporting the instances are private implementation details:
 --   - Reflexivity theorems: `*_refl` (prove `beq x x = true`)
 --   - Soundness theorems: `*_sound` (prove `(x == y) = true → x = y`)
---   - Helper lemmas: constructor-specific soundness helpers for Expr
 --
 -- ============================================================================
 -- Proof Structure
@@ -54,7 +57,7 @@ import LeanPoison.Syntax
 open Std
 
 -- ============================================================================
--- Proofs for types defined in Syntax.lean
+-- Proofs for types defined in LeanPoison/Syntax.lean
 -- ============================================================================
 
 
@@ -181,9 +184,7 @@ private theorem beqPExpr_refl (e : PExpr) : beqPExpr e e = true := by
   | app e1 e2 IH1 IH2 =>
       simp [beqPExpr, IH1, IH2]
 
--- Soundness lemmas for PExpr
-
--- Main theorem for PExpr
+-- Soundness proof for beqPExpr
 private theorem beqPExpr_sound (a b : PExpr) : (a == b) = true → a = b := by
   intro h
   induction a generalizing b with
@@ -261,7 +262,7 @@ instance : LawfulBEq PExpr where
   rfl {a} := beqPExpr_refl a
 
 -- ============================================================================
--- EffectTarget: Reflexivity, Soundness, and LawfulBEq instance
+-- EffectTarget, CaptureTarget: Reflexivity, Soundness, and LawfulBEq instances
 -- ============================================================================
 
 private theorem EffectTarget_beq_refl (t : EffectTarget) : (t == t) = true := by
@@ -299,9 +300,9 @@ instance : LawfulBEq CaptureTarget where
   rfl {a} := CaptureTarget_beq_refl a
 
 -- ============================================================================
--- Expr, SyntaxPredicate, Effect, ExternReturn: Mutual recursion
+-- Expr, SyntaxPredicate, Effect, Capture, ExternReturn: Mutual recursion
 -- ============================================================================
--- These types are mutually recursive with each other in Syntax.lean.
+-- These types are mutually recursive with each other in LeanPoison/Syntax.lean.
 -- We define all reflexivity and soundness proofs together using well-founded recursion.
 
 -- Reflexivity proofs using well-founded recursion
@@ -609,7 +610,7 @@ mutual
     | .externRef _ _ _ _ _, .externFn _ _ _ _ _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _ _ _ _ _, .externRef _ _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externRef _ _ _ _ _, .externPfn _ _ _ _ _ _ _ => fun h => by have : false = true := h; contradiction
-    -- Mismatched constructor wildcards (552 total - auto-generated)
+    -- Remaining mismatched constructor wildcards
     | .unit, .num _ => fun h => by have : false = true := h; contradiction
     | .unit, .bool _ => fun h => by have : false = true := h; contradiction
     | .unit, .str _ => fun h => by have : false = true := h; contradiction
@@ -1174,7 +1175,7 @@ instance : LawfulBEq Value where
   rfl {a} := beqValue_refl a
 
 -- ============================================================================
--- Proofs for types defined in Poison.lean
+-- ETyp, FnTClosure, PFnTClosure, Predicate, QTyp: Mutual recursion
 -- ============================================================================
 
 -- Reflexivity lemmas for mutually recursive types
@@ -1466,7 +1467,7 @@ instance : LawfulBEq QTyp where
   eq_of_beq {a b} := beqQTyp_sound a b
   rfl {a} := beqQTyp_refl a
 
--- DecidableEq is now automatically derivable from LawfulBEq using decidable_of_iff
+-- DecidableEq instances, obtained from soundness and reflexivity via decidable_of_iff
 instance : DecidableEq ETyp := fun a b =>
   decidable_of_iff (a == b) ⟨beqETyp_sound a b, fun h => h ▸ beqETyp_refl a⟩
 
@@ -1505,11 +1506,3 @@ theorem beqETypSignature_refl (t : ETyp) : beqETypSignature t t = true := by
       simp [beqETypSignature]
   | parrow st1 st2 p _ =>
       simp [beqETypSignature]
-
--- ============================================================================
--- Proofs for new extern types
--- ============================================================================
-
--- Note: LawfulBEq instances for SyntaxPredicate, Effect, and ExternReturn
--- are defined earlier in this file (around line 263-361) as part of the
--- mutual recursion block with Expr proofs.

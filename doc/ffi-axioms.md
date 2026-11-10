@@ -3,15 +3,16 @@
 Status: the registry-aware extern-boundary path is in place. The
 clean-input/clean-output `abs` entry (`@12`) is a complete trusted entry
 (`ExternProofs.builtinAbsSpec`, all five `ExternBoundarySpec` fields) with a
-program-level FR capstone (`AbsFR.abs_FR`); the curried-`max` entries and
-memory-read `@23` likewise have concrete trusted specs and program-level FR
+program-level FR capstone (`AbsFR.abs_FR`); the curried-`max` entries,
+memory-read `@23`, the `errno` reference `@21`, and `set_err` (`@22`) likewise
+have concrete trusted specs and program-level FR
 artifacts. Declaration runs are expression-coupled through
 `ExternDeclBoundaryRunForExpr`; nested returned extern callables are covered by
 the same id-indexed trusted boundary.
 
 The public fault-robustness theorem is relative to trusted extern boundary
 evidence under a populated registry. Explicit extern read dependencies
-(`captures:`) are implemented on `ffi`: bare environment reads, guarded call-time
+(`captures:`) are implemented: bare environment reads, guarded call-time
 satisfaction, the representative explicit-argument memory-read `!r` path, and
 branch-join capture conjunction merging are all implemented/proved.
 Guarded-value applied routing requires a trusted producer extern plus
@@ -22,8 +23,7 @@ from proof patterns that actually repeat.
 Related documents:
 
 - `doc/ffi-proposal.md` is the authoritative FFI status and roadmap document.
-  This file should point there instead of carrying an independent global
-  roadmap.
+  This file points there rather than carrying an independent roadmap.
 - `doc/extern-poison.md` explains the source-language extern contract:
   argument preconditions, return/effect poison meaning, regimes, and trust
   triage.
@@ -96,7 +96,9 @@ concludes:
 - regime consistency is preserved,
 - clean context entries still agree,
 - output values are regime-consistent,
-- and clean outputs agree.
+- clean outputs agree,
+- and the reserved-address discipline for `extern ref` cells
+  (`ReservedDiscipline`) is preserved.
 
 That bundle is the right contract for externs, but the tag-meaning layer must
 remain explicit. `StepFR` does not merely prove facts under the incoming
@@ -167,8 +169,10 @@ def StepFRPost
       res.qualType cf₀.memory θ₀' o₀ ∧
     valueConsistentWithRegime predSat (ctxAfter ctx res).regime
       res.qualType cf₁.memory θ₁' o₁ ∧
-      resultAgreesIfClean predSat (ctxAfter ctx res).regime
-        cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁
+    resultAgreesIfClean predSat (ctxAfter ctx res).regime
+      cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁ ∧
+    ReservedDiscipline cf₀.registry res.declared' θ₀' ∧
+    ReservedDiscipline cf₁.registry res.declared' θ₁'
 ```
 
 The `_e` parameter indexes the post by the expression whose typecheck produced
@@ -190,8 +194,9 @@ from successful `ExternDeclBoundaryRun` or `ExternCallBoundaryRun` events. The
 conclusion is the same `StepFRPost`.
 
 For extern declarations, this is essentially `StepFR` specialized to
-`Expr.externVal`, `Expr.externFn`, or `Expr.externPfn`, with the proof supplied
-by trusted registry evidence. For extern dispatch, it is not just `StepFR`
+`Expr.externVal`, `Expr.externRef`, `Expr.externFn`, or `Expr.externPfn`, with
+the proof supplied by trusted registry evidence. For extern dispatch, it is
+not just `StepFR`
 restricted to a syntactic subset of `Expr`: the boundary is a semantic sub-event
 inside application evaluation after the function and argument have already
 evaluated.
@@ -202,6 +207,7 @@ Externs appear at two proof boundaries. The first is expression evaluation of
 extern declarations:
 
 - `externVal`
+- `externRef`
 - `externFn`
 - `externPfn`
 
@@ -220,25 +226,24 @@ environment plus the argument binding.
 ```lean
 inductive ExternDeclarationKind where
   | val
+  | ref
   | fn
   | pfn
 
-inductive ExternBoundaryKind where
-  | declVal
-  | declFn
-  | declPfn
-  | callFn
-  | callPfn
-
 /-- Static declaration shape extracted from the source program. -/
 structure ExternDeclaration where
-  id      : ExternId
-  kind    : ExternDeclarationKind
-  typ     : Typ
-  argName : Option Name
-  retSpec : Option ExternReturn
-  effects : List Effect
-  preds   : List SyntaxPredicate
+  id         : ExternId
+  kind       : ExternDeclarationKind
+  typ        : Typ
+  argName    : Option Name
+  retSpec    : Option ExternReturn
+  effects    : List Effect
+  preds      : List SyntaxPredicate
+  argPoison  : Bool                        -- declared argument poison flag
+  argPred    : SyntaxPredicate := .noPred  -- declared argument predicate
+  captures   : List Capture := []          -- declared `captures:` reads
+  refPoison  : Bool := false  -- `.ref` only: poison of the reference value
+  cellPoison : Bool := true   -- `.ref` only: poison of the pointed-to cell
 
 /-- Runtime evidence for a successful extern declaration step.
     The input configuration is the input of the extern expression itself. -/
@@ -248,6 +253,9 @@ inductive ExternDeclBoundaryRun
     (cᵢ cₒ : Config) (v : Value) : Prop where
   | val :
       ExternDeclValFacts d impl ctx res cᵢ cₒ v →
+      ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v
+  | ref :
+      ExternDeclRefFacts d impl ctx res cᵢ cₒ v →
       ExternDeclBoundaryRun d impl ctx res cᵢ cₒ v
   | fn :
       ExternDeclFnFacts d impl ctx res cᵢ cₒ v →
@@ -289,7 +297,7 @@ inductive ExternCallBoundaryRun
       ExternCallBoundaryRun d impl entry res cₒ v
 ```
 
-The fact payloads should include at least:
+The fact payloads include:
 
 - the declaration id and kind, matching `d`;
 - the registry lookup equation `cᵢ.registry.get? id = some impl`;
@@ -298,7 +306,7 @@ The fact payloads should include at least:
 - the `validateExternReturn` success equation for call boundaries;
 - the exact output configuration equation;
 - the captured runtime/type environment, argument value, and updated call
-  environment for `callFn` / `callPfn`;
+  environment for call boundaries;
 - the relevant `pureMode` condition for impure calls.
 
 Typechecking-origin evidence is deliberately separate. The runtime payloads
@@ -345,6 +353,10 @@ def ExternDeclBoundaryFR
                    pureMode := pm, registry := registry } →
         wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁,
                    pureMode := pm, registry := registry } →
+        RegistryReservedWF registry μ₀ a₀ →
+        RegistryReservedWF registry μ₁ a₁ →
+        ReservedDiscipline registry ctx.declaredExternRefs θ₀ →
+        ReservedDiscipline registry ctx.declaredExternRefs θ₁ →
         ExternDeclBoundaryRunForExpr postExpr d impl ctx res
           { memory := μ₀, varEnv := ρ₀, nextAddr := a₀,
             pureMode := pm, registry := registry }
@@ -371,7 +383,8 @@ def ExternCallBoundaryFR
     -- the closure-body-entry context: wfRealizationMap, wfTypeContext,
     -- TagBoundedCtx, runtimeInstantiatesCtx for both runs,
     -- regimeConsistentWithCtx, consistentWithRegime for both runs,
-    -- agreeOnClean, and wfConfig for both entry configs.
+    -- agreeOnClean, wfConfig for both entry configs, and
+    -- ReservedDiscipline for both runs.
     ∀ (θ₀ θ₁ : RealizationMap),
     BodyEntryInputsAgree predSat ctx entry₀ entry₁ θ₀ θ₁ →
     ∀ (cf₀ cf₁ : Config) (o₀ o₁ : Value),
@@ -406,9 +419,9 @@ the input environment:
 def declRunOutputMatchesExpr (postExpr : Expr) (cᵢ : Config) (v : Value) :
   Prop :=
   match postExpr with
-  | Expr.externPfn _ x _ _ _ _ => v = Value.peClosure x postExpr cᵢ.varEnv
-  | Expr.externFn  _ x _ _ _ _ _ => v = Value.closure x postExpr cᵢ.varEnv
-  | _ => True  -- `externVal` has no closure body; the coupling is vacuous
+  | Expr.externPfn _ x _ _ _ _ _ => v = Value.peClosure x postExpr cᵢ.varEnv
+  | Expr.externFn _ x _ _ _ _ _ _ => v = Value.closure x postExpr cᵢ.varEnv
+  | _ => True  -- `externVal` / `externRef`: no closure body; vacuous
 
 structure ExternDeclBoundaryRunForExpr
     (postExpr : Expr) (d : ExternDeclaration) (impl : ExternImpl)
@@ -417,7 +430,7 @@ structure ExternDeclBoundaryRunForExpr
   forExpr : declRunOutputMatchesExpr postExpr cᵢ v
 ```
 
-This restores **same-expression closure identity** across the two runs. A
+This gives **same-expression closure identity** across the two runs. A
 declaration's output is an extern closure whose body carries the syntactic
 argument predicate, and the relational obligation in `StepFRPost`
 (`resultAgreesIfClean` on a clean `parrow`) needs the two outputs to agree via
@@ -432,11 +445,11 @@ environment), and the agreement goes through without weakening `agreeValueUnder`
 predicates.
 
 The producers
-`ExternDeclBoundaryRun.of_terminatesTo_extern{Val,Fn,Pfn}` return the wrapper
+`ExternDeclBoundaryRun.of_terminatesTo_extern{Val,Ref,Fn,Pfn}` return the wrapper
 directly: the same `terminatesTo postExpr` evaluation that builds the run also
 discharges `forExpr` (the executable semantics evaluates `externFn`/`externPfn`
 to exactly `peClosure`/`closure` of the declared expression). The single-run
-field `ExternDeclBoundarySingle` keeps consuming a bare `ExternDeclBoundaryRun`
+field `ExternDeclBoundarySingle` consumes a bare `ExternDeclBoundaryRun`
 — it has no relational obligation, so the coupling is unnecessary there;
 orchestration sites that feed it project `.run`.
 
@@ -446,9 +459,11 @@ The proof stack also has one-run facts. In `LeanProofs/StepFR.lean`,
 `StepFRSingleRunFinalCleanPcTrue` and
 `StepFRSingleRunFinalCleanPcTrueMaskedRegParam` have the same shape as
 `StepFR`, but with one successful run instead of two. They produce the
-single-run preservation facts needed when the final pc is clean.
+single-run preservation facts needed under a poisoned program counter
+(`ctx.pc = true`): inherited locations that are clean in the output typing keep
+their contents, and fresh clean locations stay unrealized.
 
-Externs should get the same treatment. The boundary interface should include
+Externs get the same treatment. The boundary interface includes
 single-run declaration and call contracts whose conclusions mirror the existing
 `StepFRSingle...` postcondition, but whose run premises are
 `ExternDeclBoundaryRun` / `ExternCallBoundaryRun` rather than `terminatesTo e`.
@@ -470,12 +485,14 @@ def ExternBoundarySinglePost
     valueConsistentWithRegime predSat (ctxAfter ctx res).regime
       res.qualType cf.memory θ' o ∧
     PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
-    FreshCleanLocsUnrealizedOneRun ctx res θ'
+    FreshCleanLocsUnrealizedOneRun ctx res θ' ∧
+    ReservedDiscipline cf.registry res.declared' θ'
 
 def ExternDeclBoundarySingle
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
-  ∀ (ctx : TypeContext) (res : TypeResult)
+  ∀ (postExpr : Expr) (ctx : TypeContext) (res : TypeResult)
     (predSat : PredSat) (tm : TagMeaning),
+    ExternBoundaryTyping.Decl d postExpr ctx res →
     PredSatLaws predSat tm →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
@@ -486,20 +503,24 @@ def ExternDeclBoundarySingle
       runtimeInstantiatesCtx ctx μ ρ θ →
       regimeConsistentWithCtx ctx →
       consistentWithRegime predSat ctx.regime ctx μ ρ θ →
-      ∀ (a : Address) (pm : Bool),
-        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm } →
+      ∀ (a : Address) (pm : Bool) (registry : ExternRegistry),
+        wfConfig { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+                   registry := registry } →
+        RegistryReservedWF registry μ a →
+        ReservedDiscipline registry ctx.declaredExternRefs θ →
         ExternDeclBoundaryRun d impl ctx res
-          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm }
+          { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+            registry := registry }
           cf o →
         ctx.pc = true →
         ExternBoundarySinglePost ctx res predSat tm θ μ cf o
 
 def ExternCallBoundarySingle
     (d : ExternDeclaration) (impl : ExternImpl) : Prop :=
-  -- Same single-run clean-pc postcondition, stated at the call body's
-  -- `ExternCallEntry.bodyCtx` and `ExternCallEntry.unifiedEnv`.  This should
-  -- thread `tm` and conclude `ExternBoundarySinglePost`, exactly as the
-  -- declaration contract above does.
+  -- Same single-run postcondition (again under `ctx.pc = true`), stated at
+  -- the call body's `ExternCallEntry.bodyCtx` and
+  -- `ExternCallEntry.unifiedEnv`.  It threads `tm` and concludes
+  -- `ExternBoundarySinglePost`, exactly as the declaration contract above.
   ...
 
 /-- Forgetful view of either declaration or call boundary runs for operational
@@ -534,8 +555,20 @@ def ExternOperationalSafe
       wfValue addr vArg →
       wfValue addr vRaw)
   ∧
+  -- val: lookup-aware, so stored location values (reference externs) get
+  -- their bound from the registry-reserved-address invariant.
   (∀ v, impl = ExternImpl.val v →
-    ∀ (cfg : Config), wfConfig cfg → wfValue cfg.nextAddr v)
+    ∀ (cfg : Config) (id : ExternId),
+      wfConfig cfg →
+      cfg.registry.get? id = some impl →
+      RegistryReservedBelow cfg.registry cfg.nextAddr →
+      wfValue cfg.nextAddr v)
+  ∧
+  -- fn memory monotonicity: an impure dispatch never removes memory entries.
+  (∀ implFn, impl = ExternImpl.fn implFn →
+    ∀ env vArg mem addr vRaw mem' addr',
+      implFn env vArg mem addr = .ok (vRaw, mem', addr') →
+      ∀ a, mem.contains a → mem'.contains a)
 
 structure ExternBoundarySpec
     (d : ExternDeclaration) (impl : ExternImpl) : Prop where
@@ -546,17 +579,18 @@ structure ExternBoundarySpec
   operational : ExternOperationalSafe d impl
 ```
 
-Fields that do not apply to a declaration kind should be discharged by an
-explicit kind-impossibility helper, not by informal convention. For example,
-`callFR` and `callSingle` for a `.val` entry should be proved from the fact that
-no `ExternCallBoundaryRun` can be constructed for a value implementation. If
-that becomes awkward in Lean, specialize `ExternBoundarySpec` by declaration
-kind or make the irrelevant fields optional.
+Fields that do not apply to a declaration kind are discharged by an
+explicit kind-impossibility argument, not by informal convention. For example,
+`callFR` and `callSingle` for the `.ref` entry `builtinErrnoSpec` are proved
+from the fact that no `ExternCallBoundaryRun` can be constructed for a
+declaration of that kind (its `fn` / `pfn` constructors require `d.kind = .fn`
+/ `.pfn`).
 
 The `single` fields are the extern analogues of the `StepFRSingle...` lemmas.
 `operational` is a per-kind operational projection consumed by
 `wfConfig_preserved` and `beval_nextAddr_mono` in `SemanticsProperties.lean`:
-its three clauses mirror `RegistryOperationalSafe`'s shape so the bridge from
+its clauses (fn, pfn, val, and fn memory monotonicity) mirror
+`RegistryOperationalSafe`'s shape so the bridge from
 a trusted registry to runtime safety is a direct unpacking.  Each clause
 should be proved from the same concrete implementation facts used by the FR and
 single-run fields, not treated as an unrelated trust burden. A helper may
@@ -624,10 +658,11 @@ end TrustedRegistry
 
 /-- Predicate saying expression `e` contains, or can synthesize through a
     nested extern return descriptor, an extern declaration with id `id` and
-    declaration shape `d`. The concrete definition must walk both `Expr` and
+    declaration shape `d`. The constructors walk both `Expr` and
     `ExternReturn` descriptors transitively. -/
-def ExternDeclarationInProgram
-    (e : Expr) (id : ExternId) (d : ExternDeclaration) : Prop := ...
+inductive ExternDeclarationInProgram :
+    Expr → ExternId → ExternDeclaration → Prop where
+  ...
 
 /-- A trusted entry is allowed only when its declaration shape agrees with the
     extern declaration under the same id in the program. This is intentionally
@@ -663,7 +698,7 @@ theorem TypeSystemEnforcesFaultRobustness
 ```
 
 The universal-agreement variant is available as the corollary
-`TypeSystemEnforcesFaultRobustness_allCtx`, concluding the renamed
+`TypeSystemEnforcesFaultRobustness_allCtx`, concluding the
 registry-parametric spec `FaultRobustnessSpecForRegistry
 (TrustedRegistry.toRuntimeRegistry tr) e s obs`. That premise is intentionally
 stronger than the public theorem and is not the shape used for concrete
@@ -679,8 +714,9 @@ FR spec. Structural induction threads expression reachability and a
 sites that need the relational boundary contract look up the trusted entry by
 id; if `TrustedRegistry.lookup? tr id = some entry`, then `entry.spec.declFR` /
 `entry.spec.callFR` are the relational boundary contracts, and
-`entry.spec.declSingle` / `entry.spec.callSingle` are the single-run clean-pc
-contracts. The `entry.spec.operational` field (`ExternOperationalSafe d impl`)
+`entry.spec.declSingle` / `entry.spec.callSingle` are the single-run
+poisoned-pc contracts. The `entry.spec.operational` field
+(`ExternOperationalSafe d impl`)
 asserts that a successful extern boundary preserves `wfConfig`, produces a
 `wfValue` at the output `nextAddr`, and pushes the address cursor forward
 (`cᵢ.nextAddr ≤ cₒ.nextAddr`).
@@ -717,8 +753,9 @@ The runtime-boundary structures are split across two modules:
   `operationalSafe` bridge to `RegistryOperationalSafe`),
   `TrustedRegistryAgreesWithReachable`, `BodyEntryInputsAgree`,
   `ExternBoundarySpec` (with `declFR`, `callFR`, `declSingle`, `callSingle`,
-  and `operational` fields), and the reachability inductives
-  (`ExternDeclarationReachableFromExpr` etc.) along with their navigation
+  and `operational` fields), and the reachability predicates
+  (`ExternDeclarationReachableFromContext`,
+  `ExternDeclarationReachableFromExpr`, etc.) along with their navigation
   theorems.
 - `LeanProofs/ExternBoundaryProofs.lean` (above `ExternBoundary`) carries
   the proof-heavy resolution and integration theorems for the
@@ -761,7 +798,8 @@ details.
 
 Concrete trusted specs and program-level FR artifacts live with the Lean proof
 files, especially `LeanProofs/ExternProofs.lean`, `LeanProofs/AbsFR.lean`,
-`LeanProofs/MaxCurriedFR.lean`, and `LeanProofs/MemReadCapturesFR.lean`.
+`LeanProofs/MaxCurriedFR.lean`, `LeanProofs/MemReadCapturesFR.lean`,
+`LeanProofs/GuardedCapturesFR.lean`, and `LeanProofs/ExternRegimeInt.lean`.
 Current coverage includes:
 
 - clean-input/clean-output `abs` (`@12`);
@@ -769,14 +807,15 @@ Current coverage includes:
   capture-bearing `@11` path;
 - guarded pfn captures at the trusted call boundary;
 - representative memory-read `!r` captures through `@23`;
-- branch-join capture conjunction preservation.
+- branch-join capture conjunction preservation;
+- the `errno` reference declaration (`@21`, `kind = .ref`);
+- the effect-bearing `set_err` (`@22`), the trusted `kind = .fn` entry.
 
 The active example-coverage plan is tracked in `doc/ffi-proposal.md` under
-`## Planning`. That plan covers remaining shipped-builtin examples (`@19`,
-`@21`, `@22`), a meaningful trusted `kind = .fn` example over an effect-bearing
-extern such as `set_err`, guarded producer routing, and a shipped-registry
-trusted instantiation. These are stress tests and examples for the completed
-boundary interface, not prerequisites for changing the proof interface itself.
+`## Planning`. That plan covers the remaining shipped-builtin gap (`@19`) and a
+shipped-registry trusted instantiation. These are stress tests and examples
+for the completed boundary interface, not prerequisites for changing the proof
+interface itself.
 
 ## Boundary Discipline
 
@@ -798,9 +837,9 @@ semantics, and the public fault-robustness theorem.
 ## Helper Extraction
 
 Non-goal: expose a complete set of constructors for arbitrary externs.
-`LeanProofs/ExternBoundaryConstructors.lean` contains private helper
-experiments. Do not extend it as a framework by default; either ignore it or
-reuse only tiny private helpers that directly shorten concrete proofs. Extract a
+The development has no constructor module: each concrete spec in
+`LeanProofs/ExternProofs.lean` assembles its `ExternBoundarySpec` directly,
+with private local helpers where they shorten the proof. Extract a
 public helper or constructor only when it removes real duplication across
 multiple concrete specs.
 
@@ -811,7 +850,8 @@ different consumer: the existing `StepFRSingle...` lemmas. They should remain
 separate projections in `ExternBoundarySpec`.
 
 `ExternOperationalSafe` (the type of `entry.spec.operational`) is the
-operational projection.  Its three clauses (fn, pfn, val) supply the
+operational projection.  Its clauses (fn, pfn, val, and fn memory
+monotonicity) supply the
 per-kind facts about memory bounds, returned-value well-formedness, and
 `nextAddr` monotonicity for impure calls, consumed by `wfConfig_preserved`
 and `beval_nextAddr_mono` in `SemanticsProperties.lean` via the

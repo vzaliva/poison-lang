@@ -78,11 +78,11 @@ test: cache parser
 	chmod +x scripts/run_tests.sh
 	echo "Running tests"
 	rm -rf testResults
-	./scripts/run_tests.sh 
+	./scripts/run_tests.sh
 
-clean: lean-clean parser-clean 
-	 $(MAKE) -C poison-lang-spec clean
-	 $(MAKE) -C doc clean
+clean: lean-clean parser-clean
+	$(MAKE) -C poison-lang-spec clean
+	$(MAKE) -C doc clean
 
 # If you really want to reset everything, including the lock file
 distclean: clean

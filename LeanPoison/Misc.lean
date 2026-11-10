@@ -16,7 +16,7 @@ def combineExtTreeMaps [Ord α] [BEq α] [TransCmp (compare : α → α → Orde
   (m₁ m₂ : ExtTreeMap α β)
   (f : α → Option β → Option β → Option β)
   : ExtTreeMap α β :=
-  -- Collect all keys from both maps using fold
+  -- Collect all keys from both maps
   let keys1 := m₁.keys
   let keys2 := m₂.keys
   let ks := (keys1 ++ keys2).eraseDups

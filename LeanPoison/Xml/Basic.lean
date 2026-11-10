@@ -7,6 +7,7 @@ Vendored from Lean core `Lean.Data.Xml.Basic` (as of Lean v4.27.0). The
 `Lean.Data.Xml` modules were removed from Lean core in v4.30.0, so this project
 carries its own copy. Adapted from the core module-system syntax (`module` /
 `prelude` / `public import` / `@[expose]` / `private_decl%`) to ordinary Lean.
+The Apache 2.0 license text referred to above is in `LeanPoison/Xml/LICENSE`.
 -/
 import Std.Data.TreeMap.Basic
 import Init.Data.Ord.String

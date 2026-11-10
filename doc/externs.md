@@ -1,8 +1,8 @@
 # Shipped extern registry
 
 Status: reference for the interpreter's fixed built-in extern set
-(`LeanPoison/ExternBuiltins.defaultRegistry`). Each entry below gives a
-canonical surface declaration, a short implementation summary, and the
+(`defaultRegistry` in `LeanPoison/ExternBuiltins.lean`). Each entry below gives
+a canonical surface declaration, a short implementation summary, and the
 fault-robustness (FR) boundary status.
 
 Related documents:
@@ -16,11 +16,15 @@ Related documents:
 
 Every shipped extern should have both:
 
-- a runtime entry in `LeanPoison/ExternBuiltins.defaultRegistry`; and
+- a runtime entry in `defaultRegistry` (`LeanPoison/ExternBuiltins.lean`); and
 - a matching trusted entry in the default trusted registry.
 
 Entries still marked as missing trusted evidence below are cleanup gaps, not a
-separate "runtime-only" category of shipped extern.
+separate "runtime-only" category of shipped extern. The trusted entries are the
+per-extern `ExternBoundarySpec` theorems in `LeanProofs/ExternProofs.lean`,
+consumed through the per-program trusted registries of the capstone files; a
+single assembled default trusted registry is not defined in the Lean
+development (see `doc/ffi-proposal.md`, `## Planning`).
 
 A trusted entry's boundary contract is an `ExternBoundarySpec` with five fields:
 
@@ -191,9 +195,9 @@ The qualifier before `points_to:` describes the returned reference value; the
 `points_to:` qualifier describes the pointed-to memory cell. The conservative
 poisoned cell assumes nothing about the external cell's initial contents;
 cleanness is re-established by writing through the reference (an assignment or
-`@22`'s `!errno` write effect). The old ref-typed `extern val` spelling is
-rejected. Clean `points_to:` cells are a documented language limitation,
-tracked as a potential extension in issue #140.
+`@22`'s `!errno` write effect). A ref-typed `extern val` is rejected. Clean
+`points_to:` cells are a documented language limitation, tracked as a
+potential extension in issue #140.
 `extern ref` declarations are unique per extern id per program and may not
 appear under `fn`/`pfn` bodies. The nesting rule is enforced where a body is
 typechecked: at declaration for `pfn` (pure bodies are converted via
@@ -247,9 +251,10 @@ does not allocate (`nextAddr` unchanged).
 fields cover the produced extern closure. The call fields cover the immediate
 `unit` return and the typed post-state of the declared `effects:` block,
 `!errno :> (int :> clean {})`. Operational safety follows from the well-formed
-captured `errno` reference and the insertion-only memory update.
-`ExternProofs.defaultRegistry_lookup_seterr` connects the interpreter's shipped
-`defaultRegistry` entry to the proven `setErrImpl`.
+captured `errno` reference and the insertion-only memory update. The proof-side
+implementation `ExternProofs.builtinSetErrImpl` is definitionally
+`.fn setErrImpl`, the same function `defaultRegistry` registers under `@22`
+(both come from `LeanPoison/ExternBuiltins.lean`).
 
 The combined source scenario that first declares `@21` and then declares/calls
 `@22` is proven end to end: `ExternRegimeInt.errnoScenario_FR` instantiates
@@ -280,8 +285,8 @@ load-bearing.
 
 ## Default shipped registry
 
-`LeanPoison/ExternBuiltins.defaultInitialState` currently registers the shipped
-runtime entries below. The intended invariant is that the default trusted
+`defaultInitialState` (`LeanPoison/ExternBuiltins.lean`) registers the shipped
+runtime entries below. The intended invariant is that a default trusted
 registry contains the same shipped ids with matching declarations and
 `ExternBoundarySpec` evidence. Rows marked **missing** identify the remaining
 proof/registry work.
@@ -298,6 +303,6 @@ proof/registry work.
 
 User programs may declare the same ids with richer `captures:` / `effects:`
 clauses; dispatch uses the fixed implementations above. Ids not in this map fail
-at runtime. The default trusted registry should prove the listed shipped
+at runtime. A default trusted registry should prove the listed shipped
 declarations directly; specialised same-id proof variants, such as guarded
 `@11`, remain auxiliary examples rather than alternatives to the shipped entry.
