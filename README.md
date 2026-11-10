@@ -143,6 +143,37 @@ The system provides a uniform type system for tracking faults through both
 data and control paths, even in the presence of aliasing and higher-order
 code.
 
+## Citation
+
+The language, the type system and the proofs are described in the following
+paper:
+
+Vadim Zaliva, Valerii Huhnin and Jeffrey S. Foster. *Verifying Fault
+Robustness by Type Checking: A Verified Information-Flow Approach.* In 28th
+International Conference on Verification, Model Checking, and Abstract
+Interpretation (VMCAI 2027), Mexico City, Mexico, January 2027. Lecture Notes
+in Computer Science, Springer. To appear.
+[Preprint](https://zaliva.org/fault-robustness-vmcai27.pdf).
+
+To cite it, use the following BibTeX entry:
+
+```bibtex
+@inproceedings{zaliva2026faultrobustness,
+  author = {Zaliva, Vadim and Huhnin, Valerii and Foster, Jeffrey S.},
+  title = {Verifying Fault Robustness by Type Checking:
+           A Verified Information-Flow Approach},
+  booktitle = {28th International Conference on Verification, Model Checking,
+               and Abstract Interpretation (VMCAI 2027)},
+  series = {Lecture Notes in Computer Science},
+  publisher = {Springer},
+  address = {Mexico City, Mexico},
+  year = {2027},
+  month = jan,
+  url = {https://zaliva.org/fault-robustness-vmcai27.pdf},
+  note = {To appear}
+}
+```
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE)
