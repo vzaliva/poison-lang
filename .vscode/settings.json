@@ -1,5 +1,6 @@
 {
   "[ocaml]": {
     "editor.formatOnSave": false
-  }
+  },
+  "cmake.sourceDirectory": "~/src/poison-lang/parser"
 }
