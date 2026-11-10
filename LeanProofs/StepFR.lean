@@ -66,7 +66,7 @@ lemma resultAgreesIfClean_of_poison_noPred
 
     For extern call boundaries inside `Expr.app`, the same bundle is meant to
     be produced from the boundary witness rather than from `IsCanonicalExtension`
-    on a single source expression (see `doc/ffi-axioms.md`). -/
+    on a single source expression. -/
 def BoundaryTagMeaningPost
     (ctx : TypeContext) (res : TypeResult) (predSat : PredSat) (tm tm' : TagMeaning) :
     Prop :=

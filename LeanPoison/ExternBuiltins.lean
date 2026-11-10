@@ -23,7 +23,7 @@ proof-side trusted boundary specs reference the **same** runtime functions:
 The trusted declarations / `ExternBoundarySpec`s remain proof-side (they are not
 executable registry data).
 
-See `doc/ffi-proposal.md` and `doc/poison-lang-description.tex`.
+See `doc/externs.md` and `doc/poison-lang-description.tex`.
 -/
 
 open Std
@@ -80,8 +80,7 @@ def sqrtImpl
     (both runs realise `r` to a common logical cell), and the capture fixes the
     cell *contents* clean (so the two reads agree).  A clean reference may point
     to a poisoned cell, so the capture is genuinely load-bearing — this is why
-    memory-read read-dependencies exist.  See the `captures:` section of
-    `doc/ffi-proposal.md`. -/
+    memory-read read-dependencies exist. -/
 def memDerefImpl
     : VarEnv → Value → Memory → Except ExternError Value
   | _unifiedEnv, Value.loc addr, mem =>

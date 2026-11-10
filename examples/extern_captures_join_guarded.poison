@@ -1,6 +1,6 @@
 --! poison-interpreter --extern-regime "238=true"
--- Branch-join capture conjunction, GUARDED (non-`noPred`) predicate dimension
--- (doc/ffi-proposal.md, `captures:` section).  Both branches of the `if`
+-- Branch-join capture conjunction, GUARDED (non-`noPred`) predicate dimension.
+-- Both branches of the `if`
 -- produce `@239` extern closures of
 -- the same signature that capture the environment entry `a`, each under a
 -- guard-CLOSURE clean dependency, but with distinct guard tags (`{ 5, ... }` vs

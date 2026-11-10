@@ -1,5 +1,5 @@
--- Memory-read (`!r`) extern read dependency, running end-to-end
--- (doc/ffi-proposal.md, `captures:` section).  The built-in `@23` takes a
+-- Memory-read (`!r`) extern read dependency, running end-to-end.
+-- The built-in `@23` takes a
 -- *reference* argument `r : ref int`
 -- and declares that it reads the cell behind it via the bang capture
 -- `captures: { !r :> (int :> clean {}) }`; its implementation dereferences `r`

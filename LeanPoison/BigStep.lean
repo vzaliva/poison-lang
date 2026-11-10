@@ -268,7 +268,7 @@ mutual
         | .runtimeError msg => .runtimeError msg
 
       -- Extern declarations: look up in the registry and produce a runtime
-      -- value. See `doc/ffi-proposal.md`.
+      -- value.
       | Expr.externVal id typ _poison _pred =>
         match config.registry.get? id with
         | none => .runtimeError (ExternError.format (.missing id))

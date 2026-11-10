@@ -943,7 +943,7 @@ def builtinMax11RetSpec : ExternReturn :=
   .simple .int false .noPred
 
 /-- Capture-bearing declaration for the inner curried-`max` extern (`@11`), carrying
-    the read dependency `captures: { a :> (int :> clean {}) }` (`doc/ffi-proposal.md`).
+    the read dependency `captures: { a :> (int :> clean {}) }`.
     This is the trusted contract under which `@11`'s clean `max a b` result is
     fault-robust: the captured `a` is a declared clean integer dependency.
     A captures=`[]` variant cannot close the relational call boundary: without the
@@ -1329,7 +1329,7 @@ theorem builtinMax11CapturesSpec :
 
 /-! ## Guarded read dependency: the inner `@11` with a *guarded* captured `a`
 
-The `captures:` section of `doc/ffi-proposal.md` specifies that `captures:` accepts
+A `captures:` clause accepts
 a guarded (de-poisoned-under-regime) dependency under exactly the regime-based
 satisfaction relation used by extern argument conditions: a declared-clean
 dependency is satisfied when the actual is clean *under the call-site regime*
@@ -1587,8 +1587,8 @@ private theorem builtinMax11Guarded_callRun_bEq
     qtypCleanUnder_of_cleanUnderRegime hcleanB (by rw [hInt]; rfl)
   exact builtinAbs_arg_eq_of_bodyAgree hbody hbindB hcleanP hInt hrv₀ hrv₁
 
-/-- **The guarded `@11` `callFR` field** (`doc/ffi-proposal.md`, `captures:`
-    section): the inner-`max` call boundary returns the clean integer
+/-- **The guarded `@11` `callFR` field**: the inner-`max` call boundary returns
+    the clean integer
     `max a b`, reading the captured `a` whose declared dependency is *guarded*.  The
     captured-`a` equality is sourced through the guarded gate (the declared
     `clean { 5, v => v >= 0 }` requirement is satisfied because the actual `a` is

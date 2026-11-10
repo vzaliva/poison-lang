@@ -1533,7 +1533,7 @@ above, it is parameterised by a trusted extern registry and assumes that the
 registry agrees with the extern declarations reachable from the initial
 context, that the extern-regime policy matches the input specification, and
 that registry-reserved cells are well formed in the initial states; see
-``Handling Extern Constructs'' below and \texttt{doc/ffi-axioms.md}.
+``Handling Extern Constructs'' below.
 
 \paragraph{Proof structure (Lean).}
 The top-level fault-robustness statement is spec-driven: it relates two runs
@@ -1661,8 +1661,7 @@ those of the trusted extern declarations a program names. Whether this
 obligation should instead move into
 per-extern trusted-entry evidence, so each trusted extern declaration supplies
 the descriptor laws for the guard descriptors that its declared return and
-effect summaries can allocate, is an open design question
-(\texttt{doc/ffi-proposal.md}).
+effect summaries can allocate, is an open design question.
 
 \paragraph{Guard provenance for impure memory effects (structural).}
 The typechecker's \texttt{applyExternEffect} erases the stored predicate to

@@ -1169,7 +1169,7 @@ def typecheckExternRef (ctx : TypeContext) (id : ExternId)
            declared' := id :: ctx.declaredExternRefs }
 
 -- ----------------------------------------------------------------------------
--- Extern argument conditions (see doc/extern-poison.md)
+-- Extern argument conditions
 --
 -- An extern callable's declared argument is a qualified type (precondition).
 -- The surface triple `(Typ, Bool, SyntaxPredicate)` is resolved here into a
@@ -1261,7 +1261,7 @@ def argConditionSatisfied (declared actual : QTyp) (R : Regime) (fuel : Nat) : B
 /-- Conservative predicate-shape match for a `captures:` dependency: the declared
     side is a surface `SyntaxPredicate`, so only its shape is compared against the
     resolved actual `Predicate` (no logical implication, no guarded
-    reconciliation — see `doc/ffi-proposal.md`). -/
+    reconciliation). -/
 def captureSyntaxPredShapeMatches (declared : SyntaxPredicate) (actual : Predicate) : Bool :=
   match declared with
   | SyntaxPredicate.noPred => true
@@ -1316,9 +1316,8 @@ def parseReturnType (retType : ExternReturn):Typ :=
  | ExternReturn.nestedPfn _ _ typ _ _ extReturn _ => Typ.arrow typ (parseReturnType extReturn)
 
 /-- Require that an executable extern's input type is first-order: one of
-    `{int, bool, unit, string, ref int}`.  Function-typed inputs are rejected
-    (design: `doc/ffi-proposal.md`).  Arrow and non-int ref
-    types are forbidden at declaration sites. -/
+    `{int, bool, unit, string, ref int}`.  Function-typed inputs are rejected.
+    Arrow and non-int ref types are forbidden at declaration sites. -/
 def checkExternInputFirstOrder (argTyp : Typ) : TypecheckM Unit :=
   match argTyp with
   | Typ.int | Typ.bool | Typ.unit | Typ.string => return ()
@@ -1339,8 +1338,7 @@ def checkExternReturnInputsFirstOrder : ExternReturn → TypecheckM Unit
 
 /-- Typecheck extern impure function.  Per-declaration, rejects function-
     typed and non-`ref int` reference inputs — both at the top-level argument
-    and inside every nested return descriptor.  See
-    `doc/ffi-proposal.md`. -/
+    and inside every nested return descriptor. -/
 def typecheckExternFn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
     (retSpec : ExternReturn) (effects : List Effect) (captures : List Capture) : TypecheckM TypeResult := do

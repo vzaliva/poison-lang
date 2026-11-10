@@ -31,8 +31,8 @@ inductive ExternDeclarationKind where
 /-- Static declaration shape extracted from a source expression.
 
     `typ`, `argPoison`, `argPred` are the surface form of the declared argument
-    condition (precondition): base type, poison flag, and symbolic predicate
-    (see doc/extern-poison.md).  `argPoison` (the clean/poisoned flag) is
+    condition (precondition): base type, poison flag, and symbolic predicate.
+    `argPoison` (the clean/poisoned flag) is
     populated FAITHFULLY at every construction site — from the source AST at
     syntactic sites and from the applied closure's `argQTyp.poison` at the
     arrow-reachability site — so the reachable `entry.decl = d` agreement binds the
@@ -51,7 +51,7 @@ structure ExternDeclaration where
   preds     : List SyntaxPredicate
   argPoison : Bool
   argPred   : SyntaxPredicate := .noPred
-  /-- Declared `captures:` read dependencies (`doc/ffi-proposal.md`).  Defaults
+  /-- Declared `captures:` read dependencies.  Defaults
       to `[]` (no read dependencies); populated for externs whose
       trusted clean result depends on environment or memory read targets. -/
   captures  : List Capture := []

@@ -5,12 +5,8 @@ Status: reference for the interpreter's fixed built-in extern set
 a canonical surface declaration, a short implementation summary, and the
 fault-robustness (FR) boundary status.
 
-Related documents:
-
-- `doc/ffi-proposal.md` — FFI roadmap and `captures:` / `effects:` model.
-- `doc/extern-poison.md` — argument preconditions, regimes, trust triage.
-- `doc/ffi-axioms.md` — proof-facing `ExternBoundarySpec` and `TrustedRegistry`.
-- `doc/poison-interpreter.md` — CLI and default runtime registry.
+Related document: `doc/poison-interpreter.md` describes the CLI and the
+default runtime registry.
 
 ## Shipped-entry proof obligation
 
@@ -24,7 +20,7 @@ separate "runtime-only" category of shipped extern. The trusted entries are the
 per-extern `ExternBoundarySpec` theorems in `LeanProofs/ExternProofs.lean`,
 consumed through the per-program trusted registries of the capstone files; a
 single assembled default trusted registry is not defined in the Lean
-development (see `doc/ffi-proposal.md`, `## Planning`).
+development.
 
 A trusted entry's boundary contract is an `ExternBoundarySpec` with five fields:
 

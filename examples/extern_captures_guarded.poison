@@ -1,5 +1,5 @@
 --! poison-interpreter --extern-regime "238=true"
--- Guarded extern read dependency (doc/ffi-proposal.md, `captures:` section).
+-- Guarded extern read dependency.
 -- A capture whose declared requirement is a *guarded* clean
 -- dependency `(int :> clean { 5, v => v >= 0 })` is accepted at the extern call
 -- boundary when the captured value is clean *under the call-site regime* — the

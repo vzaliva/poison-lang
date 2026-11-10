@@ -724,7 +724,7 @@ mutual
             -- `allowCleanPred := true`: a `captures:` requirement may be a guarded
             -- dependency `(int :> clean { k, v => p })` — a clean requirement that
             -- additionally constrains the guard shape — exactly as extern argument
-            -- conditions allow (`doc/ffi-proposal.md`, `captures:` section).
+            -- conditions allow.
             match xmlToQTyp (Element.Element "qtyp" attr qtypContents) (allowCleanPred := true) with
             | .ok (typ, poison, pred) =>
               acc := acc.append [Capture.mk target typ poison pred]

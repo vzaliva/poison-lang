@@ -4,8 +4,7 @@ import LeanProofs.ExternRegimeInt
 /-!
 # Program-level fault-robustness for a *guarded* `captures:` read dependency
 
-This is the capstone for guarded extern read dependencies
-(`doc/ffi-proposal.md`, `captures:` section).  Where `MaxCurriedFR`
+This is the capstone for guarded extern read dependencies.  Where `MaxCurriedFR`
 exercises an all-clean captured dependency, here the inner-`max` extern `@11`
 declares its captured `a` as a **guarded** dependency
 `captures: { a :> (int :> clean { 5, v => v >= 0 }) }`.  The guard predicate

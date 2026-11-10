@@ -127,7 +127,7 @@ that use the shipped externs (`AbsFR.lean`, `MaxCurriedFR.lean`,
 - `poison-lang-spec/` - Ott specification of the syntax, the typing rules and
   the big-step semantics
 - `doc/` - Language description (`poison-lang-description.tex`), the
-  interpreter manual, and design notes on the extern (FFI) boundary
+  interpreter manual, and a reference for the shipped externs
 - `scripts/` - Test runner and maintenance scripts
 
 ## Research Context

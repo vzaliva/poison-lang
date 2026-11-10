@@ -94,8 +94,3 @@ The same program two ways — id-keyed vs concrete tag. Both typecheck and run;
 
 - `doc/externs.md` lists the shipped built-in externs, their canonical
   declarations, and their trusted-boundary status.
-- `doc/ffi-proposal.md` gives the FFI design and status and records the
-  `captures:` read-dependency model for externs.
-- `doc/extern-poison.md` explains extern argument conditions, regimes, and
-  trusted/untrusted extern contracts.
-- `doc/ffi-axioms.md` explains the proof-facing trusted extern boundary.

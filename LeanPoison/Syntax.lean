@@ -161,15 +161,14 @@ inductive EffectTarget where
 
 -- Capture target: an extern read dependency.  Either an environment variable
 -- (`a`, bare) or a memory location reached through a reference variable
--- (`!r`, bang).  See `doc/ffi-proposal.md`.
+-- (`!r`, bang).
 inductive CaptureTarget where
   | bareVar : Name → CaptureTarget   -- `a`  : environment entry
   | memVar  : Name → CaptureTarget   -- `!r` : memory entry via reference
   deriving Repr, BEq
 
 /-- Extern identifier: author-chosen runtime handle assigned at each extern
-    declaration site (both top-level and nested). See
-    `doc/ffi-proposal.md`. -/
+    declaration site (both top-level and nested). -/
 abbrev ExternId := Nat
 
 mutual
@@ -192,7 +191,7 @@ structure Effect where
 -- Read-dependency ("captures:") specification for extern callables.  Parallel to
 -- `Effect`, but a capture target may be bare (environment entry) or bang (memory
 -- entry), and carries an explicit base type used by the dependency check
--- (`Qactual <:R Qdecl`).  See `doc/ffi-proposal.md`.
+-- (`Qactual <:R Qdecl`).
 structure Capture where
   target : CaptureTarget
   typ : Typ
@@ -536,7 +535,7 @@ structure QTyp where
 inductive FnTClosure : Type where
   | regular : Name → Expr → List (Name × QTyp) → FnTClosure
   -- The trailing `List Capture` records the declared `captures:` read
-  -- dependencies (`doc/ffi-proposal.md`) for impure (`fn`) externs,
+  -- dependencies for impure (`fn`) externs,
   -- mirroring the `PFnTClosure.extern` field; resolved at the declaration /
   -- nested-return site and re-checked when the closure is applied.
   | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp) → QTyp → List Capture → FnTClosure
@@ -544,7 +543,7 @@ inductive FnTClosure : Type where
 inductive PFnTClosure : Type where
   | regular : Name → PExpr → List (Name × QTyp) → PFnTClosure
   -- The trailing `List Capture` records the declared `captures:` read
-  -- dependencies (`doc/ffi-proposal.md`), resolved at the declaration /
+  -- dependencies, resolved at the declaration /
   -- nested-return site and re-checked when the closure is applied.
   | extern : ExternId → Name → ExternReturn → List (Name × QTyp) → QTyp → List Capture → PFnTClosure
 

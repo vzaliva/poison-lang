@@ -1,5 +1,5 @@
--- Negative example for the trusted fn-boundary narrowing
--- (doc/ffi-proposal.md).
+-- Negative example for the trusted fn-boundary
+-- narrowing.
 --
 -- A regular `fn` lambda whose body is a *bare* `extern fn` declaration is
 -- rejected by the type checker.  Such a lambda is observationally bogus: at

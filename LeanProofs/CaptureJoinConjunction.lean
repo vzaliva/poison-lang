@@ -4,8 +4,7 @@ import LeanProofs.TypeSafety
 # Branch-join capture conjunction
 
 This module discharges the **branch-join capture conjunction merge** obligation
-for extern `captures:` read dependencies (`doc/ffi-proposal.md`, `captures:`
-section).
+for extern `captures:` read dependencies.
 
 The design requirement is:
 

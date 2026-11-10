@@ -1,5 +1,5 @@
 -- Branch-join capture conjunction, memory-read (`!r`) dimension, running
--- end-to-end (doc/ffi-proposal.md, `captures:` section).
+-- end-to-end.
 --
 -- The two branches of the `if` produce extern closures of the SAME signature
 -- `(ref int :> clean {}) -> (int :> clean {})` but DIFFERENT `captures:`

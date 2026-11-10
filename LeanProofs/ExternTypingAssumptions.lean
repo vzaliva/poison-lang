@@ -11,8 +11,7 @@
   Guard-origin provenance is derived structurally: the typechecker erases
   predicates on extern effect writes under poisoned `pc` (mirroring assignment),
   making the guard-origin trace provable via
-  `applyFnTClosure_extern_ok_memEnv_guard_origin` in `ExternTagMeaning.lean`.  See
-  `doc/ffi-axioms.md` for the broader extern-boundary design.
+  `applyFnTClosure_extern_ok_memEnv_guard_origin` in `ExternTagMeaning.lean`.
 
   The contract lives as a field of `ExternTypingAssumptions`, threaded
   explicitly through the fault-robustness proof.  Callers must supply (or
@@ -421,8 +420,7 @@ theorem ExternBatchTagMeaningExtension.canonical_general
     extern allocation batch.
 
     The fault-robustness theorem is relative to this assumption: callers must
-    supply (or postulate) an `ExternTypingAssumptions` to instantiate it.  See
-    `doc/ffi-axioms.md` for the extern-boundary design.
+    supply (or postulate) an `ExternTypingAssumptions` to instantiate it.
 
     The typechecker erases predicates on extern effect writes under poisoned `pc`
     (mirroring assignment), making the guard-origin trace structurally provable
@@ -434,8 +432,7 @@ structure ExternTypingAssumptions where
       `PredSatLaws` against `tm`, those laws survive in the extended table.
 
       This is a broad trust input: the field ranges over all extern batches
-      rather than over only the trusted extern declarations a program names.  See
-      `doc/ffi-axioms.md` for the extern-boundary design. -/
+      rather than over only the trusted extern declarations a program names. -/
   externPredSatDelta :
     ∀ (predSat : PredSat)
       {tm tm' : TagMeaning}

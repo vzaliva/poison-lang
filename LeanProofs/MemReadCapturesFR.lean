@@ -4,8 +4,8 @@ import LeanProofs.ExternRegimeInt
 /-!
 # Program-level fault-robustness for a *memory-read* (`!r`) `captures:` dependency
 
-This is the capstone for memory-read read-dependencies
-(`doc/ffi-proposal.md`, `captures:` section).  Where `MaxCurriedFR` exercises an
+This is the capstone for memory-read read-dependencies.  Where `MaxCurriedFR`
+exercises an
 environment capture and `GuardedCapturesFR` a guarded environment capture, here
 the memory-read extern `@23` takes a reference argument `r : ref int` and
 declares a *bang* read dependency on the cell behind it:
