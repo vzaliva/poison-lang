@@ -111,6 +111,7 @@ Formal correctness proofs establishing type safety and semantic properties. **No
   - `StepFRVlet.lean` - `vlet`
 - `FaultRobustnessProofs.lean` - Orchestration: imports all `StepFR*` case modules and proves the step theorem (the private `TypeSystemEnforcesFaultRobustness_step_*` family), the bridge from the step theorem to the specification (`faultRobustnessSpec_of_step`), the per-context theorem `TypeSystemEnforcesFaultRobustness_at` with its all-context corollary `TypeSystemEnforcesFaultRobustness_allCtx`, and the top-level statement (`FaultRobustnessSpec`, `TypeSystemEnforcesFaultRobustness`). The public top-level theorem derives `RegistryOperationalSafe` internally via `TrustedRegistry.operationalSafe tr` — no separate public operational-safety hypothesis.
 - `Progress.lean` - Statement of the progress property (well-typed expressions evaluate or diverge, never get stuck). Definition only; the repository contains no proof of it.
+- `PredSatLawsWitness.lean` - Satisfiability witness for `PredSatLaws`: a tag meaning with a matchable guard (`v => v`), a satisfaction relation that meets both laws (`predSatLaws_idSat`), and a context in which `matchGuard` selects that guard. Imports `StepFRIte` for `matchGuard_ok_matched_owner`; a leaf of the import graph, not on the FR proof path.
 
 **Helper modules:** `Auxiliary.lean`, `Equality.lean`, `VarEnvPreservation.lean`
 

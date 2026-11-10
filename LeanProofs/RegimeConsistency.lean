@@ -989,34 +989,42 @@ lemma EnvRespectsTagMeaning_of_update
 
 -- Laws that constrain the abstract `PredSat` relation.
 structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
-  -- Bidirectional match law: if match_guard recognizes the condition as tag k,
-  -- then the condition's boolean result matches predSat on the owning value.
-  match_iff : ∀ (condition : Expr) (Γ : MemoryTypeEnv) (σ : VarTypeEnv)
+  -- Bidirectional match law: if match_guard recognizes the condition as tag k in a
+  -- context that respects `tm` and that the runtime state instantiates, then the
+  -- condition's boolean result matches predSat on the value the condition checks.
+  -- That value belongs to some owner of the guard closure for k: a variable
+  -- carrying the closure, or the contents of a location carrying it, reached
+  -- through a reference variable.
+  match_iff : ∀ (condition : Expr) (ctx : TypeContext)
                   (fuel : Nat)
                   (k : Tag) (deps : Deps)
                   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (addr : Address)
                   (pm : Bool) (registry : ExternRegistry) (cfg : Config)
-                  (v : Value) (b : Bool),
-    EnvRespectsTagMeaning tm σ Γ →
-    matchGuard condition Γ σ fuel = .ok (k, deps) →
+                  (b : Bool),
+    wfTagMeaningCtx tm ctx →
+    matchGuard condition ctx.memEnv ctx.varEnv fuel = .ok (k, deps) →
+    runtimeInstantiatesCtx ctx μ ρ θ →
     terminatesTo condition
       { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm, registry := registry }
       cfg (Value.bool b) →
-    ( (∃ (x : Name) (qt : QTyp),
-          σ.lookup x = some qt ∧
-          qtypGuardTag qt = some k ∧
-          ρ.lookup x = some v)
-      ∨
-      (∃ (x : Name) (qt memQt : QTyp) (ls : LocSet) (l0 : Loc) (a : Address) (n : Int),
-          σ.lookup x = some qt ∧
-          qt.etyp = ETyp.ref ls ∧
-          l0 ∈ ls ∧
-          Γ.lookup l0 = some memQt ∧
-          qtypGuardTag memQt = some k ∧
-          θ.lookup l0 = some a ∧
-          μ.lookup a = some n ∧
-          v = Value.num n) ) →
-    (b = true ↔ predSat k μ v)
+    ∃ v,
+      ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr)
+            (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+            ρ.lookup x = some v)
+        ∨
+        (∃ (x : Name) (qt memQt : QTyp) (ls : LocSet) (l0 : Loc) (a : Address) (n : Int)
+            (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.etyp = ETyp.ref ls ∧
+            l0 ∈ ls ∧
+            ctx.memEnv.lookup l0 = some memQt ∧
+            memQt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+            θ.lookup l0 = some a ∧
+            μ.lookup a = some n ∧
+            v = Value.num n) ) ∧
+      (b = true ↔ predSat k μ v)
 
   mem_monotone : ∀ (k : Tag) (pred : Predicate) (fuel : Nat)
       (μ μ' : Memory) (v : Value) (deps : Deps) (θ : RealizationMap),
