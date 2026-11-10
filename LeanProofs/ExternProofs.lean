@@ -697,7 +697,7 @@ private theorem builtinAbs_call_output
   refine ⟨n, harg, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinAbsRetSpec, validateExternReturn, valueMatchesTyp,
-    if_true, Except.ok.injEq] at hvalRet
+    ite_true, Except.ok.injEq] at hvalRet
   exact hvalRet.symm
 
 /-- Shared structure extracted from a pure `abs` call boundary typing witness:
@@ -1020,7 +1020,7 @@ private theorem builtinMax11Captures_call_output
   refine ⟨a, b, harg, ha, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinMax11RetSpec, validateExternReturn, valueMatchesTyp,
-    if_true, Except.ok.injEq] at hvalRet
+    ite_true, Except.ok.injEq] at hvalRet
   exact hvalRet.symm
 
 private theorem builtinMax11Captures_callRun_output
@@ -1430,7 +1430,7 @@ private theorem builtinMax11Guarded_call_output
   refine ⟨a, b, harg, ha, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinMax11RetSpec, validateExternReturn, valueMatchesTyp,
-    if_true, Except.ok.injEq] at hvalRet
+    ite_true, Except.ok.injEq] at hvalRet
   exact hvalRet.symm
 
 private theorem builtinMax11Guarded_callRun_output
@@ -1813,7 +1813,7 @@ private theorem builtinMax10_call_output
   refine ⟨a, harg, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinMax10Decl, builtinMax10RetSpec, validateExternReturn] at hvalRet
-  rw [if_pos (by decide)] at hvalRet
+  rw [ite_eq_left (by decide)] at hvalRet
   simp only [Except.ok.injEq] at hvalRet
   exact hvalRet.symm
 
@@ -2392,7 +2392,7 @@ private theorem builtinMemDeref_call_output
   refine ⟨addr, n, harg, hlk, ?_, hfacts.output_config⟩
   rw [hraw] at hvalRet
   simp only [builtinMemDerefRetSpec, validateExternReturn, valueMatchesTyp,
-    if_true, Except.ok.injEq] at hvalRet
+    ite_true, Except.ok.injEq] at hvalRet
   exact hvalRet.symm
 
 private theorem builtinMemDeref_callRun_output
@@ -2903,7 +2903,7 @@ private theorem builtinSetErr_callRun_output
       refine ⟨n, a, harg, hlk, ?_, hmem, hnext, hfacts.output_config⟩
       rw [hraw] at hvalRet
       simp only [builtinSetErrRetSpec, validateExternReturn, valueMatchesTyp,
-        if_true, Except.ok.injEq] at hvalRet
+        ite_true, Except.ok.injEq] at hvalRet
       exact hvalRet.symm
   | pfn hfacts => have h := hfacts.kind_pfn; simp [builtinSetErrDecl] at h
 
@@ -4987,13 +4987,13 @@ private theorem typecheckExternRef_ok_inv
     res = externRefDeclResult ctx id ∧ id ∉ ctx.declaredExternRefs := by
   unfold typecheckExternRef at htc
   by_cases hgate : (ctx.pureCtx || !ctx.externRefAllowed) = true
-  · rw [if_pos hgate] at htc
+  · rw [ite_eq_left hgate] at htc
     exact nomatch htc
-  · rw [if_neg hgate] at htc
+  · rw [ite_eq_right hgate] at htc
     by_cases hdup : ctx.declaredExternRefs.contains id = true
-    · rw [if_pos hdup] at htc
+    · rw [ite_eq_left hdup] at htc
       exact nomatch htc
-    · rw [if_neg hdup] at htc
+    · rw [ite_eq_right hdup] at htc
       have hnot : id ∉ ctx.declaredExternRefs := by
         intro hmem
         exact hdup (List.contains_iff_mem.mpr hmem)

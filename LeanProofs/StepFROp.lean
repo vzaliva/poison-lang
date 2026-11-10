@@ -139,7 +139,7 @@ lemma stepFR_op_with_expr_proof
   have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
-    simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
+    simpa [ctx', typecheck, Nat.succ_sub_one] using! htc2
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have hIH1 := IH fuel' (by exact Nat.lt_succ_of_lt (Nat.lt_succ_self fuel'))
     e1 ctxᵢ hctxCurrent hcan1 hwfTm htagBounded res1 htc1'
@@ -637,7 +637,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
   have htc1' : typecheck ctx e1 fuel' = .ok res1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
-    simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
+    simpa [ctx', typecheck, Nat.succ_sub_one] using! htc2
   intro hpredlaws hExtTyping hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
@@ -763,7 +763,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
     rcases
       typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res2)
-        (by simpa [ctx', ctxAfter] using htc2')
+        (by simpa [ctx', ctxAfter] using! htc2')
         hwf1 hbnd1
         (by simpa [ctxAfter] using hpc)
         l qt_out
@@ -813,7 +813,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_op_maskedReg_with_expr_proof
     · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
         typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
           (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res2)
-          (by simpa [ctx', ctxAfter] using htc2')
+          (by simpa [ctx', ctxAfter] using! htc2')
           hwf1 hbnd1
           (by simpa [ctxAfter] using hpc)
           l qt hlookup2 hcontains_mid hclean2

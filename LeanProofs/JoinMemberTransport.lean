@@ -889,7 +889,7 @@ private lemma joinTypeResults_qualType_guardTag_compat_from_member
             · subst src'
               have htag_resPred : predGuardTag resPred = some k :=
                 (predGuardTag_joinPredicates (p := acc.2.2.2.1) (q := resPred) (k := k) hjoin).2
-              simpa [hqx, qtypGuardTag, predGuardTag] using htag_resPred
+              simpa [hqx, qtypGuardTag, predGuardTag] using! htag_resPred
             · exact ih (acc := acc1) (acc' := acc') (src' := src') hfold_tail hsrc_tail htag_out
   cases hqt : first.qualType with
   | mk etyp poison pred =>
@@ -929,7 +929,7 @@ private lemma joinTypeResults_qualType_guardTag_compat_from_member
                     | ETyp.arrow _ _ _ _ => Predicate.noPred
                     | ETyp.parrow _ _ _ _ => Predicate.noPred
                     | _ => a.2.2.2.1) = some k := by
-                simpa [qtypGuardTag, predGuardTag] using htag_res
+                simpa [qtypGuardTag, predGuardTag] using! htag_res
               have htag_a : predGuardTag a.2.2.2.1 = some k := by
                 cases ha1 : a.1 <;> simp [ha1, predGuardTag] at htag_match <;> exact htag_match
               rcases (List.mem_cons.mp _hmem_src) with hsrc | hsrc_rest
@@ -941,7 +941,7 @@ private lemma joinTypeResults_qualType_guardTag_compat_from_member
                     (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
                       first.nextTag')
                     a hfold htag_a
-                simpa [hqt, qtypGuardTag, predGuardTag] using htag_first
+                simpa [hqt, qtypGuardTag, predGuardTag] using! htag_first
               · exact
                   h_fold_member_guardTag
                     rest
@@ -1854,7 +1854,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
                     have : some v' = some v_y := by
                       calc
                         some v' = ρcap₀.lookup y := by simpa using hlookup_ρ'.symm
-                        _ = some v_y := by simpa using hlookup_ρ
+                        _ = some v_y := by simpa using! hlookup_ρ
                     exact Option.some.inj this
                   subst hv_eq
                   exact htyp'
@@ -1878,7 +1878,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
                     have : some v' = some v_y := by
                       calc
                         some v' = ρcap₁.lookup y := by simpa using hlookup_ρ'.symm
-                        _ = some v_y := by simpa using hlookup_ρ
+                        _ = some v_y := by simpa using! hlookup_ρ
                     exact Option.some.inj this
                   subst hv_eq
                   exact htyp'
@@ -2161,7 +2161,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
                     have : some v' = some v_y := by
                       calc
                         some v' = ρcap₀.lookup y := by simpa using hlookup_ρ'.symm
-                        _ = some v_y := by simpa using hlookup_ρ
+                        _ = some v_y := by simpa using! hlookup_ρ
                     exact Option.some.inj this
                   subst hv_eq
                   exact htyp'
@@ -2186,7 +2186,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
                     have : some v' = some v_y := by
                       calc
                         some v' = ρcap₁.lookup y := by simpa using hlookup_ρ'.symm
-                        _ = some v_y := by simpa using hlookup_ρ
+                        _ = some v_y := by simpa using! hlookup_ρ
                     exact Option.some.inj this
                   subst hv_eq
                   exact htyp'
@@ -2636,7 +2636,7 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
           have hcap_src :
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.arrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v := by
-            simpa using (.closure x body ρcap σcap st1l st2l pr tclr hval rfl htcl hP hrec hbody :
+            simpa using! (.closure x body ρcap σcap st1l st2l pr tclr hval rfl htcl hP hrec hbody :
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.arrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v)
           have hcap_join :
@@ -2676,7 +2676,7 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.arrow st1l (parseReturnType retSpec) pr tclr,
                   resPoison, resPred⟩ μ θ v := by
-            simpa using (.closure_extern id x y st1l retSpec effects ρcap σcap pr tclr
+            simpa using! (.closure_extern id x y st1l retSpec effects ρcap σcap pr tclr
               hval rfl htcl hP hrec :
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.arrow st1l (parseReturnType retSpec) pr tclr,
@@ -2720,7 +2720,7 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
           have hcap_src :
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.parrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v := by
-            simpa using (.peClosure x body pbody ρcap σcap st1l st2l pr tclr hval rfl hpure htcl hP hrec :
+            simpa using! (.peClosure x body pbody ρcap σcap st1l st2l pr tclr hval rfl hpure htcl hP hrec :
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.parrow st1l st2l pr tclr, resPoison, resPred⟩ μ θ v)
           have hcap_join :
@@ -2760,7 +2760,7 @@ theorem closureCapturedVarsRegimeMasked_joinETyps_step_right
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.parrow st1l (parseReturnType retSpec) pr tclr,
                   resPoison, resPred⟩ μ θ v := by
-            simpa using (.peClosure_extern id x y st1l retSpec ρcap σcap pr tclr
+            simpa using! (.peClosure_extern id x y st1l retSpec ρcap σcap pr tclr
               hval rfl htcl hP hrec :
               closureCapturedVarsRegimeMasked masked predSat R
                 ⟨ETyp.parrow st1l (parseReturnType retSpec) pr tclr,
@@ -2814,7 +2814,7 @@ private lemma joinMemEnvs_lookup_pred_eq_joinPredicates
   have hmatch : f l (env1.get? l) (env2.get? l) = some ⟨qt.poison, qt.pred⟩ := by
     have hjoin_go : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
       ({} : MemoryTypeEnv))[l]? = some ⟨qt.poison, qt.pred⟩ := by
-      simpa [joinMemEnvs, combineExtTreeMaps, Std.ExtTreeMap.get?_eq_getElem?] using hjoin_get
+      simpa [joinMemEnvs, combineExtTreeMaps, Std.ExtTreeMap.get?_eq_getElem?] using! hjoin_get
     have h_go_eq_f : (combineExtTreeMaps.go env1 env2 f (env1.keys ++ env2.keys).eraseDups
       ({} : MemoryTypeEnv))[l]? = f l (env1.get? l) (env2.get? l) := by
       cases hopt : f l (env1.get? l) (env2.get? l) with

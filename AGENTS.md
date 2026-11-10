@@ -112,7 +112,7 @@ Formal correctness proofs establishing type safety and semantic properties. **No
 - `FaultRobustnessProofs.lean` - Orchestration: imports all `StepFR*` case modules and proves the step theorem (the private `TypeSystemEnforcesFaultRobustness_step_*` family), the bridge from the step theorem to the specification (`faultRobustnessSpec_of_step`), the per-context theorem `TypeSystemEnforcesFaultRobustness_at` with its all-context corollary `TypeSystemEnforcesFaultRobustness_allCtx`, and the top-level statement (`FaultRobustnessSpec`, `TypeSystemEnforcesFaultRobustness`). The public top-level theorem derives `RegistryOperationalSafe` internally via `TrustedRegistry.operationalSafe tr` — no separate public operational-safety hypothesis.
 - `Progress.lean` - Statement of the progress property (well-typed expressions evaluate or diverge, never get stuck). Definition only; the repository contains no proof of it.
 
-**Helper modules:** `Aux.lean`, `Equality.lean`, `VarEnvPreservation.lean`
+**Helper modules:** `Auxiliary.lean`, `Equality.lean`, `VarEnvPreservation.lean`
 
 **Dependency graph (extern boundary stack):**
 

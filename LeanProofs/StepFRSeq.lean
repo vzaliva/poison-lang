@@ -78,9 +78,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
     with ⟨θ1, hθext1, hv1, hric1, hctxCons1, hvalc1, hpres1, _hfresh1, _hrd1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwfTm' : wfTagMeaningCtx tm1 ctx' := by
-    simpa [hctx', ctxAfter] using hTm1
+    simpa [hctx', ctxAfter] using! hTm1
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
-    simpa [hctx', ctxAfter] using
+    simpa [hctx', ctxAfter] using!
       IsCanonicalExtension.bounded hcanon1
   have hpc1 : ctx'.pc = true := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using hpc
@@ -90,7 +90,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
     exact masked_lookup_none_of_monotoneStepExt
       hmasked_none (fun t ht => Nat.not_le.2 (hmasked_bounded t ht)) hmono1 k hk
   have hric1' : runtimeInstantiatesCtx ctx' cfg1.memory cfg1.varEnv θ1 := by
-    simpa [hctx', ctxAfter] using hric1
+    simpa [hctx', ctxAfter] using! hric1
   have hreg1' : regimeConsistentWithCtxMasked masked ctx' := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using hreg1
   have hmasked_none1' : ∀ k, masked k → ctx'.regime.lookup? k = none := by
@@ -112,7 +112,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
       consistentWithRegimeMasked masked predSat ctx'.regime ctx' cfg1.memory cfg1.varEnv θ1 := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using hctxCons1
   have hwf1' : wfTypeContext ctx' := by
-    simpa [hctx', ctxAfter] using hwf1
+    simpa [hctx', ctxAfter] using! hwf1
   have hIH2 := IH fuel' (by simp)
     e2 ctx' (by simpa [hctx', updateCtxFromResult, ctxAfter] using hctxAfter hctxCurrent)
       hcan2 hwfTm' hTmBounded' res htc2'
@@ -157,7 +157,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
     rcases
       typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
         (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
-        (by simpa [hctx', ctxAfter] using htc2')
+        (by simpa [hctx', ctxAfter] using! htc2')
         hwf1 hbnd1
         (by simpa [ctxAfter] using hpc)
         l qt_out hlookup_out
@@ -177,7 +177,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_seq_maskedReg_with_expr_proof
     · obtain ⟨qt_mid, hlookup_mid, hclean_mid⟩ :=
         typecheckExpr_clean_lookup_origin_of_pc_true hExtTyping
           (ctx := ctxAfter ctx res1) (e := e2) (fuel := fuel') (res := res)
-          (by simpa [hctx', ctxAfter] using htc2')
+          (by simpa [hctx', ctxAfter] using! htc2')
           hwf1 hbnd1
           (by simpa [ctxAfter] using hpc)
           l qt hlookup hcontains_mid hclean
@@ -239,24 +239,24 @@ lemma stepFR_seq_with_expr_proof
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e1 ht₁_e1
   rcases hstep_e1 with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e1⟩
   rcases hstep_e1 with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, hv₀1_typed, hv₁1_typed, _hTm1, hwf1, _htagBounded1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean1, _hval_consist₀1, _hval_consist₁1, hres_agree1, _hrd₀1, _hrd₁1⟩
-  have hwfTm' : wfTagMeaningCtx tm1 ctx' := by simpa [hctx', ctxAfter] using _hTm1
+  have hwfTm' : wfTagMeaningCtx tm1 ctx' := by simpa [hctx', ctxAfter] using! _hTm1
   have htagBounded1' : TagBoundedCtx ctx' := by
-    simpa [hctx', ctxAfter] using _htagBounded1
+    simpa [hctx', ctxAfter] using! _htagBounded1
   have hTmBounded' : TagMeaningBounded tm1 ctx'.nextTag := by
-    simpa [hctx', ctxAfter] using BoundaryTagMeaningPost.bounded hcanon1
+    simpa [hctx', ctxAfter] using! BoundaryTagMeaningPost.bounded hcanon1
   have hIH2 := IH fuel' (by simp)
-    e2 ctx' (by simpa [hctx', ctxAfter] using hctxAfter hctxCurrent)
+    e2 ctx' (by simpa [hctx', ctxAfter] using! hctxAfter hctxCurrent)
       hcan2 hwfTm' htagBounded1' res htc2'
   -- Prepare for IH2
   have hθ₀1wf : wfRealizationMap θ₀1 := hθext₀1.2 hθ₀
   have hθ₁1wf : wfRealizationMap θ₁1 := hθext₁1.2 hθ₁
-  have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using hwf1
+  have hwf1' : wfTypeContext ctx' := by simpa [hctx', ctxAfter] using! hwf1
   -- hric₀1, hric₁1, htagR1 are already extracted from hstep_e1 for (ctxAfter ctxᵢ res1)
   -- Since ctx' = ctxAfter ctxᵢ res1, we convert them
   have hric₀1' : runtimeInstantiatesCtx ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by
-    simpa [hctx', ctxAfter] using hric₀1
+    simpa [hctx', ctxAfter] using! hric₀1
   have hric₁1' : runtimeInstantiatesCtx ctx' cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    simpa [hctx', ctxAfter] using hric₁1
+    simpa [hctx', ctxAfter] using! hric₁1
   have htagR1' : regimeConsistentWithCtx ctx' := by
     simpa [hctx', updateCtxFromResult, ctxAfter] using htagR1
   have hcwr₀1' : consistentWithRegime predSat ctx'.regime ctx' cfg₀1.memory cfg₀1.varEnv θ₀1 := by

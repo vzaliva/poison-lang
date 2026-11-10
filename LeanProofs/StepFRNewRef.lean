@@ -770,7 +770,7 @@ lemma stepFR_newRef_with_expr_proof
     -- htagR1 gives regimeConsistentWithCtx (ctxAfter ctxᵢ res1); use hregime_eq to transfer
     unfold regimeConsistentWithCtx
     rw [hregime_eq]
-    simpa [ctxAfter, h_tag, h_ntag] using htagR1
+    simpa [ctxAfter, h_tag, h_ntag] using! htagR1
   -- Prove agreeOnClean (using output regime from IH)
   have hagree_clean :
       agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
@@ -1152,7 +1152,7 @@ lemma stepFR_newRef_with_expr_proof
   have hEnvTm_res : EnvRespectsTagMeaning tm1 ctxᵢ.varEnv res.memEnv' := by
     have hEnvTm_upd : EnvRespectsTagMeaning tm1 ctxᵢ.varEnv (res1.memEnv'.update l storedQt) := by
       exact EnvRespectsTagMeaning_memEnv_ext tm1 ctxᵢ.varEnv res1.memEnv' l storedQt (by simp [storedQt]) hEnvTm_res1 hstored_desc
-    simpa [h_mem, storedQt, updateMemEnv] using hEnvTm_upd
+    simpa [h_mem, storedQt, updateMemEnv] using! hEnvTm_upd
   have hresTm : QTypRespectsTagMeaning tm1 res.qualType := by
     have hnotfun_res : res.qualType.etyp.isFunctionType = false := by
       simp [h_etyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]

@@ -8,7 +8,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanProofs.Aux
+import LeanProofs.Auxiliary
 import LeanProofs.Semantics
 import LeanProofs.ExternRuntime
 import Mathlib.Tactic
@@ -540,7 +540,7 @@ private lemma bevalApp_success_shape_of_inner
     BevalAppSuccess e1 e2 fuel' verbose config₀ config₁ config₂ config_final v₂ v := by
   unfold LeanPoison.beval at hmain
   simp [hb2, hb1] at hmain
-  cases vv <;> simp at hmain <;> try contradiction
+  cases vv <;> simp at hmain
   case closure x body env =>
     match body with
     | Expr.externFn id y argTyp _ _ retSpec eff cap =>
@@ -914,7 +914,7 @@ private lemma bevalApp_success_registry_eq (fuel' : Nat) (verbose : Bool)
     cfg_final.registry = cfg''.registry := by
   unfold LeanPoison.beval at hmain
   simp [h₂, h₁] at hmain
-  cases vv <;> simp at hmain <;> try contradiction
+  cases vv <;> simp at hmain
   case closure x body env =>
     match body with
     | Expr.externFn _id _argName _argTyp _ _ _retSpec _eff _cap =>
@@ -1204,7 +1204,7 @@ lemma beval_preserves_registry (fuel : Nat) (cfg₀ cfg₁ : Config) (e : Expr)
         cases impl with
         | val v' =>
             simp [hscr] at h
-            split_ifs at h; try contradiction
+            split_ifs at h
             · rcases h with ⟨rfl, _⟩; rfl
         | fn _ =>
             simp [hscr] at h
@@ -1219,7 +1219,7 @@ lemma beval_preserves_registry (fuel : Nat) (cfg₀ cfg₁ : Config) (e : Expr)
         cases impl with
         | val v' =>
             simp [hscr] at h
-            split_ifs at h; try contradiction
+            split_ifs at h
             · rcases h with ⟨rfl, _⟩; rfl
         | fn _ =>
             simp [hscr] at h
@@ -1761,7 +1761,7 @@ private lemma beval_nextAddr_mono : ∀ (e : Expr) (fuel : Nat) (verbose : Bool)
             cases impl with
             | val v' =>
                 simp [hscr] at h_eval
-                split_ifs at h_eval; try contradiction
+                split_ifs at h_eval
                 · rcases h_eval with ⟨rfl, _⟩; exact le_rfl
             | fn _ =>
                 simp [hscr] at h_eval
@@ -2090,7 +2090,7 @@ private lemma beval_memory_contains_mono : ∀ (e : Expr) (fuel : Nat) (verbose 
             cases impl with
             | val v' =>
                 simp [hscr] at h_eval
-                split_ifs at h_eval; try contradiction
+                split_ifs at h_eval
                 rcases h_eval with ⟨rfl, _⟩; intro a hc; exact hc
             | fn _ => simp [hscr] at h_eval
             | pfn _ => simp [hscr] at h_eval

@@ -7,7 +7,7 @@
 
 import LeanPoison.Syntax
 import LeanPoison.Typecheck
-import LeanProofs.Aux
+import LeanProofs.Auxiliary
 import LeanProofs.TypeSafety
 import LeanProofs.SemanticsProperties
 import Std.Data.ExtTreeMap
@@ -41,7 +41,7 @@ end TagMeaning
 /-- `tm` extends to `tm'`: every binding of `tm` is preserved in `tm'`.
     Insertions at fresh keys are allowed; overwrites and removals are forbidden.
 
-    Built on the generic `ExtTreeMap.IsSubmap` (`LeanProofs/Aux.lean`). -/
+    Built on the generic `ExtTreeMap.IsSubmap` (`LeanProofs/Auxiliary.lean`). -/
 abbrev TagMeaningExtends (tm tm' : TagMeaning) : Prop :=
   ExtTreeMap.IsSubmap tm tm'
 
@@ -577,7 +577,7 @@ lemma EnvRespectsTagMeaning_updateMemEnv
     (hEnv : EnvRespectsTagMeaning tm σ env)
     (hqt : QTypRespectsTagMeaning tm qt) :
     EnvRespectsTagMeaning tm σ (updateMemEnv env l qt) := by
-  simpa [updateMemEnv] using
+  simpa [updateMemEnv] using!
     (EnvRespectsTagMeaning_memEnv_ext tm σ env l qt hqt_int hEnv hqt)
 
 lemma EnvRespectsTagMeaning_list_fold_updateMemEnv
@@ -662,7 +662,7 @@ lemma QTypRespectsTagMeaning_joinMem_lookup
     simp [f, Std.ExtTreeMap.get?_eq_getElem?, h1_val, h2_val]
   rw [hfun] at hgo
   have hget_join : (joinMemEnvs Γ1 Γ2).get? l = some ⟨joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩ := by
-    simpa [joinMemEnvs, combineExtTreeMaps] using hgo
+    simpa [joinMemEnvs, combineExtTreeMaps] using! hgo
   have heq_root : qtRoot = ⟨ETyp.int, joinPoison e1.poison e2.poison, joinPredicates e1.pred e2.pred⟩ := by
     have hto := memEnv_lookup_toQTyp (joinMemEnvs Γ1 Γ2) l qtRoot hlookup
     have hget := memEnv_get_eq_of_lookup (joinMemEnvs Γ1 Γ2) l qtRoot hlookup
@@ -1642,7 +1642,7 @@ private lemma joinRegimes_lookup_true_of_both_true
     simp only [← Std.ExtTreeMap.get?_eq_getElem?, hkmap1, hkmap2] at hgo_regime
     simp only [↓reduceIte] at hgo_regime
     simpa [Std.ExtTreeMap.get?_eq_getElem?] using hgo_regime
-  simpa [Regime.lookup?, joinRegimes] using hkjoined
+  simpa [Regime.lookup?, joinRegimes] using! hkjoined
 
 lemma tagEnvConsistentWithRegimeMasked_join
     (masked : Tag → Prop)

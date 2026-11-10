@@ -147,7 +147,7 @@ private lemma deref_valueConsistentWithRegimeMasked_of_typecheck
                     have hfold' :
                         LocSet.foldM ls0 (false, (none : Option Predicate)) (derefFoldF res1.memEnv') =
                           Except.ok v := by
-                      simpa [LocSet.foldM, derefFoldF] using hfold
+                      simpa [LocSet.foldM, derefFoldF] using! hfold
                     cases hmerged : v.2.getD Predicate.noPred with
                     | noPred =>
                         simp [hmerged, pure, Except.pure] at htc''
@@ -744,7 +744,7 @@ lemma stepFR_deref_with_expr_proof
               have hfold' :
                   LocSet.foldM ls0 (false, (none : Option Predicate)) (derefFoldF res1.memEnv') =
                     Except.ok v_3 := by
-                simpa [LocSet.foldM, derefFoldF] using hfold
+                simpa [LocSet.foldM, derefFoldF] using! hfold
               have hlookup_ctx' : res1.memEnv'.lookup l = some qt := by
                 simpa [ctxAfter] using hlookup_ctx
               cases hclean with
@@ -817,7 +817,7 @@ lemma stepFR_deref_with_expr_proof
                                       _ = some qt := hlookup_ctx'
                                   exact Option.some.inj this
                                 have htagqt' : qtypGuardTag qt = some k := by
-                                  simpa [hqt'] using htagqt
+                                  simpa [hqt'] using! htagqt
                                 obtain ⟨qt'', hlookup''⟩ :=
                                   deref_foldM_etyp_int res1.memEnv' ls0 v_3.1 v_3.2 hfold' l hlin
                                 have hqt'' : qt'' = qt := by
@@ -882,7 +882,7 @@ lemma stepFR_deref_with_expr_proof
                                       _ = some qt := hlookup_ctx'
                                   exact Option.some.inj this
                                 have htagqt' : qtypGuardTag qt = some k := by
-                                  simpa [hqt'] using htagqt
+                                  simpa [hqt'] using! htagqt
                                 obtain ⟨qt'', hlookup''⟩ :=
                                   deref_foldM_etyp_int res1.memEnv' ls0 v_3.1 v_3.2 hfold' l hlin
                                 have hqt'' : qt'' = qt := by
@@ -972,7 +972,7 @@ lemma stepFR_deref_with_expr_proof
                         have htagqt' : qtypGuardTag qt = some k := by
                           have hk : k' = k := by
                             simpa [qtypGuardTag, hpred] using htag
-                          simpa [hk, hqt'] using htagqt
+                          simpa [hk, hqt'] using! htagqt
                         obtain ⟨qt'', hlookup''⟩ :=
                           deref_foldM_etyp_int res1.memEnv' ls0 v_3.1 v_3.2 hfold' l hlin
                         have hqt'' : qt'' = qt := by

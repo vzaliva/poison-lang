@@ -1588,7 +1588,7 @@ private lemma wfTagMeaningCtx_arrow_static_body
       wfTagMeaningCtx_ofCaptured_from_arrow_static_source
         tm (ctxAfter ctx result1) qtRes st1 st2 p tcls id x y argTyp retSpec effects
         σcap hctxTm hresTm hetyp hsource
-    simpa [ctxCap, ctxAfter] using hcapTm
+    simpa [ctxCap, ctxAfter] using! hcapTm
   have hbodyTm :
       wfTagMeaningCtx tm { ctxCap with varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt } :=
     wfTagMeaningCtx_varEnv_ext tm ctxCap x argQt hctxCapTm hargTm
@@ -1679,7 +1679,7 @@ private lemma wfTagMeaningCtx_parrow_static_body
       wfTagMeaningCtx_ofCaptured_from_parrow_static_source
         tm (ctxAfter ctx result1) qtRes st1 st2 p tcls id x y argTyp retSpec
         σcap hctxTm hresTm hetyp hsource
-    simpa [ctxCap, ctxAfter] using hcapTm
+    simpa [ctxCap, ctxAfter] using! hcapTm
   have hbodyTm :
       wfTagMeaningCtx tm { ctxCap with varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured σcap) x argQt } :=
     wfTagMeaningCtx_varEnv_ext tm ctxCap x argQt hctxCapTm hargTm
@@ -1727,7 +1727,7 @@ private lemma consistentWithRegimeMasked_app_closure_body_start
   refine ⟨?_, ?_, ?_⟩
   · intro l qt k hlookup hguard hRdef
     exact hpre.1 l qt k (by simpa [bodyCtx, ctxAfter] using hlookup) (by simpa [bodyCtx] using hguard)
-      (by simpa [bodyCtx] using hRdef)
+      (by simpa [bodyCtx] using! hRdef)
   · intro y qt k hlookup hguard hRdef
     by_cases hy : y = x
     · have hlookup_xarg :
@@ -2010,7 +2010,7 @@ private lemma consistentWithRegimeMasked_app_arrow_body_start
         exact hrec y qt v hy hv
       refine ⟨σ, hmem, hP.2, ?_⟩
       intro cursor
-      simpa using
+      simpa using!
         consistentWithRegimeMasked_app_closure_body_start
           (masked := masked) (predSat := predSat)
           (ctx := ctx) (result2 := result2) (result1 := result1)
@@ -2155,7 +2155,7 @@ private lemma consistentWithRegimeMasked_app_arrow_extern_body_start
         exact hrec z qt v hz hv
       refine ⟨σ, _, _, ExternCallBoundaryFnStaticSource.externMember hargEq rfl hmem, hP.2, ?_⟩
       intro cursor
-      simpa using
+      simpa using!
         consistentWithRegimeMasked_app_closure_body_start
           (masked := masked) (predSat := predSat)
           (ctx := ctx) (result2 := result2) (result1 := result1)
@@ -2284,7 +2284,7 @@ private lemma consistentWithRegimeMasked_app_parrow_body_start
         exact hrec y qt v hy hv
       refine ⟨σ, pbody, hpure, hmem, hP.2, ?_⟩
       intro cursor
-      simpa using
+      simpa using!
         consistentWithRegimeMasked_app_closure_body_start
           (masked := masked) (predSat := predSat)
           (ctx := ctx) (result2 := result2) (result1 := result1)
@@ -2423,7 +2423,7 @@ private lemma consistentWithRegimeMasked_app_parrow_extern_body_start
         exact hrec z qt v hz hv
       refine ⟨σ, _, _, ExternCallBoundaryPfnStaticSource.externMember hargEq rfl hmem, hP.2, ?_⟩
       intro cursor
-      simpa using
+      simpa using!
         consistentWithRegimeMasked_app_closure_body_start
           (masked := masked) (predSat := predSat)
           (ctx := ctx) (result2 := result2) (result1 := result1)
@@ -2468,7 +2468,7 @@ private lemma applyFnTClosure_ok_regimeConsistentWithCtx
               tagEnv := result1.tagEnv', nextTag := result1.nextTag',
               nextLoc := result1.nextLoc', regime := result1.regime',
               externRefAllowed := false, declaredExternRefs := result1.declared' }
-          have htcBody' : typecheck bodyCtx body fuel' = .ok result3 := by simpa using htcBody
+          have htcBody' : typecheck bodyCtx body fuel' = .ok result3 := by simpa using! htcBody
           have hreg_body : regimeConsistentWithCtx bodyCtx := by
             simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using hreg1
           have hIH := typecheckExpr_preserves_regimeConsistentWithCtx bodyCtx body fuel' result3 hreg_body htcBody'
@@ -2511,7 +2511,7 @@ private lemma applyFnTClosureAtCursor_ok_regimeConsistentWithCtx
   regimeConsistentWithCtx (ctxAfter ctx r) := by
   let resultCursor : TypeResult := { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
   have hregCursor : regimeConsistentWithCtx (ctxAfter ctx resultCursor) := by
-    simpa [ctxAfter, resultCursor] using hreg1
+    simpa [ctxAfter, resultCursor] using! hreg1
   have happlyOld :
       applyFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
         ctx resultCursor fuel = .ok r := by
@@ -3056,7 +3056,7 @@ private lemma applyPFnTClosure_ok_regimeConsistentWithCtx
               pureCtx := true,
               nextLoc := result1.nextLoc', regime := result1.regime',
               externRefAllowed := false, declaredExternRefs := result1.declared' }
-          have htcBody' : typecheck bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by simpa using htcBody
+          have htcBody' : typecheck bodyCtx (PExpr.toExpr body) fuel' = .ok result3 := by simpa using! htcBody
           have hreg_body : regimeConsistentWithCtx bodyCtx := by
             simpa [bodyCtx, ctxAfter, regimeConsistentWithCtx] using hreg1
           have hIH := typecheckExpr_preserves_regimeConsistentWithCtx bodyCtx (PExpr.toExpr body) fuel' result3 hreg_body htcBody'
@@ -3133,7 +3133,7 @@ private lemma applyPFnTClosureAtCursor_ok_regimeConsistentWithCtx
   regimeConsistentWithCtx (ctxAfter ctx r) := by
   let resultCursor : TypeResult := { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
   have hregCursor : regimeConsistentWithCtx (ctxAfter ctx resultCursor) := by
-    simpa [ctxAfter, resultCursor] using hreg1
+    simpa [ctxAfter, resultCursor] using! hreg1
   have happlyOld :
       applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred
         ctx resultCursor fuel = .ok r := by
@@ -7524,7 +7524,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
             (hqt2 ▸ QTypRespectsTagMeaning_mono
               (IsCanonicalExtension.extends_tm hcanon1) hresTm2) rfl rfl
         have hTmBody : wfTagMeaningCtx tm1 bodyCtx := by
-          simpa [bodyCtx, ctxAfter] using
+          simpa [bodyCtx, ctxAfter] using!
             wfTagMeaningCtx_closure_body
               (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
               (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -8166,7 +8166,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
         (hqt2 ▸ QTypRespectsTagMeaning_mono
           (IsCanonicalExtension.extends_tm hcanon1) hresTm2) rfl rfl
     have hTmBody : wfTagMeaningCtx tm1 bodyCtx := by
-      simpa [bodyCtx, ctxAfter] using
+      simpa [bodyCtx, ctxAfter] using!
         wfTagMeaningCtx_arrow_static_body
           (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
           (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -9082,7 +9082,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             (hqt2 ▸ QTypRespectsTagMeaning_mono
               (IsCanonicalExtension.extends_tm hcanon1) hresTm2) rfl rfl
         have hTmBody : wfTagMeaningCtx tm1 bodyCtx := by
-          simpa [bodyCtx, ctxAfter] using
+          simpa [bodyCtx, ctxAfter] using!
             wfTagMeaningCtx_pclosure_body
               (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
               (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -9743,7 +9743,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
         (hqt2 ▸ QTypRespectsTagMeaning_mono
           (IsCanonicalExtension.extends_tm hcanon1) hresTm2) rfl rfl
     have hTmBody : wfTagMeaningCtx tm1 bodyCtx := by
-      simpa [bodyCtx, ctxAfter] using
+      simpa [bodyCtx, ctxAfter] using!
         wfTagMeaningCtx_parrow_static_body
           (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
           (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -11058,7 +11058,7 @@ lemma stepFR_app_with_expr_proof
                     (QTypRespectsTagMeaning_mono
                       (BoundaryTagMeaningPost.extends_tm hcanon1) hresTm2_arg)
                     rfl rfl
-                simpa [bodyCtxA₀, ctxAfter] using
+                simpa [bodyCtxA₀, ctxAfter] using!
                   wfTagMeaningCtx_closure_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -11296,7 +11296,7 @@ lemma stepFR_app_with_expr_proof
                     (QTypRespectsTagMeaning_mono
                       (BoundaryTagMeaningPost.extends_tm hcanon1) hresTm2_arg)
                     rfl rfl
-                simpa [bodyCtxA₁, ctxAfter] using
+                simpa [bodyCtxA₁, ctxAfter] using!
                   wfTagMeaningCtx_closure_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -12059,7 +12059,7 @@ lemma stepFR_app_with_expr_proof
                       (xArg := x₀)
                       (argQt := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
                       hTm1 hresTm1' hetyp1 hmem hargTm
-                  simpa [bodyCtx, ctxAfter] using hTmBody'
+                  simpa [bodyCtx, ctxAfter] using! hTmBody'
                 have htcBody' : typecheck bodyCtx body₀ fuelBody = .ok result3Shared := by
                   simpa [bodyCtx, typecheck] using htcBody
                 have htagBoundedBody : TagBoundedCtx bodyCtx := by
@@ -13401,7 +13401,7 @@ lemma stepFR_app_with_expr_proof
                     hresTm2_arg' rfl rfl
                 exact fun {qt'} {k} {d} hinq hqd => hargTm' hinq hqd
               have hTmBodyU₀ : wfTagMeaningCtx tm1 bodyCtxU₀ := by
-                simpa [bodyCtxU₀, ctxAfter] using
+                simpa [bodyCtxU₀, ctxAfter] using!
                   wfTagMeaningCtx_closure_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -13410,7 +13410,7 @@ lemma stepFR_app_with_expr_proof
                     (xArg := x₀) (argQt := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
                     hTm1 hresTm1 hetyp1 hσcap₀_mem hargTm
               have hTmBodyE₁ : wfTagMeaningCtx tm1 bodyCtxE₁ := by
-                simpa [bodyCtxE₁, ctxAfter] using
+                simpa [bodyCtxE₁, ctxAfter] using!
                   wfTagMeaningCtx_arrow_static_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -13800,7 +13800,7 @@ lemma stepFR_app_with_expr_proof
                   simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                     using hcwr_bodyE₁
                 have hpcBody : callEntry₁.bodyCtx.pc = true := by
-                  simpa [callEntry₁] using hpc_bodyE₁
+                  simpa [callEntry₁] using! hpc_bodyE₁
                 exact
                   externCallBoundaryRunProvider_singlePost
                     (entryKey := entryKey) (id := id₁) (result3 := firstE₁)
@@ -13808,10 +13808,10 @@ lemma stepFR_app_with_expr_proof
                     (θBody := θ₁1) (callEntry := callEntry₁)
                     (cf := cf₁) (o := o₁)
                     hrunProvider₁ hpredlaws1
-                    (by simpa [callEntry₁] using hTmBodyE₁)
-                    (by simpa [callEntry₁] using hTmBoundedBodyE₁)
-                    hθ₁1wf (by simpa [callEntry₁] using hwfBodyCtxE₁)
-                    hricBody (by simpa [callEntry₁] using htagR_bodyE₁)
+                    (by simpa [callEntry₁] using! hTmBodyE₁)
+                    (by simpa [callEntry₁] using! hTmBoundedBodyE₁)
+                    hθ₁1wf (by simpa [callEntry₁] using! hwfBodyCtxE₁)
+                    hricBody (by simpa [callEntry₁] using! htagR_bodyE₁)
                     hcwrBody hwfcfg_body_initE₁
                     (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
                       bodyCtxE₁] using hrd₁1x)
@@ -14166,7 +14166,7 @@ lemma stepFR_app_with_expr_proof
                     hresTm2_arg' rfl rfl
                 exact fun {qt'} {k} {d} hinq hqd => hargTm' hinq hqd
               have hTmBodyE₀ : wfTagMeaningCtx tm1 bodyCtxE₀ := by
-                simpa [bodyCtxE₀, ctxAfter] using
+                simpa [bodyCtxE₀, ctxAfter] using!
                   wfTagMeaningCtx_arrow_static_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -14177,7 +14177,7 @@ lemma stepFR_app_with_expr_proof
                     (argQt := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
                     hTm1 hresTm1 hetyp1 hsource₀ hargTm
               have hTmBodyU₁ : wfTagMeaningCtx tm1 bodyCtxU₁ := by
-                simpa [bodyCtxU₁, ctxAfter] using
+                simpa [bodyCtxU₁, ctxAfter] using!
                   wfTagMeaningCtx_closure_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -14514,7 +14514,7 @@ lemma stepFR_app_with_expr_proof
                   simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                     using hcwr_bodyE₀
                 have hpcBody : callEntry₀.bodyCtx.pc = true := by
-                  simpa [callEntry₀] using hpc_bodyE₀
+                  simpa [callEntry₀] using! hpc_bodyE₀
                 exact
                   externCallBoundaryRunProvider_singlePost
                     (entryKey := entryKey) (id := id₀) (result3 := firstE₀)
@@ -14522,12 +14522,12 @@ lemma stepFR_app_with_expr_proof
                     (θBody := θ₀1) (callEntry := callEntry₀)
                     (cf := cf₀) (o := o₀)
                     hrunProvider₀ hpredlaws1
-                    (by simpa [callEntry₀] using hTmBodyE₀)
-                    (by simpa [callEntry₀] using hTmBoundedBodyE₀)
-                    hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtxE₀)
-                    hricBody (by simpa [callEntry₀] using htagR_bodyE₀)
+                    (by simpa [callEntry₀] using! hTmBodyE₀)
+                    (by simpa [callEntry₀] using! hTmBoundedBodyE₀)
+                    hθ₀1wf (by simpa [callEntry₀] using! hwfBodyCtxE₀)
+                    hricBody (by simpa [callEntry₀] using! htagR_bodyE₀)
                     hcwrBody hwfcfg_body_initE₀
-                    (by simpa [callEntry₀, ExternCallEntry.bodyConfig] using hrd₀1x)
+                    (by simpa [callEntry₀, ExternCallEntry.bodyConfig] using! hrd₀1x)
                     hpcBody
               have htagBnd_bodyU₁ : TagBoundedCtx bodyCtxU₁ := by
                 have hCapBoundBase : CapturedEnvFullBounded σcap₁ result1.nextTag' := by
@@ -14924,7 +14924,7 @@ lemma stepFR_app_with_expr_proof
                     rfl rfl
                 exact fun {qt'} {k} {d} hinq hqd => hargTm' hinq hqd
               have hTmBody₀ : wfTagMeaningCtx tm1 bodyCtx₀ := by
-                simpa [bodyCtx₀, ctxAfter] using
+                simpa [bodyCtx₀, ctxAfter] using!
                   wfTagMeaningCtx_arrow_static_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -14935,7 +14935,7 @@ lemma stepFR_app_with_expr_proof
                     (argQt := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
                     hTm1 hresTm1 hetyp1 hsource₀ hargTm
               have hTmBody₁ : wfTagMeaningCtx tm1 bodyCtx₁ := by
-                simpa [bodyCtx₁, ctxAfter] using
+                simpa [bodyCtx₁, ctxAfter] using!
                   wfTagMeaningCtx_arrow_static_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -15223,7 +15223,7 @@ lemma stepFR_app_with_expr_proof
                   simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                     using hcwr_body₀
                 have hpcBody : callEntry₀.bodyCtx.pc = true := by
-                  simpa [callEntry₀] using hpc_body₀
+                  simpa [callEntry₀] using! hpc_body₀
                 exact
                   externCallBoundaryRunProvider_singlePost
                     (entryKey := entryKey) (id := id₀) (result3 := firstA₀)
@@ -15231,10 +15231,10 @@ lemma stepFR_app_with_expr_proof
                     (θBody := θ₀1) (callEntry := callEntry₀)
                     (cf := cf₀) (o := o₀)
                     hrunProvider₀ hpredlaws1
-                    (by simpa [callEntry₀] using hTmBody₀)
-                    (by simpa [callEntry₀] using hTmBoundedBody₀)
-                    hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtx₀)
-                    hricBody (by simpa [callEntry₀] using htagR_body₀)
+                    (by simpa [callEntry₀] using! hTmBody₀)
+                    (by simpa [callEntry₀] using! hTmBoundedBody₀)
+                    hθ₀1wf (by simpa [callEntry₀] using! hwfBodyCtx₀)
+                    hricBody (by simpa [callEntry₀] using! htagR_body₀)
                     hcwrBody hwfcfg_body_init₀
                     (by simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
                       bodyCtx₀] using hrd₀1x)
@@ -15253,7 +15253,7 @@ lemma stepFR_app_with_expr_proof
                   simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                     using hcwr_body₁
                 have hpcBody : callEntry₁.bodyCtx.pc = true := by
-                  simpa [callEntry₁] using hpc_body₁
+                  simpa [callEntry₁] using! hpc_body₁
                 exact
                   externCallBoundaryRunProvider_singlePost
                     (entryKey := entryKey) (id := id₁) (result3 := firstA₁)
@@ -15261,10 +15261,10 @@ lemma stepFR_app_with_expr_proof
                     (θBody := θ₁1) (callEntry := callEntry₁)
                     (cf := cf₁) (o := o₁)
                     hrunProvider₁ hpredlaws1
-                    (by simpa [callEntry₁] using hTmBody₁)
-                    (by simpa [callEntry₁] using hTmBoundedBody₁)
-                    hθ₁1wf (by simpa [callEntry₁] using hwfBodyCtx₁)
-                    hricBody (by simpa [callEntry₁] using htagR_body₁)
+                    (by simpa [callEntry₁] using! hTmBody₁)
+                    (by simpa [callEntry₁] using! hTmBoundedBody₁)
+                    hθ₁1wf (by simpa [callEntry₁] using! hwfBodyCtx₁)
+                    hricBody (by simpa [callEntry₁] using! htagR_body₁)
                     hcwrBody hwfcfg_body_init₁
                     (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
                       bodyCtx₁] using hrd₁1x)
@@ -15514,7 +15514,7 @@ lemma stepFR_app_with_expr_proof
                         hresTm2_arg' rfl rfl
                     exact fun {qt'} {k} {d} hinq hqd => hargTm' hinq hqd
                   have hTmBody : wfTagMeaningCtx tm1 bodyCtx := by
-                    simpa [bodyCtx, ctxAfter] using
+                    simpa [bodyCtx, ctxAfter] using!
                       wfTagMeaningCtx_arrow_static_body
                         (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                         (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -16132,7 +16132,7 @@ lemma stepFR_app_with_expr_proof
                         hvar₀_eq hvar₁_eq hricFinal₀ hricFinal₁ hθbody₀ hθbody₁
                         hagree1
                         (by
-                          simpa [callEntry₀, evalCfg₀, evalCfg₁] using hagreeBody)
+                          simpa [callEntry₀, evalCfg₀, evalCfg₁] using! hagreeBody)
                   have _hOutChoice_clean :
                       AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ := by
                     exact
@@ -16152,9 +16152,9 @@ lemma stepFR_app_with_expr_proof
                         _hentryKey_unique _hcallFR_of_entryKey
                         hrunProvider₀ hrunProvider₁ rfl
                         hpredlaws1
-                        (by simpa [callEntry₀] using hTmBody)
-                        (by simpa [callEntry₀] using hTmBoundedBody)
-                        (by simpa [callEntry₀, callEntry₁] using hinputs)
+                        (by simpa [callEntry₀] using! hTmBody)
+                        (by simpa [callEntry₀] using! hTmBoundedBody)
+                        (by simpa [callEntry₀, callEntry₁] using! hinputs)
                         rfl rfl h_join hfirstA_mem'
                         hres1_to_firstA_mono htagBounded1
                         (fun z qt hlookup => by simpa [ctxAfter] using hlookup)
@@ -17048,7 +17048,7 @@ lemma stepFR_app_with_expr_proof
                   (QTypRespectsTagMeaning_mono
                     (BoundaryTagMeaningPost.extends_tm hcanon1) hresTm2_arg)
                   rfl rfl
-              simpa [bodyCtxA₀, ctxAfter] using
+              simpa [bodyCtxA₀, ctxAfter] using!
                 wfTagMeaningCtx_pclosure_body
                   (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                   (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -17295,7 +17295,7 @@ lemma stepFR_app_with_expr_proof
                   (QTypRespectsTagMeaning_mono
                     (BoundaryTagMeaningPost.extends_tm hcanon1) hresTm2_arg)
                   rfl rfl
-              simpa [bodyCtxA₁, ctxAfter] using
+              simpa [bodyCtxA₁, ctxAfter] using!
                 wfTagMeaningCtx_pclosure_body
                   (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                   (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -19482,7 +19482,7 @@ lemma stepFR_app_with_expr_proof
                     hresTm2_arg' rfl rfl
                 exact fun {qt'} {k} {d} hinq hqd => hargTm' hinq hqd
               have hTmBodyU₀ : wfTagMeaningCtx tm1 bodyCtxU₀ := by
-                simpa [bodyCtxU₀, ctxAfter] using
+                simpa [bodyCtxU₀, ctxAfter] using!
                   wfTagMeaningCtx_pclosure_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -19491,7 +19491,7 @@ lemma stepFR_app_with_expr_proof
                     (xArg := x₀) (argQt := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
                     hTm1 hresTm1 hetyp1 hsource₀ hargTm
               have hTmBodyE₁ : wfTagMeaningCtx tm1 bodyCtxE₁ := by
-                simpa [bodyCtxE₁, ctxAfter] using
+                simpa [bodyCtxE₁, ctxAfter] using!
                   wfTagMeaningCtx_parrow_static_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -19823,7 +19823,7 @@ lemma stepFR_app_with_expr_proof
                   simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                     using hcwr_bodyE₁
                 have hpcBody : callEntry₁.bodyCtx.pc = true := by
-                  simpa [callEntry₁] using hpc_bodyE₁
+                  simpa [callEntry₁] using! hpc_bodyE₁
                 exact
                   externCallBoundaryRunProvider_singlePost
                     (entryKey := entryKey) (id := id₁) (result3 := firstE₁)
@@ -19831,10 +19831,10 @@ lemma stepFR_app_with_expr_proof
                     (θBody := θ₁1) (callEntry := callEntry₁)
                     (cf := cf₁) (o := o₁)
                     hrunProvider₁ hpredlaws1
-                    (by simpa [callEntry₁] using hTmBodyE₁)
-                    (by simpa [callEntry₁] using hTmBoundedBodyE₁)
-                    hθ₁1wf (by simpa [callEntry₁] using hwfBodyCtxE₁)
-                    hricBody (by simpa [callEntry₁] using htagR_bodyE₁)
+                    (by simpa [callEntry₁] using! hTmBodyE₁)
+                    (by simpa [callEntry₁] using! hTmBoundedBodyE₁)
+                    hθ₁1wf (by simpa [callEntry₁] using! hwfBodyCtxE₁)
+                    hricBody (by simpa [callEntry₁] using! htagR_bodyE₁)
                     hcwrBody hwfcfg_body_initE₁
                     (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
                       bodyCtxE₁] using hrd₁1x)
@@ -20196,7 +20196,7 @@ lemma stepFR_app_with_expr_proof
                     hresTm2_arg' rfl rfl
                 exact fun {qt'} {k} {d} hinq hqd => hargTm' hinq hqd
               have hTmBodyE₀ : wfTagMeaningCtx tm1 bodyCtxE₀ := by
-                simpa [bodyCtxE₀, ctxAfter] using
+                simpa [bodyCtxE₀, ctxAfter] using!
                   wfTagMeaningCtx_parrow_static_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -20207,7 +20207,7 @@ lemma stepFR_app_with_expr_proof
                     (argQt := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
                     hTm1 hresTm1 hetyp1 hsource₀ hargTm
               have hTmBodyU₁ : wfTagMeaningCtx tm1 bodyCtxU₁ := by
-                simpa [bodyCtxU₁, ctxAfter] using
+                simpa [bodyCtxU₁, ctxAfter] using!
                   wfTagMeaningCtx_pclosure_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -20476,7 +20476,7 @@ lemma stepFR_app_with_expr_proof
                   simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                     using hcwr_bodyE₀
                 have hpcBody : callEntry₀.bodyCtx.pc = true := by
-                  simpa [callEntry₀] using hpc_bodyE₀
+                  simpa [callEntry₀] using! hpc_bodyE₀
                 exact
                   externCallBoundaryRunProvider_singlePost
                     (entryKey := entryKey) (id := id₀) (result3 := firstE₀)
@@ -20484,12 +20484,12 @@ lemma stepFR_app_with_expr_proof
                     (θBody := θ₀1) (callEntry := callEntry₀)
                     (cf := cf₀) (o := o₀)
                     hrunProvider₀ hpredlaws1
-                    (by simpa [callEntry₀] using hTmBodyE₀)
-                    (by simpa [callEntry₀] using hTmBoundedBodyE₀)
-                    hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtxE₀)
-                    hricBody (by simpa [callEntry₀] using htagR_bodyE₀)
+                    (by simpa [callEntry₀] using! hTmBodyE₀)
+                    (by simpa [callEntry₀] using! hTmBoundedBodyE₀)
+                    hθ₀1wf (by simpa [callEntry₀] using! hwfBodyCtxE₀)
+                    hricBody (by simpa [callEntry₀] using! htagR_bodyE₀)
                     hcwrBody hwfcfg_body_initE₀
-                    (by simpa [callEntry₀, ExternCallEntry.bodyConfig] using hrd₀1x)
+                    (by simpa [callEntry₀, ExternCallEntry.bodyConfig] using! hrd₀1x)
                     hpcBody
               have htagBnd_bodyU₁ : TagBoundedCtx bodyCtxU₁ := by
                 have hCapBoundBase : CapturedEnvFullBounded σcap₁ result1.nextTag' := by
@@ -20894,7 +20894,7 @@ lemma stepFR_app_with_expr_proof
                     hresTm2_arg' rfl rfl
                 exact fun {qt'} {k} {d} hinq hqd => hargTm' hinq hqd
               have hTmBody₀ : wfTagMeaningCtx tm1 bodyCtx₀ := by
-                simpa [bodyCtx₀, ctxAfter] using
+                simpa [bodyCtx₀, ctxAfter] using!
                   wfTagMeaningCtx_parrow_static_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -20905,7 +20905,7 @@ lemma stepFR_app_with_expr_proof
                     (argQt := ⟨etyp2, joinPoison ctxᵢ.pc p2, pred2⟩)
                     hTm1 hresTm1 hetyp1 hsource₀ hargTm
               have hTmBody₁ : wfTagMeaningCtx tm1 bodyCtx₁ := by
-                simpa [bodyCtx₁, ctxAfter] using
+                simpa [bodyCtx₁, ctxAfter] using!
                   wfTagMeaningCtx_parrow_static_body
                     (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                     (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -21195,7 +21195,7 @@ lemma stepFR_app_with_expr_proof
                   simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                     using hcwr_body₀
                 have hpcBody : callEntry₀.bodyCtx.pc = true := by
-                  simpa [callEntry₀] using hpc_body₀
+                  simpa [callEntry₀] using! hpc_body₀
                 exact
                   externCallBoundaryRunProvider_singlePost
                     (entryKey := entryKey) (id := id₀) (result3 := firstA₀)
@@ -21203,10 +21203,10 @@ lemma stepFR_app_with_expr_proof
                     (θBody := θ₀1) (callEntry := callEntry₀)
                     (cf := cf₀) (o := o₀)
                     hrunProvider₀ hpredlaws1
-                    (by simpa [callEntry₀] using hTmBody₀)
-                    (by simpa [callEntry₀] using hTmBoundedBody₀)
-                    hθ₀1wf (by simpa [callEntry₀] using hwfBodyCtx₀)
-                    hricBody (by simpa [callEntry₀] using htagR_body₀)
+                    (by simpa [callEntry₀] using! hTmBody₀)
+                    (by simpa [callEntry₀] using! hTmBoundedBody₀)
+                    hθ₀1wf (by simpa [callEntry₀] using! hwfBodyCtx₀)
+                    hricBody (by simpa [callEntry₀] using! htagR_body₀)
                     hcwrBody hwfcfg_body_init₀
                     (by simpa [callEntry₀, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
                       bodyCtx₀] using hrd₀1x)
@@ -21225,7 +21225,7 @@ lemma stepFR_app_with_expr_proof
                   simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime]
                     using hcwr_body₁
                 have hpcBody : callEntry₁.bodyCtx.pc = true := by
-                  simpa [callEntry₁] using hpc_body₁
+                  simpa [callEntry₁] using! hpc_body₁
                 exact
                   externCallBoundaryRunProvider_singlePost
                     (entryKey := entryKey) (id := id₁) (result3 := firstA₁)
@@ -21233,10 +21233,10 @@ lemma stepFR_app_with_expr_proof
                     (θBody := θ₁1) (callEntry := callEntry₁)
                     (cf := cf₁) (o := o₁)
                     hrunProvider₁ hpredlaws1
-                    (by simpa [callEntry₁] using hTmBody₁)
-                    (by simpa [callEntry₁] using hTmBoundedBody₁)
-                    hθ₁1wf (by simpa [callEntry₁] using hwfBodyCtx₁)
-                    hricBody (by simpa [callEntry₁] using htagR_body₁)
+                    (by simpa [callEntry₁] using! hTmBody₁)
+                    (by simpa [callEntry₁] using! hTmBoundedBody₁)
+                    hθ₁1wf (by simpa [callEntry₁] using! hwfBodyCtx₁)
+                    hricBody (by simpa [callEntry₁] using! htagR_body₁)
                     hcwrBody hwfcfg_body_init₁
                     (by simpa [callEntry₁, ExternCallEntry.bodyConfig, ExternCallEntry.ofRuntime,
                       bodyCtx₁] using hrd₁1x)
@@ -21483,7 +21483,7 @@ lemma stepFR_app_with_expr_proof
                         hresTm2_arg' rfl rfl
                     exact fun {qt'} {k} {d} hinq hqd => hargTm' hinq hqd
                   have hTmBody : wfTagMeaningCtx tm1 bodyCtx := by
-                    simpa [bodyCtx, ctxAfter] using
+                    simpa [bodyCtx, ctxAfter] using!
                       wfTagMeaningCtx_parrow_static_body
                         (tm := tm1) (ctx := ctxAfter ctxᵢ result2) (result1 := result1)
                         (qtRes := result1.qualType) (st1 := st1) (st2 := st2)
@@ -22107,7 +22107,7 @@ lemma stepFR_app_with_expr_proof
                         rfl rfl hricFinal₀ hricFinal₁ hθbody₀ hθbody₁
                         hagree1_cf
                         (by
-                          simpa [callEntry₀, evalCfg₀, evalCfg₁] using hagreeBody)
+                          simpa [callEntry₀, evalCfg₀, evalCfg₁] using! hagreeBody)
                   have _hOutChoice_clean :
                       AppTwoRunOutChoice predSat ctxᵢ res θ₀1 θ₁1 cf₀ cf₁ o₀ o₁ := by
                     exact
@@ -22127,9 +22127,9 @@ lemma stepFR_app_with_expr_proof
                         _hentryKey_unique _hcallFR_of_entryKey
                         hrunProvider₀ hrunProvider₁ rfl
                         hpredlaws1
-                        (by simpa [callEntry₀] using hTmBody)
-                        (by simpa [callEntry₀] using hTmBoundedBody)
-                        (by simpa [callEntry₀, callEntry₁] using hinputs)
+                        (by simpa [callEntry₀] using! hTmBody)
+                        (by simpa [callEntry₀] using! hTmBoundedBody)
+                        (by simpa [callEntry₀, callEntry₁] using! hinputs)
                         rfl rfl h_join hfirstA_mem'
                         hres1_to_firstA_mono htagBounded1
                         (fun z qt hlookup => by simpa [ctxAfter] using hlookup)

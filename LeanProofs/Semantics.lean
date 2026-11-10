@@ -10,7 +10,7 @@
 import LeanPoison.Syntax
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanProofs.Aux
+import LeanProofs.Auxiliary
 
 open Std
 open LeanPoison

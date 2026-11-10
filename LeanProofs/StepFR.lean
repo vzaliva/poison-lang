@@ -16,7 +16,7 @@ import Mathlib.Data.List.Forall2
 
 import LeanProofs.FaultRobustness
 import LeanProofs.TypeSafety
-import LeanProofs.Aux
+import LeanProofs.Auxiliary
 import LeanProofs.SemanticsProperties
 import LeanProofs.RegimeConsistency
 import LeanProofs.ExternTypingAssumptions
@@ -2856,7 +2856,7 @@ private lemma list_foldlM_derefFoldF_guardTag
                       match acc.2 with
                       | none => some qt.pred
                       | some p => some (joinPredicates p qt.pred) := by
-                simpa using (congrArg Prod.snd hfx).symm
+                simpa using! (congrArg Prod.snd hfx).symm
               have ih' := ih acc' joined pred? k hfold hguard
               rcases ih' with ⟨hacc'_tag, htail⟩
               have hhead_tag : predGuardTag qt.pred = some k := by

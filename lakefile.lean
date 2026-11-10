@@ -2,11 +2,14 @@ import Lake
 open Lake DSL
 
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.30.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"
 
 package «lean-poison» where
   -- Default targets are set via `@[default_target]` on declarations below
   restoreAllArtifacts := true
+  -- Mathlib sets `requiresModuleSystem`; this project's files are not module-system
+  -- files, so opt out of Lake's per-import warning.
+  allowNonModules := true
 
 @[default_target]
 lean_lib LeanPoison where

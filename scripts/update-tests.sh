@@ -87,7 +87,7 @@ process_single_file() {
     fi
 
     temp_output=$(mktemp)
-    if lake exe poison-interpreter --verbose ${extra_args[@]+"${extra_args[@]}"} "$poison_file" > "$temp_output" 2>&1; then
+    if lake -q exe poison-interpreter --verbose ${extra_args[@]+"${extra_args[@]}"} "$poison_file" > "$temp_output" 2>&1; then
         rm -f "examples/${base_name}.fail"
         mv "$temp_output" "examples/${base_name}.output"
         echo "  ✓ Success: saved to examples/${base_name}.output"

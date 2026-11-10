@@ -18,7 +18,7 @@ import Mathlib.Data.List.Forall2
 
 import LeanProofs.FaultRobustness
 import LeanProofs.TypeSafety
-import LeanProofs.Aux
+import LeanProofs.Auxiliary
 import LeanProofs.SemanticsProperties
 import LeanProofs.RegimeConsistency
 import LeanProofs.ExternTypingAssumptions
@@ -72,7 +72,7 @@ private lemma foldr_insert_of_list_lookup (tenv : List (Name × QTyp)) (y : Name
       have hne : y ≠ hd.1 := beq_eq_false_iff_ne.mp hbeq
       have hcmp_ne : ¬(varTypeEnvCmp hd.1 y = .eq) :=
         fun hcmp => hne ((LawfulEqCmp.compare_eq_iff_eq (cmp := varTypeEnvCmp)).mp hcmp).symm
-      rw [if_neg hcmp_ne]
+      rw [ite_eq_right hcmp_ne]
       exact ih hlookup
 
 private lemma list_lookup_exists_of_ofCaptured_lookup

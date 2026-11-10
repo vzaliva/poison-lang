@@ -125,7 +125,7 @@ run_single_test() {
     fi
   fi
 
-  lake exe poison-interpreter --verbose ${extra_args[@]+"${extra_args[@]}"} "$poison_file" > "$result_file" 2>&1
+  lake -q exe poison-interpreter --verbose ${extra_args[@]+"${extra_args[@]}"} "$poison_file" > "$result_file" 2>&1
   exit_code=$?
 
   if diff -q "$result_file" "$expected" >/dev/null; then

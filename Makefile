@@ -59,12 +59,12 @@ lean-build-file: cache config.json
 # Example: make run POISON=examples/foo.poison
 run: cache
 	@if [ -z "$(POISON)" ]; then echo "Usage: make run POISON=path/to/file.poison"; exit 1; fi
-	lake build poison-interpreter && lake exe poison-interpreter "$(POISON)"
+	lake build poison-interpreter && lake -q exe poison-interpreter "$(POISON)"
 
 # Run a .poison file with verbose output.
 run-verbose: cache
 	@if [ -z "$(POISON)" ]; then echo "Usage: make run-verbose POISON=path/to/file.poison"; exit 1; fi
-	lake build poison-interpreter && lake exe poison-interpreter --verbose "$(POISON)"
+	lake build poison-interpreter && lake -q exe poison-interpreter --verbose "$(POISON)"
 
 lean-clean:
 	lake clean

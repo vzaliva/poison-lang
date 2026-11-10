@@ -775,7 +775,7 @@ lemma stepFR_var
   have hcanon : IsCanonicalExtension tm ctxᵢ (Expr.var name) res tm := by
     refine IsCanonicalExtension.refl ?_ ?_ hresTm
     · simpa [hnextTag] using hTmBounded
-    · simpa [ctxAfter, hmem] using hwfTm
+    · simpa [ctxAfter, hmem] using! hwfTm
   refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
@@ -791,7 +791,7 @@ lemma stepFR_var
   · -- valueHasETyp θ₁ o₁ res.qualType.etyp
     exact var_valueHasETyp_of_typecheck ctxᵢ μ₁ ρ₁ θ₁ name res o₁ htc' hθ₁ hric₁ hlookup₁
   · -- wfTagMeaningCtx tm (ctxAfter ctxᵢ res): typecheckVar does not change varEnv/memEnv
-    simpa [ctxAfter, hmem] using hwfTm
+    simpa [ctxAfter, hmem] using! hwfTm
   · -- wfTypeContext (ctxAfter ctxᵢ res): typecheckVar does not change the context
     simpa [ctxAfter, wfTypeContext, hmem, hnextLoc] using hwf
   · -- TagBoundedCtx (ctxAfter ctxᵢ res)
@@ -802,18 +802,18 @@ lemma stepFR_var
   · -- wfConfig cf₁ (unchanged since var doesn't modify config)
     exact hwfcfg₁
   · -- runtimeInstantiatesCtx for θ₀' (var doesn't change context or config)
-    simpa [ctxAfter, hmem] using hric₀
+    simpa [ctxAfter, hmem] using! hric₀
   · -- runtimeInstantiatesCtx for θ₁'
-    simpa [ctxAfter, hmem] using hric₁
+    simpa [ctxAfter, hmem] using! hric₁
   · -- regimeConsistentWithCtx (var doesn't change tagEnv or nextTag or regime)
     -- (ctxAfter ctxᵢ res).regime = res.regime' = ctxᵢ.regime
     simpa [ctxAfter, regimeConsistentWithCtx, htag, hnextTag, hregime'] using hreg
   · -- consistentWithRegime for run 0 (var doesn't change context)
-    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hcwr₀
+    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using! hcwr₀
   · -- consistentWithRegime for run 1 (var doesn't change context)
-    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hcwr₁
+    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using! hcwr₁
   · -- agreeOnClean for ctxAfter: typecheckVar doesn't change the context (including regime)
-    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using hagree
+    simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using! hagree
   · -- valueConsistentWithRegime for cf₀
     exact hvcons μ₀ ρ₀ θ₀ o₀ hlookup₀ hcwr₀ hric₀
   · -- valueConsistentWithRegime for cf₁

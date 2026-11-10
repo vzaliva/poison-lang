@@ -174,7 +174,7 @@ lemma externBoundarySinglePost_of_singleRun_normalized_app
           cf.memory θ' o :=
       valueConsistentWithRegime_transport_normalizeAppResultByProvenance
         predSat result3.regime' p p1 result3.qualType cf.memory θ' o hval_final
-    simpa [hfirst_eq, hctxAfter_eq] using hval_norm
+    simpa [hfirst_eq, hctxAfter_eq] using! hval_norm
   · refine PreservesInheritedFinalCleanLocsOneRun.intro ?_
     intro l qt_in qt_out hlookup_in hlookup_out hclean
     exact

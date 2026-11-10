@@ -137,7 +137,7 @@ private lemma invalidateRegimeDeps_survives_of_lookup_ne_none
     (invalidateTagDeps env ls).contains k = true := by
   unfold invalidateRegimeDeps Regime.lookup? at hlookup
   have hmap : (R.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k ≠ none := by
-    simpa using hlookup
+    simpa using! hlookup
   by_contra hkeep
   have hmapEq :
       (R.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k =
@@ -973,13 +973,13 @@ private lemma typecheckAssign_result2_lookup_clean_back_of_pc_true
               simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
               unfold LocSet.fold
               rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-              simpa using
+              simpa using!
                 list_fold_joinPoison_first_true result2.memEnv' ls.toList Predicate.noPred
             have hpred : finalQt.pred = Predicate.noPred := by
               simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
               unfold LocSet.fold
               rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-              simpa using list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
+              simpa using! list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
             exact False.elim ((not_qtypCleanUnder_of_poison_true_noPred hpoison hpred) hclean_out)
   · have hlookup_eq :
         (assignMemEnvFormula ctx result1 result2 ls).lookup l =
@@ -1109,14 +1109,14 @@ private lemma assign_write_step_preserves_inherited_final_clean_pc_true
               simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
               unfold LocSet.fold
               rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-              simpa using
+              simpa using!
                 list_fold_joinPoison_first_true result2.memEnv' ls.toList Predicate.noPred
             have hpred : qt_out.pred = Predicate.noPred := by
               rw [hqt]
               simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
               unfold LocSet.fold
               rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-              simpa using list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
+              simpa using! list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
             exact (not_qtypCleanUnder_of_poison_true_noPred hpoison hpred) hclean_out
   cases hθ : θ.lookup l with
   | none =>
@@ -1181,7 +1181,7 @@ lemma stepFR_assign_with_expr_proof
             nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime',
             declaredExternRefs := res1.declared' }
           e2 fuel' = .ok res2 := by
-    simpa [Nat.succ_sub_one] using htc2
+    simpa [Nat.succ_sub_one] using! htc2
   have htc_full := htc'
   simp [typecheckAssign, htc1_expr, htc2_expr, bind, Except.bind, pure, Except.pure] at htc_full
   have htc1' : typecheck ctxᵢ e1 fuel' = .ok res1 := by
@@ -1196,7 +1196,7 @@ lemma stepFR_assign_with_expr_proof
       declaredExternRefs := res1.declared'
   }
   have htc2' : typecheck ctx' e2 fuel' = .ok res2 := by
-    simpa [ctx', typecheck, Nat.succ_sub_one] using htc2
+    simpa [ctx', typecheck, Nat.succ_sub_one] using! htc2
   intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hregCtx hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
   have hinv₀ := terminatesTo_assign_inv' e1 e2 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
   rcases hinv₀ with ⟨cfg₀1, cfg₀2, a₀w, n₀, ht₀_e1, ht₀_e2, ho₀, hmem₀, hvar₀, hnext₀, hpm₀⟩
@@ -1344,7 +1344,7 @@ lemma stepFR_assign_with_expr_proof
             simp [hq1, hq2] at hRef' hInt'
             have htc_assign_simp := htc'
             simp [typecheckAssign, htc1_expr, htc2_expr, hq1, hq2, hRef', hInt', bind, Except.bind, pure, Except.pure] at htc_assign_simp
-            simpa [hq1, hq2, assignStoredPred, assignStoredPoison, assignMemEnvFormula] using htc_assign_simp
+            simpa [hq1, hq2, assignStoredPred, assignStoredPoison, assignMemEnvFormula] using! htc_assign_simp
   have h_ret_decl : res.declared' = res2.declared' :=
     (congrArg TypeResult.declared' hassign_eq).symm
   have hmem_assign := congrArg TypeResult.memEnv' hassign_eq
@@ -1967,7 +1967,7 @@ lemma stepFR_assign_with_expr_proof
               ∃ deps, res2.tagEnv'.get? k = some ⟨false, deps⟩ := by
         intro k hkR
         have htag_res2 : tagEnvConsistentWithRegime res2.tagEnv' res2.regime' := by
-          simpa [ctxAfter, ctx'] using hregCtx2
+          simpa [ctxAfter, ctx'] using! hregCtx2
         have hkR_inv : (invalidateRegimeDeps res2.regime' res2.tagEnv' ls).lookup? k ≠ none := by
           simpa [ctxAfter, hRegime] using hkR
         exact
@@ -2309,7 +2309,7 @@ lemma stepFR_assign_with_expr_proof
                                                 | none => (acc.1, Predicate.noPred))
                                               (assignStoredPoison ctxᵢ res1 res2,
                                                 assignStoredPred ctxᵢ res1 res2)).1) = true := by
-                                        simpa [hbase] using
+                                        simpa [hbase] using!
                                           list_fold_joinPoison_first_true
                                             res2.memEnv' ls.toList
                                             (assignStoredPred ctxᵢ res1 res2)
@@ -2531,7 +2531,7 @@ lemma stepFR_assign_with_expr_proof
                               simp [assignStoredPred, hw] at hstored
                             have hpred_res2 :
                                 res2.qualType.pred = Predicate.guardClosure k' arg_name pred_body var_env := by
-                              simpa [assignStoredPred, if_neg hgate] using hstored
+                              simpa [assignStoredPred, ite_eq_right hgate] using hstored
                             have hmembers :=
                               fold_joinPred_guardClosure_members res2.memEnv' ls.toList
                                 (assignStoredPoison ctxᵢ res1 res2)
@@ -3228,13 +3228,13 @@ private lemma assign_lookup_not_clean_of_pc_true_of_mem
             simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
             unfold LocSet.fold
             rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-            simpa using
+            simpa using!
               list_fold_joinPoison_first_true result2.memEnv' ls.toList Predicate.noPred
           have hpred : finalQt.pred = Predicate.noPred := by
             simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
             unfold LocSet.fold
             rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-            simpa using list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
+            simpa using! list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
           exact (not_qtypCleanUnder_of_poison_true_noPred hpoison hpred) hclean_out
 
 private lemma assign_updated_lookup_shape_of_pc_true
@@ -3328,13 +3328,13 @@ private lemma assign_updated_lookup_shape_of_pc_true
             simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
             unfold LocSet.fold
             rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-            simpa using
+            simpa using!
               list_fold_joinPoison_first_true result2.memEnv' ls.toList Predicate.noPred
           have hpred : finalQt.pred = Predicate.noPred := by
             simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
             unfold LocSet.fold
             rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-            simpa using list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
+            simpa using! list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
           exact ⟨hpoison, hpred⟩
 
 private lemma assign_final_clean_preservation
@@ -3869,7 +3869,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
             nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime',
             declaredExternRefs := result1.declared' }
           e2 fuel' = .ok result2 := by
-    simpa [Nat.succ_sub_one] using htc2
+    simpa [Nat.succ_sub_one] using! htc2
   have htc1' : typecheck ctx e1 fuel' = .ok result1 := by
     simpa [typecheck, Nat.succ_sub_one] using htc1
   have htc2' : typecheck (ctxAfter ctx result1) e2 fuel' = .ok result2 := by
@@ -3971,7 +3971,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
             simp [hq1, hq2] at hRef' hInt'
             have htc_assign_simp := htc'
             simp [typecheckAssign, htc1_expr, htc2_expr_raw, hq1, hq2, hRef', hInt', bind, Except.bind, pure, Except.pure] at htc_assign_simp
-            simpa [hq1, hq2, assignStoredPred, assignStoredPoison, assignMemEnvFormula] using htc_assign_simp
+            simpa [hq1, hq2, assignStoredPred, assignStoredPoison, assignMemEnvFormula] using! htc_assign_simp
   have hmem_assign := congrArg TypeResult.memEnv' hassign_eq
   have htag_assign := congrArg TypeResult.tagEnv' hassign_eq
   have hmem_res :
@@ -4077,12 +4077,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_assign_maskedReg_with_expr_proof
                 simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
                 unfold LocSet.fold
                 rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-                simpa using list_fold_joinPoison_first_true result2.memEnv' ls.toList Predicate.noPred
+                simpa using! list_fold_joinPoison_first_true result2.memEnv' ls.toList Predicate.noPred
               have hpred_final : finalQt.pred = Predicate.noPred := by
                 simp [finalQt, joined, assignStoredPoison, assignStoredPred, hpc]
                 unfold LocSet.fold
                 rw [Std.ExtTreeSet.foldl_eq_foldl_toList]
-                simpa using list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
+                simpa using! list_fold_joinPredicates_init_noPred result2.memEnv' ls.toList true
               cases hclean with
               | clean hp => simp [hpoison_final] at hp
               | guard k htag _ _ => simp [qtypGuardTag, hpred_final] at htag

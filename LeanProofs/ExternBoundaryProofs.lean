@@ -317,7 +317,7 @@ theorem ctxAfter
     (hctx : ContextReachableFrom root ctxRoot ctx) :
     ContextReachableFrom root ctxRoot (ctxAfter ctx res) := by
   intro x qt hlookup
-  exact hctx (by simpa [ctxAfter] using hlookup)
+  exact hctx (by simpa [ctxAfter] using! hlookup)
 
 theorem lookup
     {root : Expr} {ctxRoot ctx : TypeContext}
@@ -1863,53 +1863,24 @@ private theorem of_applyFnTClosureAtCursor
               cases tagResult with
               | mk tagMapping nextTag' =>
                   simp [htag] at happly
-                  let effectRun : TypecheckM MemoryTypeEnv :=
-                    forIn effects result1.memEnv' fun effect r =>
-                      match applyExternEffect effect unifiedEnv tagMapping
-                          (joinPoison p (joinPoison p1 ctx.pc)) r with
-                      | Except.error err => Except.error err
-                      | Except.ok v => Except.ok (ForInStep.yield v)
                   let finish : MemoryTypeEnv → TypecheckM TypeResult :=
                     fnExternFinishAtCursor ctx result1 cursor p p1 unifiedEnv tagMapping
                       nextTag' id effects retSpec fuel'
-                  have hwholeOk :
-                      (match effectRun with
-                      | Except.error err => Except.error err
-                      | Except.ok v => finish v) = Except.ok result := by
-                    convert happly
-                    · funext _motive scrut _err _ok
-                      cases scrut <;> rfl
-                    · funext _motive scrut _err _ok
-                      cases scrut <;> rfl
-                    · rename_i memEnvArg
-                      cases retSpec <;> simp [finish, fnExternFinishAtCursor, unifiedEnv]
-                      · rename_i typ poison pred
-                        cases resolveSyntaxPred pred unifiedEnv tagMapping <;> simp
-                        · rename_i resolvedPred
-                          cases returnSpecToQTyp typ poison resolvedPred cursor.2 <;> rfl
-                      · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures
-                        cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' <;> rfl
-                      · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures
-                        cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' <;> rfl
-                  cases hfor : effectRun with
-                  | error _err =>
-                      have hbad : (Except.error _err : TypecheckM TypeResult) =
-                          Except.ok result := by
-                        have hcongr := congrArg
-                          (fun z : TypecheckM MemoryTypeEnv =>
-                            match z with
-                            | Except.error err => (Except.error err : TypecheckM TypeResult)
-                            | Except.ok memEnv => finish memEnv) hfor
-                        simpa [finish] using Eq.trans (Eq.symm hcongr) hwholeOk
-                      cases hbad
-                  | ok memEnv =>
+                  -- Split the effects-loop bind of `happly` directly; the error leaf is impossible.
+                  split at happly
+                  case h_1 => simp at happly
+                  case h_2 memEnv _hfor =>
                       have hfinishOk : finish memEnv = Except.ok result := by
-                        have hcongr := congrArg
-                          (fun z : TypecheckM MemoryTypeEnv =>
-                            match z with
-                            | Except.error err => (Except.error err : TypecheckM TypeResult)
-                            | Except.ok memEnv => finish memEnv) hfor
-                        simpa [finish] using Eq.trans (Eq.symm hcongr) hwholeOk
+                        rw [← happly]
+                        cases retSpec <;> simp [finish, fnExternFinishAtCursor, unifiedEnv]
+                        · rename_i typ poison pred
+                          cases resolveSyntaxPred pred unifiedEnv tagMapping <;> simp
+                          · rename_i resolvedPred
+                            cases returnSpecToQTyp typ poison resolvedPred cursor.2 <;> rfl
+                        · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures
+                          cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' <;> rfl
+                        · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures
+                          cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' <;> rfl
                       cases retSpec with
                       | simple typ poison pred =>
                           simp [finish, fnExternFinishAtCursor] at hfinishOk
@@ -2413,15 +2384,15 @@ private theorem opEType?_nonFunction
     (hop : opEType? op etyp₁ etyp₂ = some result) :
     result.isFunctionType = false := by
   cases op <;> cases etyp₁ <;> cases etyp₂ <;> simp [opEType?] at hop
-  all_goals cases hop <;> rfl
+  all_goals (cases hop; rfl)
 
 set_option linter.unnecessarySeqFocus false in
 private theorem opUnaryEType?_nonFunction
     {op : UnaryOp} {etyp result : ETyp}
     (hop : opUnaryEType? op etyp = some result) :
     result.isFunctionType = false := by
-  cases op <;> cases etyp <;> simp [opUnaryEType?] at hop
-  all_goals cases hop <;> rfl
+  cases op; cases etyp <;> simp [opUnaryEType?] at hop
+  all_goals (cases hop; rfl)
 
 private theorem surfaceSpecToQTyp_nonFunction
     {typ : Typ} {poison : Poison} {pred : Predicate}

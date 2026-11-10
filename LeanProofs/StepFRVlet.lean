@@ -370,9 +370,9 @@ lemma stepFR_vlet_with_expr_proof
            varEnvClosuresCapturedRefLocsBounded_update (varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono1)
              (typecheckExpr_preserves_etypClosuresCapturedRefLocsBounded ctxᵢ e1 fuel' res1 hwf htc1')⟩
   have hric₀1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₀1.memory cfg₀1.varEnv θ₀1 := by
-    simpa [ctxAfter] using hric₀1
+    simpa [ctxAfter] using! hric₀1
   have hric₁1_mem : runtimeInstantiatesCtx { ctxᵢ with memEnv := res1.memEnv' } cfg₁1.memory cfg₁1.varEnv θ₁1 := by
-    simpa [ctxAfter] using hric₁1
+    simpa [ctxAfter] using! hric₁1
   -- hv₀1_typed, hv₁1_typed come from IH1 (StepFR includes valueHasETyp)
   -- wfValue from wfConfig_preserved (needs terminatesTo)
   have ht₀_e1_w : terminatesTo e1 { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cfg₀1 v₀1 :=
@@ -1510,7 +1510,7 @@ lemma stepFR_vlet_with_expr_proof
     unfold wfTagMeaningCtx at _hTm2 ⊢
     simp only [ctxAfter, h_mem, h_tag, h_loc, h_ntag]
     have _hTm2' : EnvRespectsTagMeaning tm2 (ctxᵢ.varEnv.update vname res1.qualType) res2.memEnv' := by
-      simpa [hctx'] using _hTm2
+      simpa [hctx'] using! _hTm2
     refine EnvRespectsTagMeaning_of_update tm2 vname ctxᵢ.varEnv res1.qualType res2.memEnv' _hTm2' ?_
     intro qt hlookup
     exact QTypRespectsTagMeaning_mono hext_tm_tm2
@@ -1738,7 +1738,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
     exact masked_lookup_none_of_monotoneStepExt
       hmasked_none (fun t ht => Nat.not_le.2 (hmasked_bounded t ht)) hmono1 k hk
   have hric1' : runtimeInstantiatesCtx ctx' cfg2.memory cfg2.varEnv θ1 := by
-    simpa [cfg2, hctx', ctxAfter] using
+    simpa [cfg2, hctx', ctxAfter] using!
       runtimeInstantiatesCtx_vlet_body_start ctxᵢ res1 vname cfg1.memory cfg1.varEnv θ1 v1 hric1 hv1
   have hreg1' : regimeConsistentWithCtxMasked masked ctx' := by
     simpa [hctx', ctxAfter, updateCtxFromResult, regimeConsistentWithCtxMasked] using hreg1
@@ -1762,7 +1762,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_vlet_maskedReg_with_expr_proof
     exact fun k hk => by simpa [hctx'] using Nat.lt_of_lt_of_le (hmasked_bounded k hk) hb
   have hctxCons1' :
       consistentWithRegimeMasked masked predSat ctx'.regime ctx' cfg2.memory cfg2.varEnv θ1 := by
-    simpa [cfg2, hctx', ctxAfter] using
+    simpa [cfg2, hctx', ctxAfter] using!
       consistentWithRegimeMasked_vlet_body_start
         masked predSat
         ctxᵢ res1 vname cfg1.memory cfg1.varEnv θ1 v1 hctxCons1 hvalc1

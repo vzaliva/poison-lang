@@ -966,7 +966,7 @@ theorem typecheckFn_ok_eq {ctx : TypeContext} {x : Name} {st1 : Typ} {body : Exp
         simp [typecheckFn, hb', Except.map, Functor.map, throw, throwThe,
           MonadExceptOf.throw] at htc
     | false => rfl
-  simp only [typecheckFn, hb, Bool.false_eq_true, if_false, bind, Except.bind,
+  simp only [typecheckFn, hb, Bool.false_eq_true, ite_false, bind, Except.bind,
     pure, Except.pure] at htc
   exact (Except.ok.inj htc).symm
 
@@ -989,6 +989,9 @@ def typecheckPfn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 :
 
 -- Helper functions for extern type conversion
 
+-- The proofs in `LeanProofs/TypeSafety.lean` restate this loop's `MProd` state
+-- layout (`CollectExternSeenState`), which the legacy `do` elaborator produces.
+set_option backward.do.legacy true in
 /-- Collect distinct TagIndex values from a list of SyntaxPredicates, allocate
     a fresh concrete Tag for each, and return the mapping plus the advanced nextTag.
     If the same TagIndex appears in multiple guardClosure entries, their Name and

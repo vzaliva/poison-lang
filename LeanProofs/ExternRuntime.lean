@@ -16,7 +16,7 @@ import LeanPoison.Syntax
 import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
-import LeanProofs.Aux
+import LeanProofs.Auxiliary
 import LeanProofs.Semantics
 
 open Std
