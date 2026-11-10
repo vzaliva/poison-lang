@@ -1818,31 +1818,49 @@ closures cannot be re-evaluated directly inside the proof.  \texttt{PredSat}
 acts as the abstract bridge, and \texttt{PredSatLaws} specifies the exact
 properties of that bridge that the fault-robustness argument relies on.
 
-\paragraph{Bidirectional matching axiom (\texttt{match\_iff}).} If a condition
-syntactically matches a tagged predicate via \texttt{matchGuard} and evaluates
-to boolean value $b$ under the current runtime state (omitting the pure-mode flag, extern registry, and final
-configuration for brevity), then the predicate is satisfied for the
-\emph{specific} runtime value denoted by the matched owner (either a variable
-\(x\) or a dereference \(!x\)) if and only if $b = \text{true}$:
+\paragraph{Bidirectional matching axiom (\texttt{match\_iff}).} If the typing
+context agrees with the tag meaning $tm$ (\texttt{wfTagMeaningCtx}: every guard
+closure in the context agrees with $tm$), a condition syntactically matches a
+tagged predicate via \texttt{matchGuard}, the runtime state instantiates the
+typing context, and the condition evaluates to boolean value $b$ (omitting the
+pure-mode flag, extern registry, final configuration, and the fuel argument of
+\texttt{matchGuard} for brevity), then there is a runtime value $v$, the value of
+an owner of the guard closure for $k$ (either a variable \(x\) or a dereference
+\(!x\)), for which the predicate is satisfied if and only if $b = \text{true}$:
 
 \[
 \begin{aligned}
-&\forall\, \text{condition},\, \Gamma,\, \sigma,\, k,\, \text{deps},\, \mu,\, \rho,\, \theta,\, v,\, b.\\
-&\quad \texttt{matchGuard}(\text{condition}, \Gamma, \sigma) = \texttt{ok}(k, \text{deps})\\
+&\forall\, \text{condition},\, \Gamma,\, \sigma,\, k,\, \text{deps},\, \mu,\, \rho,\, \theta,\, b.\\
+&\quad \texttt{wfTagMeaningCtx}(tm, \Gamma, \sigma)\\
+&\quad \land\; \texttt{matchGuard}(\text{condition}, \Gamma, \sigma) = \texttt{ok}(k, \text{deps})\\
+&\quad \land\; \texttt{runtimeInstantiatesCtx}(\Gamma, \sigma, \mu, \rho, \theta)\\
 &\quad \land\; \langle \text{condition}, \mu, \rho \rangle \Downarrow b\\
-&\quad \land\;
+&\quad \implies \exists\, v.\;
 \Big(
-  \exists x.\; \sigma(x)\text{ has tag }k \land \rho(x)=v
+  \exists x.\; \sigma(x)\text{ carries a guard closure for }k \land \rho(x)=v
   \;\lor\\
 &\qquad\qquad
   \exists x,\, LS,\, l,\, a,\, n.\;
-    \sigma(x)\text{ is a ref over }LS \land l \in LS \land \Gamma(l)\text{ has tag }k \\
+    \sigma(x)\text{ is a ref over }LS \land l \in LS \\
 &\qquad\qquad\qquad
+    \land\; \Gamma(l)\text{ carries a guard closure for }k
     \land\; \theta(l)=a \land \mu(a)=n \land v=\texttt{num}(n)
 \Big)\\
-&\quad \implies (b = \text{true} \iff \text{PredSat}\; k\; \mu\; v)\,.
+&\qquad\qquad \land\; (b = \text{true} \iff \text{PredSat}\; k\; \mu\; v)\,.
 \end{aligned}
 \]
+
+The premises \texttt{wfTagMeaningCtx} and \texttt{runtimeInstantiatesCtx} tie
+the law to the surrounding derivation: the typing context must agree with the
+tag meaning $tm$, and the runtime state must instantiate that context, so that
+the typing information consulted by \texttt{matchGuard} describes the state in
+which the condition is evaluated.
+The owner appears in the conclusion because a successful \texttt{matchGuard}
+guarantees that the tested expression is such an owner; the law therefore
+speaks about the value that was actually tested, and not about other variables
+that share the tag.  An owner must carry the guard closure itself: a variable
+whose predicate is only the guard-only tag \texttt{guard k} is not an owner in
+this sense, since guard-only predicates cannot be matched syntactically.
 
 This bidirectional axiom connects the type system's syntactic predicate matching (which
 returns a tag and dependencies) with the abstract satisfaction relation, while
