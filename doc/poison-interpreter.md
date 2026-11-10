@@ -52,7 +52,8 @@ reachable only through `--regime`. Tags the policy leaves unset keep the
 conservative (uninterpreted) behavior.
 
 `--repl`  
-Start a REPL.
+Start a REPL. It cannot be combined with `--verbose`, `--regime`,
+`--extern-regime` or a file name.
 
 `--help`  
 Print usage.

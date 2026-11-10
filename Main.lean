@@ -73,7 +73,7 @@ def typecheckExprVerbose (e : _root_.Expr) (regime : Regime := emptyRegime)
 structure CliOptions where
   verbose : Bool := false
   regime : Option Regime := none
-  externRegime : ExternId → Tag → Option Bool := fun _ _ => none
+  externRegime : Option (ExternId → Tag → Option Bool) := none
   filename : Option String := none
   repl : Bool := false
   help : Bool := false
@@ -188,7 +188,7 @@ partial def parseArgs (args : List String) (opts : CliOptions := {}) : Except St
       throw "Missing value for --regime"
   | "--extern-regime" :: spec :: rest =>
       match parseExternRegimeSpec spec with
-      | .ok policy => parseArgs rest { opts with externRegime := policy }
+      | .ok policy => parseArgs rest { opts with externRegime := some policy }
       | .error msg => throw msg
   | "--extern-regime" :: [] =>
       throw "Missing value for --extern-regime"
@@ -404,8 +404,10 @@ def main (args : List String) : IO UInt32 := do
         printUsage
         return (0 : UInt32)
       else if opts.repl then
-        if opts.filename.isSome || opts.regime.isSome || opts.verbose then
-          IO.println "Error: --repl does not accept --verbose, --regime, or a filename"
+        if opts.filename.isSome || opts.regime.isSome || opts.externRegime.isSome
+            || opts.verbose then
+          IO.println
+            "Error: --repl does not accept --verbose, --regime, --extern-regime, or a filename"
           printUsage
           return (1 : UInt32)
         IO.println s!"Poison {versionNo} - Tufts University."
@@ -420,7 +422,7 @@ def main (args : List String) : IO UInt32 := do
           replLoop initialConfig (tmpDir / "repl.poison").toString
       else
         let regime := opts.regime.getD emptyRegime
-        let externRegime := opts.externRegime
+        let externRegime := opts.externRegime.getD (fun _ _ => none)
         match opts.filename with
         | none =>
             IO.println "Error: missing input file"
