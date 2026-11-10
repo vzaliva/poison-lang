@@ -303,9 +303,10 @@ instance : LawfulBEq CaptureTarget where
 -- Expr, SyntaxPredicate, Effect, Capture, ExternReturn: Mutual recursion
 -- ============================================================================
 -- These types are mutually recursive with each other in LeanPoison/Syntax.lean.
--- We define all reflexivity and soundness proofs together using well-founded recursion.
+-- We define all reflexivity and soundness proofs together by mutual structural recursion;
+-- the explicit `termination_by structural` clauses skip the decreasing-argument search.
 
--- Reflexivity proofs using well-founded recursion
+-- Reflexivity proofs by mutual structural recursion
 mutual
   private theorem beqExpr_refl : ∀ (e : Expr), beqExpr e e = true
     | Expr.unit => rfl
@@ -355,6 +356,7 @@ mutual
     | Expr.externPfn id arg argTyp argPoison argPred retSpec cap =>
         show (id == id && arg == arg && argTyp == argTyp && argPoison == argPoison && beqSyntaxPredicate argPred argPred && beqExternReturn retSpec retSpec && beqCaptureList cap cap) = true from by
           rw [Typ_beq_refl argTyp, beqSyntaxPredicate_refl argPred, beqExternReturn_refl retSpec, beqCaptureList_refl cap]; simp
+  termination_by structural x => x
 
   private theorem beqSyntaxPredicate_refl : ∀ (p : SyntaxPredicate), beqSyntaxPredicate p p = true
     | SyntaxPredicate.guardClosure tag arg body => by
@@ -367,6 +369,7 @@ mutual
         rw [heq]; simp
     | SyntaxPredicate.noPred =>
         rfl
+  termination_by structural x => x
 
   private theorem beqEffect_refl : ∀ (e : Effect), beqEffect e e = true
     | ⟨target, poison, pred⟩ => by
@@ -374,6 +377,7 @@ mutual
                    (target == target && poison == poison && beqSyntaxPredicate pred pred) := rfl
         rw [heq, EffectTarget_beq_refl target, beqSyntaxPredicate_refl pred]
         simp
+  termination_by structural x => x
 
   private theorem beqEffectList_refl : ∀ (es : List Effect), beqEffectList es es = true
     | [] => rfl
@@ -381,6 +385,7 @@ mutual
         have heq : beqEffectList (e :: es') (e :: es') = (beqEffect e e && beqEffectList es' es') := rfl
         rw [heq, beqEffect_refl e, beqEffectList_refl es']
         rfl
+  termination_by structural x => x
 
   private theorem beqCapture_refl : ∀ (c : Capture), beqCapture c c = true
     | ⟨target, typ, poison, pred⟩ => by
@@ -388,6 +393,7 @@ mutual
                    (target == target && typ == typ && poison == poison && beqSyntaxPredicate pred pred) := rfl
         rw [heq, CaptureTarget_beq_refl target, Typ_beq_refl typ, beqSyntaxPredicate_refl pred]
         simp
+  termination_by structural x => x
 
   private theorem beqCaptureList_refl : ∀ (cs : List Capture), beqCaptureList cs cs = true
     | [] => rfl
@@ -395,6 +401,7 @@ mutual
         have heq : beqCaptureList (c :: cs') (c :: cs') = (beqCapture c c && beqCaptureList cs' cs') := rfl
         rw [heq, beqCapture_refl c, beqCaptureList_refl cs']
         rfl
+  termination_by structural x => x
 
   private theorem beqExternReturn_refl : ∀ (r : ExternReturn), beqExternReturn r r = true
     | ExternReturn.simple typ poison pred => by
@@ -415,9 +422,10 @@ mutual
         have h_typ : (typ == typ) = true := Typ_beq_refl typ
         rw [heq, h_typ, beqSyntaxPredicate_refl argPred, beqExternReturn_refl ret, beqCaptureList_refl cap]
         simp
+  termination_by structural x => x
 end
 
--- Soundness proofs using well-founded recursion
+-- Soundness proofs by mutual structural recursion
 mutual
   -- beqExpr_sound with all cases explicitly handled
   private theorem beqExpr_sound : ∀ (a b : Expr), beqExpr a b = true → a = b
@@ -953,6 +961,7 @@ mutual
     | .externPfn _ _ _ _ _ _ _, .app _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _ _ _ _ _, .externVal _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .externPfn _ _ _ _ _ _ _, .externFn _ _ _ _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+  termination_by structural x _ => x
 
   private theorem beqSyntaxPredicate_sound : ∀ (a b : SyntaxPredicate), (a == b) = true → a = b
     | .guardClosure tag1 arg1 body1, .guardClosure tag2 arg2 body2 => fun h => by
@@ -977,6 +986,7 @@ mutual
     | .guardOnly _, .noPred => fun h => by have : false = true := h; contradiction
     | .noPred, .guardClosure _ _ _ => fun h => by have : false = true := h; contradiction
     | .noPred, .guardOnly _ => fun h => by have : false = true := h; contradiction
+  termination_by structural x _ => x
 
   private theorem beqEffect_sound : ∀ (a b : Effect), (a == b) = true → a = b
     | ⟨target1, poison1, pred1⟩, ⟨target2, poison2, pred2⟩ => fun h => by
@@ -988,6 +998,7 @@ mutual
         have : poison1 = poison2 := of_decide_eq_true h_poison
         have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
         subst_vars; rfl
+  termination_by structural x _ => x
 
   private theorem beqEffectList_sound : ∀ (a b : List Effect), beqEffectList a b = true → a = b
     | [], [] => fun _ => rfl
@@ -1000,6 +1011,7 @@ mutual
         have : e1 = e2 := beqEffect_sound e1 e2 h_e
         have : es1 = es2 := beqEffectList_sound es1 es2 h_es
         subst_vars; rfl
+  termination_by structural x _ => x
 
   private theorem beqCapture_sound : ∀ (a b : Capture), beqCapture a b = true → a = b
     | ⟨target1, typ1, poison1, pred1⟩, ⟨target2, typ2, poison2, pred2⟩ => fun h => by
@@ -1012,6 +1024,7 @@ mutual
         have : poison1 = poison2 := of_decide_eq_true h_poison
         have : pred1 = pred2 := beqSyntaxPredicate_sound pred1 pred2 h_pred
         subst_vars; rfl
+  termination_by structural x _ => x
 
   private theorem beqCaptureList_sound : ∀ (a b : List Capture), beqCaptureList a b = true → a = b
     | [], [] => fun _ => rfl
@@ -1024,6 +1037,7 @@ mutual
         have : c1 = c2 := beqCapture_sound c1 c2 h_c
         have : cs1 = cs2 := beqCaptureList_sound cs1 cs2 h_cs
         subst_vars; rfl
+  termination_by structural x _ => x
 
   private theorem beqExternReturn_sound : ∀ (a b : ExternReturn), (a == b) = true → a = b
     | .simple typ1 poison1 pred1, .simple typ2 poison2 pred2 => fun h => by
@@ -1069,6 +1083,7 @@ mutual
     | .nestedFn _ _ _ _ _ _ _ _, .nestedPfn _ _ _ _ _ _ _ => fun h => by have : false = true := h; contradiction
     | .nestedPfn _ _ _ _ _ _ _, .simple _ _ _ => fun h => by have : false = true := h; contradiction
     | .nestedPfn _ _ _ _ _ _ _, .nestedFn _ _ _ _ _ _ _ _ => fun h => by have : false = true := h; contradiction
+  termination_by structural x _ => x
 end
 
 instance : LawfulBEq SyntaxPredicate where

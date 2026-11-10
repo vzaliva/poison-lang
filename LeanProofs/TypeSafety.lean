@@ -2524,42 +2524,6 @@ lemma typecheckApp_arrow_structure_full
 
 -- Regime join and invalidation lemmas (inputs to the regime-monotonicity proof below)
 
-private lemma list_mem_eraseDups_of_mem {α : Type} [BEq α] [LawfulBEq α]
-    {x : α} {l : List α} (h : x ∈ l) : x ∈ l.eraseDups := by
-  let P : Nat → Prop := fun n =>
-    ∀ l : List α, l.length = n → ∀ x : α, x ∈ l → x ∈ l.eraseDups
-  have hP : P l.length := by
-    induction l.length using Nat.strong_induction_on with
-    | _ n ih =>
-        intro l hlen x hmem
-        cases l with
-        | nil =>
-            cases hmem
-        | cons a as =>
-            have hlen_as : as.length < n := by
-              have hlen' : as.length + 1 = n := by simpa using hlen
-              have : as.length < as.length + 1 := Nat.lt_succ_self as.length
-              simpa [hlen'] using this
-            cases hmem with
-            | head =>
-                simp [List.eraseDups_cons]
-            | tail _ hmem_as =>
-                by_cases hxa : x = a
-                · subst hxa
-                  simp [List.eraseDups_cons]
-                · have h_not_mem_filter : x ∈ as.filter (fun y => !y == a) := by
-                    apply List.mem_filter.mpr
-                    refine ⟨hmem_as, ?_⟩
-                    simp [hxa]
-                  have hlen_filter_le : (as.filter (fun y => !y == a)).length ≤ as.length := by
-                    exact List.length_filter_le _ _
-                  have hlen_filter_lt : (as.filter (fun y => !y == a)).length < n := by
-                    exact Nat.lt_of_le_of_lt hlen_filter_le hlen_as
-                  have hrec := ih (as.filter (fun y => !y == a)).length hlen_filter_lt
-                  have hrec' := hrec (as.filter (fun y => !y == a)) rfl x h_not_mem_filter
-                  simp [List.eraseDups_cons, hxa, hrec']
-  exact hP l rfl x h
-
 private lemma combineExtTreeMaps_getElem?_of_none_none
     (m1 m2 : ExtTreeMap Nat β)
     (f : Nat → Option β → Option β → Option β)
@@ -2578,12 +2542,12 @@ private lemma combineExtTreeMaps_getElem?_of_none_none
       intro hk
       have hk_keys : k ∈ m1.keys := (ExtTreeMap.mem_keys).2 hk
       have hk_in_append : k ∈ m1.keys ++ m2.keys := List.mem_append_left _ hk_keys
-      exact hmem (list_mem_eraseDups_of_mem hk_in_append)
+      exact hmem (List.mem_eraseDups_of_mem hk_in_append)
     have hk_not_m2 : k ∉ m2 := by
       intro hk
       have hk_keys : k ∈ m2.keys := (ExtTreeMap.mem_keys).2 hk
       have hk_in_append : k ∈ m1.keys ++ m2.keys := List.mem_append_right _ hk_keys
-      exact hmem (list_mem_eraseDups_of_mem hk_in_append)
+      exact hmem (List.mem_eraseDups_of_mem hk_in_append)
     have hm1_none : m1[k]? = none := ExtTreeMap.getElem?_eq_none hk_not_m1
     have hm2_none : m2[k]? = none := ExtTreeMap.getElem?_eq_none hk_not_m2
     have hgo := combineExtTreeMaps_go_get_not_mem m1 m2 f ks ({} : ExtTreeMap Nat β) k hmem
@@ -12916,7 +12880,7 @@ lemma joinMemEnvs_lookup_eq_left_of_right_none (env1 env2 : MemoryTypeEnv) (l : 
   have hmem : l ∈ env1 := (Std.ExtTreeMap.contains_iff_mem).mp h1
   have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
     have hkeys : l ∈ env1.keys := by rw [Std.ExtTreeMap.mem_keys]; exact hmem
-    exact list_mem_eraseDups_of_mem (List.mem_append_left _ hkeys)
+    exact List.mem_eraseDups_of_mem (List.mem_append_left _ hkeys)
   classical
   let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
     match oe1, oe2 with
@@ -12966,7 +12930,7 @@ lemma joinMemEnvs_lookup_eq_right_of_left_none (env1 env2 : MemoryTypeEnv) (l : 
   obtain ⟨entry, hentry⟩ := Option.ne_none_iff_exists'.1 h1'
   have h_in : l ∈ (env1.keys ++ env2.keys).eraseDups := by
     have hkeys : l ∈ env2.keys := by rw [Std.ExtTreeMap.mem_keys]; exact hmem
-    exact list_mem_eraseDups_of_mem (List.mem_append_right _ hkeys)
+    exact List.mem_eraseDups_of_mem (List.mem_append_right _ hkeys)
   classical
   let f : Loc → Option MemEntry → Option MemEntry → Option MemEntry := fun _ oe1 oe2 =>
     match oe1, oe2 with
