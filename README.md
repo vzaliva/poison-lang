@@ -108,7 +108,7 @@ the extern typing assumptions packaged as `ExternTypingAssumptions`
 (`LeanProofs/ExternTypingAssumptions.lean`) as a hypothesis. `lake build`
 checks the whole development. It contains no `sorry`, and the main theorem
 depends only on Lean's standard axioms (`propext`, `Classical.choice`,
-`Quot.sound`), as `#print axioms TypeSystemEnforcesFaultRobustness` confirms.
+`Quot.sound`); `make axioms` prints them.
 
 `LeanProofs/` also contains fault-robustness theorems for concrete programs
 that use the shipped externs (`AbsFR.lean`, `MaxCurriedFR.lean`,

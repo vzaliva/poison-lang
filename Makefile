@@ -1,4 +1,4 @@
-.PHONY: all clean test poison-lang-spec doc lean-build lean-build-file lean-clean run run-verbose parser parser-clean cache cache-refresh distclean
+.PHONY: all clean test poison-lang-spec doc lean-build lean-build-file lean-clean run run-verbose parser parser-clean cache cache-refresh distclean axioms
 
 all: poison-lang-spec lean-build parser doc
 
@@ -81,6 +81,10 @@ test: cache parser
 	echo "Running tests"
 	rm -rf testResults
 	./scripts/run_tests.sh -j 1
+
+# Print the axioms the main fault-robustness theorems depend on.
+axioms: lean-build
+	lake env lean scripts/Axioms.lean
 
 clean: lean-clean parser-clean
 	$(MAKE) -C poison-lang-spec clean

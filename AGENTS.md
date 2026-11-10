@@ -28,6 +28,7 @@ The Poison Language is a research implementation of a simple imperative programm
 make                                   # Build everything: spec, docs, parser, Lean code
 make lean-build                        # Build Lean libraries and executables
 make lean-build-file FILE=LeanProofs/FaultRobustness.lean  # Build one module (path or dotted name, e.g. LeanProofs.FaultRobustness)
+make axioms                            # Print the axioms the main theorems depend on (expect propext, Classical.choice, Quot.sound)
 
 # Running interpreter
 make run POISON=FILE.poison              # Run a .poison file
