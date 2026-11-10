@@ -47,8 +47,7 @@ theorem TrustedRegistryAgreesWithReachable.of_programCover
     collapses to the program AST: the `var` constructor cannot fire (no variable
     is bound), so registry agreement with the program implies agreement with
     everything reachable.  This is the reduction that makes the per-context trust
-    premise *provable* for a non-empty registry — the positive dual to
-    `ExternRegimeInt.nonempty_registry_hagrees_unprovable`. -/
+    premise *provable* for a non-empty registry. -/
 theorem agreesWithReachable_of_emptyVarEnv
     {e : Expr} {ctx : TypeContext} {tr : TrustedRegistry}
     (hempty : ctx.varEnv = {})

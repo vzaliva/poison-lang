@@ -33,8 +33,7 @@ reachable declarations.  No *applied* counterpart is given here: routing the
 guarded `callFR` through a program that materialises a genuinely de-poisoned
 captured value would additionally require a trusted guarded-value producer,
 which this development does not include (the extern-argument guarded path has
-the same dependency — see `ExternRegimeInt.open_empty_context_FR_instantiable`,
-which is parameterised over `impl`/`spec`).
+the same dependency).
 -/
 
 open Std LeanPoison ExternProofs ExternRegimeInt

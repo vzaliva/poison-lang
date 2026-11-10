@@ -6375,51 +6375,6 @@ def TrustedRegistryAgreesWithPfnProgramLocal
   ExternCallBoundaryFRPfnSide1Provider ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
     (entryKey := entryKey) (registry := registry)
 
-theorem TrustedRegistryAgreesWithPfnProgramLocal.of_emptyExternRegistry
-    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
-    {sourceArgTyp : Typ}
-    {entryKey : ExternCallEntryKey} :
-    TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
-      (entryKey := entryKey) :=
-  ⟨ExternCallBoundaryFRPfnSide0Provider.of_emptyExternRegistry (entryKey := entryKey),
-   ExternCallBoundaryFRPfnSide1Provider.of_emptyExternRegistry (entryKey := entryKey)⟩
-
-theorem TrustedRegistryAgreesWithPfnProgramLocal.of_trustedRegistry
-    {tr : TrustedRegistry}
-    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
-    {sourceArgTyp : Typ}
-    (hagreesExtern :
-      ∀ {argTyp : Typ}, TrustedRegistryAgreesWithPFnTClosures tr argTyp tcls) :
-    TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
-      (entryKey := ExternCallTrustedEntryKey tr)
-      (registry := TrustedRegistry.toRuntimeRegistry tr) :=
-  ⟨ExternCallBoundaryFRPfnSide0Provider.of_trustedRegistry hagreesExtern,
-   ExternCallBoundaryFRPfnSide1Provider.of_trustedRegistry hagreesExtern⟩
-
-theorem TrustedRegistryAgreesWithPfnProgramLocal.of_trustedProgram
-    {tr : TrustedRegistry} {root : Expr}
-    {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
-    {e1 e2 : Expr} {res : TypeResult} {tcls : List PFnTClosure}
-    {sourceArgTyp : Typ}
-    (hagrees : TrustedRegistryAgreesWithProgram root tr)
-    (hsourceProgram :
-      ∀ {sourceArgTyp argTyp : Typ} {argPoison : Bool} {id : ExternId} {x y : Name}
-        {retSpec : ExternReturn} {capturedEnv : CapturedVarEnv} {memberCap : List Capture},
-        ExternCallBoundaryPfnStaticSource tcls sourceArgTyp id x y argTyp argPoison retSpec
-          capturedEnv memberCap →
-        ExternDeclarationInProgram root id
-          { id := id, kind := .pfn, typ := argTyp, argName := some x,
-            retSpec := some retSpec, effects := [],
-            preds := collectExternPreds retSpec [], argPoison := argPoison,
-            captures := memberCap }) :
-    TrustedRegistryAgreesWithPfnProgramLocal ctxᵢ predSat tm e1 e2 res tcls sourceArgTyp
-      (entryKey := ExternCallTrustedEntryKey tr)
-      (registry := TrustedRegistry.toRuntimeRegistry tr) :=
-  ⟨ExternCallBoundaryFRPfnSide0Provider.of_trustedProgram hagrees hsourceProgram,
-   ExternCallBoundaryFRPfnSide1Provider.of_trustedProgram hagrees hsourceProgram⟩
-
 theorem TrustedRegistryAgreesWithPfnProgramLocal.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
     {ctxᵢ : TypeContext} {predSat : PredSat} {tm : TagMeaning}
