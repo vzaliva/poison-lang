@@ -1,0 +1,11 @@
+--! poison-interpreter --extern-regime "250=false"
+-- A guarded extern value under the assignment that makes its guard tag false.
+--
+-- This is the same program as `extern-val-regime-true.poison`, with the tag of
+-- @250 false: the declared value does not satisfy its guard, so the test
+-- `if v >= 0` takes the else branch, which returns 0, and the result is again a
+-- clean int. The tag environment records the guard with the value false. No
+-- `extern val` is registered in the interpreter, so the run stops at the
+-- declaration after the typecheck.
+let v = extern val @250 : (int :> poisoned { 0, w => (w >= 0) }) in
+if v >= 0 then v else 0

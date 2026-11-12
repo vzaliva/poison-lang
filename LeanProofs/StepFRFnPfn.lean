@@ -24,7 +24,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.fn x paramType body returnType) res predSat tm (registry := registry) := by
+    ctxᵢ (Expr.fn x paramType body returnType) res predSat tm (Nat.succ fuel) (registry := registry) := by
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -44,13 +44,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   have hres : res = res_expected := typecheckFn_ok_eq htcFn
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro hpredlaws hExtTyping hwfTm hTmBounded
+  intro hpredlaws hframe hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
-      StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
+      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
         (Expr.fn x paramType body returnType) (Nat.succ fuel) res
-        hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg _hres _hrd ht _hpc
+        hwfTm hTmBounded hframe htc
+  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg _hres _hrd ht _hpc _P _hP _hroot
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   subst hcf
@@ -138,7 +138,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm (registry := registry) := by
+    ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm (Nat.succ fuel) (registry := registry) := by
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -166,13 +166,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro hpredlaws hExtTyping hwfTm hTmBounded
+      intro hpredlaws hframe hwfTm hTmBounded
       refine ⟨?_, ?_⟩
       · exact
-          StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
+          StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
             (Expr.pfn x paramType body returnType) (Nat.succ fuel) res
-            hwfTm hTmBounded hpredlaws htc
-      intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg _hres _hrd ht _hpc
+            hwfTm hTmBounded hframe htc
+      intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg _hres _hrd ht _hpc _P _hP _hroot
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
       subst hcf
@@ -258,7 +258,7 @@ lemma stepFR_fn
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.fn x paramType body returnType) res predSat tm (registry := registry) := by
+  StepFR ctxᵢ (Expr.fn x paramType body returnType) res predSat tm (Nat.succ fuel) (registry := registry) := by
   -- Extract typecheck result
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -279,7 +279,7 @@ lemma stepFR_fn
   have hres : res = res_expected := typecheckFn_ok_eq htcFn
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
+  intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
   -- Use inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -309,7 +309,8 @@ lemma stepFR_fn
     refine IsCanonicalExtension.refl ?_ ?_ hresTm
     · simpa [hres, res_expected] using hTmBounded
     · simpa [hctxAfter] using hwfTm
-  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
+  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
+    (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
@@ -524,7 +525,7 @@ lemma stepFR_pfn
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm (registry := registry) := by
+  StepFR ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm (Nat.succ fuel) (registry := registry) := by
   -- Extract typecheck result
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -553,7 +554,7 @@ lemma stepFR_pfn
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
+      intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
       -- Use inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -585,7 +586,8 @@ lemma stepFR_pfn
         refine IsCanonicalExtension.refl ?_ ?_ hresTm
         · simpa [hres, res_expected] using hTmBounded
         · simpa [hctxAfter] using hwfTm
-      refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
+      refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
+    (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
       refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩

@@ -81,14 +81,14 @@ assumption, per guard tag, that the tag's check holds (`true`) or fails
 (`false`). The typechecker runs once per regime; two flags select one:
 
 ```bash
-# Preferred: select an extern by its id (@238 in the source). Every output tag
-# the typechecker allocates for that extern's applications is set to the value.
+# Preferred: select an extern by its id (@238 in the source). Every guard tag
+# the typechecker allocates for that extern's calls and `extern val`
+# declarations is set to the value.
 lake exe poison-interpreter --extern-regime "238=true" examples/extern_captures_guarded.poison
 
 # Low-level: name a concrete guard tag. Tags are numbered from 1 in the
 # typechecker's traversal order, so this depends on allocation order; use it
-# for debugging, and for guards --extern-regime cannot reach, such as those of
-# `extern val` declarations (tags fixed at the declaration).
+# for debugging. Here tag 1 is the guard of an `extern val` declaration.
 lake exe poison-interpreter --regime "1=true" examples/vlet-shadow-guarded.poison
 ```
 
@@ -104,16 +104,35 @@ passes to the interpreter:
 The main result is the theorem `TypeSystemEnforcesFaultRobustness` in
 `LeanProofs/FaultRobustnessProofs.lean`: a well-typed program satisfies the
 fault-robustness specification defined in `LeanProofs/FaultRobustness.lean`,
-relative to a registry of trusted extern functions. The specification takes
-the extern typing assumptions packaged as `ExternTypingAssumptions`
-(`LeanProofs/ExternTypingAssumptions.lean`) as a hypothesis. `lake build`
-checks the whole development. It contains no `sorry`, and the main theorem
-depends only on Lean's standard axioms (`propext`, `Classical.choice`,
-`Quot.sound`); `make axioms` prints them.
+relative to a registry of trusted extern functions. The specification holds
+for every predicate-satisfaction relation that satisfies the predicate laws on
+the program table of the typing run: the starting tag meaning together with
+every guard the typechecker allocates for the program (`programTable` in
+`LeanProofs/TagFrame.lean`). Values returned by extern calls are treated as
+inputs: the theorem assumes, call by call, that each guard tag a call
+allocates carries the outcome of its check on the returned value and on the
+cells the call writes through its effects, and that the two runs return the
+same value and leave the same content in those cells when that tag is true
+(`ExternCallsMatch`, `ExternCallsAgree` in `LeanProofs/ExternCallSteps.lean`).
+Of the value an `extern val` declaration provides, the theorem assumes only
+the first condition; that the two runs declare the same value is proved by the
+author of the extern's trusted entry, in its declaration contract.
+`lake build` checks the whole development. It contains no `sorry`, and the
+main theorem depends only on Lean's standard axioms (`propext`,
+`Classical.choice`, `Quot.sound`); `make axioms` prints them.
 
 `LeanProofs/` also contains fault-robustness theorems for concrete programs
 that use the shipped externs (`AbsFR.lean`, `MaxCurriedFR.lean`,
-`MemReadCapturesFR.lean`, `GuardedCapturesFR.lean`, `ExternRegimeInt.lean`).
+`MemReadCapturesFR.lean`, `GuardedCapturesFR.lean`, `ExternRegimeInt.lean`),
+and small programs with extern calls for which the premises on extern calls
+are proved or refuted and the theorem is applied with every premise proved
+(`ExternCallsWitness.lean`, `ExternCallsWitnessClosed.lean`), and calls of an
+extern function that writes a guarded cell, for which the premises are proved
+or refuted (`ExternCallsWitnessCell.lean`) and the theorem is applied with a
+trusted entry for that function (`ExternCallsWitnessCellClosed.lean`), and a
+program that declares and tests a guarded `extern val`, to which the theorem is
+applied with a trusted entry for that value under each value of its tag
+(`ExternCallsWitnessVal.lean`).
 
 ## Project Structure
 

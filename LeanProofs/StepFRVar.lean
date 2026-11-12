@@ -498,7 +498,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v =>
       valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.var name) res predSat tm (registry := registry) := by
+    ctxᵢ (Expr.var name) res predSat tm (Nat.succ fuel) (registry := registry) := by
   have htc' : typecheckVar ctxᵢ name = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
   have hdeclared : res.declared' = ctxᵢ.declaredExternRefs := by
@@ -514,12 +514,12 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       typecheckVar_preserves_nextTag ctxᵢ name res htc',
       typecheckVar_preserves_regime ctxᵢ name res htc',
       hdeclared]
-  intro hpredlaws hExtTyping hwfTm hTmBounded
+  intro hpredlaws hframe hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
-      StepFRSingleRunTagMeaningPost.of_typecheck_preserves hExtTyping predSat tm ctxᵢ
-        (Expr.var name) (Nat.succ fuel) res hwfTm hTmBounded hpredlaws htc
-  intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hmasked_absent _hmasked_bounded _hbnd hctxCons a pm hwfcfg _hres _hrd ht _hpc
+      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
+        (Expr.var name) (Nat.succ fuel) res hwfTm hTmBounded hframe htc
+  intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hmasked_absent _hmasked_bounded _hbnd hctxCons a pm hwfcfg _hres _hrd ht _hpc _P _hP _hroot
   rcases
     terminatesTo_var_inv' name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
@@ -553,8 +553,8 @@ lemma stepFR_var
   (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.var name) res predSat tm (registry := registry) := by
-  intro hpredlaws hExtTyping hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁
+  StepFR ctxᵢ (Expr.var name) res predSat tm (Nat.succ fuel) (registry := registry) := by
+  intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' name
@@ -776,7 +776,8 @@ lemma stepFR_var
     refine IsCanonicalExtension.refl ?_ ?_ hresTm
     · simpa [hnextTag] using hTmBounded
     · simpa [ctxAfter, hmem] using! hwfTm
-  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws, hpredlaws, hresTm, ?_⟩
+  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
+    (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩

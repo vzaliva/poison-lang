@@ -321,6 +321,15 @@ structure TypeContext where
   -- `TypeResult.declared'`.
   declaredExternRefs : List ExternId := []
 
+/-- One guard allocated by the typechecker: a fresh tag together with the
+    guard closure (argument name, body, captured environment) it names. -/
+structure TagAlloc where
+  tag : Tag
+  argName : Name
+  body : PExpr
+  capEnv : CapturedVarEnv
+  deriving Repr
+
 /-- Type checking result: qualified type and updated memory environment -/
 structure TypeResult where
   qualType : QTyp -- Qualified type of the expression
@@ -330,6 +339,9 @@ structure TypeResult where
   nextTag' : Tag -- Updated next tag
   regime' : Regime -- Updated regime after typing step
   declared' : List ExternId -- Updated declared `extern ref` ids (no default: every result must thread it)
+  -- Guards allocated during this typing run, including those of sub-runs
+  -- whose result is discarded (the pure typing of a matched condition).
+  tagLog' : List TagAlloc := []
 
 /-- Type checking monad for error handling -/
 abbrev TypecheckM := Except String
@@ -1023,6 +1035,21 @@ def collectAndAllocExternTags (preds : List SyntaxPredicate) (nextTag : Tag)
     tag := tag + 1
   return (mapping, tag)
 
+/-- The guards allocated by one extern batch: every guard closure of `preds`
+    whose index the batch mapped to a fresh tag, with the captured environment
+    `env` its resolved predicate records (see `resolveSyntaxPred`). -/
+def externTagLog (preds : List SyntaxPredicate) (env : VarTypeEnv)
+    (mapping : ExtTreeMap TagIndex Tag) : List TagAlloc :=
+  preds.filterMap fun pred =>
+    match pred with
+    | SyntaxPredicate.guardClosure idx arg body =>
+        match mapping.get? idx, body.toPExpr with
+        | some tag, .ok pbody =>
+            some { tag := tag, argName := arg, body := pbody,
+                   capEnv := VarTypeEnv.toCaptured env }
+        | _, _ => none
+    | _ => none
+
 /-- Resolve a SyntaxPredicate to a concrete Predicate using a tag mapping and
     the current variable typing environment.
 -/
@@ -1109,24 +1136,6 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate)
   return (⟨etyp, poison, pred⟩, nextLoc')
 
 -- Type checking functions for extern expressions
-
-/-- Typecheck extern value: let x = extern val @id : (T :> p { SP })
-    Allocates fresh tags for TagIndex values in the SyntaxPredicate, resolves
-    to a concrete Predicate, then converts the surface type.
--/
-def typecheckExternVal (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-    : TypecheckM TypeResult := do
-    match (poison,pred) with
-    | (false, SyntaxPredicate.guardOnly _)
-    | (false, SyntaxPredicate.guardClosure _ _ _) =>
-        throw "Clean types cannot have predicates"
-    | _ => do
-      let (tagMapping, nextTag') ← collectAndAllocExternTags [pred] ctx.nextTag
-      let resolvedPred ← resolveSyntaxPred pred ctx.varEnv tagMapping
-      let (qt, ctx') ← surfaceSpecToQTyp typ poison resolvedPred ctx
-      return { qualType := qt, memEnv' := ctx'.memEnv, tagEnv' := ctx.tagEnv,
-               nextLoc' := ctx'.nextLoc, nextTag' := nextTag', regime' := ctx.regime,
-               declared' := ctx.declaredExternRefs }
 
 /-- Typecheck a reference-valued extern declaration:
     `extern ref @id : (ref int :> clean {}), points_to: (int :> poisoned {})`
@@ -1442,7 +1451,8 @@ def joinTypeResults (ctx : TypeContext) (firstResult : TypeResult) (restResults 
     let qt : QTyp := ⟨joinedEtyp, finalPoison, finalPred⟩
     return { qualType := qt, memEnv' := joinedMemEnv, tagEnv' := joinedTagEnv,
              nextLoc' := maxNextLoc, nextTag' := maxNextTag, regime' := joinedRegime,
-             declared' := firstResult.declared' }
+             declared' := firstResult.declared',
+             tagLog' := firstResult.tagLog' ++ restResults.flatMap (·.tagLog') }
 
 def applyClosuresThreaded {α : Type}
     (applyOne : α → Tag × Loc → TypecheckM TypeResult)
@@ -1486,6 +1496,46 @@ def installReturnGuard (env : TagEnv) (resolvedPred : Predicate) (R : Regime)
       | none => env
   | _ => env
 
+/-- Extern-regime insertion: for each freshly-allocated
+    output guard tag `k` of a selected extern id, query the scenario policy
+    `policy id k`; when it returns `some b`, insert `k ↦ b` into the active regime.  Tags
+    with `none` are left out (conservative path).  All tags in `tagMapping` are fresh
+    (allocated `≥ ctx.nextTag`), so this only ever ADDS tags above the incoming `nextTag`. -/
+def applyExternRegimePolicy (R : Regime) (id : ExternId)
+    (policy : ExternId → Tag → Option Bool) (tagMapping : TagMapping) : Regime :=
+  tagMapping.toList.foldl
+    (fun R (p : TagIndex × Tag) =>
+      match policy id p.2 with
+      | some b => match R.lookup? p.2 with
+                  | none => R.insert p.2 b
+                  | some _ => R
+      | none => R) R
+
+/-- Typecheck extern value: `let x = extern val @id : (T :> p { SP })`.
+    Typed as a call of a constant pure extern function with a simple return:
+    allocates fresh tags for the `TagIndex` values in the `SyntaxPredicate`,
+    resolves it to a concrete `Predicate`, converts the surface type, gives
+    the fresh tags the values that the extern-regime assignment
+    `ctx.externRegime` selects for `id` (`applyExternRegimePolicy`), and
+    records the guard in the tag environment (`installReturnGuard`).
+-/
+def typecheckExternVal (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison : Bool)
+    (pred : SyntaxPredicate) (fuel : Nat) : TypecheckM TypeResult := do
+    match (poison,pred) with
+    | (false, SyntaxPredicate.guardOnly _)
+    | (false, SyntaxPredicate.guardClosure _ _ _) =>
+        throw "Clean types cannot have predicates"
+    | _ => do
+      let (tagMapping, nextTag') ← collectAndAllocExternTags [pred] ctx.nextTag
+      let resolvedPred ← resolveSyntaxPred pred ctx.varEnv tagMapping
+      let (qt, ctx') ← surfaceSpecToQTyp typ poison resolvedPred ctx
+      let regime' := applyExternRegimePolicy ctx.regime id ctx.externRegime tagMapping
+      return { qualType := qt, memEnv' := ctx'.memEnv,
+               tagEnv' := installReturnGuard ctx.tagEnv resolvedPred regime' fuel,
+               nextLoc' := ctx'.nextLoc, nextTag' := nextTag', regime' := regime',
+               declared' := ctx.declaredExternRefs,
+               tagLog' := externTagLog [pred] ctx.varEnv tagMapping }
+
 mutual
 
 -- Helper function to type check an expression with context
@@ -1511,7 +1561,7 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.app e1 e2 => typecheckApp ctx e1 e2 fuel
     | Expr.ite e1 e2 e3 => typecheckIf ctx e1 e2 e3 fuel
     | Expr.unaryop op e => typecheckUnaryOp ctx op e fuel
-    | Expr.externVal _ typ poison pred => typecheckExternVal ctx typ poison pred
+    | Expr.externVal id typ poison pred => typecheckExternVal ctx id typ poison pred fuel
     | Expr.externRef id refPoison refPred cellPoison cellPred =>
         typecheckExternRef ctx id refPoison refPred cellPoison cellPred
     | Expr.externFn id arg argTyp argPoison argPred retSpec effects captures =>
@@ -1545,7 +1595,7 @@ def typecheckOp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (op : Op) : Type
     | some r =>
         let poison := joinPoison ctx.pc (joinPoison p1 p2)
         let qt : QTyp := ⟨r, poison, Predicate.noPred⟩
-        return { result2 with qualType := qt }
+        return { result2 with qualType := qt, tagLog' := result1.tagLog' ++ result2.tagLog' }
     | none => throw s!"Operation argument types do not match.\n  Left: {etyp1}\n  Op:   {op}\n  Right: {etyp2}"
 termination_by fuel
 
@@ -1575,7 +1625,7 @@ def typecheckNewRef (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Typ
     let memEnv' := updateMemEnv result'.memEnv' l storedQt
 
     let qt : QTyp := ⟨ETyp.ref (LocSet.singleton l), ctx.pc, Predicate.noPred⟩
-    return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag', regime' := result'.regime', declared' := result'.declared' }
+    return { qualType := qt, memEnv' := memEnv', tagEnv' := result'.tagEnv', nextLoc' := result'.nextLoc', nextTag' := result'.nextTag', regime' := result'.regime', declared' := result'.declared', tagLog' := result'.tagLog' }
 termination_by fuel
 
 /-- Rule: assign (Ott rules: assign_singleton, assign_locset, assign_singleton_poisoned_ref, assign_locset_poisoned_ref) -/
@@ -1615,7 +1665,7 @@ def typecheckAssign (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM
       -- Bump nextLoc' past all locations in ls to ensure wfTypeResult holds
       -- (locations may not be in memEnv due to conservative if typing)
       let nextLoc' := LocSet.fold ls result2.nextLoc' (fun acc l => max acc (l + 1))
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := result2.nextTag', regime' := regime', declared' := result2.declared' }
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := result2.nextTag', regime' := regime', declared' := result2.declared', tagLog' := result1.tagLog' ++ result2.tagLog' }
     | _ => throw "Left operand of assignment must be a reference"
 termination_by fuel
 
@@ -1650,25 +1700,25 @@ def typecheckDeref (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM Type
       if poisonRef then
         -- Reference itself poisoned: ignore predicates, return poisoned
         let qt : QTyp := ⟨ETyp.int, true, Predicate.noPred⟩
-        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared' }
+        return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared', tagLog' := result.tagLog' }
       else
         match mergedPred with
         | Predicate.noPred =>
             let poison := joinPoison ctx.pc joinedCellPoison
             let qt : QTyp := ⟨ETyp.int, poison, Predicate.noPred⟩
-            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared' }
+            return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared', tagLog' := result.tagLog' }
         | Predicate.guardOnly k | Predicate.guardClosure k _ _ _ =>
             match result.tagEnv'.get? k with
             | some ⟨true, _deps⟩ =>
               let qt : QTyp := ⟨ETyp.int, ctx.pc, Predicate.noPred⟩
-              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared' }
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared', tagLog' := result.tagLog' }
             | some ⟨false, _deps⟩ =>
               let qt : QTyp := ⟨ETyp.int, true, Predicate.noPred⟩
-              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared' }
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared', tagLog' := result.tagLog' }
             | none =>
               let poison := joinPoison ctx.pc joinedCellPoison
               let qt : QTyp := ⟨ETyp.int, poison, mergedPred⟩
-              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared' }
+              return { qualType := qt, memEnv' := result.memEnv', tagEnv' := result.tagEnv', nextLoc' := result.nextLoc', nextTag' := result.nextTag', regime' := result.regime', declared' := result.declared', tagLog' := result.tagLog' }
     | _ => throw "Operand of dereference must be a reference"
 termination_by fuel
 
@@ -1685,7 +1735,7 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
     let result1 ← typecheckExpr ctx e1 fuel
     let ctx' := updateCtxFromResult ctx result1
     let result2 ← typecheckExpr ctx' e2 fuel
-    return result2
+    return { result2 with tagLog' := result1.tagLog' ++ result2.tagLog' }
 termination_by fuel
 
 
@@ -1748,21 +1798,6 @@ def effectTargetLocs (effects : List Effect) (unifiedEnv : VarTypeEnv) : LocSet 
             | ETyp.ref ls => LocSet.union acc ls
             | _ => acc
         | none => acc) (∅ : LocSet)
-
-/-- Extern-regime insertion: for each freshly-allocated
-    output guard tag `k` of a selected extern id, query the scenario policy
-    `policy id k`; when it returns `some b`, insert `k ↦ b` into the active regime.  Tags
-    with `none` are left out (conservative path).  All tags in `tagMapping` are fresh
-    (allocated `≥ ctx.nextTag`), so this only ever ADDS tags above the incoming `nextTag`. -/
-def applyExternRegimePolicy (R : Regime) (id : ExternId)
-    (policy : ExternId → Tag → Option Bool) (tagMapping : TagMapping) : Regime :=
-  tagMapping.toList.foldl
-    (fun R (p : TagIndex × Tag) =>
-      match policy id p.2 with
-      | some b => match R.lookup? p.2 with
-                  | none => R.insert p.2 b
-                  | some _ => R
-      | none => R) R
 
 /-- Helper: Apply a single FnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single closure alternative.
@@ -1845,7 +1880,8 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
                      regime' := applyExternRegimePolicy
                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                        id ctx.externRegime tagMapping,
-                     declared' := result2.declared' }
+                     declared' := result2.declared',
+                     tagLog' := externTagLog allPreds unifiedEnv tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -1863,7 +1899,8 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
                      regime' := applyExternRegimePolicy
                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                        id ctx.externRegime tagMapping,
-                     declared' := result2.declared' }
+                     declared' := result2.declared',
+                     tagLog' := externTagLog allPreds unifiedEnv tagMapping }
 
         | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -1881,7 +1918,8 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
                      regime' := applyExternRegimePolicy
                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                        id ctx.externRegime tagMapping,
-                     declared' := result2.declared' }
+                     declared' := result2.declared',
+                     tagLog' := externTagLog allPreds unifiedEnv tagMapping }
 termination_by fuel
 
 def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poison)
@@ -1961,7 +1999,8 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                      regime' := applyExternRegimePolicy
                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                        id ctx.externRegime tagMapping,
-                     declared' := result2.declared' }
+                     declared' := result2.declared',
+                     tagLog' := externTagLog allPreds unifiedEnv tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -1979,7 +2018,8 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                      regime' := applyExternRegimePolicy
                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                        id ctx.externRegime tagMapping,
-                     declared' := result2.declared' }
+                     declared' := result2.declared',
+                     tagLog' := externTagLog allPreds unifiedEnv tagMapping }
 
         | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -1997,7 +2037,8 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
                      regime' := applyExternRegimePolicy
                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                        id ctx.externRegime tagMapping,
-                     declared' := result2.declared' }
+                     declared' := result2.declared',
+                     tagLog' := externTagLog allPreds unifiedEnv tagMapping }
 
 /-- Helper: Apply a single PFnTClosure and return the result type and updated environments.
     This encapsulates the body typing logic for a single pure closure alternative.
@@ -2067,7 +2108,8 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
                      tagEnv' := installReturnGuard result2.tagEnv' resolvedPred
                        (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) fuel,
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping,
-                     declared' := result2.declared' }
+                     declared' := result2.declared',
+                     tagLog' := externTagLog [pred] unifiedEnv tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -2166,7 +2208,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
                      tagEnv' := installReturnGuard result2.tagEnv' resolvedPred
                        (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) fuel,
                      nextLoc' := nextLoc', nextTag' := nextTag', regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping,
-                     declared' := result2.declared' }
+                     declared' := result2.declared',
+                     tagLog' := externTagLog [pred] unifiedEnv tagMapping }
 
         | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
             let (innerArgQt, nextTag'') ← resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv argBaseTag
@@ -2235,7 +2278,9 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       -- Check that we have at least one result and join them
       match results with
       | [] => throw "Internal error: no results from closure application"
-      | firstResult :: restResults => joinTypeResults ctx firstResult restResults
+      | firstResult :: restResults => do
+          let joined ← joinTypeResults ctx firstResult restResults
+          return { joined with tagLog' := result2.tagLog' ++ result1.tagLog' ++ joined.tagLog' }
     | ETyp.parrow st1 st2 p tcls =>
       -- Check for empty closure list (should never happen in well-formed programs)
       if tcls.isEmpty then
@@ -2253,7 +2298,9 @@ def typecheckApp (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
       -- Check that we have at least one result and join them
       match results with
       | [] => throw "Internal error: no results from closure application"
-      | firstResult :: restResults => joinTypeResults ctx firstResult restResults
+      | firstResult :: restResults => do
+          let joined ← joinTypeResults ctx firstResult restResults
+          return { joined with tagLog' := result2.tagLog' ++ result1.tagLog' ++ joined.tagLog' }
 
     | _ => throw "Left operand of application must be a function"
 termination_by fuel
@@ -2290,7 +2337,7 @@ def typecheckVlet (ctx : TypeContext) (x : Name) (e1 : Expr) (e2 : Expr) (fuel :
 
     let poison := joinPoison ctx.pc p2
     let qt : QTyp := ⟨etyp2, poison, pred2⟩
-    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag', regime' := result2.regime', declared' := result2.declared' }
+    return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv', nextLoc' := result2.nextLoc', nextTag' := result2.nextTag', regime' := result2.regime', declared' := result2.declared', tagLog' := result1.tagLog' ++ result2.tagLog' }
 termination_by fuel
 
 
@@ -2318,10 +2365,13 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       -- threads FULLY SERIALLY (like nextLoc): condition, then-arm, else-arm.
       -- The else-arm therefore sees the then-arm's declarations, so the
       -- per-declaration duplicate gate in typecheckExternRef also rejects
-      -- same-id declarations across the two arms.
+      -- same-id declarations across the two arms.  The tag counter threads
+      -- the same way: the arms allocate after the condition's tags.
       let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                nextTag := result1.nextTag',
                                 declaredExternRefs := result1.declared' }
       let ctxFalse := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
+                                 nextTag := result1.nextTag',
                                  declaredExternRefs := result1.declared' }
 
       -- Consult R(k) for branch selection
@@ -2340,7 +2390,8 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
         let qt : QTyp := ⟨etyp2, poison, Predicate.noPred⟩
         return { qualType := qt, memEnv' := result2.memEnv', tagEnv' := result2.tagEnv',
                  nextLoc' := max result2.nextLoc' result3.nextLoc', nextTag' := max result2.nextTag' result3.nextTag', regime' := result2.regime',
-                 declared' := result3.declared' }
+                 declared' := result3.declared',
+                 tagLog' := result1.tagLog' ++ result2.tagLog' ++ result3.tagLog' }
 
       | some false => do
         let result2 ← typecheckExpr ctxTrue e2 fuel
@@ -2354,9 +2405,12 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
         let qt : QTyp := ⟨etyp3, poison, Predicate.noPred⟩
         return { qualType := qt, memEnv' := result3.memEnv', tagEnv' := result3.tagEnv',
                  nextLoc' := max result2.nextLoc' result3.nextLoc', nextTag' := max result2.nextTag' result3.nextTag', regime' := result3.regime',
-                 declared' := result3.declared' }
+                 declared' := result3.declared',
+                 tagLog' := result1.tagLog' ++ result2.tagLog' ++ result3.tagLog' }
 
       | none => do
+        -- Standard typing of the condition; the pure typing above only gates
+        -- this case and its result is discarded.
         let result1 ← typecheckExpr ctx e1 fuel
         let ⟨etyp1, p1, _⟩ := result1.qualType
         if etyp1 != ETyp.bool then throw "Condition of if must be bool"
@@ -2386,7 +2440,8 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
         let regime' := joinRegimes result2.regime' result3.regime'
         let nextLoc' := max result2.nextLoc' result3.nextLoc'
         let nextTag' := max result2.nextTag' result3.nextTag'
-        return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := nextTag', regime' := regime', declared' := result3.declared' }
+        return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := nextTag', regime' := regime', declared' := result3.declared',
+                 tagLog' := result1.tagLog' ++ result2.tagLog' ++ result3.tagLog' }
 
     | .error _ => do
       -- Standard case (if_std_*) - no matching predicate found
@@ -2424,7 +2479,8 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let regime' := joinRegimes result2.regime' result3.regime'
       let nextLoc' := max result2.nextLoc' result3.nextLoc'
       let nextTag' := max result2.nextTag' result3.nextTag'
-      return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := nextTag', regime' := regime', declared' := result3.declared' }
+      return { qualType := qt, memEnv' := memEnv', tagEnv' := tagEnv', nextLoc' := nextLoc', nextTag' := nextTag', regime' := regime', declared' := result3.declared',
+               tagLog' := result1.tagLog' ++ result2.tagLog' ++ result3.tagLog' }
 termination_by fuel
 
 

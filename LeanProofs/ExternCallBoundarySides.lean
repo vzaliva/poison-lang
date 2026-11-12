@@ -140,7 +140,7 @@ lemma externBoundarySinglePost_of_singleRun_normalized_app
         (registry := registry) μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg) :
     ExternBoundarySinglePost bodyCtx first predSat tm θ μ cf o := by
   rcases StepFRSingleRunTagMeaningPost.to_boundary htag with ⟨tm', htag_post⟩
-  rcases htag_post with ⟨hext, hbounded, hwfCtx, hresTm, hpredlaws⟩
+  rcases htag_post with ⟨hext, hbounded, hwfCtx, hresTm, hpredlaws, hwithin⟩
   rcases hpost with
     ⟨θ', hθext, hv, hric_final, hcwr_final, hval_final, hpres, hfresh, hrd⟩
   have hctxAfter_eq : ctxAfter bodyCtx first = ctxAfter bodyCtx result3 := by
@@ -157,12 +157,13 @@ lemma externBoundarySinglePost_of_singleRun_normalized_app
     rw [hfirst_eq]
     simp [normalizeAppResultByProvenance, h_p1p, qtypGuardDesc?]
   refine ⟨tm', ?_, θ', hθext, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · refine ⟨hext, ?_, ?_, ?_, hpredlaws⟩
+  · refine ⟨hext, ?_, ?_, ?_, hpredlaws, ?_⟩
     · simpa [hfirst_eq, normalizeAppResultByProvenance] using hbounded
     · simpa [hctxAfter_eq] using hwfCtx
     · exact
         QTypRespectsTagMeaning_transport_etyp_noGuard
           tm' result3.qualType first.qualType hresTm hfirst_etyp hfirst_no_guard
+    · rw [hfirst_eq]; exact hwithin
   · simpa [hfirst_etyp] using hv
   · simpa [hctxAfter_eq] using hric_final
   · simpa [hctxAfter_eq] using hcwr_final
@@ -578,6 +579,31 @@ def ExternCallPfnTypingProvider
       ExternBoundaryTyping.Call entry.decl
         (Expr.externPfn id y argTyp argPoisonAst argPredAst retSpec captures) callEntry res
 
+/-- The effects of an impure extern declaration typed at a call are the
+    effects of the extern closure. -/
+theorem ExternBoundaryTyping.Call.fn_effects
+    {d : ExternDeclaration} {id : ExternId} {y : Name} {argTyp : Typ}
+    {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
+    {effects : List Effect} {captures : List Capture}
+    {entry : ExternCallEntry} {res : TypeResult}
+    (h : ExternBoundaryTyping.Call d
+      (Expr.externFn id y argTyp argPoison argPred retSpec effects captures) entry res) :
+    d.effects = effects := by
+  cases h with
+  | fnExternMember _ _ _ _ _ heff _ _ _ _ => exact heff
+
+/-- A pure extern declaration typed at a call declares no effects. -/
+theorem ExternBoundaryTyping.Call.pfn_effects
+    {d : ExternDeclaration} {id : ExternId} {y : Name} {argTyp : Typ}
+    {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
+    {captures : List Capture}
+    {entry : ExternCallEntry} {res : TypeResult}
+    (h : ExternBoundaryTyping.Call d
+      (Expr.externPfn id y argTyp argPoison argPred retSpec captures) entry res) :
+    d.effects = [] := by
+  cases h with
+  | pfnExternMember _ _ _ _ _ _ _ _ _ heff => exact heff
+
 private theorem externCallBoundaryRun_singlePost
     {entry : TrustedExternEntry} {typedExpr : Expr} {result3 : TypeResult}
     {predSatBody : PredSat} {tmBody : TagMeaning}
@@ -585,10 +611,12 @@ private theorem externCallBoundaryRun_singlePost
     {cf : Config} {o : Value}
     (htypedCall : ExternBoundaryTyping.Call entry.decl typedExpr callEntry result3)
     (hpredlawsBody : PredSatLaws predSatBody tmBody)
+    (hframeBody : TagFrame predSatBody tmBody result3.tagLog')
     (hwfTmBody : wfTagMeaningCtx tmBody callEntry.bodyCtx)
     (hTmBoundedBody : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag)
     (hθBodyWf : wfRealizationMap θBody)
     (hwfBody : wfTypeContext callEntry.bodyCtx)
+    (hbndBody : TagBoundedCtx callEntry.bodyCtx)
     (hricBody :
       runtimeInstantiatesCtx callEntry.bodyCtx
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
@@ -599,12 +627,13 @@ private theorem externCallBoundaryRun_singlePost
     (hwfcfgBody : wfConfig callEntry.bodyConfig)
     (hrdBody : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody)
     (hrun : ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf o)
+    (hmatch : CallMatches predSatBody callEntry entry.decl.effects result3 cf o)
     (hpcBody : callEntry.bodyCtx.pc = true) :
     ExternBoundarySinglePost callEntry.bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o :=
   entry.spec.callSingle typedExpr result3 predSatBody tmBody callEntry
-    htypedCall hpredlawsBody hwfTmBody hTmBoundedBody θBody cf o
-    hθBodyWf hwfBody hricBody htagRBody hcwrBody hwfcfgBody hrdBody hrun hpcBody
+    htypedCall hpredlawsBody hframeBody hwfTmBody hTmBoundedBody θBody cf o
+    hθBodyWf hwfBody hbndBody hricBody htagRBody hcwrBody hwfcfgBody hrdBody hrun hmatch hpcBody
 
 /-- Body-local single-run contract for successful impure extern app dispatch.
 
@@ -638,10 +667,12 @@ def ExternCallBoundarySingleFnContract
     (predSatBody : PredSat) (tmBody : TagMeaning)
     (θBody : RealizationMap) (callEntry : ExternCallEntry)
     (_hpredlawsBody : PredSatLaws predSatBody tmBody)
+    (_hframeBody : TagFrame predSatBody tmBody result3.tagLog')
     (_hwfTmBody : wfTagMeaningCtx tmBody bodyCtx)
     (_hTmBoundedBody : TagMeaningBounded tmBody bodyCtx.nextTag)
     (_hθBodyWf : wfRealizationMap θBody)
     (_hwfBody : wfTypeContext bodyCtx)
+    (_hbndBody : TagBoundedCtx bodyCtx)
     (_hricBody :
       runtimeInstantiatesCtx bodyCtx
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
@@ -679,6 +710,7 @@ def ExternCallBoundarySingleFnContract
     callEntry.capturedEnv = env →
     callEntry.unifiedEnv =
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
+    CallMatches predSatBody callEntry eff result3 cf o →
     ExternBoundarySinglePost bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o
 
@@ -705,11 +737,11 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
-        hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
+        hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hbndBody hricBody
         htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec eff tenv memberCap cap env impl vRaw mem' addr'
         hstatic htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
-        hargName hargValue hcaptured hunified
+        hargName hargValue hcaptured hunified hcallMatch
   have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht_e2
   have hreg_c₁ : c₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
@@ -748,12 +780,17 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
   have hentryPoison :=
     congrArg ExternDeclaration.argPoison (hagrees (hsourceReachable hstatic) _hlookup)
   obtain ⟨_apaFn, _aprFn, _capFn, htypedEntryCall⟩ := htypedCallProvider entry hmatch hentryPoison
+  have hmatchCall : CallMatches predSatBody callEntry entry.decl.effects result3 cf o := by
+    rw [hmatch.2.2.2.2.2.1]
+    exact hcallMatch
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
     simpa [hbodyCtx] using hTmBoundedBody
   have hwfCall : wfTypeContext callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfBody
+  have hbndCall : TagBoundedCtx callEntry.bodyCtx := by
+    simpa [hbodyCtx] using hbndBody
   have htagRCall : regimeConsistentWithCtx callEntry.bodyCtx := by
     simpa [hbodyCtx] using htagRBody
   have hricCall :
@@ -773,8 +810,8 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
-      htagRCall hcwrCall hwfcfgBody hrdCall hrun hpcCall
+      htypedEntryCall hpredlawsBody hframeBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hbndCall
+      hricCall htagRCall hcwrCall hwfcfgBody hrdCall hrun hmatchCall hpcCall
 
 /-- Body-local single-run contract for successful pure extern app dispatch. -/
 def ExternCallBoundarySinglePfnContract
@@ -803,10 +840,12 @@ def ExternCallBoundarySinglePfnContract
     (predSatBody : PredSat) (tmBody : TagMeaning)
     (θBody : RealizationMap) (callEntry : ExternCallEntry)
     (_hpredlawsBody : PredSatLaws predSatBody tmBody)
+    (_hframeBody : TagFrame predSatBody tmBody result3.tagLog')
     (_hwfTmBody : wfTagMeaningCtx tmBody bodyCtx)
     (_hTmBoundedBody : TagMeaningBounded tmBody bodyCtx.nextTag)
     (_hθBodyWf : wfRealizationMap θBody)
     (_hwfBody : wfTypeContext bodyCtx)
+    (_hbndBody : TagBoundedCtx bodyCtx)
     (_hricBody :
       runtimeInstantiatesCtx bodyCtx
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
@@ -842,6 +881,7 @@ def ExternCallBoundarySinglePfnContract
     callEntry.capturedEnv = env →
     callEntry.unifiedEnv =
       VarEnv.update callEntry.capturedEnv callEntry.argName callEntry.argValue →
+    CallMatches predSatBody callEntry [] result3 cf o →
     ExternBoundarySinglePost bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o
 
@@ -868,11 +908,11 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
-        hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
+        hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hbndBody hricBody
         htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec tenv memberCap cap env impl vRaw
         hstatic htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
-        hargName hargValue hcaptured hunified
+        hargName hargValue hcaptured hunified hcallMatch
   have hreg_c₂' : c₂'.registry = TrustedRegistry.toRuntimeRegistry tr := by
     simpa using terminatesTo_preserves_registry ht_e2
   have hreg_c₁ : c₁.registry = TrustedRegistry.toRuntimeRegistry tr :=
@@ -905,12 +945,17 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
   have hentryPoison :=
     congrArg ExternDeclaration.argPoison (hagrees (hsourceReachable hstatic) _hlookup)
   obtain ⟨_apaPfn, _aprPfn, _capPfn, htypedEntryCall⟩ := htypedCallProvider entry hmatch hentryPoison
+  have hmatchCall : CallMatches predSatBody callEntry entry.decl.effects result3 cf o := by
+    rw [TrustedRegistryEntryMatchesPfn.effects_eq hmatch]
+    exact hcallMatch
   have hwfTmCall : wfTagMeaningCtx tmBody callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
     simpa [hbodyCtx] using hTmBoundedBody
   have hwfCall : wfTypeContext callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfBody
+  have hbndCall : TagBoundedCtx callEntry.bodyCtx := by
+    simpa [hbodyCtx] using hbndBody
   have htagRCall : regimeConsistentWithCtx callEntry.bodyCtx := by
     simpa [hbodyCtx] using htagRBody
   have hricCall :
@@ -930,8 +975,8 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      htypedEntryCall hpredlawsBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hricCall
-      htagRCall hcwrCall hwfcfgBody hrdCall hrun hpcCall
+      htypedEntryCall hpredlawsBody hframeBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hbndCall
+      hricCall htagRCall hcwrCall hwfcfgBody hrdCall hrun hmatchCall hpcCall
 
 /-- Keying evidence attached to a trusted extern entry returned by a local
     two-run app-call provider.  The empty-registry instance uses
@@ -969,10 +1014,12 @@ theorem externCallBoundaryRunProvider_singlePost
         ExternBoundaryTyping.Call entry.decl typedExpr callEntry result3 ∧
         ExternCallBoundaryRun entry.decl entry.impl callEntry result3 cf o)
     (hpredlawsBody : PredSatLaws predSatBody tmBody)
+    (hframeBody : TagFrame predSatBody tmBody result3.tagLog')
     (hwfTmBody : wfTagMeaningCtx tmBody callEntry.bodyCtx)
     (hTmBoundedBody : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag)
     (hθBodyWf : wfRealizationMap θBody)
     (hwfBody : wfTypeContext callEntry.bodyCtx)
+    (hbndBody : TagBoundedCtx callEntry.bodyCtx)
     (hricBody :
       runtimeInstantiatesCtx callEntry.bodyCtx
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
@@ -982,6 +1029,10 @@ theorem externCallBoundaryRunProvider_singlePost
         callEntry.bodyConfig.memory callEntry.bodyConfig.varEnv θBody)
     (hwfcfgBody : wfConfig callEntry.bodyConfig)
     (hrdBody : ReservedDiscipline callEntry.bodyConfig.registry callEntry.bodyCtx.declaredExternRefs θBody)
+    (hmatch :
+      ∀ entry : TrustedExternEntry,
+        ExternBoundaryTyping.Call entry.decl typedExpr callEntry result3 →
+        CallMatches predSatBody callEntry entry.decl.effects result3 cf o)
     (hpcBody : callEntry.bodyCtx.pc = true) :
     ExternBoundarySinglePost callEntry.bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o := by
@@ -991,8 +1042,8 @@ theorem externCallBoundaryRunProvider_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      htypedCall hpredlawsBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hricBody
-      htagRBody hcwrBody hwfcfgBody hrdBody hrun hpcBody
+      htypedCall hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hbndBody
+      hricBody htagRBody hcwrBody hwfcfgBody hrdBody hrun (hmatch entry htypedCall) hpcBody
 
 /-- Single-run "tail" of the impure (`fn`) extern-call boundary contract.
 
@@ -1116,7 +1167,6 @@ private def ExternCallBoundaryFRFnSide0Contract
     (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
-    (_hExtTyping : ExternTypingAssumptions)
     (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
     (_hTmBounded : TagMeaningBounded tm ctxᵢ.nextTag)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
@@ -1176,7 +1226,6 @@ private def ExternCallBoundaryFRFnSide1Contract
     (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
-    (_hExtTyping : ExternTypingAssumptions)
     (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
     (_hTmBounded : TagMeaningBounded tm ctxᵢ.nextTag)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
@@ -1246,7 +1295,7 @@ private theorem ExternCallBoundaryFRFnSide0Provider.of_trustedReachable
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _eff₀ _tenv₀ _memberCap₀ _hstaticProvider
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   exact ExternCallBoundaryFRFnRunContract.of_trustedReachable hagrees hsourceReachable
 
 private theorem ExternCallBoundaryFRFnSide1Provider.of_trustedReachable
@@ -1270,7 +1319,7 @@ private theorem ExternCallBoundaryFRFnSide1Provider.of_trustedReachable
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _eff₁ _tenv₁ _memberCap₁ _hstaticProvider
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   exact ExternCallBoundaryFRFnRunContract.of_trustedReachable hagrees hsourceReachable
 
 /-- Run-generic single-run `pfn` boundary tail shared by both side-0/side-1
@@ -1387,7 +1436,6 @@ private def ExternCallBoundaryFRPfnSide0Contract
     (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
-    (_hExtTyping : ExternTypingAssumptions)
     (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
     (_hTmBounded : TagMeaningBounded tm ctxᵢ.nextTag)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
@@ -1441,7 +1489,6 @@ private def ExternCallBoundaryFRPfnSide1Contract
     (entryKey : ExternCallEntryKey := ExternCallNoEntryKey)
     (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (_hpredlaws : PredSatLaws predSat tm)
-    (_hExtTyping : ExternTypingAssumptions)
     (_hwfTm : wfTagMeaningCtx tm ctxᵢ)
     (_hTmBounded : TagMeaningBounded tm ctxᵢ.nextTag)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
@@ -1507,7 +1554,7 @@ theorem ExternCallBoundaryFRPfnSide0Provider.of_trustedReachable
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro _id₀ _x₀ _y₀ _argTyp₀ _argPoison₀ _retSpec₀ _tenv₀ _memberCap₀ _hstaticProvider
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   exact ExternCallBoundaryFRPfnRunContract.of_trustedReachable hagrees hsourceReachable
 
 theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedReachable
@@ -1530,7 +1577,7 @@ theorem ExternCallBoundaryFRPfnSide1Provider.of_trustedReachable
       (entryKey := ExternCallTrustedEntryKey tr)
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro _id₁ _x₁ _y₁ _argTyp₁ _argPoison₁ _retSpec₁ _tenv₁ _memberCap₁ _hstaticProvider
-        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+        _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   exact ExternCallBoundaryFRPfnRunContract.of_trustedReachable hagrees hsourceReachable
 
 /-- Local registry-agreement-shaped adapter for the two impure arrow sides.

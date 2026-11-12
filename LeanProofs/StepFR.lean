@@ -19,9 +19,10 @@ import LeanProofs.TypeSafety
 import LeanProofs.Auxiliary
 import LeanProofs.SemanticsProperties
 import LeanProofs.RegimeConsistency
-import LeanProofs.ExternTypingAssumptions
+import LeanProofs.TagFrame
 import LeanProofs.ExternTagMeaning
 import LeanProofs.TypecheckInduction
+import LeanProofs.ExternCallSteps
 import Std.Data.ExtTreeMap.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 
@@ -62,7 +63,8 @@ lemma resultAgreesIfClean_of_poison_noPred
 /-- Tag-meaning facts at a typing boundary, without an expression spine.
 
     For ordinary source steps, this follows from `IsCanonicalExtension` (the
-    extension facts) plus `PredSatLaws` on the extended meaning.
+    extension facts) plus `PredSatLaws` on the extended meaning; the extended
+    meaning adds only allocations of the run (`WithinLog`).
 
     For extern call boundaries inside `Expr.app`, the same bundle is meant to
     be produced from the boundary witness rather than from `IsCanonicalExtension`
@@ -74,7 +76,8 @@ def BoundaryTagMeaningPost
   TagMeaningBounded tm' res.nextTag' ∧
   wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
   QTypRespectsTagMeaning tm' res.qualType ∧
-  PredSatLaws predSat tm'
+  PredSatLaws predSat tm' ∧
+  WithinLog tm res.tagLog' tm'
 
 namespace BoundaryTagMeaningPost
 
@@ -102,16 +105,29 @@ theorem respectsResult
     QTypRespectsTagMeaning tm' res.qualType :=
   h.2.2.2.1
 
+theorem laws
+    {ctx : TypeContext} {res : TypeResult} {predSat : PredSat} {tm tm' : TagMeaning}
+    (h : BoundaryTagMeaningPost ctx res predSat tm tm') :
+    PredSatLaws predSat tm' :=
+  h.2.2.2.2.1
+
+theorem within
+    {ctx : TypeContext} {res : TypeResult} {predSat : PredSat} {tm tm' : TagMeaning}
+    (h : BoundaryTagMeaningPost ctx res predSat tm tm') :
+    WithinLog tm res.tagLog' tm' :=
+  h.2.2.2.2.2
+
 theorem of_isCanonical_predSat
     {tm tm' : TagMeaning} {ctx : TypeContext} {e : Expr} {res : TypeResult}
     {predSat : PredSat}
-    (hco : IsCanonicalExtension tm ctx e res tm') (hl : PredSatLaws predSat tm') :
+    (hco : IsCanonicalExtension tm ctx e res tm') (hl : PredSatLaws predSat tm')
+    (hw : WithinLog tm res.tagLog' tm') :
     BoundaryTagMeaningPost ctx res predSat tm tm' :=
   ⟨IsCanonicalExtension.extends_tm hco,
     IsCanonicalExtension.bounded hco,
     IsCanonicalExtension.wfCtx hco,
     IsCanonicalExtension.respectsResult hco,
-    hl⟩
+    hl, hw⟩
 
 end BoundaryTagMeaningPost
 
@@ -331,15 +347,19 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
 -- Step theorem (context-driven, no input/output specs).
 -- It assumes agreement on clean items in the initial context and preserves it
 -- for the post-context, plus result agreement when the result is clean under R.
+-- `fuel` is the fuel of the typing of `e`. The extern calls of the two runs are
+-- constrained through `ExternStepPremises`: `P₀` and `P₁` are sets of steps,
+-- closed under `SubStep`, that contain the two root steps.
 def StepFR
   (ctx : TypeContext)
   (e : Expr)
   (res : TypeResult)
   (predSat : PredSat)
   (tm : TagMeaning)
+  (fuel : Nat)
   (registry : ExternRegistry := emptyExternRegistry) : Prop :=
     PredSatLaws predSat tm →
-    ExternTypingAssumptions →
+    TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
     ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
@@ -361,6 +381,9 @@ def StepFR
         ReservedDiscipline registry ctx.declaredExternRefs θ₁ →
         terminatesTo e { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ →
         terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ →
+        ∀ {P₀ P₁ : Step → Prop}, ExternStepPremises predSat P₀ P₁ →
+        P₀ ⟨ctx, e, fuel, { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }⟩ →
+        P₁ ⟨ctx, e, fuel, { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }⟩ →
         StepFRPost ctx e res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
 
 -- Step theorem spec derived from typing (context-driven).
@@ -374,7 +397,7 @@ def TypeSystemEnforcesFaultRobustness_step_spec
   (registry : ExternRegistry := emptyExternRegistry) : Prop :=
   ∀ (fuel : Nat) (res : TypeResult),
     typecheck ctxᵢ e fuel = .ok res →
-      StepFR ctxᵢ e res predSat tm (registry := registry)
+      StepFR ctxᵢ e res predSat tm fuel (registry := registry)
 
 lemma valueHasETyp_loc_inv {θ : RealizationMap} {a : Address} {e : ETyp}
   (h : valueHasETyp θ (Value.loc a) e) : ∃ ls l, e = ETyp.ref ls ∧ θ.lookup l = some a ∧ l ∈ ls := by
@@ -686,14 +709,15 @@ def StepFRSingleRunTagMeaningPost
     IsCanonicalExtension tm ctx e res tm' ∧
     PredSatLaws predSat tm' ∧
     QTypRespectsTagMeaning tm' res.qualType ∧
-    wfTagMeaningCtx tm' (ctxAfter ctx res)
+    wfTagMeaningCtx tm' (ctxAfter ctx res) ∧
+    WithinLog tm res.tagLog' tm'
 
 theorem StepFRSingleRunTagMeaningPost.to_boundary
     {ctx : TypeContext} {e : Expr} {res : TypeResult} {predSat : PredSat} {tm : TagMeaning}
     (h : StepFRSingleRunTagMeaningPost ctx e res predSat tm) :
     ∃ tm', BoundaryTagMeaningPost ctx res predSat tm tm' := by
-  rcases h with ⟨tm', hcanon, hlaws, _, _⟩
-  exact ⟨tm', BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hlaws⟩
+  rcases h with ⟨tm', hcanon, hlaws, _, _, hw⟩
+  exact ⟨tm', BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hlaws hw⟩
 
 def StepFRSingleRunFinalCleanPcTrue
   (ctx : TypeContext)
@@ -701,9 +725,10 @@ def StepFRSingleRunFinalCleanPcTrue
   (res : TypeResult)
   (predSat : PredSat)
   (tm : TagMeaning)
+  (fuel : Nat)
   (registry : ExternRegistry := emptyExternRegistry) : Prop :=
     PredSatLaws predSat tm →
-    ExternTypingAssumptions →
+    TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
     TagBoundedCtx ctx →
@@ -721,6 +746,8 @@ def StepFRSingleRunFinalCleanPcTrue
         ReservedDiscipline registry ctx.declaredExternRefs θ →
         terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry} cf o →
         ctx.pc = true →
+        ∀ {P : Step → Prop}, ExternCallsMatchOn predSat P →
+        P ⟨ctx, e, fuel, { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}⟩ →
         StepFRSingleRunFinalCleanPcTruePost ctx res predSat
           (registry := registry) μ ρ θ cf o
           hθwf hwf hric hreg hcwr a pm hwfcfg
@@ -734,9 +761,10 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
   (res : TypeResult)
   (predSat : PredSat)
   (tm : TagMeaning)
+  (fuel : Nat)
   (registry : ExternRegistry := emptyExternRegistry) : Prop :=
     PredSatLaws predSat tm →
-    ExternTypingAssumptions →
+    TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
     StepFRSingleRunTagMeaningPost ctx e res predSat tm ∧
@@ -757,6 +785,8 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
         ReservedDiscipline registry ctx.declaredExternRefs θ →
         terminatesTo e { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry} cf o →
         ctx.pc = true →
+        ∀ {P : Step → Prop}, ExternCallsMatchOn predSat P →
+        P ⟨ctx, e, fuel, { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}⟩ →
         StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
           masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
           hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg
@@ -3898,7 +3928,7 @@ variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
       wfTagMeaningCtx tmᵢ ctxᵢ →
       TagBoundedCtx ctxᵢ →
       ∀ (res : TypeResult), typecheck ctxᵢ e m = .ok res →
-        StepFR ctxᵢ e res predSat tmᵢ (registry := registry)
+        StepFR ctxᵢ e res predSat tmᵢ m (registry := registry)
 
   abbrev StepFRSingleRunFinalCleanPcTrue_IH_WithExprCtx
       (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
@@ -3911,7 +3941,7 @@ variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
       TagMeaningBounded tmᵢ ctxᵢ.nextTag →
       ∀ (res : TypeResult),
         typecheck ctxᵢ e m = .ok res →
-        StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ (registry := registry)
+        StepFRSingleRunFinalCleanPcTrue ctxᵢ e res predSat tmᵢ m (registry := registry)
 
   abbrev StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
       (CanUse : Expr → Prop) (CtxReach : TypeContext → Prop)
@@ -3928,7 +3958,7 @@ variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
       ∀ (res : TypeResult),
         typecheck ctx e m = .ok res →
         StepFRSingleRunFinalCleanPcTrueMaskedRegParam
-          masked CtxCons ValCons ctx e res predSat tmᵢ (registry := registry)
+          masked CtxCons ValCons ctx e res predSat tmᵢ m (registry := registry)
 
 lemma agreeValueUnder_clean_transport_by_cleanBack
     {predSat : PredSat} {R R' : Regime}
@@ -4194,22 +4224,21 @@ lemma PExpr_toExpr_of_toPExpr?_some : ∀ (e : Expr) (pe : PExpr),
 
 
 theorem StepFRSingleRunTagMeaningPost.of_typecheck_preserves
-    (extTyping : ExternTypingAssumptions)
     (predSat : PredSat)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
     (fuel : Nat) (res : TypeResult)
     (h_wf : wfTagMeaningCtx tm ctx)
     (h_bounded : TagMeaningBounded tm ctx.nextTag)
-    (h_laws : PredSatLaws predSat tm)
+    (hframe : TagFrame predSat tm res.tagLog')
     (htc : typecheck ctx e fuel = .ok res) :
     StepFRSingleRunTagMeaningPost ctx e res predSat tm := by
-  rcases typecheck_preserves_predSatLaws extTyping predSat tm ctx e fuel res
-      h_wf h_bounded h_laws htc with
-    ⟨tm', hcanon, hlaws'⟩
+  rcases typecheck_preserves_predSatLaws predSat tm ctx e fuel res
+      h_wf h_bounded hframe htc with
+    ⟨tm', hcanon, hlaws', hw⟩
   exact
     ⟨tm', hcanon, hlaws',
       IsCanonicalExtension.respectsResult hcanon,
-      IsCanonicalExtension.wfCtx hcanon⟩
+      IsCanonicalExtension.wfCtx hcanon, hw⟩
 
 theorem StepFRSingleRunTagMeaningPost.refl_of_ctxAfter_eq
     {predSat : PredSat}
@@ -4232,7 +4261,8 @@ theorem StepFRSingleRunTagMeaningPost.refl_of_ctxAfter_eq
       IsCanonicalExtension.refl h_bounded_res h_wf_after h_resp,
       h_laws,
       h_resp,
-      h_wf_after⟩
+      h_wf_after,
+      WithinLog.refl tm res.tagLog'⟩
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Shared clean-under backward-transport infrastructure

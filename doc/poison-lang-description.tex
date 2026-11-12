@@ -435,20 +435,24 @@ extern that is honest only on non-negative inputs). This clean-with-predicate
 shape is admissible only in argument position; return, value, and effect
 qualified types still forbid predicates on clean types.
 
-The active regime can be extended at extern call sites by an
-\emph{extern-regime policy}. When the type checker allocates the fresh concrete
-output tags for a selected extern identifier, it inserts those tags into the
-active regime with the scenario's chosen boolean. A later guard check that
-matches an extern-produced predicate then sees the inserted regime entry and may
-treat the value as clean, instead of taking the conservative poisoned path that
-applies when the generated tag is absent from the regime. Selection is by extern
-identifier: every output tag generated for a selected identifier receives the
-same value, and unselected identifiers leave the regime unchanged. The
-executable interface is the command-line flag
-\texttt{--extern-regime "id=bool"}, which installs an identifier-keyed policy of
-this shape; the underlying type-context field is the more precise per-generated
-tag policy \(\mathit{ExternId} \to \mathit{Tag} \to \mathit{Option}\,
-\mathit{Bool}\). For instance, an \texttt{open}-style extern returning
+The active regime can be extended at extern call sites and at
+\texttt{extern val} declarations by an \emph{extern-regime policy}: the typing
+context carries an assignment of values to the tags that externs allocate
+(\(\mathit{ExternId} \to \mathit{Tag} \to \mathit{Option}\,\mathit{Bool}\)),
+and the fault-robustness theorem quantifies over it. When the type checker
+allocates the fresh concrete output tags of an extern call, or the fresh guard
+tag of an \texttt{extern val} declaration, it inserts each tag to which the
+policy gives a value into the active regime with that value, unless the regime
+already has an entry for the tag; tags the policy leaves unset leave the regime
+unchanged. A later guard check that matches an extern-produced predicate then
+sees the inserted regime entry and may treat the value as clean, instead of
+taking the conservative poisoned path that applies when the generated tag is
+absent from the regime. An \texttt{extern val} declaration is thus typed as a
+call of a constant pure extern function: its rule reads the policy as the call
+rule does and records its guard in the tag environment (below). The driver
+fixes one policy for a run with the command-line flag
+\texttt{--extern-regime "id=bool"}, which gives the chosen value to every tag
+allocated for the identifier \texttt{id}. For instance, an \texttt{open}-style extern returning
 \texttt{int :> poisoned \{ v => v >= 0 \}} de-poisons its checked result under a
 later \texttt{fd >= 0} guard exactly when its identifier is selected as
 \texttt{true}.
@@ -521,7 +525,8 @@ invalidated regime.
 For this invalidation to be value-correct it must be able to see the guards
 that matter, so a simple extern return additionally \emph{materialises} its
 resolved return guard into the tag environment at the call site
-(\(\mathrm{installReturnGuard}\)): when the post-call regime determines the
+(\(\mathrm{installReturnGuard}\)), and an \texttt{extern val} declaration
+materialises its guard in the same way: when the post-call regime determines the
 fresh guard tag's value --- whether asserted through the initial regime or
 inserted by the extern-regime policy --- the tag enters the tag environment
 with that value and with the dependency locations extracted from the guard's
@@ -1213,6 +1218,8 @@ The specification provides two families of conditional typing rules:
     and $\mathcal{L}[k \mapsto \text{false using } deps]$; both must typecheck
     with signature-compatible types, and the result type, result poison, and
     output environments are those of the branch selected by $\mathcal{R}(k)$.
+    The fresh-tag counter runs through the guard and then through both
+    branches, so the branches never reuse a tag that the guard allocated.
     \item \textbf{Standard case} (\textsc{if\_std\_*}): when no matching predicate
     is found, or one is found but $\mathcal{R}(k)$ is undetermined, the guard is
     typed in the current mode and its poison is joined into
@@ -1499,6 +1506,8 @@ A program $e$ satisfies fault robustness with respect to the critical-input spec
     \item \textbf{Regime consistency:} For each critical input, the regime is consistent with predicate satisfaction on that input (for guard-only tags there is no additional consistency requirement; for guarded predicates, satisfaction agrees with the regime's truth value).
     \item \textbf{Agreement on critical inputs under $\mathcal{R}$:} The two runs agree on each critical entry that is clean under $\mathcal{R}$. Dirty guard-closure entries may differ in payload, while regime consistency still constrains predicate satisfaction in each run.
     \item \textbf{Agreement on trusted inputs:} The two runs agree on context entries not in $S$ whenever those entries are typed clean under $\mathcal{R}$.
+    \item \textbf{Extern calls match their checks (each run):} At every extern call that a run makes, each guard tag that the call allocates and that the regime after the call determines carries the outcome of the guard's check on the returned value and on each cell that the call writes through its effects: the check holds if and only if the tag is true. The same is asked at every \texttt{extern val} declaration, of the declared value. This is the regime-consistency condition of critical inputs, asked of the values that extern calls return and write.
+    \item \textbf{Extern calls agree (both runs):} At every extern call that both runs make, if the result type is guarded by a tag of the call that the regime after the call sets true, and is neither a function nor a reference type, the two calls return the same value; and each cell that the calls write, whose type is guarded by such a tag, holds the same content after them. This is the agreement condition of clean critical inputs, asked of the values that extern calls return and write.
     \item \textbf{Termination:} Both runs terminate, starting from the same pure-mode flag and the same extern registry, producing final configurations and return values.
 \end{itemize}
 Then there exist final realisation maps $\theta_1'$ and $\theta_2'$ extending $\theta_1$ and $\theta_2$ such that the observable outputs coincide:
@@ -1516,11 +1525,14 @@ $(pc,\Gamma,\sigma,\mathcal{L})$ that matches $S$, is well-formed, and starts
 from a clean program counter ($pc = \text{false}$) with an empty tag environment
 ($\mathcal{L} = \emptyset$), the following implication holds:
 
-If typechecking $e$ under this context succeeds and the inferred typing result satisfies the
+If typechecking $e$ under this context succeeds with some fuel and the inferred typing result satisfies the
 observable constraints, then for \emph{any} abstract predicate satisfaction relation
-$\text{PredSat}$ satisfying the predicate-satisfaction laws and \emph{any}
-\texttt{ExternTypingAssumptions} witness, the program $e$ satisfies the fault robustness property with
-respect to $S$, $\text{obs}$, and $\text{PredSat}$.
+$\text{PredSat}$ that satisfies the predicate-satisfaction laws on the
+\emph{program table} of the typing run---the initial tag meaning together with
+every guard that typechecking $e$ allocates---the program $e$ satisfies the
+fault robustness property with respect to $S$, $\text{obs}$, and
+$\text{PredSat}$, where the premises on extern calls are read against the
+typing run with that fuel.
 \end{theorem}
 
 Intuitively, this turns fault robustness into a checkable certificate: once a program typechecks and
@@ -1589,13 +1601,13 @@ typecheck. If that branch contains an extern call, the typing rules for externs
 are on the critical path of the proof even though that branch never reaches
 runtime dispatch.
 Externs therefore affect the FR proof at two explicit trust boundaries. The
-typing boundary concerns what the typechecker states about external code. One
-typing-side assumption, packaged as a field of the
-\texttt{ExternTypingAssumptions} structure (defined in
-\texttt{LeanProofs/ExternTypingAssumptions.lean}), pins the typechecker's
-extern summaries to the proof layer: preserving abstract predicate laws
-across an extern allocation batch. The structural facts about which fresh
-tag denotes which guard descriptor are derived from the allocation trace
+typing boundary concerns what the typechecker states about external code.
+The guards that extern summaries introduce receive fresh tags, and the typing
+run records each of them, with its descriptor, in its allocation log.  The
+theorem's premise on $\text{PredSat}$ covers exactly these guards: it asks for
+the predicate laws on the program table of the typing run (see ``Predicate
+laws on the program table'' below).  The structural facts about which fresh
+tag denotes which guard descriptor are derived from the allocation log
 itself. Extern effect writes erase predicates whenever the effect-pc gate
 \(\textit{pc} \sqcup p_1 \sqcup p\) is poisoned, mirroring assignment, so
 every guard tag carried by a post-call cell traces back to a pre-call
@@ -1604,10 +1616,138 @@ call events. The public fault-robustness theorem is stated for the runtime
 registry projected from a \texttt{TrustedRegistry}, and each reachable
 registered extern entry supplies the declaration and call boundary facts
 consumed by the proof.
-The fault-robustness theorem is relative to a witness of
-\texttt{ExternTypingAssumptions}: a caller must supply (or postulate) one to
-instantiate the theorem, making this trust boundary explicit at the public
-API rather than implicit in global axioms.
+
+\paragraph{Premises on extern calls.}
+A guard on the result of an extern call is checked against a value that comes
+from outside the program, so the theorem treats it as it treats a critical
+input: it assumes the outcome of the check and the agreement of the two runs,
+call by call, and does not prove them.  The statement reads each run beside its
+typing run (\texttt{LeanProofs/ExternCallSteps.lean}).  A \emph{step} is a
+typing context, an expression, the typing fuel and a runtime configuration;
+the steps of a run are those reached from its first step by the
+decomposition the typechecker itself performs (\texttt{SubStep},
+\texttt{Reach}).  An \emph{extern call} is a step at which an application
+reaches an extern member of the function type (\texttt{ExternCallAt}), with the
+typing result of that member, the context in which its body is typed, the
+configuration after the call and the returned value.
+\begin{itemize}
+  \item \emph{Match} (\texttt{ExternCallsMatch}, per run; \texttt{CallMatches}
+  per call): for every tag in the allocation log of the member result whose
+  entry in the regime after the call is $b$, the tag's guard holds on the
+  returned value if and only if $b$ is true, and likewise on the content of each
+  cell that the call writes and whose stored type carries the guard.
+  \item \emph{Agreement} (\texttt{ExternCallsAgree}, for the pair;
+  \texttt{CallAgrees} per call): two calls are the same call when their steps
+  have the same typing context, expression and fuel and the calls have the same
+  member result and body context; if the member result is guarded by a tag of
+  the call that the regime sets true, and is neither a function nor a reference
+  type, the two calls return the same value; and each cell that the calls write
+  through the same effect target, and whose stored type is guarded by such a
+  tag, holds the same content after the two calls.
+\end{itemize}
+The cells that a call writes (\texttt{EffectCell}) are found through its
+effects.  For an effect \texttt{!v}, the variable \texttt{v} has a reference
+type naming a single location in the context in which the body is typed; the
+cell is the address that \texttt{v} holds at the call, and its type is the one
+that the typing of the call stored for that location.  The clauses on a cell
+therefore ask something only when that type carries a guard of the call: a
+write through a poisoned reference or under a poisoned program counter stores
+the cell as poisoned without a guard, and such a cell is not clean under any
+regime.
+An \texttt{extern val} declaration is typed as a call of a constant extern
+function, and the premises read it as one (\texttt{ExternValAt}).  Match
+(\texttt{ValMatches}) asks of the declared value what the clause on the
+returned value asks of a call, and it is a premise.  Agreement of the declared
+value in two runs is not a premise.
+Commitments are made per call, not per extern declaration: a call site that
+runs twice, for instance in the body of a function applied twice, allocates a
+fresh tag at each call, and each of these tags may take its own value.  The
+extern-regime policy of the typing context (\(\mathit{ExternId} \to \mathit{Tag}
+\to \mathit{Option}\,\mathit{Bool}\)), over which the theorem quantifies,
+chooses these values, at calls and at \texttt{extern val} declarations alike;
+the driver's \texttt{--extern-regime} flag fixes one policy for a run, giving
+one value to every tag of an identifier.
+A run whose registry has no entries makes no extern call and declares no
+extern value, so a program without externs meets both premises (\texttt{ExternCallsMatch.of\_registry\_none},
+\texttt{ExternCallsAgree.of\_registry\_none}).
+
+The call contracts of a trusted entry (\texttt{callSingle}, \texttt{callFR})
+receive these two conditions for the call they are about.  For the returned
+value, what the author of an extern still proves about two runs is therefore
+that a value declared clean outright agrees when the clean inputs agree; a value
+that is clean because a tag of the call is true agrees by the premise.  For
+cells written by effects, the contracts receive the same conditions; the
+trusted entry of a witness extern with a guarded effect uses the one for
+agreement (see below).  The
+declaration contracts (\texttt{declSingle}, \texttt{declFR}) receive match
+for an \texttt{extern val}.  Agreement of the declared value in the two runs is
+an obligation of the entry's author inside \texttt{declFR}, which is stated
+for the one implementation of the entry, so both runs it receives are runs of
+that implementation.  No shipped entry is an \texttt{extern val}; the trusted
+entry of a witness \texttt{extern val} meets this obligation (see below).
+
+The premises have the following scope.
+\begin{itemize}
+  \item \emph{One call, several members.}  When a function type has two members
+  with the same extern code (for instance, the two branches of a conditional
+  both evaluate to the same pure extern), the one runtime call is typed against
+  both members, and match is asked for the tags of both.  Both tags describe the
+  same returned value under the same check, so the outcome the run really has
+  satisfies both; the premise is stronger than needed there, but never
+  unsound.
+  \item \emph{Cells written by effects.}  A cell is covered when the target of
+  the effect names a single location.  A target whose type names several
+  locations is updated weakly, and the cells it writes keep the obligations of
+  the call contracts.  No shipped entry declares an effect with a guard.  The
+  trusted entry of a witness extern whose effect writes the cell of its
+  reference argument with a guard (module \texttt{ExternCallsWitnessCellClosed})
+  proves its two-run call contract from the clause of agreement for cells.  The
+  guard of that cell has no predicate, so no entry uses the clause of match for
+  cells.
+  \item \emph{Guarded \texttt{extern val}.}  The fresh tag of a guarded
+  \texttt{extern val} takes the value that the extern-regime policy gives it,
+  as at a call, so match asks of the declared value the outcome that the regime
+  after the declaration gives the tag.  The trusted entry of a witness
+  \texttt{extern val} (module \texttt{ExternCallsWitnessVal}) proves its
+  declaration contracts from match, and the agreement of the declared value
+  inside \texttt{declFR}; its proofs cover one guard, on an \texttt{int}.
+  \item \emph{\texttt{extern ref}.}  The type checker rejects a guard on the
+  reference and on its cell, so no premise is needed.
+\end{itemize}
+The Lean modules \texttt{ExternCallsWitness} and
+\texttt{ExternCallsWitnessClosed} check the premises on small
+programs that call a pure extern \texttt{read} (the identity, whose result
+carries the guard \texttt{w => w >= 0}): match holds for the values that the
+runs compute and fails for other values, including when one call site runs
+twice and when a skipped branch also calls; agreement pairs each call with the
+same call of the other run.  For each program, the theorem is applied with
+every premise proved.  The module \texttt{ExternCallsWitnessCell} checks the
+premises for a call of an extern function in the shape of
+\texttt{lp55xx\_read}, whose effect writes the cell of its reference argument
+with a guard that shares the tag of the result: match asks nothing of the
+cell, whose guard has no predicate, and agreement holds exactly when the two
+runs leave the same content in it after the call, also when they start with
+different contents.  The module \texttt{ExternCallsWitnessCellClosed} gives a
+trusted entry for that extern function, \texttt{rd}, and applies the theorem,
+with every premise proved, to the call and to a program that tests the guarded
+result and reads the cell back:
+\begin{lstlisting}[language=poison]
+let c = ref x in let ret = rd c in if ret >= 0 then !c else 0
+\end{lstlisting}
+Two runs whose calls leave the same content in the cell return the same value.
+The module \texttt{ExternCallsWitnessVal} gives a trusted entry for a guarded
+\texttt{extern val} whose value is an integer $m$, and applies the theorem,
+with every premise proved, to a program that declares it and tests it, under
+each of the two values of its tag:
+\begin{lstlisting}[language=poison]
+let v = extern val @250 : (int :> poisoned { 0, w => w >= 0 }) in
+if v >= 0 then v else 0
+\end{lstlisting}
+The program is typed as a clean \texttt{int} under either value.  Match holds
+exactly when the declared value satisfies the guard as the tag says ($m \ge 0$
+when the tag is true, $m < 0$ when it is false) and fails otherwise; two runs
+that differ in a poisoned input \texttt{x}, which the program does not read,
+return the same value.
 
 \paragraph{Tag meaning for fresh guards.}
 Extern typechecking resolves symbolic predicates using
@@ -1645,23 +1785,26 @@ allocation ranges across alternatives are disjoint by construction.  This is
 the precondition for composing per-alternative \texttt{TagMeaning} extensions
 into a joined extension at function-application sites.
 
-\paragraph{PredSat extension across one extern batch (\texttt{ExternTypingAssumptions.externPredSatDelta}).}
-One semantic input about extern allocation remains.  When a typecheck step extends a tag
-meaning $tm$ to $tm'$ by allocating one extern batch, the abstract
-predicate-satisfaction relation $\text{PredSat}$ that was lawful against
-$tm$ must remain lawful against $tm'$.  Structurally, the batch only
-adds new descriptors at fresh tags; semantically, $\text{PredSat}$ at
-those new tags is opaque to the structural proof.  The \texttt{externPredSatDelta}
-field captures exactly this transport: given
-\texttt{PredSatLaws}~\textit{predSat}~tm and an
-\texttt{ExternBatchTagMeaningExtension} from $tm$ to $tm'$, it asserts
-\texttt{PredSatLaws}~\textit{predSat}~tm'.  This is a broad trust input:
-it ranges over all structurally valid extern batch extensions rather than only
-those of the trusted extern declarations a program names. Whether this
-obligation should instead move into
-per-extern trusted-entry evidence, so each trusted extern declaration supplies
-the descriptor laws for the guard descriptors that its declared return and
-effect summaries can allocate, is an open design question.
+\paragraph{Predicate laws on the program table.}
+Every successful typing run records the guards it allocates in an allocation
+log (\texttt{TypeResult.tagLog'}).  Each entry pairs a fresh tag with the guard
+closure it names: an argument name, a body, and a captured environment.
+Distinct entries carry distinct tags, all between the starting and the final
+value of the fresh-tag counter (\texttt{typecheck\_tagLog\_fresh}).  The
+\emph{program table} \texttt{programTable}~$tm$~\textit{log} is the initial tag
+meaning $tm$ extended with every entry of the log.  Since the tags are fresh,
+it contains $tm$ and maps each allocated tag to the closure allocated for it.
+The top-level theorem assumes \texttt{PredSatLaws}~\textit{predSat} on this
+table.
+
+The laws are anti-monotone in the table (\texttt{PredSatLaws.anti\_mono}): a
+relation that is lawful for a table is lawful for every part of it.  The step
+theorems therefore carry a \emph{frame} (\texttt{TagFrame}): a lawful table
+that contains the current tag meaning and every allocation of the current
+sub-run.  A step that extends $tm$ to $tm'$ with allocations of its own log
+stays inside the frame, and obtains the laws at $tm'$ from it.  The premise
+concerns a single table, that of the program being typed: a caller discharges
+it for the guards that this program and the externs it calls introduce.
 
 \paragraph{Guard provenance for impure memory effects (structural).}
 The typechecker's \texttt{applyExternEffect} erases the stored predicate to
@@ -1787,10 +1930,9 @@ captured typing environment).  The laws are stated relative to the
 \texttt{TagMeaning} threaded through typechecking: a step that does not
 allocate fresh tags carries the same $tm$, and a step that allocates extends
 it to $tm \sqsubseteq tm'$ via \texttt{ExternBatchTagMeaningExtension}.
-The \texttt{ExternTypingAssumptions.externPredSatDelta} field supplies the
-corresponding \texttt{PredSatLaws} transport for each structural extern-batch
-extension, so a $\text{PredSat}$ that is lawful against $tm$ remains lawful
-against $tm'$.  This guarantees that the same tag cannot silently change
+Every such $tm'$ is part of the program table of the typing run, and the laws
+are anti-monotone in the table, so a $\text{PredSat}$ that is lawful on the
+program table is lawful against every $tm'$.  This guarantees that the same tag cannot silently change
 meaning across the derivation while allowing the table to grow with each extern
 allocation batch.
 

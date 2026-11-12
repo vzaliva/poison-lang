@@ -21,7 +21,7 @@ import LeanProofs.TypeSafety
 import LeanProofs.Auxiliary
 import LeanProofs.SemanticsProperties
 import LeanProofs.RegimeConsistency
-import LeanProofs.ExternTypingAssumptions
+import LeanProofs.TagFrame
 import LeanProofs.ExternTagMeaning
 import Std.Data.ExtTreeMap.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
@@ -1287,15 +1287,16 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                 simp [h_topexpr, pure, Except.pure] at htc
                 subst htc
                 simpa [ctxAfter, regimeConsistentWithCtxMasked]
-        | externVal _ _ _ =>
-            simp only [typecheckExternVal] at htc
-            simp [Bind.bind, Except.bind, pure, Except.pure] at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            cases htc
-            simpa [ctxAfter, regimeConsistentWithCtxMasked]
+        | externVal id typ poison pred =>
+            have htc' : typecheckExternVal ctx id typ poison pred fuel' = .ok res := htc
+            obtain ⟨_, tagMapping, _, _, _, _, _, _, rfl⟩ := typecheckExternVal_ok_shape htc'
+            simp only [ctxAfter, regimeConsistentWithCtxMasked, tagEnvConsistentWithRegimeMasked]
+            intro k deps hk
+            rcases installReturnGuard_get?_cases _ _ _ _ k _ hk with hold | ⟨hR, _⟩
+            · rcases hreg k deps hold with hm | hR
+              · exact Or.inl hm
+              · exact Or.inr (applyExternRegimePolicy_lookup_preserve_some _ _ _ _ k true hR)
+            · exact Or.inr hR
         | externRef _ _ _ _ _ =>
             simp only [typecheckExternRef] at htc
             simp [Bind.bind, Except.bind, pure, Except.pure] at htc
@@ -1354,7 +1355,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
             rw [htag, hregime']; exact hIH2
         | seq e1 e2 =>
             have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
-            rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
+            rcases hstruct with ⟨result1, ctx', res, htc1, hctx', htc2, rfl⟩
             have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using! htc1
             have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1 hreg htc1'
             have hreg_mid : regimeConsistentWithCtxMasked masked ctx' := by
@@ -1455,6 +1456,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
             rcases hstruct with h1 | h2 | hstd
             · rcases h1 with ⟨k, deps, _, hRk, res1, _, _, res2, _, htc2, _, _hmem, htag, _, _, hregEq, _, _⟩
               let ctxT := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                     nextTag := res1.nextTag',
                                      declaredExternRefs := res1.declared' }
               have hreg_true : regimeConsistentWithCtxMasked masked ctxT := by
                 exact tagEnvConsistentWithRegimeMasked_insert_true masked ctx.tagEnv ctx.regime k deps hreg hRk
@@ -1686,8 +1688,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                             id x retSpec capturedEnv declaredArgQt happly_old k true ht)
                       · exact Or.inr hR
                 rcases hcases with
-                  ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join⟩ |
-                  ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join⟩
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, res, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join, rfl⟩ |
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, res, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join, rfl⟩
                 · subst hresults
                   have h_all_reg : ∀ r, r ∈ (first :: rest) → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) :=
                     h_fn_closure_reg st1 st2 p p1 tcls (first :: rest) hmap
@@ -1842,15 +1844,19 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                 simp [h_topexpr, pure, Except.pure] at htc
                 subst htc
                 simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
-        | externVal _ _ _ =>
-            simp only [typecheckExternVal] at htc
-            simp [Bind.bind, Except.bind, pure, Except.pure] at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
-            cases htc
-            simpa [ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using habsent
+        | externVal id typ poison pred =>
+            have htc' : typecheckExternVal ctx id typ poison pred fuel' = .ok res := htc
+            obtain ⟨_, tagMapping, _, _, _, halloc, _, _, rfl⟩ := typecheckExternVal_ok_shape htc'
+            simp only [ctxAfter, MaskedTagsAbsentFromTrueTagEnv]
+            intro k deps hm hk
+            rcases installReturnGuard_get?_cases _ _ _ _ k _ hk with hold | ⟨hR, _⟩
+            · exact habsent k deps hm hold
+            · -- The installed tag is fresh, so it is not a masked tag.
+              rcases applyExternRegimePolicy_lookup_spec ctx.regime id ctx.externRegime tagMapping k
+                with heq | ⟨idx, hidx⟩
+              · rw [heq, hmasked_none k hm] at hR; cases hR
+              · exact absurd (collectAndAllocExternTags_mapping_values_ge _ _ _ _ halloc idx k hidx)
+                  (Nat.not_le.mpr (hmasked_bounded k hm))
         | externRef _ _ _ _ _ =>
             simp only [typecheckExternRef] at htc
             simp [Bind.bind, Except.bind, pure, Except.pure] at htc
@@ -1932,7 +1938,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
             · exact hIH2
         | seq e1 e2 =>
             have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
-            rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
+            rcases hstruct with ⟨result1, ctx', res, htc1, hctx', htc2, rfl⟩
             have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by simpa using! htc1
             have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 result1
               habsent hmasked_none hmasked_bounded htc1'
@@ -2064,7 +2070,9 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
         | ite e1 e2 e3 =>
             have hstruct := typecheckIf_structure ctx e1 e2 e3 fuel' res htc
             rcases hstruct with h1 | h2 | hstd
-            · rcases h1 with ⟨k, deps, _, hRk, res1, _, _, res2, _, htc2, _, _hmem, htag, _, _, _hregEq, _, _⟩
+            · rcases h1 with ⟨k, deps, _, hRk, res1, htc1p, _, res2, _, htc2, _, _hmem, htag, _, _, _hregEq, _, _⟩
+              have hb1 : ctx.nextTag ≤ res1.nextTag' :=
+                typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) res1 htc1p
               have hnotMasked : masked k → False := by
                 intro hk
                 have hnone := hmasked_none k hk
@@ -2081,22 +2089,28 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                 simpa using hmasked_none
               have hmasked_bounded_true :
                   ∀ t, masked t →
-                    t < ({ ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩ } : TypeContext).nextTag := by
-                simpa using hmasked_bounded
+                    t < ({ ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                    nextTag := res1.nextTag' } : TypeContext).nextTag :=
+                fun t ht => Nat.lt_of_lt_of_le (hmasked_bounded t ht) hb1
               have htc2' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                                nextTag := res1.nextTag',
                                                 declaredExternRefs := res1.declared' } e2 (fuel' - 1) = .ok res2 := by
                 simpa using! htc2
               have hIH2 := IH' (fuel' - 1) (by omega) masked
                 { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                           nextTag := res1.nextTag',
                            declaredExternRefs := res1.declared' } e2 res2
                 habsent_true hmasked_none_true hmasked_bounded_true htc2'
               apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
                 (ctx₁ := ctxAfter { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                             nextTag := res1.nextTag',
                                              declaredExternRefs := res1.declared' } res2)
                 (ctx₂ := ctxAfter ctx res)
               · simp [ctxAfter, htag]
               · exact hIH2
-            · rcases h2 with ⟨k, deps, _, _, res1, _, _, res2, res3, htc2f, htc3, _hmem, htag, _, _, _hregEq, _, _⟩
+            · rcases h2 with ⟨k, deps, _, _, res1, htc1p, _, res2, res3, htc2f, htc3, _hmem, htag, _, _, _hregEq, _, _⟩
+              have hb1 : ctx.nextTag ≤ res1.nextTag' :=
+                typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) res1 htc1p
               have habsent_false :
                   MaskedTagsAbsentFromTrueTagEnv masked
                     { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } :=
@@ -2111,7 +2125,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                 simpa [ctxF] using hmasked_none
               have hbF : ctx.nextTag ≤ res2.nextTag' := by
                 have := typecheck_nextTag_mono _ e2 (fuel' - 1) res2 (by simpa [typecheck] using htc2f)
-                simpa using this
+                exact Nat.le_trans hb1 (by simpa using this)
               have hmasked_bounded_F : ∀ t, masked t → t < ctxF.nextTag := by
                 intro t ht
                 show t < res2.nextTag'
@@ -2397,8 +2411,8 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                       · exact absurd hge (Nat.not_le.2
                           (Nat.lt_of_lt_of_le (hmasked_bounded k hmasked) (Nat.le_trans hb_r1 hcursorTag)))
                 rcases hcases with
-                  ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join⟩ |
-                  ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join⟩
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, res, _hetyp1, _hp1, _hpure, _hne, _hsub, hmap, hresults, h_join, rfl⟩ |
+                  ⟨st1, st2, p, p1, tcls, results, first, rest, res, _hetyp1, _hp1, _hne, _hsub, hmap, hresults, h_join, rfl⟩
                 · subst hresults
                   have h_all :
                       ∀ r, r ∈ (first :: rest) →
@@ -2846,9 +2860,8 @@ private lemma QTypRespectsTagMeaning_joinStep
     have hp1 := (joinPredicates_eq_guardClosure hpj).1
     exact h1 (QTypInQTyp.self _) (by simp [qtypGuardDesc?, hp1])
 
-private lemma applyFnTClosure_ok_tagMeaningPredSat_byIH
-  (hExtTyping : ExternTypingAssumptions)
-  (predSat : PredSat)
+private lemma applyFnTClosure_ok_tagMeaningSub_byIH
+  (Q : TagMeaning)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List FnTClosure)
@@ -2860,13 +2873,13 @@ private lemma applyFnTClosure_ok_tagMeaningPredSat_byIH
       typecheck ctx_i e_i m = .ok res_i →
       wfTagMeaningCtx tm_i ctx_i →
       TagMeaningBounded tm_i ctx_i.nextTag →
-      PredSatLaws predSat tm_i →
-      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ PredSatLaws predSat tm')
+      tm_i ⊑ Q → LogIn res_i.tagLog' Q →
+      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ tm' ⊑ Q)
   (tcl : FnTClosure) (r : TypeResult)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
   (hbounded : TagMeaningBounded tm result1.nextTag')
-  (h_laws : PredSatLaws predSat tm)
+  (h_laws : tm ⊑ Q) (hL : LogIn r.tagLog' Q)
   (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p tcls)
   (hmem_tcl : tcl ∈ tcls)
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
@@ -2877,7 +2890,7 @@ private lemma applyFnTClosure_ok_tagMeaningPredSat_byIH
     TagMeaningBounded tm' r.nextTag' ∧
     wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
     QTypRespectsTagMeaning tm' r.qualType ∧
-    PredSatLaws predSat tm' := by
+    tm' ⊑ Q := by
   cases tcl with
   | regular x body env =>
     cases fuel with
@@ -2918,7 +2931,7 @@ private lemma applyFnTClosure_ok_tagMeaningPredSat_byIH
                 x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
                 hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
           rcases IH fuel' (Nat.lt_succ_self _) tm bodyCtx body result3
-              htcBody' hwf_body (by simpa [bodyCtx] using hbounded) h_laws with
+              htcBody' hwf_body (by simpa [bodyCtx] using hbounded) h_laws hL with
             ⟨tmBody, hcanonBody, h_lawsBody⟩
           have hextBody : tm ⊑ tmBody := hcanonBody.1
           have hctxTm1Body : wfTagMeaningCtx tmBody (ctxAfter ctx result1) :=
@@ -2960,13 +2973,12 @@ private lemma applyFnTClosure_ok_tagMeaningPredSat_byIH
     rcases applyFnTClosure_extern_canonical_batch tm ctx st1 st2 p p1 argEtyp argPoison
         argPred result1 fuel id x retSpec effects capturedEnv r
         hctxTm1 hbounded hcapTm hargTm' argQt happly with
-      ⟨tm', _tagMapping, _nextTag', hbatch, hbounded', hwf, hqtm⟩
+      ⟨tm', _tagMapping, _nextTag', hbatch, hwithin, hbounded', hwf, hqtm⟩
     exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hbounded', hwf, hqtm,
-      PredSatLaws.extend_extern_batch hExtTyping predSat h_laws hbatch⟩
+      hwithin.submap h_laws hL⟩
 
-private lemma applyPFnTClosure_ok_tagMeaningPredSat_byIH
-  (hExtTyping : ExternTypingAssumptions)
-  (predSat : PredSat)
+private lemma applyPFnTClosure_ok_tagMeaningSub_byIH
+  (Q : TagMeaning)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (tcls : List PFnTClosure)
@@ -2978,13 +2990,13 @@ private lemma applyPFnTClosure_ok_tagMeaningPredSat_byIH
       typecheck ctx_i e_i m = .ok res_i →
       wfTagMeaningCtx tm_i ctx_i →
       TagMeaningBounded tm_i ctx_i.nextTag →
-      PredSatLaws predSat tm_i →
-      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ PredSatLaws predSat tm')
+      tm_i ⊑ Q → LogIn res_i.tagLog' Q →
+      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ tm' ⊑ Q)
   (tcl : PFnTClosure) (r : TypeResult)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
   (hbounded : TagMeaningBounded tm result1.nextTag')
-  (h_laws : PredSatLaws predSat tm)
+  (h_laws : tm ⊑ Q) (hL : LogIn r.tagLog' Q)
   (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p tcls)
   (hmem_tcl : tcl ∈ tcls)
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
@@ -2995,7 +3007,7 @@ private lemma applyPFnTClosure_ok_tagMeaningPredSat_byIH
     TagMeaningBounded tm' r.nextTag' ∧
     wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
     QTypRespectsTagMeaning tm' r.qualType ∧
-    PredSatLaws predSat tm' := by
+    tm' ⊑ Q := by
   cases tcl with
   | regular x body env =>
     cases fuel with
@@ -3037,7 +3049,7 @@ private lemma applyPFnTClosure_ok_tagMeaningPredSat_byIH
                 x body env x ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
                 hctxTm1 hresTm1 hetyp1 hmem_tcl hargTm'
           rcases IH fuel' (Nat.lt_succ_self _) tm bodyCtx (PExpr.toExpr body) result3
-              htcBody' hwf_body (by simpa [bodyCtx] using hbounded) h_laws with
+              htcBody' hwf_body (by simpa [bodyCtx] using hbounded) h_laws hL with
             ⟨tmBody, hcanonBody, h_lawsBody⟩
           have hextBody : tm ⊑ tmBody := hcanonBody.1
           have hctxTm1Body : wfTagMeaningCtx tmBody (ctxAfter ctx result1) :=
@@ -3079,9 +3091,9 @@ private lemma applyPFnTClosure_ok_tagMeaningPredSat_byIH
         rcases applyPFnTClosure_extern_simple_canonical_batch tm ctx st1 st2 p p1
             argEtyp argPoison argPred result1 fuel id x typ poison spred capturedEnv r
             hctxTm1 hbounded hcapTm hargTm' declaredArgQt happly with
-          ⟨tm', _tagMapping, _nextTag', hbatch, hbounded', hwf, hqtm⟩
+          ⟨tm', _tagMapping, _nextTag', hbatch, hwithin, hbounded', hwf, hqtm⟩
         exact ⟨tm', ExternBatchTagMeaningExtension.extends_tm hbatch, hbounded', hwf, hqtm,
-          PredSatLaws.extend_extern_batch hExtTyping predSat h_laws hbatch⟩
+          hwithin.submap h_laws hL⟩
     | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
         have hmem := applyPFnTClosure_extern_memEnv_eq ctx st1 st2 p p1
           argEtyp argPoison argPred result1 r fuel id x
@@ -3157,9 +3169,8 @@ private lemma applyPFnTClosure_ok_tagMeaningPredSat_byIH
                 · simp only [pure, Except.pure, Except.ok.injEq] at hresolve; rw [← hresolve]
         exact ⟨tm, ExtTreeMap.IsSubmap.refl tm, by rwa [htag_eq], hwf, hqtm, h_laws⟩
 
-private lemma applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
-  (hExtTyping : ExternTypingAssumptions)
-  (predSat : PredSat)
+private lemma applyFnClosuresThreaded_ok_tagMeaningSub_byIH
+  (Q : TagMeaning)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (allTcls todo : List FnTClosure)
@@ -3171,13 +3182,13 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
       typecheck ctx_i e_i m = .ok res_i →
       wfTagMeaningCtx tm_i ctx_i →
       TagMeaningBounded tm_i ctx_i.nextTag →
-      PredSatLaws predSat tm_i →
-      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ PredSatLaws predSat tm')
+      tm_i ⊑ Q → LogIn res_i.tagLog' Q →
+      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ tm' ⊑ Q)
   (first : TypeResult) (rest : List TypeResult)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
   (hbounded : TagMeaningBounded tm cursor.1)
-  (h_laws : PredSatLaws predSat tm)
+  (h_laws : tm ⊑ Q) (hL : ∀ r ∈ first :: rest, LogIn r.tagLog' Q)
   (hetyp1 : result1.qualType.etyp = ETyp.arrow st1 st2 p allTcls)
   (hmem_todo : ∀ tcl, tcl ∈ todo → tcl ∈ allTcls)
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
@@ -3193,7 +3204,7 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
     TagMeaningBounded tm' last.nextTag' ∧
     (∀ r, r ∈ first :: rest → wfTagMeaningCtx tm' (ctxAfter ctx r)) ∧
     (∀ r, r ∈ first :: rest → QTypRespectsTagMeaning tm' r.qualType) ∧
-    PredSatLaws predSat tm' := by
+    tm' ⊑ Q := by
   induction todo generalizing tm cursor first rest with
   | nil =>
       simp [applyClosuresThreaded, pure, Except.pure] at hthread
@@ -3234,16 +3245,16 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
                 unfold applyFnTClosure
                 unfold applyFnTClosureAtCursor at hhead
                 simpa [cursorResult] using hhead
-              rcases applyFnTClosure_ok_tagMeaningPredSat_byIH
-                  (hExtTyping := hExtTyping) (predSat := predSat) (tm := tm)
+              rcases applyFnTClosure_ok_tagMeaningSub_byIH
+                  (Q := Q) (tm := tm)
                   (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
                   (tcls := allTcls)
                   (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
                   (result1 := cursorResult) (fuel := fuel)
-                  (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i =>
-                    IH m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i)
+                  (IH := IH)
                   (tcl := tcl) (r := head)
                   hctxCursor hresCursor (by simpa [cursorResult] using hbounded) h_laws
+                  (by rw [hhead_eq]; exact hL first (List.mem_cons_self ..))
                   hetypCursor (hmem_todo tcl (by simp)) hargTm happlyOld with
                 ⟨tmHead, hextHead, hboundedHead, hwfHead, hqHead, h_lawsHead⟩
               cases tailResults with
@@ -3271,6 +3282,8 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
                     QTypRespectsTagMeaning_mono hextHead hargTm
                   rcases ih tmHead (head.nextTag', head.nextLoc') tailFirst tailRest
                       hctxHeadBase hresHeadBase hboundedHead h_lawsHead
+                      (fun r hr => hL r (by
+                        rw [← htail_eq]; exact List.mem_cons_of_mem _ hr))
                       (fun tcl htcl => hmem_todo tcl (by simp [htcl]))
                       hargHead htail with
                     ⟨tmTail, last, hextTail, hlastTail, hboundedLast,
@@ -3295,9 +3308,8 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
                     · intro qt' k d hinq hqd
                       exact hqTail r hr' hinq hqd
 
-private lemma applyPFnClosuresThreaded_ok_tagMeaningPredSat_byIH
-  (hExtTyping : ExternTypingAssumptions)
-  (predSat : PredSat)
+private lemma applyPFnClosuresThreaded_ok_tagMeaningSub_byIH
+  (Q : TagMeaning)
   (tm : TagMeaning)
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (allTcls todo : List PFnTClosure)
@@ -3309,13 +3321,13 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningPredSat_byIH
       typecheck ctx_i e_i m = .ok res_i →
       wfTagMeaningCtx tm_i ctx_i →
       TagMeaningBounded tm_i ctx_i.nextTag →
-      PredSatLaws predSat tm_i →
-      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ PredSatLaws predSat tm')
+      tm_i ⊑ Q → LogIn res_i.tagLog' Q →
+      ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ tm' ⊑ Q)
   (first : TypeResult) (rest : List TypeResult)
   (hctxTm1 : wfTagMeaningCtx tm (ctxAfter ctx result1))
   (hresTm1 : QTypRespectsTagMeaning tm result1.qualType)
   (hbounded : TagMeaningBounded tm cursor.1)
-  (h_laws : PredSatLaws predSat tm)
+  (h_laws : tm ⊑ Q) (hL : ∀ r ∈ first :: rest, LogIn r.tagLog' Q)
   (hetyp1 : result1.qualType.etyp = ETyp.parrow st1 st2 p allTcls)
   (hmem_todo : ∀ tcl, tcl ∈ todo → tcl ∈ allTcls)
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
@@ -3331,7 +3343,7 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningPredSat_byIH
     TagMeaningBounded tm' last.nextTag' ∧
     (∀ r, r ∈ first :: rest → wfTagMeaningCtx tm' (ctxAfter ctx r)) ∧
     (∀ r, r ∈ first :: rest → QTypRespectsTagMeaning tm' r.qualType) ∧
-    PredSatLaws predSat tm' := by
+    tm' ⊑ Q := by
   induction todo generalizing tm cursor first rest with
   | nil =>
       simp [applyClosuresThreaded, pure, Except.pure] at hthread
@@ -3372,16 +3384,16 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningPredSat_byIH
                 unfold applyPFnTClosure
                 unfold applyPFnTClosureAtCursor at hhead
                 simpa [cursorResult] using hhead
-              rcases applyPFnTClosure_ok_tagMeaningPredSat_byIH
-                  (hExtTyping := hExtTyping) (predSat := predSat) (tm := tm)
+              rcases applyPFnTClosure_ok_tagMeaningSub_byIH
+                  (Q := Q) (tm := tm)
                   (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
                   (tcls := allTcls)
                   (argEtyp := argEtyp) (argPoison := argPoison) (argPred := argPred)
                   (result1 := cursorResult) (fuel := fuel)
-                  (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i =>
-                    IH m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i)
+                  (IH := IH)
                   (tcl := tcl) (r := head)
                   hctxCursor hresCursor (by simpa [cursorResult] using hbounded) h_laws
+                  (by rw [hhead_eq]; exact hL first (List.mem_cons_self ..))
                   hetypCursor (hmem_todo tcl (by simp)) hargTm happlyOld with
                 ⟨tmHead, hextHead, hboundedHead, hwfHead, hqHead, h_lawsHead⟩
               cases tailResults with
@@ -3409,6 +3421,8 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningPredSat_byIH
                     QTypRespectsTagMeaning_mono hextHead hargTm
                   rcases ih tmHead (head.nextTag', head.nextLoc') tailFirst tailRest
                       hctxHeadBase hresHeadBase hboundedHead h_lawsHead
+                      (fun r hr => hL r (by
+                        rw [← htail_eq]; exact List.mem_cons_of_mem _ hr))
                       (fun tcl htcl => hmem_todo tcl (by simp [htcl]))
                       hargHead htail with
                     ⟨tmTail, last, hextTail, hlastTail, hboundedLast,
@@ -3663,24 +3677,23 @@ private lemma joinTypeResults_QTypRespectsTagMeaning_byMembers
                       hacc_qtm rfl rfl hinq hqd
 
 private lemma typecheck_extends_tagMeaning_nonApp_byIH
-    (_extTyping : ExternTypingAssumptions)
-    (P : TagMeaning → Prop)
+    (Q : TagMeaning)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
     (fuel : Nat) (res : TypeResult)
     (h_wf : wfTagMeaningCtx tm ctx)
     (h_bounded : TagMeaningBounded tm ctx.nextTag)
     (htc : typecheck ctx e fuel = .ok res)
-    (hP : P tm)
+    (hP : tm ⊑ Q) (hL : LogIn res.tagLog' Q)
     (hnotApp : ∀ e1 e2, e ≠ Expr.app e1 e2)
     (hnotExternVal : ∀ id typ poison pred, e ≠ Expr.externVal id typ poison pred)
     (IH : ∀ m, m < fuel →
       ∀ (tm_i : TagMeaning) (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
         wfTagMeaningCtx tm_i ctx_i →
         TagMeaningBounded tm_i ctx_i.nextTag →
-        P tm_i →
+        tm_i ⊑ Q → LogIn res_i.tagLog' Q →
         typecheck ctx_i e_i m = .ok res_i →
-        ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ P tm') :
-    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ P tm' := by
+        ∃ tm', IsCanonicalExtension tm_i ctx_i e_i res_i tm' ∧ tm' ⊑ Q) :
+    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ tm' ⊑ Q := by
   have htc_full := htc
   unfold typecheck at htc
   cases fuel with
@@ -3907,7 +3920,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
               hnextTag, _hregime, hetyp, _hpoison, hpred⟩
           have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
             simpa using! htc1
-          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP
+              (hL.of_log_eq (typecheckUnaryOp_tagLog htc htc1)) htc1' with
             ⟨tm1, hcanon1, hP1⟩
           have hresTm : QTypRespectsTagMeaning tm1 res.qualType := by
             have hnf : result_etyp.isFunctionType = false := by
@@ -3937,7 +3951,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                 ⟨result1, htc1, hmem, _htag, _hloc, hnextTag, _hregime⟩
               have htc1' : typecheck ctx e1 fuel'' = .ok result1 := by
                 simpa [typecheck] using htc1
-              rcases IH fuel'' (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+              rcases IH fuel'' (by omega) tm ctx e1 result1 h_wf h_bounded hP
+                  (hL.of_log_eq (typecheckDeref_tagLog htc htc1)) htc1' with
                 ⟨tm1, hcanon1, hP1⟩
               have hresTm : QTypRespectsTagMeaning tm1 res.qualType :=
                 typecheckDeref_qtypRespects tm1 ctx e1 fuel'' res result1
@@ -3956,7 +3971,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
               hmem_res, _htag_res, _hnextLoc_res, hnextTag_res, _hregime_res⟩
           have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
             simpa using! htc1
-          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP
+              (hL.of_log_eq (typecheckNewRef_tagLog htc htc1)) htc1' with
             ⟨tm1, hcanon1, hP1⟩
           let storedQt : QTyp :=
             ⟨ETyp.int, joinPoison ctx.pc result1.qualType.poison,
@@ -4000,7 +4016,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
               _hnextLoc, hnextTag, _hregime, hetyp, _hpoison, hpred⟩
           have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
             simpa using! htc1
-          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP
+              (hL.of_log_eq (typecheckOp_tagLog htc htc1 htc2)).left htc1' with
             ⟨tm1, hcanon1, hP1⟩
           have hwf_mid : wfTagMeaningCtx tm1 (updateCtxFromResult ctx result1) := by
             simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using
@@ -4011,7 +4028,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
               typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
             simpa using! htc2
           rcases IH (fuel' - 1) (by omega) tm1 (updateCtxFromResult ctx result1) e2
-              result2 hwf_mid hb_mid hP1 htc2' with
+              result2 hwf_mid hb_mid hP1
+              (hL.of_log_eq (typecheckOp_tagLog htc htc1 htc2)).right htc2' with
             ⟨tm2, hcanon2, hP2⟩
           have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
           have hresTm : QTypRespectsTagMeaning tm2 res.qualType := by
@@ -4033,10 +4051,11 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
             hresTm⟩
       | seq e1 e2 =>
           have hstruct := typecheckSeq_structure ctx e1 e2 fuel' res htc
-          rcases hstruct with ⟨result1, ctx', htc1, hctx', htc2⟩
+          rcases hstruct with ⟨result1, ctx', res, htc1, hctx', htc2, rfl⟩
           have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
             simpa using! htc1
-          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP
+              hL.left htc1' with
             ⟨tm1, hcanon1, hP1⟩
           have hwf_mid : wfTagMeaningCtx tm1 ctx' := by
             rw [hctx']
@@ -4047,7 +4066,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
             simpa [updateCtxFromResult] using IsCanonicalExtension.bounded hcanon1
           have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok res := by
             simpa using! htc2
-          rcases IH (fuel' - 1) (by omega) tm1 ctx' e2 res hwf_mid hb_mid hP1 htc2' with
+          rcases IH (fuel' - 1) (by omega) tm1 ctx' e2 res hwf_mid hb_mid hP1 hL.right htc2' with
             ⟨tm2, hcanon2, hP2⟩
           have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
           refine ⟨tm2, ?_, hP2⟩
@@ -4062,7 +4081,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
               _hnextLoc, hnextTag, _hregime, _hpoison_res, hpred_res⟩
           have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
             simpa using! htc1
-          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP
+              (hL.of_log_eq (typecheckVlet_tagLog htc htc1 (hctx' ▸ htc2))).left htc1' with
             ⟨tm1, hcanon1, hP1⟩
           have hwf_mid : wfTagMeaningCtx tm1 ctx' := by
             rw [hctx']
@@ -4081,7 +4101,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
             simpa using IsCanonicalExtension.bounded hcanon1
           have htc2' : typecheck ctx' e2 (fuel' - 1) = .ok result2 := by
             simpa using! htc2
-          rcases IH (fuel' - 1) (by omega) tm1 ctx' e2 result2 hwf_mid hb_mid hP1 htc2' with
+          rcases IH (fuel' - 1) (by omega) tm1 ctx' e2 result2 hwf_mid hb_mid hP1
+              (hL.of_log_eq (typecheckVlet_tagLog htc htc1 (hctx' ▸ htc2))).right htc2' with
             ⟨tm2, hcanon2, hP2⟩
           have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
           have hresTm : QTypRespectsTagMeaning tm2 res.qualType :=
@@ -4126,7 +4147,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
           subst result2s
           have htc1' : typecheck ctx e1 (fuel' - 1) = .ok result1 := by
             simpa [typecheck] using htc1
-          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP htc1' with
+          rcases IH (fuel' - 1) (by omega) tm ctx e1 result1 h_wf h_bounded hP
+              (hL.of_log_eq (typecheckAssign_tagLog htc htc1 htc2)).left htc1' with
             ⟨tm1, hcanon1, hP1⟩
           have hwf_mid : wfTagMeaningCtx tm1 (updateCtxFromResult ctx result1) := by
             simpa [wfTagMeaningCtx, ctxAfter, updateCtxFromResult] using
@@ -4137,7 +4159,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
               typecheck (updateCtxFromResult ctx result1) e2 (fuel' - 1) = .ok result2 := by
             simpa [typecheck] using htc2
           rcases IH (fuel' - 1) (by omega) tm1 (updateCtxFromResult ctx result1) e2
-              result2 hwf_mid hb_mid hP1 htc2' with
+              result2 hwf_mid hb_mid hP1
+              (hL.of_log_eq (typecheckAssign_tagLog htc htc1 htc2)).right htc2' with
             ⟨tm2, hcanon2, hP2⟩
           have hcanon_trans := IsCanonicalExtension.trans hcanon1 hcanon2
           let storedPred : Predicate :=
@@ -4215,17 +4238,21 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
           cases hstruct with
           | inl h1 =>
               rcases h1 with
-                ⟨k, deps, _, _, res1, _htc1, _hbool, res2, res3, htc2, _htc3,
+                ⟨k, deps, hmatch, hRk, res1, htc1p, _hbool, res2, res3, htc2, htc3,
                   hmemEnv, _htagEnv, _hnextLoc, hnextTag, _hregime, _hdecl, _hpoison, hetyp_res⟩
+              have hb1 : ctx.nextTag ≤ res1.nextTag' :=
+                typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) res1 htc1p
               let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                                      nextTag := res1.nextTag',
                                                       declaredExternRefs := res1.declared' }
               have htc2' : typecheck ctxTrue e2 (fuel' - 1) = .ok res2 := by
                 simpa [typecheck, ctxTrue] using htc2
               have hwf_true : wfTagMeaningCtx tm ctxTrue := by
                 simpa [wfTagMeaningCtx, ctxTrue] using h_wf
-              have hb_true : TagMeaningBounded tm ctxTrue.nextTag := by
-                simpa [ctxTrue] using h_bounded
+              have hb_true : TagMeaningBounded tm ctxTrue.nextTag := h_bounded.mono hb1
               rcases IH (fuel' - 1) (by omega) tm ctxTrue e2 res2 hwf_true hb_true hP
+                  (hL.of_log_eq
+                    (typecheckIf_tagLog_matched htc hmatch hRk htc1p htc2 htc3)).left.right
                   htc2' with
                 ⟨tm2, hcanon2, hP2⟩
               have hresTm : QTypRespectsTagMeaning tm2 res.qualType :=
@@ -4244,10 +4271,13 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
             cases h_rest with
             | inl h2 =>
                 rcases h2 with
-                  ⟨k, deps, _, _, res1, _htc1, _hbool, res2, res3, htc2, htc3,
+                  ⟨k, deps, hmatch, hRk, res1, htc1p, _hbool, res2, res3, htc2, htc3,
                     hmemEnv, _htagEnv, _hnextLoc, hnextTag, _hregime, _hdecl, _hpoison,
                     hetyp_res⟩
+                have hb1 : ctx.nextTag ≤ res1.nextTag' :=
+                  typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) res1 htc1p
                 let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ({ value := true, deps := deps } : TagVal),
+                                                        nextTag := res1.nextTag',
                                                         declaredExternRefs := res1.declared' }
                 let ctxFalse : TypeContext :=
                   { ctx with tagEnv := ctx.tagEnv.insert k ({ value := false, deps := deps } : TagVal),
@@ -4255,9 +4285,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                              declaredExternRefs := res2.declared' }
                 have htc2' : typecheck ctxTrue e2 (fuel' - 1) = .ok res2 := by
                   simpa [typecheck, ctxTrue] using htc2
-                have hnextTag2 : ctx.nextTag ≤ res2.nextTag' := by
-                  simpa [ctxTrue] using
-                    typecheck_nextTag_mono ctxTrue e2 (fuel' - 1) res2 htc2'
+                have hnextTag2 : ctx.nextTag ≤ res2.nextTag' :=
+                  Nat.le_trans hb1 (typecheck_nextTag_mono ctxTrue e2 (fuel' - 1) res2 htc2')
                 have htc3' : typecheck ctxFalse e3 (fuel' - 1) = .ok res3 := by
                   simpa [typecheck, ctxFalse] using htc3
                 have hwf_false : wfTagMeaningCtx tm ctxFalse := by
@@ -4265,6 +4294,8 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                 have hb_false : TagMeaningBounded tm ctxFalse.nextTag := by
                   simpa [ctxFalse] using h_bounded.mono hnextTag2
                 rcases IH (fuel' - 1) (by omega) tm ctxFalse e3 res3 hwf_false hb_false hP
+                    (hL.of_log_eq
+                      (typecheckIf_tagLog_matched htc hmatch hRk htc1p htc2 htc3)).right
                     htc3' with
                   ⟨tm3, hcanon3, hP3⟩
                 have hresTm : QTypRespectsTagMeaning tm3 res.qualType :=
@@ -4281,7 +4312,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                   hwfFinal, hresTm⟩
             | inr hstd =>
                 obtain
-                  ⟨_hstdCase, res1, htc1, _hbool, res2, htc2, res3, htc3_raw,
+                  ⟨hstdCase, res1, htc1, _hbool, res2, htc2, res3, htc3_raw,
                     hmemEnv, _htagEnv, _hnextLoc, hnextTag, _hregime, _hdecl, _hpoison,
                     hetyp_res, hpred_res⟩ := hstd
                 let ctx1 : TypeContext :=
@@ -4292,8 +4323,10 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                 let ctx'' := { ctx1 with pc := pc' }
                 have htc1' : typecheck ctx e1 (fuel' - 1) = .ok res1 := by
                   simpa [typecheck] using htc1
+                have hLstd := hL.of_log_eq
+                  (typecheckIf_tagLog_std htc hstdCase htc1 htc2 htc3_raw)
                 rcases IH (fuel' - 1) (by omega) tm ctx e1 res1 h_wf h_bounded hP
-                    htc1' with
+                    hLstd.left.left htc1' with
                   ⟨tm1, hcanon1, hP1⟩
                 have hwf_mid : wfTagMeaningCtx tm1 ctx'' := by
                   simp only [wfTagMeaningCtx, ctx'', ctx1]
@@ -4304,7 +4337,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                 have htc2' : typecheck ctx'' e2 (fuel' - 1) = .ok res2 := by
                   simpa [typecheck, ctx'', ctx1, pc'] using htc2
                 rcases IH (fuel' - 1) (by omega) tm1 ctx'' e2 res2 hwf_mid hb_mid
-                    hP1 htc2' with
+                    hP1 hLstd.left.right htc2' with
                   ⟨tm2, hcanon2, hP2⟩
                 let ctxForE3 :=
                   { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
@@ -4317,7 +4350,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                 have hb_mid3 : TagMeaningBounded tm2 ctxForE3.nextTag := by
                   simpa [ctxForE3] using IsCanonicalExtension.bounded hcanon2
                 rcases IH (fuel' - 1) (by omega) tm2 ctxForE3 e3 res3 hwf_mid3 hb_mid3
-                    hP2 htc3' with
+                    hP2 hLstd.right htc3' with
                   ⟨tm3, hcanon3, hP3⟩
                 have hcanon12 := IsCanonicalExtension.trans hcanon1 hcanon2
                 have hext_tm_tm3 : tm ⊑ tm3 :=
@@ -4361,40 +4394,38 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
       | app e1 e2 =>
           exact False.elim (hnotApp e1 e2 rfl)
 
-/-- For any successful typecheck, there is a canonical extension `tm'` of the
-    input tag meaning `tm`, and `PredSatLaws predSat tm'` survives.
+/-- For any successful typecheck and any table `Q` that contains the input
+    table and records every allocation of the run, there is a canonical
+    extension `tm'` of the input table, and it is part of `Q`.
 
-    Non-allocating leaves use `tm' = tm` and the laws pass through
-    unchanged.  Composite cases thread `tm'` through subexpression IHs and
-    advance `PredSatLaws` along the chain.  At extern allocation steps the
-    advancement uses `ExternTypingAssumptions.externPredSatDelta` (the
-    semantic delta that survives one structural extern batch), composed
-    via `PredSatLaws.extend_extern_batch`. -/
-theorem typecheck_preserves_predSatLaws
-    (extTyping : ExternTypingAssumptions)
-    (predSat : PredSat)
+    Non-allocating leaves use `tm' = tm`.  Composite cases thread `tm'`
+    through the sub-runs, each of whose allocations are allocations of the
+    whole run.  At extern allocation steps the batch table adds only the
+    allocations the batch logs, so it stays inside `Q`. -/
+private theorem typecheck_canonical_sub
+    (Q : TagMeaning)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
     (fuel : Nat) (res : TypeResult)
     (h_wf : wfTagMeaningCtx tm ctx)
     (h_bounded : TagMeaningBounded tm ctx.nextTag)
-    (h_laws : PredSatLaws predSat tm)
+    (h_laws : tm ⊑ Q) (hL : LogIn res.tagLog' Q)
     (htc : typecheck ctx e fuel = .ok res) :
-    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ PredSatLaws predSat tm' := by
-  revert predSat tm ctx e res
+    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ tm' ⊑ Q := by
+  revert tm ctx e res
   induction fuel using Nat.strong_induction_on with
   | h fuel IH =>
-  intro predSat tm ctx e res h_wf h_bounded h_laws htc
+  intro tm ctx e res h_wf h_bounded h_laws hL htc
   have nonAppCase
       (hnotApp : ∀ e1 e2, e ≠ Expr.app e1 e2)
       (hnotExternVal : ∀ id typ poison pred, e ≠ Expr.externVal id typ poison pred) :
-      ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ PredSatLaws predSat tm' := by
+      ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ tm' ⊑ Q := by
     exact
       typecheck_extends_tagMeaning_nonApp_byIH
-        (_extTyping := extTyping) (P := PredSatLaws predSat)
+        (Q := Q)
         (tm := tm) (ctx := ctx) (e := e) (fuel := fuel) (res := res)
-        h_wf h_bounded htc h_laws hnotApp hnotExternVal
-        (fun m hm tm_i ctx_i e_i res_i hwf_i hb_i h_laws_i htc_i =>
-          IH m hm predSat tm_i ctx_i e_i res_i hwf_i hb_i h_laws_i htc_i)
+        h_wf h_bounded htc h_laws hL hnotApp hnotExternVal
+        (fun m hm tm_i ctx_i e_i res_i hwf_i hb_i h_laws_i hL_i htc_i =>
+          IH m hm tm_i ctx_i e_i res_i hwf_i hb_i h_laws_i hL_i htc_i)
   cases e with
   | num n =>
       exact nonAppCase (by intro e1 e2 h; cases h)
@@ -4450,13 +4481,22 @@ theorem typecheck_preserves_predSatLaws
                 typecheckApp_arrow_structure_full ctx e1 e2 fuel'' res htcApp
               have htc2' : typecheck ctx e2 fuel'' = .ok result2 := by
                 simpa [typecheck] using htc2
-              rcases IH fuel'' (by omega) predSat tm ctx e2 result2
-                  h_wf h_bounded h_laws htc2' with
+              have hLapp : ∃ joined : TypeResult,
+                  res.tagLog' = result2.tagLog' ++ (result1.tagLog' ++ joined.tagLog') := by
+                rcases h_arrow_or_parrow with
+                  ⟨_, _, _, _, _, _, _, _, joined, _, _, _, _, _, _, _, _, hres⟩ |
+                  ⟨_, _, _, _, _, _, _, _, joined, _, _, _, _, _, _, _, hres⟩
+                · exact ⟨joined, by rw [hres]⟩
+                · exact ⟨joined, by rw [hres]⟩
+              obtain ⟨_joined, hLapp⟩ := hLapp
+              have hL21 := hL.of_log_eq hLapp
+              rcases IH fuel'' (by omega) tm ctx e2 result2
+                  h_wf h_bounded h_laws hL21.left htc2' with
                 ⟨tm2, hcanon2, h_laws2⟩
               have htc1' : typecheck (ctxAfter ctx result2) e1 fuel'' = .ok result1 := by
                 simpa [typecheck, ctxAfter] using htc1
-              rcases IH fuel'' (by omega) predSat tm2 (ctxAfter ctx result2) e1 result1
-                  hcanon2.2.2.1 hcanon2.2.1 h_laws2 htc1' with
+              rcases IH fuel'' (by omega) tm2 (ctxAfter ctx result2) e1 result1
+                  hcanon2.2.2.1 hcanon2.2.1 h_laws2 hL21.right.left htc1' with
                 ⟨tm1, hcanon1, h_laws1⟩
               have hext_tm_tm2 : tm ⊑ tm2 := hcanon2.1
               have hext_tm2_tm1 : tm2 ⊑ tm1 := hcanon1.1
@@ -4473,20 +4513,20 @@ theorem typecheck_preserves_predSatLaws
                 QTypRespectsTagMeaning_mono hext_tm2_tm1 hargTm2
               cases h_arrow_or_parrow with
               | inl h_arrow =>
-                  obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1,
-                    _hnpure, _hnempty, _hsub, hthread, heq_results, h_join⟩ := h_arrow
-                  rcases applyFnClosuresThreaded_ok_tagMeaningPredSat_byIH
-                      (hExtTyping := extTyping) (predSat := predSat) (tm := tm1)
+                  obtain ⟨st1, st2, p, p1, tcls, results, first, rest, res, hetyp1, _hp1,
+                    _hnpure, _hnempty, _hsub, hthread, heq_results, h_join, rfl⟩ := h_arrow
+                  rcases applyFnClosuresThreaded_ok_tagMeaningSub_byIH
+                      (Q := Q) (tm := tm1)
                       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
                       (allTcls := tcls) (todo := tcls)
                       (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
                       (result1 := result1) (cursor := (result1.nextTag', result1.nextLoc'))
                       (fuel := fuel'')
-                      (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i =>
-                        IH m (by omega) predSat tm_i ctx_i e_i res_i
-                          hwf_i hb_i h_laws_i htc_i)
+                      (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i hL_i =>
+                        IH m (by omega) tm_i ctx_i e_i res_i
+                          hwf_i hb_i h_laws_i hL_i htc_i)
                       (first := first) (rest := rest)
-                      hctxTm1 hresTm1 hcanon1.2.1 h_laws1
+                      hctxTm1 hresTm1 hcanon1.2.1 h_laws1 (hL.right.right.of_join h_join)
                       hetyp1 (fun tcl htcl => htcl) hargTm1
                       (by simpa [heq_results] using hthread) with
                     ⟨tmFinal, last, hextClosures, hlast_mem, hboundedLast,
@@ -4520,20 +4560,20 @@ theorem typecheck_preserves_predSatLaws
                         res h_join hqFirst hqRest⟩,
                     h_lawsFinal⟩
               | inr h_parrow =>
-                  obtain ⟨st1, st2, p, p1, tcls, results, first, rest, hetyp1, _hp1,
-                    _hnempty, _hsub, hthread, heq_results, h_join⟩ := h_parrow
-                  rcases applyPFnClosuresThreaded_ok_tagMeaningPredSat_byIH
-                      (hExtTyping := extTyping) (predSat := predSat) (tm := tm1)
+                  obtain ⟨st1, st2, p, p1, tcls, results, first, rest, res, hetyp1, _hp1,
+                    _hnempty, _hsub, hthread, heq_results, h_join, rfl⟩ := h_parrow
+                  rcases applyPFnClosuresThreaded_ok_tagMeaningSub_byIH
+                      (Q := Q) (tm := tm1)
                       (ctx := ctx) (st1 := st1) (st2 := st2) (p := p) (p1 := p1)
                       (allTcls := tcls) (todo := tcls)
                       (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
                       (result1 := result1) (cursor := (result1.nextTag', result1.nextLoc'))
                       (fuel := fuel'')
-                      (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i =>
-                        IH m (by omega) predSat tm_i ctx_i e_i res_i
-                          hwf_i hb_i h_laws_i htc_i)
+                      (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i hL_i =>
+                        IH m (by omega) tm_i ctx_i e_i res_i
+                          hwf_i hb_i h_laws_i hL_i htc_i)
                       (first := first) (rest := rest)
-                      hctxTm1 hresTm1 hcanon1.2.1 h_laws1
+                      hctxTm1 hresTm1 hcanon1.2.1 h_laws1 (hL.right.right.of_join h_join)
                       hetyp1 (fun tcl htcl => htcl) hargTm1
                       (by simpa [heq_results] using hthread) with
                     ⟨tmFinal, last, hextClosures, hlast_mem, hboundedLast,
@@ -4577,10 +4617,10 @@ theorem typecheck_preserves_predSatLaws
       cases fuel with
       | zero => simp at htc
       | succ fuel' =>
-          rcases typecheckExternVal_canonical_batch tm ctx id typ poison pred res
+          rcases typecheckExternVal_canonical_batch tm ctx id typ poison pred fuel' res
               h_wf h_bounded htc with
-            ⟨tm', _tagMapping, _nextTag', hbatch, hcanon⟩
-          exact ⟨tm', hcanon, PredSatLaws.extend_extern_batch extTyping predSat h_laws hbatch⟩
+            ⟨tm', _tagMapping, _nextTag', _hbatch, hwithin, hcanon⟩
+          exact ⟨tm', hcanon, hwithin.submap h_laws hL⟩
   | externRef _ _ _ _ _ =>
       exact nonAppCase (by intro e1 e2 h; cases h)
         (by intro id typ poison pred h; cases h)
@@ -4590,6 +4630,27 @@ theorem typecheck_preserves_predSatLaws
   | externPfn id arg argTyp _ _ retSpec =>
       exact nonAppCase (by intro e1 e2 h; cases h)
         (by intro id typ poison pred h; cases h)
+
+/-- For any successful typecheck in a frame (a lawful table containing the
+    input table and every allocation of the run), there is a canonical
+    extension `tm'` of the input table; it adds only allocations of the run,
+    and `PredSatLaws predSat tm'` holds. -/
+theorem typecheck_preserves_predSatLaws
+    (predSat : PredSat)
+    (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
+    (fuel : Nat) (res : TypeResult)
+    (h_wf : wfTagMeaningCtx tm ctx)
+    (h_bounded : TagMeaningBounded tm ctx.nextTag)
+    (hframe : TagFrame predSat tm res.tagLog')
+    (htc : typecheck ctx e fuel = .ok res) :
+    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ PredSatLaws predSat tm' ∧
+      WithinLog tm res.tagLog' tm' := by
+  obtain ⟨hsub, hlog, hwithinQ⟩ := typecheck_programTable tm ctx e fuel res h_bounded htc
+  obtain ⟨tm', hcanon, hsubQ⟩ :=
+    typecheck_canonical_sub (programTable tm res.tagLog') tm ctx e fuel res
+      h_wf h_bounded hsub hlog htc
+  have hwithin : WithinLog tm res.tagLog' tm' := hwithinQ.of_submap hsubQ
+  exact ⟨tm', hcanon, hframe.laws_of_within hwithin, hwithin⟩
 
 lemma applyPFnTClosure_regular_inv
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -5620,7 +5681,6 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
           rw [hmem_eq]; exact hlookup
 
 private lemma typecheckExpr_lookup_origin_of_pc_true_split
-  (_extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -5790,7 +5850,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           have htcSeq : typecheckSeq ctx e1 e2 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckSeq_structure ctx e1 e2 fuel' res htcSeq with
-            ⟨result1, ctx', htc1, hctx', htc2⟩
+            ⟨result1, ctx', res, htc1, hctx', htc2, rfl⟩
           have hpc2 : ctx'.pc = true := by
             simpa [hctx', updateCtxFromResult] using hpc
           have hpre' : ctx'.memEnv.contains l := by
@@ -6114,9 +6174,12 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
           have htcIf : typecheckIf ctx e1 e2 e3 fuel' = .ok res := by
             simpa [typecheckExpr] using htc
           rcases typecheckIf_structure ctx e1 e2 e3 fuel' res htcIf with h1 | h2 | hstd
-          · rcases h1 with ⟨k, deps, hmg, _hk, _res1, _htc1, _hBool, res2, _, htc2, _, h_mem, _h_tag,
+          · rcases h1 with ⟨k, deps, hmg, _hk, _res1, htc1p, _hBool, res2, _, htc2, _, h_mem, _h_tag,
               _h_nextLoc, _h_nextTag, h_regime, _h_poison, _h_etyp⟩
+            have hb1 : ctx.nextTag ≤ _res1.nextTag' :=
+              typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) _res1 htc1p
             let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                                    nextTag := _res1.nextTag',
                                                     declaredExternRefs := _res1.declared' }
             have hpcTrue : ctxTrue.pc = true := by
               simpa [ctxTrue] using hpc
@@ -6126,8 +6189,10 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               matchGuard_tag_bounded e1 ctx.memEnv ctx.varEnv (fuel' - 1) k deps ctx.nextTag
                 hmg hbnd.2.1.1 hbnd.2.1.2
             have hbnd_ctxTrue : TagBoundedCtx ctxTrue :=
-              ⟨tagEnvBounded_insert_of_lt ctx.tagEnv ctx.nextTag k ⟨true, deps⟩ hbnd.1 hk_lt,
-               hbnd.2.1, hbnd.2.2⟩
+              ⟨tagEnvBounded_mono _ _ _
+                 (tagEnvBounded_insert_of_lt ctx.tagEnv ctx.nextTag k ⟨true, deps⟩ hbnd.1 hk_lt) hb1,
+               ⟨predTagsBoundedInVarEnv_mono hbnd.2.1.1 hb1, predTagsBoundedInMemEnv_mono hbnd.2.1.2 hb1⟩,
+               varEnvClosuresCapturedBounded_mono hbnd.2.2 hb1⟩
             rcases ih (fuel' - 1) hltSub ctxTrue e2 res2
                 (by simpa [ctxTrue] using htc2) hwf_ctxTrue hbnd_ctxTrue hpcTrue l qt_out
                 (by simpa [h_mem] using hlookup_out) (by simpa [ctxTrue] using hpre) with
@@ -6141,21 +6206,26 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                 ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩
               exact ⟨qt_in, by simpa [ctxTrue] using hlookup_in, htag_in,
                 by simpa [ctxTrue] using hk_in, hnotfun_in⟩
-          · rcases h2 with ⟨k, deps, hmg, _hk, _res1, _htc1, _hBool, res2, res3, htc2_true, htc3, h_mem, _h_tag,
+          · rcases h2 with ⟨k, deps, hmg, _hk, _res1, htc1p, _hBool, res2, res3, htc2_true, htc3, h_mem, _h_tag,
               _h_nextLoc, _h_nextTag, h_regime, _h_poison, _h_etyp⟩
+            have hb1 : ctx.nextTag ≤ _res1.nextTag' :=
+              typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) _res1 htc1p
             let ctxFalse : TypeContext :=
               { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
                          nextLoc := res2.nextLoc', nextTag := res2.nextTag',
                          declaredExternRefs := res2.declared' }
             have hpcFalse : ctxFalse.pc = true := by
               simpa [ctxFalse] using hpc
-            have hmonoT : ctx.nextTag ≤ res2.nextTag' := by
-              simpa using typecheck_nextTag_mono { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                                                              declaredExternRefs := _res1.declared' }
-                e2 (fuel' - 1) res2 (by simpa using! htc2_true)
+            have hmonoT : ctx.nextTag ≤ res2.nextTag' :=
+              Nat.le_trans hb1 (typecheck_nextTag_mono
+                { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                           nextTag := _res1.nextTag',
+                           declaredExternRefs := _res1.declared' }
+                e2 (fuel' - 1) res2 htc2_true)
             have hwf_ctxFalse : wfTypeContext ctxFalse := by
               have hmono : ctx.nextLoc ≤ res2.nextLoc' :=
                 typecheck_nextLoc_mono { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                                                  nextTag := _res1.nextTag',
                                                   declaredExternRefs := _res1.declared' }
                   e2 (fuel' - 1) res2 (by simpa using! htc2_true)
               exact ⟨fun l hl => Nat.lt_of_lt_of_le (hwf.1 l hl) hmono,
@@ -6391,8 +6461,8 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               · intro hpoison_out
                 cases hcases with
                 | inl harrow =>
-                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1,
-                        _hnpure, _hnempty, _hsub, hmap, heq_results, h_join⟩ := harrow
+                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, res, _hetyp1, _hp1,
+                        _hnpure, _hnempty, _hsub, hmap, heq_results, h_join, rfl⟩ := harrow
                     have hmember_origin :
                         ∀ srcRes, srcRes ∈ first :: rest → srcRes.memEnv'.contains l →
                           ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false := by
@@ -6555,8 +6625,8 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                     · exact hmember_origin first (by simp) hhead
                     · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
                 | inr hparrow =>
-                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1,
-                        _hnempty, _hsub, hmap, heq_results, h_join⟩ := hparrow
+                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, res, _hetyp1, _hp1,
+                        _hnempty, _hsub, hmap, heq_results, h_join, rfl⟩ := hparrow
                     have hmember_origin :
                         ∀ srcRes, srcRes ∈ first :: rest → srcRes.memEnv'.contains l →
                           ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false := by
@@ -6637,8 +6707,8 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               · intro k htag hk hnotfun
                 cases hcases with
                 | inl harrow =>
-                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1,
-                        _hnpure, _hnempty, _hsub, hmap, heq_results, h_join⟩ := harrow
+                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, res, _hetyp1, _hp1,
+                        _hnpure, _hnempty, _hsub, hmap, heq_results, h_join, rfl⟩ := harrow
                     have hmember_origin :
                         ∀ srcRes, srcRes ∈ first :: rest → srcRes.memEnv'.contains l →
                           ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧
@@ -6844,8 +6914,8 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                     · exact hmember_origin first (by simp) hhead
                     · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
                 | inr hparrow =>
-                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, _hetyp1, _hp1,
-                        _hnempty, _hsub, hmap, heq_results, h_join⟩ := hparrow
+                    obtain ⟨st1, st2, p, p1, tcls, results, first, rest, res, _hetyp1, _hp1,
+                        _hnempty, _hsub, hmap, heq_results, h_join, rfl⟩ := hparrow
                     have hmember_origin :
                         ∀ srcRes, srcRes ∈ first :: rest → srcRes.memEnv'.contains l →
                           ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧
@@ -6981,9 +7051,10 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                     · exact hmember_origin first (by simp) hhead
                     · exact hmember_origin srcRes (List.mem_cons_of_mem _ hsrc_rest) hsrc_contains
       | externVal _id typ poison pred =>
-          have htc' : typecheckExternVal ctx typ poison pred = .ok res := by
+          have htc' : typecheckExternVal ctx _id typ poison pred fuel' = .ok res := by
             simpa [typecheckExpr, typecheck] using htc
-          exact typecheckExternVal_preserves_lookup_origin ctx typ poison pred res htc' hwf hpc
+          exact typecheckExternVal_preserves_lookup_origin ctx _id typ poison pred fuel' res htc' hwf
+            hbnd hpc
             l qt_out hpre hlookup_out
       | externRef id refPoison refPred cellPoison cellPred =>
           simp only [typecheckExpr, typecheckExternRef] at htc
@@ -7015,7 +7086,6 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                  fun k hg hr hfn => ⟨qt_out, hlookup_out, hg, hr, hfn⟩⟩
 
 private lemma typecheckExpr_lookup_poison_origin_of_pc_true
-  (extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -7027,11 +7097,10 @@ private lemma typecheckExpr_lookup_poison_origin_of_pc_true
     qt_out.poison = false →
     ∃ qt_in, ctx.memEnv.lookup l = some qt_in ∧ qt_in.poison = false := by
   intro l qt_out hlookup_out hpre hpoison_out
-  exact (typecheckExpr_lookup_origin_of_pc_true_split extTyping
+  exact (typecheckExpr_lookup_origin_of_pc_true_split
       (ctx := ctx) (e := e) (fuel := fuel) (res := res) htc hwf hbnd hpc l qt_out hlookup_out hpre).1 hpoison_out
 
 private lemma typecheckExpr_lookup_guard_origin_of_pc_true
-  (extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -7048,12 +7117,11 @@ private lemma typecheckExpr_lookup_guard_origin_of_pc_true
       ctx.regime.lookup? k = some true ∧
       qt_in.etyp.isFunctionType = false := by
   intro l qt_out k hlookup_out hpre htag hk hnotfun
-  exact (typecheckExpr_lookup_origin_of_pc_true_split extTyping
+  exact (typecheckExpr_lookup_origin_of_pc_true_split
       (ctx := ctx) (e := e) (fuel := fuel) (res := res) htc hwf hbnd hpc l qt_out hlookup_out hpre).2
       k htag hk hnotfun
 
 lemma typecheckExpr_clean_lookup_origin_of_pc_true
-  (extTyping : ExternTypingAssumptions)
   (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult)
   (htc : typecheckExpr ctx e fuel = .ok res)
   (hwf : wfTypeContext ctx)
@@ -7067,13 +7135,13 @@ lemma typecheckExpr_clean_lookup_origin_of_pc_true
   intro l qt_out hlookup_out hpre hclean_out
   cases hclean_out with
   | clean hpoison_out =>
-      rcases typecheckExpr_lookup_poison_origin_of_pc_true extTyping
+      rcases typecheckExpr_lookup_poison_origin_of_pc_true
           (ctx := ctx) (e := e) (fuel := fuel) (res := res)
           htc hwf hbnd hpc l qt_out hlookup_out hpre hpoison_out with
         ⟨qt_in, hlookup_in, hpoison_in⟩
       exact ⟨qt_in, hlookup_in, qtypCleanUnder.clean hpoison_in⟩
   | guard k htag hk hnotfun =>
-      rcases typecheckExpr_lookup_guard_origin_of_pc_true extTyping
+      rcases typecheckExpr_lookup_guard_origin_of_pc_true
           (ctx := ctx) (e := e) (fuel := fuel) (res := res)
           htc hwf hbnd hpc l qt_out k hlookup_out hpre htag hk hnotfun with
         ⟨qt_in, hlookup_in, htag_in, hk_in, hnotfun_in⟩

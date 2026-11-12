@@ -5,9 +5,10 @@ import LeanPoison.Typecheck
 import LeanPoison.Runtime
 import LeanPoison.BigStep
 import LeanProofs.RegimeConsistency
-import LeanProofs.ExternTypingAssumptions
+import LeanProofs.TagFrame
 import LeanProofs.TypeSafety
 import LeanProofs.SemanticsProperties
+import LeanProofs.ExternCallSteps
 import Mathlib.Data.List.Forall2
 import Std.Data.ExtTreeMap
 open Std
@@ -780,12 +781,13 @@ end ReservedDiscipline
 
 /-- Pointwise two-run fault-robustness obligation under an explicit runtime
     extern registry.  This is the semantic relation used inside the public
-    top-level spec after typechecking/setup premises have selected a context
-    and tag meaning. -/
+    top-level spec after typechecking/setup premises have selected a context,
+    tag meaning and typing fuel.  The fuel fixes the root step of each run
+    (`Step`), from which the premises on extern calls are stated. -/
 private def FaultRobustnessPointwise
     (registry : ExternRegistry)
     (e : Expr) (s : InputSpec) (obs : ObservableSpec)
-    (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) : Prop :=
+    (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) (fuel : Nat) : Prop :=
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap)
     (a₁ a₂ : Address) (pm : Bool),
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
@@ -808,8 +810,20 @@ private def FaultRobustnessPointwise
     trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ θ₂ →
     consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →
     consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
+    -- Every extern call and every `extern val` declaration of each run
+    -- satisfies *match* (`ExternCallsMatch`): a tag it allocated carries the
+    -- outcome of its check.
+    ExternCallsMatch predSat
+      ⟨ctx, e, fuel, { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }⟩ →
+    ExternCallsMatch predSat
+      ⟨ctx, e, fuel, { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry }⟩ →
     agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    -- Every extern call that both runs make satisfies *agreement*
+    -- (`ExternCallsAgree`), as clean inputs do.
+    ExternCallsAgree
+      ⟨ctx, e, fuel, { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }⟩
+      ⟨ctx, e, fuel, { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry }⟩ →
     terminatesTo e { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ →
     terminatesTo e { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry } cf₂ o₂ →
     ∃ (θ₁' θ₂' : RealizationMap),
@@ -842,11 +856,13 @@ def FaultRobustnessSpecForCtx
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
     PredSatLaws predSat tm →
-    ExternTypingAssumptions →
-    ((∃ (fuel : Nat) (res : TypeResult),
-      typecheck ctx e fuel = .ok res ∧
-      ObsConstraints obs res) →
-      FaultRobustnessPointwise registry e s obs ctx predSat tm)
+    -- `predSat` also satisfies the laws on the program table of the typing run:
+    -- `tm` together with every guard tag the run allocates (`res.tagLog'`).
+    ∀ (fuel : Nat) (res : TypeResult),
+      typecheck ctx e fuel = .ok res →
+      ObsConstraints obs res →
+      PredSatLaws predSat (programTable tm res.tagLog') →
+      FaultRobustnessPointwise registry e s obs ctx predSat tm fuel
 
 /-- The registry-parametric fault-robustness specification: the type system
     enforces the per-context FR relation for every initial type context admitted

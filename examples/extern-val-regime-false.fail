@@ -1,0 +1,9 @@
+Evaluating file: examples/extern-val-regime-false.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=false, pred={}},
+  MemoryTypeEnv: {},
+  tagEnv: { 1 := { value := false, deps := [] } },
+  nextLoc: 0
+
+Runtime error: extern id 250 not registered

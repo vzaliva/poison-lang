@@ -31,6 +31,36 @@ A trusted entry's boundary contract is an `ExternBoundarySpec` with five fields:
 - **`operational`** — `ExternOperationalSafe`: well-formed outputs, preserved
   config well-formedness, and `nextAddr` monotonicity where applicable.
 
+The call contracts receive, for the call they are about, the theorem's
+premises on extern calls (`LeanProofs/ExternCallSteps.lean`): `CallMatches`
+(each tag the call allocates carries the outcome of its check on the returned
+value and on each cell the call writes) in each run, and, in `callFR`,
+`CallAgrees` (the two runs return the same value, and leave the same content
+in each cell the call writes, when it is guarded by a tag of the call that the
+regime sets true). A cell is found through an effect `!v` whose target has a
+reference type naming a single location (`EffectCell`); a target naming
+several locations is updated weakly and gives no cell. A returned value that
+is clean because a tag of the call is true therefore needs no proof from the
+entry; a returned value declared clean outright must agree when the clean
+inputs agree. For cells written by effects the contracts receive the same
+conditions. No shipped entry declares an effect with a guard; the trusted
+entry of the witness extern `rd`
+(`LeanProofs/ExternCallsWitnessCellClosed.lean`), whose effect writes the cell
+of its reference argument with a guard of the tag of its result, proves its
+two-run contract from the clause of *agreement* for cells. The guard of that
+cell has no predicate, so no entry uses the clause of *match* for cells.
+
+An `extern val` is typed as a call of a constant extern function: its guard
+tag takes the value that the typing context's assignment of values to extern
+tags gives it, and its guard is recorded in the tag environment. The premises
+read it as such a call (`ExternValAt`): *match* (`ValMatches`) is a premise of
+the theorem, and the declaration contracts (`declSingle`, `declFR`) receive it
+in each run. Agreement of the declared value in the two runs is not a premise:
+it is an obligation of the entry's author inside `declFR`, where both runs are
+runs of the entry's one implementation. No shipped entry is an `extern val`;
+the trusted entry of a witness `extern val` with a guarded `int`
+(`LeanProofs/ExternCallsWitnessVal.lean`) proves both declaration contracts.
+
 Argument-side **preconditions** are the declared argument `QTyp` (for example
 `(int :> clean {})`). **Read dependencies** are declared in `captures:`; **write
 effects** in `effects:` (impure `extern fn` only). Argument preconditions and

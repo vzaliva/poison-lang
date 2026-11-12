@@ -7,7 +7,7 @@
   These reason only about Typecheck functions and the tag-meaning predicates
   (`QTypRespectsTagMeaning`, `wfTagMeaningCtx`, `EnvRespectsTagMeaning` from
   RegimeConsistency), so the module sits below StepFR in the import graph: above
-  {TypeSafety, SemanticsProperties, RegimeConsistency, ExternTypingAssumptions},
+  {TypeSafety, SemanticsProperties, RegimeConsistency, TagFrame},
   and imported by TypecheckInduction and StepFR.
 -/
 import LeanPoison.Syntax
@@ -21,7 +21,7 @@ import LeanProofs.TypeSafety
 import LeanProofs.Auxiliary
 import LeanProofs.SemanticsProperties
 import LeanProofs.RegimeConsistency
-import LeanProofs.ExternTypingAssumptions
+import LeanProofs.TagFrame
 import Std.Data.ExtTreeMap.Lemmas
 import Std.Data.ExtTreeSet.Lemmas
 
@@ -188,7 +188,7 @@ variable (predSat : PredSat) (tm : TagMeaning) (fuel : Nat)
     succeeds, the resolved predicate respects `tm`.  This is proved by case
     analysis on `pred` — the `guardClosure` case uses `TagMappingRespectsTagMeaning`
     directly; the other cases are vacuous. -/
-private lemma resolveSyntaxPred_respectsTagMeaning
+lemma resolveSyntaxPred_respectsTagMeaning
     (tm : TagMeaning)
     (pred : SyntaxPredicate) (env : VarTypeEnv)
     (mapping : TagMapping)
@@ -283,55 +283,36 @@ private lemma returnSpecToQTyp_pred_preserves (typ : Typ) (poison : Bool)
 /-- `typecheckExternVal` result `QTyp` respects tag meaning when the allocation
     batch has already been shown structurally compatible with the table. -/
 private lemma typecheckExternVal_QTypRespectsTagMeaning_of_respects
-    (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-    (res : TypeResult)
+    (tm : TagMeaning) (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison : Bool)
+    (pred : SyntaxPredicate) (fuel : Nat) (res : TypeResult)
     (hcompatOfAlloc : ∀ (tagMapping : TagMapping) (nextTag' : Tag),
       collectAndAllocExternTags [pred] ctx.nextTag = .ok (tagMapping, nextTag') →
       TagMappingRespectsTagMeaning tm tagMapping [pred] ctx.varEnv)
-    (htc : typecheckExternVal ctx typ poison pred = .ok res) :
+    (htc : typecheckExternVal ctx id typ poison pred fuel = .ok res) :
     QTypRespectsTagMeaning tm res.qualType := by
-  simp only [typecheckExternVal] at htc
-  rcases hp : (poison, pred) with ⟨p, pr⟩
-  simp only [hp] at htc
-  split at htc
-  · simp at htc
-  · simp at htc
-  · cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
-    | error e => simp [halloc, bind, Except.bind] at htc
-    | ok tagres =>
-      obtain ⟨tagMapping, nextTag'⟩ := tagres
-      cases hresolved : resolveSyntaxPred pred ctx.varEnv tagMapping with
-      | error e =>
-        simp only [halloc, hresolved, bind, Except.bind] at htc; simp at htc
-      | ok resolvedPred =>
-        cases hsurface : surfaceSpecToQTyp typ poison resolvedPred ctx with
-        | error e =>
-          simp only [halloc, hresolved, hsurface, bind, Except.bind] at htc; simp at htc
-        | ok qctx =>
-          obtain ⟨qt, ctx'⟩ := qctx
-          simp only [halloc, hresolved, hsurface, bind, Except.bind, pure, Except.pure,
-                     Except.ok.injEq] at htc
-          subst htc; simp only
-          have hcompat := hcompatOfAlloc tagMapping nextTag' halloc
-          have hpredTm := resolveSyntaxPred_respectsTagMeaning tm pred ctx.varEnv tagMapping [pred]
-            resolvedPred hcompat (List.Mem.head _) hresolved
-          -- The surface spec preserves the predicate and produces a non-function ETyp
-          have hsurfPred := surfaceSpecToQTyp_pred_preserves typ poison resolvedPred ctx qt ctx' hsurface
-          have hsurfNotFun := surfaceSpecToQTyp_etyp_nonFunction typ poison resolvedPred ctx qt ctx' hsurface
-          -- Lift PredRespectsTagMeaning to QTypRespectsTagMeaning
-          rw [← hsurfPred] at hpredTm
-          -- Destructure qt and prove directly
-          obtain ⟨qt_e, qt_p, qt_pred⟩ := qt
-          intro qt' k d hinq hqd
-          have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hsurfNotFun
-          subst hEq
-          cases qt_pred with
-          | noPred => simp [qtypGuardDesc?] at hqd
-          | guardOnly _ => simp [qtypGuardDesc?] at hqd
-          | guardClosure k0 arg pb cap =>
-            simp [qtypGuardDesc?] at hqd
-            rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
-            exact hpredTm k0 arg pb cap rfl
+  obtain ⟨_, tagMapping, nextTag', resolvedPred, ⟨qt, ctx'⟩, halloc, hresolved, hsurface, rfl⟩ :=
+    typecheckExternVal_ok_shape htc
+  simp only
+  have hcompat := hcompatOfAlloc tagMapping nextTag' halloc
+  have hpredTm := resolveSyntaxPred_respectsTagMeaning tm pred ctx.varEnv tagMapping [pred]
+    resolvedPred hcompat (List.Mem.head _) hresolved
+  -- The surface spec preserves the predicate and produces a non-function ETyp
+  have hsurfPred := surfaceSpecToQTyp_pred_preserves typ poison resolvedPred ctx qt ctx' hsurface
+  have hsurfNotFun := surfaceSpecToQTyp_etyp_nonFunction typ poison resolvedPred ctx qt ctx' hsurface
+  -- Lift PredRespectsTagMeaning to QTypRespectsTagMeaning
+  rw [← hsurfPred] at hpredTm
+  -- Destructure qt and prove directly
+  obtain ⟨qt_e, qt_p, qt_pred⟩ := qt
+  intro qt' k d hinq hqd
+  have hEq := QTypInQTyp_eq_of_nonFunctionTarget hinq hsurfNotFun
+  subst hEq
+  cases qt_pred with
+  | noPred => simp [qtypGuardDesc?] at hqd
+  | guardOnly _ => simp [qtypGuardDesc?] at hqd
+  | guardClosure k0 arg pb cap =>
+    simp [qtypGuardDesc?] at hqd
+    rcases hqd with ⟨hk, hd⟩; subst hk; subst hd
+    exact hpredTm k0 arg pb cap rfl
 
 /-- QTypRespectsTagMeaning is insensitive to poison when pred = noPred,
     because all deep guard descriptors come from the etyp (closures), not the pred. -/
@@ -488,6 +469,7 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
         ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
       ExternBatchTagMeaningExtension tm result2.nextTag' tagMapping [spred] unifiedEnv
         nextTag' tm' ∧
+      WithinLog tm r.tagLog' tm' ∧
       TagMeaningBounded tm' r.nextTag' ∧
       wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
       QTypRespectsTagMeaning tm' r.qualType := by
@@ -536,8 +518,9 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
                 (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) n,
               nextLoc' := nextLoc', nextTag' := nextTag',
               regime' := applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping,
-              declared' := result2.declared' }
-          refine ⟨tm', tagMapping, nextTag', hbatch, ?_, ?_, ?_⟩
+              declared' := result2.declared',
+              tagLog' := externTagLog [spred] unifiedEnv tagMapping }
+          refine ⟨tm', tagMapping, nextTag', hbatch, hbatch.within, ?_, ?_, ?_⟩
           · simpa [outRes] using ExternBatchTagMeaningExtension.bounded hbatch
           · have hwf' : wfTagMeaningCtx tm' (ctxAfter ctx result2) :=
               wfTagMeaningCtx_mono (ExternBatchTagMeaningExtension.extends_tm hbatch) hwf
@@ -546,7 +529,7 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
               (Nat.succ n) id x (ExternReturn.simple typ poison spred) capturedEnv declaredArgQt
               (captures := captures) (by
                 unfold applyPFnTClosure
-                simp [hgate, halloc, hresolved, hret, outRes, outQt, bind, Except.bind,
+                simp [hgate, halloc, hresolved, hret, outRes, outQt, unifiedEnv, bind, Except.bind,
                   pure, Except.pure])
             simp only [wfTagMeaningCtx, ctxAfter] at hwf' ⊢
             simpa [hmem] using hwf'
@@ -570,7 +553,7 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
                   exact ExternBatchTagMeaningExtension.respects hbatch)
                 (by
                   unfold applyPFnTClosure
-                  simp [hgate, halloc, hresolved, hret, outRes, outQt, bind, Except.bind,
+                  simp [hgate, halloc, hresolved, hret, outRes, outQt, unifiedEnv, bind, Except.bind,
                     pure, Except.pure])
 
 -- --------------------------------------------------------------------------
@@ -1275,6 +1258,7 @@ lemma applyFnTClosure_extern_canonical_batch
         ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
       ExternBatchTagMeaningExtension tm result2.nextTag' tagMapping
         (collectExternPreds retSpec effects) unifiedEnv nextTag' tm' ∧
+      WithinLog tm r.tagLog' tm' ∧
       TagMeaningBounded tm' r.nextTag' ∧
       wfTagMeaningCtx tm' (ctxAfter ctx r) ∧
       QTypRespectsTagMeaning tm' r.qualType := by
@@ -1322,7 +1306,29 @@ lemma applyFnTClosure_extern_canonical_batch
       have hargTm' :
           QTypRespectsTagMeaning tm' ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
         QTypRespectsTagMeaning_mono (ExternBatchTagMeaningExtension.extends_tm hbatch) hargTm
-      refine ⟨tm', tagMapping, nextTag', hbatch, ?_, ?_, ?_⟩
+      refine ⟨tm', tagMapping, nextTag', hbatch, ?_, ?_, ?_, ?_⟩
+      · have hlog_eq : r.tagLog' = externTagLog (collectExternPreds retSpec effects)
+            unifiedEnv tagMapping := by
+          simp only [hcollect] at happly
+          split at happly
+          · simp at happly
+          · cases retSpec <;> simp only [] at happly
+            · split at happly
+              · simp at happly
+              · split at happly
+                · simp at happly
+                · simp only [Except.ok.injEq] at happly
+                  rw [← happly]
+            · split at happly
+              · simp at happly
+              · simp only [Except.ok.injEq] at happly
+                rw [← happly]
+            · split at happly
+              · simp at happly
+              · simp only [Except.ok.injEq] at happly
+                rw [← happly]
+        rw [hlog_eq]
+        exact hbatch.within
       · have htag_eq : r.nextTag' = nextTag' := by
           simp only [hcollect] at happly
           split at happly
@@ -1422,99 +1428,49 @@ private lemma surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
     This follows from the fact that surfaceSpecToQTyp only modifies memEnv
     by inserting a noPred cell (for ref int), which trivially respects any TagMeaning. -/
 private lemma typecheckExternVal_preserves_wfTagMeaningCtx
-  (tm : TagMeaning) (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-  (res : TypeResult)
+  (tm : TagMeaning) (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison : Bool)
+  (pred : SyntaxPredicate) (fuel : Nat) (res : TypeResult)
   (hwf : wfTagMeaningCtx tm ctx)
-  (htc : typecheckExternVal ctx typ poison pred = .ok res) :
+  (htc : typecheckExternVal ctx id typ poison pred fuel = .ok res) :
   wfTagMeaningCtx tm (ctxAfter ctx res) := by
+  obtain ⟨_, _, _, resolvedPred, ⟨qt, ctx'⟩, _, _, hsurface, rfl⟩ :=
+    typecheckExternVal_ok_shape htc
   simp only [wfTagMeaningCtx, ctxAfter]
-  simp only [typecheckExternVal] at htc
-  rcases hp : (poison, pred) with ⟨p, pr⟩
-  simp only [hp] at htc
-  split at htc
-  · simp at htc
-  · simp at htc
-  · cases hcollect : collectAndAllocExternTags [pred] ctx.nextTag with
-    | error e => simp [hcollect, bind, Except.bind] at htc
-    | ok tagres =>
-      obtain ⟨tagMapping, nextTag'⟩ := tagres
-      cases hresolved : resolveSyntaxPred pred ctx.varEnv tagMapping with
-      | error e =>
-        simp only [hcollect, hresolved, bind, Except.bind] at htc; simp at htc
-      | ok resolvedPred =>
-        cases hsurface : surfaceSpecToQTyp typ poison resolvedPred ctx with
-        | error e =>
-          simp only [hcollect, hresolved, hsurface, bind, Except.bind] at htc; simp at htc
-        | ok qctx =>
-          obtain ⟨qt, ctx'⟩ := qctx
-          simp only [hcollect, hresolved, hsurface, bind, Except.bind, pure, Except.pure,
-                     Except.ok.injEq] at htc
-          subst htc; simp only
-          exact surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
-            tm ctx typ poison resolvedPred qt ctx' hwf hsurface
+  exact surfaceSpecToQTyp_preserves_EnvRespectsTagMeaning
+    tm ctx typ poison resolvedPred qt ctx' hwf hsurface
 
 /-- `typecheckExternVal` constructs a genuine post-allocation tag table for
     its successful result.  This is the extern-value case needed by
     `typecheck_preserves_predSatLaws` (`TypecheckInduction.lean`). -/
 lemma typecheckExternVal_canonical_batch
     (tm : TagMeaning) (ctx : TypeContext) (id : ExternId)
-    (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+    (typ : Typ) (poison : Bool) (pred : SyntaxPredicate) (fuel : Nat)
     (res : TypeResult)
     (hwf : wfTagMeaningCtx tm ctx)
     (h_bounded : TagMeaningBounded tm ctx.nextTag)
-    (htc : typecheckExternVal ctx typ poison pred = .ok res) :
+    (htc : typecheckExternVal ctx id typ poison pred fuel = .ok res) :
     ∃ (tm' : TagMeaning) (tagMapping : TagMapping) (nextTag' : Tag),
       ExternBatchTagMeaningExtension tm ctx.nextTag tagMapping [pred] ctx.varEnv nextTag' tm' ∧
+      WithinLog tm res.tagLog' tm' ∧
       IsCanonicalExtension tm ctx (Expr.externVal id typ poison pred) res tm' := by
-  simp only [typecheckExternVal] at htc
-  rcases hp : (poison, pred) with ⟨p, pr⟩
-  simp only [hp] at htc
-  split at htc
-  · simp at htc
-  · simp at htc
-  · cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
-    | error e => simp [halloc, bind, Except.bind] at htc
-    | ok tagres =>
-      obtain ⟨tagMapping, nextTag'⟩ := tagres
-      cases hresolved : resolveSyntaxPred pred ctx.varEnv tagMapping with
-      | error e =>
-        simp only [halloc, hresolved, bind, Except.bind] at htc
-        simp at htc
-      | ok resolvedPred =>
-        cases hsurface : surfaceSpecToQTyp typ poison resolvedPred ctx with
-        | error e =>
-          simp only [halloc, hresolved, hsurface, bind, Except.bind] at htc
-          simp at htc
-        | ok qctx =>
-          obtain ⟨qt, ctx'⟩ := qctx
-          simp only [halloc, hresolved, hsurface, bind, Except.bind, pure, Except.pure,
-                     Except.ok.injEq] at htc
-          subst htc
-          let res' : TypeResult :=
-            { qualType := qt, memEnv' := ctx'.memEnv, tagEnv' := ctx.tagEnv,
-              nextLoc' := ctx'.nextLoc, nextTag' := nextTag', regime' := ctx.regime,
-              declared' := ctx.declaredExternRefs }
-          have htc_res' : typecheckExternVal ctx typ poison pred = .ok res' := by
-            simp [typecheckExternVal, hp, halloc, hresolved, hsurface, bind, Except.bind,
-              pure, Except.pure, res']
-          obtain ⟨tm', hbatch⟩ :=
-            ExternBatchTagMeaningExtension.canonical_general tm [pred] ctx.varEnv
-              tagMapping ctx.nextTag nextTag' h_bounded halloc
-          refine ⟨tm', tagMapping, nextTag', hbatch, ?_, ?_, ?_, ?_⟩
-          · exact ExternBatchTagMeaningExtension.extends_tm hbatch
-          · simpa [res'] using ExternBatchTagMeaningExtension.bounded hbatch
-          · exact
-              wfTagMeaningCtx_mono
-                (ExternBatchTagMeaningExtension.extends_tm hbatch)
-                (typecheckExternVal_preserves_wfTagMeaningCtx tm ctx typ poison pred res'
-                  hwf htc_res')
-          · exact
-              typecheckExternVal_QTypRespectsTagMeaning_of_respects tm' ctx typ poison pred res'
-                (fun _tagMapping _nextTag' halloc' => by
-                  simp only [halloc] at halloc'
-                  cases halloc'
-                  exact ExternBatchTagMeaningExtension.respects hbatch)
-                htc_res'
+  obtain ⟨_, tagMapping, nextTag', _, _, halloc, _, _, rfl⟩ := typecheckExternVal_ok_shape htc
+  obtain ⟨tm', hbatch⟩ :=
+    ExternBatchTagMeaningExtension.canonical_general tm [pred] ctx.varEnv
+      tagMapping ctx.nextTag nextTag' h_bounded halloc
+  refine ⟨tm', tagMapping, nextTag', hbatch, hbatch.within, ?_, ?_, ?_, ?_⟩
+  · exact ExternBatchTagMeaningExtension.extends_tm hbatch
+  · simpa using ExternBatchTagMeaningExtension.bounded hbatch
+  · exact
+      wfTagMeaningCtx_mono
+        (ExternBatchTagMeaningExtension.extends_tm hbatch)
+        (typecheckExternVal_preserves_wfTagMeaningCtx tm ctx id typ poison pred fuel _ hwf htc)
+  · exact
+      typecheckExternVal_QTypRespectsTagMeaning_of_respects tm' ctx id typ poison pred fuel _
+        (fun _tagMapping _nextTag' halloc' => by
+          simp only [halloc] at halloc'
+          cases halloc'
+          exact ExternBatchTagMeaningExtension.respects hbatch)
+        htc
 
 /-- Helper: surfaceSpecToQTyp preserves memEnv at existing locations when wfTypeContext holds.
     For non-ref types, memEnv is unchanged. For ref int, the new allocation is at ctx.nextLoc
@@ -1540,12 +1496,13 @@ private lemma surfaceSpecToQTyp_preserves_existing_lookup
 
 /-- `typecheckExternVal` preserves the lookup-origin property for existing
     memEnv entries: with `wfTypeContext ctx`, existing entries are unchanged,
-    so the property follows trivially. -/
+    and the regime changes only at the fresh tags of the declaration, which no
+    existing entry carries (`TagBoundedCtx`). -/
 lemma typecheckExternVal_preserves_lookup_origin
-  (ctx : TypeContext) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
-  (res : TypeResult)
-  (htc : typecheckExternVal ctx typ poison pred = .ok res)
-  (hwf : wfTypeContext ctx)
+  (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison : Bool) (pred : SyntaxPredicate)
+  (fuel : Nat) (res : TypeResult)
+  (htc : typecheckExternVal ctx id typ poison pred fuel = .ok res)
+  (hwf : wfTypeContext ctx) (hbnd : TagBoundedCtx ctx)
   (_hpc : ctx.pc = true) (l : Loc) (qt_out : QTyp)
   (hpre : ctx.memEnv.contains l)
   (hlookup : res.memEnv'.lookup l = some qt_out) :
@@ -1559,31 +1516,18 @@ lemma typecheckExternVal_preserves_lookup_origin
       qtypGuardTag qt_in = some k ∧
       ctx.regime.lookup? k = some true ∧
       qt_in.etyp.isFunctionType = false := by
-  -- typecheckExternVal preserves existing memEnv entries
-  unfold typecheckExternVal at htc
-  split at htc
-  · simp at htc
-  · simp at htc
-  · simp only [bind, Except.bind] at htc
-    cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
-    | error err => simp [halloc] at htc
-    | ok result =>
-      rcases result with ⟨tagMapping, nextTag'⟩
-      simp only [halloc] at htc
-      cases hresolve : resolveSyntaxPred pred ctx.varEnv tagMapping with
-      | error err => simp [hresolve] at htc
-      | ok resolvedPred =>
-        simp only [hresolve] at htc
-        cases hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx with
-        | error err => simp [hsurf] at htc
-        | ok surfResult =>
-          simp only [hsurf, pure, Except.pure] at htc
-          cases htc
-          -- res.memEnv' = surfResult.2.memEnv, and existing entries are preserved
-          have hlookup' := surfaceSpecToQTyp_preserves_existing_lookup
-            ctx typ poison resolvedPred surfResult.1 surfResult.2 hwf hsurf l qt_out hpre hlookup
-          -- regime' = ctx.regime (unchanged)
-          exact ⟨fun h => ⟨qt_out, hlookup', h⟩,
-                 fun k htag hreg hnotfun => ⟨qt_out, hlookup', htag, hreg, hnotfun⟩⟩
+  obtain ⟨_, tagMapping, _, resolvedPred, surfResult, halloc, _, hsurf, rfl⟩ :=
+    typecheckExternVal_ok_shape htc
+  -- res.memEnv' = surfResult.2.memEnv, and existing entries are preserved
+  have hlookup' := surfaceSpecToQTyp_preserves_existing_lookup
+    ctx typ poison resolvedPred surfResult.1 surfResult.2 hwf hsurf l qt_out hpre hlookup
+  refine ⟨fun h => ⟨qt_out, hlookup', h⟩,
+    fun k htag hreg hnotfun => ⟨qt_out, hlookup', htag, ?_, hnotfun⟩⟩
+  -- The policy changes the regime only at fresh tags, above every existing guard tag.
+  rcases applyExternRegimePolicy_lookup_spec ctx.regime id ctx.externRegime tagMapping k with
+    heq | ⟨idx, hidx⟩
+  · rw [← heq]; exact hreg
+  · exact absurd (collectAndAllocExternTags_mapping_values_ge _ _ _ _ halloc idx k hidx)
+      (Nat.not_le.mpr (TagBoundedCtx_memEnv_guardTag_lt hbnd hlookup' htag))
 
 end ExternTagMeaningSig

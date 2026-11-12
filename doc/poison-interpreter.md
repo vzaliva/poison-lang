@@ -31,25 +31,24 @@ Typecheck and evaluate with verbose output.
 `--regime "k=true,..."`  
 Low-level, concrete-tag control. Each assignment maps a numeric guard tag `k`
 directly to a truth value, and the map seeds the regime *before* typechecking
-begins, so it reaches any guard tag — including `extern val` declaration guards
-that `--extern-regime` cannot. The typechecker allocates guard tags in its own
-traversal order starting from `1` — not strictly textual source order (an
-application, for instance, visits its argument before the function) — so naming
-a tag here is **allocation-order dependent**: inserting an earlier guard shifts
-every subsequent number and silently changes which guard `k` refers to. Use
-this mainly for debugging or for guards `--extern-regime` cannot reach; prefer
-`--extern-regime` for extern-produced return/effect guards. Duplicate tags use
-last-one-wins.
+begins, so it reaches any guard tag. The typechecker allocates guard tags in
+its own traversal order starting from `1` — not strictly textual source order
+(an application, for instance, visits its argument before the function) — so
+naming a tag here is **allocation-order dependent**: inserting an earlier guard
+shifts every subsequent number and silently changes which guard `k` refers to.
+Use this mainly for debugging; prefer `--extern-regime` for extern-produced
+guards. Duplicate tags use last-one-wins.
 
 `--extern-regime "id=true,..."`  
 Id-keyed control, **preferred for extern-produced guards**. Selects externs by
 their declared id; every return/effect output tag the typechecker freshly
-allocates for a selected `extern fn`/`pfn` receives the chosen truth value.
-Because selection is by id rather than by tag number, it is robust against
-allocation order and covers *all* of a callable's output tags (one per call
-site). It does **not** affect `extern val` declarations, whose guard tags are
-reachable only through `--regime`. Tags the policy leaves unset keep the
-conservative (uninterpreted) behavior.
+allocates at a call of a selected `extern fn`/`pfn`, and the guard tag of a
+selected `extern val` declaration, receives the chosen truth value. The flag
+fixes, for one run, the assignment of values to extern tags that the typing
+context carries. Because selection is by id rather than by tag number, it is
+robust against allocation order and covers *all* of a callable's output tags
+(one per call site). A tag that `--regime` already sets keeps that value. Tags
+the policy leaves unset keep the conservative (uninterpreted) behavior.
 
 `--repl`  
 Start a REPL. It cannot be combined with `--verbose`, `--regime`,
@@ -80,8 +79,8 @@ Verbose mode:
 Assert an extern-produced return guard by id (preferred):
 `poison-interpreter --verbose --extern-regime "238=true" examples/extern-regime-open.poison`
 
-Concrete-tag control for an `extern val` guard, which `--extern-regime` cannot
-reach (here tag `1` activates the declaration guard, rejecting a later shadow):
+Concrete-tag control (here tag `1` is the guard of an `extern val` declaration;
+activating it rejects a later shadow):
 `poison-interpreter --verbose --regime "1=true" examples/vlet-shadow-guarded.poison`
 
 The same program two ways — id-keyed vs concrete tag. Both typecheck and run;

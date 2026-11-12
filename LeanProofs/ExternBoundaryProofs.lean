@@ -111,8 +111,8 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
     (hreachable : ExternDeclarationReachableFromContext root ctxRoot d.id d) :
     ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl := by
-  intro hpredlaws hExtTyping hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
-    hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun hpc
+  intro hpredlaws hframe hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
+    hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun hpc hvm
   have hlookupRun := ExternDeclBoundaryRun.lookup hrun
   have hlookupRuntime :
       (TrustedRegistry.toRuntimeRegistry tr).get? d.id = some impl := hlookupRun
@@ -132,8 +132,9 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
       (predSat := predSat)
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
-      hpredlaws hExtTyping hwfTm hTmBounded htypedEntry μ ρ θ cf o hθwf hwf hric
+      hpredlaws hframe hwfTm hTmBounded htypedEntry μ ρ θ cf o hθwf hwf hric
       hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrunEntry hpc
+      (fun hk => hvm (by rw [← hdecl]; exact hk))
 
 theorem ExternDeclBoundaryFRContract.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
@@ -144,9 +145,9 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
     (hreachable : ExternDeclarationReachableFromContext root ctxRoot d.id d) :
     ExternDeclBoundaryFRContract ctx postExpr res predSat tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl₀ impl₁ := by
-  intro hpredlaws hExtTyping hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+  intro hpredlaws hframe hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
-    a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁
+    a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁ hvm₀ hvm₁
   have hlookupRun₀ := ExternDeclBoundaryRun.lookup hrun₀.run
   have hlookupRun₁ := ExternDeclBoundaryRun.lookup hrun₁.run
   have hlookupRuntime₀ :
@@ -175,9 +176,11 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
       (ctx := ctx) (postExpr := postExpr) (res := res) (predSat := predSat)
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
-      hpredlaws hExtTyping hwfTm hTmBounded htypedEntry μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+      hpredlaws hframe hwfTm hTmBounded htypedEntry μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrunEntry₀ hrunEntry₁
+      (fun hk => hvm₀ (by rw [← hdecl]; exact hk))
+      (fun hk => hvm₁ (by rw [← hdecl]; exact hk))
 
 theorem TrustedRegistryAgreesWithReachable.callBoundaryRunFn
     {root : Expr} {ctxRoot : TypeContext} {tr : TrustedRegistry}
@@ -1678,7 +1681,8 @@ private def fnExternFinishAtCursor
                   regime' := applyExternRegimePolicy
                     (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                     id ctx.externRegime tagMapping,
-                  declared' := result2.declared' }
+                  declared' := result2.declared',
+                  tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
   | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
@@ -1699,7 +1703,8 @@ private def fnExternFinishAtCursor
               regime' := applyExternRegimePolicy
                 (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                 id ctx.externRegime tagMapping,
-              declared' := result2.declared' }
+              declared' := result2.declared',
+              tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
   | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
@@ -1720,7 +1725,8 @@ private def fnExternFinishAtCursor
               regime' := applyExternRegimePolicy
                 (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                 id ctx.externRegime tagMapping,
-              declared' := result2.declared' }
+              declared' := result2.declared',
+              tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
 
 private theorem of_applyFnTClosureAtCursor
     {root : Expr} {ctxRoot ctx : TypeContext}
@@ -2330,8 +2336,8 @@ private theorem of_typecheckApp
       cases hcases with
       | inl harrow =>
           rcases harrow with
-            ⟨st1, st2, p, p1, tcls, results, first, rest, hfnEtyp, _hp1,
-              _hnpure, _hnempty, _hsub, hthread, hresults, hjoin⟩
+            ⟨st1, st2, p, p1, tcls, results, first, rest, res, hfnEtyp, _hp1,
+              _hnpure, _hnempty, _hsub, hthread, hresults, hjoin, rfl⟩
           have hresultsReach :
               ∀ result ∈ results,
                 QTypReachableFrom root ctxRoot result.qualType :=
@@ -2354,8 +2360,8 @@ private theorem of_typecheckApp
           exact (QTypReachableFrom.of_joinTypeResults hfirstReach hrestReach hjoin) hreach
       | inr hparrow =>
           rcases hparrow with
-            ⟨st1, st2, p, p1, tcls, results, first, rest, hpfnEtyp, _hp1,
-              _hnempty, _hsub, hthread, hresults, hjoin⟩
+            ⟨st1, st2, p, p1, tcls, results, first, rest, res, hpfnEtyp, _hp1,
+              _hnempty, _hsub, hthread, hresults, hjoin, rfl⟩
           have hresultsReach :
               ∀ result ∈ results,
                 QTypReachableFrom root ctxRoot result.qualType :=
@@ -2412,70 +2418,13 @@ private theorem surfaceSpecToQTyp_nonFunction
       simp at hsurf
 
 private theorem of_typecheckExternVal
-    {root : Expr} {ctxRoot ctx : TypeContext}
-    {typ : Typ} {poison : Poison} {pred : SyntaxPredicate} {res : TypeResult}
-    (htc : typecheckExternVal ctx typ poison pred = .ok res) :
+    {root : Expr} {ctxRoot ctx : TypeContext} {id : ExternId}
+    {typ : Typ} {poison : Poison} {pred : SyntaxPredicate} {fuel : Nat} {res : TypeResult}
+    (htc : typecheckExternVal ctx id typ poison pred fuel = .ok res) :
     QTypReachableFrom root ctxRoot res.qualType := by
   apply QTypReachableFrom.of_non_function_etyp
-  have hOkPath :
-      ∀ pred',
-        (do
-          let (tagMapping, nextTag') ← collectAndAllocExternTags [pred'] ctx.nextTag
-          let resolvedPred ← resolveSyntaxPred pred' ctx.varEnv tagMapping
-          let (qt, ctx') ← surfaceSpecToQTyp typ poison resolvedPred ctx
-          let out : TypeResult :=
-            { qualType := qt, memEnv' := ctx'.memEnv, tagEnv' := ctx.tagEnv,
-              nextLoc' := ctx'.nextLoc, nextTag' := nextTag', regime' := ctx.regime,
-              declared' := ctx.declaredExternRefs }
-          pure out) =
-            (.ok res : TypecheckM TypeResult) →
-        res.qualType.etyp.isFunctionType = false := by
-    intro pred' hpath
-    simp [bind, Except.bind] at hpath
-    cases htag : collectAndAllocExternTags [pred'] ctx.nextTag with
-    | error _err =>
-        simp [htag] at hpath
-    | ok tagResult =>
-        cases tagResult with
-        | mk tagMapping nextTag' =>
-            simp [htag] at hpath
-            cases hresolved : resolveSyntaxPred pred' ctx.varEnv tagMapping with
-            | error _err =>
-                rw [hresolved] at hpath
-                simp at hpath
-            | ok resolvedPred =>
-                rw [hresolved] at hpath
-                simp at hpath
-                cases hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx with
-                | error _err =>
-                    simp [hsurf] at hpath
-                | ok surfPair =>
-                    cases surfPair with
-                    | mk qt ctx' =>
-                        simp [hsurf, pure, Except.pure] at hpath
-                        cases hpath
-                        exact surfaceSpecToQTyp_nonFunction hsurf
-  cases poison with
-  | false =>
-      cases pred with
-      | guardClosure idx arg body =>
-          simp [typecheckExternVal] at htc
-      | guardOnly idx =>
-          simp [typecheckExternVal] at htc
-      | noPred =>
-          exact hOkPath SyntaxPredicate.noPred (by simpa [typecheckExternVal] using htc)
-  | true =>
-      cases pred with
-      | guardClosure idx arg body =>
-          exact
-            hOkPath (SyntaxPredicate.guardClosure idx arg body)
-              (by simpa [typecheckExternVal] using htc)
-      | guardOnly idx =>
-          exact
-            hOkPath (SyntaxPredicate.guardOnly idx)
-              (by simpa [typecheckExternVal] using htc)
-      | noPred =>
-          exact hOkPath SyntaxPredicate.noPred (by simpa [typecheckExternVal] using htc)
+  obtain ⟨_, _, _, _, ⟨qt, ctx'⟩, _, _, hsurf, rfl⟩ := typecheckExternVal_ok_shape htc
+  exact surfaceSpecToQTyp_nonFunction hsurf
 
 theorem of_typecheck
     {root : Expr} {ctxRoot ctx : TypeContext} {e : Expr}
@@ -2553,13 +2502,13 @@ theorem of_typecheck
               have htcSeq : typecheckSeq ctx e1 e2 fuel' = .ok res := by
                 simpa [typecheckExpr] using htc
               rcases typecheckSeq_structure ctx e1 e2 fuel' res htcSeq with
-                ⟨result1, ctx', _htc1, hctx', htc2⟩
+                ⟨result1, ctx', res, _htc1, hctx', htc2, rfl⟩
               have hctxSeq : ContextReachableFrom root ctxRoot ctx' := by
                 subst ctx'
                 exact ContextReachableFrom.ctxAfter hctx
               intro id d hreach
               exact
-                (IH (fuel' - 1) (by omega) hctxSeq
+                (IH (fuel' - 1) (by omega) (res := res) hctxSeq
                   (ExternDeclarationReachableFromExpr.seq_right hcurrent)
                   (by simpa [typecheck] using htc2)) hreach
           | vlet x e1 e2 =>
@@ -2623,6 +2572,7 @@ theorem of_typecheck
                     _hnextTag, _hregime, _hdecl, _hpoison, hetyp⟩
                 let ctxTrue : TypeContext :=
                   { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
+                             nextTag := _res1.nextTag',
                              declaredExternRefs := _res1.declared' }
                 have hctxTrue : ContextReachableFrom root ctxRoot ctxTrue := by
                   intro x qt hlookup

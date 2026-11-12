@@ -1,0 +1,15 @@
+--! poison-interpreter --extern-regime "250=true"
+-- A guarded extern value under the assignment that makes its guard tag true.
+--
+-- `extern val` is typed as a call of a constant pure extern function: its guard
+-- gets a fresh tag, the typing context's assignment of values to the tags that
+-- externs allocate gives that tag its value, and the guard is recorded in the
+-- tag environment. `--extern-regime "250=true"` is the driver's way of fixing
+-- that assignment for @250 in this run.
+--
+-- With the tag true, the test `if v >= 0` takes the then branch, where `v` is
+-- clean, and the result is a clean int. `extern-val-regime-false.poison` is the
+-- same program with the tag false. No `extern val` is registered in the
+-- interpreter, so the run stops at the declaration after the typecheck.
+let v = extern val @250 : (int :> poisoned { 0, w => (w >= 0) }) in
+if v >= 0 then v else 0
