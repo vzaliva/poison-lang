@@ -9,8 +9,9 @@
 -- @109 returns a nested extern fn (so the nested-return typing branch fires) and
 -- ALSO writes an effect predicate (u >= 0) to the captured cell `cap`. Listing id
 -- 109 as true via --extern-regime inserts the effect's freshly-generated tag into
--- the active regime, so the later `c >= 0` guard de-poisons the value read from
--- `cap` (final type poison=false). Without --extern-regime, or before this fix
+-- the active regime and records the guard of `cap` in the tag environment, with
+-- the location of `cap` as its dependency set, so the value read from `cap` is
+-- clean (final type poison=false). Without --extern-regime, or before this fix
 -- (which left the nested-return regime unchanged), the tag is absent from the
 -- regime and the value stays poisoned (poison=true).
 let cap = ref 0 in

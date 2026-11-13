@@ -5,7 +5,7 @@ Type checking passed:
   MemoryTypeEnv: {
     0 := (true, {1, pfn u -> u >= 0, deps: [cap : {type=ref @ [0], poison=false, pred={}}, i : {type=int, poison=false, pred={}}]})
   },
-  tagEnv: { 1 := { value := true, deps := [] } },
+  tagEnv: { 1 := { value := true, deps := [0] } },
   nextLoc: 1
 
 Runtime error: extern id 109 not registered

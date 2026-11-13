@@ -1,0 +1,22 @@
+--! poison-interpreter --extern-regime "240=true"
+-- An assignment to a location outside the dependency set of an effect guard
+-- keeps the guard.
+--
+-- The guard of the cell of `r` is recorded at the call with the locations of
+-- `r` and `b`.  `x := 1` writes neither, so the guard stays in the tag
+-- environment and the regime: the `if` is typed with its then-branch only and
+-- the result is clean.
+-- This is a typecheck-level demonstration: `@240` has no registered runtime
+-- implementation, so evaluation stops at the call `f r` with the expected
+-- "extern id 240 not registered" error.
+let r = ref 0 in
+let b = ref 0 in
+let x = ref 0 in
+let bad = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1, w => (w > !b) }) } in
+let g = extern fn @241 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> clean {}) } in
+let u = f r in
+(x := 1; if !r > !b then !r else y)

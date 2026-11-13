@@ -1645,8 +1645,9 @@ private theorem applyClosuresThreaded_forall_reachable_mem
     particular every return branch (simple and both nested returns) applies
     `applyExternRegimePolicy` to `regime'`, and
     the simple return additionally materialises the regime-determined return
-    guard into `tagEnv'` via `installReturnGuard` (`fuel` is the decremented
-    fuel of the surrounding apply). -/
+    guard into `tagEnv'` via `installReturnGuard`, and every return records the
+    regime-determined guards of the effects via `installEffectGuards` (`fuel`
+    is the decremented fuel of the surrounding apply). -/
 private def fnExternFinishAtCursor
     (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
     (p p1 : Poison) (unifiedEnv : VarTypeEnv)
@@ -1669,9 +1670,15 @@ private def fnExternFinishAtCursor
                           joinPoison p1 (joinPoison p (joinPoison ctx.pc v_2.1.poison)),
                         pred := v_2.1.pred },
                   memEnv' := memEnv,
-                  tagEnv' := installReturnGuard
-                    (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                    v_1
+                  tagEnv' := installEffectGuards
+                    (installReturnGuard
+                      (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                      v_1
+                      (applyExternRegimePolicy
+                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                        id ctx.externRegime tagMapping)
+                      fuel)
+                    effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
                     (applyExternRegimePolicy
                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                       id ctx.externRegime tagMapping)
@@ -1697,7 +1704,13 @@ private def fnExternFinishAtCursor
                     poison := joinPoison p1 (joinPoison p ctx.pc),
                     pred := Predicate.noPred },
               memEnv' := memEnv,
-              tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv),
+              tagEnv' := installEffectGuards
+                (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+                (applyExternRegimePolicy
+                  (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                  id ctx.externRegime tagMapping)
+                fuel,
               nextLoc' := cursor.2,
               nextTag' := nextTag'',
               regime' := applyExternRegimePolicy
@@ -1719,7 +1732,13 @@ private def fnExternFinishAtCursor
                     poison := joinPoison p1 (joinPoison p ctx.pc),
                     pred := Predicate.noPred },
               memEnv' := memEnv,
-              tagEnv' := invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv),
+              tagEnv' := installEffectGuards
+                (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+                (applyExternRegimePolicy
+                  (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                  id ctx.externRegime tagMapping)
+                fuel,
               nextLoc' := cursor.2,
               nextTag' := nextTag'',
               regime' := applyExternRegimePolicy

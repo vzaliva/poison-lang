@@ -1,0 +1,17 @@
+--! poison-interpreter --extern-regime "240=true"
+-- A cell guarded by an extern's effect reads clean right after the call when
+-- the regime asserts the guard, as a returned guarded value does.
+--
+-- The call `f r` records the guard of the cell of `r` in the tag environment
+-- with the regime's value `true`, so `!r` is typed clean with no `if`.
+-- This is a typecheck-level demonstration: `@240` has no registered runtime
+-- implementation, so evaluation stops at the call `f r` with the expected
+-- "extern id 240 not registered" error.
+let r = ref 0 in
+let b = ref 0 in
+let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1, w => (w > !b) }) } in
+let g = extern fn @241 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> clean {}) } in
+let u = f r in
+!r

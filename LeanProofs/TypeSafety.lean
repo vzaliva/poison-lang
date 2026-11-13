@@ -3453,6 +3453,147 @@ lemma installReturnGuard_get?_cases
     · exact Or.inl h
   · exact Or.inl h
 
+/-- A lookup in an inserted tag environment: the inserted key, or an old binding. -/
+private lemma tagEnv_get?_insert_cases (env : TagEnv) (k' k : Tag) (v tv : TagVal)
+    (h : (env.insert k' v).get? k = some tv) :
+    (k' = k ∧ tv = v) ∨ env.get? k = some tv := by
+  by_cases hcmp : compare k' k = Ordering.eq
+  · have hk' : k' = k := (Nat.compare_eq_eq).1 hcmp
+    subst hk'
+    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert_self] at h
+    exact Or.inl ⟨rfl, (Option.some.inj h).symm⟩
+  · rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_insert] at h
+    simp only [hcmp, ite_false] at h
+    rw [← Std.ExtTreeMap.get?_eq_getElem?] at h
+    exact Or.inr h
+
+/-- One effect of `installEffectGuards`: the environment is unchanged, or it gains
+    the tag of the guard closure the effect's predicate resolves to, with the
+    regime's value at that tag. -/
+private lemma installEffectGuards_single_get?_cases
+    (acc : TagEnv) (effect : Effect) (unifiedEnv : VarTypeEnv) (tagMapping : TagMapping)
+    (pc : Poison) (R : Regime) (fuel : Nat) (k : Tag) (tv : TagVal)
+    (h : (installEffectGuards acc [effect] unifiedEnv tagMapping pc R fuel).get? k = some tv) :
+    acc.get? k = some tv ∨
+      (R.lookup? k = some tv.value ∧
+        ∃ an pb ve, resolveSyntaxPred effect.pred unifiedEnv tagMapping =
+          .ok (Predicate.guardClosure k an pb ve)) := by
+  obtain ⟨⟨v⟩, _epois, epred⟩ := effect
+  simp only [installEffectGuards, List.foldl] at h
+  cases hl : unifiedEnv.lookup v with
+  | none => simp only [hl] at h; exact Or.inl h
+  | some qt =>
+    simp only [hl] at h
+    cases he : qt.etyp
+    case ref ls =>
+      simp only [he] at h
+      cases hp : (qt.poison || pc) with
+      | true => simp only [hp, ite_true] at h; exact Or.inl h
+      | false =>
+        simp only [hp, Bool.false_eq_true, ite_false] at h
+        cases hr : resolveSyntaxPred epred unifiedEnv tagMapping with
+        | error _ => simp only [hr] at h; exact Or.inl h
+        | ok rp =>
+          simp only [hr] at h
+          cases rp with
+          | guardClosure k' an pb ve =>
+            simp only at h
+            cases hR : R.lookup? k' with
+            | none => simp only [hR] at h; exact Or.inl h
+            | some b =>
+              simp only [hR] at h
+              cases hd : extractDepsFromPred (Predicate.guardClosure k' an pb ve) fuel with
+              | error _ => simp only [hd] at h; exact Or.inl h
+              | ok deps =>
+                simp only [hd] at h
+                cases ha : acc.get? k' <;> simp only [ha] at h
+                all_goals
+                  rcases tagEnv_get?_insert_cases _ _ _ _ _ h with ⟨hk, htv⟩ | hold
+                  · subst hk htv
+                    exact Or.inr ⟨hR, an, pb, ve, rfl⟩
+                  · exact Or.inl hold
+          | guardOnly _ => simp only at h; exact Or.inl h
+          | noPred => simp only at h; exact Or.inl h
+    all_goals (simp only [he] at h; exact Or.inl h)
+
+/-- Case analysis of a lookup in `installEffectGuards`'s output: either the key was
+    already bound (and is unchanged), or it is the tag of a guard closure that the
+    predicate of one of the effects resolves to, whose tag-environment value is the
+    regime's value at that tag. -/
+lemma installEffectGuards_get?_cases
+    (env : TagEnv) (effects : List Effect) (unifiedEnv : VarTypeEnv) (tagMapping : TagMapping)
+    (pc : Poison) (R : Regime) (fuel : Nat) (k : Tag) (tv : TagVal)
+    (h : (installEffectGuards env effects unifiedEnv tagMapping pc R fuel).get? k = some tv) :
+    env.get? k = some tv ∨
+      (R.lookup? k = some tv.value ∧
+        ∃ effect ∈ effects, ∃ an pb ve,
+          resolveSyntaxPred effect.pred unifiedEnv tagMapping =
+            .ok (Predicate.guardClosure k an pb ve)) := by
+  induction effects generalizing env with
+  | nil => exact Or.inl (by simpa [installEffectGuards] using h)
+  | cons e es ih =>
+      have hfold : installEffectGuards env (e :: es) unifiedEnv tagMapping pc R fuel =
+          installEffectGuards (installEffectGuards env [e] unifiedEnv tagMapping pc R fuel)
+            es unifiedEnv tagMapping pc R fuel := by
+        simp only [installEffectGuards, List.foldl]
+      rw [hfold] at h
+      rcases ih _ h with h1 | ⟨hR, e', he', an, pb, ve, hres⟩
+      · rcases installEffectGuards_single_get?_cases _ _ _ _ _ _ _ k tv h1 with
+          h0 | ⟨hR, an, pb, ve, hres⟩
+        · exact Or.inl h0
+        · exact Or.inr ⟨hR, e, List.mem_cons_self .., an, pb, ve, hres⟩
+      · exact Or.inr ⟨hR, e', List.mem_cons_of_mem _ he', an, pb, ve, hres⟩
+
+/-- A predicate that is not a guard with a body does not resolve to one. -/
+private lemma resolveSyntaxPred_ne_guardClosure
+    (sp : SyntaxPredicate) (env : VarTypeEnv) (tagMapping : TagMapping)
+    (hsp : ∀ idx arg body, sp ≠ SyntaxPredicate.guardClosure idx arg body)
+    (k : Tag) (an : Name) (pb : PExpr) (ve : CapturedVarEnv) :
+    resolveSyntaxPred sp env tagMapping ≠ .ok (Predicate.guardClosure k an pb ve) := by
+  cases sp with
+  | noPred => simp [resolveSyntaxPred, pure, Except.pure]
+  | guardOnly idx =>
+      simp only [resolveSyntaxPred]
+      split <;> simp [pure, Except.pure, throw, throwThe, MonadExceptOf.throw]
+  | guardClosure idx arg body => exact absurd rfl (hsp idx arg body)
+
+/-- `installEffectGuards` records nothing when no effect predicate is a guard with a
+    body. -/
+lemma installEffectGuards_eq_self
+    (env : TagEnv) (effects : List Effect) (unifiedEnv : VarTypeEnv) (tagMapping : TagMapping)
+    (pc : Poison) (R : Regime) (fuel : Nat)
+    (heff : ∀ effect ∈ effects, ∀ idx arg body,
+      effect.pred ≠ SyntaxPredicate.guardClosure idx arg body) :
+    installEffectGuards env effects unifiedEnv tagMapping pc R fuel = env := by
+  induction effects generalizing env with
+  | nil => simp [installEffectGuards]
+  | cons e es ih =>
+      have hfold : installEffectGuards env (e :: es) unifiedEnv tagMapping pc R fuel =
+          installEffectGuards (installEffectGuards env [e] unifiedEnv tagMapping pc R fuel)
+            es unifiedEnv tagMapping pc R fuel := by
+        simp only [installEffectGuards, List.foldl]
+      have hstep : installEffectGuards env [e] unifiedEnv tagMapping pc R fuel = env := by
+        have hne := resolveSyntaxPred_ne_guardClosure e.pred unifiedEnv tagMapping
+          (heff e (List.mem_cons_self ..))
+        obtain ⟨⟨v⟩, _epois, epred⟩ := e
+        simp only [installEffectGuards, List.foldl]
+        cases hl : unifiedEnv.lookup v with
+        | none => rfl
+        | some qt =>
+          dsimp only
+          cases he : qt.etyp
+          case ref ls =>
+            dsimp only
+            cases hp : (qt.poison || pc) with
+            | true => simp only [ite_true]
+            | false =>
+              -- The wildcard branch of the match on the resolved predicate is
+              -- discharged by `hne`.
+              simp only [Bool.false_eq_true, ite_false]
+          all_goals rfl
+      rw [hfold, hstep]
+      exact ih env (fun e' he' => heff e' (List.mem_cons_of_mem _ he'))
+
 -- The extern tagEnv shape lemmas (`applyFnTClosure_extern_tagEnv_get_cases`
 -- and `applyPFnTClosure_extern_tagEnv_get_cases`) live below, after the
 -- `collectAndAllocExternTags` freshness lemmas they depend on.
@@ -3719,10 +3860,18 @@ lemma applyFnTClosure_extern_tagEnv_get_cases
               split at happly
               · exact nomatch happly
               · cases happly
-                rcases installReturnGuard_get?_cases _ _ _ _ k tv h with hold | ⟨hR, an, pb, ve, hrp⟩
-                · exact Or.inl hold
+                rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv h with
+                  h1 | ⟨hR, _eff, _heff, an, pb, ve, hres⟩
+                · rcases installReturnGuard_get?_cases _ _ _ _ k tv h1 with hold | ⟨hR, an, pb, ve, hrp⟩
+                  · exact Or.inl hold
+                  · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
+                      _ _ tm resolvedPred hresolve k an pb ve hrp
+                    exact Or.inr
+                      ⟨collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx k hidx,
+                       collectAndAllocExternTags_mapping_values_lt _ _ _ _ hcollect idx k hidx,
+                       hR⟩
                 · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
-                    _ _ tm resolvedPred hresolve k an pb ve hrp
+                    _ _ tm _ hres k an pb ve rfl
                   exact Or.inr
                     ⟨collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx k hidx,
                      collectAndAllocExternTags_mapping_values_lt _ _ _ _ hcollect idx k hidx,
@@ -3730,11 +3879,31 @@ lemma applyFnTClosure_extern_tagEnv_get_cases
           · -- ExternReturn.nestedFn
             split at happly
             · exact nomatch happly
-            · cases happly; exact Or.inl h
+            · next v hargCond =>
+              cases happly
+              rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv h with
+                hold | ⟨hR, _eff, _heff, an, pb, ve, hres⟩
+              · exact Or.inl hold
+              · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
+                  _ _ tm _ hres k an pb ve rfl
+                refine Or.inr
+                  ⟨collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx k hidx, ?_, hR⟩
+                rw [resolveArgCondQTyp_snd hargCond]
+                exact collectAndAllocExternTags_mapping_values_lt _ _ _ _ hcollect idx k hidx
           · -- ExternReturn.nestedPfn
             split at happly
             · exact nomatch happly
-            · cases happly; exact Or.inl h
+            · next v hargCond =>
+              cases happly
+              rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv h with
+                hold | ⟨hR, _eff, _heff, an, pb, ve, hres⟩
+              · exact Or.inl hold
+              · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
+                  _ _ tm _ hres k an pb ve rfl
+                refine Or.inr
+                  ⟨collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx k hidx, ?_, hR⟩
+                rw [resolveArgCondQTyp_snd hargCond]
+                exact collectAndAllocExternTags_mapping_values_lt _ _ _ _ hcollect idx k hidx
 
 lemma applyPFnTClosure_extern_tagEnv_get_cases
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -9798,12 +9967,17 @@ private lemma applyFnTClosure_tagEnvBounded_normal
                   -- mapping freshness bound.
                   intro k hk
                   rcases Option.ne_none_iff_exists'.mp hk with ⟨tv, htv⟩
-                  rcases installReturnGuard_get?_cases _ _ _ _ k tv htv with hold | ⟨_hR, an, pb, ve, hrp⟩
-                  · exact Nat.lt_of_lt_of_le
-                      (hbound_r1 k (invalidateTagDeps_get?_ne_none_imp _ _ k
-                        (Option.ne_none_iff_exists'.mpr ⟨tv, hold⟩))) htag
+                  rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv htv with
+                    htv1 | ⟨_hR, _eff, _heff, an, pb, ve, hres⟩
+                  · rcases installReturnGuard_get?_cases _ _ _ _ k tv htv1 with hold | ⟨_hR, an, pb, ve, hrp⟩
+                    · exact Nat.lt_of_lt_of_le
+                        (hbound_r1 k (invalidateTagDeps_get?_ne_none_imp _ _ k
+                          (Option.ne_none_iff_exists'.mpr ⟨tv, hold⟩))) htag
+                    · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
+                        _ _ _ resolvedPred hresolve k an pb ve hrp
+                      exact collectAndAllocExternTags_mapping_values_lt _ _ _ _ heq' idx k hidx
                   · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
-                      _ _ _ resolvedPred hresolve k an pb ve hrp
+                      _ _ _ _ hres k an pb ve rfl
                     exact collectAndAllocExternTags_mapping_values_lt _ _ _ _ heq' idx k hidx
             · split at happly
               · simp at happly
@@ -9812,7 +9986,15 @@ private lemma applyFnTClosure_tagEnvBounded_normal
                 simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
                 rw [hresolve_tag]
                 intro k hk
-                exact Nat.lt_of_lt_of_le (hbound_r1 k (invalidateTagDeps_get?_ne_none_imp _ _ k hk)) htag
+                rcases Option.ne_none_iff_exists'.mp hk with ⟨tv, htv⟩
+                rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv htv with
+                  hold | ⟨_hR, _eff, _heff, an, pb, ve, hres⟩
+                · exact Nat.lt_of_lt_of_le
+                    (hbound_r1 k (invalidateTagDeps_get?_ne_none_imp _ _ k
+                      (Option.ne_none_iff_exists'.mpr ⟨tv, hold⟩))) htag
+                · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
+                    _ _ _ _ hres k an pb ve rfl
+                  exact collectAndAllocExternTags_mapping_values_lt _ _ _ _ heq' idx k hidx
             · split at happly
               · simp at happly
               · next v hresolve =>
@@ -9820,7 +10002,15 @@ private lemma applyFnTClosure_tagEnvBounded_normal
                 simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
                 rw [hresolve_tag]
                 intro k hk
-                exact Nat.lt_of_lt_of_le (hbound_r1 k (invalidateTagDeps_get?_ne_none_imp _ _ k hk)) htag
+                rcases Option.ne_none_iff_exists'.mp hk with ⟨tv, htv⟩
+                rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv htv with
+                  hold | ⟨_hR, _eff, _heff, an, pb, ve, hres⟩
+                · exact Nat.lt_of_lt_of_le
+                    (hbound_r1 k (invalidateTagDeps_get?_ne_none_imp _ _ k
+                      (Option.ne_none_iff_exists'.mpr ⟨tv, hold⟩))) htag
+                · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
+                    _ _ _ _ hres k an pb ve rfl
+                  exact collectAndAllocExternTags_mapping_values_lt _ _ _ _ heq' idx k hidx
 
 /-- applyPFnTClosure preserves tagEnvBounded when the input result is bounded. Takes an IH
     to avoid forward dependency on typecheckExpr_preserves_tagEnvBounded. -/

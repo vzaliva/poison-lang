@@ -316,7 +316,8 @@ private theorem rd_call_shape {typedExpr : Expr} {entry : ExternCallEntry} {res 
                         simp [returnSpecToQTyp, bind, Except.bind, pure, Except.pure] at hrq
                         exact hrq.symm
                       subst hrq'
-                      refine ⟨fuel', rp, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_, ?_⟩
+                      refine ⟨fuel', rp, rfl, rfl, rfl, rfl, rfl, rfl,
+                        installEffectGuards_eq_self _ _ _ _ _ _ _ (by simp [rdEff]), rfl, ?_, ?_, ?_⟩
                       · simp only [normalizeAppResultByProvenance]; split <;> rfl
                       · simp only [normalizeAppResultByProvenance]; split <;> simp [joinPoison]
                       · simp only [normalizeAppResultByProvenance]; split

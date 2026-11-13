@@ -1,0 +1,19 @@
+Evaluating file: examples/effect-guard-inside-function-body.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: {
+    0 := (true, {1, pfn w -> w > (!b), deps: [b : {type=ref @ [1], poison=false, pred={}},
+      bad : {type=parrow int int false [extern @12 n : {type=int,
+         poison=false,
+         pred={}} ((int :> poisoned {})), deps: [b : {type=ref @ [1], poison=false, pred={}},
+         r : {type=ref @ [0], poison=false, pred={}}]],
+       poison=false,
+       pred={}},
+      q : {type=ref @ [0], poison=false, pred={}},
+      r : {type=ref @ [0], poison=false, pred={}},
+      y : {type=int, poison=true, pred={}}]}), 1 := (false, {}) },
+  tagEnv: {},
+  nextLoc: 2
+
+Runtime error: extern id 240 not registered

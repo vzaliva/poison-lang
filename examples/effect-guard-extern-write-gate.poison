@@ -1,0 +1,18 @@
+--! poison-interpreter --extern-regime "240=true"
+-- An extern write to a location that an effect guard reads removes the guard,
+-- so a later extern that requires a clean argument refuses the cell.
+--
+-- `f` guards the cell of `r` with `w > !b`, recorded at the call with the
+-- locations of `r` and `b`.  `g b` writes `b`: the guard leaves the tag
+-- environment and the regime, `!r` is poisoned, and the call `getv (!r)`
+-- does not meet the clean argument precondition of `getv`: a type error.
+let r = ref 0 in
+let b = ref 0 in
+let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1, w => (w > !b) }) } in
+let g = extern fn @241 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> clean {}) } in
+let getv = extern pfn @242 v : (int :> clean {}) -> ((int :> clean {})) in
+let u = f r in
+let w = g b in
+getv (!r)

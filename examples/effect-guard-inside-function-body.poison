@@ -1,0 +1,22 @@
+--! poison-interpreter --extern-regime "240=true"
+-- The guard of an effect is recorded also when the extern is called inside a
+-- function body.
+--
+-- `call` applies `f` to `r`; applying `call` records the guard of the cell
+-- of `r` with the locations of `r` and `b`.  `g b` removes it, and the `if`
+-- is typed with both branches: the result is poisoned.
+-- This is a typecheck-level demonstration: `@240` has no registered runtime
+-- implementation, so evaluation stops at the call `f r` inside `call` with
+-- the expected "extern id 240 not registered" error.
+let r = ref 0 in
+let b = ref 0 in
+let bad = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1, w => (w > !b) }) } in
+let g = extern fn @241 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> clean {}) } in
+let call = fn z : int => f r : unit in
+let u = call 0 in
+let w = g b in
+if !r > !b then !r else y

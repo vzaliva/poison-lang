@@ -1,0 +1,21 @@
+Evaluating file: examples/effect-guard-unrelated-assign.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=false, pred={}},
+  MemoryTypeEnv: {
+    0 := (true, {1, pfn w -> w > (!b), deps: [b : {type=ref @ [1], poison=false, pred={}},
+      bad : {type=parrow int int false [extern @12 n : {type=int,
+         poison=false,
+         pred={}} ((int :> poisoned {})), deps: [b : {type=ref @ [1], poison=false, pred={}},
+         r : {type=ref @ [0], poison=false, pred={}},
+         x : {type=ref @ [2], poison=false, pred={}}]],
+       poison=false,
+       pred={}},
+      q : {type=ref @ [0], poison=false, pred={}},
+      r : {type=ref @ [0], poison=false, pred={}},
+      x : {type=ref @ [2], poison=false, pred={}},
+      y : {type=int, poison=true, pred={}}]}), 1 := (false, {}), 2 := (false, {}) },
+  tagEnv: { 1 := { value := true, deps := [0, 1] } },
+  nextLoc: 3
+
+Runtime error: extern id 240 not registered

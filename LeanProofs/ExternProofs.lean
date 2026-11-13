@@ -3010,7 +3010,8 @@ private theorem builtinSetErr_call_clean_shape
               ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩, ?_, ?_⟩
             · simp [normalizeAppResultByProvenance]; split <;> rfl
             · simp [normalizeAppResultByProvenance]; split <;> rfl
-            · rw [hbody]; rfl
+            · rw [hbody]
+              exact installEffectGuards_eq_self _ _ _ _ _ _ _ (by simp)
             · rw [hbody]; simp only [applyExternRegimePolicy]; rfl
             · rw [hbody]
             · rw [hbody]; simp only [builtinSetErrEffect]

@@ -1,0 +1,23 @@
+--! poison-interpreter --extern-regime "240=true"
+-- A value copied out of a cell guarded by an effect carries the guard; an
+-- extern write to a location the guard reads removes it.
+--
+-- `z` is read from the cell of `r` right after the call.  `g b` then writes
+-- `b`, which the guard `w > !b` reads: the guard leaves the tag environment
+-- and the regime, the `if z > !b` is typed with both branches, and the result
+-- is poisoned.
+-- This is a typecheck-level demonstration: `@240` has no registered runtime
+-- implementation, so evaluation stops at the call `f r` with the expected
+-- "extern id 240 not registered" error.
+let r = ref 0 in
+let b = ref 0 in
+let bad = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1, w => (w > !b) }) } in
+let g = extern fn @241 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> clean {}) } in
+let u = f r in
+let z = !r in
+let w = g b in
+if z > !b then z else y
