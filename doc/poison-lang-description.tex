@@ -539,8 +539,9 @@ resolved return guard into the tag environment at the call site
 materialises its guard in the same way: when the post-call regime determines the
 fresh guard tag's value --- whether asserted through the initial regime or
 inserted by the extern-regime policy --- the tag enters the tag environment
-with that value and with the dependency locations extracted from the guard's
-closure body. A regime-undetermined guard is not materialised. A later write
+with that value and with the guard's dependency set
+(Section~\ref{sec:dependency-tracking}). A regime-undetermined guard is not
+materialised. A later write
 effect (or assignment) to a location such a guard reads therefore invalidates
 both the materialised tag and its regime entry, so a stale assertion cannot
 keep de-poisoning values whose guard condition the write falsified (see
@@ -963,14 +964,32 @@ predicate per location. Both can include predicates that enable conditional
 de-poisoning.
 
 \subsection{Dependency Tracking and Invalidation}
+\label{sec:dependency-tracking}
 
 To ensure type system soundness, the logical environment $\mathcal{L}$ tracks
 dependencies alongside guard valuations. This prevents unsound de-poisoning when
 predicate dependencies are modified:
 
 \begin{itemize}
-    \item \textbf{Dependency extraction}: When a guard $k$ is introduced via \texttt{match\_guard}, 
-    the system computes a conservative set of logical locations that the predicate may read from
+    \item \textbf{Dependency extraction}: When a guard $k$ is introduced via
+    \texttt{match\_guard}, or recorded at an extern call or \texttt{extern val}
+    declaration by \texttt{installReturnGuard}, the system computes its
+    dependency set: the logical locations the predicate reads through its
+    captured environment, including through every alternative of each pure
+    function it mentions and the declared \texttt{captures:} of extern
+    alternatives. A free reference variable contributes the locations it may
+    point to. A pure function contributes the union over its closure
+    alternatives: a regular alternative contributes the dependency set of its
+    body, read in its own captured environment with only its argument bound, so
+    names bound around the application (the predicate's argument, a
+    \texttt{let} inside the predicate) do not hide the body's free variables;
+    an extern alternative contributes, for every variable named in a
+    \texttt{captures:} entry at any level of its return, what a mention of that
+    variable contributes in the extern's captured environment (for a reference,
+    bare \texttt{r} and bang \texttt{!r} alike, the locations it may point to).
+    The argument of a closure or extern contributes where it appears in the
+    predicate. For a guard on a memory cell, \texttt{match\_guard} also
+    includes the locations of the cell
     \item \textbf{Dependency storage}: Guard valuations are stored as $k : bool \times \text{deps}$ 
     where \texttt{deps} is a set of logical locations the predicate depends on
     \item \textbf{Invalidation on write}: When writing through a reference with locset $LS$, all entries in $\mathcal{L}$ 

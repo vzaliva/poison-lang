@@ -69,6 +69,23 @@ are post-state memory summaries: after the call gate succeeds, the typechecker
 resolves and applies them to the memory typing, and the trusted boundary proof
 must justify the resulting post-state.
 
+`captures:` also feed the dependency set of a guard, the locations whose write
+revokes it. When a guard's predicate applies a pure function, every
+alternative of that function contributes, and an extern alternative contributes
+the variables named in its `captures:`, at every level of a nested return: a
+reference (bare `r` or bang `!r`) contributes the locations it may point to,
+and a pure function contributes its own dependency set. The variables are
+resolved in the extern's captured environment; the extern's argument, and the
+argument of a nested return, contribute where they appear in the predicate.
+For example, with
+
+```poison
+let rd = extern pfn @254 m : (int :> clean {}) -> ((int :> clean {})),
+  captures: { !a :> (int :> clean {}) }
+```
+
+a guard `v => (v > rd 0)` depends on the location of `a`, so `a := 100`
+revokes it (`examples/guard-deps-extern-captures.poison`).
 ## Declaration rules
 
 The typechecker enforces two rules for extern declarations of every kind
