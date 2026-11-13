@@ -548,6 +548,24 @@ keep de-poisoning values whose guard condition the write falsified (see
 the regression example
 \texttt{examples/extern\_set\_err\_stale\_guard.poison}).
 
+The guards that an extern's effects put on the cells they write are
+materialised in the same way. In each \texttt{\_clean} application rule,
+after the return guard, \(\mathrm{installEffectGuards}\) records every
+effect guard with a body whose fresh tag the post-call regime determines: the
+tag enters the tag environment with the regime's value, and its dependency set
+is the written cells together with the locations the guard reads, the set
+\texttt{match\_guard} computes for a guard on a cell. When one call records
+the same tag twice (on its return and on a cell, or on two cells), the
+dependency sets are united. A bare tag on an effect and a regime-undetermined
+guard record nothing, and the \texttt{\_poisoned} rules, which erase the
+stored predicates, record nothing either. A cell so guarded therefore reads
+clean right after the call when the regime sets its tag true, as a returned
+guarded value does, and stays so across writes to other locations; a later
+write to a location in its dependency set, by assignment or by an extern's
+effect, removes the tag from the tag environment and the regime
+(\texttt{examples/effect-guard-extern-write.poison},
+\texttt{examples/effect-guard-unrelated-assign.poison}).
+
 \subsubsection*{Extern read dependencies (\texttt{captures:})}
 \label{sec:extern-captures}
 
@@ -973,7 +991,9 @@ predicate dependencies are modified:
 \begin{itemize}
     \item \textbf{Dependency extraction}: When a guard $k$ is introduced via
     \texttt{match\_guard}, or recorded at an extern call or \texttt{extern val}
-    declaration by \texttt{installReturnGuard}, the system computes its
+    declaration by \texttt{installReturnGuard} or, for a guard that an
+    extern's effect puts on a cell, by \texttt{installEffectGuards}, the
+    system computes its
     dependency set: the logical locations the predicate reads through its
     captured environment, including through every alternative of each pure
     function it mentions and the declared \texttt{captures:} of extern
@@ -988,8 +1008,8 @@ predicate dependencies are modified:
     variable contributes in the extern's captured environment (for a reference,
     bare \texttt{r} and bang \texttt{!r} alike, the locations it may point to).
     The argument of a closure or extern contributes where it appears in the
-    predicate. For a guard on a memory cell, \texttt{match\_guard} also
-    includes the locations of the cell
+    predicate. For a guard on a memory cell, \texttt{match\_guard} and
+    \texttt{installEffectGuards} also include the locations of the cell
     \item \textbf{Dependency storage}: Guard valuations are stored as $k : bool \times \text{deps}$ 
     where \texttt{deps} is a set of logical locations the predicate depends on
     \item \textbf{Invalidation on write}: When writing through a reference with locset $LS$, all entries in $\mathcal{L}$ 

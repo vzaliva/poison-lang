@@ -69,6 +69,27 @@ are post-state memory summaries: after the call gate succeeds, the typechecker
 resolves and applies them to the memory typing, and the trusted boundary proof
 must justify the resulting post-state.
 
+The guard an effect puts on a cell is recorded at the call, as a returned
+guard is. When the effect stores a guard with a body in the cells it writes
+and the regime after the call sets the guard's fresh tag, the tag enters the
+tag environment with the regime's value, and its dependency set is the written
+cells together with the locations the guard reads. The cell then reads clean
+right after the call when the tag is true, and a later write to a location in
+the dependency set, by assignment or by an extern's effect, revokes the guard.
+For example, after
+
+```poison
+let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1, w => (w > !b) }) }
+```
+
+the call `f r` under `--extern-regime "240=true"` makes `!r` clean, and a
+write to `b` or `r` revokes the guard
+(`examples/effect-guard-extern-write.poison`). A bare tag on an effect
+(`poisoned { 1 }`) records nothing, nor does an effect whose target reference
+is poisoned or whose call runs under a poisoned effect pc: such an effect
+stores no predicate.
+
 `captures:` also feed the dependency set of a guard, the locations whose write
 revokes it. When a guard's predicate applies a pure function, every
 alternative of that function contributes, and an extern alternative contributes
@@ -86,6 +107,7 @@ let rd = extern pfn @254 m : (int :> clean {}) -> ((int :> clean {})),
 
 a guard `v => (v > rd 0)` depends on the location of `a`, so `a := 100`
 revokes it (`examples/guard-deps-extern-captures.poison`).
+
 ## Declaration rules
 
 The typechecker enforces two rules for extern declarations of every kind

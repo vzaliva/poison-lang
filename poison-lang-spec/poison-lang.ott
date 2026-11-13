@@ -389,6 +389,17 @@ formula :: formula_ ::=
   | effectTargetLocs ESL S = LS :: :: effect_target_locs {{ com union of the locsets of the effects' !x targets as resolved in the unified environment S (a target that does not resolve to a tracked reference contributes nothing); these are exactly the locations the effect loop writes, so the application rule invalidates guard-tag / regime dependencies on them }} {{ tex [[LS]] = \mathrm{effectTargetLocs}([[ESL]], [[S]]) }}
   | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R exactly those tags that are materialised in L with a dependency set intersecting LS; tags absent from L are KEPT — unlike assignment's invalidate\_regime\_deps, which drops them — so a driver-asserted regime tag that has not yet entered the tag environment survives an unrelated write effect }} {{ tex \texttt{invalidate\_regime\_deps\_effect}([[R]], [[L]], [[LS]]) = [[R1]] }}
   | installReturnGuard L P R = L1 :: :: install_return_guard {{ com value-correct return-guard materialisation: when P is a guard closure with tag k whose value the regime R determines as b — whether asserted through the initial regime or inserted by the extern-regime policy — insert k |-> (b, deps) into L, with deps the dependency set of the closure as computed by match\_guard (the locations its body reads through its captured environment, including through every alternative of each pure function it mentions and the declared captures: of extern alternatives); a regime-undetermined guard, a guard whose dependency extraction fails, or a non-closure P leaves L unchanged. Materialising the dependencies is what lets a later write effect (or assignment) invalidate a stale guard whose predicate reads the written cell }} {{ tex [[L1]] = \mathrm{installReturnGuard}([[L]], [[P]], [[R]]) }}
+% installEffectGuards L ESL TM S R = L1: for each effect of ESL whose target
+% resolves in S to a clean reference with locations LS and whose predicate
+% resolves via TM to a guard closure with tag k whose value the regime R
+% determines as b, insert k |-> (b, LS union deps) into L, with deps the
+% dependency set of the closure as computed by match_guard; when k is already
+% in the result (the same guard on the return or on an earlier effect of the
+% call), the dependency sets are united. A regime-undetermined guard, a guard
+% whose dependency extraction fails, a bare tag, or a predicate without a guard
+% records nothing. Used only by the clean-effect-pc rules: the poisoned ones
+% erase the stored predicates.
+  | installEffectGuards L ESL TM S R = L1 :: :: install_effect_guards {{ com record the guards that the effects of an extern call put on the cells they write }} {{ tex [[L1]] = \mathrm{installEffectGuards}([[L]], [[ESL]], [[TM]], [[S]], [[R]]) }}
 
 
 defns
@@ -1398,7 +1409,17 @@ impure ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tp
 % This makes a later write to a location the guard reads invalidate the (now
 % materialised) guard and its regime entry, closing the stale-regime gap
 % demonstrated by examples/extern_set_err_stale_guard.poison.
-% Nested returns carry no resolved return predicate and install nothing.
+% Nested returns carry no resolved return predicate and install no return guard.
+%
+% Effect-guard materialisation: the clean-effect-pc impure rules (simple and
+% both nested returns) also record, after the return guard, the guards that the
+% effects put on the cells they write: installEffectGuards L ESL TM S R' = L'
+% inserts each such guard tag with the value R' determines for it and with the
+% written cells together with the locations the guard reads, the set match_guard
+% computes for a guard on a cell. A later write to any of these locations, by
+% assignment or by an effect, invalidates the guard and its regime entry; until
+% then, a cell so guarded reads clean when R' sets the tag true. The
+% poisoned-effect-pc rules erase the stored predicates and record nothing.
 %
 % Call-site regime extension: each
 % extern typing closure carries the extern id eid that produced it. At application,
@@ -1463,8 +1484,9 @@ satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 p6 = join p1 p
 extendExternRegime eid TM R4 = R'
 installReturnGuard L4 P R' = L5
+installEffectGuards L5 ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R' = L6
 ----------------------------------------------------------------------  :: app_extern_fn_simple_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L5 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L6 ; R'
 
 % Extern impure function application - simple return, poisoned effect pc
 % When the gate `join pc (join p1 p)` is poisoned, effect-installed predicates
@@ -1507,8 +1529,9 @@ invalidate_regime_deps_effect R1 L1 LS1 = R4
 returnType ER' = ST4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 extendExternRegime eid TM R4 = R'
+installEffectGuards L4 ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R' = L5
 ----------------------------------------------------------------------  :: app_extern_fn_nested_fn_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , Q3 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L4 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , Q3 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L5 ; R'
 
 % Extern impure function application - nested impure fn return, poisoned effect pc
 % Effect-installed predicates erased; inner return spec deferred as before.
@@ -1545,8 +1568,9 @@ invalidate_regime_deps_effect R1 L1 LS1 = R4
 returnType ER' = ST4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 extendExternRegime eid TM R4 = R'
+installEffectGuards L4 ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R' = L5
 ----------------------------------------------------------------------  :: app_extern_fn_nested_pfn_clean
-impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , Q3 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L4 ; R'
+impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , Q3 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L5 ; R'
 
 % Extern impure function application - nested pure fn return, poisoned effect pc
 % Effect-installed predicates erased; inner pure return spec deferred as before.
