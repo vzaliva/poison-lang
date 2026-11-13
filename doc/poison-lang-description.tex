@@ -566,6 +566,21 @@ effect, removes the tag from the tag environment and the regime
 (\texttt{examples/effect-guard-extern-write.poison},
 \texttt{examples/effect-guard-unrelated-assign.poison}).
 
+A guard that the post-call regime determines is recorded with its dependency
+set, so that set must exist. The premise
+\(\mathrm{guardDepsDefined}(P, R')\) of the simple-return rules and of
+\texttt{extern\_val}, and the premise
+\(\mathrm{effectGuardDepsDefined}\) of the \texttt{\_clean} application
+rules for the guards that the effects store, fail when such a guard reads a
+variable that is not bound or applies a variable bound to an impure function,
+which may read any location; the application or declaration is then a type
+error. A guard that the regime does not determine is not recorded and needs no
+dependency set: the value or cell it guards stays poisoned. The examples
+\texttt{guard-deps-required-effect.poison},
+\texttt{guard-deps-required-return.poison} and
+\texttt{guard-deps-impure-function.poison} in \texttt{examples/} show the
+three cases.
+
 \subsubsection*{Extern read dependencies (\texttt{captures:})}
 \label{sec:extern-captures}
 
@@ -1009,7 +1024,9 @@ predicate dependencies are modified:
     bare \texttt{r} and bang \texttt{!r} alike, the locations it may point to).
     The argument of a closure or extern contributes where it appears in the
     predicate. For a guard on a memory cell, \texttt{match\_guard} and
-    \texttt{installEffectGuards} also include the locations of the cell
+    \texttt{installEffectGuards} also include the locations of the cell.
+    A guard that reads a variable that is not bound, or applies a variable
+    bound to an impure function, has no dependency set
     \item \textbf{Dependency storage}: Guard valuations are stored as $k : bool \times \text{deps}$ 
     where \texttt{deps} is a set of logical locations the predicate depends on
     \item \textbf{Invalidation on write}: When writing through a reference with locset $LS$, all entries in $\mathcal{L}$ 

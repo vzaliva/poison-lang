@@ -90,6 +90,24 @@ write to `b` or `r` revokes the guard
 is poisoned or whose call runs under a poisoned effect pc: such an effect
 stores no predicate.
 
+A guard that the regime sets is recorded with its dependency set, so the
+typechecker must be able to compute that set. When the guard of a return, of
+an effect or of an `extern val` reads a variable that is not bound, or applies
+a variable bound to an impure function (which may read any location), and the
+regime after the call or declaration sets its tag, the call or declaration is
+a type error. For example, under `--extern-regime "250=true"`,
+
+```poison
+let chk = fn u : int => u > !a : bool in
+let x = extern val @250 : (int :> poisoned { 1, v => (chk v) }) in
+```
+
+is rejected (`examples/guard-deps-impure-function.poison`); with `pfn` in
+place of `fn` the guard is recorded with the location of `a`. A guard that the
+regime does not set is not recorded and needs no dependency set: the value or
+cell it guards stays poisoned
+(`examples/guard-deps-required-effect.poison`).
+
 `captures:` also feed the dependency set of a guard, the locations whose write
 revokes it. When a guard's predicate applies a pure function, every
 alternative of that function contributes, and an extern alternative contributes

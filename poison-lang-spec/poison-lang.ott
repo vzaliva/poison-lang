@@ -341,7 +341,9 @@ formula :: formula_ ::=
 % its captured environment, including through every alternative of each pure
 % function it mentions and the declared captures: of extern alternatives (a
 % closure body is read in its own captured environment with only its argument
-% bound), and, for a guard on a memory cell, the locations of that cell
+% bound), and, for a guard on a memory cell, the locations of that cell.
+% A guard that reads a variable that is not bound, or applies a variable bound
+% to an impure function (which may read any location), has no dependency set.
   | match_guard e G S = k with deps  :: :: match_guard  {{ com find guard k for condition e, with the dependency set deps of its predicate }}  {{ tex \texttt{match\_guard}([[e]], [[G]], [[S]]) = ([[k]],\, [[deps]]) }}
   | if_guard_case e G S R = true  :: :: if_guard_case_true  {{ com conditional guard case is known true }}  {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{true} }}
   | if_guard_case e G S R = false :: :: if_guard_case_false {{ com conditional guard case is known false }} {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{false} }}
@@ -400,6 +402,17 @@ formula :: formula_ ::=
 % records nothing. Used only by the clean-effect-pc rules: the poisoned ones
 % erase the stored predicates.
   | installEffectGuards L ESL TM S R = L1 :: :: install_effect_guards {{ com record the guards that the effects of an extern call put on the cells they write }} {{ tex [[L1]] = \mathrm{installEffectGuards}([[L]], [[ESL]], [[TM]], [[S]], [[R]]) }}
+% guardDepsDefined P R: when P is a guard closure whose tag the regime R
+% determines, its dependency set, as match_guard computes it, exists. The
+% computation fails, and the premise does not hold, when the guard reads a
+% variable that is not bound or applies a variable bound to an impure function,
+% which may read any location. A guard that R does not determine, a bare tag
+% and no predicate satisfy the premise.
+  | guardDepsDefined P R :: :: guard_deps_defined {{ com a guard that the regime determines has a dependency set }} {{ tex \mathrm{guardDepsDefined}([[P]], [[R]]) }}
+% effectGuardDepsDefined ESL TM S R: guardDepsDefined holds under R for the
+% predicate that TM resolves in S for each effect of ESL whose target resolves
+% in S to a clean reference (the effects that store a predicate).
+  | effectGuardDepsDefined ESL TM S R :: :: effect_guard_deps_defined {{ com the guards that the effects store and the regime determines have dependency sets }} {{ tex \mathrm{effectGuardDepsDefined}([[ESL]], [[TM]], [[S]], [[R]]) }}
 
 
 defns
@@ -1282,6 +1295,7 @@ externValConvert ST G = T G'
 freshTags SP k = k' TM
 resolve TM SP S = P
 extendExternRegime eid TM R = R'
+guardDepsDefined P R'
 installReturnGuard L P R' = L1
 ----------------------------------------------------------------------  :: extern_val
 impure ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L1 ; R'
@@ -1421,6 +1435,16 @@ impure ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tp
 % then, a cell so guarded reads clean when R' sets the tag true. The
 % poisoned-effect-pc rules erase the stored predicates and record nothing.
 %
+% Guards with a dependency set: a guard that R' determines is recorded with its
+% dependency set, so that set must exist. The premises guardDepsDefined P R'
+% (the return guard: the simple-return rules and extern_val) and
+% effectGuardDepsDefined (the guards that the effects store: the
+% clean-effect-pc rules) fail for such a guard when the guard reads a variable
+% that is not bound or applies an impure function, and the application or
+% declaration is then ill-typed. A guard that R' does not determine is not
+% recorded and needs no dependency set: the value or cell it guards stays
+% poisoned.
+%
 % Call-site regime extension: each
 % extern typing closure carries the extern id eid that produced it. At application,
 % extendExternRegime eid TM R1 = R' inserts into the active regime R1 the freshly
@@ -1483,6 +1507,8 @@ invalidate_regime_deps_effect R1 L1 LS1 = R4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 p6 = join p1 p
 extendExternRegime eid TM R4 = R'
+guardDepsDefined P R'
+effectGuardDepsDefined ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R'
 installReturnGuard L4 P R' = L5
 installEffectGuards L5 ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R' = L6
 ----------------------------------------------------------------------  :: app_extern_fn_simple_clean
@@ -1507,6 +1533,7 @@ invalidate_regime_deps_effect R1 L1 LS1 = R4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 p6 = join p1 p
 extendExternRegime eid TM R4 = R'
+guardDepsDefined P R'
 installReturnGuard L4 P R' = L5
 ----------------------------------------------------------------------  :: app_extern_fn_simple_poisoned
 impure ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1' ; L5 ; R'
@@ -1529,6 +1556,7 @@ invalidate_regime_deps_effect R1 L1 LS1 = R4
 returnType ER' = ST4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 extendExternRegime eid TM R4 = R'
+effectGuardDepsDefined ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R'
 installEffectGuards L4 ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R' = L5
 ----------------------------------------------------------------------  :: app_extern_fn_nested_fn_clean
 impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tclosures extern_tcl @ eid1 ( x1 , Q3 , ER' , ESL' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L5 ; R'
@@ -1568,6 +1596,7 @@ invalidate_regime_deps_effect R1 L1 LS1 = R4
 returnType ER' = ST4
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 extendExternRegime eid TM R4 = R'
+effectGuardDepsDefined ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R'
 installEffectGuards L4 ESL TM S1 [ x |-> T1 :> join pc p2 { P2 } ] R' = L5
 ----------------------------------------------------------------------  :: app_extern_fn_nested_pfn_clean
 impure ; R ; pc ; G ; S ; L |- e1 e2 : ST3 -> ST4 # pc tpclosures extern_ptcl @ eid1 ( x1 , Q3 , ER' , S1 [ x |-> T1 :> join pc p2 { P2 } ] ) :> join pc join p1 p { no_pred } -| G1' ; L5 ; R'
@@ -1605,6 +1634,7 @@ resolve TM SP S1 [ x |-> T1 :> join pc p2 { P2 } ] = P
 satisfiesArgCond R1 T1 :> join pc p2 { P2 } Q1
 p6 = join p1 p
 extendExternRegime eid TM R1 = R'
+guardDepsDefined P R'
 installReturnGuard L1 P R' = L4
 ----------------------------------------------------------------------  :: app_extern_pfn_simple
 pm ; R ; pc ; G ; S ; L |- e1 e2 : T2 :> join pc join p1 join p join pc p3 { AppPred p6 P } -| G1 ; L4 ; R'
