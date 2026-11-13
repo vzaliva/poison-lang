@@ -2715,6 +2715,8 @@ private lemma applyFnTClosureAtCursor_declared'_eq
         split at happly; · exact absurd happly (by simp)
         split at happly; · exact absurd happly (by simp)
         split at happly; · exact absurd happly (by simp)
+        split at happly
+        · exact nomatch happly
         simp only [Except.ok.injEq] at happly; subst happly; rfl
       | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
         simp only [bind, Except.bind, pure, Except.pure] at happly
@@ -2722,6 +2724,8 @@ private lemma applyFnTClosureAtCursor_declared'_eq
         split at happly; · exact absurd happly (by simp)
         split at happly; · exact absurd happly (by simp)
         split at happly; · exact absurd happly (by simp)
+        split at happly
+        · exact nomatch happly
         simp only [Except.ok.injEq] at happly; subst happly; rfl
       | nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
         simp only [bind, Except.bind, pure, Except.pure] at happly
@@ -2729,6 +2733,8 @@ private lemma applyFnTClosureAtCursor_declared'_eq
         split at happly; · exact absurd happly (by simp)
         split at happly; · exact absurd happly (by simp)
         split at happly; · exact absurd happly (by simp)
+        split at happly
+        · exact nomatch happly
         simp only [Except.ok.injEq] at happly; subst happly; rfl
 
 private lemma applyPFnTClosureAtCursor_declared'_eq
@@ -2763,6 +2769,8 @@ private lemma applyPFnTClosureAtCursor_declared'_eq
         split at happly; · exact absurd happly (by simp)
         split at happly; · exact absurd happly (by simp)
         split at happly; · exact absurd happly (by simp)
+        split at happly
+        · exact nomatch happly
         simp only [Except.ok.injEq] at happly; subst happly; rfl
       | nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
         simp only [bind, Except.bind, pure, Except.pure] at happly
@@ -2996,6 +3004,8 @@ private lemma applyPFnTClosure_ok_wfTypeResult
             · simp at happly
             · -- happly: Except.ok { memEnv' = result1.memEnv', nextLoc' = retQtPair.2 } = Except.ok r
               -- Extract r = { ... } from happly, then use returnSpecToQTyp to get nextLoc'
+              split at happly
+              · exact nomatch happly
               have hr := Except.ok.inj happly
               simp only [wfTypeResult] at hwf1 ⊢
               intro l hl
@@ -3009,7 +3019,7 @@ private lemma applyPFnTClosure_ok_wfTypeResult
               -- We need: forall non-ref Typ, returnSpecToQTyp returns nextLoc unchanged
               -- Derive this by case-splitting on the actual return type Typ in scope
               -- rename_i to get the returnSpecToQTyp equation
-              rename_i _ _ _ _ _ _ _ _ _ retQtPair hrsq
+              rename_i _ _ _ _ _ _ _ _ _ retQtPair hrsq _ _ _
               -- hrsq : returnSpecToQTyp a✝¹ a✝ v✝ result1.nextLoc' = Except.ok retQtPair
               have hnloc : retQtPair.2 = result1.nextLoc' := by
                 unfold returnSpecToQTyp at hrsq
@@ -3640,15 +3650,21 @@ private lemma applyFnTClosure_ok_poison_pred_of_p1p_true
                 · simp at happly
                 · split at happly
                   · simp at happly
-                  · have hr := Except.ok.inj happly; subst hr; simp
+                  · split at happly
+                    · exact nomatch happly
+                    have hr := Except.ok.inj happly; subst hr; simp
               · -- ExternReturn.nestedFn
                 split at happly
                 · simp at happly
-                · have hr := Except.ok.inj happly; subst hr; simp
+                · split at happly
+                  · exact nomatch happly
+                  have hr := Except.ok.inj happly; subst hr; simp
               · -- ExternReturn.nestedPfn
                 split at happly
                 · simp at happly
-                · have hr := Except.ok.inj happly; subst hr; simp
+                · split at happly
+                  · exact nomatch happly
+                  have hr := Except.ok.inj happly; subst hr; simp
 
 private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -3734,7 +3750,9 @@ private lemma applyPFnTClosure_ok_poison_pred_of_p1p_true
               · simp at happly
               · split at happly
                 · simp at happly
-                · have hr := Except.ok.inj happly; subst hr; simp
+                · split at happly
+                  · exact nomatch happly
+                  have hr := Except.ok.inj happly; subst hr; simp
           · -- ExternReturn.nestedFn
             split at happly
             · simp at happly
@@ -6127,17 +6145,23 @@ private lemma applyFnTClosureAtCursor_extern_mem_contains_preserved
               · simp at happly
               · split at happly
                 · simp at happly
-                · simp only [Except.ok.injEq] at happly
+                · split at happly
+                  · exact nomatch happly
+                  simp only [Except.ok.injEq] at happly
                   cases happly
                   exact hContains
             · split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly
                 cases happly
                 exact hContains
             · split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly
                 cases happly
                 exact hContains
 

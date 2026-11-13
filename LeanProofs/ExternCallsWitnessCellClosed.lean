@@ -310,7 +310,10 @@ private theorem rd_call_shape {typedExpr : Expr} {entry : ExternCallEntry} {res 
                   cases hrq : returnSpecToQTyp Typ.int true rp cursor.2 with
                   | error e => simp [hrq] at happly
                   | ok rq =>
-                      simp only [hrq, Except.ok.injEq] at happly
+                      simp only [hrq] at happly
+                      split at happly
+                      · exact nomatch happly
+                      simp only [Except.ok.injEq] at happly
                       subst happly
                       have hrq' : rq = (⟨ETyp.int, true, rp⟩, cursor.2) := by
                         simp [returnSpecToQTyp, bind, Except.bind, pure, Except.pure] at hrq

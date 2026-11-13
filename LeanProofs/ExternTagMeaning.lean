@@ -377,6 +377,8 @@ lemma applyPFnTClosure_extern_ok_QTypRespectsTagMeaning_of_respects
           · simp at happly
           · rename_i retres hret
             obtain ⟨retQt, nextLoc'⟩ := retres
+            split at happly
+            · exact nomatch happly
             simp only [Except.ok.injEq] at happly; subst happly
             let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
               ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
@@ -501,6 +503,9 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
         | ok retres =>
           obtain ⟨retQt, nextLoc'⟩ := retres
           simp only [hret] at happly
+          split at happly
+          · exact nomatch happly
+          rename_i hreq
           simp only [Except.ok.injEq] at happly
           subst happly
           let unifiedEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured capturedEnv) x
@@ -529,7 +534,7 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
               (Nat.succ n) id x (ExternReturn.simple typ poison spred) capturedEnv declaredArgQt
               (captures := captures) (by
                 unfold applyPFnTClosure
-                simp [hgate, halloc, hresolved, hret, outRes, outQt, unifiedEnv, bind, Except.bind,
+                simp [hgate, halloc, hresolved, hret, hreq, outRes, outQt, unifiedEnv, bind, Except.bind,
                   pure, Except.pure])
             simp only [wfTagMeaningCtx, ctxAfter] at hwf' ⊢
             simpa [hmem] using hwf'
@@ -553,7 +558,7 @@ lemma applyPFnTClosure_extern_simple_canonical_batch
                   exact ExternBatchTagMeaningExtension.respects hbatch)
                 (by
                   unfold applyPFnTClosure
-                  simp [hgate, halloc, hresolved, hret, outRes, outQt, unifiedEnv, bind, Except.bind,
+                  simp [hgate, halloc, hresolved, hret, hreq, outRes, outQt, unifiedEnv, bind, Except.bind,
                     pure, Except.pure])
 
 -- --------------------------------------------------------------------------
@@ -756,16 +761,22 @@ private lemma applyFnTClosure_extern_ok_memCellsRespect_of_respects
             · rename_i _vpred _heqpred
               split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly
                 subst happly; rfl
           · -- nestedFn
             split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly; subst happly; rfl
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly; subst happly; rfl
           · -- nestedPfn
             split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly; subst happly; rfl
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly; subst happly; rfl
         rw [hmem_eq]
         -- Normalize hloop to the form expected by extern_loop_allCellsRespect
         have hloop' : forIn effects result2.memEnv' (fun effect r =>
@@ -951,14 +962,20 @@ lemma applyFnTClosure_extern_ok_memEnv_poison_origin_of_effect_pc_true
             · rename_i _vpred _heqpred
               split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly
                 subst happly; rfl
           · split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly; subst happly; rfl
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly; subst happly; rfl
           · split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly; subst happly; rfl
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly; subst happly; rfl
         rw [hmem_eq] at hlookup
         -- Normalize hloop to the simpler form consumed by the loop lemma
         have hloop' : forIn effects result2.memEnv' (fun effect r =>
@@ -1076,14 +1093,20 @@ lemma applyFnTClosure_extern_ok_memEnv_guard_origin_of_effect_pc_true
             · rename_i _vpred _heqpred
               split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly
                 subst happly; rfl
           · split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly; subst happly; rfl
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly; subst happly; rfl
           · split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly; subst happly; rfl
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly; subst happly; rfl
         rw [hmem_eq] at hlookup
         have hloop' : forIn effects result2.memEnv' (fun effect r =>
             match applyExternEffect effect unifiedEnv allocRes.1
@@ -1167,6 +1190,8 @@ private lemma applyFnTClosure_extern_ok_qualTypeRespects_of_respects
             · simp at happly
             · rename_i retres hret
               obtain ⟨retQt, nextLoc'⟩ := retres
+              split at happly
+              · exact nomatch happly
               simp only [Except.ok.injEq] at happly; subst happly
               have hcompat : TagMappingRespectsTagMeaning tm allocRes.1
                   (collectExternPreds (ExternReturn.simple typ poison spred) effects)
@@ -1210,6 +1235,8 @@ private lemma applyFnTClosure_extern_ok_qualTypeRespects_of_respects
           split at happly
           · simp at happly
           · next v hresolve =>
+            split at happly
+            · exact nomatch happly
             simp only [Except.ok.injEq] at happly; subst happly; simp only
             simp only [normalizeAppResultByProvenance]
             split <;> {
@@ -1224,6 +1251,8 @@ private lemma applyFnTClosure_extern_ok_qualTypeRespects_of_respects
           split at happly
           · simp at happly
           · next v hresolve =>
+            split at happly
+            · exact nomatch happly
             simp only [Except.ok.injEq] at happly; subst happly; simp only
             simp only [normalizeAppResultByProvenance]
             split <;> {
@@ -1317,15 +1346,21 @@ lemma applyFnTClosure_extern_canonical_batch
               · simp at happly
               · split at happly
                 · simp at happly
-                · simp only [Except.ok.injEq] at happly
+                · split at happly
+                  · exact nomatch happly
+                  simp only [Except.ok.injEq] at happly
                   rw [← happly]
             · split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly
                 rw [← happly]
             · split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly
                 rw [← happly]
         rw [hlog_eq]
         exact hbatch.within
@@ -1338,11 +1373,15 @@ lemma applyFnTClosure_extern_canonical_batch
               · simp at happly
               · split at happly
                 · simp at happly
-                · simp only [Except.ok.injEq] at happly
+                · split at happly
+                  · exact nomatch happly
+                  simp only [Except.ok.injEq] at happly
                   rw [← happly]
             · split at happly
               · simp at happly
               · next v hresolve =>
+                split at happly
+                · exact nomatch happly
                 simp only [Except.ok.injEq] at happly
                 rw [← happly]
                 have : v.2 = nextTag' := by
@@ -1354,6 +1393,8 @@ lemma applyFnTClosure_extern_canonical_batch
             · split at happly
               · simp at happly
               · next v hresolve =>
+                split at happly
+                · exact nomatch happly
                 simp only [Except.ok.injEq] at happly
                 rw [← happly]
                 have : v.2 = nextTag' := by

@@ -763,6 +763,8 @@ private theorem builtinAbs_call_clean_shape
               argConditionSatisfied declaredArgQt
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ bodyState.regime' fuel' = true := by
             simpa [capturesSatisfied] using hgate
+          split at happly
+          · exact nomatch happly
           simp only [Except.ok.injEq] at happly
           subst res
           refine ⟨?_, ?_, ?_, ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩, ?_, ?_⟩
@@ -1148,6 +1150,8 @@ private theorem builtinMax11Captures_call_clean_shape
           rw [Bool.and_eq_true] at hgate
           obtain ⟨hcondArg, hcapGate⟩ := hgate
           obtain ⟨aQt, haLookup, haClean⟩ := capturesSatisfied_singleton_bareVar hcapGate
+          split at happly
+          · exact nomatch happly
           simp only [Except.ok.injEq] at happly
           subst res
           refine ⟨?_, ?_, ?_, ⟨⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩, ?_, ?_⟩,
@@ -1546,6 +1550,8 @@ private theorem builtinMax11Guarded_call_clean_shape
           rw [Bool.and_eq_true] at hgate
           obtain ⟨hcondArg, hcapGate⟩ := hgate
           obtain ⟨aQt, haLookup, haClean⟩ := capturesSatisfied_singleton_bareVar_guarded hcapGate
+          split at happly
+          · exact nomatch happly
           simp only [Except.ok.injEq] at happly
           subst res
           refine ⟨?_, ?_, ?_, ⟨⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩, ?_, ?_⟩,
@@ -2512,6 +2518,8 @@ private theorem builtinMemDeref_call_clean_shape
             VarTypeEnv_lookup_update_eq _ "r" _
           have hlemEq : lemQt = ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩ :=
             Option.some.inj (hlemLk.symm.trans hfront)
+          split at happly
+          · exact nomatch happly
           simp only [Except.ok.injEq] at happly
           subst res
           refine ⟨?_, ?_, ?_,
@@ -2998,6 +3006,8 @@ private theorem builtinSetErr_call_clean_shape
           split at happly
           · simp at happly
           · rename_i memEnv' heffect
+            split at happly
+            · exact nomatch happly
             simp only [Except.ok.injEq] at happly
             subst happly
             have hpin' : declaredArgQt.poison = false := by

@@ -1647,7 +1647,10 @@ private theorem applyClosuresThreaded_forall_reachable_mem
     the simple return additionally materialises the regime-determined return
     guard into `tagEnv'` via `installReturnGuard`, and every return records the
     regime-determined guards of the effects via `installEffectGuards` (`fuel`
-    is the decremented fuel of the surrounding apply). -/
+    is the decremented fuel of the surrounding apply). Before the result is
+    built, every return runs `requireExternGuardDeps`, which fails when the
+    regime determines a guard of the call whose dependency set cannot be
+    computed. -/
 private def fnExternFinishAtCursor
     (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
     (p p1 : Poison) (unifiedEnv : VarTypeEnv)
@@ -1662,90 +1665,108 @@ private def fnExternFinishAtCursor
           match returnSpecToQTyp typ poison v_1 cursor.2 with
           | Except.error err => Except.error err
           | Except.ok v_2 =>
+              match requireExternGuardDeps v_1 effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+                  (applyExternRegimePolicy
+                    (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                    id ctx.externRegime tagMapping) fuel with
+              | Except.error err => Except.error err
+              | Except.ok _ =>
+                  Except.ok
+                    { qualType :=
+                        normalizeAppResultByProvenance (joinPoison p1 p)
+                          { etyp := v_2.1.etyp,
+                            poison :=
+                              joinPoison p1 (joinPoison p (joinPoison ctx.pc v_2.1.poison)),
+                            pred := v_2.1.pred },
+                      memEnv' := memEnv,
+                      tagEnv' := installEffectGuards
+                        (installReturnGuard
+                          (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                          v_1
+                          (applyExternRegimePolicy
+                            (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                            id ctx.externRegime tagMapping)
+                          fuel)
+                        effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+                        (applyExternRegimePolicy
+                          (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                          id ctx.externRegime tagMapping)
+                        fuel,
+                      nextLoc' := v_2.2,
+                      nextTag' := nextTag',
+                      regime' := applyExternRegimePolicy
+                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                        id ctx.externRegime tagMapping,
+                      declared' := result2.declared',
+                      tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
+  | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
+      match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
+      | Except.error err => Except.error err
+      | Except.ok (innerArgQt, nextTag'') =>
+          match requireExternGuardDeps Predicate.noPred effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+              (applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping) fuel with
+          | Except.error err => Except.error err
+          | Except.ok _ =>
               Except.ok
                 { qualType :=
                     normalizeAppResultByProvenance (joinPoison p1 p)
-                      { etyp := v_2.1.etyp,
-                        poison :=
-                          joinPoison p1 (joinPoison p (joinPoison ctx.pc v_2.1.poison)),
-                        pred := v_2.1.pred },
+                      { etyp :=
+                          ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc
+                            [FnTClosure.extern innerId innerArg innerRet innerEffects
+                              (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
+                        poison := joinPoison p1 (joinPoison p ctx.pc),
+                        pred := Predicate.noPred },
                   memEnv' := memEnv,
                   tagEnv' := installEffectGuards
-                    (installReturnGuard
-                      (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                      v_1
-                      (applyExternRegimePolicy
-                        (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                        id ctx.externRegime tagMapping)
-                      fuel)
+                    (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                     effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
                     (applyExternRegimePolicy
                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                       id ctx.externRegime tagMapping)
                     fuel,
-                  nextLoc' := v_2.2,
-                  nextTag' := nextTag',
+                  nextLoc' := cursor.2,
+                  nextTag' := nextTag'',
                   regime' := applyExternRegimePolicy
                     (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                     id ctx.externRegime tagMapping,
                   declared' := result2.declared',
                   tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
-  | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
-      match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
-      | Except.error err => Except.error err
-      | Except.ok (innerArgQt, nextTag'') =>
-          Except.ok
-            { qualType :=
-                normalizeAppResultByProvenance (joinPoison p1 p)
-                  { etyp :=
-                      ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc
-                        [FnTClosure.extern innerId innerArg innerRet innerEffects
-                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
-                    poison := joinPoison p1 (joinPoison p ctx.pc),
-                    pred := Predicate.noPred },
-              memEnv' := memEnv,
-              tagEnv' := installEffectGuards
-                (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
-                (applyExternRegimePolicy
-                  (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                  id ctx.externRegime tagMapping)
-                fuel,
-              nextLoc' := cursor.2,
-              nextTag' := nextTag'',
-              regime' := applyExternRegimePolicy
-                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                id ctx.externRegime tagMapping,
-              declared' := result2.declared',
-              tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
   | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
       | Except.ok (innerArgQt, nextTag'') =>
-          Except.ok
-            { qualType :=
-                normalizeAppResultByProvenance (joinPoison p1 p)
-                  { etyp :=
-                      ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
-                        [PFnTClosure.extern innerId innerArg innerRet
-                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
-                    poison := joinPoison p1 (joinPoison p ctx.pc),
-                    pred := Predicate.noPred },
-              memEnv' := memEnv,
-              tagEnv' := installEffectGuards
-                (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
-                (applyExternRegimePolicy
-                  (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                  id ctx.externRegime tagMapping)
-                fuel,
-              nextLoc' := cursor.2,
-              nextTag' := nextTag'',
-              regime' := applyExternRegimePolicy
+          match requireExternGuardDeps Predicate.noPred effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+              (applyExternRegimePolicy
                 (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                id ctx.externRegime tagMapping,
-              declared' := result2.declared',
-              tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
+                id ctx.externRegime tagMapping) fuel with
+          | Except.error err => Except.error err
+          | Except.ok _ =>
+              Except.ok
+                { qualType :=
+                    normalizeAppResultByProvenance (joinPoison p1 p)
+                      { etyp :=
+                          ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
+                            [PFnTClosure.extern innerId innerArg innerRet
+                              (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
+                        poison := joinPoison p1 (joinPoison p ctx.pc),
+                        pred := Predicate.noPred },
+                  memEnv' := memEnv,
+                  tagEnv' := installEffectGuards
+                    (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                    effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+                    (applyExternRegimePolicy
+                      (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                      id ctx.externRegime tagMapping)
+                    fuel,
+                  nextLoc' := cursor.2,
+                  nextTag' := nextTag'',
+                  regime' := applyExternRegimePolicy
+                    (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                    id ctx.externRegime tagMapping,
+                  declared' := result2.declared',
+                  tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
 
 private theorem of_applyFnTClosureAtCursor
     {root : Expr} {ctxRoot ctx : TypeContext}
@@ -1900,11 +1921,17 @@ private theorem of_applyFnTClosureAtCursor
                         · rename_i typ poison pred
                           cases resolveSyntaxPred pred unifiedEnv tagMapping <;> simp
                           · rename_i resolvedPred
-                            cases returnSpecToQTyp typ poison resolvedPred cursor.2 <;> rfl
+                            cases returnSpecToQTyp typ poison resolvedPred cursor.2
+                            · rfl
+                            · dsimp only; split <;> (rename_i h; simp only [h])
                         · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures
-                          cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' <;> rfl
+                          cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
+                          | error => rfl
+                          | ok a => obtain ⟨_, _⟩ := a; dsimp only; split <;> (rename_i h; simp only [h])
                         · rename_i innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures
-                          cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' <;> rfl
+                          cases resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
+                          | error => rfl
+                          | ok a => obtain ⟨_, _⟩ := a; dsimp only; split <;> (rename_i h; simp only [h])
                       cases retSpec with
                       | simple typ poison pred =>
                           simp [finish, fnExternFinishAtCursor] at hfinishOk
@@ -1922,6 +1949,8 @@ private theorem of_applyFnTClosureAtCursor
                                   cases retPair with
                                   | mk retQt nextLoc' =>
                                       simp [hret] at hfinishOk
+                                      split at hfinishOk
+                                      · simp at hfinishOk
                                       cases hfinishOk
                                       apply QTypReachableFrom.of_non_function_etyp
                                       rw [normalizeAppResultByProvenance_etyp]
@@ -1953,6 +1982,8 @@ private theorem of_applyFnTClosureAtCursor
                           split at hfinishOk
                           · simp at hfinishOk
                           · next innerArgQt nextTag'' hresolve =>
+                            split at hfinishOk
+                            · simp at hfinishOk
                             simp only [Except.ok.injEq] at hfinishOk
                             cases hfinishOk
                             have hcurrent :
@@ -1994,6 +2025,8 @@ private theorem of_applyFnTClosureAtCursor
                           split at hfinishOk
                           · simp at hfinishOk
                           · next innerArgQt nextTag'' hresolve =>
+                            split at hfinishOk
+                            · simp at hfinishOk
                             simp only [Except.ok.injEq] at hfinishOk
                             cases hfinishOk
                             have hcurrent :
@@ -2192,6 +2225,8 @@ private theorem of_applyPFnTClosureAtCursor
                               cases retPair with
                               | mk retQt nextLoc' =>
                                   simp [hret] at happly
+                                  split at happly
+                                  · simp at happly
                                   cases happly
                                   apply QTypReachableFrom.of_non_function_etyp
                                   rw [normalizeAppResultByProvenance_etyp]

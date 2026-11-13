@@ -1,0 +1,5 @@
+Evaluating file: examples/guard-deps-required-return.poison (verbose mode)
+
+Type checking error:
+  the regime sets guard 1, but the locations its predicate reads cannot be determined: Variable zz not found in environment while extracting dependencies
+

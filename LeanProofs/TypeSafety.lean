@@ -3859,7 +3859,9 @@ lemma applyFnTClosure_extern_tagEnv_get_cases
             · next resolvedPred hresolve =>
               split at happly
               · exact nomatch happly
-              · cases happly
+              · split at happly
+                · exact nomatch happly
+                cases happly
                 rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv h with
                   h1 | ⟨hR, _eff, _heff, an, pb, ve, hres⟩
                 · rcases installReturnGuard_get?_cases _ _ _ _ k tv h1 with hold | ⟨hR, an, pb, ve, hrp⟩
@@ -3880,6 +3882,8 @@ lemma applyFnTClosure_extern_tagEnv_get_cases
             split at happly
             · exact nomatch happly
             · next v hargCond =>
+              split at happly
+              · exact nomatch happly
               cases happly
               rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv h with
                 hold | ⟨hR, _eff, _heff, an, pb, ve, hres⟩
@@ -3894,6 +3898,8 @@ lemma applyFnTClosure_extern_tagEnv_get_cases
             split at happly
             · exact nomatch happly
             · next v hargCond =>
+              split at happly
+              · exact nomatch happly
               cases happly
               rcases installEffectGuards_get?_cases _ _ _ _ _ _ _ k tv h with
                 hold | ⟨hR, _eff, _heff, an, pb, ve, hres⟩
@@ -3935,7 +3941,9 @@ lemma applyPFnTClosure_extern_tagEnv_get_cases
           · next resolvedPred hresolve =>
             split at happly
             · exact nomatch happly
-            · cases happly
+            · split at happly
+              · exact nomatch happly
+              cases happly
               rcases installReturnGuard_get?_cases _ _ _ _ k tv h with hold | ⟨hR, an, pb, ve, hrp⟩
               · exact Or.inl hold
               · obtain ⟨idx, hidx⟩ := resolveSyntaxPred_guardClosure_tag_from_mapping
@@ -4313,8 +4321,12 @@ theorem typecheckExternVal_ok_shape {ctx : TypeContext} {id : ExternId} {typ : T
           cases hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx with
           | error err => simp [hsurf] at htc
           | ok surfResult =>
-            simp only [hsurf, Except.ok.injEq] at htc
-            exact ⟨tagMapping, nextTag', resolvedPred, surfResult, rfl, hresolve, hsurf, htc.symm⟩
+            cases hreq : requireGuardDeps resolvedPred
+                (applyExternRegimePolicy ctx.regime id ctx.externRegime tagMapping) fuel with
+            | error err => simp [hsurf, hreq] at htc
+            | ok _ =>
+              simp only [hsurf, hreq, Except.ok.injEq] at htc
+              exact ⟨tagMapping, nextTag', resolvedPred, surfResult, rfl, hresolve, hsurf, htc.symm⟩
 
 -- nextTag monotonicity: per-construct lemmas and the main induction (`typecheck_nextTag_mono`)
 
@@ -4414,15 +4426,21 @@ private lemma applyFnTClosure_nextTag_mono_normal
                 · simp at happly
                 · split at happly
                   · simp at happly
-                  · simp only [Except.ok.injEq] at happly; rw [← happly]; exact htag
+                  · split at happly
+                    · exact nomatch happly
+                    simp only [Except.ok.injEq] at happly; rw [← happly]; exact htag
               · split at happly
                 · simp at happly
                 · rename_i hresolve
+                  split at happly
+                  · exact nomatch happly
                   simp only [Except.ok.injEq] at happly; rw [← happly]
                   exact htag.trans (Nat.le_of_eq (resolveArgCondQTyp_snd hresolve).symm)
               · split at happly
                 · simp at happly
                 · rename_i hresolve
+                  split at happly
+                  · exact nomatch happly
                   simp only [Except.ok.injEq] at happly; rw [← happly]
                   exact htag.trans (Nat.le_of_eq (resolveArgCondQTyp_snd hresolve).symm)
 
@@ -4492,7 +4510,9 @@ private lemma applyPFnTClosure_nextTag_mono_normal
               · simp at happly
               · split at happly
                 · simp at happly
-                · simp only [Except.ok.injEq] at happly
+                · split at happly
+                  · exact nomatch happly
+                  simp only [Except.ok.injEq] at happly
                   rw [← happly]; exact htag
           · -- nestedFn: resolveArgCondQTyp leaves nextTag unchanged
             split at happly
@@ -5671,7 +5691,9 @@ private lemma applyPFnTClosure_extern_regime_eq_or_policy
           · exact nomatch happly
           · split at happly
             · exact nomatch happly
-            · cases happly
+            · split at happly
+              · exact nomatch happly
+              cases happly
               refine Or.inr ⟨tm, rfl, ?_⟩
               intro idx j hj
               exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
@@ -5760,21 +5782,27 @@ private lemma applyFnTClosure_extern_regime_eq_or_policy
             · exact nomatch happly
             · split at happly
               · exact nomatch happly
-              · cases happly
+              · split at happly
+                · exact nomatch happly
+                cases happly
                 refine Or.inr ⟨tm, rfl, ?_⟩
                 intro idx j hj
                 exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
           · -- ExternReturn.nestedFn: outer effect tags are policy-extended
             split at happly
             · exact nomatch happly
-            · cases happly
+            · split at happly
+              · exact nomatch happly
+              cases happly
               refine Or.inr ⟨tm, rfl, ?_⟩
               intro idx j hj
               exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
           · -- ExternReturn.nestedPfn: outer effect tags are policy-extended
             split at happly
             · exact nomatch happly
-            · cases happly
+            · split at happly
+              · exact nomatch happly
+              cases happly
               refine Or.inr ⟨tm, rfl, ?_⟩
               intro idx j hj
               exact collectAndAllocExternTags_mapping_values_ge _ _ _ _ hcollect idx j hj
@@ -8035,6 +8063,8 @@ private lemma applyFnTClosure_extern_predTagsBounded
             split at happly
             · simp at happly
             · rename_i retResult hret
+              split at happly
+              · exact nomatch happly
               simp only [Except.ok.injEq] at happly; subst r2
               obtain ⟨retQt, nextLoc'⟩ := retResult
               have hRetPredBounded : predTagBounded nextTag' retQt.pred :=
@@ -8054,6 +8084,8 @@ private lemma applyFnTClosure_extern_predTagsBounded
           · next v hresolve =>
             have hresolve_tag : v.2 = nextTag' := resolveArgCondQTyp_snd hresolve
             rw [hresolve_tag] at happly
+            split at happly
+            · exact nomatch happly
             simp only [Except.ok.injEq] at happly; subst r2
             have hPredUnified : predTagsBoundedInVarEnv unifiedEnv nextTag' :=
               predTagsBoundedInVarEnv_update
@@ -8081,6 +8113,8 @@ private lemma applyFnTClosure_extern_predTagsBounded
           · next v hresolve =>
             have hresolve_tag : v.2 = nextTag' := resolveArgCondQTyp_snd hresolve
             rw [hresolve_tag] at happly
+            split at happly
+            · exact nomatch happly
             simp only [Except.ok.injEq] at happly; subst r2
             have hPredUnified : predTagsBoundedInVarEnv unifiedEnv nextTag' :=
               predTagsBoundedInVarEnv_update
@@ -8155,6 +8189,8 @@ private lemma applyPFnTClosure_extern_predTagsBounded
           split at happly
           · simp at happly -- error case
           · rename_i retResult hret
+            split at happly
+            · exact nomatch happly
             simp only [Except.ok.injEq] at happly; subst r2
             obtain ⟨retQt, nextLoc'⟩ := retResult
             have hRetPredBounded : predTagBounded nextTag' retQt.pred :=
@@ -9961,7 +9997,9 @@ private lemma applyFnTClosure_tagEnvBounded_normal
               · rename_i resolvedPred hresolve
                 split at happly
                 · simp at happly
-                · simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
+                · split at happly
+                  · exact nomatch happly
+                  simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
                   -- The invalidated input tagEnv stays below `r1.nextTag' ≤ nt'`;
                   -- the freshly installed return guard is below `nt'` by the
                   -- mapping freshness bound.
@@ -9983,6 +10021,8 @@ private lemma applyFnTClosure_tagEnvBounded_normal
               · simp at happly
               · next v hresolve =>
                 have hresolve_tag : v.2 = _ := resolveArgCondQTyp_snd hresolve
+                split at happly
+                · exact nomatch happly
                 simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
                 rw [hresolve_tag]
                 intro k hk
@@ -9999,6 +10039,8 @@ private lemma applyFnTClosure_tagEnvBounded_normal
               · simp at happly
               · next v hresolve =>
                 have hresolve_tag : v.2 = _ := resolveArgCondQTyp_snd hresolve
+                split at happly
+                · exact nomatch happly
                 simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
                 rw [hresolve_tag]
                 intro k hk
@@ -10097,7 +10139,9 @@ private lemma applyPFnTClosure_tagEnvBounded_normal
             · rename_i resolvedPred hresolve
               split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly; rw [← happly]; simp only []
                 -- The input tagEnv stays below `r1.nextTag' ≤ nt'`; the
                 -- freshly installed return guard is below `nt'` by mapping freshness.
                 intro k hk
@@ -11388,6 +11432,8 @@ private lemma applyFnTClosure_nextLoc_mono
             · simp at happly
             · -- ok case: r2 = {nextLoc' := v.2, ...}, and v.2 = r1.nextLoc' by preservation
               rename_i v hret
+              split at happly
+              · exact nomatch happly
               simp only [Except.ok.injEq] at happly
               rw [← happly]
               have := returnSpecToQTyp_preserves_nextLoc _ _ _ r1.nextLoc' v hret
@@ -11396,12 +11442,16 @@ private lemma applyFnTClosure_nextLoc_mono
           simp only [Functor.map, Except.map] at happly
           split at happly
           · simp at happly
-          · simp only [Except.ok.injEq] at happly; rw [← happly]
+          · split at happly
+            · exact nomatch happly
+            simp only [Except.ok.injEq] at happly; rw [← happly]
         · -- nestedPfn: nextLoc' := r1.nextLoc' (resolveArgCondQTyp does not allocate)
           simp only [Functor.map, Except.map] at happly
           split at happly
           · simp at happly
-          · simp only [Except.ok.injEq] at happly; rw [← happly]
+          · split at happly
+            · exact nomatch happly
+            simp only [Except.ok.injEq] at happly; rw [← happly]
 
 private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) (res : TypeResult)
     (IH : ∀ m < fuel, ∀ (e : Expr) (ctx' : TypeContext) (res' : TypeResult),
@@ -11602,9 +11652,11 @@ private lemma typecheckApp_nextLoc_mono (ctx : TypeContext) (e1 e2 : Expr) (fuel
                   · unfold returnSpecToQTyp at happly_old
                     split at happly_old
                     · simp at happly_old
-                    · injection happly_old with happly_old
+                    · rename_i v hret
+                      split at happly_old
+                      · exact nomatch happly_old
+                      injection happly_old with happly_old
                       cases happly_old
-                      rename_i v hret
                       have hnl : v.2 = res1.nextLoc' := by
                         have h : returnSpecToQTyp _ _ _ res1.nextLoc' = Except.ok v := hret
                         exact returnSpecToQTyp_preserves_nextLoc _ _ _ _ _ h
@@ -11737,8 +11789,9 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             cases htc
-            rename_i _surf _heqSurf
+            rename_i _surf _heqSurf _ _ _
             exact surfaceSpecToQTyp_nextLoc_mono _ _ _ _ _ _heqSurf
         | externFn id arg argTyp argPoison argPred retSpec effects =>
             obtain ⟨argQt, _, hres⟩ :=
@@ -12322,17 +12375,23 @@ private lemma applyFnTClosure_declared'_eq
               · exact nomatch happly
               · split at happly
                 · exact nomatch happly
-                · cases happly
+                · split at happly
+                  · exact nomatch happly
+                  cases happly
                   rfl
             · -- ExternReturn.nestedFn
               split at happly
               · exact nomatch happly
-              · cases happly
+              · split at happly
+                · exact nomatch happly
+                cases happly
                 rfl
             · -- ExternReturn.nestedPfn
               split at happly
               · exact nomatch happly
-              · cases happly
+              · split at happly
+                · exact nomatch happly
+                cases happly
                 rfl
 
 /-- Cursor variant of `applyFnTClosure_declared'_eq`. -/
@@ -12404,7 +12463,9 @@ private lemma applyPFnTClosure_declared'_eq
               · exact nomatch happly
               · split at happly
                 · exact nomatch happly
-                · cases happly
+                · split at happly
+                  · exact nomatch happly
+                  cases happly
                   rfl
           · -- ExternReturn.nestedFn
             split at happly
@@ -12537,6 +12598,7 @@ private lemma typecheck_declared'_main : ∀ (ctx : TypeContext) (e : Expr) (fue
             simp only [typecheckExternVal] at htc
             rw [h0ok] at htc
             simp [Bind.bind, Except.bind, pure, Except.pure] at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
@@ -14496,25 +14558,31 @@ private lemma applyFnTClosure_extern_wfTypeResult
           · simp at happly
           · split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly
               cases happly
-              rename_i retResult hret
+              rename_i retResult hret _ _ _
               have hNextLoc : retResult.2 = result2.nextLoc' := by
                 unfold returnSpecToQTyp at hret
                 simp only [bind, Except.bind, pure, Except.pure] at hret
-                rename_i typ _ _ _ _ _ _
+                rename_i typ _ _ _ _ _ _ _ _ _
                 cases typ <;> simp at hret <;> rw [← hret]
               intro l hl; rw [hNextLoc]; exact hWfLoop l hl
         · -- nestedFn retSpec
           split at happly
           · simp at happly
-          · simp only [Except.ok.injEq] at happly
+          · split at happly
+            · exact nomatch happly
+            simp only [Except.ok.injEq] at happly
             cases happly
             intro l hl; exact hWfLoop l hl
         · -- nestedPfn retSpec
           split at happly
           · simp at happly
-          · simp only [Except.ok.injEq] at happly
+          · split at happly
+            · exact nomatch happly
+            simp only [Except.ok.injEq] at happly
             cases happly
             intro l hl; exact hWfLoop l hl
 
@@ -14598,15 +14666,21 @@ private lemma applyFnTClosure_extern_mem_contains_preserved
             · simp at happly
             · split at happly
               · simp at happly
-              · simp only [Except.ok.injEq] at happly
+              · split at happly
+                · exact nomatch happly
+                simp only [Except.ok.injEq] at happly
                 cases happly; exact hContains
           · split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly
               cases happly; exact hContains
           · split at happly
             · simp at happly
-            · simp only [Except.ok.injEq] at happly
+            · split at happly
+              · exact nomatch happly
+              simp only [Except.ok.injEq] at happly
               cases happly; exact hContains
 
 /-- applyFnTClosure preserves wfTypeResult -/
@@ -14753,6 +14827,7 @@ private lemma applyPFnTClosure_wfTypeResult
         split at htc <;> simp (config := { failIfUnchanged := false }) at htc
         rename_i hret
         have hnl := returnSpecToQTyp_preserves_nextLoc _ _ _ _ _ hret
+        split at htc <;> simp (config := { failIfUnchanged := false }) at htc
         cases htc
         intro l hl; exact hnl ▸ hwf_fn l hl
       · split at htc
@@ -14810,6 +14885,8 @@ private lemma applyPFnTClosure_nextLoc_mono
           split at happly
           · simp at happly
           · rename_i v hret
+            split at happly
+            · exact nomatch happly
             simp only [Except.ok.injEq] at happly; rw [← happly]
             have := returnSpecToQTyp_preserves_nextLoc _ _ _ r1.nextLoc' v hret; simp [this]
     · -- nestedFn: nextLoc' = r1.nextLoc' (resolveArgCondQTyp does not allocate)
@@ -15102,7 +15179,7 @@ private lemma applyFnTClosure_refLocsResultOutputs
         subst htc; unfold normalizeAppResultByProvenance; split <;>
           exact ⟨trivial, fun tcl hmem => by simp at hmem; subst hmem; exact hUEF⟩))
       -- Handle remaining simple return goal
-      subst htc; rename_i hRetSpec; revert hRetSpec; unfold returnSpecToQTyp
+      subst htc; rename_i hRetSpec _ _ _; revert hRetSpec; unfold returnSpecToQTyp
       split <;> simp [bind, Except.bind, pure, Except.pure, normalizeAppResultByProvenance]
         <;> intro h <;> (try rcases h with ⟨rfl, rfl⟩) <;> split <;> exact ⟨trivial, trivial⟩
 
@@ -15191,7 +15268,7 @@ private lemma applyPFnTClosure_refLocsResultOutputs
         subst htc; unfold normalizeAppResultByProvenance; split <;>
           exact ⟨trivial, fun tcl hmem => by simp at hmem; subst hmem; exact hUEF⟩))
       -- Handle remaining simple return goal
-      subst htc; rename_i hRetSpec; revert hRetSpec; unfold returnSpecToQTyp
+      subst htc; rename_i hRetSpec _ _ _; revert hRetSpec; unfold returnSpecToQTyp
       split <;> simp [bind, Except.bind, pure, Except.pure, normalizeAppResultByProvenance]
         <;> intro h <;> (try rcases h with ⟨rfl, rfl⟩) <;> split <;> exact ⟨trivial, trivial⟩
 
@@ -15629,8 +15706,9 @@ private lemma typecheckExpr_preserves_refLocs_main :
         split at htc <;> simp (config := { failIfUnchanged := false }) at htc
         split at htc <;> simp (config := { failIfUnchanged := false }) at htc
         split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+        split at htc <;> simp (config := { failIfUnchanged := false }) at htc
         cases htc
-        rename_i _surf _heqSurf
+        rename_i _surf _heqSurf _ _ _
         unfold surfaceSpecToQTyp at _heqSurf
         split at _heqSurf <;> simp [bind, Except.bind, pure, Except.pure] at _heqSurf
         · cases _heqSurf; exact ⟨hwfMem, trivial, trivial⟩  -- int
@@ -16338,6 +16416,7 @@ private lemma applyPFnTClosure_mem_contains_preserved
           · split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+            split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             cases htc; intro l hl; exact hl
           · split at htc
             · simp at htc
@@ -16711,8 +16790,9 @@ private lemma typecheckExpr_mem_contains_preserved_main :
               split at htc <;> simp (config := { failIfUnchanged := false }) at htc
               split at htc <;> simp (config := { failIfUnchanged := false }) at htc
               split at htc <;> simp (config := { failIfUnchanged := false }) at htc
+              split at htc <;> simp (config := { failIfUnchanged := false }) at htc
               cases htc
-              rename_i _surf _heqSurf
+              rename_i _surf _heqSurf _ _ _
               unfold surfaceSpecToQTyp at _heqSurf
               split at _heqSurf <;> simp [bind, Except.bind, pure, Except.pure] at _heqSurf
               · cases _heqSurf; exact hcontains

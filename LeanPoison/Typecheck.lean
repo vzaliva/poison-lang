@@ -389,7 +389,8 @@ private def externCaptureVars (bound : List Name) (captures : List Capture) :
     the application (the predicate's argument, a `let` of the predicate) do not
     hide its free variables. The argument of a closure (or of a nested return)
     contributes nothing inside it: the argument is a subexpression of the
-    predicate and is counted there. -/
+    predicate and is counted there. A free impure-function variable makes the
+    extraction fail: no set of locations covers what it reads. -/
 def extractDepsFromPred (pred : Predicate) (fuel : Nat) : TypecheckM Deps :=
   match pred with
   | Predicate.guardClosure _tag arg_name pred_body var_env =>
@@ -420,6 +421,10 @@ def extractDepsFromPred (pred : Predicate) (fuel : Nat) : TypecheckM Deps :=
                             let d ← extractDepsFromPExpr (PExpr.var v) bound (VarTypeEnv.ofCaptured capEnv) fuel
                             return LocSet.union dacc d)
                   return LocSet.union acc deps)
+              | ETyp.arrow _ _ _ _ =>
+                -- An impure function may read and write any location: no
+                -- dependency set covers it.
+                throw s!"Variable {x} is an impure function; the locations it reads cannot be determined"
               | _ => return LocSet.empty  -- Other types don't read from heap
             | none => throw s!"Variable {x} not found in environment while extracting dependencies"
         | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel
@@ -1648,6 +1653,42 @@ def installEffectGuards (env : TagEnv) (effects : List Effect) (unifiedEnv : Var
             | _ => acc
         | none => acc) env
 
+/-- A guard whose tag the regime determines must have a dependency set the
+    typechecker can compute; otherwise the application or declaration that
+    introduces it is rejected. -/
+def requireGuardDeps (resolvedPred : Predicate) (R : Regime) (fuel : Nat) : TypecheckM Unit :=
+  match resolvedPred with
+  | Predicate.guardClosure k _ _ _ =>
+      match R.lookup? k with
+      | some _ =>
+          match extractDepsFromPred resolvedPred fuel with
+          | .ok _ => pure ()
+          | .error err =>
+              throw s!"the regime sets guard {k}, but the locations its predicate reads cannot be determined: {err}"
+      | none => pure ()
+  | _ => pure ()
+
+/-- `requireGuardDeps` for the guard of an extern call's return and for the
+    guards its effects put on the cells they write (an effect whose target is
+    poisoned, or made under a poisoned pc, stores no predicate). -/
+def requireExternGuardDeps (retPred : Predicate) (effects : List Effect) (unifiedEnv : VarTypeEnv)
+    (tagMapping : TagMapping) (pc : Poison) (R : Regime) (fuel : Nat) : TypecheckM Unit := do
+  requireGuardDeps retPred R fuel
+  effects.forM (fun effect =>
+    match effect.target with
+    | EffectTarget.namedVar v =>
+        match unifiedEnv.lookup v with
+        | some qt =>
+            match qt.etyp with
+            | ETyp.ref _ =>
+                if qt.poison || pc then pure ()
+                else
+                  match resolveSyntaxPred effect.pred unifiedEnv tagMapping with
+                  | .ok p => requireGuardDeps p R fuel
+                  | .error _ => pure ()
+            | _ => pure ()
+        | none => pure ())
+
 /-- Extern-regime insertion: for each freshly-allocated
     output guard tag `k` of a selected extern id, query the scenario policy
     `policy id k`; when it returns `some b`, insert `k ↦ b` into the active regime.  Tags
@@ -1685,6 +1726,7 @@ def typecheckExternVal (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison :
       let resolvedPred ← resolveSyntaxPred pred ctx.varEnv tagMapping
       let (qt, ctx') ← surfaceSpecToQTyp typ poison resolvedPred ctx
       let regime' := applyExternRegimePolicy ctx.regime id ctx.externRegime tagMapping
+      requireGuardDeps resolvedPred regime' fuel
       return { qualType := qt, memEnv' := ctx'.memEnv,
                tagEnv' := installReturnGuard ctx.tagEnv resolvedPred regime' fuel,
                nextLoc' := ctx'.nextLoc, nextTag' := nextTag', regime' := regime',
@@ -2023,6 +2065,10 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            requireExternGuardDeps resolvedPred effects unifiedEnv tagMapping effectPc
+              (applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping) fuel
             return { qualType := normalizedQt, memEnv' := memEnv,
                      tagEnv' := installEffectGuards
                        (installReturnGuard
@@ -2054,6 +2100,10 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            requireExternGuardDeps Predicate.noPred effects unifiedEnv tagMapping effectPc
+              (applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping) fuel
             return { qualType := normalizedQt, memEnv' := memEnv,
                      tagEnv' := installEffectGuards
                        (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
@@ -2079,6 +2129,10 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            requireExternGuardDeps Predicate.noPred effects unifiedEnv tagMapping effectPc
+              (applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping) fuel
             return { qualType := normalizedQt, memEnv' := memEnv,
                      tagEnv' := installEffectGuards
                        (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
@@ -2160,6 +2214,10 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            requireExternGuardDeps resolvedPred effects unifiedEnv tagMapping effectPc
+              (applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping) fuel
             return { qualType := normalizedQt, memEnv' := memEnv,
                      tagEnv' := installEffectGuards
                        (installReturnGuard
@@ -2191,6 +2249,10 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            requireExternGuardDeps Predicate.noPred effects unifiedEnv tagMapping effectPc
+              (applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping) fuel
             return { qualType := normalizedQt, memEnv' := memEnv,
                      tagEnv' := installEffectGuards
                        (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
@@ -2216,6 +2278,10 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            requireExternGuardDeps Predicate.noPred effects unifiedEnv tagMapping effectPc
+              (applyExternRegimePolicy
+                (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
+                id ctx.externRegime tagMapping) fuel
             return { qualType := normalizedQt, memEnv' := memEnv,
                      tagEnv' := installEffectGuards
                        (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
@@ -2295,6 +2361,8 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            requireGuardDeps resolvedPred
+              (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) fuel
             return { qualType := normalizedQt, memEnv' := result2.memEnv',
                      tagEnv' := installReturnGuard result2.tagEnv' resolvedPred
                        (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) fuel,
@@ -2395,6 +2463,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             let poison' := joinPoison p1 (joinPoison p (joinPoison ctx.pc retQt.poison))
             let qt := ⟨retQt.etyp, poison', retQt.pred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
+            requireGuardDeps resolvedPred
+              (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) fuel
             return { qualType := normalizedQt, memEnv' := result2.memEnv',
                      tagEnv' := installReturnGuard result2.tagEnv' resolvedPred
                        (applyExternRegimePolicy result2.regime' id ctx.externRegime tagMapping) fuel,

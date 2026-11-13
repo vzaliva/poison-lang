@@ -98,7 +98,10 @@ private theorem simplePfn_shape
               | error _ => simp [hret] at happly
               | ok rq =>
                   obtain ⟨retQt, nextLoc'⟩ := rq
-                  simp only [hret, Except.ok.injEq] at happly
+                  simp only [hret] at happly
+                  split at happly
+                  · exact nomatch happly
+                  simp only [Except.ok.injEq] at happly
                   exact ⟨fuel', tagMapping, nextTag', resolvedPred, retQt, nextLoc', rfl,
                     rfl, hres, hret, happly.symm⟩
 

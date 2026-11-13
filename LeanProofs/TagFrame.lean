@@ -879,7 +879,7 @@ private theorem applyFnTClosureAtCursor_logFresh
       all_goals (try simp only [Except.ok.injEq, reduceCtorEq] at h)
       all_goals (cases h)
       all_goals (try (exfalso; have hthrow := ‹throw _ = Except.ok _›; cases hthrow))
-      all_goals (try (rename_i heqLast; split at heqLast <;>
+      all_goals (try (rename_i heqLast _ _ _; split at heqLast <;>
         (try simp only [Except.ok.injEq, reduceCtorEq] at heqLast); (try subst heqLast)))
       all_goals (have hc := ‹collectAndAllocExternTags _ _ = Except.ok _›
                  simpa using externTagLog_logFresh' _ _ _ _ hc)
