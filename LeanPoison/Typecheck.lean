@@ -353,7 +353,43 @@ abbrev TypecheckM := Except String
 def updateCtxFromResult (ctx : TypeContext) (result : TypeResult) : TypeContext :=
   { ctx with memEnv := result.memEnv', tagEnv := result.tagEnv', nextLoc := result.nextLoc', nextTag := result.nextTag', regime := result.regime', declaredExternRefs := result.declared' }
 
-/-- Extract dependencies from a predicate by analyzing free variables in the predicate body -/
+/-- The variable named by a `captures:` read dependency (`a` or `!a`). -/
+private def CaptureTarget.var : CaptureTarget → Name
+  | CaptureTarget.bareVar v => v
+  | CaptureTarget.memVar v => v
+
+/-- The variables named by the `captures:` read dependencies of an extern pure
+    closure, at every level of its return, each paired with the argument names
+    in scope at that level (`bound`: the closure's own argument, then the
+    argument of each nested return). Those names are resolved in the closure's
+    captured environment by `extractDepsFromPred`. -/
+private def externCaptureVars (bound : List Name) (captures : List Capture) :
+    ExternReturn → List (Name × List Name)
+  | ExternReturn.simple _ _ _ =>
+      captures.map (fun c => (c.target.var, bound))
+  | ExternReturn.nestedFn _ innerArg _ _ _ innerRet _ innerCaptures =>
+      captures.map (fun c => (c.target.var, bound)) ++
+        externCaptureVars (innerArg :: bound) innerCaptures innerRet
+  | ExternReturn.nestedPfn _ innerArg _ _ _ innerRet innerCaptures =>
+      captures.map (fun c => (c.target.var, bound)) ++
+        externCaptureVars (innerArg :: bound) innerCaptures innerRet
+
+/-- Extract the dependency set of a predicate: the locations the predicate reads
+    through its captured environment, including through every alternative of
+    each pure function it mentions and the declared `captures:` of extern
+    alternatives.
+
+    A free reference variable contributes the locations it may point to. A free
+    pure-function variable contributes the union over all its closure
+    alternatives: a regular alternative contributes the dependencies of its body,
+    and an extern alternative contributes, for every variable named by a
+    `captures:` read dependency at any level of its return, what that variable
+    contributes in the extern's captured environment. A closure body sees only
+    its own captured environment and its argument, so the names bound around
+    the application (the predicate's argument, a `let` of the predicate) do not
+    hide its free variables. The argument of a closure (or of a nested return)
+    contributes nothing inside it: the argument is a subexpression of the
+    predicate and is counted there. -/
 def extractDepsFromPred (pred : Predicate) (fuel : Nat) : TypecheckM Deps :=
   match pred with
   | Predicate.guardClosure _tag arg_name pred_body var_env =>
@@ -371,12 +407,19 @@ def extractDepsFromPred (pred : Predicate) (fuel : Nat) : TypecheckM Deps :=
               match qt.etyp with
               | ETyp.ref ls => return ls  -- Reference type, add referenced locset
               | ETyp.parrow _argTy _retTy _poison tcls =>
-                -- Pure function, recurse into all closures' bodies
-                match tcls with
-                | [PFnTClosure.regular argName body varEnv'] =>
-                    -- Single closure, recurse into its body
-                    extractDepsFromPExpr body (argName :: boundVars) (VarTypeEnv.ofCaptured varEnv') fuel
-                | _ => return LocSet.empty  -- Multiple or extern closures: conservative fallback
+                -- Pure function: the union over all its closure alternatives.
+                -- A closure body is scoped by its own captured environment and
+                -- argument only, so the enclosing bound variables do not apply.
+                tcls.foldlM (init := LocSet.empty) (fun acc tcl => do
+                  let deps ← match tcl with
+                    | PFnTClosure.regular argName body varEnv' =>
+                        extractDepsFromPExpr body [argName] (VarTypeEnv.ofCaptured varEnv') fuel
+                    | PFnTClosure.extern _ argName retSpec capEnv _ captures =>
+                        (externCaptureVars [argName] captures retSpec).foldlM (init := LocSet.empty)
+                          (fun dacc (v, bound) => do
+                            let d ← extractDepsFromPExpr (PExpr.var v) bound (VarTypeEnv.ofCaptured capEnv) fuel
+                            return LocSet.union dacc d)
+                  return LocSet.union acc deps)
               | _ => return LocSet.empty  -- Other types don't read from heap
             | none => throw s!"Variable {x} not found in environment while extracting dependencies"
         | PExpr.deref pe' => extractDepsFromPExpr pe' boundVars env fuel

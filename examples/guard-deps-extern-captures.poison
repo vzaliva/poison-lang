@@ -1,0 +1,18 @@
+--! poison-interpreter --extern-regime "12=true"
+-- Dependency set of a guard that applies an extern pure function with a
+-- `captures:` read dependency.
+--
+-- `rd` declares `captures: { !a :> (int :> clean {}) }`, so the guard
+-- `v => v > rd 0` on the result of `getv` (`@12`, `abs`) depends on the
+-- location of `a`.  Under the regime the first `if` is typed with its
+-- then-branch only; the assignment `a := 100` removes the guard, and `x`,
+-- returned after the write, is typed poisoned.  This is a typecheck-level
+-- demonstration: `@254` has no registered runtime implementation, so
+-- evaluation stops at the call `rd 0` with the expected "extern id 254 not
+-- registered" error.
+let a = ref 5 in
+let rd = extern pfn @254 m : (int :> clean {}) -> ((int :> clean {})),
+  captures: { !a :> (int :> clean {}) } in
+let getv = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v > rd 0) })) in
+let x = getv 7 in
+if x > rd 0 then (a := 100; x) else 0
