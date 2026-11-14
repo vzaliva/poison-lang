@@ -567,19 +567,32 @@ effect, removes the tag from the tag environment and the regime
 \texttt{examples/effect-guard-unrelated-assign.poison}).
 
 A guard that the post-call regime determines is recorded with its dependency
-set, so that set must exist. The premise
-\(\mathrm{guardDepsDefined}(P, R')\) of the simple-return rules and of
-\texttt{extern\_val}, and the premise
-\(\mathrm{effectGuardDepsDefined}\) of the \texttt{\_clean} application
-rules for the guards that the effects store, fail when such a guard reads a
-variable that is not bound or applies a variable bound to an impure function,
-which may read any location; the application or declaration is then a type
-error. A guard that the regime does not determine is not recorded and needs no
-dependency set: the value or cell it guards stays poisoned. The examples
-\texttt{guard-deps-required-effect.poison},
-\texttt{guard-deps-required-return.poison} and
-\texttt{guard-deps-impure-function.poison} in \texttt{examples/} show the
-three cases.
+set, so that set must exist. Every guard body is checked where it is declared,
+whatever the regime and whether or not the extern is called: the premise
+\(\mathrm{guardBodyDefined}(S, SP)\) of \texttt{extern\_val} and the premise
+\(\mathrm{externGuardBodiesDefined}\) of \texttt{extern\_fn} and
+\texttt{extern\_pfn}, which covers the argument condition, the effects, the
+\texttt{captures:} and the returns at every level, each in the environment in
+which a call resolves it. A guard body is a pure expression; the declaration is
+a type error when a body reads a variable that is not bound, mentions an
+impure function, which may read any location, or mentions a function that can
+return an impure one (a pure extern whose nested return is an \texttt{extern
+fn}). The type of a guard body is not checked: the check covers the variables
+the body reads and its purity, and an ill-typed or non-boolean body is
+accepted. At an application, the premise \(\mathrm{guardDepsDefined}(P, R')\)
+of the simple-return rules and the premise
+\(\mathrm{effectGuardDepsDefined}\) of the \texttt{\_clean} application rules
+state that the dependency set of a guard that the regime determines exists;
+for a declared guard, the premise of its declaration guarantees it. A guard
+that the regime does not determine is not recorded: the value or cell it
+guards stays poisoned.
+The examples \texttt{guard-deps-required-effect.poison},
+\texttt{guard-deps-required-return.poison},
+\texttt{guard-deps-impure-function.poison},
+\texttt{guard-body-uncalled-declaration.poison},
+\texttt{guard-body-argument-condition.poison} and
+\texttt{guard-body-impure-result.poison} in \texttt{examples/} show these
+cases.
 
 \subsubsection*{Extern read dependencies (\texttt{captures:})}
 \label{sec:extern-captures}
@@ -1025,8 +1038,9 @@ predicate dependencies are modified:
     The argument of a closure or extern contributes where it appears in the
     predicate. For a guard on a memory cell, \texttt{match\_guard} and
     \texttt{installEffectGuards} also include the locations of the cell.
-    A guard that reads a variable that is not bound, or applies a variable
-    bound to an impure function, has no dependency set
+    A guard that reads a variable that is not bound, applies a variable
+    bound to an impure function, or mentions a pure function with an extern
+    alternative whose return has an impure level, has no dependency set
     \item \textbf{Dependency storage}: Guard valuations are stored as $k : bool \times \text{deps}$ 
     where \texttt{deps} is a set of logical locations the predicate depends on
     \item \textbf{Invalidation on write}: When writing through a reference with locset $LS$, all entries in $\mathcal{L}$ 

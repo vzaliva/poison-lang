@@ -778,13 +778,13 @@ private theorem typecheckVar_tagLog (ctx : TypeContext) (x : Name) (res : TypeRe
   unfold typecheckVar at h
   leaf_log h
 
-private theorem typecheckExternFn_tagLog (ctx : TypeContext) id arg argTyp argPoison argPred retSpec effects captures (res : TypeResult)
-    (h : typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures = .ok res) : res.tagLog' = [] := by
+private theorem typecheckExternFn_tagLog (ctx : TypeContext) id arg argTyp argPoison argPred retSpec effects captures fuel (res : TypeResult)
+    (h : typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures fuel = .ok res) : res.tagLog' = [] := by
   unfold typecheckExternFn at h
   leaf_log h
 
-private theorem typecheckExternPfn_tagLog (ctx : TypeContext) id arg argTyp argPoison argPred retSpec captures (res : TypeResult)
-    (h : typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures = .ok res) : res.tagLog' = [] := by
+private theorem typecheckExternPfn_tagLog (ctx : TypeContext) id arg argTyp argPoison argPred retSpec captures fuel (res : TypeResult)
+    (h : typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures fuel = .ok res) : res.tagLog' = [] := by
   unfold typecheckExternPfn at h
   leaf_log h
 
@@ -1123,8 +1123,8 @@ theorem typecheckExpr_tagLog_fresh : ∀ (fuel : Nat) (ctx : TypeContext) (e : E
   | pfn _ _ _ _ => exact nil_fresh (typecheckPfn_tagLog _ _ _ _ _ _ h)
   | externVal _ _ _ _ => exact typecheckExternVal_logFresh _ _ _ _ _ _ _ h
   | externRef _ _ _ _ _ => exact nil_fresh (typecheckExternRef_tagLog _ _ _ _ _ _ _ h)
-  | externFn _ _ _ _ _ _ _ _ => exact nil_fresh (typecheckExternFn_tagLog _ _ _ _ _ _ _ _ _ _ h)
-  | externPfn _ _ _ _ _ _ _ => exact nil_fresh (typecheckExternPfn_tagLog _ _ _ _ _ _ _ _ _ h)
+  | externFn _ _ _ _ _ _ _ _ => exact nil_fresh (typecheckExternFn_tagLog _ _ _ _ _ _ _ _ _ _ _ h)
+  | externPfn _ _ _ _ _ _ _ => exact nil_fresh (typecheckExternPfn_tagLog _ _ _ _ _ _ _ _ _ _ h)
   | op e1 op e2 =>
       cases n with
       | zero => simp [typecheckOp, throw, throwThe, MonadExceptOf.throw] at h

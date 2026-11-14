@@ -2,11 +2,12 @@
 -- A guard that applies an impure function has no dependency set that the
 -- typechecker can compute: an impure function may read any location.
 --
--- The guard of `x` applies `chk`, an impure function that reads `a`.  The
--- regime sets the guard (`--extern-regime "250=true"`), so the declaration of
--- `x` is a type error.  With `pfn` in place of `fn`, `chk` is pure: the
--- declaration records the guard with the location of `a`, and the assignment
--- `a := 100` removes it, so `x` is poisoned.
+-- The guard of `x` applies `chk`, an impure function that reads `a`, so the
+-- declaration of `x` is a type error, whether or not the regime sets the
+-- guard.  With `pfn` in place of `fn`, `chk` is pure: under
+-- `--extern-regime "250=true"` the declaration records the guard with the
+-- location of `a`, and the assignment `a := 100` removes it, so `x` is
+-- poisoned.
 let a = ref 5 in
 let chk = fn u : int => u > !a : bool in
 let x = extern val @250 : (int :> poisoned { 1, v => (chk v) }) in

@@ -1,0 +1,10 @@
+-- The guard bodies of an extern are checked where the extern is declared, so a
+-- declaration that is never called is checked too.
+--
+-- The effect of `f` guards the cell of its argument with `w > zz`, and `zz` is
+-- not bound.  `f` is never called and no regime is given, but the declaration
+-- of `f` is a type error.
+let r = ref 0 in
+let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1, w => (w > zz) }) } in
+!r

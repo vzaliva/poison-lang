@@ -374,6 +374,13 @@ private def externCaptureVars (bound : List Name) (captures : List Capture) :
       captures.map (fun c => (c.target.var, bound)) ++
         externCaptureVars (innerArg :: bound) innerCaptures innerRet
 
+/-- Some level of an extern return is an impure function (`nestedFn`): applying
+    the extern, once or more, can return an impure function. -/
+private def ExternReturn.returnsImpure : ExternReturn → Bool
+  | ExternReturn.simple _ _ _ => false
+  | ExternReturn.nestedFn _ _ _ _ _ _ _ _ => true
+  | ExternReturn.nestedPfn _ _ _ _ _ innerRet _ => innerRet.returnsImpure
+
 /-- Extract the dependency set of a predicate: the locations the predicate reads
     through its captured environment, including through every alternative of
     each pure function it mentions and the declared `captures:` of extern
@@ -390,7 +397,10 @@ private def externCaptureVars (bound : List Name) (captures : List Capture) :
     hide its free variables. The argument of a closure (or of a nested return)
     contributes nothing inside it: the argument is a subexpression of the
     predicate and is counted there. A free impure-function variable makes the
-    extraction fail: no set of locations covers what it reads. -/
+    extraction fail: no set of locations covers what it reads. So does a free
+    pure-function variable with an extern alternative whose return has an
+    impure level (`ExternReturn.returnsImpure`): applying its result is
+    applying an impure function. -/
 def extractDepsFromPred (pred : Predicate) (fuel : Nat) : TypecheckM Deps :=
   match pred with
   | Predicate.guardClosure _tag arg_name pred_body var_env =>
@@ -416,10 +426,13 @@ def extractDepsFromPred (pred : Predicate) (fuel : Nat) : TypecheckM Deps :=
                     | PFnTClosure.regular argName body varEnv' =>
                         extractDepsFromPExpr body [argName] (VarTypeEnv.ofCaptured varEnv') fuel
                     | PFnTClosure.extern _ argName retSpec capEnv _ captures =>
-                        (externCaptureVars [argName] captures retSpec).foldlM (init := LocSet.empty)
-                          (fun dacc (v, bound) => do
-                            let d ← extractDepsFromPExpr (PExpr.var v) bound (VarTypeEnv.ofCaptured capEnv) fuel
-                            return LocSet.union dacc d)
+                        if retSpec.returnsImpure then
+                          throw s!"Variable {x} is a pure function that can return an impure function; the locations it reads cannot be determined"
+                        else
+                          (externCaptureVars [argName] captures retSpec).foldlM (init := LocSet.empty)
+                            (fun dacc (v, bound) => do
+                              let d ← extractDepsFromPExpr (PExpr.var v) bound (VarTypeEnv.ofCaptured capEnv) fuel
+                              return LocSet.union dacc d)
                   return LocSet.union acc deps)
               | ETyp.arrow _ _ _ _ =>
                 -- An impure function may read and write any location: no
@@ -1460,16 +1473,61 @@ def checkExternDeclSite (ctx : TypeContext) (kind : String) (id : ExternId)
       throw s!"extern {kind} @{id}: duplicate declaration of extern id @{dup}; each extern id may be declared at most once per program"
   | none => pure ()
 
+/-- The body of a guard closure declared in the environment `env`: a pure
+    expression (`Expr.toPExpr`) whose dependency set the typechecker can
+    compute (`extractDepsFromPred`).  The computation fails when the body
+    reads a variable that is bound neither by the guard nor in `env`, or
+    mentions an impure function, which may read any location, or a function
+    that can return one.  A bare tag and no predicate have no body.  The
+    body's type is not checked: an ill-typed or non-boolean body passes.
+    TODO (#144): typecheck the body as a pure boolean expression of the
+    guard's argument. -/
+def checkGuardBody (env : VarTypeEnv) (fuel : Nat) : SyntaxPredicate → TypecheckM Unit
+  | SyntaxPredicate.guardClosure idx arg body => do
+      let pbody ← body.toPExpr
+      match extractDepsFromPred (Predicate.guardClosure 0 arg pbody (VarTypeEnv.toCaptured env)) fuel with
+      | .ok _ => pure ()
+      | .error err =>
+          throw s!"guard {repr idx.val}: the locations its predicate reads cannot be determined: {err}"
+  | _ => pure ()
+
+/-- The guard bodies of one level of an extern callable declared in the
+    environment `env` (`checkGuardBody`): the argument condition in `env`; the
+    effects, the `captures:` and the return in `env` extended with the
+    argument; a nested return as one more level in that extended environment.
+    These are the environments in which a call resolves the guards. -/
+def checkExternGuardBodies (env : VarTypeEnv) (fuel : Nat) (arg : Name) (argTyp : Typ)
+    (argPoison : Bool) (argPred : SyntaxPredicate) (retSpec : ExternReturn)
+    (effects : List Effect) (captures : List Capture) : TypecheckM Unit := do
+  checkGuardBody env fuel argPred
+  let argEtyp ← argTypToETyp argTyp
+  let env' := VarTypeEnv.update env arg ⟨argEtyp, argPoison, Predicate.noPred⟩
+  effects.forM (fun effect => checkGuardBody env' fuel effect.pred)
+  captures.forM (fun c => checkGuardBody env' fuel c.pred)
+  match retSpec with
+  | ExternReturn.simple _ _ pred => checkGuardBody env' fuel pred
+  | ExternReturn.nestedFn _ innerArg innerArgTyp innerArgPoison innerArgPred innerRet
+      innerEffects innerCaptures =>
+      checkExternGuardBodies env' fuel innerArg innerArgTyp innerArgPoison innerArgPred
+        innerRet innerEffects innerCaptures
+  | ExternReturn.nestedPfn _ innerArg innerArgTyp innerArgPoison innerArgPred innerRet
+      innerCaptures =>
+      checkExternGuardBodies env' fuel innerArg innerArgTyp innerArgPoison innerArgPred
+        innerRet [] innerCaptures
+
 /-- Typecheck extern impure function.  Per-declaration, rejects function-
     typed and non-`ref int` reference inputs — both at the top-level argument
-    and inside every nested return descriptor — and enforces the declaration-site
-    rules of `checkExternDeclSite`. -/
+    and inside every nested return descriptor — and guard bodies whose
+    dependency sets cannot be computed (`checkExternGuardBodies`), and enforces
+    the declaration-site rules of `checkExternDeclSite`. -/
 def typecheckExternFn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) (effects : List Effect) (captures : List Capture) : TypecheckM TypeResult := do
+    (retSpec : ExternReturn) (effects : List Effect) (captures : List Capture) (fuel : Nat) :
+    TypecheckM TypeResult := do
   checkExternDeclSite ctx "fn" id retSpec.declIds
   checkExternInputFirstOrder argTyp
   checkExternReturnInputsFirstOrder retSpec
+  checkExternGuardBodies ctx.varEnv fuel arg argTyp argPoison argPred retSpec effects captures
   -- Resolve the declared argument condition (precondition) into a concrete QTyp.
   let (argQt, nextTag') ← resolveArgCondQTyp argTyp argPoison argPred ctx.varEnv ctx.nextTag
   -- Create extern closure with captured varEnv (singleton list), the precondition,
@@ -1487,14 +1545,15 @@ def typecheckExternFn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp :
            nextLoc' := ctx.nextLoc, nextTag' := nextTag', regime' := ctx.regime,
            declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) }
 
-/-- Typecheck extern pure function. Same first-order-input rule and
-    declaration-site rules as `typecheckExternFn`. -/
+/-- Typecheck extern pure function. Same first-order-input rule, check of
+    guard bodies and declaration-site rules as `typecheckExternFn`. -/
 def typecheckExternPfn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) (captures : List Capture) : TypecheckM TypeResult := do
+    (retSpec : ExternReturn) (captures : List Capture) (fuel : Nat) : TypecheckM TypeResult := do
   checkExternDeclSite ctx "pfn" id retSpec.declIds
   checkExternInputFirstOrder argTyp
   checkExternReturnInputsFirstOrder retSpec
+  checkExternGuardBodies ctx.varEnv fuel arg argTyp argPoison argPred retSpec [] captures
   -- Resolve the declared argument condition (precondition) into a concrete QTyp.
   let (argQt, nextTag') ← resolveArgCondQTyp argTyp argPoison argPred ctx.varEnv ctx.nextTag
   -- Create extern closure with captured varEnv (singleton list), the precondition,
@@ -1653,9 +1712,11 @@ def installEffectGuards (env : TagEnv) (effects : List Effect) (unifiedEnv : Var
             | _ => acc
         | none => acc) env
 
-/-- A guard whose tag the regime determines must have a dependency set the
-    typechecker can compute; otherwise the application or declaration that
-    introduces it is rejected. -/
+/-- At an extern application, a guard whose tag the regime determines must
+    have a dependency set that the typechecker can compute; otherwise the
+    application is rejected.  The declaration has checked the guard's body
+    (`checkExternGuardBodies`); the set is computed again here, within the
+    fuel of the application. -/
 def requireGuardDeps (resolvedPred : Predicate) (R : Regime) (fuel : Nat) : TypecheckM Unit :=
   match resolvedPred with
   | Predicate.guardClosure k _ _ _ =>
@@ -1709,10 +1770,10 @@ def applyExternRegimePolicy (R : Regime) (id : ExternId)
     allocates fresh tags for the `TagIndex` values in the `SyntaxPredicate`,
     resolves it to a concrete `Predicate`, converts the surface type, gives
     the fresh tags the values that the extern-regime assignment
-    `ctx.externRegime` selects for `id` (`applyExternRegimePolicy`), and
-    records the guard in the tag environment (`installReturnGuard`).  The
-    declaration-site rules of `checkExternDeclSite` apply, and `id` is recorded
-    in `declared'`.
+    `ctx.externRegime` selects for `id` (`applyExternRegimePolicy`), checks
+    the guard's body (`checkGuardBody`), and records the guard in the tag
+    environment (`installReturnGuard`).  The declaration-site rules of
+    `checkExternDeclSite` apply, and `id` is recorded in `declared'`.
 -/
 def typecheckExternVal (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison : Bool)
     (pred : SyntaxPredicate) (fuel : Nat) : TypecheckM TypeResult := do
@@ -1726,7 +1787,7 @@ def typecheckExternVal (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison :
       let resolvedPred ← resolveSyntaxPred pred ctx.varEnv tagMapping
       let (qt, ctx') ← surfaceSpecToQTyp typ poison resolvedPred ctx
       let regime' := applyExternRegimePolicy ctx.regime id ctx.externRegime tagMapping
-      requireGuardDeps resolvedPred regime' fuel
+      checkGuardBody ctx.varEnv fuel pred
       return { qualType := qt, memEnv' := ctx'.memEnv,
                tagEnv' := installReturnGuard ctx.tagEnv resolvedPred regime' fuel,
                nextLoc' := ctx'.nextLoc, nextTag' := nextTag', regime' := regime',
@@ -1762,9 +1823,9 @@ def typecheckExpr (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeR
     | Expr.externRef id refPoison refPred cellPoison cellPred =>
         typecheckExternRef ctx id refPoison refPred cellPoison cellPred
     | Expr.externFn id arg argTyp argPoison argPred retSpec effects captures =>
-        typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures
+        typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures fuel
     | Expr.externPfn id arg argTyp argPoison argPred retSpec captures =>
-        typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures
+        typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures fuel
 termination_by fuel
 
 /-- Rules: op_* (Ott rules: op_plus, op_minus, op_mult, op_div, op_bitwise_and,

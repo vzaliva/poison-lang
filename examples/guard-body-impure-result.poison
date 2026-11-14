@@ -1,0 +1,14 @@
+--! poison-interpreter --extern-regime "250=true"
+-- A guard body may not mention a function that can return an impure function.
+--
+-- `p` is a pure extern whose result is an impure extern (`@261`, which writes
+-- `a`).  The guard of `x` applies that result, `(p 0) v`, so the declaration of
+-- `x` is a type error.  When the nested return of `p` is a pure extern with
+-- `captures: { !a :> (int :> clean {}) }` instead, the declaration records the
+-- guard with the location of `a`, and the assignment `a := 100` removes it.
+let a = ref 5 in
+let p = extern pfn @260 x : (int :> clean {}) -> (extern fn @261 y : (int :> clean {}) -> ((bool :> clean {})),
+  effects: { !a :> (int :> clean {}) }) in
+let x = extern val @250 : (int :> poisoned { 1, v => ((p 0) v) }) in
+let z = (a := 100) in
+x

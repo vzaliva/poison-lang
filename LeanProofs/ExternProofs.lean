@@ -269,7 +269,7 @@ private theorem pfnExternDecl_shape
       | zero => simp [typecheck, typecheckExpr] at htc
       | succ fuel' =>
           have htcPfn :
-              typecheckExternPfn ctx id argName argTyp argPoison argPred retSpec memberCap = .ok res := by
+              typecheckExternPfn ctx id argName argTyp argPoison argPred retSpec memberCap fuel' = .ok res := by
             have h := htc
             simp only [typecheck, typecheckExpr] at h
             exact h
@@ -4183,7 +4183,7 @@ private theorem builtinSetErr_decl_shape
       | succ fuel' =>
           have htcFn :
               typecheckExternFn ctx 22 "n" Typ.int false argPred builtinSetErrRetSpec
-                [builtinSetErrEffect] [] = .ok res := by
+                [builtinSetErrEffect] [] fuel' = .ok res := by
             have h := htc
             simp only [typecheck, typecheckExpr] at h
             exact h

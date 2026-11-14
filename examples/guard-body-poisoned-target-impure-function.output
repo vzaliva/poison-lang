@@ -1,0 +1,5 @@
+Evaluating file: examples/guard-body-poisoned-target-impure-function.poison (verbose mode)
+
+Type checking error:
+  guard 1: the locations its predicate reads cannot be determined: Variable chk is an impure function; the locations it reads cannot be determined
+

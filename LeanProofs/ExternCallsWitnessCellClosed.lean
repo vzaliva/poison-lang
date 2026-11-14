@@ -1194,7 +1194,7 @@ private theorem rd_decl_shape
       | succ fuel' =>
           have htcFn :
               typecheckExternFn ctx 8 "r" (Typ.ref Typ.int) false argPred readRet
-                [rdEff] [] = .ok res := by
+                [rdEff] [] fuel' = .ok res := by
             have h := htc
             simp only [typecheck, typecheckExpr] at h
             exact h

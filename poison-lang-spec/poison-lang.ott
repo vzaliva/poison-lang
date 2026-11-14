@@ -343,7 +343,10 @@ formula :: formula_ ::=
 % closure body is read in its own captured environment with only its argument
 % bound), and, for a guard on a memory cell, the locations of that cell.
 % A guard that reads a variable that is not bound, or applies a variable bound
-% to an impure function (which may read any location), has no dependency set.
+% to an impure function (which may read any location), has no dependency set;
+% nor has a guard that mentions a pure function with an extern alternative whose
+% return has an impure level, since applying its result applies an impure
+% function.
   | match_guard e G S = k with deps  :: :: match_guard  {{ com find guard k for condition e, with the dependency set deps of its predicate }}  {{ tex \texttt{match\_guard}([[e]], [[G]], [[S]]) = ([[k]],\, [[deps]]) }}
   | if_guard_case e G S R = true  :: :: if_guard_case_true  {{ com conditional guard case is known true }}  {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{true} }}
   | if_guard_case e G S R = false :: :: if_guard_case_false {{ com conditional guard case is known false }} {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{false} }}
@@ -402,12 +405,25 @@ formula :: formula_ ::=
 % records nothing. Used only by the clean-effect-pc rules: the poisoned ones
 % erase the stored predicates.
   | installEffectGuards L ESL TM S R = L1 :: :: install_effect_guards {{ com record the guards that the effects of an extern call put on the cells they write }} {{ tex [[L1]] = \mathrm{installEffectGuards}([[L]], [[ESL]], [[TM]], [[S]], [[R]]) }}
+% guardBodyDefined S SP: when SP is a guard closure, its body is a pure
+% expression whose dependency set in S, as match_guard computes it, exists: the
+% body reads no variable that is bound neither by the guard (its argument or a
+% let inside the body) nor in S, and it mentions no impure function and no
+% function that can return an impure one. A bare tag and no predicate satisfy
+% the premise.
+  | guardBodyDefined S SP :: :: guard_body_defined {{ com the body of a declared guard is a pure expression with a dependency set }} {{ tex \mathrm{guardBodyDefined}([[S]], [[SP]]) }}
+% externGuardBodiesDefined S x Q ER ESL CSL: guardBodyDefined holds for the
+% guard of the argument condition Q in S, and, in S extended with the argument x
+% at its declared type, for the guards of the effects ESL, of the captures: CSL
+% and of a simple return ER; a nested return of ER is one more level, with its
+% own argument, effects and captures:, in that extended environment. These are
+% the environments in which a call resolves the guards.
+  | externGuardBodiesDefined S x Q ER ESL CSL :: :: extern_guard_bodies_defined {{ com the guard bodies of an extern callable declaration are pure with dependency sets }} {{ tex \mathrm{externGuardBodiesDefined}([[S]], [[x]], [[Q]], [[ER]], [[ESL]], [[CSL]]) }}
 % guardDepsDefined P R: when P is a guard closure whose tag the regime R
-% determines, its dependency set, as match_guard computes it, exists. The
-% computation fails, and the premise does not hold, when the guard reads a
-% variable that is not bound or applies a variable bound to an impure function,
-% which may read any location. A guard that R does not determine, a bare tag
-% and no predicate satisfy the premise.
+% determines, its dependency set, as match_guard computes it, exists. For a
+% declared guard, the premise of its declaration (guardBodyDefined,
+% externGuardBodiesDefined) guarantees it. A guard that R does not determine, a
+% bare tag and no predicate satisfy the premise.
   | guardDepsDefined P R :: :: guard_deps_defined {{ com a guard that the regime determines has a dependency set }} {{ tex \mathrm{guardDepsDefined}([[P]], [[R]]) }}
 % effectGuardDepsDefined ESL TM S R: guardDepsDefined holds under R for the
 % predicate that TM resolves in S for each effect of ESL whose target resolves
@@ -1285,6 +1301,7 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 
 % values that the assignment of values to extern tags (the ambient extern-regime
 % policy) selects for eid, and installReturnGuard records the guard in the tag
 % environment with the value that the resulting regime R' gives it.
+% guardBodyDefined S SP checks the guard's body, whatever the regime.
 % Like every extern declaration, it appears only in an evaluate-at-most-once
 % position (extern_decl_allowed, impure mode) and declares a fresh id
 % (extern_fresh_id).
@@ -1295,7 +1312,7 @@ externValConvert ST G = T G'
 freshTags SP k = k' TM
 resolve TM SP S = P
 extendExternRegime eid TM R = R'
-guardDepsDefined P R'
+guardBodyDefined S SP
 installReturnGuard L P R' = L1
 ----------------------------------------------------------------------  :: extern_val
 impure ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L1 ; R'
@@ -1349,6 +1366,10 @@ impure ; R ; pc ; G ; S ; L |- extern_ref @ eid clean no_pred poisoned no_pred :
 % extern_spec_wf ensures all (poison, SP) pairs in ER and ESL satisfy extern_wf
 % (clean types cannot carry predicates); it is NOT applied to the argument Q1.
 % This is enforced at parse time.
+% externGuardBodiesDefined checks every guard body of the declaration (argument
+% condition, effects, captures:, returns at every level) in the environment in
+% which a call resolves it, whatever the regime and whether or not the
+% function is called.
 % Like every extern declaration, it appears only in an evaluate-at-most-once
 % position (extern_decl_allowed, impure mode); eid and the ids of the nested
 % descriptors in ER are fresh (extern_fresh_ids).
@@ -1357,6 +1378,7 @@ extern_fresh_ids eid ER
 extern_spec_wf ER ESL
 base_of Q1 = ST1
 returnType ER = ST2
+externGuardBodiesDefined S x Q1 ER ESL CSL
 ----------------------------------------------------------------------  :: extern_fn
 impure ; R ; pc ; G ; S ; L |- extern_fn @ eid x Q1 ER ESL CSL : ST1 -> ST2 # pc tclosures extern_tcl @ eid ( x , Q1 , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
 
@@ -1372,13 +1394,15 @@ impure ; R ; pc ; G ; S ; L |- extern_fn @ eid x Q1 ER ESL CSL : ST1 -> ST2 # pc
 % surface type ST1 so the runtime erase T1 = ST1 match is unchanged. The return
 % qualified type is unchanged.
 % extern_spec_wf ensures all predicates in ER satisfy extern_wf; it is NOT applied
-% to the argument Q1.
+% to the argument Q1. externGuardBodiesDefined checks the guard bodies as in
+% extern_fn.
 % The position and uniqueness conditions are those of extern_fn.
 extern_decl_allowed
 extern_fresh_ids eid ER
 extern_spec_wf ER empty
 base_of Q1 = ST1
 returnType ER = ST2
+externGuardBodiesDefined S x Q1 ER empty CSL
 ----------------------------------------------------------------------  :: extern_pfn
 impure ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tpclosures extern_ptcl @ eid ( x , Q1 , ER , S ) :> pc { no_pred } -| G ; L ; R
 
@@ -1435,14 +1459,18 @@ impure ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tp
 % then, a cell so guarded reads clean when R' sets the tag true. The
 % poisoned-effect-pc rules erase the stored predicates and record nothing.
 %
-% Guards with a dependency set: a guard that R' determines is recorded with its
-% dependency set, so that set must exist. The premises guardDepsDefined P R'
-% (the return guard: the simple-return rules and extern_val) and
+% Guards with a dependency set: every guard body is checked where it is
+% declared, whatever the regime and whether or not the extern is called.
+% extern_val requires guardBodyDefined S SP, and extern_fn and extern_pfn require
+% externGuardBodiesDefined for the argument condition, the effects, the
+% captures: and the returns at every level. The declaration is ill-typed when a
+% guard body reads a variable that is not bound, or mentions an impure function
+% or a function that can return an impure one. A guard that R' determines is
+% recorded with its dependency set: the premises guardDepsDefined P R' (the
+% return guard of the simple-return application rules) and
 % effectGuardDepsDefined (the guards that the effects store: the
-% clean-effect-pc rules) fail for such a guard when the guard reads a variable
-% that is not bound or applies an impure function, and the application or
-% declaration is then ill-typed. A guard that R' does not determine is not
-% recorded and needs no dependency set: the value or cell it guards stays
+% clean-effect-pc rules) state that the set exists at the application. A guard
+% that R' does not determine is not recorded: the value or cell it guards stays
 % poisoned.
 %
 % Call-site regime extension: each

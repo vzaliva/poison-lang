@@ -1,0 +1,12 @@
+-- A guard body that reads an unbound variable is a type error, also on an
+-- effect whose target is poisoned, which stores no predicate in the cell.
+--
+-- `s` is poisoned (it is chosen by the poisoned `y`), and the effect of `f`
+-- guards the cell of `s` with `w > zz`, where `zz` is not bound.  The
+-- declaration of `f` is a type error, without any regime.
+let r = ref 0 in
+let y = extern val @251 : (int :> poisoned {}) in
+let s = if y > 0 then ref 1 else ref 2 in
+let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !s :> (int :> poisoned { 1, w => (w > zz) }) } in
+f r

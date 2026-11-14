@@ -890,12 +890,12 @@ private theorem of_typecheckExternFn
     {root : Expr} {ctxRoot ctx : TypeContext}
     {id : ExternId} {x : Name} {argTyp : Typ}
     {argPoison : Bool} {argPred : SyntaxPredicate}
-    {retSpec : ExternReturn} {effects : List Effect} {res : TypeResult}
+    {retSpec : ExternReturn} {effects : List Effect} {fuel : Nat} {res : TypeResult}
     (hctx : ContextReachableFrom root ctxRoot ctx)
     (hcurrent :
       ExternDeclarationReachableFromExpr root ctxRoot
         (Expr.externFn id x argTyp argPoison argPred retSpec effects cap))
-    (htc : typecheckExternFn ctx id x argTyp argPoison argPred retSpec effects cap = .ok res) :
+    (htc : typecheckExternFn ctx id x argTyp argPoison argPred retSpec effects cap fuel = .ok res) :
     QTypReachableFrom root ctxRoot res.qualType := by
   obtain ⟨argQt, hpoison, hres⟩ :=
     typecheckExternFn_ok_res_eq ctx id x argTyp argPoison argPred retSpec effects res htc
@@ -913,12 +913,12 @@ private theorem of_typecheckExternPfn
     {root : Expr} {ctxRoot ctx : TypeContext}
     {id : ExternId} {x : Name} {argTyp : Typ}
     {argPoison : Bool} {argPred : SyntaxPredicate}
-    {retSpec : ExternReturn} {res : TypeResult}
+    {retSpec : ExternReturn} {fuel : Nat} {res : TypeResult}
     (hctx : ContextReachableFrom root ctxRoot ctx)
     (hcurrent :
       ExternDeclarationReachableFromExpr root ctxRoot
         (Expr.externPfn id x argTyp argPoison argPred retSpec cap))
-    (htc : typecheckExternPfn ctx id x argTyp argPoison argPred retSpec cap = .ok res) :
+    (htc : typecheckExternPfn ctx id x argTyp argPoison argPred retSpec cap fuel = .ok res) :
     QTypReachableFrom root ctxRoot res.qualType := by
   obtain ⟨argQt, hpoison, hres⟩ :=
     typecheckExternPfn_ok_res_eq ctx id x argTyp argPoison argPred retSpec res htc

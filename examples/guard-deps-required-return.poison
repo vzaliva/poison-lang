@@ -1,10 +1,12 @@
 --! poison-interpreter --extern-regime "244=true"
 -- The guard of an extern's return, like the guard of an effect, must have a
--- dependency set that the typechecker can compute when the regime sets it.
+-- dependency set that the typechecker can compute; its body is checked where
+-- the extern is declared.
 --
 -- `h` returns a value guarded by `w > !b + zz`; `zz` is not bound, so the
--- locations that the guard reads cannot be determined.  The regime sets the
--- guard (`--extern-regime "244=true"`), so the call `h 5` is a type error.
+-- locations that the guard reads cannot be determined, and the declaration of
+-- `h` is a type error, whether or not the regime sets the guard
+-- (`--extern-regime "244=true"` sets it).
 -- With the guard `w > !b` the call is accepted and records the guard with the
 -- location of `b`; the write `g b` then removes it, `t` is poisoned, and the
 -- error is at `getv t`, whose argument must be clean.

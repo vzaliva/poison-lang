@@ -1,5 +1,5 @@
 Evaluating file: examples/guard-deps-impure-function.poison (verbose mode)
 
 Type checking error:
-  the regime sets guard 1, but the locations its predicate reads cannot be determined: Variable chk is an impure function; the locations it reads cannot be determined
+  guard 1: the locations its predicate reads cannot be determined: Variable chk is an impure function; the locations it reads cannot be determined
 

@@ -1,12 +1,12 @@
 --! poison-interpreter --extern-regime "240=true"
--- A guard that the regime sets must have a dependency set that the typechecker
--- can compute.
+-- The guard of an extern's effect must have a dependency set that the
+-- typechecker can compute; its body is checked where the extern is declared.
 --
 -- The effect of `f` guards the cell of `r` with `w > zz`, and `zz` is not
 -- bound, so the locations that the guard reads cannot be determined.  The
--- regime sets the guard (`--extern-regime "240=true"`), so the call `f r` is a
--- type error.  Without that regime entry the guard is not set, the call is
--- accepted and `!r` is poisoned.
+-- declaration of `f` is a type error, whether or not the regime sets the
+-- guard (`--extern-regime "240=true"` sets it) and whether or not `f` is
+-- called.
 let r = ref 0 in
 let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
   effects: { !q :> (int :> poisoned { 1, w => (w > zz) }) } in

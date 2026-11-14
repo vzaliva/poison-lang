@@ -2909,8 +2909,8 @@ lemma checkExternDeclSite_ok_allowed {ctx : TypeContext} {kind : String} {id : E
 /-- A successful `typecheckExternFn` passed the declaration-site check. -/
 lemma typecheckExternFn_ok_declSite {ctx : TypeContext} {id : ExternId} {arg : Name}
     {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
-    {effects : List Effect} {captures : List Capture} {res : TypeResult}
-    (h : typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures = .ok res) :
+    {effects : List Effect} {captures : List Capture} {fuel : Nat} {res : TypeResult}
+    (h : typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures fuel = .ok res) :
     checkExternDeclSite ctx "fn" id retSpec.declIds = .ok PUnit.unit := by
   cases c_eq : checkExternDeclSite ctx "fn" id retSpec.declIds with
   | error e =>
@@ -2922,8 +2922,8 @@ lemma typecheckExternFn_ok_declSite {ctx : TypeContext} {id : ExternId} {arg : N
 /-- A successful `typecheckExternPfn` passed the declaration-site check. -/
 lemma typecheckExternPfn_ok_declSite {ctx : TypeContext} {id : ExternId} {arg : Name}
     {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
-    {captures : List Capture} {res : TypeResult}
-    (h : typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures = .ok res) :
+    {captures : List Capture} {fuel : Nat} {res : TypeResult}
+    (h : typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures fuel = .ok res) :
     checkExternDeclSite ctx "pfn" id retSpec.declIds = .ok PUnit.unit := by
   cases c_eq : checkExternDeclSite ctx "pfn" id retSpec.declIds with
   | error e =>
@@ -2941,8 +2941,8 @@ lemma typecheckExternPfn_ok_declSite {ctx : TypeContext} {id : ExternId} {arg : 
 lemma typecheckExternFn_ok_res_eq
     (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) (effects : List Effect) {captures : List Capture} (res : TypeResult) :
-    typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures = .ok res →
+    (retSpec : ExternReturn) (effects : List Effect) {captures : List Capture} {fuel : Nat} (res : TypeResult) :
+    typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures fuel = .ok res →
     ∃ argQt,
       argQt.poison = argPoison ∧
       res =
@@ -2985,11 +2985,20 @@ lemma typecheckExternFn_ok_res_eq
       have hca : checkExternReturnInputsFirstOrder retSpec = .ok a := c_eq
       have ha' : a = PUnit.unit := Subsingleton.elim a PUnit.unit
       exact hca.trans (congrArg Except.ok ha')
+  have h3ok : checkExternGuardBodies ctx.varEnv fuel arg argTyp argPoison argPred retSpec
+      effects captures = .ok PUnit.unit := by
+    cases c_eq : checkExternGuardBodies ctx.varEnv fuel arg argTyp argPoison argPred retSpec
+        effects captures with
+    | error e =>
+      unfold typecheckExternFn at h
+      rw [h0ok, h1ok, h2ok, c_eq] at h
+      cases h
+    | ok a => rfl
   cases hr : resolveArgCondQTyp argTyp argPoison argPred ctx.varEnv ctx.nextTag with
   | error e =>
       exfalso
       unfold typecheckExternFn at h
-      simp [h0ok, h1ok, h2ok, bind, Except.bind, hr] at h
+      simp [h0ok, h1ok, h2ok, h3ok, bind, Except.bind, hr] at h
   | ok p =>
       obtain ⟨argQt, nt⟩ := p
       have hpoison : argQt.poison = argPoison := resolveArgCondQTyp_fst_poison hr
@@ -2997,7 +3006,7 @@ lemma typecheckExternFn_ok_res_eq
       subst hnt
       refine ⟨argQt, hpoison, ?_⟩
       have hdef :
-          typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures
+          typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures fuel
             = .ok { qualType :=
                       ⟨ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
                         [FnTClosure.extern id arg retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
@@ -3006,14 +3015,14 @@ lemma typecheckExternFn_ok_res_eq
                     nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
                     regime' := ctx.regime,
                     declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) } := by
-        simp [typecheckExternFn, h0ok, h1ok, h2ok, hr, bind, Except.bind, TypecheckM_pure_eq]
+        simp [typecheckExternFn, h0ok, h1ok, h2ok, h3ok, hr, bind, Except.bind, TypecheckM_pure_eq]
       exact (by injection h.symm.trans hdef)
 
 lemma typecheckExternPfn_ok_res_eq
   (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) {captures : List Capture} (res : TypeResult) :
-    typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures = .ok res →
+    (retSpec : ExternReturn) {captures : List Capture} {fuel : Nat} (res : TypeResult) :
+    typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures fuel = .ok res →
     ∃ argQt,
       argQt.poison = argPoison ∧
       res =
@@ -3056,11 +3065,20 @@ lemma typecheckExternPfn_ok_res_eq
       have hca : checkExternReturnInputsFirstOrder retSpec = .ok a := c_eq
       have ha' : a = PUnit.unit := Subsingleton.elim a PUnit.unit
       exact hca.trans (congrArg Except.ok ha')
+  have h3ok : checkExternGuardBodies ctx.varEnv fuel arg argTyp argPoison argPred retSpec
+      [] captures = .ok PUnit.unit := by
+    cases c_eq : checkExternGuardBodies ctx.varEnv fuel arg argTyp argPoison argPred retSpec
+        [] captures with
+    | error e =>
+      unfold typecheckExternPfn at h
+      rw [h0ok, h1ok, h2ok, c_eq] at h
+      cases h
+    | ok a => rfl
   cases hr : resolveArgCondQTyp argTyp argPoison argPred ctx.varEnv ctx.nextTag with
   | error e =>
       exfalso
       unfold typecheckExternPfn at h
-      simp [h0ok, h1ok, h2ok, bind, Except.bind, hr] at h
+      simp [h0ok, h1ok, h2ok, h3ok, bind, Except.bind, hr] at h
   | ok p =>
       obtain ⟨argQt, nt⟩ := p
       have hpoison : argQt.poison = argPoison := resolveArgCondQTyp_fst_poison hr
@@ -3068,7 +3086,7 @@ lemma typecheckExternPfn_ok_res_eq
       subst hnt
       refine ⟨argQt, hpoison, ?_⟩
       have hdef :
-          typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures
+          typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures fuel
             = .ok { qualType :=
                       ⟨ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
                         [PFnTClosure.extern id arg retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
@@ -3077,7 +3095,7 @@ lemma typecheckExternPfn_ok_res_eq
                     nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
                     regime' := ctx.regime,
                     declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) } := by
-        simp [typecheckExternPfn, h0ok, h1ok, h2ok, hr, bind, Except.bind, TypecheckM_pure_eq]
+        simp [typecheckExternPfn, h0ok, h1ok, h2ok, h3ok, hr, bind, Except.bind, TypecheckM_pure_eq]
       exact (by injection h.symm.trans hdef)
 
 private lemma typecheckExternRef_ok_res_eq
@@ -4321,8 +4339,7 @@ theorem typecheckExternVal_ok_shape {ctx : TypeContext} {id : ExternId} {typ : T
           cases hsurf : surfaceSpecToQTyp typ poison resolvedPred ctx with
           | error err => simp [hsurf] at htc
           | ok surfResult =>
-            cases hreq : requireGuardDeps resolvedPred
-                (applyExternRegimePolicy ctx.regime id ctx.externRegime tagMapping) fuel with
+            cases hreq : checkGuardBody ctx.varEnv fuel pred with
             | error err => simp [hsurf, hreq] at htc
             | ok _ =>
               simp only [hsurf, hreq, Except.ok.injEq] at htc
@@ -4342,8 +4359,8 @@ private lemma typecheckExternVal_nextTag_mono
 private lemma typecheckExternFn_preserves_nextTag
     (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) (effects : List Effect) (res : TypeResult) :
-    typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures = .ok res →
+    (retSpec : ExternReturn) (effects : List Effect) {fuel : Nat} (res : TypeResult) :
+    typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures fuel = .ok res →
     res.nextTag' = ctx.nextTag := by
   intro htc
   obtain ⟨argQt, _, hres⟩ :=
@@ -4353,8 +4370,8 @@ private lemma typecheckExternFn_preserves_nextTag
 private lemma typecheckExternPfn_preserves_nextTag
     (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
-    (retSpec : ExternReturn) (res : TypeResult) :
-    typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures = .ok res →
+    (retSpec : ExternReturn) {fuel : Nat} (res : TypeResult) :
+    typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures fuel = .ok res →
     res.nextTag' = ctx.nextTag := by
   intro htc
   obtain ⟨argQt, _, hres⟩ :=

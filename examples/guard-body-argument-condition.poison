@@ -1,0 +1,10 @@
+-- The guard of an extern's argument condition is checked at the declaration
+-- like the guards of its return and effects.
+--
+-- The argument condition of `f` applies `chk`, an impure function that reads
+-- `a`, so the declaration of `f` is a type error, although `f` is never
+-- called.
+let a = ref 5 in
+let chk = fn u : int => u > !a : bool in
+let f = extern fn @240 n : (int :> poisoned { 1, w => (chk w) }) -> ((unit :> clean {})) in
+0

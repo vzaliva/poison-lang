@@ -1,0 +1,5 @@
+Evaluating file: examples/guard-body-uncalled-declaration.poison (verbose mode)
+
+Type checking error:
+  guard 1: the locations its predicate reads cannot be determined: Variable zz not found in environment while extracting dependencies
+

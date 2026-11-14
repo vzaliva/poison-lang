@@ -91,11 +91,21 @@ is poisoned or whose call runs under a poisoned effect pc: such an effect
 stores no predicate.
 
 A guard that the regime sets is recorded with its dependency set, so the
-typechecker must be able to compute that set. When the guard of a return, of
-an effect or of an `extern val` reads a variable that is not bound, or applies
-a variable bound to an impure function (which may read any location), and the
-regime after the call or declaration sets its tag, the call or declaration is
-a type error. For example, under `--extern-regime "250=true"`,
+typechecker must be able to compute that set. It checks every guard body where
+the guard is declared, whatever the regime and whether or not the extern is
+called. The guards of an `extern val`, and those of the argument condition, the
+return, the effects and the `captures:` of an `extern fn` or `extern pfn`, at
+every level of a nested return, are all checked. A guard body is a pure
+expression. It may not:
+
+- read a variable that is bound neither by the guard nor where the extern is
+  declared (the extern's arguments count as bound);
+- mention an impure function, which may read any location;
+- mention a function that can return an impure function, such as a pure extern
+  whose nested return is an `extern fn`.
+
+Any of these makes the declaration a type error. The type of a guard body is
+not checked: a body that is ill-typed or not boolean is accepted. For example,
 
 ```poison
 let chk = fn u : int => u > !a : bool in
@@ -103,10 +113,13 @@ let x = extern val @250 : (int :> poisoned { 1, v => (chk v) }) in
 ```
 
 is rejected (`examples/guard-deps-impure-function.poison`); with `pfn` in
-place of `fn` the guard is recorded with the location of `a`. A guard that the
-regime does not set is not recorded and needs no dependency set: the value or
-cell it guards stays poisoned
-(`examples/guard-deps-required-effect.poison`).
+place of `fn` the guard is recorded with the location of `a` when the regime
+sets it. An `extern fn` whose effect guard reads an unbound variable is
+rejected even if it is never called
+(`examples/guard-body-uncalled-declaration.poison`). At a call, the typechecker
+computes the dependency set again for a guard that the regime sets. A guard
+that the regime does not set is not recorded: the value or cell it guards stays
+poisoned.
 
 `captures:` also feed the dependency set of a guard, the locations whose write
 revokes it. When a guard's predicate applies a pure function, every
