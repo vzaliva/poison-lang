@@ -1,0 +1,9 @@
+Evaluating file: examples/effect-guard-bare-tag-read.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=false, pred={}},
+  MemoryTypeEnv: { 0 := (true, {1}), 1 := (false, {}), 2 := (true, {}), 3 := (true, {}) },
+  tagEnv: { 1 := { value := true, deps := [1, 2, 3] } },
+  nextLoc: 4
+
+Runtime error: extern id 251 not registered

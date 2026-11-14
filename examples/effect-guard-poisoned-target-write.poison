@@ -1,0 +1,26 @@
+--! poison-interpreter --extern-regime "240=true"
+-- The guard that an extern's effect puts on a cell is recorded at the call also
+-- when the effect's target is poisoned, so a write to what the guard reads
+-- removes it.
+--
+-- `s` is poisoned (it is chosen by the poisoned `y`).  The call `fB r` stores
+-- the bare tag 1 in the cell of `r` and stores no predicate in the cell of `s`;
+-- the closure of tag 1, `w > !b`, is on the effect on `s`.  The regime sets the
+-- tag (`--extern-regime "240=true"`), so the call records tag 1 with the
+-- locations of `s` and `b`, and `!r` reads clean.  `g b` then writes `b`: tag 1
+-- is removed from the tag environment and the regime, `!r` is poisoned, and
+-- `getv (!r)`, whose argument must be clean, is a type error.  Without the
+-- write the program is accepted
+-- (`examples/effect-guard-poisoned-target.poison`).
+let r = ref 0 in
+let b = ref 0 in
+let y = extern val @251 : (int :> poisoned {}) in
+let s = if y > 0 then ref 1 else ref 2 in
+let getv = extern pfn @242 v : (int :> clean {}) -> ((int :> clean {})) in
+let fB = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1 }), !s :> (int :> poisoned { 1, w => (w > !b) }) } in
+let g = extern fn @241 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> clean {}) } in
+let u = fB r in
+let w = g b in
+getv (!r)

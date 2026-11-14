@@ -86,9 +86,14 @@ let f = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
 the call `f r` under `--extern-regime "240=true"` makes `!r` clean, and a
 write to `b` or `r` revokes the guard
 (`examples/effect-guard-extern-write.poison`). A bare tag on an effect
-(`poisoned { 1 }`) records nothing, nor does an effect whose target reference
-is poisoned or whose call runs under a poisoned effect pc: such an effect
-stores no predicate.
+(`poisoned { 1 }`) records nothing, nor does an effect whose call runs under a
+poisoned effect pc: such an effect stores no predicate. An effect whose target
+reference is poisoned stores no predicate in its cells, but its guard is
+recorded all the same. The same call may store the bare tag of that guard in
+another cell, which then reads clean while the guard stands
+(`examples/effect-guard-poisoned-target.poison`,
+`examples/effect-guard-bare-tag-read.poison`). A write to what the guard reads
+removes it (`examples/effect-guard-poisoned-target-write.poison`).
 
 A guard that the regime sets is recorded with its dependency set, so the
 typechecker must be able to compute that set. It checks every guard body where

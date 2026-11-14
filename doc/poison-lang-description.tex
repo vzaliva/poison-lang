@@ -556,9 +556,15 @@ tag enters the tag environment with the regime's value, and its dependency set
 is the written cells together with the locations the guard reads, the set
 \texttt{match\_guard} computes for a guard on a cell. When one call records
 the same tag twice (on its return and on a cell, or on two cells), the
-dependency sets are united. A bare tag on an effect and a regime-undetermined
-guard record nothing, and the \texttt{\_poisoned} rules, which erase the
-stored predicates, record nothing either. A cell so guarded therefore reads
+dependency sets are united. An effect whose target reference is poisoned
+stores no predicate in its cells, but its guard is recorded all the same: the
+same call may store the bare tag of that guard in another cell, which then
+reads clean only while the guard stands
+(\texttt{examples/effect-guard-poisoned-target.poison},
+\texttt{examples/effect-guard-poisoned-target-write.poison}). A bare tag on an
+effect and a regime-undetermined guard record nothing, and the
+\texttt{\_poisoned} rules, which erase the stored predicates, record nothing
+either. A cell so guarded therefore reads
 clean right after the call when the regime sets its tag true, as a returned
 guarded value does, and stays so across writes to other locations; a later
 write to a location in its dependency set, by assignment or by an extern's

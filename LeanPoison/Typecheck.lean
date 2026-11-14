@@ -1675,16 +1675,19 @@ def installReturnGuard (env : TagEnv) (resolvedPred : Predicate) (R : Regime)
 
 /-- Value-correct materialisation of the guards that an extern call's effects
     put on the cells they write.  The effects are followed in order, resolved
-    as `applyExternEffect` resolves them.  When the predicate an effect stores
-    in its cells is a guard closure (it is erased when the target reference or
-    the effect pc is poisoned) and the post-call regime `R` determines its fresh
-    tag `k` as `b`, the tag is recorded as `k ↦ (b, deps)`, where `deps` is the
+    as `applyExternEffect` resolves them.  When the effect pc `pc` is clean,
+    the predicate of an effect whose target is a reference resolves to a guard
+    closure, and the post-call regime `R` determines its fresh tag `k` as `b`,
+    the tag is recorded as `k ↦ (b, deps)`, where `deps` is the
     set of written cells (the target's locations) together with the locations
     the predicate reads (`extractDepsFromPred`): the set `matchGuard` computes
     for a guard on a cell.  When the call has already recorded `k` (the same
     guard on its return or on an earlier effect), the dependency sets are
-    united.  A regime-undetermined guard, a guard whose dependency extraction
-    fails, and a predicate without a body record nothing. -/
+    united.  A poisoned target reference stores no predicate in its cells, but
+    the guard is recorded all the same: the call may store the bare tag `k` in
+    another cell.  A poisoned effect pc erases every stored predicate and
+    records nothing; so do a regime-undetermined guard, a guard whose
+    dependency extraction fails, and a predicate without a body. -/
 def installEffectGuards (env : TagEnv) (effects : List Effect) (unifiedEnv : VarTypeEnv)
     (tagMapping : TagMapping) (pc : Poison) (R : Regime) (fuel : Nat) : TagEnv :=
   effects.foldl (fun acc effect =>
@@ -1694,7 +1697,7 @@ def installEffectGuards (env : TagEnv) (effects : List Effect) (unifiedEnv : Var
         | some qt =>
             match qt.etyp with
             | ETyp.ref ls =>
-                if qt.poison || pc then acc
+                if pc then acc
                 else
                   match resolveSyntaxPred effect.pred unifiedEnv tagMapping with
                   | .ok (Predicate.guardClosure k arg body cap) =>
@@ -1730,8 +1733,8 @@ def requireGuardDeps (resolvedPred : Predicate) (R : Regime) (fuel : Nat) : Type
   | _ => pure ()
 
 /-- `requireGuardDeps` for the guard of an extern call's return and for the
-    guards its effects put on the cells they write (an effect whose target is
-    poisoned, or made under a poisoned pc, stores no predicate). -/
+    guards that `installEffectGuards` records for its effects: those whose
+    target is a reference, clean or poisoned, when the effect pc is clean. -/
 def requireExternGuardDeps (retPred : Predicate) (effects : List Effect) (unifiedEnv : VarTypeEnv)
     (tagMapping : TagMapping) (pc : Poison) (R : Regime) (fuel : Nat) : TypecheckM Unit := do
   requireGuardDeps retPred R fuel
@@ -1742,7 +1745,7 @@ def requireExternGuardDeps (retPred : Predicate) (effects : List Effect) (unifie
         | some qt =>
             match qt.etyp with
             | ETyp.ref _ =>
-                if qt.poison || pc then pure ()
+                if pc then pure ()
                 else
                   match resolveSyntaxPred effect.pred unifiedEnv tagMapping with
                   | .ok p => requireGuardDeps p R fuel

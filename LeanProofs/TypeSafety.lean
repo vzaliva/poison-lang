@@ -3505,7 +3505,7 @@ private lemma installEffectGuards_single_get?_cases
     cases he : qt.etyp
     case ref ls =>
       simp only [he] at h
-      cases hp : (qt.poison || pc) with
+      cases hp : pc with
       | true => simp only [hp, ite_true] at h; exact Or.inl h
       | false =>
         simp only [hp, Bool.false_eq_true, ite_false] at h
@@ -3602,7 +3602,7 @@ lemma installEffectGuards_eq_self
           cases he : qt.etyp
           case ref ls =>
             dsimp only
-            cases hp : (qt.poison || pc) with
+            cases hp : pc with
             | true => simp only [ite_true]
             | false =>
               -- The wildcard branch of the match on the resolved predicate is

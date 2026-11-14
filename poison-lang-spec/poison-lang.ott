@@ -395,15 +395,17 @@ formula :: formula_ ::=
   | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R exactly those tags that are materialised in L with a dependency set intersecting LS; tags absent from L are KEPT — unlike assignment's invalidate\_regime\_deps, which drops them — so a driver-asserted regime tag that has not yet entered the tag environment survives an unrelated write effect }} {{ tex \texttt{invalidate\_regime\_deps\_effect}([[R]], [[L]], [[LS]]) = [[R1]] }}
   | installReturnGuard L P R = L1 :: :: install_return_guard {{ com value-correct return-guard materialisation: when P is a guard closure with tag k whose value the regime R determines as b — whether asserted through the initial regime or inserted by the extern-regime policy — insert k |-> (b, deps) into L, with deps the dependency set of the closure as computed by match\_guard (the locations its body reads through its captured environment, including through every alternative of each pure function it mentions and the declared captures: of extern alternatives); a regime-undetermined guard, a guard whose dependency extraction fails, or a non-closure P leaves L unchanged. Materialising the dependencies is what lets a later write effect (or assignment) invalidate a stale guard whose predicate reads the written cell }} {{ tex [[L1]] = \mathrm{installReturnGuard}([[L]], [[P]], [[R]]) }}
 % installEffectGuards L ESL TM S R = L1: for each effect of ESL whose target
-% resolves in S to a clean reference with locations LS and whose predicate
-% resolves via TM to a guard closure with tag k whose value the regime R
+% resolves in S to a reference with locations LS, clean or poisoned, and whose
+% predicate resolves via TM to a guard closure with tag k whose value the regime R
 % determines as b, insert k |-> (b, LS union deps) into L, with deps the
 % dependency set of the closure as computed by match_guard; when k is already
 % in the result (the same guard on the return or on an earlier effect of the
 % call), the dependency sets are united. A regime-undetermined guard, a guard
 % whose dependency extraction fails, a bare tag, or a predicate without a guard
-% records nothing. Used only by the clean-effect-pc rules: the poisoned ones
-% erase the stored predicates.
+% records nothing. A poisoned target stores no predicate in its cells
+% (resolveEffects), but the guard is recorded all the same: the call may store
+% the bare tag k in another cell. Used only by the clean-effect-pc rules: the
+% poisoned ones erase the stored predicates.
   | installEffectGuards L ESL TM S R = L1 :: :: install_effect_guards {{ com record the guards that the effects of an extern call put on the cells they write }} {{ tex [[L1]] = \mathrm{installEffectGuards}([[L]], [[ESL]], [[TM]], [[S]], [[R]]) }}
 % guardBodyDefined S SP: when SP is a guard closure, its body is a pure
 % expression whose dependency set in S, as match_guard computes it, exists: the
@@ -427,7 +429,8 @@ formula :: formula_ ::=
   | guardDepsDefined P R :: :: guard_deps_defined {{ com a guard that the regime determines has a dependency set }} {{ tex \mathrm{guardDepsDefined}([[P]], [[R]]) }}
 % effectGuardDepsDefined ESL TM S R: guardDepsDefined holds under R for the
 % predicate that TM resolves in S for each effect of ESL whose target resolves
-% in S to a clean reference (the effects that store a predicate).
+% in S to a reference, clean or poisoned (the effects whose guards
+% installEffectGuards records).
   | effectGuardDepsDefined ESL TM S R :: :: effect_guard_deps_defined {{ com the guards that the effects store and the regime determines have dependency sets }} {{ tex \mathrm{effectGuardDepsDefined}([[ESL]], [[TM]], [[S]], [[R]]) }}
 
 
@@ -1456,8 +1459,11 @@ impure ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tp
 % written cells together with the locations the guard reads, the set match_guard
 % computes for a guard on a cell. A later write to any of these locations, by
 % assignment or by an effect, invalidates the guard and its regime entry; until
-% then, a cell so guarded reads clean when R' sets the tag true. The
-% poisoned-effect-pc rules erase the stored predicates and record nothing.
+% then, a cell so guarded reads clean when R' sets the tag true. An effect
+% whose target is poisoned stores no predicate in its cells, but its guard is
+% recorded too, so that a cell holding the bare tag of that guard, stored by the
+% same call, reads clean only while the guard stands. The poisoned-effect-pc
+% rules erase the stored predicates and record nothing.
 %
 % Guards with a dependency set: every guard body is checked where it is
 % declared, whatever the regime and whether or not the extern is called.

@@ -1,0 +1,18 @@
+--! poison-interpreter --extern-regime "240=true"
+-- A cell that holds the bare tag of a recorded guard reads clean right after
+-- the call when the regime sets the tag true.
+--
+-- The call `fB r` stores the bare tag 1 in the cell of `r`; the closure of tag
+-- 1 is on the effect on the poisoned `s`, and the call records tag 1 with the
+-- locations of `s` and `b`.  `!r` is typed clean.
+-- This is a typecheck-level demonstration: `@251` has no registered runtime
+-- implementation, so evaluation stops at the declaration of `y` with the
+-- expected "extern id 251 not registered" error.
+let r = ref 0 in
+let b = ref 0 in
+let y = extern val @251 : (int :> poisoned {}) in
+let s = if y > 0 then ref 1 else ref 2 in
+let fB = extern fn @240 q : (ref int :> clean {}) -> ((unit :> clean {})) ,
+  effects: { !q :> (int :> poisoned { 1 }), !s :> (int :> poisoned { 1, w => (w > !b) }) } in
+let u = fB r in
+!r
