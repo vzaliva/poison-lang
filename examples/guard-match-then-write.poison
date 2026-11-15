@@ -1,0 +1,17 @@
+--! poison-interpreter --extern-regime "250=true"
+-- A guard selected by a test, and a write to the cell it reads.
+--
+-- The extern value x (`@250`) carries the guard v => v > !a, which reads the
+-- cell of a. The test x > !a reads that cell through the same variable, and a
+-- is a clean reference to one cell, so the test selects the guard; the regime
+-- (`--extern-regime "250=true"`) sets its tag true and the else branch is
+-- dead. The then branch writes a := 100, a location the guard reads: the
+-- guard is removed from the tag environment and the regime, and x, read after
+-- the write, is typed poisoned. guard-match-no-write.poison is the same
+-- program without the write. `@250` has no runtime implementation, so the run
+-- stops at its declaration with the error "extern id 250 not registered".
+let a = ref 0 in
+let x = extern val @250 : (int :> poisoned { 1, v => (v > !a) }) in
+if x > !a then
+  (a := 100; x)
+else 0
