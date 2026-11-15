@@ -1,0 +1,16 @@
+--! poison-interpreter --extern-regime "12=true"
+-- Dependency set of a guard that applies a pure function with two alternatives.
+--
+-- `chk` is the join of two pure closures that both read `!a`.  `getv` (`@12`,
+-- `abs`) returns a poisoned int guarded by `w => chk w`; the dependency set of
+-- that guard is the union over both alternatives of `chk`: the location of `a`.
+-- The regime asserts the guard (`--extern-regime "12=true"`), so `x` reads
+-- clean while the guard stands.  The assignment `a := 100` writes a location
+-- the guard reads: the guard is removed from the tag environment and the
+-- regime, and `x`, read after the write, is poisoned.  At run time the
+-- program returns 7.
+let a = ref 5 in
+let chk = if true then (pfn v : int => v > !a : bool) else (pfn v : int => v > (!a + 0) : bool) in
+let getv = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, w => (chk w) })) in
+let x = getv 7 in
+(a := 100; x)

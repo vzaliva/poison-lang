@@ -1,0 +1,13 @@
+--! poison-interpreter --extern-regime "12=true"
+-- The guard of x reads the integer lo (0); a second lo (10) shadows it, and
+-- the test x >= lo reads the second one. A variable the guard reads, other
+-- than its argument, must be a clean reference to a single location: lo is an
+-- integer, so the guard is not selected, the branches are joined, and the
+-- result is poisoned. The test 5 >= 10 is false, so the else branch runs.
+let lo = 0 in
+let bad = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let g = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v >= lo) })) in
+let x = g 5 in
+let lo = 10 in
+if x >= lo then 1 else y

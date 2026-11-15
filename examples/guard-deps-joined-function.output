@@ -1,0 +1,19 @@
+Evaluating file: examples/guard-deps-joined-function.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int,
+   poison=true,
+   pred={1, pfn w -> chk w, deps: [a : {type=ref @ [0], poison=false, pred={}},
+     chk : {type=parrow int bool false [regular v (v > (!a)) [a : {type=ref @ [0], poison=false, pred={}}],
+       regular v (v > ((!a) + 0)) [a : {type=ref @ [0], poison=false, pred={}}]],
+      poison=false,
+      pred={}},
+     n : {type=int, poison=false, pred={}}]}},
+  MemoryTypeEnv: { 0 := (false, {}) },
+  tagEnv: {},
+  nextLoc: 1
+
+Result: 7
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0), (1000001, 100)]

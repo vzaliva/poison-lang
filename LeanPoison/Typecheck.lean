@@ -745,17 +745,20 @@ def opUnaryEType? : UnaryOp → ETyp → Option ETyp
   | _,    _     => none
 
 /--
- Helper function to check if two PExprs are syntactically equal modulo
- environment differences. This handles variable substitution during structural
- comparison. Variables are substituted in the first argument only.
+ Syntactic equality of two pure expressions, with an optional substitution in
+ the first. With `substitution = some (x, val)`, an occurrence of `x` in `pe1`
+ is compared as `val`; any other variable equals only a variable of the same
+ name. A `let` in `pe1` that binds `x` turns the substitution off in its body,
+ and a `let` that binds a name occurring in `val` makes the comparison fail
+ (the binder would capture it). The environments `env1` and `env2` are not
+ read: two variables of the same name are equal whatever they denote. Where
+ `matchGuard` uses this comparison, `guardScopeAgrees` checks what they
+ denote. A unary operator has no case: it equals nothing.
 
  The `fuel` parameter is used to prove termination. Structural recursion on the
  pe1 and pe2 arguments does not work in case of substitution: the substituted
  value is compared again under the same substitution, so recursion is bounded
- by fuel instead.
-
- The `substitution` parameter is an optional (variable, value) pair for
- substitution.
+ by fuel instead. Out of fuel, the comparison is false.
 --/
 def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : CapturedVarEnv) (pe2 : PExpr) (env2 : CapturedVarEnv)
     (substitution : Option (Name × PExpr)) (fuel : Nat) : Bool :=
@@ -796,6 +799,11 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : CapturedVarEnv) (pe2 : PExpr) (env
     | .deref e1, .deref e2 => equalWithEnvs e1 env1 e2 env2 substitution fuel
     | .vlet x1 e1 e2, .vlet x2 e1' e2' =>
       x1 == x2 &&
+      -- The substituted value must not mention the bound name: it would be
+      -- captured by the binder in the body.
+      (match substitution with
+       | some (arg1, val1) => arg1 == x1 || !(PExpr.usesArg x1 val1)
+       | none => true) &&
       equalWithEnvs e1 env1 e1' env2 substitution fuel &&
       -- For the body, disable substitution if the bound variable shadows the substitution variable
       equalWithEnvs e2 env1 e2' env2 (if substitution.map (·.1) == some x1 then none else substitution) fuel
@@ -803,17 +811,67 @@ def PExpr.equalWithEnvs (pe1 : PExpr) (env1 : CapturedVarEnv) (pe2 : PExpr) (env
       equalWithEnvs e1 env1 e1' env2 substitution fuel && equalWithEnvs e2 env1 e2' env2 substitution fuel
     | _, _ => false
 
+/-- The free variables of a pure expression, other than the names in `bound`. -/
+def PExpr.freeVars (bound : List Name) : PExpr → List Name
+  | .var y => if bound.contains y then [] else [y]
+  | .op p _ q => PExpr.freeVars bound p ++ PExpr.freeVars bound q
+  | .unaryop _ p => PExpr.freeVars bound p
+  | .ite p q r => PExpr.freeVars bound p ++ PExpr.freeVars bound q ++ PExpr.freeVars bound r
+  | .deref p => PExpr.freeVars bound p
+  | .vlet y p q => PExpr.freeVars bound p ++ PExpr.freeVars (y :: bound) q
+  | .app p q => PExpr.freeVars bound p ++ PExpr.freeVars bound q
+  | _ => []
+
+/-- `PExpr.derefsArg names body` holds when a dereference `!p` in `body` reads one
+    of `names`. Called with the argument of a guard. A `let` inside the body
+    whose bound expression reads one of `names` adds its name to `names` (it
+    stands for the argument); any other `let` removes its name (it hides it). -/
+def PExpr.derefsArg (names : List Name) : PExpr → Bool
+  | .deref p => names.any (fun x => PExpr.usesArg x p) || PExpr.derefsArg names p
+  | .op p _ q => PExpr.derefsArg names p || PExpr.derefsArg names q
+  | .unaryop _ p => PExpr.derefsArg names p
+  | .ite p q r => PExpr.derefsArg names p || PExpr.derefsArg names q || PExpr.derefsArg names r
+  | .vlet y p q =>
+      PExpr.derefsArg names p ||
+        PExpr.derefsArg
+          (if names.any (fun x => PExpr.usesArg x p) then y :: names
+           else names.filter (fun x => x != y)) q
+  | .app p q => PExpr.derefsArg names p || PExpr.derefsArg names q
+  | _ => false
+
+/-- A guard closure is in scope for matching when its body does not dereference its
+    argument, and every variable its body reads, other than its argument, is a
+    clean reference to a single location and has the same qualified type in the
+    guard's captured environment and in the current environment `S`. -/
+def guardScopeAgrees (argName : Name) (body : PExpr) (capEnv : CapturedVarEnv)
+    (S : VarTypeEnv) : Bool :=
+  !PExpr.derefsArg [argName] body &&
+  (PExpr.freeVars [argName] body).all fun x =>
+    match (VarTypeEnv.ofCaptured capEnv).get? x, S.get? x with
+    | some q1, some q2 =>
+        beqQTyp q1 q2 && !q1.poison &&
+          (match q1.etyp with
+           | ETyp.ref ls =>
+               match ls.toList with
+               | [_] => true
+               | _ => false
+           | _ => false)
+    | _, _ => false
 
 /--
-  Scans the predicates attached to every variable in S and every memory location
-  in G which has a variable in S referencing it; if it finds exactly one guard k
-  whose test expression, when applied to its owning value (variable or deref of
-  variable), is syntactically identical to the condition e, it returns that k -
-  otherwise it throws an error.
-
-  We perform variable substitution in the predicate body before comparing it to
-  the condition using PExpr.equalWithEnvs for proper environment-aware
-  comparison.
+  Selects the guard that the condition `e` of an `if` tests. A candidate is a
+  guard closure with tag `k`, argument `a` and a body that uses `a`, carried
+  either by a variable `x` of `S` (the owner value is `x`) or by every cell in
+  `G` that a clean reference `x` of `S` points to (the cells' predicates
+  merged; the owner value is `!x`). The body, with `a` standing for the owner
+  value, must equal `e` (`PExpr.equalWithEnvs`). That comparison is
+  syntactic, so the candidate must also be in scope at the condition
+  (`guardScopeAgrees`): its body does not dereference its argument, and every
+  other variable it reads is a clean reference to a single location, with the
+  same qualified type where the guard was made and in `S`. If there is exactly
+  one candidate, its tag and dependency set are returned (for a reference
+  owner, the dependency set includes the owner's cells); otherwise an error is
+  thrown.
 --/
 def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) (fuel : Nat) : TypecheckM (Tag × Deps) := do
   -- Try to convert the condition e to a PExpr
@@ -837,7 +895,8 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) (fuel : Nat) : Ty
     | Predicate.guardClosure tag arg_name pred_body var_env =>
         if PExpr.usesArg arg_name pred_body then
           -- Parameterised: proceed with substitution + equality
-          if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) fuel then do
+          if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) fuel
+              && guardScopeAgrees arg_name pred_body var_env S then do
             let deps ← extractDepsFromPred qt.pred fuel
             return some (tag, deps)
           else return none
@@ -886,7 +945,8 @@ def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) (fuel : Nat) : Ty
           match merged with
           | Predicate.guardClosure tag arg_name pred_body var_env =>
               if PExpr.usesArg arg_name pred_body then
-                if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) fuel then
+                if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured (some (arg_name, arg)) fuel
+                    && guardScopeAgrees arg_name pred_body var_env S then
                   pure ((tag, depsMerged) :: acc)
                 else pure acc
               else pure acc

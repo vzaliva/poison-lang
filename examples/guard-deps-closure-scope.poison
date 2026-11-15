@@ -1,0 +1,17 @@
+--! poison-interpreter --extern-regime "12=true"
+-- Dependency set of a guard whose argument has the same name as a reference
+-- read inside the function it applies.
+--
+-- The guard is `v => chk v`, and `chk` reads `!v`, where `v` is the reference
+-- captured by `chk`.  The body of `chk` is read in its own captured
+-- environment with only its argument `u` bound, so the guard's argument `v`
+-- does not hide the reference: the dependency set is the location of the
+-- reference `v`.  The regime asserts the guard, so `x` reads clean while the
+-- guard stands.  The assignment `v := 100` writes that location and removes
+-- the guard, so `x`, read after the write, is poisoned.  At run time the
+-- program returns 7.
+let v = ref 5 in
+let chk = pfn u : int => u > !v : bool in
+let getv = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (chk v) })) in
+let x = getv 7 in
+(v := 100; x)

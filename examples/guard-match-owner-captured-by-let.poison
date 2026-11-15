@@ -1,0 +1,14 @@
+--! poison-interpreter --extern-regime "12=true"
+-- The cell cellx holds 10 with the guard v => (let cellx = other in v > !cellx),
+-- whose let binds the name of the owner cellx. Substituting !cellx for v
+-- under that let would read other instead of cellx, so the comparison refuses
+-- it: the condition (let cellx = other in !cellx > !cellx), always false, does
+-- not select the guard. The branches are joined, the result is poisoned, and
+-- the else branch runs.
+let bad = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let other = ref 0 in
+let cellx = ref 0 in
+let g = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (let cellx = other in v > !cellx) })) in
+let u = (cellx := g 10) in
+if (let cellx = other in !cellx > !cellx) then 1 else y

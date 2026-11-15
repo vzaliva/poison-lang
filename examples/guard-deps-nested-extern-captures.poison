@@ -1,0 +1,22 @@
+--! poison-interpreter --extern-regime "12=true"
+-- Dependency set of a guard that applies the closure returned by a nested
+-- extern, whose `captures:` names a variable of its captured environment.
+--
+-- `mk a` returns the inner extern `@255`, which declares
+-- `captures: { !r :> (int :> clean {}) }`; in the closure `h` the variable `r`
+-- belongs to the captured environment (it was the argument of `@254`) and
+-- refers to the location of `a`.  The guard `v => v > h 0` therefore depends
+-- on that location.  The regime asserts the guard, so `x` reads clean while
+-- the guard stands.  The assignment `a := 100` removes the guard, and `x`,
+-- read after the write, is poisoned.  This is a typecheck-level
+-- demonstration: `@254` has no registered runtime implementation, so
+-- evaluation stops at the call `mk a` with the expected "extern id 254 not
+-- registered" error.
+let a = ref 5 in
+let mk = extern pfn @254 r : (ref int :> clean {}) -> (
+  extern pfn @255 m : (int :> clean {}) -> ((int :> clean {})), captures: { !r :> (int :> clean {}) }
+) in
+let h = mk a in
+let getv = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v > h 0) })) in
+let x = getv 7 in
+(a := 100; x)

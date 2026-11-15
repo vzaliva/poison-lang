@@ -1,0 +1,12 @@
+Evaluating file: examples/guard-match-int-not-rebound.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: {},
+  tagEnv: { 1 := { value := false, deps := [] } },
+  nextLoc: 0
+
+Result: 1
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0)]

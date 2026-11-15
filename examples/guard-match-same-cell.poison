@@ -1,0 +1,11 @@
+--! poison-interpreter --extern-regime "12=true"
+-- The guard of x reads the cell of a: v => v > !a. The test x > !a reads the
+-- same cell through the same variable, so the guard is selected: under the
+-- regime its tag is true, the else branch is dead, and the result is clean.
+-- abs(5) = 5 and 5 > 0, so the then branch runs.
+let a = ref 0 in
+let bad = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let g = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v > !a) })) in
+let x = g 5 in
+if x > !a then 1 else y

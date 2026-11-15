@@ -1,0 +1,22 @@
+Evaluating file: examples/guard-match-owner-captured-by-let.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: {
+    0 := (false, {}),
+    1 := (true, {1, pfn v -> let cellx = other in v > (!cellx), deps: [bad : {type=parrow int int false [extern @19 n : {type=int,
+         poison=false,
+         pred={}} ((int :> poisoned {})), deps: []],
+       poison=false,
+       pred={}},
+      cellx : {type=ref @ [1], poison=false, pred={}},
+      n : {type=int, poison=false, pred={}},
+      other : {type=ref @ [0], poison=false, pred={}},
+      y : {type=int, poison=true, pred={}}]}) },
+  tagEnv: { 1 := { value := true, deps := [0] } },
+  nextLoc: 2
+
+Result: 1
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0), (1000001, 0), (1000002, 10)]

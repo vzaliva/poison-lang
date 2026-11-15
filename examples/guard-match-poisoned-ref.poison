@@ -1,0 +1,13 @@
+--! poison-interpreter --extern-regime "12=true"
+-- The guard of x reads the cell of a: v => v > !a. The reference a points to
+-- the single cell c0, but it is poisoned: it is chosen by a test on the
+-- poisoned y. A reference the guard reads must be clean, so the guard is not
+-- selected, the branches are joined, and the result is poisoned. abs(7) = 7
+-- and 7 > 5, so the then branch runs.
+let bad = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let c0 = ref 5 in
+let a = if y > 0 then c0 else c0 in
+let g = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v > !a) })) in
+let x = g 7 in
+if x > !a then 1 else y

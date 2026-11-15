@@ -4,8 +4,8 @@
 --
 -- `rd` declares `captures: { !a :> (int :> clean {}) }`, so the guard
 -- `v => v > rd 0` on the result of `getv` (`@12`, `abs`) depends on the
--- location of `a`.  Under the regime the first `if` is typed with its
--- then-branch only; the assignment `a := 100` removes the guard, and `x`,
+-- location of `a`.  The regime asserts the guard, so `x` reads clean while
+-- the guard stands; the assignment `a := 100` removes the guard, and `x`,
 -- returned after the write, is typed poisoned.  This is a typecheck-level
 -- demonstration: `@254` has no registered runtime implementation, so
 -- evaluation stops at the call `rd 0` with the expected "extern id 254 not

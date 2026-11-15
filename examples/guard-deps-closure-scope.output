@@ -1,0 +1,20 @@
+Evaluating file: examples/guard-deps-closure-scope.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int,
+   poison=true,
+   pred={1, pfn v -> chk v, deps: [chk : {type=parrow int bool false [regular u (u > (!v)) [v : {type=ref @ [0],
+         poison=false,
+         pred={}}]],
+      poison=false,
+      pred={}},
+     n : {type=int, poison=false, pred={}},
+     v : {type=ref @ [0], poison=false, pred={}}]}},
+  MemoryTypeEnv: { 0 := (false, {}) },
+  tagEnv: {},
+  nextLoc: 1
+
+Result: 7
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0), (1000001, 100)]

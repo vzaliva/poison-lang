@@ -1,0 +1,12 @@
+Evaluating file: examples/guard-match-shadowed-int.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: {},
+  tagEnv: { 1 := { value := true, deps := [] } },
+  nextLoc: 0
+
+Result: 1
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0)]

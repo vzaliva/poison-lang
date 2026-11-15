@@ -1,0 +1,14 @@
+--! poison-interpreter --extern-regime "12=true"
+-- Control for guard-deps-joined-function: the write goes to `b`, a location
+-- the guard does not read.
+--
+-- The dependency set of the guard `w => chk w` is the location of `a` (the
+-- union over both alternatives of `chk`).  `b := 100` leaves the guard in the
+-- tag environment and the regime, so `x`, read after the write, is clean.  At
+-- run time the program returns 7.
+let a = ref 5 in
+let b = ref 0 in
+let chk = if true then (pfn v : int => v > !a : bool) else (pfn v : int => v > (!a + 0) : bool) in
+let getv = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, w => (chk w) })) in
+let x = getv 7 in
+(b := 100; x)

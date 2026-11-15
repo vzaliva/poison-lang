@@ -27,8 +27,8 @@ private def matchGuard_checkNoPredOnArrow (qt : QTyp) : TypecheckM Unit := do
 
 /-- Shared predicate matcher from `matchGuard`. -/
 private def matchGuard_checkPredicate
-    (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv) (arg : PExpr) (qt : QTyp)
-    (fuel : Nat) :
+    (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv) (S : VarTypeEnv) (arg : PExpr)
+    (qt : QTyp) (fuel : Nat) :
     TypecheckM (Option (Tag × Deps)) := do
   matchGuard_checkNoPredOnArrow qt
   match qt.pred with
@@ -38,8 +38,8 @@ private def matchGuard_checkPredicate
       -- Use `... = true` conditionals to stay syntactically aligned with the unfolded
       -- `matchGuard` implementation (which often normalizes Bool-ifs this way).
       if PExpr.usesArg arg_name pred_body = true then
-        if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-            (some (arg_name, arg)) fuel = true then do
+        if (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+            (some (arg_name, arg)) fuel && guardScopeAgrees arg_name pred_body var_env S) = true then do
           let deps ← extractDepsFromPred qt.pred fuel
           return some (tag, deps)
         else
@@ -53,7 +53,7 @@ private def matchGuard_varMatches (conditionPExpr : PExpr) (ctx : TypeContext)
   let sCaptured := VarTypeEnv.toCaptured ctx.varEnv
   VarTypeEnv.foldl [] (fun acc name qt =>
     let arg := PExpr.var name
-    match matchGuard_checkPredicate conditionPExpr sCaptured arg qt fuel with
+    match matchGuard_checkPredicate conditionPExpr sCaptured ctx.varEnv arg qt fuel with
     | .ok (some kd) => kd :: acc
     | .ok none => acc
     | .error _ => acc) ctx.varEnv
@@ -95,8 +95,9 @@ private def matchGuard_refStep
         match merged with
         | Predicate.guardClosure tag arg_name pred_body var_env =>
             if PExpr.usesArg arg_name pred_body = true then
-              if PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-                  (some (arg_name, arg)) fuel = true then
+              if (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                  (some (arg_name, arg)) fuel &&
+                    guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true then
                 pure ((tag, depsMerged) :: acc)
               else
                 pure acc
@@ -115,15 +116,15 @@ private def matchGuard_refMatches (conditionPExpr : PExpr) (ctx : TypeContext)
     ctx.varEnv
 
 private lemma matchGuard_checkPredicate_ok_some_guardClosure
-    (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv) (arg : PExpr) (qt : QTyp)
-    (fuel : Nat)
+    (conditionPExpr : PExpr) (sCaptured : CapturedVarEnv) (S : VarTypeEnv) (arg : PExpr)
+    (qt : QTyp) (fuel : Nat)
     (k : Tag) (deps : Deps)
     (h :
-      matchGuard_checkPredicate conditionPExpr sCaptured arg qt fuel = .ok (some (k, deps))) :
+      matchGuard_checkPredicate conditionPExpr sCaptured S arg qt fuel = .ok (some (k, deps))) :
     ∃ arg_name pred_body var_env,
       qt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
-      PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-        (some (arg_name, arg)) fuel = true := by
+      (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+        (some (arg_name, arg)) fuel && guardScopeAgrees arg_name pred_body var_env S) = true := by
   cases hpred : qt.pred with
   | noPred =>
       unfold matchGuard_checkPredicate at h
@@ -147,21 +148,24 @@ private lemma matchGuard_checkPredicate_ok_some_guardClosure
           simp [hchk, hpred] at h
           by_cases huses : PExpr.usesArg arg_name pred_body = true
           · simp [huses] at h
-            by_cases heqv :
-                PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-                  (some (arg_name, arg)) fuel = true
-            · simp [heqv] at h
-              cases hdeps : extractDepsFromPred (Predicate.guardClosure k' arg_name pred_body var_env) fuel with
-              | error err =>
-                  have : False := by
+            cases hA : PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                (some (arg_name, arg)) fuel with
+            | false => simp [hA] at h
+            | true =>
+              cases hB : guardScopeAgrees arg_name pred_body var_env S with
+              | false => simp [hA, hB] at h
+              | true =>
+                simp [hA, hB] at h
+                cases hdeps : extractDepsFromPred (Predicate.guardClosure k' arg_name pred_body var_env) fuel with
+                | error err =>
+                    have : False := by
+                      simp [hdeps] at h
+                      cases h
+                    exact False.elim this
+                | ok d =>
                     simp [hdeps] at h
                     cases h
-                  exact False.elim this
-              | ok d =>
-                  simp [hdeps] at h
-                  cases h
-                  exact ⟨arg_name, pred_body, var_env, rfl, heqv⟩
-            · simp [heqv] at h
+                    exact ⟨arg_name, pred_body, var_env, rfl, by simp [hA, hB]⟩
           · simp [huses] at h
 
 /-- From `matchGuard = .ok`, recover singleton structure of combined var/ref matches. -/
@@ -178,7 +182,7 @@ private lemma matchGuard_ok_allMatches_singleton
     VarTypeEnv.foldl []
       (fun acc name qt =>
         let arg := PExpr.var name
-        match matchGuard_checkPredicate conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv) arg qt fuel with
+        match matchGuard_checkPredicate conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv) ctx.varEnv arg qt fuel with
         | .ok (some (tag, deps)) => (tag, deps) :: acc
         | .ok none => acc
         | .error _ => acc)
@@ -244,7 +248,7 @@ private lemma matchGuard_ok_allMatches_singleton
         funext acc name qt
         dsimp
         cases hcp :
-            matchGuard_checkPredicate conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv)
+            matchGuard_checkPredicate conditionPExpr (VarTypeEnv.toCaptured ctx.varEnv) ctx.varEnv
               (PExpr.var name) qt fuel with
         | error err =>
             simp
@@ -270,22 +274,24 @@ private lemma var_match_from_varMatches_aux
         ∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env ∧
-          PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-            (some (arg_name, PExpr.var x)) fuel = true) →
+          (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+            (some (arg_name, PExpr.var x)) fuel &&
+              guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true) →
       ∀ kd, kd ∈ List.foldl
         (fun acc entry =>
           let name := entry.1
           let qt := entry.2
           let arg := PExpr.var name
-          match matchGuard_checkPredicate conditionPExpr sCaptured arg qt fuel with
+          match matchGuard_checkPredicate conditionPExpr sCaptured ctx.varEnv arg qt fuel with
           | .ok (some kd) => kd :: acc
           | .ok none => acc
           | .error _ => acc) acc entries →
         ∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env ∧
-          PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-            (some (arg_name, PExpr.var x)) fuel = true := by
+          (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+            (some (arg_name, PExpr.var x)) fuel &&
+              guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true := by
   intro entries
   induction entries with
   | nil =>
@@ -296,7 +302,7 @@ private lemma var_match_from_varMatches_aux
       rcases entry with ⟨name, qt⟩
       have hlookup_name : ctx.varEnv.lookup name = some qt := hentries name qt (by simp)
       set acc1 :=
-        (match matchGuard_checkPredicate conditionPExpr sCaptured (PExpr.var name) qt fuel with
+        (match matchGuard_checkPredicate conditionPExpr sCaptured ctx.varEnv (PExpr.var name) qt fuel with
         | .ok (some kd) => kd :: acc
         | .ok none => acc
         | .error _ => acc)
@@ -305,11 +311,12 @@ private lemma var_match_from_varMatches_aux
             ∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
               ctx.varEnv.lookup x = some qt ∧
               qt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env ∧
-              PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-                (some (arg_name, PExpr.var x)) fuel = true := by
+              (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                (some (arg_name, PExpr.var x)) fuel &&
+                  guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true := by
         intro kd' hmem'
         dsimp [acc1] at hmem'
-        cases hcp : matchGuard_checkPredicate conditionPExpr sCaptured (PExpr.var name) qt fuel with
+        cases hcp : matchGuard_checkPredicate conditionPExpr sCaptured ctx.varEnv (PExpr.var name) qt fuel with
         | error err =>
             simp [hcp] at hmem'
             exact hacc kd' hmem'
@@ -323,10 +330,10 @@ private lemma var_match_from_varMatches_aux
                 rcases hmem' with hhead | htail
                 · subst hhead
                   have hcp' :
-                      matchGuard_checkPredicate conditionPExpr sCaptured (PExpr.var name) qt fuel = .ok (some kd') := by
+                      matchGuard_checkPredicate conditionPExpr sCaptured ctx.varEnv (PExpr.var name) qt fuel = .ok (some kd') := by
                     simp [hcp]
                   rcases matchGuard_checkPredicate_ok_some_guardClosure
-                    conditionPExpr sCaptured (PExpr.var name) qt fuel kd'.1 kd'.2 hcp'
+                    conditionPExpr sCaptured ctx.varEnv (PExpr.var name) qt fuel kd'.1 kd'.2 hcp'
                     with ⟨arg_name, pred_body, var_env, hpred, heqv⟩
                   exact ⟨name, qt, arg_name, pred_body, var_env, hlookup_name, hpred, heqv⟩
                 · exact hacc kd' htail
@@ -344,8 +351,9 @@ private lemma var_match_from_varMatches
     ∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
       ctx.varEnv.lookup x = some qt ∧
       qt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
-      PExpr.equalWithEnvs pred_body var_env conditionPExpr
-        (VarTypeEnv.toCaptured ctx.varEnv) (some (arg_name, PExpr.var x)) fuel = true := by
+      (PExpr.equalWithEnvs pred_body var_env conditionPExpr
+        (VarTypeEnv.toCaptured ctx.varEnv) (some (arg_name, PExpr.var x)) fuel &&
+          guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true := by
   unfold matchGuard_varMatches at hmem
   rw [VarTypeEnv.foldl, Std.ExtTreeMap.foldl_eq_foldl_toList] at hmem
   have hentries_toList :
@@ -510,24 +518,28 @@ private lemma matchGuard_refStep_preserves_invariant
           (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.etyp = ETyp.ref ls ∧
+          qt.poison = false ∧
           ls.isEmpty = false ∧
           (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
               memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) ∧
-          PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-            (some (arg_name, PExpr.deref (PExpr.var x))) fuel = true)
+          (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+            (some (arg_name, PExpr.deref (PExpr.var x))) fuel &&
+              guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true)
     (hstep : matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel = .ok acc1) :
     ∀ kd, kd ∈ acc1 →
       ∃ (x : Name) (qt : QTyp) (ls : LocSet)
         (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
         ctx.varEnv.lookup x = some qt ∧
         qt.etyp = ETyp.ref ls ∧
+        qt.poison = false ∧
         ls.isEmpty = false ∧
         (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
             memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) ∧
-        PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-          (some (arg_name, PExpr.deref (PExpr.var x))) fuel = true := by
+        (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+          (some (arg_name, PExpr.deref (PExpr.var x))) fuel &&
+            guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true := by
   intro kd hmem
   have hstep0 : matchGuard_refStep conditionPExpr sCaptured ctx acc (name, qt) fuel = .ok acc1 := hstep
   unfold matchGuard_refStep at hstep
@@ -635,8 +647,9 @@ private lemma matchGuard_refStep_preserves_invariant
                   | guardClosure tag arg_name pred_body var_env =>
                       by_cases husesT : PExpr.usesArg arg_name pred_body = true
                       · by_cases heqvT :
-                          PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-                            (some (arg_name, PExpr.deref (PExpr.var name))) fuel = true
+                          (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                            (some (arg_name, PExpr.deref (PExpr.var name))) fuel &&
+                              guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true
                         · have hacc1eq : acc1 = (tag, depsMerged) :: acc := by
                             have hstep' := hstep0
                             unfold matchGuard_refStep at hstep'
@@ -645,13 +658,15 @@ private lemma matchGuard_refStep_preserves_invariant
                             erw [hdeps] at hstep'
                             simp [bind, Except.bind] at hstep'
                             erw [hmg] at hstep'
-                            simp [husesT, heqvT] at hstep'
+                            have hAB := (Bool.and_eq_true _ _).mp heqvT
+                            simp [husesT, hAB.1, hAB.2] at hstep'
                             cases hstep'
                             rfl
                           subst hacc1eq
                           rcases (List.mem_cons.mp hmem) with hhead | htail
                           · subst hhead
-                            refine ⟨name, qt, ls, arg_name, pred_body, var_env, hlookup_name, hEt, hlsEmptyF, ?_, heqvT⟩
+                            refine ⟨name, qt, ls, arg_name, pred_body, var_env, hlookup_name, hEt, hpoisonF, hlsEmptyF,
+                              ?_, heqvT⟩
                             have hmerged' :
                                 LocSet.foldM ls (init := (none : Option Predicate))
                                   (matchGuard_refPredFoldF ctx) = .ok merged? := by
@@ -667,15 +682,27 @@ private lemma matchGuard_refStep_preserves_invariant
                             exact hls
                           · exact hacc kd htail
                         · have heqvF :
-                              PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-                                (some (arg_name, PExpr.deref (PExpr.var name))) fuel = false := by
+                              (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                                (some (arg_name, PExpr.deref (PExpr.var name))) fuel &&
+                                  guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = false := by
                             cases heqv :
-                                PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-                                  (some (arg_name, PExpr.deref (PExpr.var name))) fuel with
+                                (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                                  (some (arg_name, PExpr.deref (PExpr.var name))) fuel &&
+                                    guardScopeAgrees arg_name pred_body var_env ctx.varEnv) with
                             | false =>
                                 rfl
                             | true =>
                                 simp [heqv] at heqvT
+                          have hcases :
+                              PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                                  (some (arg_name, PExpr.deref (PExpr.var name))) fuel = false ∨
+                                guardScopeAgrees arg_name pred_body var_env ctx.varEnv = false := by
+                            cases hA : PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                                (some (arg_name, PExpr.deref (PExpr.var name))) fuel with
+                            | false => exact Or.inl rfl
+                            | true =>
+                                right
+                                simpa [hA] using heqvF
                           have hacc1eq : acc1 = acc := by
                             have hstep' := hstep0
                             unfold matchGuard_refStep at hstep'
@@ -684,9 +711,13 @@ private lemma matchGuard_refStep_preserves_invariant
                             erw [hdeps] at hstep'
                             simp [bind, Except.bind] at hstep'
                             erw [hmg] at hstep'
-                            simp [husesT, heqvF] at hstep'
-                            cases hstep'
-                            rfl
+                            rcases hcases with hAf | hBf
+                            · simp [husesT, hAf] at hstep'
+                              cases hstep'
+                              rfl
+                            · simp [husesT, hBf] at hstep'
+                              cases hstep'
+                              rfl
                           subst hacc1eq
                           exact hacc kd hmem
                       · have husesF : PExpr.usesArg arg_name pred_body = false := by
@@ -746,12 +777,14 @@ private lemma ref_match_from_refMatches_aux
           (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.etyp = ETyp.ref ls ∧
+          qt.poison = false ∧
           ls.isEmpty = false ∧
           (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
               memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) ∧
-          PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-            (some (arg_name, PExpr.deref (PExpr.var x))) fuel = true) →
+          (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+            (some (arg_name, PExpr.deref (PExpr.var x))) fuel &&
+              guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true) →
       ∀ acc',
         List.foldlM (fun acc entry => matchGuard_refStep conditionPExpr sCaptured ctx acc entry fuel) acc entries =
           .ok acc' →
@@ -760,12 +793,14 @@ private lemma ref_match_from_refMatches_aux
           (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
           ctx.varEnv.lookup x = some qt ∧
           qt.etyp = ETyp.ref ls ∧
+          qt.poison = false ∧
           ls.isEmpty = false ∧
           (∀ l, l ∈ ls →
             ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
               memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) ∧
-          PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-            (some (arg_name, PExpr.deref (PExpr.var x))) fuel = true := by
+          (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+            (some (arg_name, PExpr.deref (PExpr.var x))) fuel &&
+              guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true := by
   intro entries
   induction entries with
   | nil =>
@@ -788,12 +823,14 @@ private lemma ref_match_from_refMatches_aux
                   (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
                   ctx.varEnv.lookup x = some qt ∧
                   qt.etyp = ETyp.ref ls ∧
+                  qt.poison = false ∧
                   ls.isEmpty = false ∧
                   (∀ l, l ∈ ls →
                     ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
                       memQt.pred = Predicate.guardClosure kd.1 arg_name pred_body var_env) ∧
-                  PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
-                    (some (arg_name, PExpr.deref (PExpr.var x))) fuel = true := by
+                  (PExpr.equalWithEnvs pred_body var_env conditionPExpr sCaptured
+                    (some (arg_name, PExpr.deref (PExpr.var x))) fuel &&
+                      guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true := by
             exact
               matchGuard_refStep_preserves_invariant
                 ctx conditionPExpr sCaptured name qt acc acc1 fuel hlookup_name hacc hstep
@@ -803,8 +840,8 @@ private lemma ref_match_from_refMatches_aux
             exact hentries name' qt' (List.mem_cons_of_mem _ hmem')
           exact ih hentries_tail acc1 hacc1 acc' hfold kd hmem
 
-/-- Ref-side extraction from refMatches membership. -/
-private lemma ref_match_from_refMatches
+/-- Ref-side extraction from refMatches membership, with the owner clean. -/
+private lemma ref_match_from_refMatches_clean
     (ctx : TypeContext) (conditionPExpr : PExpr) (k : Tag) (deps : Deps)
     (refMatches : List (Tag × Deps))
     (fuel : Nat)
@@ -814,13 +851,15 @@ private lemma ref_match_from_refMatches
       (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
       ctx.varEnv.lookup x = some qt ∧
       qt.etyp = ETyp.ref ls ∧
+      qt.poison = false ∧
       ls.isEmpty = false ∧
       (∀ l, l ∈ ls →
         ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
           memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) ∧
-      PExpr.equalWithEnvs pred_body var_env conditionPExpr
+      (PExpr.equalWithEnvs pred_body var_env conditionPExpr
         (VarTypeEnv.toCaptured ctx.varEnv)
-        (some (arg_name, PExpr.deref (PExpr.var x))) fuel = true := by
+        (some (arg_name, PExpr.deref (PExpr.var x))) fuel &&
+          guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true := by
   unfold matchGuard_refMatches at href
   rw [VarTypeEnv.foldlM, Std.ExtTreeMap.foldlM_eq_foldlM_toList] at href
   cases hfold :
@@ -842,6 +881,29 @@ private lemma ref_match_from_refMatches
               (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some (t := ctx.varEnv)).1 hmemToList
             simpa [VarTypeEnv.lookup] using hlookup)
           [] (by intro kd h; cases h) rms hfold (k, deps) hmem
+
+/-- Ref-side extraction from refMatches membership. -/
+private lemma ref_match_from_refMatches
+    (ctx : TypeContext) (conditionPExpr : PExpr) (k : Tag) (deps : Deps)
+    (refMatches : List (Tag × Deps))
+    (fuel : Nat)
+    (href : matchGuard_refMatches conditionPExpr ctx fuel = .ok refMatches)
+    (hmem : (k, deps) ∈ refMatches) :
+    ∃ (x : Name) (qt : QTyp) (ls : LocSet)
+      (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+      ctx.varEnv.lookup x = some qt ∧
+      qt.etyp = ETyp.ref ls ∧
+      ls.isEmpty = false ∧
+      (∀ l, l ∈ ls →
+        ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+          memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) ∧
+      (PExpr.equalWithEnvs pred_body var_env conditionPExpr
+        (VarTypeEnv.toCaptured ctx.varEnv)
+        (some (arg_name, PExpr.deref (PExpr.var x))) fuel &&
+          guardScopeAgrees arg_name pred_body var_env ctx.varEnv) = true := by
+  rcases ref_match_from_refMatches_clean ctx conditionPExpr k deps refMatches fuel href hmem with
+    ⟨x, qt, ls, arg_name, pred_body, var_env, hlook, hEt, _hpois, hne, hls, hboth⟩
+  exact ⟨x, qt, ls, arg_name, pred_body, var_env, hlook, hEt, hne, hls, hboth⟩
 
 /-- Successful `matchGuard` implies the condition has a pure-expression view. -/
 lemma matchGuard_ok_toPExpr?_some
@@ -1795,9 +1857,108 @@ theorem matchGuard_ok_matched_owner
   rcases singleton_allMatches_implies_var_or_ref (matchGuard_varMatches conditionPExpr ctx fuel)
       refMatches k deps hall with hvar | hrefMem
   · left
-    exact var_match_from_varMatches ctx conditionPExpr k deps fuel hvar
+    rcases var_match_from_varMatches ctx conditionPExpr k deps fuel hvar with
+      ⟨x, qt, arg_name, pred_body, var_env, hlook, hpred, hboth⟩
+    exact ⟨x, qt, arg_name, pred_body, var_env, hlook, hpred, ((Bool.and_eq_true _ _).mp hboth).1⟩
   · right
-    exact ref_match_from_refMatches ctx conditionPExpr k deps refMatches fuel href hrefMem
+    rcases ref_match_from_refMatches ctx conditionPExpr k deps refMatches fuel href hrefMem with
+      ⟨x, qt, ls, arg_name, pred_body, var_env, hlook, hEt, hne, hls, hboth⟩
+    exact ⟨x, qt, ls, arg_name, pred_body, var_env, hlook, hEt, hne, hls,
+      ((Bool.and_eq_true _ _).mp hboth).1⟩
+
+/-- A guard closure with argument `argName`, body `body` and captured environment
+    `capEnv` is in scope in the environment `S`: the body does not dereference its
+    argument (`PExpr.derefsArg`), and every variable the body reads, other than its
+    argument (`PExpr.freeVars`), has one qualified type in the captured environment
+    and in `S`, clean, a reference to a single location. -/
+structure GuardInScope (S : VarTypeEnv) (argName : Name) (body : PExpr)
+    (capEnv : CapturedVarEnv) : Prop where
+  noDerefArg : PExpr.derefsArg [argName] body = false
+  reads : ∀ x, x ∈ PExpr.freeVars [argName] body →
+    ∃ (qt : QTyp) (ls : LocSet) (l : Loc),
+      (VarTypeEnv.ofCaptured capEnv).lookup x = some qt ∧
+      S.lookup x = some qt ∧
+      qt.poison = false ∧
+      qt.etyp = ETyp.ref ls ∧
+      ls.toList = [l]
+
+/-- `guardScopeAgrees` decides `GuardInScope`, in the direction `matchGuard` uses. -/
+theorem GuardInScope.of_guardScopeAgrees {S : VarTypeEnv} {argName : Name} {body : PExpr}
+    {capEnv : CapturedVarEnv}
+    (h : guardScopeAgrees argName body capEnv S = true) :
+    GuardInScope S argName body capEnv := by
+  unfold guardScopeAgrees at h
+  rw [Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨hnd, hall⟩ := h
+  refine ⟨by simpa using hnd, ?_⟩
+  intro x hx
+  have hx' := hall x hx
+  split at hx'
+  · rename_i q1 q2 h1 h2
+    simp only [Bool.and_eq_true] at hx'
+    obtain ⟨⟨hbeq, hpois⟩, het⟩ := hx'
+    have hq : q1 = q2 := eq_of_beq (show (q1 == q2) = true from hbeq)
+    subst hq
+    split at het
+    · rename_i ls hE
+      split at het
+      · rename_i l hL
+        exact ⟨q1, ls, l, h1, h2, by simpa using hpois, hE, hL⟩
+      · simp at het
+    · simp at het
+  · simp at hx'
+
+/-- `matchGuard_ok_matched_owner`, with the matched guard closure in scope in the
+    context's environment (`GuardInScope`), and in the reference case a clean owner. -/
+theorem matchGuard_ok_matched_owner_inScope
+    (ctx : TypeContext) (cond : Expr) (k : Tag) (deps : Deps)
+    {fuel : Nat}
+    (hmatch : matchGuard cond ctx.memEnv ctx.varEnv fuel = .ok (k, deps)) :
+    ∃ conditionPExpr, cond.toPExpr? = some conditionPExpr ∧
+      ( (∃ (x : Name) (qt : QTyp) (arg_name : Name) (pred_body : PExpr)
+            (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.pred = Predicate.guardClosure k arg_name pred_body var_env ∧
+            PExpr.equalWithEnvs pred_body var_env conditionPExpr
+              (VarTypeEnv.toCaptured ctx.varEnv) (some (arg_name, PExpr.var x)) fuel = true ∧
+            GuardInScope ctx.varEnv arg_name pred_body var_env)
+        ∨
+        (∃ (x : Name) (qt : QTyp) (ls : LocSet)
+            (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv),
+            ctx.varEnv.lookup x = some qt ∧
+            qt.etyp = ETyp.ref ls ∧
+            qt.poison = false ∧
+            ls.isEmpty = false ∧
+            (∀ l, l ∈ ls →
+              ∃ memQt, ctx.memEnv.lookup l = some memQt ∧
+                memQt.pred = Predicate.guardClosure k arg_name pred_body var_env) ∧
+            PExpr.equalWithEnvs pred_body var_env conditionPExpr
+              (VarTypeEnv.toCaptured ctx.varEnv)
+              (some (arg_name, PExpr.deref (PExpr.var x))) fuel = true ∧
+            GuardInScope ctx.varEnv arg_name pred_body var_env) ) := by
+  rcases matchGuard_ok_toPExpr?_some ctx cond k deps hmatch with ⟨conditionPExpr, hcond_some⟩
+  have hcond : cond.toPExpr = .ok conditionPExpr := by
+    unfold Expr.toPExpr
+    rw [hcond_some]
+    simp [pure, Except.pure]
+  refine ⟨conditionPExpr, hcond_some, ?_⟩
+  rcases matchGuard_ok_allMatches_singleton ctx cond k deps conditionPExpr fuel hcond hmatch
+    with ⟨refMatches, href, hall⟩
+  rcases singleton_allMatches_implies_var_or_ref (matchGuard_varMatches conditionPExpr ctx fuel)
+      refMatches k deps hall with hvar | hrefMem
+  · left
+    rcases var_match_from_varMatches ctx conditionPExpr k deps fuel hvar with
+      ⟨x, qt, arg_name, pred_body, var_env, hlook, hpred, hboth⟩
+    have hAB := (Bool.and_eq_true _ _).mp hboth
+    exact ⟨x, qt, arg_name, pred_body, var_env, hlook, hpred, hAB.1,
+      GuardInScope.of_guardScopeAgrees hAB.2⟩
+  · right
+    rcases ref_match_from_refMatches_clean ctx conditionPExpr k deps refMatches fuel href
+        hrefMem with
+      ⟨x, qt, ls, arg_name, pred_body, var_env, hlook, hEt, hpois, hne, hls, hboth⟩
+    have hAB := (Bool.and_eq_true _ _).mp hboth
+    exact ⟨x, qt, ls, arg_name, pred_body, var_env, hlook, hEt, hpois, hne, hls, hAB.1,
+      GuardInScope.of_guardScopeAgrees hAB.2⟩
 
 /-- Successful `matchGuard` implies the returned guard tag appears as
     `qtypGuardTag` in the context's `varEnv` or `memEnv`. -/

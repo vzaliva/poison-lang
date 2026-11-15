@@ -1,0 +1,12 @@
+Evaluating file: examples/guard-match-two-cell-ref.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: { 0 := (false, {}), 1 := (false, {}) },
+  tagEnv: { 1 := { value := true, deps := [0, 1] } },
+  nextLoc: 2
+
+Result: 1
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0), (1000001, 0), (1000002, 10)]

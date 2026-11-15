@@ -1,0 +1,16 @@
+--! poison-interpreter --extern-regime "12=true"
+-- Two references a with the same location set {r1, r2}, from two joins. The
+-- guard reads the first a (r1, 0); the test reads the second (r2, 10). A
+-- reference the guard reads must point to a single location, so the guard is
+-- not selected, the branches are joined, and the result is poisoned. The test
+-- 5 > 10 is false, so the else branch runs.
+let r1 = ref 0 in
+let r2 = ref 10 in
+let c = true in
+let a = if c then r1 else r2 in
+let bad = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let g = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v > !a) })) in
+let x = g 5 in
+let a = if c then r2 else r1 in
+if x > !a then 1 else y

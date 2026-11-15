@@ -1,0 +1,25 @@
+Evaluating file: examples/guard-deps-nested-extern-captures.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int,
+   poison=true,
+   pred={1, pfn v -> v > (h 0), deps: [a : {type=ref @ [0], poison=false, pred={}},
+     h : {type=parrow int int false [extern @255 m : {type=int,
+        poison=false,
+        pred={}} ((int :> clean {})), deps: [a : {type=ref @ [0], poison=false, pred={}},
+        r : {type=ref @ [0], poison=false, pred={}}]],
+      poison=false,
+      pred={}},
+     mk : {type=parrow ref int (int -> int) false [extern @254 r : {type=ref @ [],
+        poison=false,
+        pred={}} (extern pfn @255 m : (int :> clean {}) -> ((int :> clean {})), captures: {!r :> (int :> clean {})}), deps: [a : {type=ref @ [0],
+         poison=false,
+         pred={}}]],
+      poison=false,
+      pred={}},
+     n : {type=int, poison=false, pred={}}]}},
+  MemoryTypeEnv: { 0 := (false, {}) },
+  tagEnv: {},
+  nextLoc: 1
+
+Runtime error: extern id 254 not registered
