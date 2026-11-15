@@ -392,7 +392,7 @@ qualified type is run through the same tag-resolution machinery, but it is
 resolved once, when the declaration is typed, so the declared condition carries
 fixed concrete tags. Because the declared condition and the actual argument
 therefore carry independently allocated tags, the call-site satisfaction check
-compares predicate shapes modulo tag and binder rather than by tag identity
+compares predicate shapes up to the tag rather than by tag identity
 (Section~\ref{sec:extern-arg-conditions}).
 
 \subsubsection*{Extern argument conditions}
@@ -422,8 +422,12 @@ The check is the conservative, regime-aware structural relation
     \item if the declared condition carries no predicate, no predicate match is
       required;
     \item if the declared condition carries a predicate, the actual argument must
-      carry the same guard shape (guard body equal modulo tag, binder, and
-      captured environment, after the usual extern tag-resolution machinery).
+      carry the same guard shape: a bare guard for a declared bare guard, and
+      for a declared guard closure a guard closure whose body equals, as text,
+      the declared body with the declared argument's name replaced by the
+      actual argument's name (the tags are not compared, nor the environments
+      in which the two bodies are read; a body with a \texttt{not} matches
+      nothing).
 \end{itemize}
 This is a syntactic, regime-aware compatibility check, not theorem proving: it
 deliberately performs no general logical implication between predicates, so it
@@ -660,7 +664,8 @@ the same guard shape, with no general logical implication: a declared guard
 closure requires an actual guard closure whose body equals, as text, the
 declared body with the declared argument's name replaced by the actual
 argument's name (the tags are not compared, nor the environments in which the
-two bodies are read), and a declared bare guard requires a bare actual guard.
+two bodies are read; a body with a \texttt{not} matches nothing), and a
+declared bare guard requires a bare actual guard.
 
 The \texttt{captures:} clause is part of the surface syntax of extern
 declarations (and of nested-return descriptors), accepted by the parser and the
@@ -853,14 +858,15 @@ clean reference \texttt{y} of $\sigma$ may point to, in which case the owner
 value is \texttt{!y}. The body \texttt{pe} must use its argument \texttt{x},
 and \texttt{pe} with \texttt{x} replaced by the owner value must be
 syntactically equal to the condition. A \texttt{let} of the body that binds
-\texttt{x} itself is compared with the replacement switched off in its body; a
-\texttt{let} of the body that binds another name occurring in the owner value
-does not match. Syntactic equality compares names, not what they denote, so
-the closure must also be \emph{in scope} at the condition: its body does not
+\texttt{x} itself is compared with the replacement switched off in its body;
+while the replacement is on, a \texttt{let} of the body that binds another name
+occurring in the owner value does not match. A body with a \texttt{not} matches
+nothing. Syntactic equality compares names, not what they denote, so the
+closure must also be \emph{in scope} at the condition: its body does not
 dereference its argument, and every free variable of the body other than its
 argument is a clean reference to a single location, with the same qualified
-type in the captured environment \texttt{r} and in $\sigma$. A name bound by
-a \texttt{let} of the body is not free and is not checked. A body with a free
+type in the captured environment \texttt{r} and in $\sigma$. A name bound by a
+\texttt{let} of the body is not free and is not checked. A body with a free
 variable, besides its argument, that is an integer, a function, a poisoned
 reference or a reference with several possible locations is therefore never
 selected, nor is a body read in a scope where one of its free variables names
@@ -1046,12 +1052,12 @@ dependencies alongside guard valuations. This prevents unsound de-poisoning when
 predicate dependencies are modified:
 
 \begin{itemize}
-    \item \textbf{Dependency extraction}: When a guard $k$ is introduced via
-    \texttt{match\_guard}, or recorded at an extern call or \texttt{extern val}
-    declaration by \texttt{installReturnGuard} or, for a guard that an
-    extern's effect puts on a cell, by \texttt{installEffectGuards}, the
-    system computes its
-    dependency set: the logical locations the predicate reads through its
+    \item \textbf{Dependency extraction}: The dependency set of a guard is
+    computed from its predicate. It is recorded when \texttt{match\_guard}
+    selects the guard, and when \texttt{installReturnGuard} or, for a guard
+    that an extern's effect puts on a cell, \texttt{installEffectGuards}
+    records the guard at an extern call or \texttt{extern val} declaration.
+    It is the set of logical locations the predicate reads through its
     captured environment, including through every alternative of each pure
     function it mentions and the declared \texttt{captures:} of extern
     alternatives. A free reference variable contributes the locations it may

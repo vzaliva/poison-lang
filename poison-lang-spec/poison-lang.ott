@@ -352,12 +352,13 @@ formula :: formula_ ::=
 % or by every cell in G that a clean reference y of S may point to (the owner
 % value is !y). The body pe uses x, and pe with x replaced by the owner value is
 % syntactically equal to e. A let of pe that binds x itself is compared with the
-% replacement switched off in its body; a let of pe that binds another name
-% occurring in the owner value does not match. The closure is in scope at e: pe
-% does not dereference x, and every free variable of pe other than x (a name
-% bound by a let of pe is not free, and is not checked) is a clean reference to
-% a single location, with the same qualified type in r and in S. Exactly one
-% candidate must be found.
+% replacement switched off in its body; while the replacement is on, a let of pe
+% that binds another name occurring in the owner value does not match. A body
+% with a unary operator matches nothing. The closure is in scope at e: pe does
+% not dereference x, and every free variable of pe other than x (a name bound by
+% a let of pe is not free, and is not checked) is a clean reference to a single
+% location, with the same qualified type in r and in S. Exactly one candidate
+% must be found.
   | match_guard e G S = k with deps  :: :: match_guard  {{ com find the one guard k in scope that condition e tests, with the dependency set deps of its predicate }}  {{ tex \texttt{match\_guard}([[e]], [[G]], [[S]]) = ([[k]],\, [[deps]]) }}
   | if_guard_case e G S R = true  :: :: if_guard_case_true  {{ com conditional guard case is known true }}  {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{true} }}
   | if_guard_case e G S R = false :: :: if_guard_case_false {{ com conditional guard case is known false }} {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{false} }}
@@ -366,12 +367,12 @@ formula :: formula_ ::=
   | invalidate_regime_deps R L LS = R1 :: :: invalidate_regime_deps {{ com remove from R tags whose deps in L intersect LS }}  {{ tex \texttt{invalidate\_regime\_deps}([[R]], [[L]], [[LS]]) = [[R1]] }}
   | erase T = ST           :: :: erase        {{ com $\tau$ is the erasure of T: location sets and the poison and closure sets of arrows are dropped }} {{ tex \lfloor [[T]] \rfloor = [[ST]] }}
   | base_of Q = ST         :: :: base_of      {{ com $\tau$ is the surface base type underlying the qualified type Q (drops the poison flag and predicate, then erases the enriched type); rendered with the erasure glyph since it is erasure lifted to qualified types }} {{ tex \lfloor [[Q]] \rfloor = [[ST]] }}
-  | satisfiesArgCond R Q1 Q2 :: :: arg_cond_sat {{ com actual argument qualified type Q1 satisfies the declared extern argument precondition Q2 under regime R: base types match; a declared-clean Q2 forces Q1 clean under R (literally clean, or its guard tag is active in R); a declared no-predicate Q2 imposes no match; a declared bare guard forces a bare guard, and a declared guard closure forces a guard closure whose body equals, as text, the declared body with the declared argument's name replaced by the actual argument's name, tags and environments not compared (no logical implication) }} {{ tex [[Q1]] \vDash_{[[R]]} [[Q2]] }}
+  | satisfiesArgCond R Q1 Q2 :: :: arg_cond_sat {{ com actual argument qualified type Q1 satisfies the declared extern argument precondition Q2 under regime R: base types match; a declared-clean Q2 forces Q1 clean under R (literally clean, or its guard tag is active in R); a declared no-predicate Q2 imposes no match; a declared bare guard forces a bare guard, and a declared guard closure forces a guard closure whose body equals, as text, the declared body with the declared argument's name replaced by the actual argument's name, tags and environments not compared, a body with a unary operator matching nothing (no logical implication) }} {{ tex [[Q1]] \vDash_{[[R]]} [[Q2]] }}
 % In capturesSatisfied, a declared guard closure requires an actual guard closure
 % whose body equals, as text, the declared body with the declared argument's
 % name replaced by the actual argument's name; the tags are not compared, nor
-% the environments in which the two bodies are read. A declared bare guard
-% requires a bare actual guard.
+% the environments in which the two bodies are read, and a body with a unary
+% operator matches nothing. A declared bare guard requires a bare actual guard.
   | capturesSatisfied R CSL S G :: :: captures_sat {{ com the call-site read-dependency gate: every declared capture target in CSL resolves to a qualified type that satisfies the declared one under regime R, exactly as satisfiesArgCond gates the argument precondition.  A bare-variable target resolves directly in the callable environment S; a bang target resolves its reference variable in S (a captured reference or the explicit reference-typed argument) to a ref type, then checks each cell it points to in the memory typing G.  In particular a declared-clean dependency may be guarded, accepting a poisoned actual whose guard tag is active in R (clean under the regime), with predicate-shape matching modulo tag --- a call-time decision, so an inactive guard at the call site rejects the trusted result.  For a bang target the reference's own argument condition forces both runs to a common cell and the cell-contents capture forces the read clean, so both facts are load-bearing (a clean reference may point to a poisoned cell).  A trusted clean result is available only when both the argument condition and all captures hold; the two are fused into a single gate at the call site.  Across branch joins, capture preconditions combine by conjunction: a joined closure keeps each branch's member distinct (member equality compares the captures, so members differing only in their captures are not coalesced) and capture contracts never pass through the predicate join that collapses to noPred, so applying the join gates on every branch's captures and rejects incompatible predicate shapes rather than weakening them }} {{ tex \mathrm{capturesSat}([[R]], [[CSL]], [[S]], [[G]]) }}
   | T1 ≈ T2                :: :: sig_comp     {{ com T1 and T2 signature-compatible }} {{ tex [[T1]] \approx [[T2]] }}
   | pcl = range pe1 pe2 S      :: :: range {{ tex [[pcl]] = ( 0 \leq [[pe1]] \leq [[pe2]] , [[S]]) }}
