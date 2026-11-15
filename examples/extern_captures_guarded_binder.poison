@@ -1,0 +1,19 @@
+--! poison-interpreter --extern-regime "238=true"
+-- A guarded `captures:` dependency compares guard bodies modulo the name of the
+-- guard's argument.  `@238` returns a poisoned int carrying the guard
+-- `{ 5, v => v >= 0 }`, and `--extern-regime "238=true"` makes the captured `a`
+-- clean under the regime, as in extern_captures_guarded.poison.  `@239` declares
+-- the dependency `a :> (int :> clean { 5, w => w >= 0 })`: the same body with the
+-- argument named `w`.  The dependency is satisfied at the call `f 2` and type
+-- checking passes.  None of these externs has a runtime implementation, so
+-- evaluation stops at the producer `@238` (`openf 0`) with the error
+-- "extern id 238 not registered".
+let openf = extern fn @238 p : (int :> clean {}) -> ((int :> poisoned { 5, v => (v >= 0) }))
+in
+let a = openf 0
+in
+let f =
+  extern pfn @239 b : (int :> clean {}) -> ((int :> clean {})),
+    captures: { a :> (int :> clean { 5, w => (w >= 0) }) }
+in
+f 2

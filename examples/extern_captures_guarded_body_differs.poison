@@ -1,0 +1,18 @@
+--! poison-interpreter --extern-regime "238=true"
+-- A guarded `captures:` dependency is satisfied only by an actual guard whose
+-- body equals the declared body, modulo the tag and the name of the guard's
+-- argument.  `@238` returns a poisoned int carrying the guard `{ 5, v => v >= 0 }`,
+-- and `--extern-regime "238=true"` makes the captured `a` clean under the regime,
+-- as in extern_captures_guarded.poison.  `@239` declares the dependency
+-- `a :> (int :> clean { 5, v => v > 0 })`: the declared body `v > 0` differs from
+-- the actual body `v >= 0`, so the dependency is not satisfied at the call `f 2`
+-- and type checking fails.
+let openf = extern fn @238 p : (int :> clean {}) -> ((int :> poisoned { 5, v => (v >= 0) }))
+in
+let a = openf 0
+in
+let f =
+  extern pfn @239 b : (int :> clean {}) -> ((int :> clean {})),
+    captures: { a :> (int :> clean { 5, v => (v > 0) }) }
+in
+f 2

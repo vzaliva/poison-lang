@@ -1,0 +1,9 @@
+Evaluating file: examples/extern_captures_guarded_binder.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=false, pred={}},
+  MemoryTypeEnv: {},
+  tagEnv: { 1 := { value := true, deps := [] } },
+  nextLoc: 0
+
+Runtime error: extern id 238 not registered

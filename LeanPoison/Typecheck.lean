@@ -839,6 +839,16 @@ def PExpr.derefsArg (names : List Name) : PExpr → Bool
   | .app p q => PExpr.derefsArg names p || PExpr.derefsArg names q
   | _ => false
 
+/-- The number of levels of a pure expression. -/
+def PExpr.depth : PExpr → Nat
+  | .op p _ q => max (PExpr.depth p) (PExpr.depth q) + 1
+  | .unaryop _ p => PExpr.depth p + 1
+  | .ite p q r => max (max (PExpr.depth p) (PExpr.depth q)) (PExpr.depth r) + 1
+  | .deref p => PExpr.depth p + 1
+  | .vlet _ p q => max (PExpr.depth p) (PExpr.depth q) + 1
+  | .app p q => max (PExpr.depth p) (PExpr.depth q) + 1
+  | _ => 1
+
 /-- A guard closure is in scope for matching when its body does not dereference its
     argument, and every variable its body reads, other than its argument, is a
     clean reference to a single location and has the same qualified type in the
@@ -1420,17 +1430,28 @@ def argConditionSatisfied (declared actual : QTyp) (R : Regime) (fuel : Nat) : B
     (declared.poison == true || qtypCleanUnderRegime actual R) &&
     predShapeMatches declared.pred actual.pred fuel
 
-/-- Conservative predicate-shape match for a `captures:` dependency: the declared
-    side is a surface `SyntaxPredicate`, so only its shape is compared against the
-    resolved actual `Predicate` (no logical implication, no guarded
-    reconciliation). -/
+/-- Conservative predicate match for a `captures:` dependency, as in
+    `predShapeMatches`, modulo tag, captured environment and binder name (no
+    logical implication). A declared bare guard requires a bare actual guard. A
+    declared guard closure requires an actual guard closure whose body equals the
+    declared body (`PExpr.equalWithEnvs`, with the declared argument standing for
+    the actual one); a declared body that is not a pure expression matches
+    nothing. The comparison is given one level of fuel more than the declared
+    body has (`PExpr.depth`), plus one for the substituted argument. -/
 def captureSyntaxPredShapeMatches (declared : SyntaxPredicate) (actual : Predicate) : Bool :=
   match declared with
   | SyntaxPredicate.noPred => true
   | SyntaxPredicate.guardOnly _ =>
       match actual with | Predicate.guardOnly _ => true | _ => false
-  | SyntaxPredicate.guardClosure _ _ _ =>
-      match actual with | Predicate.guardClosure _ _ _ _ => true | _ => false
+  | SyntaxPredicate.guardClosure _ dArg dBody =>
+      match actual with
+      | Predicate.guardClosure _ aArg aBody aEnv =>
+          match Expr.toPExpr? dBody with
+          | some dBodyP =>
+              PExpr.equalWithEnvs dBodyP [] aBody aEnv (some (dArg, PExpr.var aArg))
+                (PExpr.depth dBodyP + 2)
+          | none => false
+      | _ => false
 
 /-- Satisfaction of one declared `captures:` read dependency.  Mirrors
     `argConditionSatisfied` (`Qactual <:R Qdecl`): the resolved dependency's
