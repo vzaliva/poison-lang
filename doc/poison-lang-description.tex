@@ -553,8 +553,8 @@ materialised in the same way. In each \texttt{\_clean} application rule,
 after the return guard, \(\mathrm{installEffectGuards}\) records every
 effect guard with a body whose fresh tag the post-call regime determines: the
 tag enters the tag environment with the regime's value, and its dependency set
-is the written cells together with the locations the guard reads, the set
-\texttt{match\_guard} computes for a guard on a cell. When one call records
+is the written cells together with the dependency set of the guard's
+predicate. When one call records
 the same tag twice (on its return and on a cell, or on two cells), the
 dependency sets are united. An effect whose target reference is poisoned
 stores no predicate in its cells, but its guard is recorded all the same: the
@@ -657,9 +657,10 @@ as a call-time fact and gives environment and memory dependencies the same
 operational reading. A declared no-predicate requirement imposes no guard-shape
 obligation; a declared guard predicate additionally requires the actual to carry
 the same guard shape, with no general logical implication: a declared guard
-closure requires an actual guard closure whose body is equal to the declared
-body modulo tag, binder, and captured environment, and a declared bare guard
-requires a bare actual guard.
+closure requires an actual guard closure whose body equals, as text, the
+declared body with the declared argument's name replaced by the actual
+argument's name (the tags are not compared, nor the environments in which the
+two bodies are read), and a declared bare guard requires a bare actual guard.
 
 The \texttt{captures:} clause is part of the surface syntax of extern
 declarations (and of nested-return descriptors), accepted by the parser and the
@@ -805,8 +806,9 @@ The language includes a predicate system that allows selective de-poisoning base
     \texttt{p} is the poison status, and \texttt{P} is an optional predicate.
     \item \textbf{Guard predicates with closure}: \texttt{guard k pred\_closure (x, pe, r)}
     creates a predicate with tag \texttt{k} and pure expression test \texttt{pe}
-    (pure function from \texttt{T} to \texttt{bool}). The \texttt{r} captures
-    value of variables used in \texttt{pe} at definition time. These enable
+    (pure function from \texttt{T} to \texttt{bool}). The \texttt{r} records
+    the qualified types of the variables in scope at definition time (the
+    captured typing environment). These enable
     syntactic matching for conditional de-poisoning.
     \item \textbf{Guard-only predicates}: \texttt{guard k} associates a guard tag
     \texttt{k} with a value without a syntactically matchable predicate closure.
@@ -837,8 +839,9 @@ applies only to non-function values. Qualified types for functions always carry
 guard tags therefore never de-poison functions.
 
 \textbf{Rationale:} Predicate closures are deliberately first-order: \texttt{match\_guard}
-validates a closure only by syntactic correspondence (up to substitution) against a
-well-typed guard condition. This makes argument-type annotations redundant, and it
+validates a closure by syntactic correspondence (up to substitution) against a
+well-typed guard condition, together with the scope check of the matching rule
+below. This makes argument-type annotations redundant, and it
 also explains the restriction to non-function values: meaningful predicates on
 functions are behavioural (extensional) properties, which cannot be established by
 the typechecker via syntactic matching.
@@ -849,22 +852,24 @@ the typechecker via syntactic matching.
 clean reference \texttt{y} of $\sigma$ may point to, in which case the owner
 value is \texttt{!y}. The body \texttt{pe} must use its argument \texttt{x},
 and \texttt{pe} with \texttt{x} replaced by the owner value must be
-syntactically equal to the condition; a \texttt{let} of the body that binds a
-name occurring in the owner value does not match. Syntactic equality compares
-names, not what they denote, so the closure must also be \emph{in scope} at the
-condition: its body does not dereference its argument, and every other
-variable it reads is a clean reference to a single location, with the same
-qualified type in the captured environment \texttt{r} and in $\sigma$. A body
-that reads, besides its argument, an integer, a function, a poisoned reference
-or a reference with several possible locations is therefore never selected,
-nor is a body read in a scope where one of its variables names another cell.
+syntactically equal to the condition. A \texttt{let} of the body that binds
+\texttt{x} itself is compared with the replacement switched off in its body; a
+\texttt{let} of the body that binds another name occurring in the owner value
+does not match. Syntactic equality compares names, not what they denote, so
+the closure must also be \emph{in scope} at the condition: its body does not
+dereference its argument, and every free variable of the body other than its
+argument is a clean reference to a single location, with the same qualified
+type in the captured environment \texttt{r} and in $\sigma$. A name bound by
+a \texttt{let} of the body is not free and is not checked. A body with a free
+variable, besides its argument, that is an integer, a function, a poisoned
+reference or a reference with several possible locations is therefore never
+selected, nor is a body read in a scope where one of its free variables names
+another cell.
 
-\textbf{Tag Uniqueness:} The \texttt{match\_guard} function expects to find at
-most one matching predicate for any given condition. Predicates parametrised by
-their argument will naturally match at most once due to syntactic substitution
-differences. However, for predicates that ignore their argument, extra care must
-be taken to ensure no two distinct tags are assigned to identical predicate
-bodies, as this would cause multiple-match errors in \texttt{match\_guard}.
+\textbf{Tag Uniqueness:} \texttt{match\_guard} selects a guard only when
+exactly one candidate matches the condition. With none, or with two or more,
+it selects nothing, and the conditional is typed by the standard rules. A guard
+closure whose body does not use its argument is never a candidate.
 
 \textbf{Guard-only limitations:} Guard-only predicates (\texttt{guard k} without
 a closure) cannot be matched via \texttt{match\_guard} because they lack the
@@ -2117,7 +2122,7 @@ returns a tag and dependencies) with the abstract satisfaction relation, while
 keeping the semantics \emph{value--sensitive}: the conclusion relates the
 concrete boolean result to predicate satisfaction for the runtime value observed at check time. The bidirectional form is essential for regime-aware typing: when a regime fixes $\mathcal{R}(k) = \text{false}$, the type system must conclude that the predicate is \emph{not} satisfied, which requires both directions of the equivalence.
 
-\emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\). \texttt{matchGuard} uses it on the \emph{syntactic} side of the comparison: every variable the body reads, other than its argument, must have the same qualified type in \(r\) and in the check--time typing environment \(\sigma\), a clean reference to a single location. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
+\emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\). \texttt{matchGuard} uses it on the \emph{syntactic} side of the comparison: every free variable of the body other than its argument (a name bound by a \texttt{let} of the body is not free) must have the same qualified type in \(r\) and in the check--time typing environment \(\sigma\), a clean reference to a single location. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
 
 \paragraph{Memory Monotonicity Axiom.} Predicates are stable under memory changes that do not affect their dependencies:
 \[

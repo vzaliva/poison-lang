@@ -748,9 +748,11 @@ def opUnaryEType? : UnaryOp → ETyp → Option ETyp
  Syntactic equality of two pure expressions, with an optional substitution in
  the first. With `substitution = some (x, val)`, an occurrence of `x` in `pe1`
  is compared as `val`; any other variable equals only a variable of the same
- name. A `let` in `pe1` that binds `x` turns the substitution off in its body,
- and a `let` that binds a name occurring in `val` makes the comparison fail
- (the binder would capture it). The environments `env1` and `env2` are not
+ name. A `let` equals only a `let` that binds the same name. A `let` in `pe1`
+ that binds `x` itself is compared with the substitution turned off in its
+ body, even when `val` mentions `x`; a `let` that binds any other name
+ occurring in `val` makes the comparison fail (the binder would capture it).
+ The environments `env1` and `env2` are not
  read: two variables of the same name are equal whatever they denote. Where
  `matchGuard` uses this comparison, `guardScopeAgrees` checks what they
  denote. A unary operator has no case: it equals nothing.
@@ -840,7 +842,7 @@ def PExpr.derefsArg (names : List Name) : PExpr → Bool
   | _ => false
 
 /-- The number of levels of a pure expression. -/
-def PExpr.depth : PExpr → Nat
+private def PExpr.depth : PExpr → Nat
   | .op p _ q => max (PExpr.depth p) (PExpr.depth q) + 1
   | .unaryop _ p => PExpr.depth p + 1
   | .ite p q r => max (max (PExpr.depth p) (PExpr.depth q)) (PExpr.depth r) + 1
@@ -850,9 +852,10 @@ def PExpr.depth : PExpr → Nat
   | _ => 1
 
 /-- A guard closure is in scope for matching when its body does not dereference its
-    argument, and every variable its body reads, other than its argument, is a
-    clean reference to a single location and has the same qualified type in the
-    guard's captured environment and in the current environment `S`. -/
+    argument, and every free variable of its body other than its argument
+    (`PExpr.freeVars`: a name bound by a `let` of the body is not free, and is not
+    checked) is a clean reference to a single location and has the same qualified
+    type in the guard's captured environment and in the current environment `S`. -/
 def guardScopeAgrees (argName : Name) (body : PExpr) (capEnv : CapturedVarEnv)
     (S : VarTypeEnv) : Bool :=
   !PExpr.derefsArg [argName] body &&
@@ -874,14 +877,16 @@ def guardScopeAgrees (argName : Name) (body : PExpr) (capEnv : CapturedVarEnv)
   either by a variable `x` of `S` (the owner value is `x`) or by every cell in
   `G` that a clean reference `x` of `S` points to (the cells' predicates
   merged; the owner value is `!x`). The body, with `a` standing for the owner
-  value, must equal `e` (`PExpr.equalWithEnvs`). That comparison is
-  syntactic, so the candidate must also be in scope at the condition
-  (`guardScopeAgrees`): its body does not dereference its argument, and every
-  other variable it reads is a clean reference to a single location, with the
-  same qualified type where the guard was made and in `S`. If there is exactly
-  one candidate, its tag and dependency set are returned (for a reference
-  owner, the dependency set includes the owner's cells); otherwise an error is
-  thrown.
+  value, must equal `e` (`PExpr.equalWithEnvs`; a `let` of the body that binds
+  `a` itself is compared with the substitution off in its body). That
+  comparison is syntactic, so the candidate must also be in scope at the
+  condition (`guardScopeAgrees`): its body does not dereference its argument,
+  and every free variable of its body other than its argument (a name bound by
+  a `let` of the body is not free) is a clean reference to a single location,
+  with the same qualified type where the guard was made and in `S`. If there is
+  exactly one candidate, its tag and dependency set are returned (for a
+  reference owner, the dependency set includes the owner's cells); otherwise an
+  error is thrown.
 --/
 def matchGuard (e : Expr) (G : MemoryTypeEnv) (S : VarTypeEnv) (fuel : Nat) : TypecheckM (Tag × Deps) := do
   -- Try to convert the condition e to a PExpr
@@ -1401,9 +1406,12 @@ def qtypCleanUnderRegime (qt : QTyp) (R : Regime) : Bool :=
      | Predicate.guardOnly k => R.lookup? k == some true
      | Predicate.noPred => false)
 
-/-- Conservative predicate-SHAPE match for argument conditions: the actual
-    predicate must carry the same guard shape as the declared one, modulo tag,
-    captured environment, and binder name (no logical implication). -/
+/-- Conservative predicate-SHAPE match for argument conditions (no logical
+    implication). A declared bare guard requires a bare actual guard. A declared
+    guard closure requires an actual guard closure whose body equals, as text,
+    the declared body with the declared argument's name replaced by the actual
+    argument's name (`PExpr.equalWithEnvs`); the tags are not compared, nor the
+    environments in which the two bodies are read. -/
 def predShapeMatches (declared actual : Predicate) (fuel : Nat) : Bool :=
   match declared with
   | Predicate.noPred => true
@@ -1431,13 +1439,14 @@ def argConditionSatisfied (declared actual : QTyp) (R : Regime) (fuel : Nat) : B
     predShapeMatches declared.pred actual.pred fuel
 
 /-- Conservative predicate match for a `captures:` dependency, as in
-    `predShapeMatches`, modulo tag, captured environment and binder name (no
-    logical implication). A declared bare guard requires a bare actual guard. A
-    declared guard closure requires an actual guard closure whose body equals the
-    declared body (`PExpr.equalWithEnvs`, with the declared argument standing for
-    the actual one); a declared body that is not a pure expression matches
-    nothing. The comparison is given one level of fuel more than the declared
-    body has (`PExpr.depth`), plus one for the substituted argument. -/
+    `predShapeMatches` (no logical implication). A declared bare guard requires a
+    bare actual guard. A declared guard closure requires an actual guard closure
+    whose body equals, as text, the declared body with the declared argument's
+    name replaced by the actual argument's name (`PExpr.equalWithEnvs`); the tags
+    are not compared, nor the environments in which the two bodies are read. A
+    declared body that is not a pure expression matches nothing. The comparison
+    is given one level of fuel more than the declared body has (`PExpr.depth`),
+    plus one for the substituted argument. -/
 def captureSyntaxPredShapeMatches (declared : SyntaxPredicate) (actual : Predicate) : Bool :=
   match declared with
   | SyntaxPredicate.noPred => true

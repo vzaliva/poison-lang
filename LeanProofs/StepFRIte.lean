@@ -1868,9 +1868,10 @@ theorem matchGuard_ok_matched_owner
 
 /-- A guard closure with argument `argName`, body `body` and captured environment
     `capEnv` is in scope in the environment `S`: the body does not dereference its
-    argument (`PExpr.derefsArg`), and every variable the body reads, other than its
-    argument (`PExpr.freeVars`), has one qualified type in the captured environment
-    and in `S`, clean, a reference to a single location. -/
+    argument (`PExpr.derefsArg`), and every free variable of the body other than its
+    argument (`PExpr.freeVars`; a name bound by a `let` of the body is not free) has
+    one qualified type in the captured environment and in `S`, clean, a reference
+    to a single location. -/
 structure GuardInScope (S : VarTypeEnv) (argName : Name) (body : PExpr)
     (capEnv : CapturedVarEnv) : Prop where
   noDerefArg : PExpr.derefsArg [argName] body = false
