@@ -1722,11 +1722,11 @@ captured variables and never their binding numbers, so they hold of an
 environment iff they hold of it with every number set to 0 (`zeroCapEnv`). -/
 section ZeroBindNumbers
 
-@[simp] lemma fnCapturedEnv_zeroFnTClosure (tcl : FnTClosure) :
+@[simp] private lemma fnCapturedEnv_zeroFnTClosure (tcl : FnTClosure) :
     fnCapturedEnv (zeroFnTClosure tcl) = zeroCapEnv (fnCapturedEnv tcl) := by
   cases tcl <;> rfl
 
-@[simp] lemma pfnCapturedEnv_zeroPFnTClosure (tcl : PFnTClosure) :
+@[simp] private lemma pfnCapturedEnv_zeroPFnTClosure (tcl : PFnTClosure) :
     pfnCapturedEnv (zeroPFnTClosure tcl) = zeroCapEnv (pfnCapturedEnv tcl) := by
   cases tcl <;> rfl
 

@@ -7807,7 +7807,7 @@ def FnTClosure.ZeroedFrom (tcl tcl' : FnTClosure) : Prop :=
 def PFnTClosure.ZeroedFrom (tcl tcl' : PFnTClosure) : Prop :=
   ∃ env', CapEnvZeroedFrom tcl.capEnv env' ∧ tcl' = tcl.withCapEnv env'
 
-lemma CapEntryZeroedFrom.trans {a b c : Name × QTyp × Nat}
+private lemma CapEntryZeroedFrom.trans {a b c : Name × QTyp × Nat}
     (h₁ : CapEntryZeroedFrom a b) (h₂ : CapEntryZeroedFrom b c) : CapEntryZeroedFrom a c := by
   cases h₁ with
   | keep => exact h₂
@@ -7823,11 +7823,11 @@ lemma CapEntryZeroedFrom.qtyp {x x' : Name} {qt qt' : QTyp} {n n' : Nat}
   | keep => exact ⟨rfl, Or.inl rfl⟩
   | zero => exact ⟨rfl, Or.inr rfl⟩
 
-lemma CapEnvZeroedFrom.refl : ∀ env : CapturedVarEnv, CapEnvZeroedFrom env env
+private lemma CapEnvZeroedFrom.refl : ∀ env : CapturedVarEnv, CapEnvZeroedFrom env env
   | [] => List.Forall₂.nil
   | _ :: env => List.Forall₂.cons .keep (CapEnvZeroedFrom.refl env)
 
-lemma CapEnvZeroedFrom.trans {a b c : CapturedVarEnv}
+private lemma CapEnvZeroedFrom.trans {a b c : CapturedVarEnv}
     (h₁ : CapEnvZeroedFrom a b) (h₂ : CapEnvZeroedFrom b c) : CapEnvZeroedFrom a c := by
   unfold CapEnvZeroedFrom at *
   induction h₁ generalizing c with
@@ -7855,8 +7855,9 @@ lemma CapEnvZeroedFrom.mem_inv {env env' : CapturedVarEnv} (h : CapEnvZeroedFrom
       · obtain ⟨e, he, hr'⟩ := ih hmem
         exact ⟨e, List.mem_cons_of_mem _ he, hr'⟩
 
-lemma CapEnvZeroedFrom.mem {env env' : CapturedVarEnv} (h : CapEnvZeroedFrom env env')
-    {e : Name × QTyp × Nat} (hmem : e ∈ env) : ∃ e' ∈ env', CapEntryZeroedFrom e e' := by
+private lemma CapEnvZeroedFrom.mem {env env' : CapturedVarEnv}
+    (h : CapEnvZeroedFrom env env') {e : Name × QTyp × Nat} (hmem : e ∈ env) :
+    ∃ e' ∈ env', CapEntryZeroedFrom e e' := by
   unfold CapEnvZeroedFrom at h
   revert hmem
   induction h with
@@ -7911,11 +7912,12 @@ private lemma CapEnvZeroedFrom.lookup_eq_some_of {env env' : CapturedVarEnv}
     (tcl.withCapEnv env).capEnv = env := by
   cases tcl <;> rfl
 
-@[simp] lemma FnTClosure.withCapEnv_capEnv (tcl : FnTClosure) :
+@[simp] private lemma FnTClosure.withCapEnv_capEnv (tcl : FnTClosure) :
     tcl.withCapEnv tcl.capEnv = tcl := by
   cases tcl <;> rfl
 
-@[simp] lemma FnTClosure.withCapEnv_withCapEnv (tcl : FnTClosure) (env env' : CapturedVarEnv) :
+@[simp] private lemma FnTClosure.withCapEnv_withCapEnv (tcl : FnTClosure)
+    (env env' : CapturedVarEnv) :
     (tcl.withCapEnv env).withCapEnv env' = tcl.withCapEnv env' := by
   cases tcl <;> rfl
 
@@ -7923,11 +7925,12 @@ private lemma CapEnvZeroedFrom.lookup_eq_some_of {env env' : CapturedVarEnv}
     (tcl.withCapEnv env).capEnv = env := by
   cases tcl <;> rfl
 
-@[simp] lemma PFnTClosure.withCapEnv_capEnv (tcl : PFnTClosure) :
+@[simp] private lemma PFnTClosure.withCapEnv_capEnv (tcl : PFnTClosure) :
     tcl.withCapEnv tcl.capEnv = tcl := by
   cases tcl <;> rfl
 
-@[simp] lemma PFnTClosure.withCapEnv_withCapEnv (tcl : PFnTClosure) (env env' : CapturedVarEnv) :
+@[simp] private lemma PFnTClosure.withCapEnv_withCapEnv (tcl : PFnTClosure)
+    (env env' : CapturedVarEnv) :
     (tcl.withCapEnv env).withCapEnv env' = tcl.withCapEnv env' := by
   cases tcl <;> rfl
 
