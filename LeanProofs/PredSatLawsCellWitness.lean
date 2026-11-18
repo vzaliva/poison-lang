@@ -381,7 +381,7 @@ private theorem cellSat_iff {θ : RealizationMap} {μ : Memory} {a0 : Address} {
     cases hv
     simpa using hlt
 
-/-- **`cellSat` meets the candidate laws for `tm1`**, against the real
+/-- **`cellSat` meets the laws for `tm1`**, against the real
     `matchGuard`, with no hypothesis beyond the law's own. -/
 theorem cellSat_lawful : PredSatLaws cellSat tm1 := by
   refine ⟨?_, ?_⟩

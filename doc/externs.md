@@ -325,7 +325,8 @@ implementation returns `0`.
 
 **Blocker (not provable without trusted-surface expansion).** The inactive-guard
 branch is the obstruction. The FR stack is parametric over an abstract predicate
-oracle `predSat`, whose only behavioral law (`PredSatLaws`) is `match_iff` — a
+oracle `predSat`, and the only law of `PredSatLaws` that relates it to
+evaluation is `match_iff` — a
 *forward* law requiring an evaluated source-level `if` condition (`matchGuard`
 recognition plus a `terminatesTo … (bool b)` witness). A guard attached to a
 *value* (not an evaluated condition) yields only the abstract

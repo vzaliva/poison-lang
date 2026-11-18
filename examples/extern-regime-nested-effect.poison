@@ -11,9 +11,8 @@
 -- 109 as true via --extern-regime inserts the effect's freshly-generated tag into
 -- the active regime and records the guard of `cap` in the tag environment, with
 -- the location of `cap` as its dependency set, so the value read from `cap` is
--- clean (final type poison=false). Without --extern-regime, or before this fix
--- (which left the nested-return regime unchanged), the tag is absent from the
--- regime and the value stays poisoned (poison=true).
+-- clean (final type poison=false). Without --extern-regime the tag is absent
+-- from the regime and the value stays poisoned (poison=true).
 let cap = ref 0 in
 let h =
   extern fn @109 i : (int :> clean {}) -> (
