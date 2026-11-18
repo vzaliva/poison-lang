@@ -34,9 +34,11 @@ true, and the program is typed as a clean `int`.
   environment.
 * The relation `loSat β`: the checked value is a number at least the value
   the view `β` gives the binding number of `lo`. `loSat_lawful`: it satisfies
-  the laws on the table of the program under every view. `loSat_lawful_cap`:
-  the same on `loTmOf cap`, the table of the guard over any captured
-  environment `cap` that holds `lo` as a clean integer with number 1.
+  the laws on the table of the program under every view. `loSat_lawful_tbl`:
+  the same on any table whose every entry satisfies `IsLoEntry`, the guard
+  over a captured environment that holds `lo` as a clean integer with number
+  1; `loSat_lawful_cap` is the case of `loTmOf cap`, the table with the one
+  such entry over `cap`.
 * The view `βm m` of a run gives `lo` (number 1) the value 3 and `y`
   (number 2) the value `m`. `tests`: every run agrees with it at the
   conditional. `view_needed`: a view that gives number 1 another value does
@@ -46,8 +48,9 @@ true, and the program is typed as a clean `int`.
   exactly when `c ≤ n`. `match_iff_lawful`: for such a relation, with
   `c = 3`, *match* holds in a run exactly when `3 ≤ m`; `match_iff` is the
   case of `loSat (βm m)`. `agree`: *agreement* holds for every pair of runs,
-  which make no extern call. `pin_lo_cap`: the pin on `loTmOf cap`, for a
-  `cap` with which `y >= lo` is matched to the guard (`pinSelectsOf`).
+  which make no extern call. `pin_lo_tbl`: the pin on any table whose tag 0
+  is the guard over a `cap` with which `y >= lo` is matched to the guard
+  (`pinSelectsOf`); `pin_lo_cap` is the case of `loTmOf cap`.
 * `same_return`: when `3 ≤ m`, two runs from any `x` return the same value.
   `true_5`: the registry holds 5; the runs from `x = 0` and `x = 1` return 1.
   `no_premises_lt`: when `m < 3`, no relation and view meet the laws on the
@@ -222,12 +225,18 @@ private theorem scope_lo {cap : CapturedVarEnv} {S : VarTypeEnv} {B : BindEnv}
     rw [hn2, ← hagree.2]
     rfl
 
-/-- The law holds for the relation under every view, on the table over any
-    captured environment that holds `lo` as a clean integer with number 1. -/
-theorem loSat_lawful_cap (gcap : CapturedVarEnv)
-    (hq : (VarTypeEnv.ofCaptured gcap).lookup "lo" = some intQt)
-    (hn : (BindEnv.ofCaptured gcap).get? "lo" = some loNum) (β : BindVals) :
-    PredSatLaws (loSat β) (loTmOf gcap) β := by
+/-- An entry of a table is the guard `v >= lo` over a captured environment
+    that holds `lo` as a clean integer with number 1. -/
+def IsLoEntry (d : GuardDesc) : Prop :=
+  d.argName = "v" ∧ d.body = loBody ∧
+    (VarTypeEnv.ofCaptured d.capEnv).lookup "lo" = some intQt ∧
+    (BindEnv.ofCaptured d.capEnv).get? "lo" = some loNum
+
+/-- The law holds for the relation under every view, on any table whose every
+    entry is the guard `v >= lo` over a captured environment that holds `lo` as
+    a clean integer with number 1. -/
+theorem loSat_lawful_tbl (P : TagMeaning) (hP : ∀ k d, P.lookup k = some d → IsLoEntry d)
+    (β : BindVals) : PredSatLaws (loSat β) P β := by
   refine ⟨?_, ?_⟩
   · intro condition ctx fuel k deps μ ρ θ addr pm registry cfg b hwf hmatch hview hric hterm
     obtain ⟨pe, hpe, hown⟩ := matchGuard_ok_matched_owner_inScope ctx condition k deps hmatch
@@ -238,9 +247,9 @@ theorem loSat_lawful_cap (gcap : CapturedVarEnv)
         GuardDescInEnvsDeep.intro qt k ⟨arg, body, cap⟩
           (QTypInEnvs.inVar ctx.varEnv ctx.memEnv x qt qt hlookup (QTypInQTyp.self qt))
           (by simp [qtypGuardDesc?, hpred])
-      have hdesc := loTmOf_lookup_eq (hwf.1 hdeep)
-      simp only [GuardDesc.mk.injEq] at hdesc
-      obtain ⟨rfl, rfl, rfl⟩ := hdesc
+      obtain ⟨harg, hbody, hq, hn⟩ := hP _ _ (hwf.1 hdeep)
+      dsimp only at harg hbody hq hn
+      subst harg hbody
       have hloρ : ρ.lookup "lo" = β loNum :=
         hview _ hdeep "lo" (by simp [loBody, PExpr.freeVars]) loNum (scope_lo hq hn hscope)
           (by decide)
@@ -278,9 +287,9 @@ theorem loSat_lawful_cap (gcap : CapturedVarEnv)
         GuardDescInEnvsDeep.intro memQt k ⟨arg, body, cap⟩
           (QTypInEnvs.inMem ctx.varEnv ctx.memEnv l memQt memQt hmem (QTypInQTyp.self memQt))
           (by simp [qtypGuardDesc?, hmpred])
-      have hdesc := loTmOf_lookup_eq (hwf.1 hdeep)
-      simp only [GuardDesc.mk.injEq] at hdesc
-      obtain ⟨rfl, rfl, rfl⟩ := hdesc
+      obtain ⟨harg, hbody, hq, hn⟩ := hP _ _ (hwf.1 hdeep)
+      dsimp only at harg hbody hq hn
+      subst harg hbody
       have hloρ : ρ.lookup "lo" = β loNum :=
         hview _ hdeep "lo" (by simp [loBody, PExpr.freeVars]) loNum (scope_lo hq hn hscope)
           (by decide)
@@ -320,6 +329,15 @@ theorem loSat_lawful_cap (gcap : CapturedVarEnv)
           simpa using hle
   · intro _k _pred _fuel _μ _μ' _v _deps _θ _ _
     exact Iff.rfl
+
+/-- The law holds for the relation under every view, on the table over any
+    captured environment that holds `lo` as a clean integer with number 1. -/
+theorem loSat_lawful_cap (gcap : CapturedVarEnv)
+    (hq : (VarTypeEnv.ofCaptured gcap).lookup "lo" = some intQt)
+    (hn : (BindEnv.ofCaptured gcap).get? "lo" = some loNum) (β : BindVals) :
+    PredSatLaws (loSat β) (loTmOf gcap) β :=
+  loSat_lawful_tbl (loTmOf gcap)
+    (fun _ _ h => by rw [loTmOf_lookup_eq h]; exact ⟨rfl, rfl, hq, hn⟩) β
 
 /-- The law holds for the relation under every view. -/
 theorem loSat_lawful (β : BindVals) : PredSatLaws (loSat β) loTm β :=
@@ -1309,7 +1327,9 @@ private theorem pinCtx_lookup {cap : CapturedVarEnv} {z : Name} {q : QTyp}
     · rw [VarTypeEnv_lookup_update_ne _ "lo" z _ hl] at h
       simp [VarTypeEnv.lookup] at h
 
-private theorem pinCtx_wf (cap : CapturedVarEnv) : wfTagMeaningCtx (loTmOf cap) (pinCtxOf cap) := by
+private theorem pinCtx_wf {P : TagMeaning} {cap : CapturedVarEnv}
+    (hP : P.lookup 0 = some { argName := "v", body := loBody, capEnv := cap }) :
+    wfTagMeaningCtx P (pinCtxOf cap) := by
   refine EnvRespectsTagMeaning.intro ?_
   intro k d hdeep
   rcases hdeep with ⟨qt, k, d, hin, hdesc⟩
@@ -1322,7 +1342,7 @@ private theorem pinCtx_wf (cap : CapturedVarEnv) : wfTagMeaningCtx (loTmOf cap) 
       subst hqt
       simp [qtypGuardDesc?, yQtOf] at hdesc
       obtain ⟨rfl, rfl⟩ := hdesc
-      rfl
+      exact hP
     · have hqt : qt = intQt :=
         QTypInQTyp_eq_of_nonFunctionTarget hinq
           (by simp [intQt, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
@@ -1374,19 +1394,21 @@ private theorem pin_runs (μ : Memory) (c n : Int) :
   have hl : VarEnv.lookup (pinRho c n) "lo" = some (Value.num c) := rfl
   simp [cond, LeanPoison.beval, LeanPoison.evalOp, pinCfg, hy, hl]
 
-/-- The laws fix a relation at the guard's tag, on the table over any captured
-    environment `cap` for which `y >= lo` is matched to the guard: under a view
-    that gives `lo`'s number the value `c`, on an integer `n` it holds exactly
-    when `c ≤ n`. -/
-theorem pin_lo_cap (cap : CapturedVarEnv) (hsel : pinSelectsOf cap = true) {predSat : PredSat}
-    {β : BindVals} {c : Int} (hlaws : PredSatLaws predSat (loTmOf cap) β)
-    (hβ : β loNum = some (Value.num c)) (μ : Memory) (n : Int) :
-    predSat 0 μ (Value.num n) ↔ c ≤ n := by
+/-- The laws fix a relation at tag 0, on any table whose tag 0 is the guard
+    `v >= lo` over a captured environment `cap` for which `y >= lo` is matched
+    to the guard: under a view that gives `lo`'s number the value `c`, on an
+    integer `n` it holds exactly when `c ≤ n`. -/
+theorem pin_lo_tbl (P : TagMeaning) (cap : CapturedVarEnv)
+    (hP : P.lookup 0 = some { argName := "v", body := loBody, capEnv := cap })
+    (hsel : pinSelectsOf cap = true) {predSat : PredSat} {β : BindVals} {c : Int}
+    (hlaws : PredSatLaws predSat P β) (hβ : β loNum = some (Value.num c)) (μ : Memory)
+    (n : Int) : predSat 0 μ (Value.num n) ↔ c ≤ n := by
   obtain ⟨deps, hmatch⟩ := pin_matches hsel
   have hview : ∀ d, GuardDescInEnvsDeep (pinCtxOf cap).varEnv (pinCtxOf cap).memEnv 0 d →
       ViewAgreesOn β (pinCtxOf cap).bindEnv (pinRho c n) (PExpr.freeVars [d.argName] d.body) := by
     intro d hd
-    have hdesc := loTmOf_lookup_eq ((pinCtx_wf cap).1 hd)
+    have hdesc : d = { argName := "v", body := loBody, capEnv := cap } :=
+      (Option.some.inj (hP.symm.trans ((pinCtx_wf hP).1 hd))).symm
     subst hdesc
     intro x hx k hk _
     have hxlo : x = "lo" := by simpa [loBody, PExpr.freeVars] using hx
@@ -1400,7 +1422,7 @@ theorem pin_lo_cap (cap : CapturedVarEnv) (hsel : pinSelectsOf cap = true) {pred
     rfl
   obtain ⟨v, hown, hiff⟩ :=
     hlaws.match_iff cond (pinCtxOf cap) 10 0 deps μ (pinRho c n) ∅ 0 false default
-      (pinCfg μ c n) (decide (n ≥ c)) (pinCtx_wf cap) hmatch hview (pinRic cap μ c n)
+      (pinCfg μ c n) (decide (n ≥ c)) (pinCtx_wf hP) hmatch hview (pinRic cap μ c n)
       (pin_runs μ c n)
   have hv : v = Value.num n := by
     rcases hown with ⟨x, qt, _, _, _, hlookup, hpred, hρ⟩ |
@@ -1416,6 +1438,16 @@ theorem pin_lo_cap (cap : CapturedVarEnv) (hsel : pinSelectsOf cap = true) {pred
   rw [hv] at hiff
   rw [← hiff]
   simp
+
+/-- The laws fix a relation at the guard's tag, on the table over any captured
+    environment `cap` for which `y >= lo` is matched to the guard: under a view
+    that gives `lo`'s number the value `c`, on an integer `n` it holds exactly
+    when `c ≤ n`. -/
+theorem pin_lo_cap (cap : CapturedVarEnv) (hsel : pinSelectsOf cap = true) {predSat : PredSat}
+    {β : BindVals} {c : Int} (hlaws : PredSatLaws predSat (loTmOf cap) β)
+    (hβ : β loNum = some (Value.num c)) (μ : Memory) (n : Int) :
+    predSat 0 μ (Value.num n) ↔ c ≤ n :=
+  pin_lo_tbl (loTmOf cap) cap rfl hsel hlaws hβ μ n
 
 /-- The laws fix a relation at the guard's tag: under a view that gives `lo`'s
     number the value `c`, on an integer `n` it holds exactly when `c ≤ n`. -/
