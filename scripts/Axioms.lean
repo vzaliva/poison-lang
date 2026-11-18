@@ -73,6 +73,9 @@ import LeanProofs.ExternCallsWitnessCallFromBody
 #print axioms ExternCallsWitness.IntCallFalse.same_return
 #print axioms ExternCallsWitness.IntCallFalse.false_5
 #print axioms ExternCallsWitness.IntCallFalse.fails_10
+
+-- An extern function declared outside a function and called in its body,
+-- and the theorem applied to that program.
 #print axioms ExternCallsWitness.CallInBody.gSpec
 #print axioms ExternCallsWitness.CallInBody.typed_clean
 #print axioms ExternCallsWitness.CallInBody.call_reached
@@ -86,6 +89,9 @@ import LeanProofs.ExternCallsWitnessCallFromBody
 #print axioms ExternCallsWitness.CallInBody.same_return
 #print axioms ExternCallsWitness.CallInBody.true_5
 #print axioms ExternCallsWitness.CallInBody.fails_0
+
+-- An extern function called in a function body and its result tested
+-- outside, and the theorem applied to that program.
 #print axioms ExternCallsWitness.CallFromBody.gSpec
 #print axioms ExternCallsWitness.CallFromBody.typed_clean
 #print axioms ExternCallsWitness.CallFromBody.call_reached
