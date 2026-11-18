@@ -1642,7 +1642,10 @@ Assume a well-formed critical-input specification $S$ and observable
 specification $\text{obs}$. For any initial typing context
 $(pc,\Gamma,\sigma,\mathcal{L})$ that matches $S$, is well-formed, and starts
 from a clean program counter ($pc = \text{false}$) with an empty tag environment
-($\mathcal{L} = \emptyset$), the following implication holds:
+($\mathcal{L} = \emptyset$), and whose guards capture references only to
+locations that already exist (\texttt{GuardCapsBelow}: at every closure depth,
+the reference locations of the captured environment of every guard of the
+context are below the next fresh location), the following implication holds:
 
 If typechecking $e$ under this context succeeds with some fuel and the inferred typing result satisfies the
 observable constraints, then for \emph{any} abstract predicate satisfaction relation
@@ -1803,7 +1806,15 @@ for an \texttt{extern val}.  Agreement of the declared value in the two runs is
 an obligation of the entry's author inside \texttt{declFR}, which is stated
 for the one implementation of the entry, so both runs it receives are runs of
 that implementation.  No shipped entry is an \texttt{extern val}; the trusted
-entry of a witness \texttt{extern val} meets this obligation (see below).
+entry of a witness \texttt{extern val} meets this obligation (see below).  All four
+contracts also receive the footprint invariant \texttt{FootprintCtx} of the
+context the boundary is typed in, and prove two more facts about each run: the
+realisation map after the boundary agrees with the one before on every
+location below the context's next fresh location (\texttt{MapKeepsBelow}), and
+the boundary keeps the content of every realised cell in the footprint of a
+tag that the regime after it defines (\texttt{KeepsFootprints}).  For an
+entry whose implementation writes a cell, the second fact follows from the
+regime rule for effects above (\texttt{keepsFootprints\_write\_effect}).
 
 The premises have the following scope.
 \begin{itemize}
@@ -2000,16 +2011,18 @@ captured variables.
 
 Instead of concretely evaluating predicates, the proof treats predicate satisfaction as an abstract mathematical relation:
 \[
-\text{PredSat} : \text{Tag} \to \text{Memory} \to \text{Value} \to \text{Prop}
+\text{PredSat} : \text{Tag} \to \text{RealizationMap} \to \text{Memory} \to \text{Value} \to \text{Prop}
 \]
 
 This relation specifies whether a predicate (identified by its tag) is satisfied
-by a value in a given memory state, without requiring concrete evaluation. Key
+by a value in a given state (a realisation map and a memory), without requiring
+concrete evaluation. Key
 design aspects:
 
 \begin{itemize}
     \item \textbf{No variable environment parameter}: Captured variables are encoded in the tag's identity. Each tag uniquely identifies both the predicate body and its captured lexical context.
     \item \textbf{Memory parameter}: Required because predicates may dereference heap locations (e.g., \texttt{!x}), which can change during execution.
+    \item \textbf{Realisation map parameter}: A predicate names logical locations (the reference \texttt{x} captured by the guard names a location $l$); the realisation map $\theta$ gives the address $\theta(l)$ whose content the predicate reads.
     \item \textbf{Universal quantification}: The fault robustness theorem quantifies over all \texttt{PredSat} relations satisfying certain axioms, proving the property holds regardless of what predicates mean.
 \end{itemize}
 
@@ -2034,7 +2047,7 @@ assumptions used throughout the development:
 
 \begin{itemize}
     \item how a successful \texttt{matchGuard} check relates a runtime boolean outcome to abstract predicate satisfaction, and
-    \item how predicate satisfaction behaves when memory changes outside the predicate's declared dependency footprint.
+    \item how predicate satisfaction behaves when the state changes outside the predicate's footprint, the locations it reads.
 \end{itemize}
 
 This is why the top-level theorem quantifies over \emph{all} \texttt{PredSat}
@@ -2066,11 +2079,12 @@ in plain language:
     named by \(k\) holds for the \emph{particular runtime value that was
     checked}.  This is the law that lets the proof turn a successful guard test
     into regime-consistency facts.
-    \item \textbf{\texttt{mem\_monotone}} says: if two memory states agree on
-    all locations a predicate depends on, then the predicate's truth value does
-    not change between those memories.  This is the law that lets the proof
-    transport predicate satisfaction across heap updates that are irrelevant to
-    the guard.
+    \item \textbf{\texttt{mem\_footprint}} says: if two states agree on
+    every location of the predicate's footprint (where the location lives and
+    what its address holds), then the predicate's truth value does not change
+    between those states.  This is the law that lets the proof transport
+    predicate satisfaction across heap updates that are irrelevant to the
+    guard.
 \end{itemize}
 
 Together, these laws explain why \texttt{PredSat} is needed at all:
@@ -2107,7 +2121,7 @@ an owner of the guard closure for $k$ (either a variable \(x\) or a dereference
     \land\; \Gamma(l)\text{ carries a guard closure for }k
     \land\; \theta(l)=a \land \mu(a)=n \land v=\texttt{num}(n)
 \Big)\\
-&\qquad\qquad \land\; (b = \text{true} \iff \text{PredSat}\; k\; \mu\; v)\,.
+&\qquad\qquad \land\; (b = \text{true} \iff \text{PredSat}\; k\; \theta\; \mu\; v)\,.
 \end{aligned}
 \]
 
@@ -2130,21 +2144,37 @@ concrete boolean result to predicate satisfaction for the runtime value observed
 
 \emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\). \texttt{matchGuard} uses it on the \emph{syntactic} side of the comparison: every free variable of the body other than its argument (a name bound by a \texttt{let} of the body is not free) must have the same qualified type in \(r\) and in the check--time typing environment \(\sigma\), a clean reference to a single location. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
 
-\paragraph{Memory Monotonicity Axiom.} Predicates are stable under memory changes that do not affect their dependencies:
+\paragraph{Footprint axiom (\texttt{mem\_footprint}).} For a tag $k$ with a
+descriptor $d$ in the tag meaning, the predicate reads the state only at its
+\emph{footprint}: the locations of every set that \texttt{extractDepsFromPred}
+computes, at any fuel, for the guard closure of $d$.  Two states that agree on
+the footprint, on where each location lives and on what its address holds,
+give the same answer:
 \[
 \begin{aligned}
-&\forall\, k,\, \text{pred},\, \mu,\, \mu',\, v,\, \text{deps},\, \theta.\\
-&\text{extractDepsFromPred}(\text{pred}) = \texttt{ok}(\text{deps})\ \land\\
-&(\forall l \in \text{deps}.\; \forall a.\; \theta(l)=a \rightarrow\\
-&\qquad \mu(a) = \mu'(a))\ \implies\\
-&\qquad (\text{PredSat}\; k\; \mu\; v \iff \text{PredSat}\; k\; \mu'\; v)
+&\forall\, k,\, d,\, \theta,\, \theta',\, \mu,\, \mu',\, v.\;\; tm(k) = d\ \land\\
+&\big(\forall\, \text{deps}.\; \text{extractDepsFromPred}(\texttt{guardClosure}(k, d)) = \texttt{ok}(\text{deps}) \rightarrow\\
+&\qquad (\forall l \in \text{deps}.\; \theta(l) = \theta'(l))\ \land\
+ (\forall l \in \text{deps}.\; \forall a.\; \theta(l)=a \rightarrow \mu(a) = \mu'(a))\big)\\
+&\qquad \implies (\text{PredSat}\; k\; \theta\; \mu\; v \iff \text{PredSat}\; k\; \theta'\; \mu'\; v)
 \end{aligned}
 \]
+When no fuel extracts a set, the meaning of the tag does not depend on the
+state.
 
-This axiom ensures the abstract relation behaves consistently with the type
-system's dependency extraction and guard invalidation on assignment. The
-dependencies are computed directly by \texttt{extractDepsFromPred}, the same
-function used by the type checker.
+This axiom ties the abstract relation to the type system's dependency
+extraction and to the invalidation of guards on writes.  The dependencies are
+computed by \texttt{extractDepsFromPred}, the same function used by the type
+checker.  The step theorems carry an invariant of the typing context,
+\texttt{FootprintCtx}: the dependency set that the tag environment records for
+a tag covers the tag's footprint, and every footprint location is below the
+next fresh location.  An assignment removes from the regime every tag whose
+record meets the written locations, and every tag without a record; a call
+whose effects write some location does the same.  Every tag left in the regime
+therefore has a footprint that the write misses, and the allocation of a fresh
+location touches no footprint.  The start condition
+\texttt{GuardCapsBelow} establishes the invariant at the start of a run
+(\texttt{root\_footprintCtx}).
 
 \subsubsection{Relationship to Regimes}
 

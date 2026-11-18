@@ -61,6 +61,36 @@ runs of the entry's one implementation. No shipped entry is an `extern val`;
 the trusted entry of a witness `extern val` with a guarded `int`
 (`LeanProofs/ExternCallsWitnessVal.lean`) proves both declaration contracts.
 
+All four contracts also receive the footprint invariant of the context the
+boundary is typed in, `FootprintCtx tm ctx`
+(`LeanProofs/RegimeConsistency.lean`). The footprint of a tag is the set of
+locations that `extractDepsFromPred` computes for the guard closure of its
+descriptor, at any fuel (`InFootprint`); the law `mem_footprint` of
+`PredSatLaws` says that the satisfaction relation reads the realisation map and
+the memory only there. The invariant says that each record of the tag
+environment covers the footprint of its tag (`RecordsCover`) and that every
+footprint location is below the context's `nextLoc` (`FootprintBelow`). In
+return, each contract proves two more clauses of the post-condition, for each
+run:
+
+- `MapKeepsBelow ctx.nextLoc θ θ'`: the realisation map after the boundary
+  agrees with the one before on every location below `ctx.nextLoc`;
+- `KeepsFootprints tm (ctxAfter ctx res).regime θ μ cf.memory`: for every tag
+  that the regime after the boundary defines and that has a descriptor in
+  `tm`, the boundary leaves unchanged the content of every cell of the tag's
+  footprint that `θ` realises.
+
+A boundary that leaves the map and the memory as they are meets both by
+reflexivity (`MapKeepsBelow.refl`, `KeepsFootprints.refl`); an `extern ref`
+declaration adds one location at `nextLoc` (`MapKeepsBelow.update`). A call
+that writes a cell relies on the typechecker's rule for effects
+(`invalidateRegimeDepsEffect`): after the call, a tag that has a record in the
+tag environment stays in the regime only if its record misses every written
+location, and a tag without a record stays only if the call writes no
+location. Every tag left in the regime therefore has a footprint that the write
+misses (`keepsFootprints_write_effect`); the entry of `set_err` proves
+`KeepsFootprints` this way (`LeanProofs/ExternProofs.lean`).
+
 Argument-side **preconditions** are the declared argument `QTyp` (for example
 `(int :> clean {})`). **Read dependencies** are declared in `captures:`; **write
 effects** in `effects:` (impure `extern fn` only). Argument preconditions and
@@ -299,7 +329,7 @@ oracle `predSat`, whose only behavioral law (`PredSatLaws`) is `match_iff` — a
 *forward* law requiring an evaluated source-level `if` condition (`matchGuard`
 recognition plus a `terminatesTo … (bool b)` witness). A guard attached to a
 *value* (not an evaluated condition) yields only the abstract
-`¬ predSat k μ (num n)` from `varsRegime.withPred_ok`; nothing connects that to
+`¬ predSat k θ μ (num n)` from `varsRegime.withPred_ok`; nothing connects that to
 the arithmetic fact `n < 0`. Discharging the inactive branch through the return
 spec ("guard inactive ⟹ returns `0`") does not avoid this — it relocates the
 same `¬predSat ⟹ n < 0` fact into the trusted layer. A clean-input spec that
