@@ -833,7 +833,7 @@ private def FaultRobustnessPointwise
 
 /-- The start condition: every guard of the context captures an environment whose
     reference locations, at every closure depth, are below `nextLoc` (a guard
-    names only locations that already exist). -/
+    captures references only to locations that already exist). -/
 def GuardCapsBelow (ctx : TypeContext) : Prop :=
   ∀ k d, GuardDescInEnvsDeep ctx.varEnv ctx.memEnv k d →
     CapturedEnvRefLocsFullBounded d.capEnv ctx.nextLoc
