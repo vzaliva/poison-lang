@@ -1693,12 +1693,14 @@ from a clean program counter ($pc = \text{false}$) with an empty tag environment
 ($\mathcal{L} = \emptyset$), the following implication holds:
 
 If typechecking $e$ under this context succeeds with some fuel and the inferred typing result satisfies the
-observable constraints, then for \emph{any} abstract predicate satisfaction relation
-$\text{PredSat}$ that satisfies the predicate-satisfaction laws on the
-\emph{program table} of the typing run---the initial tag meaning together with
-every guard that typechecking $e$ allocates---the program $e$ satisfies the
-fault robustness property with respect to $S$, $\text{obs}$, and
-$\text{PredSat}$, where the premises on extern calls are read against the
+observable constraints, then for any two runs, each with an abstract predicate
+satisfaction relation $\text{PredSat}_i$ and a \emph{view} $\beta_i$ (the values
+the run gives to binding numbers), such that $\text{PredSat}_i$ satisfies the
+predicate-satisfaction laws under $\beta_i$ on the \emph{program table} of the
+typing run---the initial tag meaning together with every guard that
+typechecking $e$ allocates---and the matched tests of the run agree with
+$\beta_i$, the two runs satisfy the fault robustness property with respect to
+$S$ and $\text{obs}$, where the premises on extern calls are read against the
 typing run with that fuel.
 \end{theorem}
 
@@ -1713,6 +1715,26 @@ registry agrees with the extern declarations reachable from the initial
 context, that the extern-regime policy matches the input specification, and
 that registry-reserved cells are well formed in the initial states; see
 ``Handling Extern Constructs'' below.
+
+\paragraph{Views and the premise on matched tests.}
+A guard may read a clean variable of a base type, and \texttt{matchGuard}
+selects it at a test only when the variable is the same binding at the guard
+and at the test. The value of such a variable is a fact of the run, not of the
+typing. The predicate laws are therefore stated under a view
+$\beta$ (\texttt{BindVals}, the values a run gives to binding numbers), and
+the matching law applies at a test only when the variables that the guards of
+the matched tag read, other than their argument, hold the values $\beta$ gives
+their binding numbers (\texttt{ViewAgreesOn}). The theorem takes a relation
+and a view for each run, and assumes for each run \texttt{TestsAgreeWithView}
+(\texttt{LeanProofs/ExternCallSteps.lean}): at every reachable conditional that
+\texttt{matchGuard} matches to a tag with an entry in the regime, the variables
+that the guards of that tag read hold the values the view gives their binding
+numbers. This premise is assumed: it is not proved for every run, and a proof
+of it from the typing is open. The witness modules prove it, with every other
+premise, for small programs in which a guard reads a \texttt{let}-bound
+integer (\texttt{ExternCallsWitnessInt}, \texttt{ExternCallsWitnessIntCall},
+\texttt{ExternCallsWitnessIntCallFalse}, \texttt{ExternCallsWitnessCallInBody},
+\texttt{ExternCallsWitnessCallFromBody}).
 
 \paragraph{Proof structure (Lean).}
 The top-level fault-robustness statement is spec-driven: it relates two runs
@@ -1961,8 +1983,9 @@ value of the fresh-tag counter (\texttt{typecheck\_tagLog\_fresh}).  The
 \emph{program table} \texttt{programTable}~$tm$~\textit{log} is the initial tag
 meaning $tm$ extended with every entry of the log.  Since the tags are fresh,
 it contains $tm$ and maps each allocated tag to the closure allocated for it.
-The top-level theorem assumes \texttt{PredSatLaws}~\textit{predSat} on this
-table.
+The top-level theorem assumes, for each run,
+\texttt{PredSatLaws}~\textit{predSat}~\textit{tm}~$\beta$ on this table, with
+the run's relation and view.
 
 The laws are anti-monotone in the table (\texttt{PredSatLaws.anti\_mono}): a
 relation that is lawful for a table is lawful for every part of it.  The step
@@ -2131,7 +2154,9 @@ properties of that bridge that the fault-robustness argument relies on.
 context agrees with the tag meaning $tm$ (\texttt{wfTagMeaningCtx}: every guard
 closure in the context agrees with $tm$), a condition syntactically matches a
 tagged predicate via \texttt{matchGuard}, the runtime state instantiates the
-typing context, and the condition evaluates to boolean value $b$ (omitting the
+typing context, the variables that the guards of the tag read hold the values
+the view $\beta$ gives their binding numbers, and the condition evaluates to
+boolean value $b$ (omitting the
 pure-mode flag, extern registry, final configuration, and the fuel argument of
 \texttt{matchGuard} for brevity), then there is a runtime value $v$, the value of
 an owner of the guard closure for $k$ (either a variable \(x\) or a dereference
@@ -2143,6 +2168,7 @@ an owner of the guard closure for $k$ (either a variable \(x\) or a dereference
 &\quad \texttt{wfTagMeaningCtx}(tm, \Gamma, \sigma)\\
 &\quad \land\; \texttt{matchGuard}(\text{condition}, \Gamma, \sigma) = \texttt{ok}(k, \text{deps})\\
 &\quad \land\; \texttt{runtimeInstantiatesCtx}(\Gamma, \sigma, \mu, \rho, \theta)\\
+&\quad \land\; \texttt{ViewAgreesOn}(\beta, \text{the variables the guards of } k \text{ read})\\
 &\quad \land\; \langle \text{condition}, \mu, \rho \rangle \Downarrow b\\
 &\quad \implies \exists\, v.\;
 \Big(
