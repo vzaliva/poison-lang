@@ -1,0 +1,13 @@
+--! poison-interpreter --extern-regime "12=true"
+-- The integer lo is bound outside the function f. g, whose guard v >= lo
+-- reads lo, is declared outside f and called inside its body, where the test
+-- x >= lo reads the same lo. In the body lo has the binding number it has
+-- where f is made, in f's captured environment as in g's guard, so the guard
+-- is selected. The regime gives it the value true (5 >= 3): the else branch
+-- is dead and the result is the clean then branch. The then branch runs.
+let lo = 3 in
+let bad = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let g = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v >= lo) })) in
+let f = fn u : int => (let x = g 5 in if x >= lo then 1 else y) : int in
+f 0

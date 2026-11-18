@@ -1,0 +1,8 @@
+Evaluating file: examples/guard-match-int-joined-bindings.poison (verbose mode)
+
+Type checking passed: Type: {type=int, poison=true, pred={}}, MemoryTypeEnv: {}, tagEnv: {}, nextLoc: 0
+
+Result: 1
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0)]

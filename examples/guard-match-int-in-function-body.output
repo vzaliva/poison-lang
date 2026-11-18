@@ -1,0 +1,12 @@
+Evaluating file: examples/guard-match-int-in-function-body.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=false, pred={}},
+  MemoryTypeEnv: {},
+  tagEnv: { 1 := { value := true, deps := [] } },
+  nextLoc: 0
+
+Result: 1
+Final state:
+Variable environment: []
+  Memory: [(1000000, 0)]

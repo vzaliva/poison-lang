@@ -1,0 +1,20 @@
+--! poison-interpreter --extern-regime "12=true,19=true"
+-- f1 and f2 have the same parameter and body. They are made under two
+-- bindings of lo, each with its own g, whose guard v >= lo reads that lo.
+-- Called alone, either selects its guard at the test x >= lo (as in
+-- guard-match-int-in-function-body). The conditional joins their function
+-- types: the members disagree on the binding of lo, so the joined type records
+-- no binding for lo, nor inside the type of g. In the body of the joined
+-- function the test is not selected, the branches are joined and the result
+-- is poisoned. f2 runs: g is the integer square root, 2 >= 2, so the then
+-- branch runs and bad is not called.
+let bad = extern pfn @11 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let lo = 1 in
+let g = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v >= lo) })) in
+let f1 = fn u : int => (let x = g u in if x >= lo then 1 else bad 3) : int in
+let lo = 2 in
+let g = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v >= lo) })) in
+let f2 = fn u : int => (let x = g u in if x >= lo then 1 else bad 3) : int in
+let c = 1 > 2 in
+let f = if c then f1 else f2 in
+f 5

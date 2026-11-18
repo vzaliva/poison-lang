@@ -1,0 +1,20 @@
+--! poison-interpreter --extern-regime "12=true"
+-- Three functions made by three calls of mk are joined twice. Each gives mk's
+-- parameter a its own binding, and the joins erase the bindings of a. The
+-- guard v >= lo of g and the test x >= lo read lo instead, which is bound
+-- once outside mk and is the same binding in every member, so the guard is
+-- selected. The regime gives it the value true (5 >= 3): the else branch is
+-- dead and the result is the clean then branch. The then branch runs.
+let bad = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned {})) in
+let y = bad 3 in
+let lo = 3 in
+let g = extern pfn @12 n : (int :> clean {}) -> ((int :> poisoned { 1, v => (v >= lo) })) in
+let mk = fn a : int => fn u : int => (let x = g u in if x >= lo then 1 else y) : int : (int -> int) in
+let f1 = mk 1 in
+let f2 = mk 2 in
+let f3 = mk 3 in
+let c12 = 1 > 2 in
+let f12 = if c12 then f1 else f2 in
+let c3 = 1 < 2 in
+let f = if c3 then f3 else f12 in
+f 5
