@@ -87,9 +87,11 @@ that writes a cell relies on the typechecker's rule for effects
 (`invalidateRegimeDepsEffect`): after the call, a tag that has a record in the
 tag environment stays in the regime only if its record misses every written
 location, and a tag without a record stays only if the call writes no
-location. Every tag left in the regime therefore has a footprint that the write
-misses (`keepsFootprints_write_effect`); the entry of `set_err` proves
-`KeepsFootprints` this way (`LeanProofs/ExternProofs.lean`).
+location. Every tag of `tm` left in the regime therefore has a footprint that
+the write misses (`keepsFootprints_write_effect`); the guards that the call
+itself installs are not in `tm` and describe the state after the call. The
+entry of `set_err` proves `KeepsFootprints` this way
+(`LeanProofs/ExternProofs.lean`).
 
 Argument-side **preconditions** are the declared argument `QTyp` (for example
 `(int :> clean {})`). **Read dependencies** are declared in `captures:`; **write

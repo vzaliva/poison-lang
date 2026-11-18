@@ -1812,7 +1812,9 @@ context the boundary is typed in, and prove two more facts about each run: the
 realisation map after the boundary agrees with the one before on every
 location below the context's next fresh location (\texttt{MapKeepsBelow}), and
 the boundary keeps the content of every realised cell in the footprint of a
-tag that the regime after it defines (\texttt{KeepsFootprints}).  For an
+tag that the regime after it defines and that the tag meaning before it
+describes (\texttt{KeepsFootprints}); a guard that the boundary itself
+installs is not among these and describes the state after the boundary.  For an
 entry whose implementation writes a cell, the second fact follows from the
 regime rule for effects above (\texttt{keepsFootprints\_write\_effect}).
 
@@ -2170,9 +2172,10 @@ checker.  The step theorems carry an invariant of the typing context,
 a tag covers the tag's footprint, and every footprint location is below the
 next fresh location.  An assignment removes from the regime every tag whose
 record meets the written locations, and every tag without a record; a call
-whose effects write some location does the same.  Every tag left in the regime
-therefore has a footprint that the write misses, and the allocation of a fresh
-location touches no footprint.  The start condition
+whose effects write some location does the same.  Every tag that these
+removals leave in the regime therefore has a footprint that the write misses
+(a guard that the call then installs describes the state after the call), and
+the allocation of a fresh location touches no footprint.  The start condition
 \texttt{GuardCapsBelow} establishes the invariant at the start of a run
 (\texttt{root\_footprintCtx}).
 
