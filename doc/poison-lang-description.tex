@@ -2133,9 +2133,9 @@ tag meaning $tm$, and the runtime state must instantiate that context, so that
 the typing information consulted by \texttt{matchGuard} describes the state in
 which the condition is evaluated.
 The owner appears in the conclusion because a successful \texttt{matchGuard}
-guarantees that the tested expression is such an owner; the law therefore
-speaks about the value that was actually tested, and not about other variables
-that share the tag.  An owner must carry the guard closure itself: a variable
+guarantees that the tested expression is such an owner; the law states the
+equivalence for the value of some owner of the guard closure for $k$ and does
+not single out the tested one.  An owner must carry the guard closure itself: a variable
 whose predicate is only the guard-only tag \texttt{guard k} is not an owner in
 this sense, since guard-only predicates cannot be matched syntactically.
 
@@ -2185,7 +2185,7 @@ The guard regime $\mathcal{R}$ and abstract satisfaction \texttt{PredSat} serve 
 
 \begin{itemize}
     \item \textbf{PredSat} (abstract satisfaction): Universally quantified parameter specifying what predicates mean abstractly. Fixed throughout the proof for all regime choices.
-    \item \textbf{Regime $\mathcal{R}$} (execution path): Existentially chosen mapping recording which predicates were satisfied for specific runtime values in a particular execution. Different regimes represent different program runs.
+    \item \textbf{Regime $\mathcal{R}$} (execution path): A mapping, part of the typing context, recording which predicates are satisfied for specific runtime values in an execution. The theorem holds for every regime and compares two runs that are consistent with the same one; different regimes give separate instances of the theorem.
 \end{itemize}
 
 The regime \emph{witnesses} facts about concrete runtime values under the
