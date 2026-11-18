@@ -150,16 +150,25 @@ ptcl :: 'PTCL_' ::= {{ com pure fn closure }}
   | ( x , pe , S )          ::   :: pfn_closure
   | extern_ptcl @ eid ( x , Q , ER , S ) ::   :: extern_closure {{ com extern pure closure (carries the extern id eid for the extern-regime policy and the declared argument precondition Q consulted at the call site) }} {{ tex \mathsf{extern}@[[eid]]([[x]], [[Q]], [[ER]], [[S]]) }}
 
-% Merged typing closures (non-empty lists treated as sets)
+% Merged typing closures (non-empty lists treated as sets).
+% In a union, members with the same parameter and body (extern members: the
+% same in everything but the captured environment) are compared. An entry of
+% their captured environments is kept as it is only if every one of these
+% members has that variable with the same record (the same binding, or none in
+% each) and the same qualified type. Otherwise the entry records no binding,
+% and neither does any entry of a captured environment inside its type; the
+% captured environments of guard closures are not changed. Members that then
+% coincide are one member. Members with different parameters or bodies are not
+% compared, and keep their entries.
 tcls :: 'TCLS_' ::= {{ com impure closure set }}
   | tcl                     ::   :: singleton {{ tex \{ [[tcl]] \} }}
   | tcl , tcls              ::   :: cons {{ tex \{ [[tcl]] \} \cup [[tcls]] }}
-  | tcls1 U tcls2           ::   :: union {{ com closure set union }} {{ tex [[tcls1]] \cup [[tcls2]] }}
+  | tcls1 U tcls2           ::   :: union {{ com closure set union; same-body members keep the bindings they agree on }} {{ tex [[tcls1]] \cup [[tcls2]] }}
 
 ptcls :: 'PTCLS_' ::= {{ com pure closure set }}
   | ptcl                    ::   :: singleton {{ tex \{ [[ptcl]] \} }}
   | ptcl , ptcls            ::   :: cons {{ tex \{ [[ptcl]] \} \cup [[ptcls]] }}
-  | ptcls1 U ptcls2         ::   :: union {{ com closure set union }} {{ tex [[ptcls1]] \cup [[ptcls2]] }}
+  | ptcls1 U ptcls2         ::   :: union {{ com closure set union; same-body members keep the bindings they agree on }} {{ tex [[ptcls1]] \cup [[ptcls2]] }}
 
 predicate, P :: 'P_' ::= {{ com predicate }}
   | guard k pred_closure pcl ::   :: pred_closure {{ com predicate as pure closure }} {{ tex [[k]],\, [[pcl]] }}
@@ -355,11 +364,24 @@ formula :: formula_ ::=
 % replacement switched off in its body; while the replacement is on, a let of pe
 % that binds another name occurring in the owner value does not match. A body
 % with a unary operator matches nothing. The closure is in scope at e: pe does
-% not dereference x, and every free variable of pe other than x (a name bound by
-% a let of pe is not free, and is not checked) is a clean reference to a single
-% location, with the same qualified type in r and in S. Exactly one candidate
-% must be found.
-  | match_guard e G S = k with deps  :: :: match_guard  {{ com find the one guard k in scope that condition e tests, with the dependency set deps of its predicate }}  {{ tex \texttt{match\_guard}([[e]], [[G]], [[S]]) = ([[k]],\, [[deps]]) }}
+% not dereference x, and every free variable z of pe other than x (a name bound
+% by a let of pe is not free, and is not checked) either
+%   - is a clean reference to a single location, with the same qualified type
+%     in r and in S, or
+%   - is the same binding in r and in S, clean in both, with the same enriched
+%     type in both, one of int, bool, unit and string (its predicates are not
+%     compared).
+% Exactly one candidate must be found.
+%
+% Bindings. Every typing of a binder introduces a distinct binding of the bound
+% name: a let; the parameter of a function, each time one of its typing
+% closures is typed at an application; the parameter of an extern, each time it
+% is called. An entry of S made by a binder records the binding it comes from,
+% and a captured environment keeps that record. Two entries are the same
+% binding when they record one and the same binding. An entry that records none
+% (a variable of the starting environment, or one whose record a union of
+% closure sets has erased) is not the same binding as any entry.
+  | match_guard e G S = k with deps  :: :: match_guard  {{ com find the one guard k in scope that condition e tests, with the dependency set deps of its predicate; a free variable of the predicate is a clean single-location reference of the same type, or the same binding of a clean variable of base type }}  {{ tex \texttt{match\_guard}([[e]], [[G]], [[S]]) = ([[k]],\, [[deps]]) }}
   | if_guard_case e G S R = true  :: :: if_guard_case_true  {{ com conditional guard case is known true }}  {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{true} }}
   | if_guard_case e G S R = false :: :: if_guard_case_false {{ com conditional guard case is known false }} {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{false} }}
   | if_guard_case e G S R = none  :: :: if_guard_case_std   {{ com conditional guard case is standard: no match or unknown regime }} {{ tex \texttt{if\_guard\_case}([[e]], [[G]], [[S]], [[R]]) = \mathsf{std} }}

@@ -178,7 +178,9 @@ that are related to concrete runtime addresses by a per-run realisation map
 tclosures tcls} store both the user-provided surface types and a non-empty
 merged set of typing closures. Single function definitions introduce singleton
 closure sets; control-flow joins (for example in \texttt{if}) and function
-application build larger sets by taking unions. The type system always
+application build larger sets by taking unions, in which members with the same
+parameter and body keep the binding of a captured variable only where they
+agree on it and on its type. The type system always
 re-typechecks all available closures at application time and conservatively
 joins their results.
 
@@ -812,8 +814,9 @@ The language includes a predicate system that allows selective de-poisoning base
     \item \textbf{Guard predicates with closure}: \texttt{guard k pred\_closure (x, pe, r)}
     creates a predicate with tag \texttt{k} and pure expression test \texttt{pe}
     (pure function from \texttt{T} to \texttt{bool}). The \texttt{r} records
-    the qualified types of the variables in scope at definition time (the
-    captured typing environment). These enable
+    the qualified types of the variables in scope at definition time, and
+    the binding each of them comes from (the captured typing environment).
+    These enable
     syntactic matching for conditional de-poisoning.
     \item \textbf{Guard-only predicates}: \texttt{guard k} associates a guard tag
     \texttt{k} with a value without a syntactically matchable predicate closure.
@@ -864,13 +867,35 @@ occurring in the owner value does not match. A body with a \texttt{not} matches
 nothing. Syntactic equality compares names, not what they denote, so the
 closure must also be \emph{in scope} at the condition: its body does not
 dereference its argument, and every free variable of the body other than its
-argument is a clean reference to a single location, with the same qualified
-type in the captured environment \texttt{r} and in $\sigma$. A name bound by a
-\texttt{let} of the body is not free and is not checked. A body with a free
-variable, besides its argument, that is an integer, a function, a poisoned
-reference or a reference with several possible locations is therefore never
-selected, nor is a body read in a scope where one of its free variables names
-another cell.
+argument meets one of two conditions. Either it is a clean reference to a
+single location, with the same qualified type in the captured environment
+\texttt{r} and in $\sigma$; or it is the \emph{same binding} in \texttt{r}
+and in $\sigma$, clean in both, with the same enriched type in both, one of
+\texttt{int}, \texttt{bool}, \texttt{unit} and \texttt{string} (its
+predicates are not compared). A name bound by a \texttt{let} of the body is
+not free and is not checked. A body with a free variable, besides its
+argument, that is a function, a poisoned variable or a reference with several
+possible locations is therefore never selected, nor is a body read in a scope
+where one of its free variables names another cell or is another binding.
+
+\textbf{Bindings:} Every typing of a binder introduces a distinct binding of
+the bound name: a \texttt{let}; the parameter of a function, each time one of
+its typing closures is typed at an application; and the parameter of an
+extern, each time it is called. The typing environment records, for each
+variable bound by a binder, the binding it comes from, and a captured
+environment keeps that record. Two occurrences of a name are the same binding
+when both record one and the same binding; an occurrence that records none (a
+variable of the starting environment, or one whose record a union of closure
+sets has erased) is not the same binding as any occurrence. A second \texttt{let} of a name is a new binding, so a guard that
+reads \texttt{lo} is selected by a test that reads the same \texttt{lo}
+(\texttt{guard-match-int-not-rebound.poison}) and not by a test that reads a
+later one (\texttt{guard-match-shadowed-int.poison}). The body of a function
+is typed in the captured environment of its typing closure, so a variable
+that the function captures is, in the body, the binding it is where the
+function is made (\texttt{guard-match-int-in-function-body.poison}), while
+two applications give the parameter two bindings. The implementation
+represents bindings by numbers (\texttt{BindEnv} and
+\texttt{TypeContext.nextBind} in \texttt{LeanPoison/Typecheck.lean}).
 
 \textbf{Tag Uniqueness:} \texttt{match\_guard} selects a guard only when
 exactly one candidate matches the condition. With none, or with two or more,
@@ -1293,6 +1318,25 @@ to \texttt{no\_pred}. The examples \texttt{closure-set-basic.poison} and
 \texttt{closure-set-nested.poison} in \texttt{examples/} exercise these
 behaviours.
 
+\textbf{Bindings in a union of closure sets:} wherever closure sets are
+united (here, and at the join of the branches of a conditional), the members
+with the same parameter and body are compared; for extern members, those that
+are the same in everything but the captured environment. A variable of their
+captured environments is kept as it is only if every one of these members
+has it with the same record (the same binding, or none in each) and the same
+qualified type. Otherwise the variable records no binding in the united set,
+and neither do the variables captured inside its type; the captured environments of guard closures are not
+changed. Members that then coincide are one member, and members with
+different parameters or bodies are not compared. A guard that reads a variable
+of a base type without a binding is not selected in the body. Two functions
+with the same parameter and body, made under two bindings of a variable,
+disagree on its binding: after the two are joined, a guard that reads the
+variable is not selected in the body, although each function alone selects
+it (\texttt{guard-match-int-joined-bindings.poison}). The functions that a
+factory returns bind the factory's parameter separately, and a guard that
+reads a variable bound once outside the factory is selected after any number
+of joins (\texttt{guard-match-int-three-members-rejoined.poison}).
+
 
 Example of predicate-based de-poisoning in functions:
 \begin{lstlisting}[language=poison]
@@ -1343,8 +1387,10 @@ The specification provides two families of conditional typing rules:
     no guard, or matches one but $\mathcal{R}(k)$ is undetermined, the guard is
     typed in the current mode and its poison is joined into
     the branch contexts and the result poison. Result types are joined
-    with shape-specific rules: closure sets are unioned for functions, locsets are
-    unioned for references, and base types must agree.
+    with shape-specific rules: closure sets are unioned for functions (with
+    the bindings of members of the same parameter and body kept only where
+    the members agree, as for merged closure sets above), locsets are unioned for references, and
+    base types must agree.
 \end{itemize}
 
 The typing rules use a \emph{signature-compatibility} relation (denoted
@@ -2128,7 +2174,7 @@ returns a tag and dependencies) with the abstract satisfaction relation, while
 keeping the semantics \emph{value--sensitive}: the conclusion relates the
 concrete boolean result to predicate satisfaction for the runtime value observed at check time. The bidirectional form is essential for regime-aware typing: when a regime fixes $\mathcal{R}(k) = \text{false}$, the type system must conclude that the predicate is \emph{not} satisfied, which requires both directions of the equivalence.
 
-\emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\). \texttt{matchGuard} uses it on the \emph{syntactic} side of the comparison: every free variable of the body other than its argument (a name bound by a \texttt{let} of the body is not free) must have the same qualified type in \(r\) and in the check--time typing environment \(\sigma\), a clean reference to a single location. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
+\emph{Captured vs. check--time environments.} The predicate closure stores a captured typing environment \(r\). \texttt{matchGuard} uses it on the \emph{syntactic} side of the comparison: every free variable of the body other than its argument (a name bound by a \texttt{let} of the body is not free) must be, in \(r\) and in the check--time typing environment \(\sigma\), either a clean reference to a single location with the same qualified type, or the same binding of a clean variable of a base type. The proof layer never evaluates predicate bodies with captured runtime values. Instead, the captured lexical context is encoded in the tag \(k\). The runtime triple \((\mu, \rho, \theta)\) used above is the \emph{check--time} state: it evaluates the condition and determines the concrete value \(v\) (either \(\rho(x)\) or the memory value at the concrete address \(\theta(l)\) for the realised logical location \(l\) selected by the reference). This separation avoids the environment--capture problem whilst preserving value sensitivity.
 
 \paragraph{Memory Monotonicity Axiom.} Predicates are stable under memory changes that do not affect their dependencies:
 \[
