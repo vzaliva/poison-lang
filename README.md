@@ -108,7 +108,13 @@ relative to a registry of trusted extern functions. The specification holds
 for every predicate-satisfaction relation that satisfies the predicate laws on
 the program table of the typing run: the starting tag meaning together with
 every guard the typechecker allocates for the program (`programTable` in
-`LeanProofs/TagFrame.lean`). Values returned by extern calls are treated as
+`LeanProofs/TagFrame.lean`). The relation takes the realisation map and the
+memory of a run, and the memory law asks that it depend on them only through
+the cells in the dependency set of the guard (`mem_footprint`). Of the
+starting context the theorem asks that its guards capture references only to
+locations that already exist (`GuardCapsBelow` in
+`LeanProofs/FaultRobustness.lean`).
+Values returned by extern calls are treated as
 inputs: the theorem assumes, call by call, that each guard tag a call
 allocates carries the outcome of its check on the returned value and on the
 cells the call writes through its effects, and that the two runs return the
@@ -132,7 +138,13 @@ or refuted (`ExternCallsWitnessCell.lean`) and the theorem is applied with a
 trusted entry for that function (`ExternCallsWitnessCellClosed.lean`), and a
 program that declares and tests a guarded `extern val`, to which the theorem is
 applied with a trusted entry for that value under each value of its tag
-(`ExternCallsWitnessVal.lean`).
+(`ExternCallsWitnessVal.lean`). For a guard that reads a memory cell there
+are a relation that satisfies the predicate laws
+(`PredSatLawsCellWitness.lean`), the theorem applied to a program that
+declares an `extern val` with such a guard (`ExternCallsWitnessValCell.lean`)
+and to one that writes another cell before the test
+(`ExternCallsWitnessValCellWrite.lean`), and a sufficient condition for the
+premise on the starting context (`GuardCapsBelowWitness.lean`).
 
 ## Project Structure
 
