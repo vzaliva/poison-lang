@@ -4,6 +4,7 @@ import LeanProofs.ExternCallsWitnessCell
 import LeanProofs.ExternCallsWitnessCellClosed
 import LeanProofs.ExternCallsWitnessVal
 import LeanProofs.PredSatLawsCellWitness
+import LeanProofs.GuardCapsBelowWitness
 
 -- Expected: only Lean's standard axioms propext, Classical.choice, Quot.sound
 -- (no sorryAx, no project-specific axioms).
@@ -46,3 +47,9 @@ import LeanProofs.PredSatLawsCellWitness
 #print axioms PredSatLawsCellWitness.TwoTargets.lawful
 #print axioms PredSatLawsCellWitness.DerefArg.lawful
 #print axioms PredSatLawsCellWitness.DerefArg.footprint_forces_constant
+
+-- A sufficient condition for the start condition `GuardCapsBelow`, and two
+-- contexts where the converse fails.
+#print axioms GuardCapsBelowWitness.guardCapsBelow_of_guardLocsBelow
+#print axioms GuardCapsBelowWitness.converse_fails
+#print axioms GuardCapsBelowWitness.converse_fails_argQ
