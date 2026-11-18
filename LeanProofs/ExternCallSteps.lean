@@ -59,43 +59,47 @@ structure Step where
   fuel : Nat
   cfg  : Config
 
-/-- `applyClosuresThreaded applyOne items cursor` applies the member `x` at the
-    cursor `cursor'` with result `r`: the members are applied in order, each at
-    the cursor the previous one left. -/
-inductive ThreadedAt {α : Type} (applyOne : α → Tag × Loc → TypecheckM TypeResult) :
-    List α → Tag × Loc → α → Tag × Loc → TypeResult → Prop where
-  | here {item : α} {rest : List α} {cursor : Tag × Loc} {r : TypeResult} :
-      applyOne item cursor = .ok r →
-      ThreadedAt applyOne (item :: rest) cursor item cursor r
-  | there {item x : α} {rest : List α} {cursor cursor' : Tag × Loc} {r rx : TypeResult} :
-      applyOne item cursor = .ok r →
-      ThreadedAt applyOne rest (r.nextTag', r.nextLoc') x cursor' rx →
-      ThreadedAt applyOne (item :: rest) cursor x cursor' rx
+/-- `applyClosuresThreaded applyOne items cursor bn` applies the member `x` at the
+    cursor `cursor'` and binding number `bn'` with result `r`: the members are
+    applied in order, each at the cursor and binding number the previous one
+    left. -/
+inductive ThreadedAt {α : Type} (applyOne : α → Tag × Loc → Nat → TypecheckM TypeResult) :
+    List α → Tag × Loc → Nat → α → Tag × Loc → Nat → TypeResult → Prop where
+  | here {item : α} {rest : List α} {cursor : Tag × Loc} {bn : Nat} {r : TypeResult} :
+      applyOne item cursor bn = .ok r →
+      ThreadedAt applyOne (item :: rest) cursor bn item cursor bn r
+  | there {item x : α} {rest : List α} {cursor cursor' : Tag × Loc} {bn bn' : Nat}
+      {r rx : TypeResult} :
+      applyOne item cursor bn = .ok r →
+      ThreadedAt applyOne rest (r.nextTag', r.nextLoc') r.nextBind' x cursor' bn' rx →
+      ThreadedAt applyOne (item :: rest) cursor bn x cursor' bn' rx
 
 /-- The member application of `typecheckApp` for an impure arrow: `r2` types
     the argument, `r1` the function. -/
 def fnApply (ctx : TypeContext) (r2 r1 : TypeResult) (st1 st2 : Typ) (p : Poison) (G : Nat) :
-    FnTClosure → Tag × Loc → TypecheckM TypeResult :=
-  fun tcl cursor => applyFnTClosureAtCursor tcl st1 st2 p r1.qualType.poison
-    r2.qualType.etyp r2.qualType.poison r2.qualType.pred ctx r1 cursor G
+    FnTClosure → Tag × Loc → Nat → TypecheckM TypeResult :=
+  fun tcl cursor bn => applyFnTClosureAtCursor tcl st1 st2 p r1.qualType.poison
+    r2.qualType.etyp r2.qualType.poison r2.qualType.pred ctx r1 cursor bn G
 
 /-- The member application of `typecheckApp` for a pure arrow. -/
 def pfnApply (ctx : TypeContext) (r2 r1 : TypeResult) (st1 st2 : Typ) (p : Poison) (G : Nat) :
-    PFnTClosure → Tag × Loc → TypecheckM TypeResult :=
-  fun tcl cursor => applyPFnTClosureAtCursor tcl st1 st2 p r1.qualType.poison
-    r2.qualType.etyp r2.qualType.poison r2.qualType.pred ctx r1 cursor G
+    PFnTClosure → Tag × Loc → Nat → TypecheckM TypeResult :=
+  fun tcl cursor bn => applyPFnTClosureAtCursor tcl st1 st2 p r1.qualType.poison
+    r2.qualType.etyp r2.qualType.poison r2.qualType.pred ctx r1 cursor bn G
 
 /-- The body context of an impure member (`applyFnTClosureAtCursor`,
     `ExternBoundaryTyping.Call.fnExternMember`). -/
 def fnBodyCtx (ctx : TypeContext) (r2 r1 : TypeResult) (p : Poison) (x : Name)
-    (tenv : CapturedVarEnv) (cursor : Tag × Loc) : TypeContext :=
+    (tenv : CapturedVarEnv) (cursor : Tag × Loc) (bn : Nat) : TypeContext :=
   { ctx with
     pc := joinPoison p (joinPoison r1.qualType.poison ctx.pc)
     memEnv := r1.memEnv'
     varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
       ⟨r2.qualType.etyp, joinPoison ctx.pc r2.qualType.poison, r2.qualType.pred⟩
+    bindEnv := BindEnv.bindParam tenv x bn
     tagEnv := r1.tagEnv'
     nextTag := cursor.1
+    nextBind := bn + 1
     nextLoc := cursor.2
     regime := r1.regime'
     externRefAllowed := false
@@ -104,15 +108,17 @@ def fnBodyCtx (ctx : TypeContext) (r2 r1 : TypeResult) (p : Poison) (x : Name)
 /-- The body context of a pure member (`applyPFnTClosureAtCursor`,
     `ExternBoundaryTyping.Call.pfnExternMember`). -/
 def pfnBodyCtx (ctx : TypeContext) (r2 r1 : TypeResult) (p : Poison) (x : Name)
-    (tenv : CapturedVarEnv) (cursor : Tag × Loc) : TypeContext :=
+    (tenv : CapturedVarEnv) (cursor : Tag × Loc) (bn : Nat) : TypeContext :=
   { ctx with
     pc := joinPoison p (joinPoison ctx.pc r1.qualType.poison)
     memEnv := r1.memEnv'
     varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
       ⟨r2.qualType.etyp, joinPoison ctx.pc r2.qualType.poison, r2.qualType.pred⟩
+    bindEnv := BindEnv.bindParam tenv x bn
     tagEnv := r1.tagEnv'
     pureCtx := true
     nextTag := cursor.1
+    nextBind := bn + 1
     nextLoc := cursor.2
     regime := r1.regime'
     externRefAllowed := false
@@ -123,12 +129,13 @@ def pfnBodyCtx (ctx : TypeContext) (r2 r1 : TypeResult) (p : Poison) (x : Name)
     `r2` the then-branch; the else-branch is typed after both. -/
 def ctxTrue (ctx : TypeContext) (k : Tag) (deps : Deps) (r1 : TypeResult) : TypeContext :=
   { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-             nextTag := r1.nextTag', declaredExternRefs := r1.declared' }
+             nextTag := r1.nextTag', nextBind := r1.nextBind',
+             declaredExternRefs := r1.declared' }
 
 /-- See `ctxTrue`. -/
 def ctxFalse' (ctx : TypeContext) (k : Tag) (deps : Deps) (r2 : TypeResult) : TypeContext :=
   { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-             nextTag := r2.nextTag', nextLoc := r2.nextLoc',
+             nextTag := r2.nextTag', nextLoc := r2.nextLoc', nextBind := r2.nextBind',
              declaredExternRefs := r2.declared' }
 
 /-- The then-branch context of a conditional typed by the standard rule; `r1`
@@ -139,14 +146,14 @@ def ctxStd (ctx : TypeContext) (r1 : TypeResult) : TypeContext :=
 /-- The else-branch context of a conditional typed by the standard rule; `r2`
     types the then-branch. -/
 def ctxStdElse (ctx : TypeContext) (r1 r2 : TypeResult) : TypeContext :=
-  { ctxStd ctx r1 with nextLoc := r2.nextLoc', nextTag := r2.nextTag',
+  { ctxStd ctx r1 with nextLoc := r2.nextLoc', nextTag := r2.nextTag', nextBind := r2.nextBind',
                        declaredExternRefs := r2.declared' }
 
 /-- `typecheckIf` uses the standard rule: no guard matches the condition, or the
     matched tag has no entry in the regime. -/
 def StdArm (ctx : TypeContext) (e1 : Expr) (f : Nat) : Prop :=
-  (∃ msg, matchGuard e1 ctx.memEnv ctx.varEnv f = .error msg) ∨
-  (∃ k deps, matchGuard e1 ctx.memEnv ctx.varEnv f = .ok (k, deps) ∧ ctx.regime.lookup? k = none)
+  (∃ msg, matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .error msg) ∨
+  (∃ k deps, matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) ∧ ctx.regime.lookup? k = none)
 
 /-- The parts of a step. A composite expression typed at fuel `f + 2` has its
     parts typed at fuel `f` (`typecheckExpr` and the rule each use one unit). -/
@@ -190,25 +197,27 @@ inductive SubStep : Step → Step → Prop where
       typecheckExpr ctx e1 f = .ok r1 →
       terminatesTo e1 cfg c1 v1 →
       SubStep ⟨ctx, .vlet x e1 e2, f + 2, cfg⟩
-        ⟨{ ctxAfter ctx r1 with varEnv := ctx.varEnv.update x r1.qualType }, e2, f,
+        ⟨{ ctxAfter ctx r1 with varEnv := ctx.varEnv.update x r1.qualType,
+                                bindEnv := ctx.bindEnv.insert x r1.nextBind',
+                                nextBind := r1.nextBind' + 1 }, e2, f,
          { c1 with varEnv := cfg.varEnv.update x v1 }⟩
   -- Conditional whose guard matches a tag with an entry in the regime: the
   -- condition in pure mode, then the branch the run takes.
   | iteCondPure {ctx : TypeContext} {e1 e2 e3 : Expr} {f : Nat} {cfg : Config}
       {k : Tag} {deps : Deps} {b : Bool} :
-      matchGuard e1 ctx.memEnv ctx.varEnv f = .ok (k, deps) →
+      matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) →
       ctx.regime.lookup? k = some b →
       SubStep ⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ ⟨{ ctx with pureCtx := true }, e1, f, cfg⟩
   | iteThenMatched {ctx : TypeContext} {e1 e2 e3 : Expr} {f : Nat} {cfg : Config}
       {k : Tag} {deps : Deps} {b : Bool} {r1 : TypeResult} {c1 : Config} :
-      matchGuard e1 ctx.memEnv ctx.varEnv f = .ok (k, deps) →
+      matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) →
       ctx.regime.lookup? k = some b →
       typecheckExpr { ctx with pureCtx := true } e1 f = .ok r1 →
       terminatesTo e1 cfg c1 (.bool true) →
       SubStep ⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ ⟨ctxTrue ctx k deps r1, e2, f, c1⟩
   | iteElseMatched {ctx : TypeContext} {e1 e2 e3 : Expr} {f : Nat} {cfg : Config}
       {k : Tag} {deps : Deps} {b : Bool} {r1 r2 : TypeResult} {c1 : Config} :
-      matchGuard e1 ctx.memEnv ctx.varEnv f = .ok (k, deps) →
+      matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) →
       ctx.regime.lookup? k = some b →
       typecheckExpr { ctx with pureCtx := true } e1 f = .ok r1 →
       terminatesTo e1 cfg c1 (.bool false) →
@@ -245,22 +254,22 @@ inductive SubStep : Step → Step → Prop where
       {r2 r1 rb : TypeResult} {c2 c1 : Config} {v2 : Value}
       {x : Name} {body : Expr} {env : VarEnv}
       {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
-      {tenv : CapturedVarEnv} {cursor : Tag × Loc} :
+      {tenv : CapturedVarEnv} {cursor : Tag × Loc} {bn : Nat} :
       typecheckExpr ctx e2 (H + 1) = .ok r2 →
       terminatesTo e2 cfg c2 v2 →
       typecheckExpr (ctxAfter ctx r2) e1 (H + 1) = .ok r1 →
       terminatesTo e1 { c2 with varEnv := cfg.varEnv } c1 (.closure x body env) →
       r1.qualType.etyp = .arrow st1 st2 p tcls →
       ThreadedAt (fnApply ctx r2 r1 st1 st2 p (H + 1)) tcls (r1.nextTag', r1.nextLoc')
-        (.regular x body tenv) cursor rb →
+        r1.nextBind' (.regular x body tenv) cursor bn rb →
       SubStep ⟨ctx, .app e1 e2, H + 3, cfg⟩
-        ⟨fnBodyCtx ctx r2 r1 p x tenv cursor, body, H,
+        ⟨fnBodyCtx ctx r2 r1 p x tenv cursor bn, body, H,
          { c1 with varEnv := env.update x v2, pureMode := false }⟩
   | appPfnBody {ctx : TypeContext} {e1 e2 : Expr} {H : Nat} {cfg : Config}
       {r2 r1 rb : TypeResult} {c2 c1 : Config} {v2 : Value}
       {x : Name} {body : Expr} {pbody : PExpr} {env : VarEnv}
       {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
-      {tenv : CapturedVarEnv} {cursor : Tag × Loc} :
+      {tenv : CapturedVarEnv} {cursor : Tag × Loc} {bn : Nat} :
       typecheckExpr ctx e2 (H + 1) = .ok r2 →
       terminatesTo e2 cfg c2 v2 →
       typecheckExpr (ctxAfter ctx r2) e1 (H + 1) = .ok r1 →
@@ -268,9 +277,9 @@ inductive SubStep : Step → Step → Prop where
       r1.qualType.etyp = .parrow st1 st2 p tcls →
       Expr.toPExpr? body = some pbody →
       ThreadedAt (pfnApply ctx r2 r1 st1 st2 p (H + 1)) tcls (r1.nextTag', r1.nextLoc')
-        (.regular x pbody tenv) cursor rb →
+        r1.nextBind' (.regular x pbody tenv) cursor bn rb →
       SubStep ⟨ctx, .app e1 e2, H + 3, cfg⟩
-        ⟨pfnBodyCtx ctx r2 r1 p x tenv cursor, PExpr.toExpr pbody, H,
+        ⟨pfnBodyCtx ctx r2 r1 p x tenv cursor bn, PExpr.toExpr pbody, H,
          { c1 with varEnv := env.update x v2, pureMode := true }⟩
 
 /-- The steps reachable from a root. -/
@@ -290,7 +299,7 @@ inductive ExternCallAt :
       {x y : Name} {env : VarEnv} {id : ExternId} {argTyp : Typ} {argPoison : Bool}
       {argPred : SyntaxPredicate} {retSpec : ExternReturn} {captures memberCaptures : List Capture}
       {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
-      {tenv : CapturedVarEnv} {declaredArgQt : QTyp} {cursor : Tag × Loc}
+      {tenv : CapturedVarEnv} {declaredArgQt : QTyp} {cursor : Tag × Loc} {bn : Nat}
       {implFn : VarEnv → Value → Memory → Except ExternError Value} :
       typecheckExpr ctx e2 G = .ok r2 →
       terminatesTo e2 cfg c2 v2 →
@@ -299,13 +308,13 @@ inductive ExternCallAt :
         (.peClosure x (.externPfn id y argTyp argPoison argPred retSpec captures) env) →
       r1.qualType.etyp = .parrow st1 st2 p tcls →
       ThreadedAt (pfnApply ctx r2 r1 st1 st2 p G) tcls (r1.nextTag', r1.nextLoc')
-        (.extern id x retSpec tenv declaredArgQt memberCaptures) cursor res →
+        r1.nextBind' (.extern id x retSpec tenv declaredArgQt memberCaptures) cursor bn res →
       c1.registry.get? id = some (.pfn implFn) →
       valueMatchesTyp v2 argTyp = true →
       implFn (env.update x v2) v2 c1.memory = .ok vRaw →
       validateExternReturn id retSpec vRaw = .ok o →
       ExternCallAt ⟨ctx, .app e1 e2, G + 2, cfg⟩ []
-        (ExternCallEntry.ofRuntime (pfnBodyCtx ctx r2 r1 p x tenv cursor) c1 env x v2)
+        (ExternCallEntry.ofRuntime (pfnBodyCtx ctx r2 r1 p x tenv cursor bn) c1 env x v2)
         res c1 o
   | fn {ctx : TypeContext} {e1 e2 : Expr} {G : Nat} {cfg : Config}
       {r2 r1 res : TypeResult} {c2 c1 : Config} {v2 vRaw o : Value}
@@ -313,7 +322,7 @@ inductive ExternCallAt :
       {argPred : SyntaxPredicate} {retSpec : ExternReturn} {effects : List Effect}
       {captures memberCaptures : List Capture}
       {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure}
-      {tenv : CapturedVarEnv} {declaredArgQt : QTyp} {cursor : Tag × Loc}
+      {tenv : CapturedVarEnv} {declaredArgQt : QTyp} {cursor : Tag × Loc} {bn : Nat}
       {implFn : VarEnv → Value → Memory → Address →
         Except ExternError (Value × Memory × Address)}
       {mem' : Memory} {addr' : Address} :
@@ -324,14 +333,14 @@ inductive ExternCallAt :
         (.closure x (.externFn id y argTyp argPoison argPred retSpec effects captures) env) →
       r1.qualType.etyp = .arrow st1 st2 p tcls →
       ThreadedAt (fnApply ctx r2 r1 st1 st2 p G) tcls (r1.nextTag', r1.nextLoc')
-        (.extern id x retSpec effects tenv declaredArgQt memberCaptures) cursor res →
+        r1.nextBind' (.extern id x retSpec effects tenv declaredArgQt memberCaptures) cursor bn res →
       c1.pureMode = false →
       c1.registry.get? id = some (.fn implFn) →
       valueMatchesTyp v2 argTyp = true →
       implFn (env.update x v2) v2 c1.memory c1.nextAddr = .ok (vRaw, mem', addr') →
       validateExternReturn id retSpec vRaw = .ok o →
       ExternCallAt ⟨ctx, .app e1 e2, G + 2, cfg⟩ effects
-        (ExternCallEntry.ofRuntime (fnBodyCtx ctx r2 r1 p x tenv cursor) c1 env x v2)
+        (ExternCallEntry.ofRuntime (fnBodyCtx ctx r2 r1 p x tenv cursor bn) c1 env x v2)
         res { c1 with memory := mem', nextAddr := addr' } o
 
 /-! ## The conditions on one call -/
@@ -439,6 +448,51 @@ structure ExternCallsAgree (root₀ root₁ : Step) : Prop where
     entry₀.bodyCtx = entry₁.bodyCtx →
     CallAgrees entry₀ entry₁ effects res cf₀ cf₁ o₀ o₁
 
+/-! ## Guard variables at matched conditionals -/
+
+/-- The variables the guards of a matched conditional read hold the values the
+    view `β` gives their binding numbers: at every step reachable from `root`
+    that is a conditional whose condition `matchGuard` matches to a tag `k` with
+    an entry in the regime, every guard with tag `k` in the context reads, other
+    than its argument, only variables whose values in the run's environment are
+    the values `β` gives their binding numbers (`ViewAgreesOn`). -/
+structure TestsAgreeWithView (β : BindVals) (root : Step) : Prop where
+  tests : ∀ {ctx : TypeContext} {e1 e2 e3 : Expr} {f : Nat} {cfg : Config}
+      {k : Tag} {deps : Deps} {b : Bool} {d : GuardDesc},
+    Reach root ⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ →
+    matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) →
+    ctx.regime.lookup? k = some b →
+    GuardDescInEnvsDeep ctx.varEnv ctx.memEnv k d →
+    ViewAgreesOn β ctx.bindEnv cfg.varEnv (PExpr.freeVars [d.argName] d.body)
+
+/-- `TestsAgreeWithView` on a set of steps closed under `SubStep`, the form the
+    step lemmas carry. -/
+structure TestsAgreeWithViewOn (β : BindVals) (P : Step → Prop) : Prop where
+  closed : ∀ {s s' : Step}, P s → SubStep s s' → P s'
+  tests : ∀ {ctx : TypeContext} {e1 e2 e3 : Expr} {f : Nat} {cfg : Config}
+      {k : Tag} {deps : Deps} {b : Bool} {d : GuardDesc},
+    P ⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ →
+    matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) →
+    ctx.regime.lookup? k = some b →
+    GuardDescInEnvsDeep ctx.varEnv ctx.memEnv k d →
+    ViewAgreesOn β ctx.bindEnv cfg.varEnv (PExpr.freeVars [d.argName] d.body)
+
+theorem TestsAgreeWithViewOn.of_root {β : BindVals} {root : Step}
+    (h : TestsAgreeWithView β root) : TestsAgreeWithViewOn β (Reach root) where
+  closed hs hstep := Relation.ReflTransGen.tail hs hstep
+  tests hs hm hk hd := h.tests hs hm hk hd
+
+/-- The hypothesis of `PredSatLaws.match_iff` at a matched conditional of the set. -/
+theorem TestsAgreeWithViewOn.at_ite {β : BindVals} {P : Step → Prop}
+    (h : TestsAgreeWithViewOn β P) {ctx : TypeContext} {e1 e2 e3 : Expr} {f : Nat}
+    {cfg : Config} {k : Tag} {deps : Deps} {b : Bool}
+    (hs : P ⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩)
+    (hm : matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps))
+    (hk : ctx.regime.lookup? k = some b) :
+    ∀ d, GuardDescInEnvsDeep ctx.varEnv ctx.memEnv k d →
+      ViewAgreesOn β ctx.bindEnv cfg.varEnv (PExpr.freeVars [d.argName] d.body) :=
+  fun _ hd => h.tests hs hm hk hd
+
 /-! ## The form carried by the step proof
 
 The step proof works with sets of steps closed under `SubStep` rather than
@@ -466,11 +520,17 @@ def ExternCallsAgreeOn (P₀ P₁ : Step → Prop) : Prop :=
     entry₀.bodyCtx = entry₁.bodyCtx →
     CallAgrees entry₀ entry₁ effects res cf₀ cf₁ o₀ o₁
 
-/-- The premises on extern calls for two runs, carried by the step theorem. -/
-structure ExternStepPremises (predSat : PredSat) (P₀ P₁ : Step → Prop) : Prop where
-  run₀ : ExternCallsMatchOn predSat P₀
-  run₁ : ExternCallsMatchOn predSat P₁
+/-- The premises on extern calls for two runs, carried by the step theorem.
+    Each run has its own relation and its own view of the values of binding
+    numbers; `tests₀` and `tests₁` state, for each run, that the guards of its
+    matched conditionals read variables holding the values of that run's view. -/
+structure ExternStepPremises (predSat₀ predSat₁ : PredSat) (β₀ β₁ : BindVals)
+    (P₀ P₁ : Step → Prop) : Prop where
+  run₀ : ExternCallsMatchOn predSat₀ P₀
+  run₁ : ExternCallsMatchOn predSat₁ P₁
   agree : ExternCallsAgreeOn P₀ P₁
+  tests₀ : TestsAgreeWithViewOn β₀ P₀
+  tests₁ : TestsAgreeWithViewOn β₁ P₁
 
 theorem ExternCallsMatchOn.of_root {predSat : PredSat} {root : Step}
     (h : ExternCallsMatch predSat root) : ExternCallsMatchOn predSat (Reach root) where
@@ -483,27 +543,32 @@ theorem ExternCallsAgreeOn.of_roots {root₀ root₁ : Step}
   fun hs₀ hs₁ hctx he hfuel hcall₀ hcall₁ hbody =>
     h.calls _ _ _ _ _ _ _ _ _ _ hs₀ hs₁ hctx he hfuel hcall₀ hcall₁ hbody
 
-theorem ExternStepPremises.of_roots {predSat : PredSat} {root₀ root₁ : Step}
-    (h₀ : ExternCallsMatch predSat root₀) (h₁ : ExternCallsMatch predSat root₁)
-    (hagree : ExternCallsAgree root₀ root₁) :
-    ExternStepPremises predSat (Reach root₀) (Reach root₁) :=
-  ⟨.of_root h₀, .of_root h₁, ExternCallsAgreeOn.of_roots hagree⟩
+theorem ExternStepPremises.of_roots {predSat₀ predSat₁ : PredSat} {β₀ β₁ : BindVals}
+    {root₀ root₁ : Step}
+    (h₀ : ExternCallsMatch predSat₀ root₀) (h₁ : ExternCallsMatch predSat₁ root₁)
+    (hagree : ExternCallsAgree root₀ root₁)
+    (ht₀ : TestsAgreeWithView β₀ root₀) (ht₁ : TestsAgreeWithView β₁ root₁) :
+    ExternStepPremises predSat₀ predSat₁ β₀ β₁ (Reach root₀) (Reach root₁) :=
+  ⟨.of_root h₀, .of_root h₁, ExternCallsAgreeOn.of_roots hagree,
+    .of_root ht₀, .of_root ht₁⟩
 
 theorem Reach.refl (root : Step) : Reach root root := Relation.ReflTransGen.refl
 
 /-- A program without extern calls and `extern val` declarations meets the
     premises for any two runs. -/
-theorem ExternStepPremises.of_noCalls {predSat : PredSat} {P₀ P₁ : Step → Prop}
+theorem ExternStepPremises.of_noCalls {predSat₀ predSat₁ : PredSat} {β₀ β₁ : BindVals}
+    {P₀ P₁ : Step → Prop}
     (hclosed₀ : ∀ {s s' : Step}, P₀ s → SubStep s s' → P₀ s')
     (hclosed₁ : ∀ {s s' : Step}, P₁ s → SubStep s s' → P₁ s')
     (hnone₀ : ∀ {s effects entry res cf o}, P₀ s → ¬ ExternCallAt s effects entry res cf o)
     (hnone₁ : ∀ {s effects entry res cf o}, P₁ s → ¬ ExternCallAt s effects entry res cf o)
     (hnoval₀ : ∀ {s res cf o}, P₀ s → ¬ ExternValAt s res cf o)
-    (hnoval₁ : ∀ {s res cf o}, P₁ s → ¬ ExternValAt s res cf o) :
-    ExternStepPremises predSat P₀ P₁ :=
+    (hnoval₁ : ∀ {s res cf o}, P₁ s → ¬ ExternValAt s res cf o)
+    (ht₀ : TestsAgreeWithViewOn β₀ P₀) (ht₁ : TestsAgreeWithViewOn β₁ P₁) :
+    ExternStepPremises predSat₀ predSat₁ β₀ β₁ P₀ P₁ :=
   ⟨⟨hclosed₀, fun hs hcall => (hnone₀ hs hcall).elim, fun hs hval => (hnoval₀ hs hval).elim⟩,
    ⟨hclosed₁, fun hs hcall => (hnone₁ hs hcall).elim, fun hs hval => (hnoval₁ hs hval).elim⟩,
-   fun hs₀ _ _ _ _ hcall₀ _ _ => (hnone₀ hs₀ hcall₀).elim⟩
+   fun hs₀ _ _ _ _ hcall₀ _ _ => (hnone₀ hs₀ hcall₀).elim, ht₀, ht₁⟩
 
 /-! ## Runs without extern entries -/
 

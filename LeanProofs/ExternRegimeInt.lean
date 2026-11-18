@@ -56,6 +56,65 @@ private theorem emptyCtx_FR_of_agreesWithProgram
   TypeSystemEnforcesFaultRobustness_at tr e s obs openEmptyCtx
     (agreesWithReachable_of_emptyVarEnv (by rfl) hprog)
 
+/-! ## The tests of the capstone programs
+
+    Every view agrees with the tests (`TestsAgreeWithView`) of a run that
+    reaches no conditional. The steps the runs of the capstone programs reach
+    lie in small sets closed under `SubStep` that hold no conditional: the
+    declaration node alone for a bare declaration, and the parts of the program
+    and the extern nodes the run enters for an applied one. -/
+
+/-- The steps reachable from `root` lie in `P`; when `P` holds no
+    conditional, every view agrees with the tests of the run. -/
+theorem testsAgreeWithView_of_closed {β : BindVals} {root : Step} (P : Step → Prop)
+    (hroot : P root) (hclosed : ∀ {s s' : Step}, P s → SubStep s s' → P s')
+    (hnoIte : ∀ {s : Step} {e1 e2 e3 : Expr}, P s → s.e ≠ .ite e1 e2 e3) :
+    TestsAgreeWithView β root := by
+  have hall : ∀ s, Reach root s → P s := fun s h => by
+    induction h with
+    | refl => exact hroot
+    | tail _ hsub ih => exact hclosed ih hsub
+  exact ⟨fun hreach _ _ _ => (hnoIte (hall _ hreach) rfl).elim⟩
+
+/-- A root without steps below it that is not a conditional. -/
+theorem testsAgreeWithView_of_leaf {β : BindVals} {root : Step}
+    (hsub : ∀ s', ¬ SubStep root s') (hite : ∀ {e1 e2 e3 : Expr}, root.e ≠ .ite e1 e2 e3) :
+    TestsAgreeWithView β root :=
+  testsAgreeWithView_of_closed (· = root) rfl
+    (fun hs h => by subst hs; exact absurd h (hsub _)) (fun hs => by subst hs; exact hite)
+
+/-- A run of an `extern fn` declaration returns the closure of the declaration. -/
+private theorem terminatesTo_externFn_value {id : ExternId} {x : Name} {argTyp : Typ}
+    {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
+    {effects : List Effect} {captures : List Capture} {c c' : Config} {v : Value}
+    (h : terminatesTo (.externFn id x argTyp argPoison argPred retSpec effects captures) c c' v) :
+    v = .closure x (.externFn id x argTyp argPoison argPred retSpec effects captures) c.varEnv := by
+  obtain ⟨fuel, _, hb⟩ := h
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hb
+  | succ f =>
+      simp only [LeanPoison.beval] at hb
+      repeat' split at hb
+      all_goals first
+        | (simp at hb; done)
+        | (simp only [EvalResult.success.injEq] at hb; obtain ⟨rfl, rfl⟩ := hb; rfl)
+
+/-- A run of an `extern pfn` declaration returns the closure of the declaration. -/
+theorem terminatesTo_externPfn_value {id : ExternId} {x : Name} {argTyp : Typ}
+    {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
+    {captures : List Capture} {c c' : Config} {v : Value}
+    (h : terminatesTo (.externPfn id x argTyp argPoison argPred retSpec captures) c c' v) :
+    v = .peClosure x (.externPfn id x argTyp argPoison argPred retSpec captures) c.varEnv := by
+  obtain ⟨fuel, _, hb⟩ := h
+  cases fuel with
+  | zero => simp [LeanPoison.beval] at hb
+  | succ f =>
+      simp only [LeanPoison.beval] at hb
+      repeat' split at hb
+      all_goals first
+        | (simp at hb; done)
+        | (simp only [EvalResult.success.injEq] at hb; obtain ⟨rfl, rfl⟩ := hb; rfl)
+
 /-! ## Program-level fault-robustness for the `set_err` write effect
 
 Where `MaxCurriedFR` / `GuardedCapturesFR` / `MemReadCapturesFR` exercise *read*
@@ -90,6 +149,12 @@ theorem setErrWriteEffect_FR (s : InputSpec) (obs : ObservableSpec) :
       (TrustedRegistry.toRuntimeRegistry setErrRegistry)
       setErrProg s obs openEmptyCtx :=
   emptyCtx_FR_of_agreesWithProgram setErrRegistry setErrProg s obs setErr_agreesWithProgram
+
+/-- The tests of every run of `setErrProg` agree with every view: the
+    declaration node has no step below it. -/
+theorem setErrWriteEffect_tests (β : BindVals) (fuel : Nat) (cfg : Config) :
+    TestsAgreeWithView β ⟨openEmptyCtx, setErrProg, fuel, cfg⟩ :=
+  testsAgreeWithView_of_leaf (fun _ h => by cases h) (fun h => by cases h)
 
 /-! ## Program-level FR for the `@21` `errno` reference extern
 
@@ -148,6 +213,12 @@ theorem errnoExternRef_FR (s : InputSpec) (obs : ObservableSpec) :
       (TrustedRegistry.toRuntimeRegistry errnoRegistry)
       errnoProg s obs openEmptyCtx :=
   emptyCtx_FR_of_agreesWithProgram errnoRegistry errnoProg s obs errno_agreesWithProgram
+
+/-- The tests of every run of `errnoProg` agree with every view: the
+    declaration node has no step below it. -/
+theorem errnoExternRef_tests (β : BindVals) (fuel : Nat) (cfg : Config) :
+    TestsAgreeWithView β ⟨openEmptyCtx, errnoProg, fuel, cfg⟩ :=
+  testsAgreeWithView_of_leaf (fun _ h => by cases h) (fun h => by cases h)
 
 /-! ## Combined declare/write/read scenario -/
 
@@ -224,5 +295,56 @@ theorem errnoScenario_FR (s : InputSpec) (obs : ObservableSpec) :
       errnoScenarioProg s obs openEmptyCtx :=
   emptyCtx_FR_of_agreesWithProgram errnoScenarioRegistry errnoScenarioProg s obs
     errnoScenario_agreesWithProgram
+
+/-- The callee of the scenario: the `@22` `extern fn` node. -/
+private def setErrCallee : Expr :=
+  .externFn 22 "n" Typ.int false SyntaxPredicate.noPred builtinSetErrRetSpec
+    [builtinSetErrEffect] []
+
+/-- The expressions of the steps a run of `errnoScenarioProg` reaches. The
+    call enters the body of the closure of `@22`, which is the `@22` node. -/
+private inductive ErrnoScenarioExpr : Expr → Prop
+  | prog : ErrnoScenarioExpr errnoScenarioProg
+  | ref : ErrnoScenarioExpr (.externRef 21 false SyntaxPredicate.noPred true SyntaxPredicate.noPred)
+  | seq : ErrnoScenarioExpr (.seq (.app setErrCallee (.num 7)) (.deref (.var "errno")))
+  | app : ErrnoScenarioExpr (.app setErrCallee (.num 7))
+  | callee : ErrnoScenarioExpr setErrCallee
+  | num : ErrnoScenarioExpr (.num 7)
+  | deref : ErrnoScenarioExpr (.deref (.var "errno"))
+  | var : ErrnoScenarioExpr (.var "errno")
+
+/-- The tests of every run of `errnoScenarioProg` agree with every view: the
+    run reaches no conditional. -/
+theorem errnoScenario_tests (β : BindVals) (fuel : Nat) (cfg : Config) :
+    TestsAgreeWithView β ⟨openEmptyCtx, errnoScenarioProg, fuel, cfg⟩ :=
+  testsAgreeWithView_of_closed (fun s => ErrnoScenarioExpr s.e) .prog
+    (fun {s _} hs h => by
+      obtain ⟨_, _, _, _⟩ := s
+      cases hs with
+      | prog =>
+          cases h with
+          | vletBound => exact .ref
+          | vletBody _ _ => exact .seq
+      | ref => cases h
+      | seq =>
+          cases h with
+          | seqLeft => exact .app
+          | seqRight _ _ => exact .deref
+      | app =>
+          unfold setErrCallee at h
+          cases h with
+          | appArg => exact .num
+          | appFun _ _ => exact .callee
+          | appFnBody _ _ _ hr1 _ _ =>
+              obtain ⟨-, rfl, -⟩ := Value.closure.inj (terminatesTo_externFn_value hr1)
+              exact .callee
+          | appPfnBody _ _ _ hr1 _ _ _ => cases terminatesTo_externFn_value hr1
+      | callee => cases h
+      | num => cases h
+      | deref => cases h with | deref => exact .var
+      | var => cases h)
+    (fun {s _ _ _} hs => by
+      obtain ⟨_, _, _, _⟩ := s
+      cases hs <;> (intro h; cases h))
 
 end ExternRegimeInt

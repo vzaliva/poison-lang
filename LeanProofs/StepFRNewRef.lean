@@ -16,10 +16,10 @@ variable {registry : ExternRegistry}
 
 private def NewRefCtxConsFinish
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (predSat : PredSat) (tm : TagMeaning) : Prop :=
+  (predSat : PredSat) (β : BindVals) (tm : TagMeaning) : Prop :=
   ∀ (ctx : TypeContext) (res res1 : TypeResult) (l : Loc) (storedQt : QTyp)
     (cfg1 cf : Config) (θ1 θ' : RealizationMap) (n : Int),
-    PredSatLaws predSat tm →
+    PredSatLaws predSat tm β →
     wfConfig cfg1 →
     (ctxAfter ctx res).regime = (ctxAfter ctx res1).regime →
     res.memEnv' = updateMemEnv res1.memEnv' l storedQt →
@@ -56,10 +56,10 @@ private lemma newRef_valueConsistentWithRegimeMasked_result
 
 private lemma consistentWithRegimeMasked_newRef_finish
   (masked : Tag → Prop)
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (β : BindVals) (tm : TagMeaning)
   (res res1 : TypeResult) (l : Loc) (storedQt : QTyp)
   (cfg' cf : Config) (θ1 θ' : RealizationMap) (n : Int)
-  (hpredlaws : PredSatLaws predSat tm)
+  (hpredlaws : PredSatLaws predSat tm β)
   (hwfcfg1 : wfConfig cfg')
   (hregime_eq : (ctxAfter ctxᵢ res).regime = (ctxAfter ctxᵢ res1).regime)
   (h_mem : res.memEnv' = updateMemEnv res1.memEnv' l storedQt)
@@ -196,24 +196,24 @@ private lemma consistentWithRegimeMasked_newRef_finish
 
 private def StepFRNewRefCtxConsFinish
   (CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop)
-  (predSat : PredSat) (tm : TagMeaning) : Prop :=
-  NewRefCtxConsFinish CtxCons predSat tm
+  (predSat : PredSat) (β : BindVals) (tm : TagMeaning) : Prop :=
+  NewRefCtxConsFinish CtxCons predSat β tm
 
 private def StepFRNewRefResultValCons
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop) : Prop :=
   NewRefResultValCons ValCons
 
 private theorem stepFRNewRef_ctxConsFinish_masked
-  (masked : Tag → Prop) (predSat : PredSat) (tm : TagMeaning) :
+  (masked : Tag → Prop) (predSat : PredSat) (β : BindVals) (tm : TagMeaning) :
   StepFRNewRefCtxConsFinish
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-    predSat tm := by
+    predSat β tm := by
   intro ctx res' res1 l storedQt cfg1 cf θ1 θ' n
     hpredlaws hwfcfg1 hregime_eq hmemEq hmem hvar hpc hθext hstoredQt hctxCons
   simpa [StepFRNewRefCtxConsFinish] using
     consistentWithRegimeMasked_newRef_finish
       (masked := masked)
-      (ctxᵢ := ctx) (predSat := predSat) (tm := tm)
+      (ctxᵢ := ctx) (predSat := predSat) (β := β) (tm := tm)
       (res := res') (res1 := res1) (l := l) (storedQt := storedQt)
       (cfg' := cfg1) (cf := cf) (θ1 := θ1) (θ' := θ') (n := n)
       hpredlaws hwfcfg1 hregime_eq hmemEq hmem hvar hpc hθext hstoredQt hctxCons
@@ -231,7 +231,7 @@ private theorem stepFRNewRef_resultValCons_masked
 
 lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
   (masked : Tag → Prop)
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (β : BindVals) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
   (CtxReach : TypeContext → Prop)
@@ -239,7 +239,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
   (hctxCurrent : CtxReach ctxᵢ)
   (IH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
-      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+      predSat β tm (Nat.succ (Nat.succ fuel')) CanUse
       CtxReach
       masked
       (fun ctx μ ρ θ =>
@@ -252,7 +252,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.newRef e) res predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry) := by
+    ctxᵢ (Expr.newRef e) res predSat β tm (Nat.succ (Nat.succ fuel')) (registry := registry) := by
   classical
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
@@ -281,10 +281,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
   intro hpredlaws hframe hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
-      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
+      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat β tm ctxᵢ
         (Expr.newRef e) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hframe htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg _hres _hrd ht hpc P hP hroot
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg _hres _hrd ht hpc P hP hT hroot
   have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_newRef_inv' e
@@ -293,7 +293,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
   rcases
     (hIH hpredlaws (hframe.of_log_eq (typecheckNewRef_tagLog htc' htc1)) hwfTm hTmBounded).2 μ ρ θ cfg' (Value.num n)
       hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg _hres _hrd ht_e hpc
-      hP (hP.closed hroot (SubStep.newRef (f := fuel')))
+      hP hT (hP.closed hroot (SubStep.newRef (f := fuel')))
     with ⟨θ1, hθext1, hvnum1, hric1, hctxCons1, _hvalc1, hpres1, _hfresh1, _hrd1⟩
   have hθ1wf : wfRealizationMap θ1 := hθext1.2 hθwf
   have hwf1 : wfTypeContext (ctxAfter ctxᵢ res1) :=
@@ -400,7 +400,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
       consistentWithRegimeMasked masked predSat
         (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf.memory cf.varEnv θ' := by
     exact
-      stepFRNewRef_ctxConsFinish_masked masked predSat tm
+      stepFRNewRef_ctxConsFinish_masked masked predSat β tm
         ctxᵢ res res1 l storedQt cfg' cf θ1 θ' n
         hpredlaws hwfcfg1 hregime_eq h_mem hmem hvar hpc hθext' rfl hctxCons1
   have hclean_back :
@@ -525,18 +525,18 @@ lemma stepFRSingleRunFinalCleanPcTrue_newRef_maskedReg_with_expr_proof
 
 
 lemma stepFR_newRef_with_expr_proof
-  (ctxᵢ : TypeContext) (predSat : PredSat)
+  (ctxᵢ : TypeContext) (predSat₀ predSat₁ : PredSat) (β₀ β₁ : BindVals)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (tm : TagMeaning) (CanUse : Expr → Prop)
   (CtxReach : TypeContext → Prop)
   (hcan : CanUse e)
   (hctxCurrent : CtxReach ctxᵢ)
   (IH :
-    StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
+    StepFR_IH_WithExprCtx predSat₀ predSat₁ β₀ β₁ tm (Nat.succ (Nat.succ fuel'))
       CanUse CtxReach (registry := registry))
   (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.newRef e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.newRef e) res predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry) := by
+  StepFR ctxᵢ (Expr.newRef e) res predSat₀ predSat₁ β₀ β₁ tm (Nat.succ (Nat.succ fuel')) (registry := registry) := by
   -- Parse typecheck result
   have htc' : typecheckNewRef ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
@@ -562,7 +562,7 @@ lemma stepFR_newRef_with_expr_proof
         cases htc'; rfl
       | bool | unit | string | ref _ | arrow _ _ | parrow _ _ =>
           rw [hetyp] at htc'; simp at htc'
-  intro hpredlaws hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ P₀ P₁ hprem hroot₀ hroot₁
+  intro hpredlaws₀ hpredlaws₁ hframe₀ hframe₁ hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ P₀ P₁ hprem hroot₀ hroot₁
   have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm htagBounded res1 htc1'
   -- Use inversion lemma for newRef
@@ -574,11 +574,12 @@ lemma stepFR_newRef_with_expr_proof
   rcases hstruct₁ with ⟨cfg₁', n₁, ht₁_e, ho₁, hmem₁, hnext₁, hvar₁, hpm₁⟩
   -- Apply IH for e
   have hstep_e :=
-    hIH hpredlaws (hframe.of_log_eq (typecheckNewRef_tagLog htc' htc1)) hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
+    hIH hpredlaws₀ hpredlaws₁ (hframe₀.of_log_eq (typecheckNewRef_tagLog htc' htc1)) (hframe₁.of_log_eq (typecheckNewRef_tagLog htc' htc1)) hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.num n₀) (Value.num n₁)
       hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e ht₁_e hprem
       (hprem.run₀.closed hroot₀ (SubStep.newRef (f := fuel')))
       (hprem.run₁.closed hroot₁ (SubStep.newRef (f := fuel')))
-  rcases hstep_e with ⟨tm1, hcanon1, hpredlaws1, hresTm1, hstep_e⟩
+  rcases hstep_e with ⟨tm1, hcanon1, hpredlaws1₁, hresTm1, hstep_e⟩
+  have hpredlaws1₀ := hcanon1.laws
   rcases hstep_e with ⟨θ₀1, θ₁1, hθext₀1, hθext₁1, _hvtyp₀1, _hvtyp₁1, _hTm1, hwf1, _htagBounded1, hwfcf₀1, hwfcf₁1, hric₀1, hric₁1, htagR1, hcwr₀1, hcwr₁1, hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e, _hrd₀_e, _hrd₁_e⟩
   -- Derive regime equality: newRef preserves regime (res.regime' = res1.regime')
   -- From typecheckNewRef_structure, we already have h_regime
@@ -776,20 +777,20 @@ lemma stepFR_newRef_with_expr_proof
     simpa [ctxAfter, h_tag, h_ntag] using! htagR1
   -- Prove agreeOnClean (using output regime from IH)
   have hagree_clean :
-      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
+      agreeOnClean predSat₀ predSat₁ (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
     rw [hregime_eq]
     have hqtypPredHolds_mem₀ :
         ∀ (qt : QTyp) (v : Value),
-          qtypPredHolds predSat qt cfg₀'.memory v ↔ qtypPredHolds predSat qt cf₀.memory v :=
+          qtypPredHolds predSat₀ qt cfg₀'.memory v ↔ qtypPredHolds predSat₀ qt cf₀.memory v :=
       qtypPredHolds_mem_compat_of_predSatLaws
-        (hpredlaws := hpredlaws) (θ := θ₀1) (μ := cfg₀'.memory) (μ' := cf₀.memory)
+        (hpredlaws := hpredlaws₀) (θ := θ₀1) (μ := cfg₀'.memory) (μ' := cf₀.memory)
     have hqtypPredHolds_mem₁ :
         ∀ (qt : QTyp) (v : Value),
-          qtypPredHolds predSat qt cfg₁'.memory v ↔ qtypPredHolds predSat qt cf₁.memory v :=
+          qtypPredHolds predSat₁ qt cfg₁'.memory v ↔ qtypPredHolds predSat₁ qt cf₁.memory v :=
       qtypPredHolds_mem_compat_of_predSatLaws
-        (hpredlaws := hpredlaws) (θ := θ₁1) (μ := cfg₁'.memory) (μ' := cf₁.memory)
+        (hpredlaws := hpredlaws₁) (θ := θ₁1) (μ := cfg₁'.memory) (μ' := cf₁.memory)
     exact agreeOnClean_newRef_extend
-      predSat (ctxAfter ctxᵢ res1).regime ctxᵢ res1 res l ETyp.int
+      predSat₀ predSat₁ (ctxAfter ctxᵢ res1).regime ctxᵢ res1 res l ETyp.int
       cfg₀' cfg₁' cf₀ cf₁ n₀ n₁ cfg₀'.nextAddr cfg₁'.nextAddr θ₀1 θ₁1 θ₀' θ₁'
       h_mem h_etyp1 rfl rfl rfl hmem₀ hmem₁ hvar₀ hvar₁ rfl rfl
       hθext₀' hθext₁' hwfcf₀1 hwfcf₁1 hqtypPredHolds_mem₀ hqtypPredHolds_mem₁
@@ -803,26 +804,27 @@ lemma stepFR_newRef_with_expr_proof
   -- 1. New location l has a fresh address with storedQt whose pred is gated by ctxᵢ.pc
   -- 2. Old locations transfer from hcwr₀1/hcwr₁1
   -- 3. VarEnv is unchanged
-  have one_run : ∀ (cf₀ cfg₀' : Config) (θ₀1 : RealizationMap) (n₀ : ℤ)
+  have one_run : ∀ (predSat₀ : PredSat) (β₀ : BindVals) (hpredlaws₀ : PredSatLaws predSat₀ tm β₀)
+      (cf₀ cfg₀' : Config) (θ₀1 : RealizationMap) (n₀ : ℤ)
       (hmem₀ : cf₀.memory = ExtTreeMap.insert cfg₀'.memory cfg₀'.nextAddr n₀)
       (hvar₀ : cf₀.varEnv = cfg₀'.varEnv)
       (hwfcf₀1 : wfConfig cfg₀')
       (hθext₀' : wfExtendsMap θ₀1 (θ₀1.update l cfg₀'.nextAddr))
-      (hcwr₀1 : consistentWithRegime predSat (ctxAfter ctxᵢ res1).regime (ctxAfter ctxᵢ res1) cfg₀'.memory cfg₀'.varEnv θ₀1)
-      (_hval_consist₀ : valueConsistentWithRegime predSat (ctxAfter ctxᵢ res1).regime res1.qualType cfg₀'.memory θ₀1 (Value.num n₀)),
-      consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv (θ₀1.update l cfg₀'.nextAddr) := by
-    intro cf₀ cfg₀' θ₀1 n₀ hmem₀ hvar₀ hwfcf₀1 hθext₀' hcwr₀1 _hval_consist₀
+      (hcwr₀1 : consistentWithRegime predSat₀ (ctxAfter ctxᵢ res1).regime (ctxAfter ctxᵢ res1) cfg₀'.memory cfg₀'.varEnv θ₀1)
+      (_hval_consist₀ : valueConsistentWithRegime predSat₀ (ctxAfter ctxᵢ res1).regime res1.qualType cfg₀'.memory θ₀1 (Value.num n₀)),
+      consistentWithRegime predSat₀ (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv (θ₀1.update l cfg₀'.nextAddr) := by
+    intro predSat₀ β₀ hpredlaws₀ cf₀ cfg₀' θ₀1 n₀ hmem₀ hvar₀ hwfcf₀1 hθext₀' hcwr₀1 _hval_consist₀
     let θ₀' := θ₀1.update l cfg₀'.nextAddr
     classical
     let storedQt : QTyp :=
       ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩
     have hPredSat_mem :
-        ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
+        ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat₀ k μ v ↔ predSat₀ k μ' v := by
       intro k μ μ' v
-      exact predSat_mem_noPred_compat hpredlaws θ₀1 k μ μ' v
+      exact predSat_mem_noPred_compat hpredlaws₀ θ₀1 k μ μ' v
     have hqtypPredHolds_mem :
         ∀ (qt : QTyp) (v : Value),
-          qtypPredHolds predSat qt cfg₀'.memory v ↔ qtypPredHolds predSat qt cf₀.memory v := by
+          qtypPredHolds predSat₀ qt cfg₀'.memory v ↔ qtypPredHolds predSat₀ qt cf₀.memory v := by
       intro qt v
       constructor
       · intro h
@@ -830,11 +832,11 @@ lemma stepFR_newRef_with_expr_proof
         | noPred_ok hpred =>
             exact qtypPredHolds.noPred_ok hpred
         | guardClosure_ok hpred hSat =>
-            have hSat' : predSat _ cf₀.memory v :=
+            have hSat' : predSat₀ _ cf₀.memory v :=
               (hPredSat_mem _ cfg₀'.memory cf₀.memory v).1 hSat
             exact qtypPredHolds.guardClosure_ok hpred hSat'
         | guardOnly_ok hpred hSat =>
-            have hSat' : predSat _ cf₀.memory v :=
+            have hSat' : predSat₀ _ cf₀.memory v :=
               (hPredSat_mem _ cfg₀'.memory cf₀.memory v).1 hSat
             exact qtypPredHolds.guardOnly_ok hpred hSat'
       · intro h
@@ -842,11 +844,11 @@ lemma stepFR_newRef_with_expr_proof
         | noPred_ok hpred =>
             exact qtypPredHolds.noPred_ok hpred
         | guardClosure_ok hpred hSat =>
-            have hSat' : predSat _ cfg₀'.memory v :=
+            have hSat' : predSat₀ _ cfg₀'.memory v :=
               (hPredSat_mem _ cfg₀'.memory cf₀.memory v).2 hSat
             exact qtypPredHolds.guardClosure_ok hpred hSat'
         | guardOnly_ok hpred hSat =>
-            have hSat' : predSat _ cfg₀'.memory v :=
+            have hSat' : predSat₀ _ cfg₀'.memory v :=
               (hPredSat_mem _ cfg₀'.memory cf₀.memory v).2 hSat
             exact qtypPredHolds.guardOnly_ok hpred hSat'
     constructor
@@ -897,7 +899,7 @@ lemma stepFR_newRef_with_expr_proof
                 exact (hkR hk).elim
             | some b =>
                 have hval0 :
-                    valueConsistentWithRegime predSat (ctxAfter ctxᵢ res).regime
+                    valueConsistentWithRegime predSat₀ (ctxAfter ctxᵢ res).regime
                       res1.qualType cfg₀'.memory θ₀1 (Value.num n₀) := by
                   simpa [hregime_eq] using _hval_consist₀
                 have hpc_false : ctxᵢ.pc = false := by
@@ -913,14 +915,14 @@ lemma stepFR_newRef_with_expr_proof
                 have hpredEq : res1.qualType.pred = storedQt.pred := by
                   simp [storedQt, hpc_false]
                 have hconsist_old :
-                      (b = true → qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀)) ∧
-                      (b = false → ¬ qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀)) := by
+                      (b = true → qtypPredHolds predSat₀ storedQt cfg₀'.memory (Value.num n₀)) ∧
+                      (b = false → ¬ qtypPredHolds predSat₀ storedQt cfg₀'.memory (Value.num n₀)) := by
                     cases hb : b with
                     | true =>
                         have hktrue : (ctxAfter ctxᵢ res).regime.lookup? k = some true := by
                           simpa [hb] using hk
                         have hholds_res1 :
-                            qtypPredHolds predSat res1.qualType cfg₀'.memory (Value.num n₀) := by
+                            qtypPredHolds predSat₀ res1.qualType cfg₀'.memory (Value.num n₀) := by
                           cases hval0 with
                           | noTag hnotag =>
                               have : (none : Option Tag) ≠ some k := by simp
@@ -962,8 +964,8 @@ lemma stepFR_newRef_with_expr_proof
                               have : (ctxAfter ctxᵢ res).regime.lookup? k = some false := by simpa using hkR'
                               simp [this] at hktrue
                         have hholds_stored_old :
-                            qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀) :=
-                          qtypPredHolds_transport_pred (predSat := predSat) (qt := res1.qualType) (qt' := storedQt)
+                            qtypPredHolds predSat₀ storedQt cfg₀'.memory (Value.num n₀) :=
+                          qtypPredHolds_transport_pred (predSat := predSat₀) (qt := res1.qualType) (qt' := storedQt)
                             (μ := cfg₀'.memory) (v := Value.num n₀) hpredEq hholds_res1
                         refine ⟨?_, ?_⟩
                         · intro _; exact hholds_stored_old
@@ -972,7 +974,7 @@ lemma stepFR_newRef_with_expr_proof
                         have hkfalse : (ctxAfter ctxᵢ res).regime.lookup? k = some false := by
                           simpa [hb] using hk
                         have hnot_res1 :
-                            ¬ qtypPredHolds predSat res1.qualType cfg₀'.memory (Value.num n₀) := by
+                            ¬ qtypPredHolds predSat₀ res1.qualType cfg₀'.memory (Value.num n₀) := by
                           cases hval0 with
                           | noTag hnotag =>
                               intro _
@@ -1013,19 +1015,19 @@ lemma stepFR_newRef_with_expr_proof
                               have : (ctxAfter ctxᵢ res).regime.lookup? k = some true := by simpa using hkR'
                               simp [this] at hkfalse
                         have hnot_stored_old :
-                            ¬ qtypPredHolds predSat storedQt cfg₀'.memory (Value.num n₀) := by
+                            ¬ qtypPredHolds predSat₀ storedQt cfg₀'.memory (Value.num n₀) := by
                           intro hholds_stored
                           have hholds_res1 :
-                              qtypPredHolds predSat res1.qualType cfg₀'.memory (Value.num n₀) :=
-                            qtypPredHolds_transport_pred (predSat := predSat) (qt := storedQt) (qt' := res1.qualType)
+                              qtypPredHolds predSat₀ res1.qualType cfg₀'.memory (Value.num n₀) :=
+                            qtypPredHolds_transport_pred (predSat := predSat₀) (qt := storedQt) (qt' := res1.qualType)
                               (μ := cfg₀'.memory) (v := Value.num n₀) (by simp [hpredEq]) hholds_stored
                           exact hnot_res1 hholds_res1
                         refine ⟨?_, ?_⟩
                         · intro hbtrue; cases hbtrue
                         · intro _; exact hnot_stored_old
                 have hconsist :
-                    (b = true → qtypPredHolds predSat storedQt cf₀.memory (Value.num n₀)) ∧
-                    (b = false → ¬ qtypPredHolds predSat storedQt cf₀.memory (Value.num n₀)) := by
+                    (b = true → qtypPredHolds predSat₀ storedQt cf₀.memory (Value.num n₀)) ∧
+                    (b = false → ¬ qtypPredHolds predSat₀ storedQt cf₀.memory (Value.num n₀)) := by
                   constructor
                   · intro hbtrue
                     have hholds_old := hconsist_old.1 hbtrue
@@ -1076,8 +1078,8 @@ lemma stepFR_newRef_with_expr_proof
               rw [Memory_lookup_update_ne (μ := cfg₀'.memory) (a := a) (a' := cfg₀'.nextAddr) (v := n₀) hne]
               exact hmem
             have hcons' :
-                (b = true → qtypPredHolds predSat qt cf₀.memory (Value.num n)) ∧
-                (b = false → ¬ qtypPredHolds predSat qt cf₀.memory (Value.num n)) := by
+                (b = true → qtypPredHolds predSat₀ qt cf₀.memory (Value.num n)) ∧
+                (b = false → ¬ qtypPredHolds predSat₀ qt cf₀.memory (Value.num n)) := by
               constructor
               · intro hbtrue
                 have hholds_old := hcons.1 hbtrue
@@ -1100,8 +1102,8 @@ lemma stepFR_newRef_with_expr_proof
           exact varsRegime.guardOnly_ok (x, qt) k' hgo
       | withPred_ok k' arg_name pred_body var_env v b hclos hreg hvar hcons =>
           have hcons' :
-              (b = true → qtypPredHolds predSat qt cf₀.memory v) ∧
-              (b = false → ¬ qtypPredHolds predSat qt cf₀.memory v) := by
+              (b = true → qtypPredHolds predSat₀ qt cf₀.memory v) ∧
+              (b = false → ¬ qtypPredHolds predSat₀ qt cf₀.memory v) := by
             constructor
             · intro hbtrue
               have hholds_old := hcons.1 hbtrue
@@ -1122,10 +1124,10 @@ lemma stepFR_newRef_with_expr_proof
       have hcap := hcwr₀1.2.2 x qt v hlookup_res1 hlookup_v_old
       rw [← hregime_eq] at hcap
       exact closureCapturedVarsRegime_transport_μ_θ hqtypPredHolds_mem hθext₀'.1 hcap
-  have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' :=
-    one_run cf₀ cfg₀' θ₀1 n₀ hmem₀ hvar₀ hwfcf₀1 hθext₀' hcwr₀1 _hval_consist₀
-  have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' :=
-    one_run cf₁ cfg₁' θ₁1 n₁ hmem₁ hvar₁ hwfcf₁1 hθext₁' hcwr₁1 _hval_consist₁
+  have hcwr₀_final : consistentWithRegime predSat₀ (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' :=
+    one_run predSat₀ β₀ hpredlaws₀ cf₀ cfg₀' θ₀1 n₀ hmem₀ hvar₀ hwfcf₀1 hθext₀' hcwr₀1 _hval_consist₀
+  have hcwr₁_final : consistentWithRegime predSat₁ (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' :=
+    one_run predSat₁ β₁ hpredlaws₁ cf₁ cfg₁' θ₁1 n₁ hmem₁ hvar₁ hwfcf₁1 hθext₁' hcwr₁1 _hval_consist₁
   let storedQt : QTyp := ⟨ETyp.int, joinPoison ctxᵢ.pc res1.qualType.poison, if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩
   have hres1_desc :
       ∀ {qt k d}, QTypInQTyp qt res1.qualType →
@@ -1165,12 +1167,12 @@ lemma stepFR_newRef_with_expr_proof
     exact (QTypRespectsTagMeaning_of_nonFunction_noGuard tm1 res.qualType hnotfun_res hguard) hinq hqd
   have hwfTm_final : wfTagMeaningCtx tm1 (ctxAfter ctxᵢ res) :=
     wfTagMeaningCtx_ctxAfter tm1 ctxᵢ res hEnvTm_res
-  have hboundary_newRef : BoundaryTagMeaningPost ctxᵢ res predSat tm tm1 := by
+  have hboundary_newRef : BoundaryTagMeaningPost ctxᵢ res predSat₀ β₀ tm tm1 := by
     exact ⟨BoundaryTagMeaningPost.extends_tm hcanon1,
       by simpa [h_ntag] using BoundaryTagMeaningPost.bounded hcanon1,
-      hwfTm_final, hresTm, hpredlaws1,
+      hwfTm_final, hresTm, hpredlaws1₀,
       hcanon1.within.of_log_eq (typecheckNewRef_tagLog htc' htc1).symm⟩
-  refine ⟨tm1, hboundary_newRef, hpredlaws1, hresTm, ?_⟩
+  refine ⟨tm1, hboundary_newRef, hpredlaws1₁, hresTm, ?_⟩
   refine ⟨θ₀', θ₁', ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀', hric₁', hreg', hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀'
     exact wfExtendsMap_trans hθext₀1 hθext₀'

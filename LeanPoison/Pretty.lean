@@ -373,7 +373,7 @@ partial def reprETyp : ETyp → Nat → Std.Format
       formatBracketedList closureReprs
 
 partial def reprVarEnv (env : CapturedVarEnv) (_ : Nat) : Std.Format :=
-  let entries : List Std.Format := env.map (fun (x, qt) => Std.Format.text x ++ Std.Format.text " : " ++ reprQTyp qt 0)
+  let entries : List Std.Format := env.map (fun (x, qt, _) => Std.Format.text x ++ Std.Format.text " : " ++ reprQTyp qt 0)
   formatBracketedList entries
 
 partial def reprPredicate : Predicate → Nat → Std.Format

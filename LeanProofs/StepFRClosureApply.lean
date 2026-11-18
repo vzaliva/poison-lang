@@ -141,14 +141,14 @@ lemma closureCapturedVarsRegimeMasked_transport_pred
   closureCapturedVarsRegimeMasked_transport_etyp hetyp h
 
 private lemma agreeCapturedEnv_lookup_agreeVarUnder_clean
-  {predSat : PredSat} {R : Regime}
+  {predSat₀ predSat₁ : PredSat} {R : Regime}
   {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
   {σcap : CapturedVarEnv} {ρcap₀ ρcap₁ : VarEnv}
   {x : Name} {qt : QTyp}
-  (hcap : agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
+  (hcap : agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
   (hlookup : σcap.lookup x = some qt)
   (hclean : qtypCleanUnder R qt) :
-  agreeVarUnder predSat R μ₀ ρcap₀ μ₁ ρcap₁ θ₀ θ₁ (x, qt) := by
+  agreeVarUnder predSat₀ predSat₁ R μ₀ ρcap₀ μ₁ ρcap₁ θ₀ θ₁ (x, qt) := by
   revert x qt hlookup hclean
   induction σcap generalizing ρcap₀ ρcap₁ with
   | nil =>
@@ -167,8 +167,8 @@ private lemma agreeCapturedEnv_lookup_agreeVarUnder_clean
             subst hxx'
             cases hlookup
             exact agreeVarUnder.agree_values _ _ _ _ hlookup₀ hlookup₁ hagree_head
-          · simp [CapturedVarEnv.lookup_eq, List.lookup, hxx] at hlookup
-            exact ih (hcap := htail) hlookup hclean
+          · exact ih (hcap := htail)
+              (by simpa [CapturedVarEnv.lookup_eq, List.lookup, hxx] using hlookup) hclean
       | cons_dirty hdirty_head hlookup₀ hlookup₁ htyp₀ htyp₁ htail =>
           by_cases hxx : x == xh
           · simp [CapturedVarEnv.lookup_eq, List.lookup, hxx] at hlookup
@@ -176,11 +176,11 @@ private lemma agreeCapturedEnv_lookup_agreeVarUnder_clean
             subst hxx'
             cases hlookup
             exact (hdirty_head hclean).elim
-          · simp [CapturedVarEnv.lookup_eq, List.lookup, hxx] at hlookup
-            exact ih (hcap := htail) hlookup hclean
+          · exact ih (hcap := htail)
+              (by simpa [CapturedVarEnv.lookup_eq, List.lookup, hxx] using hlookup) hclean
 
 lemma agreeOnClean_closure_body_start
-  (predSat : PredSat)
+  (predSat₀ predSat₁ : PredSat)
   (ctx : TypeContext) (result1 : TypeResult)
   (σcap : CapturedVarEnv) (xArg : Name) (argQt : QTyp)
   (μ₀ μ₁ : Memory) (θ₀ θ₁ : RealizationMap)
@@ -189,12 +189,12 @@ lemma agreeOnClean_closure_body_start
     ∀ l qt,
       result1.memEnv'.lookup l = some qt →
       qtypCleanUnder result1.regime' qt →
-      agreeLocUnder predSat result1.regime' μ₀ μ₁ θ₀ θ₁ (l, qt))
+      agreeLocUnder predSat₀ predSat₁ result1.regime' μ₀ μ₁ θ₀ θ₁ (l, qt))
   (hcap :
-    agreeCapturedEnv predSat result1.regime' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
+    agreeCapturedEnv predSat₀ predSat₁ result1.regime' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁)
   (harg_agree :
     qtypCleanUnder result1.regime' argQt →
-      agreeValueUnder predSat result1.regime' μ₀ μ₁ θ₀ θ₁ argQt vArg₀ vArg₁) :
+      agreeValueUnder predSat₀ predSat₁ result1.regime' μ₀ μ₁ θ₀ θ₁ argQt vArg₀ vArg₁) :
   let bodyCtx : TypeContext :=
     { ctx with
       memEnv := result1.memEnv'
@@ -203,7 +203,7 @@ lemma agreeOnClean_closure_body_start
       nextTag := result1.nextTag'
       nextLoc := result1.nextLoc'
       regime := result1.regime' }
-  agreeOnClean predSat bodyCtx.regime bodyCtx
+  agreeOnClean predSat₀ predSat₁ bodyCtx.regime bodyCtx
     μ₀ (VarEnv.update ρcap₀ xArg vArg₀) θ₀
     μ₁ (VarEnv.update ρcap₁ xArg vArg₁) θ₁ := by
   intro bodyCtx
@@ -244,7 +244,7 @@ lemma agreeOnClean_closure_body_start
           simpa [bodyCtx, hne_lookup] using hlookup
         exact list_lookup_of_ofCaptured_lookup σcap x qt hlookupCap'
       have hcapAgree :
-          agreeVarUnder predSat result1.regime' μ₀ ρcap₀ μ₁ ρcap₁ θ₀ θ₁ (x, qt) :=
+          agreeVarUnder predSat₀ predSat₁ result1.regime' μ₀ ρcap₀ μ₁ ρcap₁ θ₀ θ₁ (x, qt) :=
         agreeCapturedEnv_lookup_agreeVarUnder_clean
           (hcap := hcap) (hlookup := hlookupCap) (hclean := hclean)
       cases hcapAgree with

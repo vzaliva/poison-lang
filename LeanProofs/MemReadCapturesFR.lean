@@ -155,4 +155,42 @@ theorem appliedMemReadCaptures_FR (s : InputSpec) (obs : ObservableSpec) :
   TypeSystemEnforcesFaultRobustness_at memReadRegistry appliedMemReadProg s obs openEmptyCtx
     appliedMemRead_hagrees
 
+/-- The tests of every run of `memReadProg` agree with every view: the
+    declaration node has no step below it. -/
+theorem memReadCaptures_tests (β : BindVals) (fuel : Nat) (cfg : Config) :
+    TestsAgreeWithView β ⟨openEmptyCtx, memReadProg, fuel, cfg⟩ :=
+  testsAgreeWithView_of_leaf (fun _ h => by cases h) (fun h => by cases h)
+
+/-- The expressions of the steps a run of `appliedMemReadProg` reaches. The
+    callee is a closure of a pure extern, whose body is no pure expression, so
+    the call enters no body. -/
+private inductive AppliedMemReadExpr : Expr → Prop
+  | prog : AppliedMemReadExpr appliedMemReadProg
+  | callee : AppliedMemReadExpr memReadProg
+  | ref : AppliedMemReadExpr (.newRef (.num 3))
+  | num : AppliedMemReadExpr (.num 3)
+
+/-- The tests of every run of `appliedMemReadProg` agree with every view: the
+    run reaches no conditional. -/
+theorem appliedMemReadCaptures_tests (β : BindVals) (fuel : Nat) (cfg : Config) :
+    TestsAgreeWithView β ⟨openEmptyCtx, appliedMemReadProg, fuel, cfg⟩ :=
+  testsAgreeWithView_of_closed (fun s => AppliedMemReadExpr s.e) .prog
+    (fun {s _} hs h => by
+      obtain ⟨_, _, _, _⟩ := s
+      cases hs with
+      | prog =>
+          cases h with
+          | appArg => exact .ref
+          | appFun _ _ => exact .callee
+          | appFnBody _ _ _ hr1 _ _ => cases terminatesTo_externPfn_value hr1
+          | appPfnBody _ _ _ hr1 _ hpe _ =>
+              obtain ⟨-, rfl, -⟩ := Value.peClosure.inj (terminatesTo_externPfn_value hr1)
+              cases hpe
+      | callee => cases h
+      | ref => cases h with | newRef => exact .num
+      | num => cases h)
+    (fun {s _ _ _} hs => by
+      obtain ⟨_, _, _, _⟩ := s
+      cases hs <;> (intro h; cases h))
+
 end MemReadCapturesFR

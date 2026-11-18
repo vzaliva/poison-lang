@@ -1226,7 +1226,7 @@ private theorem beqETyp_refl (t : ETyp) : beqETyp t t = true := by
 -- Prove reflexivity of beqVarEnv
 private theorem beqVarEnv_refl : ∀ (env : CapturedVarEnv), beqVarEnv env env = true
   | [] => by simp [beqVarEnv]
-  | (x, qt) :: env' => by
+  | (x, qt, n) :: env' => by
       simp [beqVarEnv, beqQTyp_refl qt, beqVarEnv_refl env']
 
 -- Prove reflexivity of beqPredicate
@@ -1327,11 +1327,12 @@ private theorem beqVarEnv_sound : ∀ (a b : CapturedVarEnv), beqVarEnv a b = tr
   | [], [] => fun _ => rfl
   | [], _ :: _ => fun h => by simp only [beqVarEnv] at h; contradiction
   | _ :: _, [] => fun h => by simp only [beqVarEnv] at h; contradiction
-  | (x1, qt1) :: a', (x2, qt2) :: b' => fun h => by
+  | (x1, qt1, n1) :: a', (x2, qt2, n2) :: b' => fun h => by
       simp only [beqVarEnv, Bool.and_eq_true] at h
-      obtain ⟨⟨h_x, h_qt⟩, h_env⟩ := h
+      obtain ⟨⟨⟨h_x, h_qt⟩, h_n⟩, h_env⟩ := h
       have : x1 = x2 := of_decide_eq_true h_x
       have : qt1 = qt2 := beqQTyp_sound qt1 qt2 h_qt
+      have : n1 = n2 := beq_iff_eq.mp h_n
       have : a' = b' := beqVarEnv_sound a' b' h_env
       subst_vars
       rfl

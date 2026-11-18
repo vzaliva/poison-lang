@@ -2,10 +2,11 @@
   PredSatLawsWitness.lean — `PredSatLaws` is satisfiable at a tag meaning with a
   matchable guard.
 
-  `PredSatLaws predSat tm` is a hypothesis of the fault-robustness theorem, so the
-  theorem only says something when the laws can be met.  This module gives a concrete
-  model: the tag meaning that interprets tag `0` as the guard `v => v`, and the
-  satisfaction relation "the checked value is `true`".  It also exhibits a context that
+  `PredSatLaws predSat tm β` (the laws under the view `β` of a run) is a hypothesis of
+  the fault-robustness theorem, so the theorem only says something when the laws can be
+  met.  This module gives a concrete model: the tag meaning that interprets tag `0` as
+  the guard `v => v`, and the satisfaction relation "the checked value is `true`".  The
+  guard reads only its argument, so the laws hold under every view.  It also exhibits a context that
   respects this tag meaning and in which `matchGuard` selects tag `0`, so the premises
   of `PredSatLaws.match_iff` are met and the law is exercised.
 
@@ -86,10 +87,13 @@ private theorem toPExpr?_eq_deref {e : Expr} {pe : PExpr}
     evaluates to the owner's value.  A reference owner cannot arise for a condition of
     type `bool`, because a dereference evaluates to a number.
 
-    `mem_monotone`: the relation does not read memory. -/
-theorem predSatLaws_idSat : PredSatLaws idSat idTm := by
+    `mem_monotone`: the relation does not read memory.
+
+    The laws hold under every view `β`: the premise of `match_iff` on the variables the
+    guard body reads is not used. -/
+theorem predSatLaws_idSat (β : BindVals) : PredSatLaws idSat idTm β := by
   refine ⟨?_, ?_⟩
-  · intro condition ctx fuel k deps μ ρ θ addr pm registry cfg b hwf hmatch hric hterm
+  · intro condition ctx fuel k deps μ ρ θ addr pm registry cfg b hwf hmatch _hview hric hterm
     obtain ⟨pe, hpe, hown⟩ := matchGuard_ok_matched_owner ctx condition k deps hmatch
     rcases hown with
       ⟨x, qt, arg, body, cap, hlookup, hpred, heq⟩ |
@@ -174,7 +178,8 @@ theorem guardedCtx_wf : wfTagMeaningCtx idTm guardedCtx := by
     simp [guardedCtx, MemoryTypeEnv.lookup] at hlookup
 
 theorem guardedCtx_matches :
-    ∃ deps, matchGuard (Expr.var "y") guardedCtx.memEnv guardedCtx.varEnv 10 = .ok (0, deps) :=
+    ∃ deps, matchGuard (Expr.var "y") guardedCtx.memEnv guardedCtx.varEnv guardedCtx.bindEnv 10 =
+      .ok (0, deps) :=
   ⟨_, rfl⟩
 
 end PredSatLawsWitness

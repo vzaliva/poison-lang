@@ -413,7 +413,7 @@ def MemberCvcrEvidence
 -- Two values agree under a given regime and memory environments.
 -- Clean values must agree; poisoned values may agree vacuously depending on regime.
 mutual
-  inductive agreeValueUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
+  inductive agreeValueUnder (predSat₁ predSat₂ : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
       (θ₁ θ₂ : RealizationMap) :
       QTyp → Value → Value → Prop where
     -- Non-ref/non-arrow cases:
@@ -423,7 +423,7 @@ mutual
         (hnotfun : qt.etyp.isFunctionType = false)
         (hnotref : ¬ (∃ (ls : LocSet), qt.etyp = ETyp.ref ls))
         (hagree : v₁ = v₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     -- Arrow cases:
     -- Closure agreement cases are gated on INTERNAL poison, not outer poison.
     -- When internal poison is clean, we require same body and captured environment agreement.
@@ -435,11 +435,11 @@ mutual
         (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
         (htcl : tcl ∈ tcls)
         (hmatch : tcl = FnTClosure.regular x body σcap)
-        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
-        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
-        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
-        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (hcap : agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat₁ R μ₁ σcap ρcap₁)
+        (hmemberCvcr₁ : MemberCvcrEvidence predSat₁ R μ₁ θ₁ σcap ρcap₁)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat₂ R μ₂ σcap ρcap₂)
+        (hmemberCvcr₂ : MemberCvcrEvidence predSat₂ R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.closure x body ρcap₁)
@@ -448,7 +448,7 @@ mutual
         -- rejects such bodies); this keeps the regular agreement route disjoint
         -- from the extern-dispatch route (`clean_internal_arrow_extern`).
         (hbody : ¬ Expr.IsExternFnAst body) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_internal_arrow_extern
         {id : ExternId} {x y : Name} {argTyp : Typ}
         {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
@@ -461,23 +461,23 @@ mutual
         -- `memberCap` (the type member's captures = call-site read-dependency gate)
         -- is independent of body `cap` (two-track discipline).
         (hmatch : tcl = FnTClosure.extern id x retSpec effects σcap argQt memberCap)
-        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
-        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
-        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
-        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (hcap : agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat₁ R μ₁ σcap ρcap₁)
+        (hmemberCvcr₁ : MemberCvcrEvidence predSat₁ R μ₁ θ₁ σcap ρcap₁)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat₂ R μ₂ σcap ρcap₂)
+        (hmemberCvcr₂ : MemberCvcrEvidence predSat₂ R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) ρcap₁)
         (hv₂ : v₂ = Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec effects cap) ρcap₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | dirty_internal_arrow
         {qt : QTyp} {v₁ v₂ : Value}
         (hdirty_internal : ¬ internalPoisonClean qt)
         (hisArrow : qt.etyp.isArrow = true)
         (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
         (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_internal_parrow {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure}
         {qt : QTyp} {tcl : PFnTClosure} {x : Name} {body : Expr} {pbody : PExpr} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
@@ -485,16 +485,16 @@ mutual
         (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
         (htcl : tcl ∈ tcls)
         (hmatch : Expr.toPExpr? body = some pbody ∧ tcl = PFnTClosure.regular x pbody σcap)
-        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
-        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
-        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
-        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (hcap : agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat₁ R μ₁ σcap ρcap₁)
+        (hmemberCvcr₁ : MemberCvcrEvidence predSat₁ R μ₁ θ₁ σcap ρcap₁)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat₂ R μ₂ σcap ρcap₂)
+        (hmemberCvcr₂ : MemberCvcrEvidence predSat₂ R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.peClosure x body ρcap₁)
         (hv₂ : v₂ = Value.peClosure x body ρcap₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | clean_internal_parrow_extern
         {id : ExternId} {x y : Name} {argTyp : Typ}
         {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
@@ -511,23 +511,23 @@ mutual
         -- `value_shape` decoupling; the captured-env agreement (`hcap`,
         -- `hmemberVars*`, `hmemberCvcr*`) carries the relational obligation.
         (hmatch : tcl = PFnTClosure.extern id x retSpec σcap argQt memberCap)
-        (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
-        (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
-        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
-        (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
+        (hcap : agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat₁ R μ₁ σcap ρcap₁)
+        (hmemberCvcr₁ : MemberCvcrEvidence predSat₁ R μ₁ θ₁ σcap ρcap₁)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat₂ R μ₂ σcap ρcap₂)
+        (hmemberCvcr₂ : MemberCvcrEvidence predSat₂ R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
         (hv₁ : v₁ = Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) ρcap₁)
         (hv₂ : v₂ = Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) ρcap₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | dirty_internal_parrow
         {qt : QTyp} {v₁ v₂ : Value}
         (hdirty_internal : ¬ internalPoisonClean qt)
         (hisParrow : qt.etyp.isParrow = true)
         (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
         (htyp2 : valueHasETyp θ₂ v₂ qt.etyp) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     -- Ref cases:
     | clean_ref {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
@@ -538,7 +538,7 @@ mutual
         (hv1 : v₁ = Value.loc a₁)
         (hlookup2 : θ₂.lookup l = some a₂)
         (hv2 : v₂ = Value.loc a₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     -- de-poisoning cases:
     | withPred_true_eq (k : Tag)
         {qt : QTyp} {v₁ v₂ : Value}
@@ -547,7 +547,7 @@ mutual
         (hnotfun : qt.etyp.isFunctionType = false)
         (hnotref : ¬ (∃ (ls : LocSet), qt.etyp = ETyp.ref ls))
         (hagree : v₁ = v₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
     | withPred_true_ref (k : Tag) {ls : LocSet} {l : Loc} {a₁ a₂ : Address}
         {qt : QTyp} {v₁ v₂ : Value}
         (htag : qtypGuardTag qt = some k)
@@ -558,12 +558,12 @@ mutual
         (hv1 : v₁ = Value.loc a₁)
         (hlookup2 : θ₂.lookup l = some a₂)
         (hv2 : v₂ = Value.loc a₂) :
-        agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
+        agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂
 
   /-- Agreement of captured runtime environments w.r.t. the captured typing environment.
 
   The captured typing environment `σcap` is a finite association list (produced by `VarTypeEnv.toCaptured`).
-  For each captured entry `(x, qt)`:
+  For each captured entry `(x, qt, n)` (`n` the binding number of `x`):
   - if `qt` is clean-under-`R`, then the two runtime captured environments must bind `x` to values `v₁` and
     `v₂` that agree under `agreeValueUnder`;
   - otherwise, there is no agreement obligation for `x`.
@@ -571,36 +571,36 @@ mutual
   This is defined inductively over the finite list `σcap` to support structural inversion and recursion in
   proofs (e.g. when transporting agreement across realisation-map extensions).
   -/
-  inductive agreeCapturedEnv (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
+  inductive agreeCapturedEnv (predSat₁ predSat₂ : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
       (θ₁ θ₂ : RealizationMap) :
       CapturedVarEnv → VarEnv → VarEnv → Prop where
     | nil {ρcap₁ ρcap₂ : VarEnv} :
-        agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ [] ρcap₁ ρcap₂
-    | cons_clean {x : Name} {qt : QTyp} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ [] ρcap₁ ρcap₂
+    | cons_clean {x : Name} {qt : QTyp} {n : Nat} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
         (hclean : qtypCleanUnder R qt)
         (hlookup1 : ρcap₁.lookup x = some v₁)
         (hlookup2 : ρcap₂.lookup x = some v₂)
         (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
         (htyp2 : valueHasETyp θ₂ v₂ qt.etyp)
-        (hagree : agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂)
-        (htail : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂) :
-        agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ ((x, qt) :: σcap) ρcap₁ ρcap₂
-    | cons_dirty {x : Name} {qt : QTyp} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
+        (hagree : agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂)
+        (htail : agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂) :
+        agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ ((x, qt, n) :: σcap) ρcap₁ ρcap₂
+    | cons_dirty {x : Name} {qt : QTyp} {n : Nat} {σcap : CapturedVarEnv} {ρcap₁ ρcap₂ : VarEnv}
         {v₁ v₂ : Value}
         (hdirty : ¬ qtypCleanUnder R qt)
         (hlookup1 : ρcap₁.lookup x = some v₁)
         (hlookup2 : ρcap₂.lookup x = some v₂)
         (htyp1 : valueHasETyp θ₁ v₁ qt.etyp)
         (htyp2 : valueHasETyp θ₂ v₂ qt.etyp)
-        (htail : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂) :
-        agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ ((x, qt) :: σcap) ρcap₁ ρcap₂
+        (htail : agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂) :
+        agreeCapturedEnv predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ ((x, qt, n) :: σcap) ρcap₁ ρcap₂
 end
 
 -- Two initial states agree on a critical location under a given regime.
 -- Note: address agreement for refs lives in agreeValueUnder; heap contents
 -- agreement is enforced here via memory lookups.
-inductive agreeLocUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
+inductive agreeLocUnder (predSat₁ predSat₂ : PredSat) (R : Regime) (μ₁ : Memory) (μ₂ : Memory)
     (θ₁ θ₂ : RealizationMap)
     : (Loc × QTyp) → Prop where
   | agree_values (l : Loc) (qt : QTyp) (a₁ a₂ : Address) (n₁ n₂ : Int)
@@ -608,36 +608,36 @@ inductive agreeLocUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (μ₂
       (hreal2 : θ₂.lookup l = some a₂)
       (hlookup1 : μ₁.lookup a₁ = some n₁)
       (hlookup2 : μ₂.lookup a₂ = some n₂)
-      (hagree : agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt (Value.num n₁) (Value.num n₂)) :
-      agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂ (l, qt)
+      (hagree : agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt (Value.num n₁) (Value.num n₂)) :
+      agreeLocUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ (l, qt)
   | both_unrealized (l : Loc) (qt : QTyp)
       (hreal1 : θ₁.lookup l = none)
       (hreal2 : θ₂.lookup l = none) :
-      agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂ (l, qt)
+      agreeLocUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ (l, qt)
 
 -- Two initial states agree on a critical variable under a given regime.
-inductive agreeVarUnder (predSat : PredSat) (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
+inductive agreeVarUnder (predSat₁ predSat₂ : PredSat) (R : Regime) (μ₁ : Memory) (ρ₁ : VarEnv) (μ₂ : Memory) (ρ₂ : VarEnv)
     (θ₁ θ₂ : RealizationMap)
     : (Name × QTyp) → Prop where
   | agree_values (x : Name) (qt : QTyp) (v₁ v₂ : Value)
       (hlookup1 : ρ₁.lookup x = some v₁)
       (hlookup2 : ρ₂.lookup x = some v₂)
-      (hagree : agreeValueUnder predSat R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂) :
-      agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt)
+      (hagree : agreeValueUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ qt v₁ v₂) :
+      agreeVarUnder predSat₁ predSat₂ R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt)
   | both_none (x : Name) (qt : QTyp)
       (hlookup1 : ρ₁.lookup x = none)
       (hlookup2 : ρ₂.lookup x = none) :
-      agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt)
+      agreeVarUnder predSat₁ predSat₂ R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt)
 
 -- Two initial states agree on critical inputs under a given regime.
 def agreeOnCriticalInputsUnderRegimeSpec
-  (predSat : PredSat) (R : Regime) (s : InputSpec)
+  (predSat₁ predSat₂ : PredSat) (R : Regime) (s : InputSpec)
   (μ₁ : Memory) (ρ₁ : VarEnv) (θ₁ : RealizationMap)
   (μ₂ : Memory) (ρ₂ : VarEnv) (θ₂ : RealizationMap) : Prop :=
   (∀ l qt, s.locs.lookup l = some qt → qtypCleanUnder R qt →
-    agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂ (l, qt)) ∧
+    agreeLocUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ (l, qt)) ∧
   (∀ x qt, s.vars.lookup x = some qt → qtypCleanUnder R qt →
-    agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt))
+    agreeVarUnder predSat₁ predSat₂ R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt))
 
 -- Typing results must satisfy the observable constraints.
 private def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
@@ -649,24 +649,24 @@ private def ObsConstraints (obs : ObservableSpec) (res : TypeResult) : Prop :=
 
 -- Agreement on all clean items in the typing context (variables and locations).
 -- This is the step-level invariant: only clean-under-R entries must agree.
-def agreeOnClean (predSat : PredSat) (R : Regime) (ctx : TypeContext)
+def agreeOnClean (predSat₁ predSat₂ : PredSat) (R : Regime) (ctx : TypeContext)
   (μ₁ : Memory) (ρ₁ : VarEnv) (θ₁ : RealizationMap)
   (μ₂ : Memory) (ρ₂ : VarEnv) (θ₂ : RealizationMap) : Prop :=
   (∀ l qt, ctx.memEnv.lookup l = some qt → qtypCleanUnder R qt →
-    agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂ (l, qt)) ∧
+    agreeLocUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ (l, qt)) ∧
   (∀ x qt, ctx.varEnv.lookup x = some qt → qtypCleanUnder R qt →
-    agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt))
+    agreeVarUnder predSat₁ predSat₂ R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt))
 
 -- Agreement on trusted inputs: clean context entries not listed in S.
 -- This is the FR-specific top-level premise that replaces NI's "unconstrained"
 -- non-critical inputs.
-def agreeOnTrustedInputs (predSat : PredSat) (R : Regime) (s : InputSpec) (ctx : TypeContext)
+def agreeOnTrustedInputs (predSat₁ predSat₂ : PredSat) (R : Regime) (s : InputSpec) (ctx : TypeContext)
   (μ₁ : Memory) (ρ₁ : VarEnv) (θ₁ : RealizationMap)
   (μ₂ : Memory) (ρ₂ : VarEnv) (θ₂ : RealizationMap) : Prop :=
   (∀ l qt, ctx.memEnv.lookup l = some qt → ¬ s.locs.hasKey l → qtypCleanUnder R qt →
-    agreeLocUnder predSat R μ₁ μ₂ θ₁ θ₂ (l, qt)) ∧
+    agreeLocUnder predSat₁ predSat₂ R μ₁ μ₂ θ₁ θ₂ (l, qt)) ∧
   (∀ x qt, ctx.varEnv.lookup x = some qt → ¬ s.vars.hasKey x → qtypCleanUnder R qt →
-    agreeVarUnder predSat R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt))
+    agreeVarUnder predSat₁ predSat₂ R μ₁ ρ₁ μ₂ ρ₂ θ₁ θ₂ (x, qt))
 
 /-- Unary initialization premise for trusted top-level variables (those not listed in
 `InputSpec.vars`): their runtime values already satisfy the deep closure-captured-vars
@@ -783,14 +783,24 @@ end ReservedDiscipline
     extern registry.  This is the semantic relation used inside the public
     top-level spec after typechecking/setup premises have selected a context,
     tag meaning and typing fuel.  The fuel fixes the root step of each run
-    (`Step`), from which the premises on extern calls are stated. -/
+    (`Step`), from which the premises on extern calls are stated.  Each run
+    has its own relation `predSatᵢ` and its own view `βᵢ` of the values of
+    binding numbers. -/
 private def FaultRobustnessPointwise
     (registry : ExternRegistry)
     (e : Expr) (s : InputSpec) (obs : ObservableSpec)
-    (ctx : TypeContext) (predSat : PredSat) (_tm : TagMeaning) (fuel : Nat) : Prop :=
+    (ctx : TypeContext) (tm : TagMeaning) (fuel : Nat) (res : TypeResult) : Prop :=
   ∀ (μ₁ μ₂ : Memory) (ρ₁ ρ₂ : VarEnv) (θ₁ θ₂ : RealizationMap)
     (a₁ a₂ : Address) (pm : Bool),
     ∀ (cf₁ cf₂ : Config) (o₁ o₂ : Value),
+    ∀ (predSat₁ predSat₂ : PredSat) (β₁ β₂ : BindVals),
+    -- Each run's relation satisfies the laws under that run's view, on the
+    -- starting table and on the program table of the typing run: `tm`
+    -- together with every guard tag the run allocates (`res.tagLog'`).
+    PredSatLaws predSat₁ tm β₁ →
+    PredSatLaws predSat₂ tm β₂ →
+    PredSatLaws predSat₁ (programTable tm res.tagLog') β₁ →
+    PredSatLaws predSat₂ (programTable tm res.tagLog') β₂ →
     wfRegime ctx.regime s →
     wfRealizationMap θ₁ → wfRealizationMap θ₂ →
     wfConfig { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } →
@@ -806,19 +816,25 @@ private def FaultRobustnessPointwise
     ReservedDiscipline registry ctx.declaredExternRefs θ₂ →
     inputsConformSpec s μ₁ ρ₁ θ₁ → inputsConformSpec s μ₂ ρ₂ θ₂ →
     runtimeInstantiatesCtx ctx μ₁ ρ₁ θ₁ → runtimeInstantiatesCtx ctx μ₂ ρ₂ θ₂ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₁ ρ₁ θ₁ →
-    trustedVarsClosureRegimeInit predSat ctx.regime s ctx μ₂ ρ₂ θ₂ →
-    consistentRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ →
-    consistentRegimeSpec predSat ctx.regime s μ₂ ρ₂ θ₂ →
+    trustedVarsClosureRegimeInit predSat₁ ctx.regime s ctx μ₁ ρ₁ θ₁ →
+    trustedVarsClosureRegimeInit predSat₂ ctx.regime s ctx μ₂ ρ₂ θ₂ →
+    consistentRegimeSpec predSat₁ ctx.regime s μ₁ ρ₁ θ₁ →
+    consistentRegimeSpec predSat₂ ctx.regime s μ₂ ρ₂ θ₂ →
     -- Every extern call and every `extern val` declaration of each run
     -- satisfies *match* (`ExternCallsMatch`): a tag it allocated carries the
     -- outcome of its check.
-    ExternCallsMatch predSat
+    ExternCallsMatch predSat₁
       ⟨ctx, e, fuel, { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }⟩ →
-    ExternCallsMatch predSat
+    ExternCallsMatch predSat₂
       ⟨ctx, e, fuel, { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry }⟩ →
-    agreeOnCriticalInputsUnderRegimeSpec predSat ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
-    agreeOnTrustedInputs predSat ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    -- The variables the guards of a matched conditional read hold, in each
+    -- run, the values that run's view gives their binding numbers.
+    TestsAgreeWithView β₁
+      ⟨ctx, e, fuel, { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }⟩ →
+    TestsAgreeWithView β₂
+      ⟨ctx, e, fuel, { memory := μ₂, varEnv := ρ₂, nextAddr := a₂, pureMode := pm, registry := registry }⟩ →
+    agreeOnCriticalInputsUnderRegimeSpec predSat₁ predSat₂ ctx.regime s μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
+    agreeOnTrustedInputs predSat₁ predSat₂ ctx.regime s ctx μ₁ ρ₁ θ₁ μ₂ ρ₂ θ₂ →
     -- Every extern call that both runs make satisfies *agreement*
     -- (`ExternCallsAgree`), as clean inputs do.
     ExternCallsAgree
@@ -852,17 +868,13 @@ def FaultRobustnessSpecForCtx
   -- satisfy it.
   ctx.declaredExternRefs = [] →
   TagBoundedCtx ctx →
-  ∀ (predSat : PredSat) (tm : TagMeaning),
+  ∀ (tm : TagMeaning),
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
-    PredSatLaws predSat tm →
-    -- `predSat` also satisfies the laws on the program table of the typing run:
-    -- `tm` together with every guard tag the run allocates (`res.tagLog'`).
     ∀ (fuel : Nat) (res : TypeResult),
       typecheck ctx e fuel = .ok res →
       ObsConstraints obs res →
-      PredSatLaws predSat (programTable tm res.tagLog') →
-      FaultRobustnessPointwise registry e s obs ctx predSat tm fuel
+      FaultRobustnessPointwise registry e s obs ctx tm fuel res
 
 /-- The registry-parametric fault-robustness specification: the type system
     enforces the per-context FR relation for every initial type context admitted

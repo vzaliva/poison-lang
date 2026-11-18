@@ -77,4 +77,10 @@ theorem abs_FR (s : InputSpec) (obs : ObservableSpec) :
   TypeSystemEnforcesFaultRobustness_at absRegistry absProg s obs openEmptyCtx
     abs_hagrees
 
+/-- The tests of every run of `absProg` agree with every view: the declaration
+    node has no step below it. -/
+theorem abs_tests (β : BindVals) (fuel : Nat) (cfg : Config) :
+    TestsAgreeWithView β ⟨openEmptyCtx, absProg, fuel, cfg⟩ :=
+  testsAgreeWithView_of_leaf (fun _ h => by cases h) (fun h => by cases h)
+
 end AbsFR

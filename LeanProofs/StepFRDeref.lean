@@ -192,7 +192,8 @@ private lemma deref_valueConsistentWithRegimeMasked_of_typecheck
                                     { etyp := ETyp.int, poison := joinPoison ctxᵢ.pc v.1,
                                       pred := Predicate.guardClosure k' arg_name' pred_body' var_env' },
                                   memEnv' := res1.memEnv', tagEnv' := res1.tagEnv', nextLoc' := res1.nextLoc',
-                                  nextTag' := res1.nextTag', regime' := res1.regime',
+                                  nextTag' := res1.nextTag', nextBind' := res1.nextBind',
+                                  regime' := res1.regime',
                                   declared' := res1.declared', tagLog' := res1.tagLog' } = res := by
                               simpa using htc''
                             have hpred_tc : res.qualType.pred = Predicate.guardClosure k' arg_name' pred_body' var_env' := by
@@ -310,7 +311,7 @@ private theorem stepFRDeref_ctxToValCons_masked
 
 lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
   (masked : Tag → Prop)
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (β : BindVals) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
   (CtxReach : TypeContext → Prop)
@@ -318,7 +319,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
   (hctxCurrent : CtxReach ctxᵢ)
   (IH :
     StepFRSingleRunFinalCleanPcTrueMaskedRegParam_IH_WithExprCtx
-      predSat tm (Nat.succ (Nat.succ fuel')) CanUse
+      predSat β tm (Nat.succ (Nat.succ fuel')) CanUse
       CtxReach
       masked
       (fun ctx μ ρ θ =>
@@ -332,7 +333,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
       consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v =>
       valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.deref e) res predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry) := by
+    ctxᵢ (Expr.deref e) res predSat β tm (Nat.succ (Nat.succ fuel')) (registry := registry) := by
   classical
   have htc' : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
@@ -362,13 +363,33 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
         · split at htc' <;> (cases htc'; rfl)
         · split at htc' <;> (cases htc'; rfl)
       | int | bool | unit | string | arrow _ _ | parrow _ _ => simp [hetyp] at htc'
+  have h_nbind : res.nextBind' = res1.nextBind' := by
+    simp only [typecheckDeref, bind, Except.bind] at htc'
+    rw [htc1_expr] at htc'
+    simp only at htc'
+    cases hqt : res1.qualType with
+    | mk etyp p pred =>
+      rw [hqt] at htc'
+      cases hetyp : etyp with
+      | ref ls =>
+        rw [hetyp] at htc'
+        simp only at htc'
+        split at htc' <;> try simp at htc'
+        simp only [pure, Except.pure] at htc'
+        split at htc' <;> try simp at htc'
+        split at htc' <;> (try (cases htc'; rfl))
+        split at htc'
+        · cases htc'; rfl
+        · split at htc' <;> (cases htc'; rfl)
+        · split at htc' <;> (cases htc'; rfl)
+      | int | bool | unit | string | arrow _ _ | parrow _ _ => simp [hetyp] at htc'
   intro hpredlaws hframe hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
-      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
+      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat β tm ctxᵢ
         (Expr.deref e) (Nat.succ (Nat.succ fuel')) res
         hwfTm hTmBounded hframe htc
-  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg _hres _hrd ht hpc P hP hroot
+  intro μ ρ θ cf o hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg _hres _hrd ht hpc P hP hT hroot
   have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm hTmBounded res1 htc1'
   have hstruct := terminatesTo_deref_inv' e
@@ -377,10 +398,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_deref_maskedReg_with_expr_proof
   rcases
     (hIH hpredlaws (hframe.of_log_eq (typecheckDeref_tagLog htc' htc1)) hwfTm hTmBounded).2 μ ρ θ cfg' (Value.loc a')
       hθwf hwf hric hregCtx hmasked_none hmasked_absent hmasked_bounded hbnd hcwr a pm hwfcfg _hres _hrd ht_e hpc
-      hP (hP.closed hroot (SubStep.deref (f := fuel')))
+      hP hT (hP.closed hroot (SubStep.deref (f := fuel')))
     with ⟨θ', hθext, hvloc, hric', hctxCons', _hvalc', hpres', _hfresh', _hrd'⟩
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
-    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime, h_decl]
+    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime, h_decl, h_nbind]
   have hvaltyp_final : valueHasETyp θ' o res.qualType.etyp := by
     subst ho
     rw [typecheckDeref_etyp_int ctxᵢ e (Nat.succ fuel') res htc']
@@ -446,18 +467,18 @@ private lemma deref_valueConsistentWithRegime_one_run
       (consistentWithRegime_to_masked (masked := fun _ => False) hcwr_final))
 
 lemma stepFR_deref_with_expr_proof
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat₀ predSat₁ : PredSat) (β₀ β₁ : BindVals) (tm : TagMeaning)
   (e : Expr) (fuel' : Nat) (res : TypeResult)
   (CanUse : Expr → Prop)
   (CtxReach : TypeContext → Prop)
   (hcan : CanUse e)
   (hctxCurrent : CtxReach ctxᵢ)
   (IH :
-    StepFR_IH_WithExprCtx predSat tm (Nat.succ (Nat.succ fuel'))
+    StepFR_IH_WithExprCtx predSat₀ predSat₁ β₀ β₁ tm (Nat.succ (Nat.succ fuel'))
       CanUse CtxReach (registry := registry))
   (hOp : RegistryOperationalSafe registry)
   (htc : typecheck ctxᵢ (Expr.deref e) (Nat.succ (Nat.succ fuel')) = .ok res) :
-  StepFR ctxᵢ (Expr.deref e) res predSat tm (Nat.succ (Nat.succ fuel')) (registry := registry) := by
+  StepFR ctxᵢ (Expr.deref e) res predSat₀ predSat₁ β₀ β₁ tm (Nat.succ (Nat.succ fuel')) (registry := registry) := by
   classical
   -- Parse typecheck result
   have htc' : typecheckDeref ctxᵢ e (Nat.succ fuel') = .ok res := by
@@ -488,7 +509,27 @@ lemma stepFR_deref_with_expr_proof
         · split at htc' <;> (cases htc'; rfl)
         · split at htc' <;> (cases htc'; rfl)
       | int | bool | unit | string | arrow _ _ | parrow _ _ => simp [hetyp] at htc'
-  intro hpredlaws hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ P₀ P₁ hprem hroot₀ hroot₁
+  have h_nbind : res.nextBind' = res1.nextBind' := by
+    simp only [typecheckDeref, bind, Except.bind] at htc'
+    rw [htc1_expr] at htc'
+    simp only at htc'
+    cases hqt : res1.qualType with
+    | mk etyp p pred =>
+      rw [hqt] at htc'
+      cases hetyp : etyp with
+      | ref ls =>
+        rw [hetyp] at htc'
+        simp only at htc'
+        split at htc' <;> try simp at htc'
+        simp only [pure, Except.pure] at htc'
+        split at htc' <;> try simp at htc'
+        split at htc' <;> (try (cases htc'; rfl))
+        split at htc'
+        · cases htc'; rfl
+        · split at htc' <;> (cases htc'; rfl)
+        · split at htc' <;> (cases htc'; rfl)
+      | int | bool | unit | string | arrow _ _ | parrow _ _ => simp [hetyp] at htc'
+  intro hpredlaws₀ hpredlaws₁ hframe₀ hframe₁ hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ P₀ P₁ hprem hroot₀ hroot₁
   have hIH := IH fuel' (by simp)
     e ctxᵢ hctxCurrent hcan hwfTm htagBounded res1 htc1'
   -- Invert deref evaluation
@@ -500,19 +541,20 @@ lemma stepFR_deref_with_expr_proof
   rcases hstruct₁ with ⟨cfg₁', a₁', n₁, ht₁_e, hlookup₁, hv₁, hmem₁, hvar₁, hnext₁, hpm₁⟩
   -- Apply IH for sub-expression
   have hstep_e :=
-    hIH hpredlaws (hframe.of_log_eq (typecheckDeref_tagLog htc' htc1)) hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
+    hIH hpredlaws₀ hpredlaws₁ (hframe₀.of_log_eq (typecheckDeref_tagLog htc' htc1)) (hframe₁.of_log_eq (typecheckDeref_tagLog htc' htc1)) hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cfg₀' cfg₁' (Value.loc a₀') (Value.loc a₁')
       hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ htagR hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀_e ht₁_e hprem
       (hprem.run₀.closed hroot₀ (SubStep.deref (f := fuel')))
       (hprem.run₁.closed hroot₁ (SubStep.deref (f := fuel')))
-  rcases hstep_e with ⟨tm_e, hcanon_e, hpredlaws_e, hresTm_e, hstep_e⟩
+  rcases hstep_e with ⟨tm_e, hcanon_e, hpredlaws_e₁, hresTm_e, hstep_e⟩
+  have hpredlaws_e₀ := hcanon_e.laws
   rcases hstep_e with ⟨θ₀', θ₁', hθext₀, hθext₁, _hvtyp₀, _hvtyp₁, _hTm', hwf', _htagBounded', hwfcfg₀', hwfcfg₁', hric₀', hric₁', hreg', hcwr₀', hcwr₁', hagree_clean_e, _hval_consist₀, _hval_consist₁, hres_agree_e, _hrd₀_e, _hrd₁_e⟩
   -- Post-context is unchanged by deref (only result type changes)
   have hctxAfter : ctxAfter ctxᵢ res = ctxAfter ctxᵢ res1 := by
     cases ctxᵢ
-    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime, h_decl]
+    simp [ctxAfter, h_mem, h_tag, h_loc, h_ntag, h_regime, h_decl, h_nbind]
   -- IH gives agreeOnClean with (ctxAfter ctxᵢ res1).regime; transfer via hctxAfter
   have hagree_clean :
-      agreeOnClean predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
+      agreeOnClean predSat₀ predSat₁ (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res)
         cf₀.memory cf₀.varEnv θ₀' cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₀, hvar₀, hmem₁, hvar₁] using hagree_clean_e
   have hric₀_final : runtimeInstantiatesCtx (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
@@ -525,20 +567,20 @@ lemma stepFR_deref_with_expr_proof
   -- Derive wfConfig for final configs using wfConfig_preserved
   have hwfcf₀_final : wfConfig cf₀ := (wfConfig_preserved (Expr.deref e) _ cf₀ o₀ hOp hres₀.toBelow ht₀ hwfcfg₀).1
   have hwfcf₁_final : wfConfig cf₁ := (wfConfig_preserved (Expr.deref e) _ cf₁ o₁ hOp hres₁.toBelow ht₁ hwfcfg₁).1
-  have hcwr₀_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
+  have hcwr₀_final : consistentWithRegime predSat₀ (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₀.memory cf₀.varEnv θ₀' := by
     simpa [hctxAfter, hmem₀, hvar₀] using hcwr₀'
-  have hcwr₁_final : consistentWithRegime predSat (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
+  have hcwr₁_final : consistentWithRegime predSat₁ (ctxAfter ctxᵢ res).regime (ctxAfter ctxᵢ res) cf₁.memory cf₁.varEnv θ₁' := by
     simpa [hctxAfter, hmem₁, hvar₁] using hcwr₁'
   have hresTm : QTypRespectsTagMeaning tm_e res.qualType :=
     typecheckDeref_qtypRespects tm_e ctxᵢ e fuel' res res1 _hTm' htc1_expr htc'
-  have hboundary_deref : BoundaryTagMeaningPost ctxᵢ res predSat tm tm_e := by
+  have hboundary_deref : BoundaryTagMeaningPost ctxᵢ res predSat₀ β₀ tm tm_e := by
     exact ⟨BoundaryTagMeaningPost.extends_tm hcanon_e,
       by simpa [h_ntag] using BoundaryTagMeaningPost.bounded hcanon_e,
       by simpa [hctxAfter] using BoundaryTagMeaningPost.wfCtx hcanon_e,
       hresTm,
-      hpredlaws_e,
+      hpredlaws_e₀,
       hcanon_e.within.of_log_eq (typecheckDeref_tagLog htc' htc1).symm⟩
-  refine ⟨tm_e, hboundary_deref, hpredlaws_e, hresTm, ?_⟩
+  refine ⟨tm_e, hboundary_deref, hpredlaws_e₁, hresTm, ?_⟩
   refine ⟨θ₀', θ₁', hθext₀, hθext₁, ?_, ?_, ?_, ?_, ?_, hwfcf₀_final, hwfcf₁_final, hric₀_final, hric₁_final, hreg_final, hcwr₀_final, hcwr₁_final, hagree_clean, ?_, ?_, ?_, ?_, ?_⟩
   · subst hv₀
     have hres_etyp_int : res.qualType.etyp = ETyp.int :=
@@ -555,11 +597,11 @@ lemma stepFR_deref_with_expr_proof
   · -- TagBoundedCtx
     simpa [hctxAfter] using _htagBounded'
   · subst hv₀
-    exact deref_valueConsistentWithRegime_one_run ctxᵢ predSat e res res1 fuel'
+    exact deref_valueConsistentWithRegime_one_run ctxᵢ predSat₀ e res res1 fuel'
       cf₀ θ₀' a₀' n₀ htc' htc1' h_mem _hvtyp₀
       (by simpa [hmem₀] using hlookup₀) hcwr₀_final
   · subst hv₁
-    exact deref_valueConsistentWithRegime_one_run ctxᵢ predSat e res res1 fuel'
+    exact deref_valueConsistentWithRegime_one_run ctxᵢ predSat₁ e res res1 fuel'
       cf₁ θ₁' a₁' n₁ htc' htc1' h_mem _hvtyp₁
       (by simpa [hmem₁] using hlookup₁) hcwr₁_final
   -- Result agreement when clean: deref reads from a clean location
@@ -612,7 +654,7 @@ lemma stepFR_deref_with_expr_proof
   have hres1_clean : qtypCleanUnder (ctxAfter ctxᵢ res1).regime res1.qualType :=
     qtypCleanUnder.clean hres1_poison_false
   have hagree_ref :
-      agreeValueUnder predSat (ctxAfter ctxᵢ res1).regime cfg₀'.memory cfg₁'.memory θ₀' θ₁' res1.qualType (Value.loc a₀') (Value.loc a₁') :=
+      agreeValueUnder predSat₀ predSat₁ (ctxAfter ctxᵢ res1).regime cfg₀'.memory cfg₁'.memory θ₀' θ₁' res1.qualType (Value.loc a₀') (Value.loc a₁') :=
     hres_agree_e hres1_clean
   -- Extract the logical location l from reference agreement
   rcases hres1_etyp with ⟨ls0, hres1_etyp0⟩

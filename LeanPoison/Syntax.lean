@@ -625,7 +625,7 @@ mutual
 --   | guard k                   -- guardOnly
 --   | no_pred                   -- noPred
 inductive Predicate : Type where
-  | guardClosure : Tag → Name → PExpr → List (Name × QTyp) → Predicate
+  | guardClosure : Tag → Name → PExpr → List (Name × QTyp × Nat) → Predicate
   | guardOnly : Tag → Predicate
   | noPred : Predicate
 
@@ -640,19 +640,19 @@ structure QTyp where
 -- argument precondition (resolved from the AST surface triple at declaration
 -- time); it is consulted at the extern call site to gate the trusted result.
 inductive FnTClosure : Type where
-  | regular : Name → Expr → List (Name × QTyp) → FnTClosure
+  | regular : Name → Expr → List (Name × QTyp × Nat) → FnTClosure
   -- The trailing `List Capture` records the declared `captures:` read
   -- dependencies for impure (`fn`) externs,
   -- mirroring the `PFnTClosure.extern` field; resolved at the declaration /
   -- nested-return site and re-checked when the closure is applied.
-  | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp) → QTyp → List Capture → FnTClosure
+  | extern : ExternId → Name → ExternReturn → List Effect → List (Name × QTyp × Nat) → QTyp → List Capture → FnTClosure
 
 inductive PFnTClosure : Type where
-  | regular : Name → PExpr → List (Name × QTyp) → PFnTClosure
+  | regular : Name → PExpr → List (Name × QTyp × Nat) → PFnTClosure
   -- The trailing `List Capture` records the declared `captures:` read
   -- dependencies, resolved at the declaration /
   -- nested-return site and re-checked when the closure is applied.
-  | extern : ExternId → Name → ExternReturn → List (Name × QTyp) → QTyp → List Capture → PFnTClosure
+  | extern : ExternId → Name → ExternReturn → List (Name × QTyp × Nat) → QTyp → List Capture → PFnTClosure
 
 -- Enriched type (full type)
 -- Arrow types carry non-empty lists of closures (merged typing closures) to
@@ -686,18 +686,26 @@ def isFunctionType (t : ETyp) : Bool :=
 
 end ETyp
 
--- Captured variable environments are association lists.
-abbrev CapturedVarEnv := List (Name × QTyp)
+-- Captured variable environments are association lists. Each entry records a
+-- variable's qualified type and its binding number: the typechecker gives every
+-- typing of a binder a fresh number (`TypeContext.nextBind`), so two bindings
+-- of one name have different numbers. Number 0 is no binding number; it never
+-- agrees with another number (`bindNumbersAgree`).
+abbrev CapturedVarEnv := List (Name × QTyp × Nat)
 
 namespace CapturedVarEnv
 
 -- helper function to lookup a variable in a captured environment
 @[inline] def lookup (env : CapturedVarEnv) (x : Name) : Option QTyp :=
-  List.lookup x env
+  (List.lookup x env).map Prod.fst
+
+/-- The binding number of `x` in a captured environment. -/
+@[inline] def bindOf (env : CapturedVarEnv) (x : Name) : Option Nat :=
+  (List.lookup x env).map Prod.snd
 
 -- helper function to update a captured environment; newest mapping wins
-@[inline] def update (env : CapturedVarEnv) (x : Name) (qt : QTyp) : CapturedVarEnv :=
-  (x, qt) :: env
+@[inline] def update (env : CapturedVarEnv) (x : Name) (qt : QTyp) (n : Nat) : CapturedVarEnv :=
+  (x, qt, n) :: env
 
 /-- `env` contains a binding for `x`. -/
 def hasKey (env : CapturedVarEnv) (x : Name) : Prop :=
@@ -783,8 +791,8 @@ def beqPFnTClosure : PFnTClosure → PFnTClosure → Bool
 
 def beqVarEnv : CapturedVarEnv → CapturedVarEnv → Bool
   | [], [] => true
-  | (x1, qt1) :: env1, (x2, qt2) :: env2 =>
-      x1 == x2 && beqQTyp qt1 qt2 && beqVarEnv env1 env2
+  | (x1, qt1, n1) :: env1, (x2, qt2, n2) :: env2 =>
+      x1 == x2 && beqQTyp qt1 qt2 && n1 == n2 && beqVarEnv env1 env2
   | _, _ => false
 
 def beqPredicate : Predicate → Predicate → Bool

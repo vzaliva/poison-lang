@@ -25,42 +25,42 @@ lemma qtypCleanUnder_lookup_true_back
       exact qtypCleanUnder.guard k htag (hlookup_true_back k hk) hnotfun
 
 private lemma agreeCapturedEnv_transport_by_lookupTrueBack
-    {predSat : PredSat} {R R' : Regime}
+    {predSat₀ predSat₁ : PredSat} {R R' : Regime}
     {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
     {σcap : CapturedVarEnv} {ρcap₀ ρcap₁ : VarEnv}
     (hlookup_true_back : ∀ (k : Tag), R'.lookup? k = some true → R.lookup? k = some true)
     (hmemberVars₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberVarsRegimeEvidence predSat R μ₀ σcap ρcap →
-          MemberVarsRegimeEvidence predSat R' μ₀ σcap ρcap)
+        MemberVarsRegimeEvidence predSat₀ R μ₀ σcap ρcap →
+          MemberVarsRegimeEvidence predSat₀ R' μ₀ σcap ρcap)
     (hmemberCvcr₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberCvcrEvidence predSat R μ₀ θ₀ σcap ρcap →
-          MemberCvcrEvidence predSat R' μ₀ θ₀ σcap ρcap)
+        MemberCvcrEvidence predSat₀ R μ₀ θ₀ σcap ρcap →
+          MemberCvcrEvidence predSat₀ R' μ₀ θ₀ σcap ρcap)
     (hmemberVars₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap →
-          MemberVarsRegimeEvidence predSat R' μ₁ σcap ρcap)
+        MemberVarsRegimeEvidence predSat₁ R μ₁ σcap ρcap →
+          MemberVarsRegimeEvidence predSat₁ R' μ₁ σcap ρcap)
     (hmemberCvcr₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap →
-          MemberCvcrEvidence predSat R' μ₁ θ₁ σcap ρcap) :
-    agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ →
-      agreeCapturedEnv predSat R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ := by
+        MemberCvcrEvidence predSat₁ R μ₁ θ₁ σcap ρcap →
+          MemberCvcrEvidence predSat₁ R' μ₁ θ₁ σcap ρcap) :
+    agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ →
+      agreeCapturedEnv predSat₀ predSat₁ R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁ := by
   intro hcap
   have h_clean_back : ∀ qt, qtypCleanUnder R' qt → qtypCleanUnder R qt := by
     intro qt hclean
     exact qtypCleanUnder_lookup_true_back hlookup_true_back hclean
   let motive₁ :
-      (a : QTyp) → (a_1 a_2 : Value) → agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+      (a : QTyp) → (a_1 a_2 : Value) → agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
     fun qt v₀ v₁ _ =>
-      qtypCleanUnder R' qt → agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁
+      qtypCleanUnder R' qt → agreeValueUnder predSat₀ predSat₁ R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁
   let motive₂ :
-      (a : CapturedVarEnv) → (a_1 a_2 : VarEnv) → agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+      (a : CapturedVarEnv) → (a_1 a_2 : VarEnv) → agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
     fun σcap ρcap₀ ρcap₁ _ =>
-      agreeCapturedEnv predSat R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁
+      agreeCapturedEnv predSat₀ predSat₁ R' μ₀ μ₁ θ₀ θ₁ σcap ρcap₀ ρcap₁
   have htransport : motive₂ σcap ρcap₀ ρcap₁ hcap :=
-    agreeCapturedEnv.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
+    agreeCapturedEnv.rec (predSat₁ := predSat₀) (predSat₂ := predSat₁) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
       (motive_1 := motive₁) (motive_2 := motive₂)
       (clean_eq_nonref_nonarrow := by
         intro qt v₀ v₁ hpoison hnotfun hnotref heq hclean
@@ -140,12 +140,12 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
         intro ρcap₀ ρcap₁
         exact agreeCapturedEnv.nil)
       (cons_clean := by
-        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 htyp1 htyp2 hagree _htail ihagree ihtail
+        intro x qt _n σcap ρcap₀ ρcap₁ v₀ v₁ _hcleanR hlookup1 hlookup2 htyp1 htyp2 hagree _htail ihagree ihtail
         by_cases hcleanR' : qtypCleanUnder R' qt
         · exact agreeCapturedEnv.cons_clean hcleanR' hlookup1 hlookup2 htyp1 htyp2 (ihagree hcleanR') ihtail
         · exact agreeCapturedEnv.cons_dirty hcleanR' hlookup1 hlookup2 htyp1 htyp2 ihtail)
       (cons_dirty := by
-        intro x qt σcap ρcap₀ ρcap₁ v₀ v₁ hdirty hlookup1 hlookup2 htyp1 htyp2 _htail ihtail
+        intro x qt _n σcap ρcap₀ ρcap₁ v₀ v₁ hdirty hlookup1 hlookup2 htyp1 htyp2 _htail ihtail
         have hdirty' : ¬ qtypCleanUnder R' qt := by
           intro hcleanR'
           exact hdirty (h_clean_back qt hcleanR')
@@ -1708,15 +1708,15 @@ private lemma joinTypeResults_qualType_parrow_member_from_member
     ctx first src rest res _h_join _hmem_src hetyp_src htcl_src
 
 lemma joinTypeResults_transport_resultAgreesIfClean_from_member
-  (predSat : PredSat)
+  (predSat₀ predSat₁ : PredSat)
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
   (μ₀ μ₁ : Memory) (θ₀ θ₁ : RealizationMap) (o₀ o₁ : Value)
   (_h_join : joinTypeResults ctx first rest = .ok res)
   (_hmem_src : src ∈ first :: rest)
   (h_src :
-    resultAgreesIfClean predSat (ctxAfter ctx src).regime
+    resultAgreesIfClean predSat₀ predSat₁ (ctxAfter ctx src).regime
       μ₀ μ₁ θ₀ θ₁ src.qualType o₀ o₁) :
-  resultAgreesIfClean predSat (ctxAfter ctx res).regime
+  resultAgreesIfClean predSat₀ predSat₁ (ctxAfter ctx res).regime
     μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
   intro hclean_res
   have hclean_src :
@@ -1725,7 +1725,7 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
       (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
       _h_join _hmem_src hclean_res
   have hagree_src :
-      agreeValueUnder predSat (ctxAfter ctx src).regime μ₀ μ₁ θ₀ θ₁ src.qualType o₀ o₁ :=
+      agreeValueUnder predSat₀ predSat₁ (ctxAfter ctx src).regime μ₀ μ₁ θ₀ θ₁ src.qualType o₀ o₁ :=
     h_src hclean_src
   have _hagree_src_keep := hagree_src
   have hsig :
@@ -1786,49 +1786,49 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
             exact hlookup_back k true hk
           have hcap_res :=
             agreeCapturedEnv_transport_by_lookupTrueBack
-              (predSat := predSat)
+              (predSat₀ := predSat₀) (predSat₁ := predSat₁)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ₀ := μ₀) (μ₁ := μ₁) (θ₀ := θ₀) (θ₁ := θ₁)
               hlookup_true_back
               (fun {σcap} {ρcap} h =>
                 memberVarsRegimeEvidence_transport_lookup_back
-                  (predSat := predSat)
+                  (predSat := predSat₀)
                   (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                   (μ := μ₀) hlookup_back h)
               (fun {σcap} {ρcap} h =>
                 memberCvcrEvidence_transport_lookup_back
-                  (predSat := predSat)
+                  (predSat := predSat₀)
                   (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                   (μ := μ₀) hlookup_back h)
               (fun {σcap} {ρcap} h =>
                 memberVarsRegimeEvidence_transport_lookup_back
-                  (predSat := predSat)
+                  (predSat := predSat₁)
                   (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                   (μ := μ₁) hlookup_back h)
               (fun {σcap} {ρcap} h =>
                 memberCvcrEvidence_transport_lookup_back
-                  (predSat := predSat)
+                  (predSat := predSat₁)
                   (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                   (μ := μ₁) hlookup_back h)
               hcap
           have hmemberVars₀_res :=
             memberVarsRegimeEvidence_transport_lookup_back
-              (predSat := predSat)
+              (predSat := predSat₀)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ := μ₀) hlookup_back hmemberVars₀_src
           have hmemberCvcr₀_res :=
             memberCvcrEvidence_transport_lookup_back
-              (predSat := predSat)
+              (predSat := predSat₀)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ := μ₀) hlookup_back hmemberCvcr₀_src
           have hmemberVars₁_res :=
             memberVarsRegimeEvidence_transport_lookup_back
-              (predSat := predSat)
+              (predSat := predSat₁)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ := μ₁) hlookup_back hmemberVars₁_src
           have hmemberCvcr₁_res :=
             memberCvcrEvidence_transport_lookup_back
-              (predSat := predSat)
+              (predSat := predSat₁)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ := μ₁) hlookup_back hmemberCvcr₁_src
           rcases
@@ -1937,49 +1937,49 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               exact hlookup_back k true hk
             have hcap_res :=
               agreeCapturedEnv_transport_by_lookupTrueBack
-                (predSat := predSat)
+                (predSat₀ := predSat₀) (predSat₁ := predSat₁)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ₀ := μ₀) (μ₁ := μ₁) (θ₀ := θ₀) (θ₁ := θ₁)
                 hlookup_true_back
                 (fun {σcap} {ρcap} h =>
                   memberVarsRegimeEvidence_transport_lookup_back
-                    (predSat := predSat)
+                    (predSat := predSat₀)
                     (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                     (μ := μ₀) hlookup_back h)
                 (fun {σcap} {ρcap} h =>
                   memberCvcrEvidence_transport_lookup_back
-                    (predSat := predSat)
+                    (predSat := predSat₀)
                     (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                     (μ := μ₀) hlookup_back h)
                 (fun {σcap} {ρcap} h =>
                   memberVarsRegimeEvidence_transport_lookup_back
-                    (predSat := predSat)
+                    (predSat := predSat₁)
                     (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                     (μ := μ₁) hlookup_back h)
                 (fun {σcap} {ρcap} h =>
                   memberCvcrEvidence_transport_lookup_back
-                    (predSat := predSat)
+                    (predSat := predSat₁)
                     (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                     (μ := μ₁) hlookup_back h)
                 hcap
             have hmemberVars₀_res :=
               memberVarsRegimeEvidence_transport_lookup_back
-                (predSat := predSat)
+                (predSat := predSat₀)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ := μ₀) hlookup_back hmemberVars₀_src
             have hmemberCvcr₀_res :=
               memberCvcrEvidence_transport_lookup_back
-                (predSat := predSat)
+                (predSat := predSat₀)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ := μ₀) hlookup_back hmemberCvcr₀_src
             have hmemberVars₁_res :=
               memberVarsRegimeEvidence_transport_lookup_back
-                (predSat := predSat)
+                (predSat := predSat₁)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ := μ₁) hlookup_back hmemberVars₁_src
             have hmemberCvcr₁_res :=
               memberCvcrEvidence_transport_lookup_back
-                (predSat := predSat)
+                (predSat := predSat₁)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ := μ₁) hlookup_back hmemberCvcr₁_src
             rcases
@@ -2092,49 +2092,49 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
             exact hlookup_back k true hk
           have hcap_res :=
             agreeCapturedEnv_transport_by_lookupTrueBack
-              (predSat := predSat)
+              (predSat₀ := predSat₀) (predSat₁ := predSat₁)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ₀ := μ₀) (μ₁ := μ₁) (θ₀ := θ₀) (θ₁ := θ₁)
               hlookup_true_back
               (fun {σcap} {ρcap} h =>
                 memberVarsRegimeEvidence_transport_lookup_back
-                  (predSat := predSat)
+                  (predSat := predSat₀)
                   (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                   (μ := μ₀) hlookup_back h)
               (fun {σcap} {ρcap} h =>
                 memberCvcrEvidence_transport_lookup_back
-                  (predSat := predSat)
+                  (predSat := predSat₀)
                   (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                   (μ := μ₀) hlookup_back h)
               (fun {σcap} {ρcap} h =>
                 memberVarsRegimeEvidence_transport_lookup_back
-                  (predSat := predSat)
+                  (predSat := predSat₁)
                   (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                   (μ := μ₁) hlookup_back h)
               (fun {σcap} {ρcap} h =>
                 memberCvcrEvidence_transport_lookup_back
-                  (predSat := predSat)
+                  (predSat := predSat₁)
                   (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                   (μ := μ₁) hlookup_back h)
               hcap
           have hmemberVars₀_res :=
             memberVarsRegimeEvidence_transport_lookup_back
-              (predSat := predSat)
+              (predSat := predSat₀)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ := μ₀) hlookup_back hmemberVars₀_src
           have hmemberCvcr₀_res :=
             memberCvcrEvidence_transport_lookup_back
-              (predSat := predSat)
+              (predSat := predSat₀)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ := μ₀) hlookup_back hmemberCvcr₀_src
           have hmemberVars₁_res :=
             memberVarsRegimeEvidence_transport_lookup_back
-              (predSat := predSat)
+              (predSat := predSat₁)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ := μ₁) hlookup_back hmemberVars₁_src
           have hmemberCvcr₁_res :=
             memberCvcrEvidence_transport_lookup_back
-              (predSat := predSat)
+              (predSat := predSat₁)
               (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
               (μ := μ₁) hlookup_back hmemberCvcr₁_src
           rcases
@@ -2245,49 +2245,49 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               exact hlookup_back k true hk
             have hcap_res :=
               agreeCapturedEnv_transport_by_lookupTrueBack
-                (predSat := predSat)
+                (predSat₀ := predSat₀) (predSat₁ := predSat₁)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ₀ := μ₀) (μ₁ := μ₁) (θ₀ := θ₀) (θ₁ := θ₁)
                 hlookup_true_back
                 (fun {σcap} {ρcap} h =>
                   memberVarsRegimeEvidence_transport_lookup_back
-                    (predSat := predSat)
+                    (predSat := predSat₀)
                     (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                     (μ := μ₀) hlookup_back h)
                 (fun {σcap} {ρcap} h =>
                   memberCvcrEvidence_transport_lookup_back
-                    (predSat := predSat)
+                    (predSat := predSat₀)
                     (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                     (μ := μ₀) hlookup_back h)
                 (fun {σcap} {ρcap} h =>
                   memberVarsRegimeEvidence_transport_lookup_back
-                    (predSat := predSat)
+                    (predSat := predSat₁)
                     (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                     (μ := μ₁) hlookup_back h)
                 (fun {σcap} {ρcap} h =>
                   memberCvcrEvidence_transport_lookup_back
-                    (predSat := predSat)
+                    (predSat := predSat₁)
                     (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                     (μ := μ₁) hlookup_back h)
                 hcap
             have hmemberVars₀_res :=
               memberVarsRegimeEvidence_transport_lookup_back
-                (predSat := predSat)
+                (predSat := predSat₀)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ := μ₀) hlookup_back hmemberVars₀_src
             have hmemberCvcr₀_res :=
               memberCvcrEvidence_transport_lookup_back
-                (predSat := predSat)
+                (predSat := predSat₀)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ := μ₀) hlookup_back hmemberCvcr₀_src
             have hmemberVars₁_res :=
               memberVarsRegimeEvidence_transport_lookup_back
-                (predSat := predSat)
+                (predSat := predSat₁)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ := μ₁) hlookup_back hmemberVars₁_src
             have hmemberCvcr₁_res :=
               memberCvcrEvidence_transport_lookup_back
-                (predSat := predSat)
+                (predSat := predSat₁)
                 (R := (ctxAfter ctx src).regime) (R' := (ctxAfter ctx res).regime)
                 (μ := μ₁) hlookup_back hmemberCvcr₁_src
             rcases

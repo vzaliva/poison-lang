@@ -128,11 +128,11 @@ private theorem mem_mergePFnTClosures_extern_captures
 private theorem applyPFnTClosureAtCursor_extern_captures
     {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
     {argPred : Predicate} {ctx : TypeContext} {result2 : TypeResult}
-    {cursor : Tag × Loc} {fuel : Nat}
+    {cursor : Tag × Loc} {bn : Nat} {fuel : Nat}
     {id : ExternId} {x : Name} {retSpec : ExternReturn} {tenv : CapturedVarEnv}
     {declaredArgQt : QTyp} {captures : List Capture} {res : TypeResult}
     (h : applyPFnTClosureAtCursor (PFnTClosure.extern id x retSpec tenv declaredArgQt captures)
-          st1 st2 p p1 argEtyp argPoison argPred ctx result2 cursor fuel = Except.ok res) :
+          st1 st2 p p1 argEtyp argPoison argPred ctx result2 cursor bn fuel = Except.ok res) :
     capturesSatisfied captures
         (VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
@@ -148,27 +148,27 @@ private theorem applyPFnTClosureAtCursor_extern_captures
         exact hgate.2
 
 /-- A successful threaded application of a member list implies every member was
-    applied successfully (at its threaded cursor). -/
+    applied successfully (at its threaded cursor and binding number). -/
 private theorem applyClosuresThreaded_ok_mem {α : Type}
-    {applyOne : α → Tag × Loc → TypecheckM TypeResult}
-    {items : List α} {cursor : Tag × Loc} {results : List TypeResult}
-    (h : applyClosuresThreaded applyOne items cursor = Except.ok results) :
-    ∀ a ∈ items, ∃ c r, applyOne a c = Except.ok r := by
-  induction items generalizing cursor results with
+    {applyOne : α → Tag × Loc → Nat → TypecheckM TypeResult}
+    {items : List α} {cursor : Tag × Loc} {bn : Nat} {results : List TypeResult}
+    (h : applyClosuresThreaded applyOne items cursor bn = Except.ok results) :
+    ∀ a ∈ items, ∃ c b r, applyOne a c b = Except.ok r := by
+  induction items generalizing cursor bn results with
   | nil => intro a ha; cases ha
   | cons hd tl ih =>
       intro a ha
       rw [applyClosuresThreaded] at h
-      cases hhd : applyOne hd cursor with
+      cases hhd : applyOne hd cursor bn with
       | error e => rw [hhd] at h; simp [bind, Except.bind] at h
       | ok r =>
           rw [hhd] at h
           simp only [bind, Except.bind] at h
-          cases htl : applyClosuresThreaded applyOne tl (r.nextTag', r.nextLoc') with
+          cases htl : applyClosuresThreaded applyOne tl (r.nextTag', r.nextLoc') r.nextBind' with
           | error e => rw [htl] at h; simp at h
           | ok rs =>
               cases ha with
-              | head => exact ⟨cursor, r, hhd⟩
+              | head => exact ⟨cursor, bn, r, hhd⟩
               | tail _ ha' => exact ih htl a ha'
 
 /-- **Branch-join capture conjunction (operational).** When the merged `parrow`
@@ -180,12 +180,12 @@ private theorem applyClosuresThreaded_ok_mem {α : Type}
 theorem mergedParrow_apply_captures_conjunction
     {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison}
     {argPred : Predicate} {ctx : TypeContext} {result2 : TypeResult}
-    {cursor : Tag × Loc} {fuel : Nat}
+    {cursor : Tag × Loc} {bn : Nat} {fuel : Nat}
     {tcls1 tcls2 : List PFnTClosure} {results : List TypeResult}
     (happly : applyClosuresThreaded
-        (fun tcl c =>
-          applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 c fuel)
-        (mergePFnTClosures tcls1 tcls2) cursor = Except.ok results)
+        (fun tcl c b =>
+          applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx result2 c b fuel)
+        (mergePFnTClosures tcls1 tcls2) cursor bn = Except.ok results)
     {id : ExternId} {x : Name} {retSpec : ExternReturn} {tenv : CapturedVarEnv}
     {declaredArgQt : QTyp} {captures : List Capture}
     (hmem : PFnTClosure.extern id x retSpec tenv declaredArgQt captures ∈ tcls1 ∨
@@ -196,7 +196,7 @@ theorem mergedParrow_apply_captures_conjunction
         result2.memEnv' result2.regime' = true := by
   have hmerge := mem_mergePFnTClosures_extern_captures tcls1 tcls2 id x retSpec tenv
     declaredArgQt captures hmem
-  obtain ⟨_c, _r, hone⟩ := applyClosuresThreaded_ok_mem happly _ hmerge
+  obtain ⟨_c, _b, _r, hone⟩ := applyClosuresThreaded_ok_mem happly _ hmerge
   exact applyPFnTClosureAtCursor_extern_captures hone
 
 end CaptureJoinConjunction

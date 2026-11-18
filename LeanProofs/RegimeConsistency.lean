@@ -109,17 +109,17 @@ inductive QTypInQTyp : QTyp → QTyp → Prop where
       QTypInQTyp qt qt
   | in_arrow (qtInner qtOuter : QTyp)
       (st₁ st₂ : Typ) (p : Poison) (tcls : List FnTClosure)
-      (tcl : FnTClosure) (x : Name) :
+      (tcl : FnTClosure) (x : Name) {n : Nat} :
       qtOuter.etyp = ETyp.arrow st₁ st₂ p tcls →
       tcl ∈ tcls →
-      (x, qtInner) ∈ fnCapturedEnv tcl →
+      (x, qtInner, n) ∈ fnCapturedEnv tcl →
       QTypInQTyp qtInner qtOuter
   | in_parrow (qtInner qtOuter : QTyp)
       (st₁ st₂ : Typ) (p : Poison) (tcls : List PFnTClosure)
-      (tcl : PFnTClosure) (x : Name) :
+      (tcl : PFnTClosure) (x : Name) {n : Nat} :
       qtOuter.etyp = ETyp.parrow st₁ st₂ p tcls →
       tcl ∈ tcls →
-      (x, qtInner) ∈ pfnCapturedEnv tcl →
+      (x, qtInner, n) ∈ pfnCapturedEnv tcl →
       QTypInQTyp qtInner qtOuter
   | trans (qt₁ qt₂ qt₃ : QTyp) :
       QTypInQTyp qt₁ qt₂ →
@@ -694,12 +694,16 @@ lemma QTypRespectsTagMeaning_joinMem_lookup
 /-- Membership in a captured environment produced from `VarTypeEnv.toCaptured`
     gives the corresponding map lookup. -/
 lemma VarTypeEnv_lookup_of_toCaptured_mem
-    (σ : VarTypeEnv) (x : Name) (qt : QTyp) :
-    (x, qt) ∈ VarTypeEnv.toCaptured σ →
+    (σ : VarTypeEnv) (B : BindEnv) (x : Name) (qt : QTyp) (n : Nat) :
+    (x, qt, n) ∈ VarTypeEnv.toCaptured σ B →
     σ.lookup x = some qt := by
   intro hmem
   have hmem' : (x, qt) ∈ σ.toList := by
-    simpa [VarTypeEnv.toCaptured] using hmem
+    unfold VarTypeEnv.toCaptured at hmem
+    obtain ⟨⟨y, q⟩, hy, heq⟩ := List.mem_map.1 hmem
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨rfl, rfl, -⟩ := heq
+    exact hy
   have hget : σ[x]? = some qt :=
     (Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some).1 hmem'
   simpa [VarTypeEnv.lookup, ExtTreeMap.get?_eq_getElem?] using hget
@@ -711,10 +715,10 @@ private lemma QTypInQTyp_fn_regular_root_or_self
     {qt target : QTyp}
     (h : QTypInQTyp qt target)
     (htarget : target =
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
         p, Predicate.noPred⟩) :
     qt =
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
         p, Predicate.noPred⟩
     ∨ ∃ y qtRoot, ctx.varEnv.lookup y = some qtRoot ∧ QTypInQTyp qt qtRoot := by
   induction h generalizing ctx x st₁ st₂ p body with
@@ -722,9 +726,9 @@ private lemma QTypInQTyp_fn_regular_root_or_self
       subst qt0
       left
       rfl
-  | in_arrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
+  | @in_arrow qtInner qtOuter st1 st2 p0 tcls tcl y n houterEtyp htcl hcap =>
       subst qtOuter
-      let tcl0 : FnTClosure := FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)
+      let tcl0 : FnTClosure := FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)
       have hEtyp : ETyp.arrow st1 st2 p0 tcls = ETyp.arrow st₁ st₂ p [tcl0] := by
         simpa [tcl0] using houterEtyp.symm
       have htcls : tcls = [tcl0] := by
@@ -732,13 +736,13 @@ private lemma QTypInQTyp_fn_regular_root_or_self
       have htcl0 : tcl = tcl0 := by
         have : tcl ∈ [tcl0] := by simpa [htcls] using htcl
         simpa using this
-      have hcap' : (y, qtInner) ∈ VarTypeEnv.toCaptured ctx.varEnv := by
+      have hcap' : (y, qtInner, n) ∈ VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv := by
         simpa [fnCapturedEnv, tcl0, htcl0] using hcap
       have hlookup : ctx.varEnv.lookup y = some qtInner :=
-        VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv y qtInner hcap'
+        VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv ctx.bindEnv y qtInner n hcap'
       right
       exact ⟨y, qtInner, hlookup, QTypInQTyp.self qtInner⟩
-  | in_parrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
+  | @in_parrow qtInner qtOuter st1 st2 p0 tcls tcl y n houterEtyp htcl hcap =>
       subst qtOuter
       simp at houterEtyp
   | trans qt1 qt2 qt3 h12 h23 ih12 ih23 =>
@@ -758,10 +762,10 @@ private lemma QTypInQTyp_pfn_regular_root_or_self
     {qt target : QTyp}
     (h : QTypInQTyp qt target)
     (htarget : target =
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
         p, Predicate.noPred⟩) :
     qt =
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
         p, Predicate.noPred⟩
     ∨ ∃ y qtRoot, ctx.varEnv.lookup y = some qtRoot ∧ QTypInQTyp qt qtRoot := by
   induction h generalizing ctx x st₁ st₂ p body with
@@ -769,12 +773,12 @@ private lemma QTypInQTyp_pfn_regular_root_or_self
       subst qt0
       left
       rfl
-  | in_arrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
+  | @in_arrow qtInner qtOuter st1 st2 p0 tcls tcl y n houterEtyp htcl hcap =>
       subst qtOuter
       simp at houterEtyp
-  | in_parrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
+  | @in_parrow qtInner qtOuter st1 st2 p0 tcls tcl y n houterEtyp htcl hcap =>
       subst qtOuter
-      let tcl0 : PFnTClosure := PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)
+      let tcl0 : PFnTClosure := PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)
       have hEtyp : ETyp.parrow st1 st2 p0 tcls = ETyp.parrow st₁ st₂ p [tcl0] := by
         simpa [tcl0] using houterEtyp.symm
       have htcls : tcls = [tcl0] := by
@@ -782,10 +786,10 @@ private lemma QTypInQTyp_pfn_regular_root_or_self
       have htcl0 : tcl = tcl0 := by
         have : tcl ∈ [tcl0] := by simpa [htcls] using htcl
         simpa using this
-      have hcap' : (y, qtInner) ∈ VarTypeEnv.toCaptured ctx.varEnv := by
+      have hcap' : (y, qtInner, n) ∈ VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv := by
         simpa [pfnCapturedEnv, tcl0, htcl0] using hcap
       have hlookup : ctx.varEnv.lookup y = some qtInner :=
-        VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv y qtInner hcap'
+        VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv ctx.bindEnv y qtInner n hcap'
       right
       exact ⟨y, qtInner, hlookup, QTypInQTyp.self qtInner⟩
   | trans qt1 qt2 qt3 h12 h23 ih12 ih23 =>
@@ -805,7 +809,7 @@ lemma QTypRespectsTagMeaning_fn_regular
     (x : Name) (st₁ st₂ : Typ) (p : Poison) (body : Expr)
     (h : wfTagMeaningCtx tm ctx) :
     QTypRespectsTagMeaning tm
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
         p, Predicate.noPred⟩ := by
   intro qt k d hinq hqd
   have hroot :=
@@ -825,7 +829,7 @@ lemma QTypRespectsTagMeaning_pfn_regular
     (x : Name) (st₁ st₂ : Typ) (p : Poison) (body : PExpr)
     (h : wfTagMeaningCtx tm ctx) :
     QTypRespectsTagMeaning tm
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
         p, Predicate.noPred⟩ := by
   intro qt k d hinq hqd
   have hroot :=
@@ -846,29 +850,29 @@ lemma QTypInQTyp_fn_extern_root_or_self
     {qt target : QTyp}
     (h : QTypInQTyp qt target)
     (htarget : target =
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt captures],
         p, Predicate.noPred⟩) :
     qt =
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt captures],
         p, Predicate.noPred⟩
     ∨ ∃ y qtRoot, ctx.varEnv.lookup y = some qtRoot ∧ QTypInQTyp qt qtRoot := by
   induction h generalizing ctx id x st₁ st₂ p retSpec effects argQt with
   | self qt0 =>
       subst qt0; left; rfl
-  | in_arrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
+  | @in_arrow qtInner qtOuter st1 st2 p0 tcls tcl y n houterEtyp htcl hcap =>
       subst qtOuter
       let tcl0 : FnTClosure :=
-        FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures
+        FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt captures
       have hEtyp : ETyp.arrow st1 st2 p0 tcls = ETyp.arrow st₁ st₂ p [tcl0] := by
         simpa [tcl0] using houterEtyp.symm
       have htcls : tcls = [tcl0] := by injection hEtyp with _ _ _ htcls
       have htcl0 : tcl = tcl0 := by
         have hmem : tcl ∈ [tcl0] := by simpa [htcls] using htcl
         simpa using hmem
-      have hcap' : (y, qtInner) ∈ VarTypeEnv.toCaptured ctx.varEnv := by
+      have hcap' : (y, qtInner, n) ∈ VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv := by
         simpa [fnCapturedEnv, tcl0, htcl0] using hcap
       right
-      exact ⟨y, qtInner, VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv y qtInner hcap',
+      exact ⟨y, qtInner, VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv ctx.bindEnv y qtInner n hcap',
              QTypInQTyp.self qtInner⟩
   | in_parrow qtInner qtOuter _ _ _ _ _ _ houterEtyp _ _ =>
       subst qtOuter; simp at houterEtyp
@@ -887,7 +891,7 @@ lemma QTypRespectsTagMeaning_fn_extern
     (retSpec : ExternReturn) (effects : List Effect) {argQt : QTyp}
     (h : wfTagMeaningCtx tm ctx) :
     QTypRespectsTagMeaning tm
-      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
+      ⟨ETyp.arrow st₁ st₂ p [FnTClosure.extern id x retSpec effects (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt captures],
         p, Predicate.noPred⟩ := by
   intro qt k d hinq hqd
   rcases QTypInQTyp_fn_extern_root_or_self ctx id x st₁ st₂ p retSpec effects hinq rfl with hEq | ⟨y, qtRoot, hlookup, hInRoot⟩
@@ -902,10 +906,10 @@ lemma QTypInQTyp_pfn_extern_root_or_self
     {qt target : QTyp}
     (h : QTypInQTyp qt target)
     (htarget : target =
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt captures],
         p, Predicate.noPred⟩) :
     qt =
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt captures],
         p, Predicate.noPred⟩
     ∨ ∃ y qtRoot, ctx.varEnv.lookup y = some qtRoot ∧ QTypInQTyp qt qtRoot := by
   induction h generalizing ctx id x st₁ st₂ p retSpec argQt with
@@ -913,20 +917,20 @@ lemma QTypInQTyp_pfn_extern_root_or_self
       subst qt0; left; rfl
   | in_arrow qtInner qtOuter _ _ _ _ _ _ houterEtyp _ _ =>
       subst qtOuter; simp at houterEtyp
-  | in_parrow qtInner qtOuter st1 st2 p0 tcls tcl y houterEtyp htcl hcap =>
+  | @in_parrow qtInner qtOuter st1 st2 p0 tcls tcl y n houterEtyp htcl hcap =>
       subst qtOuter
       let tcl0 : PFnTClosure :=
-        PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt captures
+        PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt captures
       have hEtyp : ETyp.parrow st1 st2 p0 tcls = ETyp.parrow st₁ st₂ p [tcl0] := by
         simpa [tcl0] using houterEtyp.symm
       have htcls : tcls = [tcl0] := by injection hEtyp with _ _ _ htcls
       have htcl0 : tcl = tcl0 := by
         have hmem : tcl ∈ [tcl0] := by simpa [htcls] using htcl
         simpa using hmem
-      have hcap' : (y, qtInner) ∈ VarTypeEnv.toCaptured ctx.varEnv := by
+      have hcap' : (y, qtInner, n) ∈ VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv := by
         simpa [pfnCapturedEnv, tcl0, htcl0] using hcap
       right
-      exact ⟨y, qtInner, VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv y qtInner hcap',
+      exact ⟨y, qtInner, VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv ctx.bindEnv y qtInner n hcap',
              QTypInQTyp.self qtInner⟩
   | trans qt1 qt2 qt3 h12 _ ih12 ih23 =>
       rcases ih23 (ctx := ctx) (id := id) (x := x) (st₁ := st₁) (st₂ := st₂) (p := p)
@@ -943,7 +947,7 @@ lemma QTypRespectsTagMeaning_pfn_extern
     {argQt : QTyp}
     (h : wfTagMeaningCtx tm ctx) :
     QTypRespectsTagMeaning tm
-      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv) argQt captures],
+      ⟨ETyp.parrow st₁ st₂ p [PFnTClosure.extern id x retSpec (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt captures],
         p, Predicate.noPred⟩ := by
   intro qt k d hinq hqd
   rcases QTypInQTyp_pfn_extern_root_or_self ctx id x st₁ st₂ p retSpec hinq rfl with hEq | ⟨y, qtRoot, hlookup, hInRoot⟩
@@ -987,11 +991,21 @@ lemma EnvRespectsTagMeaning_of_update
         hUpd.1 (GuardDescInEnvsDeep.intro _qt k d
           (QTypInEnvs.inMem (σ.update x qtNew) Γ l _qt qtRoot hΓ hinq) hm)
 
--- Laws that constrain the abstract `PredSat` relation.
-structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
+/-- The values a run gives to binding numbers (a view of the run). -/
+abbrev BindVals := Nat → Option Value
+
+/-- The variables `xs` hold in `ρ` the values `β` gives their binding numbers in
+    `B`. A name without a number, or with number 0, is not constrained. -/
+def ViewAgreesOn (β : BindVals) (B : BindEnv) (ρ : VarEnv) (xs : List Name) : Prop :=
+  ∀ x ∈ xs, ∀ n, B.get? x = some n → n ≠ 0 → ρ.lookup x = β n
+
+-- Laws that constrain the abstract `PredSat` relation, under the view `β`.
+structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) (β : BindVals) : Prop where
   -- Bidirectional match law: if match_guard recognizes the condition as tag k in a
-  -- context that respects `tm` and that the runtime state instantiates, then the
-  -- condition's boolean result matches predSat on the value the condition checks.
+  -- context that respects `tm` and that the runtime state instantiates, and the
+  -- variables read by the bodies of the guards with tag k in the context hold the
+  -- values `β` gives their binding numbers, then the condition's boolean result
+  -- matches predSat on the value the condition checks.
   -- That value belongs to some owner of the guard closure for k: a variable
   -- carrying the closure, or the contents of a location carrying it, reached
   -- through a reference variable.
@@ -1002,7 +1016,9 @@ structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
                   (pm : Bool) (registry : ExternRegistry) (cfg : Config)
                   (b : Bool),
     wfTagMeaningCtx tm ctx →
-    matchGuard condition ctx.memEnv ctx.varEnv fuel = .ok (k, deps) →
+    matchGuard condition ctx.memEnv ctx.varEnv ctx.bindEnv fuel = .ok (k, deps) →
+    (∀ d, GuardDescInEnvsDeep ctx.varEnv ctx.memEnv k d →
+      ViewAgreesOn β ctx.bindEnv ρ (PExpr.freeVars [d.argName] d.body)) →
     runtimeInstantiatesCtx ctx μ ρ θ →
     terminatesTo condition
       { memory := μ, varEnv := ρ, nextAddr := addr, pureMode := pm, registry := registry }

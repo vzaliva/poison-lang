@@ -16,7 +16,7 @@ variable {registry : ExternRegistry}
 lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   (masked : Tag → Prop)
   
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (β : BindVals) (tm : TagMeaning)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
@@ -24,7 +24,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.fn x paramType body returnType) res predSat tm (Nat.succ fuel) (registry := registry) := by
+    ctxᵢ (Expr.fn x paramType body returnType) res predSat β tm (Nat.succ fuel) (registry := registry) := by
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -32,12 +32,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   let res_expected : TypeResult := {
     qualType :=
       ⟨ETyp.arrow paramType returnType ctxᵢ.pc
-          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)],
+          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)],
         ctxᵢ.pc, Predicate.noPred⟩
     memEnv' := ctxᵢ.memEnv
     tagEnv' := ctxᵢ.tagEnv
     nextLoc' := ctxᵢ.nextLoc
     nextTag' := ctxᵢ.nextTag
+    nextBind' := ctxᵢ.nextBind
     regime' := ctxᵢ.regime
     declared' := ctxᵢ.declaredExternRefs
   }
@@ -47,32 +48,32 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   intro hpredlaws hframe hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
-      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
+      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat β tm ctxᵢ
         (Expr.fn x paramType body returnType) (Nat.succ fuel) res
         hwfTm hTmBounded hframe htc
-  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg _hres _hrd ht _hpc _P _hP _hroot
+  intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg _hres _hrd ht _hpc _P _hP _hT _hroot
   have ⟨hcf, ho⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
   subst hcf
   have hvaltyp : valueHasETyp θ o res.qualType.etyp := by
     subst ho
-    have hcover : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+    have hcover : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv).lookup y = some qt →
         ∃ v, ρ.lookup y = some v := by
       intro y qt hlookupT
-      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
       obtain ⟨v', hvlookup, _⟩ := hric.2 hlookup_ctx
       exact ⟨v', hvlookup⟩
     have hetyp_res :
         res.qualType.etyp =
           ETyp.arrow paramType returnType ctxᵢ.pc
-            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
       simp [hres, res_expected]
     rw [hetyp_res]
     refine valueHasETyp.closure
-      (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp) (hcover := hcover) ?_
+      (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) (htcl := by simp) (hcover := hcover) ?_
     intro y qt v hlookupT hlookupV
     have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
-      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
     obtain ⟨v', hvlookup, hvtyp⟩ := hric.2 hlookup_ctx
     have hvEq : v' = v := by
       have : some v' = some v := by
@@ -88,28 +89,28 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
     refine valueConsistentWithRegimeMasked.noTag
       (by simp [qtypGuardTag, hres, res_expected]) ?_
     apply deepValueQTypProperty.closure x body ρ
-      (VarTypeEnv.toCaptured ctxᵢ.varEnv) paramType returnType ctxᵢ.pc
-      [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
+      (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) paramType returnType ctxᵢ.pc
+      [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)]
     · rfl
     · simp [hres, res_expected]
     · simp
     · constructor
       · intro y qt_y k_y hlookup_σ hguard hkR
         exact hcwr.2.1 y qt_y k_y
-          (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+          (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
           hguard hkR
-      · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+      · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv ctxᵢ.bindEnv,
           fun y qt hlookup_σ =>
             let ⟨v, hv, _⟩ := hric.2
-              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
             ⟨v, hv⟩,
           fun y qt v hlookup_σ hlookup_ρ =>
             let ⟨v', hv', htyp⟩ := hric.2
-              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
             by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
     · intro y qt_y v_y hlookup_σ hlookup_ρ
       exact hcwr.2.2 y qt_y v_y
-        (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+        (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
         hlookup_ρ
     · exact typecheckFn_ok_not_externFnAst htcFn
   exact
@@ -130,7 +131,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
 lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
   (masked : Tag → Prop)
   
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (β : BindVals) (tm : TagMeaning)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
@@ -138,7 +139,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
     masked
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm (Nat.succ fuel) (registry := registry) := by
+    ctxᵢ (Expr.pfn x paramType body returnType) res predSat β tm (Nat.succ fuel) (registry := registry) := by
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
     simp [typecheck, typecheckExpr] at h
@@ -150,12 +151,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
       let res_expected : TypeResult := {
         qualType :=
           ⟨ETyp.parrow paramType returnType ctxᵢ.pc
-              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)],
+              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)],
             ctxᵢ.pc, Predicate.noPred⟩
         memEnv' := ctxᵢ.memEnv
         tagEnv' := ctxᵢ.tagEnv
         nextLoc' := ctxᵢ.nextLoc
         nextTag' := ctxᵢ.nextTag
+        nextBind' := ctxᵢ.nextBind
         regime' := ctxᵢ.regime
         declared' := ctxᵢ.declaredExternRefs
       }
@@ -169,10 +171,10 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
       intro hpredlaws hframe hwfTm hTmBounded
       refine ⟨?_, ?_⟩
       · exact
-          StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
+          StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat β tm ctxᵢ
             (Expr.pfn x paramType body returnType) (Nat.succ fuel) res
             hwfTm hTmBounded hframe htc
-      intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg _hres _hrd ht _hpc _P _hP _hroot
+      intro μ ρ θ cf o hθwf hwf hric hreg hmasked_none hmasked_absent _hmasked_bounded _hbnd hcwr a pm hwfcfg _hres _hrd ht _hpc _P _hP _hT _hroot
       have ⟨hcf, ho⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
       subst hcf
@@ -180,24 +182,24 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
         Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
       have hvaltyp : valueHasETyp θ o res.qualType.etyp := by
         subst ho
-        have hcover : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+        have hcover : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv).lookup y = some qt →
             ∃ v, ρ.lookup y = some v := by
           intro y qt hlookupT
-          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
           obtain ⟨v', hvlookup, _⟩ := hric.2 hlookup_ctx
           exact ⟨v', hvlookup⟩
         have hetyp_res :
             res.qualType.etyp =
               ETyp.parrow paramType returnType ctxᵢ.pc
-                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
           simp [hres, res_expected]
         rw [hetyp_res]
         refine valueHasETyp.peClosure
-          (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv)
+          (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)
           (hpure := hto) (htcl := by simp) (hcover := hcover) ?_
         intro y qt v hlookupT hlookupV
         have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
-          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
         obtain ⟨v', hvlookup, hvtyp⟩ := hric.2 hlookup_ctx
         have hvEq : v' = v := by
           have : some v' = some v := by
@@ -213,8 +215,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
         refine valueConsistentWithRegimeMasked.noTag
           (by simp [qtypGuardTag, hres, res_expected]) ?_
         apply deepValueQTypProperty.peClosure x body pbody ρ
-          (VarTypeEnv.toCaptured ctxᵢ.varEnv) paramType returnType ctxᵢ.pc
-          [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
+          (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) paramType returnType ctxᵢ.pc
+          [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)]
         · rfl
         · simp [hres, res_expected]
         · exact hto
@@ -222,20 +224,20 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
         · constructor
           · intro y qt_y k_y hlookup_σ hguard hkR
             exact hcwr.2.1 y qt_y k_y
-              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
               hguard hkR
-          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv ctxᵢ.bindEnv,
               fun y qt hlookup_σ =>
                 let ⟨v, hv, _⟩ := hric.2
-                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                 ⟨v, hv⟩,
               fun y qt v hlookup_σ hlookup_ρ =>
                 let ⟨v', hv', htyp⟩ := hric.2
-                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                 by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
         · intro y qt_y v_y hlookup_σ hlookup_ρ
           exact hcwr.2.2 y qt_y v_y
-            (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+            (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
             hlookup_ρ
       exact
         singleRunFinalCleanWitness_of_same_state_maskedReg_param
@@ -254,11 +256,11 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
 
 lemma stepFR_fn
   
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat₀ predSat₁ : PredSat) (β₀ β₁ : BindVals) (tm : TagMeaning)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.fn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.fn x paramType body returnType) res predSat tm (Nat.succ fuel) (registry := registry) := by
+  StepFR ctxᵢ (Expr.fn x paramType body returnType) res predSat₀ predSat₁ β₀ β₁ tm (Nat.succ fuel) (registry := registry) := by
   -- Extract typecheck result
   have htcFn : typecheckFn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -267,19 +269,20 @@ lemma stepFR_fn
   let res_expected : TypeResult := {
     qualType :=
       ⟨ETyp.arrow paramType returnType ctxᵢ.pc
-          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)],
+          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)],
         ctxᵢ.pc, Predicate.noPred⟩
     memEnv' := ctxᵢ.memEnv
     tagEnv' := ctxᵢ.tagEnv
     nextLoc' := ctxᵢ.nextLoc
     nextTag' := ctxᵢ.nextTag
+    nextBind' := ctxᵢ.nextBind
     regime' := ctxᵢ.regime
     declared' := ctxᵢ.declaredExternRefs
   }
   have hres : res = res_expected := typecheckFn_ok_eq htcFn
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
+  intro hpredlaws₀ hpredlaws₁ _hframe₀ _hframe₁ hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
   -- Use inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -287,12 +290,12 @@ lemma stepFR_fn
     { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
   subst hcf₀ hcf₁
   have hcap' :
-      agreeCapturedEnv predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
-    agreeCapturedEnv_of_agreeOnClean predSat ctxᵢ.regime ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+      agreeCapturedEnv predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ ρ₁ :=
+    agreeCapturedEnv_of_agreeOnClean predSat₀ predSat₁ ctxᵢ.regime ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
   -- Convert to use output regime (which equals input regime for fn)
   have h_regime_eq : (ctxAfter ctxᵢ res).regime = ctxᵢ.regime := by simp [hctxAfter]
   have hcap :
-      agreeCapturedEnv predSat (ctxAfter ctxᵢ res).regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ := by
+      agreeCapturedEnv predSat₀ predSat₁ (ctxAfter ctxᵢ res).regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ ρ₁ := by
     rw [h_regime_eq]; exact hcap'
   have hresTm_expected : QTypRespectsTagMeaning tm res_expected.qualType := by
     intro qt' k d hinq hqd
@@ -309,31 +312,31 @@ lemma stepFR_fn
     refine IsCanonicalExtension.refl ?_ ?_ hresTm
     · simpa [hres, res_expected] using hTmBounded
     · simpa [hctxAfter] using hwfTm
-  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
-    (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
+  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws₀
+    (WithinLog.refl tm _), hpredlaws₁, hresTm, ?_⟩
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
   · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
-  · have hcover₀ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+  · have hcover₀ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv).lookup y = some qt →
         ∃ v, ρ₀.lookup y = some v := by
       intro y qt hlookupT
-      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
       obtain ⟨v', hvlookup, _⟩ := hric₀.2 hlookup_ctx
       exact ⟨v', hvlookup⟩
     subst ho₀
     have hetyp_res :
         res.qualType.etyp =
           ETyp.arrow paramType returnType ctxᵢ.pc
-            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
       simp [hres, res_expected]
     rw [hetyp_res]
-    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp)
+    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) (htcl := by simp)
         (hcover := hcover₀) ?_
     intro y qt v hlookupT hlookupV
     have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
-      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
     obtain ⟨v', hvlookup, hvtyp⟩ := hric₀.2 hlookup_ctx
     have hvEq : v' = v := by
       have : some v' = some v := by
@@ -343,24 +346,24 @@ lemma stepFR_fn
       exact Option.some.inj this
     subst hvEq
     exact hvtyp
-  · have hcover₁ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+  · have hcover₁ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv).lookup y = some qt →
         ∃ v, ρ₁.lookup y = some v := by
       intro y qt hlookupT
-      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
       obtain ⟨v', hvlookup, _⟩ := hric₁.2 hlookup_ctx
       exact ⟨v', hvlookup⟩
     subst ho₁
     have hetyp_res :
         res.qualType.etyp =
           ETyp.arrow paramType returnType ctxᵢ.pc
-            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
       simp [hres, res_expected]
     rw [hetyp_res]
-    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (htcl := by simp)
+    refine valueHasETyp.closure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) (htcl := by simp)
         (hcover := hcover₁) ?_
     intro y qt v hlookupT hlookupV
     have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
-      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+      VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
     obtain ⟨v', hvlookup, hvtyp⟩ := hric₁.2 hlookup_ctx
     have hvEq : v' = v := by
       have : some v' = some v := by
@@ -393,26 +396,26 @@ lemma stepFR_fn
       (.intro (by
         rw [ho₀, h_regime_eq]
         apply deepValueQTypProperty.closure x body ρ₀
-            (VarTypeEnv.toCaptured ctxᵢ.varEnv) paramType returnType ctxᵢ.pc
-            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
+            (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) paramType returnType ctxᵢ.pc
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)]
         · rfl
         · simp [hres, res_expected]
         · simp
         · constructor
           · intro y qt_y k_y hlookup_σ hguard hkR
             exact hcwr₀.2.1 y qt_y k_y
-              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
               hguard hkR
-          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv ctxᵢ.bindEnv,
               fun y qt hlookup_σ =>
-                let ⟨v, hv, _⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                let ⟨v, hv, _⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                 ⟨v, hv⟩,
               fun y qt v hlookup_σ hlookup_ρ =>
-                let ⟨v', hv', htyp⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                let ⟨v', hv', htyp⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                 by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
         · intro y qt_y v_y hlookup_σ hlookup_ρ
           cases hcwr₀.2.2 y qt_y v_y
-              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
               hlookup_ρ with
           | intro h => exact h
         · exact typecheckFn_ok_not_externFnAst htcFn))
@@ -421,26 +424,26 @@ lemma stepFR_fn
       (.intro (by
         rw [ho₁, h_regime_eq]
         apply deepValueQTypProperty.closure x body ρ₁
-            (VarTypeEnv.toCaptured ctxᵢ.varEnv) paramType returnType ctxᵢ.pc
-            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
+            (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) paramType returnType ctxᵢ.pc
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)]
         · rfl
         · simp [hres, res_expected]
         · simp
         · constructor
           · intro y qt_y k_y hlookup_σ hguard hkR
             exact hcwr₁.2.1 y qt_y k_y
-              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
               hguard hkR
-          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+          · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv ctxᵢ.bindEnv,
               fun y qt hlookup_σ =>
-                let ⟨v, hv, _⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                let ⟨v, hv, _⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                 ⟨v, hv⟩,
               fun y qt v hlookup_σ hlookup_ρ =>
-                let ⟨v', hv', htyp⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                let ⟨v', hv', htyp⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                 by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
         · intro y qt_y v_y hlookup_σ hlookup_ρ
           cases hcwr₁.2.2 y qt_y v_y
-              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+              (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
               hlookup_ρ with
           | intro h => exact h
         · exact typecheckFn_ok_not_externFnAst htcFn))
@@ -451,7 +454,7 @@ lemma stepFR_fn
         have hetyp :
             res.qualType.etyp =
               ETyp.arrow paramType returnType ctxᵢ.pc
-                [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+                [FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
           simp [hres, res_expected]
         -- res.qualType.poison = ctxᵢ.pc (from res_expected)
         -- hpoison says qt.poison = false, and qt = res.qualType
@@ -465,43 +468,43 @@ lemma stepFR_fn
         have hclean_internal : internalPoisonClean res.qualType := by
           simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
         have hmemberVars₀ :
-            MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₀
-              (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
+            MemberVarsRegimeEvidence predSat₀ (ctxAfter ctxᵢ res).regime μ₀
+              (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ := by
           simpa [hctxAfter] using
             (memberVarsRegimeEvidence_of_toCaptured
-              (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
+              (predSat := predSat₀) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀)
         have hmemberVars₁ :
-            MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₁
-              (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
+            MemberVarsRegimeEvidence predSat₁ (ctxAfter ctxᵢ res).regime μ₁
+              (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₁ := by
           simpa [hctxAfter] using
             (memberVarsRegimeEvidence_of_toCaptured
-              (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
+              (predSat := predSat₁) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
         have hmemberCvcr₀ :
-            MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₀ θ₀
-              (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
+            MemberCvcrEvidence predSat₀ (ctxAfter ctxᵢ res).regime μ₀ θ₀
+              (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ := by
           simpa [hctxAfter] using
             (memberCvcrEvidence_of_toCaptured
-              (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
+              (predSat := predSat₀) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀)
         have hmemberCvcr₁ :
-            MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₁ θ₁
-              (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
+            MemberCvcrEvidence predSat₁ (ctxAfter ctxᵢ res).regime μ₁ θ₁
+              (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₁ := by
           simpa [hctxAfter] using
             (memberCvcrEvidence_of_toCaptured
-              (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
+              (predSat := predSat₁) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
         have htyping₀ :
-            capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ :=
+            capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ :=
           capturedVarsTypingProperty_of_toCaptured ctxᵢ μ₀ ρ₀ θ₀ hric₀
         have htyping₁ :
-            capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ :=
+            capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₁ :=
           capturedVarsTypingProperty_of_toCaptured ctxᵢ μ₁ ρ₁ θ₁ hric₁
         exact
           agreeValueUnder.clean_internal_arrow
-            (tcl := FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv))
-            (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+            (tcl := FnTClosure.regular x body (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv))
+            (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
             hclean_internal hetyp (by simp) rfl hcap
             hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
             htyping₀ htyping₁
@@ -521,11 +524,11 @@ lemma stepFR_fn
 
 lemma stepFR_pfn
   
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat₀ predSat₁ : PredSat) (β₀ β₁ : BindVals) (tm : TagMeaning)
   (x : Name) (paramType : Typ) (body : Expr) (returnType : Typ)
   (fuel : Nat) (res : TypeResult)
   (htc : typecheck ctxᵢ (Expr.pfn x paramType body returnType) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.pfn x paramType body returnType) res predSat tm (Nat.succ fuel) (registry := registry) := by
+  StepFR ctxᵢ (Expr.pfn x paramType body returnType) res predSat₀ predSat₁ β₀ β₁ tm (Nat.succ fuel) (registry := registry) := by
   -- Extract typecheck result
   have htcPfn : typecheckPfn ctxᵢ x paramType body returnType = .ok res := by
     have h := htc
@@ -538,12 +541,13 @@ lemma stepFR_pfn
       let res_expected : TypeResult := {
         qualType :=
           ⟨ETyp.parrow paramType returnType ctxᵢ.pc
-              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)],
+              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)],
             ctxᵢ.pc, Predicate.noPred⟩
         memEnv' := ctxᵢ.memEnv
         tagEnv' := ctxᵢ.tagEnv
         nextLoc' := ctxᵢ.nextLoc
         nextTag' := ctxᵢ.nextTag
+        nextBind' := ctxᵢ.nextBind
         regime' := ctxᵢ.regime
         declared' := ctxᵢ.declaredExternRefs
       }
@@ -554,7 +558,7 @@ lemma stepFR_pfn
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
+      intro hpredlaws₀ hpredlaws₁ _hframe₀ _hframe₁ hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
       -- Use inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -562,12 +566,12 @@ lemma stepFR_pfn
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry } cf₁ o₁ ht₁
       subst hcf₀ hcf₁
       have hcap' :
-          agreeCapturedEnv predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ :=
-        agreeCapturedEnv_of_agreeOnClean predSat ctxᵢ.regime ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
+          agreeCapturedEnv predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ ρ₁ :=
+        agreeCapturedEnv_of_agreeOnClean predSat₀ predSat₁ ctxᵢ.regime ctxᵢ μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
       -- Convert to use output regime (which equals input regime for pfn)
       have h_regime_eq : (ctxAfter ctxᵢ res).regime = ctxᵢ.regime := by simp [hctxAfter]
       have hcap :
-          agreeCapturedEnv predSat (ctxAfter ctxᵢ res).regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ ρ₁ := by
+          agreeCapturedEnv predSat₀ predSat₁ (ctxAfter ctxᵢ res).regime μ₀ μ₁ θ₀ θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ ρ₁ := by
         rw [h_regime_eq]; exact hcap'
       have hto : Expr.toPExpr? body = some pbody :=
         Expr_toPExpr?_eq_some_of_toPExpr_ok body pbody hbody
@@ -586,31 +590,31 @@ lemma stepFR_pfn
         refine IsCanonicalExtension.refl ?_ ?_ hresTm
         · simpa [hres, res_expected] using hTmBounded
         · simpa [hctxAfter] using hwfTm
-      refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
-    (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
+      refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws₀
+    (WithinLog.refl tm _), hpredlaws₁, hresTm, ?_⟩
       refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
       · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
-      · have hcover₀ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+      · have hcover₀ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv).lookup y = some qt →
             ∃ v, ρ₀.lookup y = some v := by
           intro y qt hlookupT
-          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
           obtain ⟨v', hvlookup, _⟩ := hric₀.2 hlookup_ctx
           exact ⟨v', hvlookup⟩
         subst ho₀
         have hetyp_res :
             res.qualType.etyp =
               ETyp.parrow paramType returnType ctxᵢ.pc
-                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
           simp [hres, res_expected]
         rw [hetyp_res]
-        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (hpure := hto) (htcl := by simp)
+        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) (hpure := hto) (htcl := by simp)
             (hcover := hcover₀) ?_
         intro y qt v hlookupT hlookupV
         have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
-          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
         obtain ⟨v', hvlookup, hvtyp⟩ := hric₀.2 hlookup_ctx
         have hvEq : v' = v := by
           have : some v' = some v := by
@@ -620,24 +624,24 @@ lemma stepFR_pfn
           exact Option.some.inj this
         subst hvEq
         exact hvtyp
-      · have hcover₁ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv).lookup y = some qt →
+      · have hcover₁ : ∀ y qt, (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv).lookup y = some qt →
             ∃ v, ρ₁.lookup y = some v := by
           intro y qt hlookupT
-          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          have hlookup_ctx := VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
           obtain ⟨v', hvlookup, _⟩ := hric₁.2 hlookup_ctx
           exact ⟨v', hvlookup⟩
         subst ho₁
         have hetyp_res :
             res.qualType.etyp =
               ETyp.parrow paramType returnType ctxᵢ.pc
-                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
           simp [hres, res_expected]
         rw [hetyp_res]
-        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv) (hpure := hto) (htcl := by simp)
+        refine valueHasETyp.peClosure (tenv := VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) (hpure := hto) (htcl := by simp)
             (hcover := hcover₁) ?_
         intro y qt v hlookupT hlookupV
         have hlookup_ctx : ctxᵢ.varEnv.lookup y = some qt :=
-          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookupT
+          VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookupT
         obtain ⟨v', hvlookup, hvtyp⟩ := hric₁.2 hlookup_ctx
         have hvEq : v' = v := by
           have : some v' = some v := by
@@ -670,8 +674,8 @@ lemma stepFR_pfn
           (.intro (by
             rw [ho₀, h_regime_eq]
             apply deepValueQTypProperty.peClosure x body pbody ρ₀
-                (VarTypeEnv.toCaptured ctxᵢ.varEnv) paramType returnType ctxᵢ.pc
-                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
+                (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) paramType returnType ctxᵢ.pc
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)]
             · rfl
             · simp [hres, res_expected]
             · exact hto
@@ -679,18 +683,18 @@ lemma stepFR_pfn
             · constructor
               · intro y qt_y k_y hlookup_σ hguard hkR
                 exact hcwr₀.2.1 y qt_y k_y
-                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
                   hguard hkR
-              · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+              · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv ctxᵢ.bindEnv,
                   fun y qt hlookup_σ =>
-                    let ⟨v, hv, _⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                    let ⟨v, hv, _⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                     ⟨v, hv⟩,
                   fun y qt v hlookup_σ hlookup_ρ =>
-                    let ⟨v', hv', htyp⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                    let ⟨v', hv', htyp⟩ := hric₀.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                     by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
             · intro y qt_y v_y hlookup_σ hlookup_ρ
               cases hcwr₀.2.2 y qt_y v_y
-                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
                   hlookup_ρ with
               | intro h => exact h))
       · -- valueConsistentWithRegime for cf₁
@@ -698,8 +702,8 @@ lemma stepFR_pfn
           (.intro (by
             rw [ho₁, h_regime_eq]
             apply deepValueQTypProperty.peClosure x body pbody ρ₁
-                (VarTypeEnv.toCaptured ctxᵢ.varEnv) paramType returnType ctxᵢ.pc
-                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)]
+                (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) paramType returnType ctxᵢ.pc
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)]
             · rfl
             · simp [hres, res_expected]
             · exact hto
@@ -707,18 +711,18 @@ lemma stepFR_pfn
             · constructor
               · intro y qt_y k_y hlookup_σ hguard hkR
                 exact hcwr₁.2.1 y qt_y k_y
-                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
                   hguard hkR
-              · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv,
+              · exact ⟨VarTypeEnv_toCaptured_nodup_fst ctxᵢ.varEnv ctxᵢ.bindEnv,
                   fun y qt hlookup_σ =>
-                    let ⟨v, hv, _⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                    let ⟨v, hv, _⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                     ⟨v, hv⟩,
                   fun y qt v hlookup_σ hlookup_ρ =>
-                    let ⟨v', hv', htyp⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt hlookup_σ)
+                    let ⟨v', hv', htyp⟩ := hric₁.2 (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt hlookup_σ)
                     by rw [hlookup_ρ] at hv'; cases hv'; exact htyp⟩
             · intro y qt_y v_y hlookup_σ hlookup_ρ
               cases hcwr₁.2.2 y qt_y v_y
-                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
+                  (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv ctxᵢ.bindEnv y qt_y hlookup_σ)
                   hlookup_ρ with
               | intro h => exact h))
       · -- resultAgreesIfClean
@@ -728,14 +732,14 @@ lemma stepFR_pfn
             have hetyp :
                 res.qualType.etyp =
                   ETyp.parrow paramType returnType ctxᵢ.pc
-                    [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+                    [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
               simp [hres, res_expected]
-            have htcl : PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) ∈
-                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv)] := by
+            have htcl : PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ∈
+                [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv)] := by
               simp
             have hmatch : Expr.toPExpr? body = some pbody ∧
-                PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) =
-                  PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv) :=
+                PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) =
+                  PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) :=
               ⟨hto, rfl⟩
             -- Same reasoning as stepFR_fn: outer poison = ctxᵢ.pc = false, so internal clean
             have hpc_clean : ctxᵢ.pc = false := by
@@ -747,44 +751,44 @@ lemma stepFR_pfn
             have hclean_internal : internalPoisonClean res.qualType := by
               simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
             have hmemberVars₀ :
-                MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₀
-                  (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
+                MemberVarsRegimeEvidence predSat₀ (ctxAfter ctxᵢ res).regime μ₀
+                  (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ := by
               simpa [hctxAfter] using
                 (memberVarsRegimeEvidence_of_toCaptured
-                  (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
+                  (predSat := predSat₀) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀)
             have hmemberVars₁ :
-                MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₁
-                  (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
+                MemberVarsRegimeEvidence predSat₁ (ctxAfter ctxᵢ res).regime μ₁
+                  (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₁ := by
               simpa [hctxAfter] using
                 (memberVarsRegimeEvidence_of_toCaptured
-                  (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
+                  (predSat := predSat₁) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
             have hmemberCvcr₀ :
-                MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₀ θ₀
-                  (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
+                MemberCvcrEvidence predSat₀ (ctxAfter ctxᵢ res).regime μ₀ θ₀
+                  (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ := by
               simpa [hctxAfter] using
                 (memberCvcrEvidence_of_toCaptured
-                  (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
+                  (predSat := predSat₀) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀)
             have hmemberCvcr₁ :
-                MemberCvcrEvidence predSat (ctxAfter ctxᵢ res).regime μ₁ θ₁
-                  (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
+                MemberCvcrEvidence predSat₁ (ctxAfter ctxᵢ res).regime μ₁ θ₁
+                  (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₁ := by
               simpa [hctxAfter] using
                 (memberCvcrEvidence_of_toCaptured
-                  (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
+                  (predSat := predSat₁) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁)
             have htyping₀ :
-                capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ :=
+                capturedVarsTypingProperty θ₀ (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₀ :=
               capturedVarsTypingProperty_of_toCaptured ctxᵢ μ₀ ρ₀ θ₀ hric₀
             have htyping₁ :
-                capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ :=
+                capturedVarsTypingProperty θ₁ (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) ρ₁ :=
               capturedVarsTypingProperty_of_toCaptured ctxᵢ μ₁ ρ₁ θ₁ hric₁
             exact
               agreeValueUnder.clean_internal_parrow
                 (pbody := pbody)
-                (tcl := PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv))
-                (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
+                (tcl := PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv))
+                (σcap := VarTypeEnv.toCaptured ctxᵢ.varEnv ctxᵢ.bindEnv) (ρcap₁ := ρ₀) (ρcap₂ := ρ₁) (v₁ := o₀) (v₂ := o₁)
                 hclean_internal hetyp htcl hmatch hcap
                 hmemberVars₀ hmemberCvcr₀ hmemberVars₁ hmemberCvcr₁
                 htyping₀ htyping₁

@@ -489,7 +489,7 @@ private theorem stepFRVar_ctxToValCons_masked
 lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
   (masked : Tag → Prop)
   
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat : PredSat) (β : BindVals) (tm : TagMeaning)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFRSingleRunFinalCleanPcTrueMaskedRegParam
@@ -498,7 +498,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v =>
       valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-    ctxᵢ (Expr.var name) res predSat tm (Nat.succ fuel) (registry := registry) := by
+    ctxᵢ (Expr.var name) res predSat β tm (Nat.succ fuel) (registry := registry) := by
   have htc' : typecheckVar ctxᵢ name = .ok res := by
     simpa [typecheck, typecheckExpr] using htc
   have hdeclared : res.declared' = ctxᵢ.declaredExternRefs := by
@@ -506,8 +506,13 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
     simp [typecheckVar] at htc''
     split at htc'' <;>
       (repeat (first | split at htc'' | simp [pure, Except.pure, throw] at htc'' | cases htc'' | rfl))
+  have hnextBind : res.nextBind' = ctxᵢ.nextBind := by
+    have htc'' := htc'
+    simp [typecheckVar] at htc''
+    split at htc'' <;>
+      (repeat (first | split at htc'' | simp [pure, Except.pure, throw] at htc'' | cases htc'' | rfl))
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
-    simp [ctxAfter,
+    simp [ctxAfter, hnextBind,
       typecheckVar_preserves_memEnv ctxᵢ name res htc',
       typecheckVar_preserves_tagEnv ctxᵢ name res htc',
       typecheckVar_preserves_nextLoc ctxᵢ name res htc',
@@ -517,9 +522,9 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
   intro hpredlaws hframe hwfTm hTmBounded
   refine ⟨?_, ?_⟩
   · exact
-      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
+      StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat β tm ctxᵢ
         (Expr.var name) (Nat.succ fuel) res hwfTm hTmBounded hframe htc
-  intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hmasked_absent _hmasked_bounded _hbnd hctxCons a pm hwfcfg _hres _hrd ht _hpc _P _hP _hroot
+  intro μ ρ θ cf o hθwf _hwf hric _hreg _hmasked_none _hmasked_absent _hmasked_bounded _hbnd hctxCons a pm hwfcfg _hres _hrd ht _hpc _P _hP _hT _hroot
   rcases
     terminatesTo_var_inv' name
       { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry } cf o ht
@@ -550,11 +555,11 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
 
 lemma stepFR_var
   
-  (ctxᵢ : TypeContext) (predSat : PredSat) (tm : TagMeaning)
+  (ctxᵢ : TypeContext) (predSat₀ predSat₁ : PredSat) (β₀ β₁ : BindVals) (tm : TagMeaning)
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
-  StepFR ctxᵢ (Expr.var name) res predSat tm (Nat.succ fuel) (registry := registry) := by
-  intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
+  StepFR ctxᵢ (Expr.var name) res predSat₀ predSat₁ β₀ β₁ tm (Nat.succ fuel) (registry := registry) := by
+  intro hpredlaws₀ hpredlaws₁ _hframe₀ _hframe₁ hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' name
@@ -761,7 +766,7 @@ lemma stepFR_var
                         exact fun {qt'} {k} {d} hinq hqd =>
                           (QTypRespectsTagMeaning_transport_etyp_noGuard
                             (tm := tm) (qt := qt) (qt' := res.qualType) hqtTm hetyp hguard) hinq hqd
-  have hvcons
+  have hvcons (predSat : PredSat)
       (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (v : Value)
       (hρ : ρ.lookup name = some v)
     (hcwr : consistentWithRegime predSat ctxᵢ.regime ctxᵢ μ ρ θ)
@@ -776,8 +781,8 @@ lemma stepFR_var
     refine IsCanonicalExtension.refl ?_ ?_ hresTm
     · simpa [hnextTag] using hTmBounded
     · simpa [ctxAfter, hmem] using! hwfTm
-  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
-    (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
+  refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws₀
+    (WithinLog.refl tm _), hpredlaws₁, hresTm, ?_⟩
   refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
@@ -816,9 +821,9 @@ lemma stepFR_var
   · -- agreeOnClean for ctxAfter: typecheckVar doesn't change the context (including regime)
     simpa [ctxAfter, hmem, htag, hnextLoc, hnextTag, hregime'] using! hagree
   · -- valueConsistentWithRegime for cf₀
-    exact hvcons μ₀ ρ₀ θ₀ o₀ hlookup₀ hcwr₀ hric₀
+    exact hvcons predSat₀ μ₀ ρ₀ θ₀ o₀ hlookup₀ hcwr₀ hric₀
   · -- valueConsistentWithRegime for cf₁
-    exact hvcons μ₁ ρ₁ θ₁ o₁ hlookup₁ hcwr₁ hric₁
+    exact hvcons predSat₁ μ₁ ρ₁ θ₁ o₁ hlookup₁ hcwr₁ hric₁
   · -- Result agreement for clean outputs (requires predicate/tagEnv analysis).
     -- Key: (ctxAfter ctxᵢ res).regime = res.regime' = ctxᵢ.regime
     have hregime_after : (ctxAfter ctxᵢ res).regime = ctxᵢ.regime := by simp [ctxAfter, hregime']
@@ -834,7 +839,7 @@ lemma stepFR_var
     | some qt =>
         have hvar_agree_of_clean :
             qtypCleanUnder ctxᵢ.regime qt →
-            agreeVarUnder predSat ctxᵢ.regime μ₀ ρ₀ μ₁ ρ₁ θ₀ θ₁ (name, qt) := by
+            agreeVarUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ ρ₀ μ₁ ρ₁ θ₀ θ₁ (name, qt) := by
           intro hclean_qt
           exact (hagree.2 name qt hlookup_ctx hclean_qt)
         cases hpred : qt.pred with
@@ -863,7 +868,7 @@ lemma stepFR_var
             have hclean_qt : qtypCleanUnder ctxᵢ.regime qt := by
               exact qtypCleanUnder.clean hpoison
             have hvar := hvar_agree_of_clean hclean_qt
-            have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+            have hval : agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
               agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
             have hres_eq : res.qualType = qt := by
               cases qt with
@@ -871,7 +876,7 @@ lemma stepFR_var
                   cases hpred
                   simp [hres, hpc, joinPoison]
             have hres_agree :
-                agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
+                agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
               simpa [hres_eq] using hval
             exact hres_agree
         | guardOnly k =>
@@ -907,7 +912,7 @@ lemma stepFR_var
                     have hclean_qt : qtypCleanUnder ctxᵢ.regime qt := by
                       exact qtypCleanUnder.clean hpoison
                     have hvar := hvar_agree_of_clean hclean_qt
-                    have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                    have hval : agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                       agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_eq : res.qualType = qt := by
                       cases qt with
@@ -915,7 +920,7 @@ lemma stepFR_var
                           cases hpred
                           simp [hres, hpc, joinPoison]
                     have hres_agree :
-                        agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
+                        agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       simpa [hres_eq] using hval
                     simpa [hlookup₀, hlookup₁] using hres_agree
                 | guard k' htag' hregime hnotfun_res =>
@@ -931,10 +936,10 @@ lemma stepFR_var
                         simp [qtypGuardTag, hpred]
                       exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                     have hvar := hvar_agree_of_clean hclean_qt
-                    have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                    have hval : agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                       agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
-                        agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
+                        agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       cases hval with
                       | clean_eq_nonref_nonarrow _ hnotfun hnotref hEq =>
                           have hnotref' : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
@@ -1047,10 +1052,10 @@ lemma stepFR_var
                             simp [qtypGuardTag, hpred]
                           exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                         have hvar := hvar_agree_of_clean hclean_qt
-                        have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                        have hval : agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                           agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                         have hres_agree :
-                            agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
+                            agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                           cases hval with
                           | clean_eq_nonref_nonarrow _ hnotfun hnotref hEq =>
                               have hnotref' : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
@@ -1180,10 +1185,10 @@ lemma stepFR_var
                     have hclean_qt : qtypCleanUnder ctxᵢ.regime qt := by
                       exact qtypCleanUnder.clean hpoison
                     have hvar := hvar_agree_of_clean hclean_qt
-                    have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                    have hval : agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                       agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
-                        agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
+                        agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       have hqt_eq : qt = ⟨qt.etyp, false, qt.pred⟩ := by
                         cases qt with
                         | mk etyp poison pred =>
@@ -1207,10 +1212,10 @@ lemma stepFR_var
                         simp [qtypGuardTag, hpred]
                       exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                     have hvar := hvar_agree_of_clean hclean_qt
-                    have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                    have hval : agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                       agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                     have hres_agree :
-                        agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
+                        agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                       cases hval with
                       | clean_eq_nonref_nonarrow _ hnotfun hnotref hEq =>
                           have hnotref' : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
@@ -1327,10 +1332,10 @@ lemma stepFR_var
                             simp [qtypGuardTag, hpred]
                           exact qtypCleanUnder.guard k htag_qt hregime hnotfun_qt
                         have hvar := hvar_agree_of_clean hclean_qt
-                        have hval : agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
+                        have hval : agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ qt o₀ o₁ :=
                           agreeValueUnder_of_agreeVarUnder hvar hlookup₀ hlookup₁
                         have hres_agree :
-                            agreeValueUnder predSat ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
+                            agreeValueUnder predSat₀ predSat₁ ctxᵢ.regime μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
                           cases hval with
                           | clean_eq_nonref_nonarrow _ hnotfun hnotref hEq =>
                               have hnotref' : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by

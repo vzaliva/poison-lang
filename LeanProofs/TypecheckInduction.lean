@@ -482,8 +482,10 @@ lemma applyFnTClosure_regular_inv
         memEnv := result2.memEnv'
         varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        bindEnv := BindEnv.bindParam tenv x result2.nextBind'
         tagEnv := result2.tagEnv'
         nextTag := result2.nextTag'
+        nextBind := result2.nextBind' + 1
         nextLoc := result2.nextLoc'
         regime := result2.regime'
         externRefAllowed := false
@@ -503,8 +505,10 @@ lemma applyFnTClosure_regular_inv
         memEnv := result2.memEnv'
         varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        bindEnv := BindEnv.bindParam tenv x result2.nextBind'
         tagEnv := result2.tagEnv'
         nextTag := result2.nextTag'
+        nextBind := result2.nextBind' + 1
         nextLoc := result2.nextLoc'
         regime := result2.regime'
         externRefAllowed := false
@@ -548,24 +552,25 @@ lemma applyFnTClosure_regular_inv
 
 lemma applyClosuresThreaded_ok_mem_output_exists_input
   {α : Type}
-  (applyOne : α → Tag × Loc → TypecheckM TypeResult)
-  {xs : List α} {cursor : Tag × Loc} {results : List TypeResult} {y : TypeResult}
-  (hthread : applyClosuresThreaded applyOne xs cursor = .ok results)
+  (applyOne : α → Tag × Loc → Nat → TypecheckM TypeResult)
+  {xs : List α} {cursor : Tag × Loc} {bn : Nat} {results : List TypeResult} {y : TypeResult}
+  (hthread : applyClosuresThreaded applyOne xs cursor bn = .ok results)
   (hmem : y ∈ results) :
-  ∃ x, x ∈ xs ∧ ∃ cursor', applyOne x cursor' = .ok y := by
-  induction xs generalizing cursor results with
+  ∃ x, x ∈ xs ∧ ∃ cursor' bn', applyOne x cursor' bn' = .ok y := by
+  induction xs generalizing cursor bn results with
   | nil =>
       simp [applyClosuresThreaded, pure, Except.pure] at hthread
       cases hthread
       cases hmem
   | cons x xs ih =>
       simp [applyClosuresThreaded, bind, Except.bind] at hthread
-      cases hfirst : applyOne x cursor with
+      cases hfirst : applyOne x cursor bn with
       | error _ =>
           simp [hfirst] at hthread
       | ok first =>
           simp [hfirst] at hthread
-          cases hrest : applyClosuresThreaded applyOne xs (first.nextTag', first.nextLoc') with
+          cases hrest : applyClosuresThreaded applyOne xs (first.nextTag', first.nextLoc')
+              first.nextBind' with
           | error _ =>
               simp [hrest] at hthread
           | ok rest =>
@@ -575,37 +580,38 @@ lemma applyClosuresThreaded_ok_mem_output_exists_input
               cases hmem with
               | inl hy =>
                   subst hy
-                  exact ⟨x, by simp, cursor, hfirst⟩
+                  exact ⟨x, by simp, cursor, bn, hfirst⟩
               | inr hy =>
-                  rcases ih hrest hy with ⟨x', hx', cursor', happly⟩
-                  exact ⟨x', by simp [hx'], cursor', happly⟩
+                  rcases ih hrest hy with ⟨x', hx', cursor', bn', happly⟩
+                  exact ⟨x', by simp [hx'], cursor', bn', happly⟩
 
 /-- Tag analog of `applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bound`: each output
     closure result comes from an input whose cursor tag is `≥ base`, given that each applied closure
     only grows the tag (`base ≤ cursor.1 → base ≤ result.nextTag'`). -/
 lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_tag_bound
   {α : Type}
-  (applyOne : α → Tag × Loc → TypecheckM TypeResult)
+  (applyOne : α → Tag × Loc → Nat → TypecheckM TypeResult)
   (base : Tag)
-  (hmono : ∀ item cursor result,
-    base ≤ cursor.1 → applyOne item cursor = .ok result → base ≤ result.nextTag')
-  {xs : List α} {cursor : Tag × Loc} {results : List TypeResult} {y : TypeResult}
+  (hmono : ∀ item cursor bn result,
+    base ≤ cursor.1 → applyOne item cursor bn = .ok result → base ≤ result.nextTag')
+  {xs : List α} {cursor : Tag × Loc} {bn : Nat} {results : List TypeResult} {y : TypeResult}
   (hbase : base ≤ cursor.1)
-  (hthread : applyClosuresThreaded applyOne xs cursor = .ok results)
+  (hthread : applyClosuresThreaded applyOne xs cursor bn = .ok results)
   (hmem : y ∈ results) :
-  ∃ x, x ∈ xs ∧ ∃ cursor', base ≤ cursor'.1 ∧ applyOne x cursor' = .ok y := by
-  induction xs generalizing cursor results with
+  ∃ x, x ∈ xs ∧ ∃ cursor' bn', base ≤ cursor'.1 ∧ applyOne x cursor' bn' = .ok y := by
+  induction xs generalizing cursor bn results with
   | nil =>
       simp [applyClosuresThreaded, pure, Except.pure] at hthread
       cases hthread
       cases hmem
   | cons x xs ih =>
       simp [applyClosuresThreaded, bind, Except.bind] at hthread
-      cases hfirst : applyOne x cursor with
+      cases hfirst : applyOne x cursor bn with
       | error _ => simp [hfirst] at hthread
       | ok first =>
           simp [hfirst] at hthread
-          cases hrest : applyClosuresThreaded applyOne xs (first.nextTag', first.nextLoc') with
+          cases hrest : applyClosuresThreaded applyOne xs (first.nextTag', first.nextLoc')
+              first.nextBind' with
           | error _ => simp [hrest] at hthread
           | ok rest =>
               simp [hrest, pure, Except.pure] at hthread
@@ -614,38 +620,40 @@ lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_tag_bound
               cases hmem with
               | inl hy =>
                   subst hy
-                  exact ⟨x, by simp, cursor, hbase, hfirst⟩
+                  exact ⟨x, by simp, cursor, bn, hbase, hfirst⟩
               | inr hy =>
-                  have hbase' : base ≤ first.nextTag' := hmono x cursor first hbase hfirst
-                  rcases ih hbase' hrest hy with ⟨x', hx', cursor', hcursor', happly⟩
-                  exact ⟨x', by simp [hx'], cursor', hcursor', happly⟩
+                  have hbase' : base ≤ first.nextTag' := hmono x cursor bn first hbase hfirst
+                  rcases ih hbase' hrest hy with ⟨x', hx', cursor', bn', hcursor', happly⟩
+                  exact ⟨x', by simp [hx'], cursor', bn', hcursor', happly⟩
 
 /-- Combined tag+loc cursor-bound (output→input): each threaded output closure result comes from an
     input whose cursor satisfies both `baseTag ≤ cursor'.1` and `baseLoc ≤ cursor'.2`. -/
 private lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bounds
   {α : Type}
-  (applyOne : α → Tag × Loc → TypecheckM TypeResult)
+  (applyOne : α → Tag × Loc → Nat → TypecheckM TypeResult)
   (baseTag : Tag) (baseLoc : Loc)
-  (hmono : ∀ item cursor result,
-    baseTag ≤ cursor.1 → baseLoc ≤ cursor.2 → applyOne item cursor = .ok result →
+  (hmono : ∀ item cursor bn result,
+    baseTag ≤ cursor.1 → baseLoc ≤ cursor.2 → applyOne item cursor bn = .ok result →
     baseTag ≤ result.nextTag' ∧ baseLoc ≤ result.nextLoc')
-  {xs : List α} {cursor : Tag × Loc} {results : List TypeResult} {y : TypeResult}
+  {xs : List α} {cursor : Tag × Loc} {bn : Nat} {results : List TypeResult} {y : TypeResult}
   (hbaseTag : baseTag ≤ cursor.1) (hbaseLoc : baseLoc ≤ cursor.2)
-  (hthread : applyClosuresThreaded applyOne xs cursor = .ok results)
+  (hthread : applyClosuresThreaded applyOne xs cursor bn = .ok results)
   (hmem : y ∈ results) :
-  ∃ x, x ∈ xs ∧ ∃ cursor', baseTag ≤ cursor'.1 ∧ baseLoc ≤ cursor'.2 ∧ applyOne x cursor' = .ok y := by
-  induction xs generalizing cursor results with
+  ∃ x, x ∈ xs ∧ ∃ cursor' bn', baseTag ≤ cursor'.1 ∧ baseLoc ≤ cursor'.2 ∧
+    applyOne x cursor' bn' = .ok y := by
+  induction xs generalizing cursor bn results with
   | nil =>
       simp [applyClosuresThreaded, pure, Except.pure] at hthread
       cases hthread
       cases hmem
   | cons x xs ih =>
       simp [applyClosuresThreaded, bind, Except.bind] at hthread
-      cases hfirst : applyOne x cursor with
+      cases hfirst : applyOne x cursor bn with
       | error _ => simp [hfirst] at hthread
       | ok first =>
           simp [hfirst] at hthread
-          cases hrest : applyClosuresThreaded applyOne xs (first.nextTag', first.nextLoc') with
+          cases hrest : applyClosuresThreaded applyOne xs (first.nextTag', first.nextLoc')
+              first.nextBind' with
           | error _ => simp [hrest] at hthread
           | ok rest =>
               simp [hrest, pure, Except.pure] at hthread
@@ -654,11 +662,11 @@ private lemma applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bound
               cases hmem with
               | inl hy =>
                   subst hy
-                  exact ⟨x, by simp, cursor, hbaseTag, hbaseLoc, hfirst⟩
+                  exact ⟨x, by simp, cursor, bn, hbaseTag, hbaseLoc, hfirst⟩
               | inr hy =>
-                  obtain ⟨hbt, hbl⟩ := hmono x cursor first hbaseTag hbaseLoc hfirst
-                  rcases ih hbt hbl hrest hy with ⟨x', hx', cursor', hct', hcl', happly⟩
-                  exact ⟨x', by simp [hx'], cursor', hct', hcl', happly⟩
+                  obtain ⟨hbt, hbl⟩ := hmono x cursor bn first hbaseTag hbaseLoc hfirst
+                  rcases ih hbt hbl hrest hy with ⟨x', hx', cursor', bn', hct', hcl', happly⟩
+                  exact ⟨x', by simp [hx'], cursor', bn', hct', hcl', happly⟩
 
 private lemma QTypRespectsTagMeaning_of_arrow_captured_lookup
   (tm : TagMeaning)
@@ -670,14 +678,17 @@ private lemma QTypRespectsTagMeaning_of_arrow_captured_lookup
   (hlookup : σcap.lookup y = some qtCap) :
   QTypRespectsTagMeaning tm qtCap := by
   intro qt k d hinq hqd
-  have hcapMem : (y, qtCap) ∈ σcap :=
-    List_lookup_some_mem y qtCap σcap (by simpa [CapturedVarEnv.lookup_eq] using hlookup)
+  rw [CapturedVarEnv.lookup_eq] at hlookup
+  obtain ⟨⟨q, n⟩, hl, hq⟩ := Option.map_eq_some_iff.1 hlookup
+  simp only at hq
+  subst hq
+  have hcapMem : (y, q, n) ∈ σcap := List_lookup_some_mem y (q, n) σcap hl
   have hroot :
-      QTypInQTyp qtCap qtRes :=
-    QTypInQTyp.in_arrow qtCap qtRes st1 st2 p tcls
-      (FnTClosure.regular xFun body σcap) y
+      QTypInQTyp q qtRes :=
+    QTypInQTyp.in_arrow q qtRes st1 st2 p tcls
+      (FnTClosure.regular xFun body σcap) y (n := n)
       hetyp hmem (by simpa [fnCapturedEnv] using hcapMem)
-  exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
+  exact hresTm (QTypInQTyp.trans qt q qtRes hinq hroot) hqd
 
 private lemma wfTagMeaningCtx_ofCaptured_from_arrow
   (tm : TagMeaning) (ctxMem : TypeContext)
@@ -753,14 +764,17 @@ private lemma QTypRespectsTagMeaning_of_parrow_captured_lookup
   (hlookup : σcap.lookup y = some qtCap) :
   QTypRespectsTagMeaning tm qtCap := by
   intro qt k d hinq hqd
-  have hcapMem : (y, qtCap) ∈ σcap :=
-    List_lookup_some_mem y qtCap σcap (by simpa [CapturedVarEnv.lookup_eq] using hlookup)
+  rw [CapturedVarEnv.lookup_eq] at hlookup
+  obtain ⟨⟨q, n⟩, hl, hq⟩ := Option.map_eq_some_iff.1 hlookup
+  simp only at hq
+  subst hq
+  have hcapMem : (y, q, n) ∈ σcap := List_lookup_some_mem y (q, n) σcap hl
   have hroot :
-      QTypInQTyp qtCap qtRes :=
-    QTypInQTyp.in_parrow qtCap qtRes st1 st2 p tcls
-      (PFnTClosure.regular xFun pbody σcap) y
+      QTypInQTyp q qtRes :=
+    QTypInQTyp.in_parrow q qtRes st1 st2 p tcls
+      (PFnTClosure.regular xFun pbody σcap) y (n := n)
       hetyp hmem (by simpa [pfnCapturedEnv] using hcapMem)
-  exact hresTm (QTypInQTyp.trans qt qtCap qtRes hinq hroot) hqd
+  exact hresTm (QTypInQTyp.trans qt q qtRes hinq hroot) hqd
 
 private lemma wfTagMeaningCtx_ofCaptured_from_parrow
   (tm : TagMeaning) (ctxMem : TypeContext)
@@ -1407,8 +1421,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                             let nextTag2 := result1.nextTag'
                             let regime2 := result1.regime'
                             let ctx2 : TypeContext :=
-                              { pc := ctx.pc, regime := regime2, memEnv := memEnv2, varEnv := ctx.varEnv,
-                                tagEnv := tagEnv2, nextLoc := nextLoc2, nextTag := nextTag2, pureCtx := ctx.pureCtx,
+                              { pc := ctx.pc, regime := regime2, memEnv := memEnv2, varEnv := ctx.varEnv, bindEnv := ctx.bindEnv,
+                                tagEnv := tagEnv2, nextLoc := nextLoc2, nextTag := nextTag2, nextBind := result1.nextBind', pureCtx := ctx.pureCtx,
                                 externRegime := ctx.externRegime, externRefAllowed := ctx.externRefAllowed,
                                 declaredExternRefs := result1.declared' }
                             have hreg2 : regimeConsistentWithCtxMasked masked ctx2 := by
@@ -1418,8 +1432,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                 have h_tc2_explicit :
                                     typecheckExpr
                                       { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
-                                        varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
-                                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx,
+                                        varEnv := ctx.varEnv, bindEnv := ctx.bindEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                        nextTag := result1.nextTag', nextBind := result1.nextBind', pureCtx := ctx.pureCtx,
                                         externRegime := ctx.externRegime, externRefAllowed := ctx.externRefAllowed,
                                         declaredExternRefs := result1.declared' }
                                       e2 fuel'' = .error err := by
@@ -1432,8 +1446,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                 have h_tc2_explicit :
                                     typecheckExpr
                                       { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
-                                        varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
-                                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx,
+                                        varEnv := ctx.varEnv, bindEnv := ctx.bindEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                        nextTag := result1.nextTag', nextBind := result1.nextBind', pureCtx := ctx.pureCtx,
                                         externRegime := ctx.externRegime, externRefAllowed := ctx.externRefAllowed,
                                         declaredExternRefs := result1.declared' }
                                       e2 fuel'' = .ok result2 := by
@@ -1456,7 +1470,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
             rcases hstruct with h1 | h2 | hstd
             · rcases h1 with ⟨k, deps, _, hRk, res1, _, _, res2, _, htc2, _, _hmem, htag, _, _, hregEq, _, _⟩
               let ctxT := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                                     nextTag := res1.nextTag',
+                                     nextTag := res1.nextTag', nextBind := res1.nextBind',
                                      declaredExternRefs := res1.declared' }
               have hreg_true : regimeConsistentWithCtxMasked masked ctxT := by
                 exact tagEnvConsistentWithRegimeMasked_insert_true masked ctx.tagEnv ctx.regime k deps hreg hRk
@@ -1469,7 +1483,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
               have hreg_false : regimeConsistentWithCtxMasked masked { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩ } := by
                 exact tagEnvConsistentWithRegimeMasked_insert_false masked ctx.tagEnv ctx.regime k deps hreg
               let ctxF := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind',
                                      declaredExternRefs := res2.declared' }
               have htc3' : typecheck ctxF e3 (fuel' - 1) = .ok res3 := by simpa [ctxF] using! htc3
               have hIH3 := IH' (fuel' - 1) (by omega) masked ctxF e3 res3 hreg_false htc3'
@@ -1480,7 +1494,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
               have htc1' : typecheck ctx e1 (fuel' - 1) = .ok res1 := by simpa using! htc1
               have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 res1 hreg htc1'
               set ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
-                                     nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime',
+                                     nextLoc := res1.nextLoc', nextTag := res1.nextTag', nextBind := res1.nextBind', regime := res1.regime',
                                      declaredExternRefs := res1.declared' }
               have hreg1 : regimeConsistentWithCtxMasked masked ctx' := by
                 apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter ctx res1)
@@ -1492,7 +1506,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
               have hreg1' : regimeConsistentWithCtxMasked masked ctx'' := hreg1
               have htc2' : typecheck ctx'' e2 (fuel' - 1) = .ok res2 := by simpa using! htc2
               have hIH2 := IH' (fuel' - 1) (by omega) masked ctx'' e2 res2 hreg1' htc2'
-              set ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
+              set ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind', declaredExternRefs := res2.declared' }
               have hIH1_tagEnv : tagEnvConsistentWithRegimeMasked masked res1.tagEnv' res1.regime' := by
                 have h := hIH1
                 simp only [ctxAfter, regimeConsistentWithCtxMasked] at h
@@ -1517,8 +1531,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                   ⟨result2, result1, etyp2, p2, pred2, _hqt2, htc2, htc1, hcases⟩
                 have hIH2 := IH' fuel'' (by omega) masked ctx e2 result2 hreg htc2
                 have hreg' : regimeConsistentWithCtxMasked masked
-                    (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
-                      result2.nextLoc', result2.nextTag', ctx.pureCtx, ctx.externRegime,
+                    (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, ctx.bindEnv, result2.tagEnv',
+                      result2.nextLoc', result2.nextTag', result2.nextBind', ctx.pureCtx, ctx.externRegime,
                       ctx.externRefAllowed, result2.declared'⟩ : TypeContext) := by
                   apply regimeConsistentWithCtxMasked_of_tagEnv_regime_nextTag masked (ctxAfter ctx result2)
                   · simp [ctxAfter]
@@ -1534,16 +1548,16 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
                       (results : List TypeResult),
                       applyClosuresThreaded
-                        (fun tcl cursor =>
-                          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
-                        tcls (result1.nextTag', result1.nextLoc') = .ok results →
+                        (fun tcl cursor bn =>
+                          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel'')
+                        tcls (result1.nextTag', result1.nextLoc') result1.nextBind' = .ok results →
                       ∀ r, r ∈ results → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) := by
                   intro st1 st2 p p1 tcls results hthread r hr
                   rcases applyClosuresThreaded_ok_mem_output_exists_input
-                      (applyOne := fun tcl cursor =>
-                        applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
+                      (applyOne := fun tcl cursor bn =>
+                        applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel'')
                       (hthread := hthread) (hmem := hr) with
-                    ⟨tcl, _htcl_mem, cursor, happly⟩
+                    ⟨tcl, _htcl_mem, cursor, bn, happly⟩
                   cases tcl with
                   | regular x body env =>
                       cases fuel'' with
@@ -1567,7 +1581,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                             memEnv := result1.memEnv',
                                             varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                                               ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
-                                            tagEnv := result1.tagEnv', nextTag := cursor.1,
+                                            bindEnv := BindEnv.bindParam env x bn,
+                                            tagEnv := result1.tagEnv', nextTag := cursor.1, nextBind := bn + 1,
                                             nextLoc := cursor.2, regime := result1.regime',
                                             externRefAllowed := false,
                                             declaredExternRefs := result1.declared' } := by
@@ -1578,7 +1593,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                           memEnv := result1.memEnv',
                                           varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                                             ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
-                                          tagEnv := result1.tagEnv', nextTag := cursor.1,
+                                          bindEnv := BindEnv.bindParam env x bn,
+                                          tagEnv := result1.tagEnv', nextTag := cursor.1, nextBind := bn + 1,
                                           nextLoc := cursor.2, regime := result1.regime',
                                           externRefAllowed := false,
                                           declaredExternRefs := result1.declared' }
@@ -1588,7 +1604,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                     exact hIH_body
                   | extern id x retSpec effects capturedEnv declaredArgQt captures =>
                       let rCursor : TypeResult :=
-                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                       have happly_old :
                           applyFnTClosure (.extern id x retSpec effects capturedEnv declaredArgQt captures) st1 st2 p p1
                             etyp2 p2 pred2 ctx rCursor fuel'' = .ok r := by
@@ -1617,16 +1633,16 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
                       (results : List TypeResult),
                       applyClosuresThreaded
-                        (fun tcl cursor =>
-                          applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
-                        tcls (result1.nextTag', result1.nextLoc') = .ok results →
+                        (fun tcl cursor bn =>
+                          applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel'')
+                        tcls (result1.nextTag', result1.nextLoc') result1.nextBind' = .ok results →
                       ∀ r, r ∈ results → regimeConsistentWithCtxMasked masked (ctxAfter ctx r) := by
                   intro st1 st2 p p1 tcls results hthread r hr
                   rcases applyClosuresThreaded_ok_mem_output_exists_input
-                      (applyOne := fun tcl cursor =>
-                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
+                      (applyOne := fun tcl cursor bn =>
+                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel'')
                       (hthread := hthread) (hmem := hr) with
-                    ⟨tcl, _htcl_mem, cursor, happly⟩
+                    ⟨tcl, _htcl_mem, cursor, bn, happly⟩
                   cases tcl with
                   | regular x body env =>
                       cases fuel'' with
@@ -1649,7 +1665,8 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                       memEnv := result1.memEnv',
                                       varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                                         ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
-                                      tagEnv := result1.tagEnv', nextTag := cursor.1,
+                                      bindEnv := BindEnv.bindParam env x bn,
+                                      tagEnv := result1.tagEnv', nextTag := cursor.1, nextBind := bn + 1,
                                       pureCtx := true,
                                       nextLoc := cursor.2, regime := result1.regime',
                                       externRefAllowed := false,
@@ -1666,7 +1683,7 @@ private lemma typecheckExpr_preserves_regimeConsistentWithCtxMasked_main :
                                     · exact hIH_body
                   | extern id x retSpec capturedEnv declaredArgQt captures =>
                       let rCursor : TypeResult :=
-                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                       have happly_old :
                           applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                             etyp2 p2 pred2 ctx rCursor fuel'' = .ok r := by
@@ -2011,8 +2028,8 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                             let nextTag2 := result1.nextTag'
                             let regime2 := result1.regime'
                             let ctx2 : TypeContext :=
-                              { pc := ctx.pc, regime := regime2, memEnv := memEnv2, varEnv := ctx.varEnv,
-                                tagEnv := tagEnv2, nextLoc := nextLoc2, nextTag := nextTag2, pureCtx := ctx.pureCtx,
+                              { pc := ctx.pc, regime := regime2, memEnv := memEnv2, varEnv := ctx.varEnv, bindEnv := ctx.bindEnv,
+                                tagEnv := tagEnv2, nextLoc := nextLoc2, nextTag := nextTag2, nextBind := result1.nextBind', pureCtx := ctx.pureCtx,
                                 externRegime := ctx.externRegime, externRefAllowed := ctx.externRefAllowed,
                                 declaredExternRefs := result1.declared' }
                             have habsent2 : MaskedTagsAbsentFromTrueTagEnv masked ctx2 := by
@@ -2031,8 +2048,8 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                                 have h_tc2_explicit :
                                     typecheckExpr
                                       { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
-                                        varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
-                                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx,
+                                        varEnv := ctx.varEnv, bindEnv := ctx.bindEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                        nextTag := result1.nextTag', nextBind := result1.nextBind', pureCtx := ctx.pureCtx,
                                         externRegime := ctx.externRegime, externRefAllowed := ctx.externRefAllowed,
                                         declaredExternRefs := result1.declared' }
                                       e2 fuel'' = .error err := by
@@ -2046,8 +2063,8 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                                 have h_tc2_explicit :
                                     typecheckExpr
                                       { pc := ctx.pc, regime := result1.regime', memEnv := result1.memEnv',
-                                        varEnv := ctx.varEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
-                                        nextTag := result1.nextTag', pureCtx := ctx.pureCtx,
+                                        varEnv := ctx.varEnv, bindEnv := ctx.bindEnv, tagEnv := result1.tagEnv', nextLoc := result1.nextLoc',
+                                        nextTag := result1.nextTag', nextBind := result1.nextBind', pureCtx := ctx.pureCtx,
                                         externRegime := ctx.externRegime, externRefAllowed := ctx.externRefAllowed,
                                         declaredExternRefs := result1.declared' }
                                       e2 fuel'' = .ok result2 := by
@@ -2090,20 +2107,20 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
               have hmasked_bounded_true :
                   ∀ t, masked t →
                     t < ({ ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                                    nextTag := res1.nextTag' } : TypeContext).nextTag :=
+                                    nextTag := res1.nextTag', nextBind := res1.nextBind' } : TypeContext).nextTag :=
                 fun t ht => Nat.lt_of_lt_of_le (hmasked_bounded t ht) hb1
               have htc2' : typecheck { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                                                nextTag := res1.nextTag',
+                                                nextTag := res1.nextTag', nextBind := res1.nextBind',
                                                 declaredExternRefs := res1.declared' } e2 (fuel' - 1) = .ok res2 := by
                 simpa using! htc2
               have hIH2 := IH' (fuel' - 1) (by omega) masked
                 { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                           nextTag := res1.nextTag',
+                           nextTag := res1.nextTag', nextBind := res1.nextBind',
                            declaredExternRefs := res1.declared' } e2 res2
                 habsent_true hmasked_none_true hmasked_bounded_true htc2'
               apply MaskedTagsAbsentFromTrueTagEnv_of_tagEnv
                 (ctx₁ := ctxAfter { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                                             nextTag := res1.nextTag',
+                                             nextTag := res1.nextTag', nextBind := res1.nextBind',
                                              declaredExternRefs := res1.declared' } res2)
                 (ctx₂ := ctxAfter ctx res)
               · simp [ctxAfter, htag]
@@ -2117,7 +2134,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                 MaskedTagsAbsentFromTrueTagEnv_insert_false
                   (masked := masked) (ctx := ctx) habsent
               let ctxF := { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                                     nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind',
                                      declaredExternRefs := res2.declared' }
               have habsent_F : MaskedTagsAbsentFromTrueTagEnv masked ctxF := by
                 simpa [ctxF, MaskedTagsAbsentFromTrueTagEnv] using habsent_false
@@ -2143,7 +2160,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
               have hIH1 := IH' (fuel' - 1) (by omega) masked ctx e1 res1
                 habsent hmasked_none hmasked_bounded htc1'
               set ctx' := { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
-                                     nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime',
+                                     nextLoc := res1.nextLoc', nextTag := res1.nextTag', nextBind := res1.nextBind', regime := res1.regime',
                                      declaredExternRefs := res1.declared' }
               have habsent1 : MaskedTagsAbsentFromTrueTagEnv masked ctx' := by
                 simpa [ctx', MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hIH1
@@ -2165,7 +2182,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
               have htc2' : typecheck ctx'' e2 (fuel' - 1) = .ok res2 := by simpa using! htc2
               have hIH2 := IH' (fuel' - 1) (by omega) masked ctx'' e2 res2
                 habsent1' hmasked_none1' hmasked_bounded1' htc2'
-              set ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
+              set ctxForE3 := { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind', declaredExternRefs := res2.declared' }
               have habsent3_in : MaskedTagsAbsentFromTrueTagEnv masked ctxForE3 := by
                 simpa [ctxForE3, MaskedTagsAbsentFromTrueTagEnv] using habsent1'
               have hmasked_none3 : ∀ k, masked k → ctxForE3.regime.lookup? k = none := by
@@ -2207,20 +2224,20 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                   typecheck_nextTag_mono ctx e2 fuel'' result2 htc2
                 have hmasked_bounded_fun :
                     ∀ k, masked k →
-                      k < (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
-                        result2.nextLoc', result2.nextTag', ctx.pureCtx, ctx.externRegime,
+                      k < (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, ctx.bindEnv, result2.tagEnv',
+                        result2.nextLoc', result2.nextTag', result2.nextBind', ctx.pureCtx, ctx.externRegime,
                         ctx.externRefAllowed, result2.declared'⟩ : TypeContext).nextTag :=
                   fun t ht => Nat.lt_of_lt_of_le (hmasked_bounded t ht) hbfun
                 have habsent_fun :
                     MaskedTagsAbsentFromTrueTagEnv masked
-                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
-                        result2.nextLoc', result2.nextTag', ctx.pureCtx, ctx.externRegime,
+                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, ctx.bindEnv, result2.tagEnv',
+                        result2.nextLoc', result2.nextTag', result2.nextBind', ctx.pureCtx, ctx.externRegime,
                         ctx.externRefAllowed, result2.declared'⟩ : TypeContext) := by
                   simpa [MaskedTagsAbsentFromTrueTagEnv, ctxAfter] using hIH2
                 have hmasked_none_fun :
                     ∀ k, masked k →
-                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
-                        result2.nextLoc', result2.nextTag', ctx.pureCtx, ctx.externRegime,
+                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, ctx.bindEnv, result2.tagEnv',
+                        result2.nextLoc', result2.nextTag', result2.nextBind', ctx.pureCtx, ctx.externRegime,
                         ctx.externRefAllowed, result2.declared'⟩ : TypeContext).regime.lookup? k = none := by
                   intro k hk
                   simpa using! hmasked_none2 k hk
@@ -2235,30 +2252,30 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                   exact masked_lookup_none_of_monotoneStepExt hmasked_none_fun
                     (fun t ht => Nat.not_le.2 (hmasked_bounded_fun t ht))
                     (regime_monotoneExt
-                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, result2.tagEnv',
-                        result2.nextLoc', result2.nextTag', ctx.pureCtx, ctx.externRegime,
+                      (⟨ctx.pc, result2.regime', result2.memEnv', ctx.varEnv, ctx.bindEnv, result2.tagEnv',
+                        result2.nextLoc', result2.nextTag', result2.nextBind', ctx.pureCtx, ctx.externRegime,
                         ctx.externRefAllowed, result2.declared'⟩ : TypeContext)
                       e1 fuel'' result1 htc1) k hk
                 have h_fn_closure_absent :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List FnTClosure)
                       (results : List TypeResult),
                       applyClosuresThreaded
-                        (fun tcl cursor =>
-                          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
-                        tcls (result1.nextTag', result1.nextLoc') = .ok results →
+                        (fun tcl cursor bn =>
+                          applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel'')
+                        tcls (result1.nextTag', result1.nextLoc') result1.nextBind' = .ok results →
                       ∀ r, r ∈ results → MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r) := by
                   intro st1 st2 p p1 tcls results hthread r hr
                   have hb_r1 : ctx.nextTag ≤ result1.nextTag' :=
                     Nat.le_trans hbfun (by simpa using typecheck_nextTag_mono _ e1 fuel'' result1 htc1)
                   rcases applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_tag_bound
-                      (applyOne := fun tcl cursor =>
-                        applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
+                      (applyOne := fun tcl cursor bn =>
+                        applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel'')
                       (base := result1.nextTag')
-                      (hmono := fun tcl cursor result hb happly =>
+                      (hmono := fun tcl cursor bn result hb happly =>
                         Nat.le_trans hb (applyFnTClosureAtCursor_nextTag_advance tcl ctx st1 st2 p p1
-                          etyp2 p2 pred2 result1 result cursor fuel'' happly))
+                          etyp2 p2 pred2 result1 result cursor bn fuel'' happly))
                       (hbase := Nat.le_refl _) (hthread := hthread) (hmem := hr) with
-                    ⟨tcl, _htcl_mem, cursor, hcursorTag, happly⟩
+                    ⟨tcl, _htcl_mem, cursor, bn, hcursorTag, happly⟩
                   cases tcl with
                   | regular x body env =>
                       cases fuel'' with
@@ -2281,7 +2298,8 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                                       memEnv := result1.memEnv',
                                       varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                                         ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
-                                      tagEnv := result1.tagEnv', nextTag := cursor.1,
+                                      bindEnv := BindEnv.bindParam env x bn,
+                                      tagEnv := result1.tagEnv', nextTag := cursor.1, nextBind := bn + 1,
                                       nextLoc := cursor.2, regime := result1.regime',
                                       externRefAllowed := false,
                                       declaredExternRefs := result1.declared' }
@@ -2303,7 +2321,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                                     simpa [bodyCtx, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hIH_body
                   | extern id x retSpec effects capturedEnv declaredArgQt captures =>
                       let rCursor : TypeResult :=
-                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                       have happly_old :
                           applyFnTClosure (.extern id x retSpec effects capturedEnv declaredArgQt captures) st1 st2 p p1
                             etyp2 p2 pred2 ctx rCursor fuel'' = .ok r := by
@@ -2328,22 +2346,22 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                     ∀ (st1 st2 : Typ) (p p1 : Poison) (tcls : List PFnTClosure)
                       (results : List TypeResult),
                       applyClosuresThreaded
-                        (fun tcl cursor =>
-                          applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
-                        tcls (result1.nextTag', result1.nextLoc') = .ok results →
+                        (fun tcl cursor bn =>
+                          applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel'')
+                        tcls (result1.nextTag', result1.nextLoc') result1.nextBind' = .ok results →
                       ∀ r, r ∈ results → MaskedTagsAbsentFromTrueTagEnv masked (ctxAfter ctx r) := by
                   intro st1 st2 p p1 tcls results hthread r hr
                   have hb_r1 : ctx.nextTag ≤ result1.nextTag' :=
                     Nat.le_trans hbfun (by simpa using typecheck_nextTag_mono _ e1 fuel'' result1 htc1)
                   rcases applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_tag_bound
-                      (applyOne := fun tcl cursor =>
-                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor fuel'')
+                      (applyOne := fun tcl cursor bn =>
+                        applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel'')
                       (base := result1.nextTag')
-                      (hmono := fun tcl cursor result hb happly =>
+                      (hmono := fun tcl cursor bn result hb happly =>
                         Nat.le_trans hb (applyPFnTClosureAtCursor_nextTag_advance tcl ctx st1 st2 p p1
-                          etyp2 p2 pred2 result1 result cursor fuel'' happly))
+                          etyp2 p2 pred2 result1 result cursor bn fuel'' happly))
                       (hbase := Nat.le_refl _) (hthread := hthread) (hmem := hr) with
-                    ⟨tcl, _htcl_mem, cursor, hcursorTag, happly⟩
+                    ⟨tcl, _htcl_mem, cursor, bn, hcursorTag, happly⟩
                   cases tcl with
                   | regular x body env =>
                       cases fuel'' with
@@ -2366,7 +2384,8 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                                       memEnv := result1.memEnv',
                                       varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                                         ⟨etyp2, joinPoison ctx.pc p2, pred2⟩,
-                                      tagEnv := result1.tagEnv', nextTag := cursor.1,
+                                      bindEnv := BindEnv.bindParam env x bn,
+                                      tagEnv := result1.tagEnv', nextTag := cursor.1, nextBind := bn + 1,
                                       pureCtx := true,
                                       nextLoc := cursor.2, regime := result1.regime',
                                       externRefAllowed := false,
@@ -2390,7 +2409,7 @@ private lemma typecheckExpr_preserves_MaskedTagsAbsentFromTrueTagEnv_main :
                                     simpa [bodyCtx, ctxAfter, MaskedTagsAbsentFromTrueTagEnv] using hIH_body
                   | extern id x retSpec capturedEnv declaredArgQt captures =>
                       let rCursor : TypeResult :=
-                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                        { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                       have happly_old :
                           applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                             etyp2 p2 pred2 ctx rCursor fuel'' = .ok r := by
@@ -2473,7 +2492,7 @@ lemma typecheckIf_pred_noPred
   | succ fuel' =>
     unfold typecheckIf at htc
     simp only [bind, Except.bind] at htc
-    cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv fuel' with
+    cases hmatch : matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv fuel' with
     | ok kd =>
       obtain ⟨k, deps⟩ := kd
       simp only [hmatch] at htc
@@ -2563,7 +2582,7 @@ lemma typecheckIf_pred_noPred
                   by_cases hbool : etyp1 = ETyp.bool
                   · simp only [hbool, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at htc
                     let ctx' := { ctx with memEnv := result1.memEnv', tagEnv := result1.tagEnv',
-                                           nextLoc := result1.nextLoc', nextTag := result1.nextTag', regime := result1.regime',
+                                           nextLoc := result1.nextLoc', nextTag := result1.nextTag', nextBind := result1.nextBind', regime := result1.regime',
                                            declaredExternRefs := result1.declared' }
                     let pc' := joinPoison ctx.pc p1
                     let ctx'' := { ctx' with pc := pc' }
@@ -2577,7 +2596,7 @@ lemma typecheckIf_pred_noPred
                         let ctxForE3 :=
                           { ctx'' with
                             nextLoc := result2.nextLoc'
-                            nextTag := result2.nextTag'
+                            nextTag := result2.nextTag', nextBind := result2.nextBind'
                             declaredExternRefs := result2.declared' }
                         cases htc3 : typecheckExpr ctxForE3 e3 fuel' with
                         | error e => rw [htc3] at htc; cases htc
@@ -2770,7 +2789,7 @@ private lemma QTypRespectsTagMeaning_joinStep
           qt' = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩)
         hinq
         (fun _ hn => Or.inr (Or.inr hn))
-        (fun qtInner qtOuter st₁ st₂ _p tcls tcl x hetyp htcl hcap hjoined => by
+        (fun qtInner qtOuter st₁ st₂ _p tcls tcl x _n hetyp htcl hcap hjoined => by
           subst hjoined
           cases e1 with
           | arrow st1a st2a pa1 tcls1 =>
@@ -2808,7 +2827,7 @@ private lemma QTypRespectsTagMeaning_joinStep
                   simp only [joinETyps] at hetyp
                   split_ifs at hetyp
               | _ => simp [joinETyps] at hetyp)
-        (fun qtInner qtOuter st₁ st₂ _p tcls tcl x hetyp htcl hcap hjoined => by
+        (fun qtInner qtOuter st₁ st₂ _p tcls tcl x _n hetyp htcl hcap hjoined => by
           subst hjoined
           cases e1 with
           | parrow st1a st2a pa1 ptcls1 =>
@@ -2913,7 +2932,8 @@ private lemma applyFnTClosure_ok_tagMeaningSub_byIH
               memEnv := result1.memEnv',
               varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
-              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+              bindEnv := BindEnv.bindParam env x result1.nextBind',
+              tagEnv := result1.tagEnv', nextTag := result1.nextTag', nextBind := result1.nextBind' + 1,
               nextLoc := result1.nextLoc', regime := result1.regime',
               externRefAllowed := false,
               declaredExternRefs := result1.declared' }
@@ -2956,10 +2976,10 @@ private lemma applyFnTClosure_ok_tagMeaningSub_byIH
               exact QTypRespectsTagMeaning_transport_etyp_pred tmBody ⟨etyp3, p3, pred3⟩
                 ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern id x retSpec effects capturedEnv argQt captures =>
-    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+    have hcapTm : ∀ (name : Name) (qt : QTyp) (n : Nat), (name, qt, n) ∈ capturedEnv →
         QTypRespectsTagMeaning tm qt := by
-      intro name qt hmem qtDeep k d hinqDeep hqd
-      have hmemCap : (name, qt) ∈ fnCapturedEnv
+      intro name qt n hmem qtDeep k d hinqDeep hqd
+      have hmemCap : (name, qt, n) ∈ fnCapturedEnv
           (FnTClosure.extern id x retSpec effects capturedEnv argQt captures) :=
         by simpa [fnCapturedEnv] using hmem
       have hroot : QTypInQTyp qt result1.qualType :=
@@ -3030,7 +3050,8 @@ private lemma applyPFnTClosure_ok_tagMeaningSub_byIH
               memEnv := result1.memEnv',
               varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩,
-              tagEnv := result1.tagEnv', nextTag := result1.nextTag',
+              bindEnv := BindEnv.bindParam env x result1.nextBind',
+              tagEnv := result1.tagEnv', nextTag := result1.nextTag', nextBind := result1.nextBind' + 1,
               pureCtx := true,
               nextLoc := result1.nextLoc', regime := result1.regime',
               externRefAllowed := false,
@@ -3074,9 +3095,9 @@ private lemma applyPFnTClosure_ok_tagMeaningSub_byIH
               exact QTypRespectsTagMeaning_transport_etyp_pred tmBody ⟨etyp3, p3, pred3⟩
                 ⟨etyp3, joinPoison p1 (joinPoison p p3), pred3⟩ hresTm3 rfl rfl hinq hgd
   | extern id x retSpec capturedEnv declaredArgQt captures =>
-    have hcapTm : ∀ (name : Name) (qt : QTyp), (name, qt) ∈ capturedEnv →
+    have hcapTm : ∀ (name : Name) (qt : QTyp) (n : Nat), (name, qt, n) ∈ capturedEnv →
         QTypRespectsTagMeaning tm qt := by
-      intro name qt hmem qt' k d hinq' hqd'
+      intro name qt n hmem qt' k d hinq' hqd'
       exact hresTm1
         (QTypInQTyp.trans qt' qt result1.qualType hinq'
           (QTypInQTyp.in_parrow qt result1.qualType st1 st2 p tcls
@@ -3175,7 +3196,7 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningSub_byIH
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (allTcls todo : List FnTClosure)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+  (result1 : TypeResult) (cursor : Tag × Loc) (bn : Nat) (fuel : Nat)
   (IH :
     ∀ (m : Nat), m < fuel →
       ∀ (tm_i : TagMeaning) (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
@@ -3194,10 +3215,10 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningSub_byIH
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (hthread :
     applyClosuresThreaded
-      (fun tcl cursor =>
+      (fun tcl cursor bn =>
         applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-          ctx result1 cursor fuel)
-      todo cursor = .ok (first :: rest)) :
+          ctx result1 cursor bn fuel)
+      todo cursor bn = .ok (first :: rest)) :
   ∃ (tm' : TagMeaning) (last : TypeResult),
     tm ⊑ tm' ∧
     last ∈ first :: rest ∧
@@ -3205,24 +3226,24 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningSub_byIH
     (∀ r, r ∈ first :: rest → wfTagMeaningCtx tm' (ctxAfter ctx r)) ∧
     (∀ r, r ∈ first :: rest → QTypRespectsTagMeaning tm' r.qualType) ∧
     tm' ⊑ Q := by
-  induction todo generalizing tm cursor first rest with
+  induction todo generalizing tm cursor bn first rest with
   | nil =>
       simp [applyClosuresThreaded, pure, Except.pure] at hthread
   | cons tcl todo ih =>
       simp [applyClosuresThreaded, bind, Except.bind] at hthread
       cases hhead :
           applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-            ctx result1 cursor fuel with
+            ctx result1 cursor bn fuel with
       | error err =>
           simp [hhead] at hthread
       | ok head =>
           simp [hhead] at hthread
           cases htail :
               applyClosuresThreaded
-                (fun tcl cursor =>
+                (fun tcl cursor bn =>
                   applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-                    ctx result1 cursor fuel)
-                todo (head.nextTag', head.nextLoc') with
+                    ctx result1 cursor bn fuel)
+                todo (head.nextTag', head.nextLoc') head.nextBind' with
           | error err =>
               simp [htail] at hthread
           | ok tailResults =>
@@ -3230,7 +3251,7 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningSub_byIH
               have hhead_eq : head = first := hthread.1
               have htail_eq : tailResults = rest := hthread.2
               let cursorResult : TypeResult :=
-                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
               have hctxCursor : wfTagMeaningCtx tm (ctxAfter ctx cursorResult) := by
                 simpa [ctxAfter, cursorResult] using! hctxTm1
               have hresCursor : QTypRespectsTagMeaning tm cursorResult.qualType := by
@@ -3280,7 +3301,7 @@ private lemma applyFnClosuresThreaded_ok_tagMeaningSub_byIH
                   have hargHead : QTypRespectsTagMeaning tmHead
                       ⟨argEtyp, argPoison, argPred⟩ :=
                     QTypRespectsTagMeaning_mono hextHead hargTm
-                  rcases ih tmHead (head.nextTag', head.nextLoc') tailFirst tailRest
+                  rcases ih tmHead (head.nextTag', head.nextLoc') head.nextBind' tailFirst tailRest
                       hctxHeadBase hresHeadBase hboundedHead h_lawsHead
                       (fun r hr => hL r (by
                         rw [← htail_eq]; exact List.mem_cons_of_mem _ hr))
@@ -3314,7 +3335,7 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningSub_byIH
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
   (allTcls todo : List PFnTClosure)
   (argEtyp : ETyp) (argPoison : Poison) (argPred : Predicate)
-  (result1 : TypeResult) (cursor : Tag × Loc) (fuel : Nat)
+  (result1 : TypeResult) (cursor : Tag × Loc) (bn : Nat) (fuel : Nat)
   (IH :
     ∀ (m : Nat), m < fuel →
       ∀ (tm_i : TagMeaning) (ctx_i : TypeContext) (e_i : Expr) (res_i : TypeResult),
@@ -3333,10 +3354,10 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningSub_byIH
   (hargTm : QTypRespectsTagMeaning tm ⟨argEtyp, argPoison, argPred⟩)
   (hthread :
     applyClosuresThreaded
-      (fun tcl cursor =>
+      (fun tcl cursor bn =>
         applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-          ctx result1 cursor fuel)
-      todo cursor = .ok (first :: rest)) :
+          ctx result1 cursor bn fuel)
+      todo cursor bn = .ok (first :: rest)) :
   ∃ (tm' : TagMeaning) (last : TypeResult),
     tm ⊑ tm' ∧
     last ∈ first :: rest ∧
@@ -3344,24 +3365,24 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningSub_byIH
     (∀ r, r ∈ first :: rest → wfTagMeaningCtx tm' (ctxAfter ctx r)) ∧
     (∀ r, r ∈ first :: rest → QTypRespectsTagMeaning tm' r.qualType) ∧
     tm' ⊑ Q := by
-  induction todo generalizing tm cursor first rest with
+  induction todo generalizing tm cursor bn first rest with
   | nil =>
       simp [applyClosuresThreaded, pure, Except.pure] at hthread
   | cons tcl todo ih =>
       simp [applyClosuresThreaded, bind, Except.bind] at hthread
       cases hhead :
           applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-            ctx result1 cursor fuel with
+            ctx result1 cursor bn fuel with
       | error err =>
           simp [hhead] at hthread
       | ok head =>
           simp [hhead] at hthread
           cases htail :
               applyClosuresThreaded
-                (fun tcl cursor =>
+                (fun tcl cursor bn =>
                   applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-                    ctx result1 cursor fuel)
-                todo (head.nextTag', head.nextLoc') with
+                    ctx result1 cursor bn fuel)
+                todo (head.nextTag', head.nextLoc') head.nextBind' with
           | error err =>
               simp [htail] at hthread
           | ok tailResults =>
@@ -3369,7 +3390,7 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningSub_byIH
               have hhead_eq : head = first := hthread.1
               have htail_eq : tailResults = rest := hthread.2
               let cursorResult : TypeResult :=
-                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
               have hctxCursor : wfTagMeaningCtx tm (ctxAfter ctx cursorResult) := by
                 simpa [ctxAfter, cursorResult] using! hctxTm1
               have hresCursor : QTypRespectsTagMeaning tm cursorResult.qualType := by
@@ -3419,7 +3440,7 @@ private lemma applyPFnClosuresThreaded_ok_tagMeaningSub_byIH
                   have hargHead : QTypRespectsTagMeaning tmHead
                       ⟨argEtyp, argPoison, argPred⟩ :=
                     QTypRespectsTagMeaning_mono hextHead hargTm
-                  rcases ih tmHead (head.nextTag', head.nextLoc') tailFirst tailRest
+                  rcases ih tmHead (head.nextTag', head.nextLoc') head.nextBind' tailFirst tailRest
                       hctxHeadBase hresHeadBase hboundedHead h_lawsHead
                       (fun r hr => hL r (by
                         rw [← htail_eq]; exact List.mem_cons_of_mem _ hr))
@@ -4090,8 +4111,9 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
               IsCanonicalExtension.wfCtx hcanon1
             simp only [wfTagMeaningCtx, ctxAfter] at hwf_after
             let ctxBase : TypeContext :=
-              ⟨ctx.pc, result1.regime', result1.memEnv', ctx.varEnv, result1.tagEnv',
-               result1.nextLoc', result1.nextTag', ctx.pureCtx, ctx.externRegime,
+              ⟨ctx.pc, result1.regime', result1.memEnv', ctx.varEnv,
+               ctx.bindEnv.insert x result1.nextBind', result1.tagEnv',
+               result1.nextLoc', result1.nextTag', result1.nextBind' + 1, ctx.pureCtx, ctx.externRegime,
                ctx.externRefAllowed, result1.declared'⟩
             exact wfTagMeaningCtx_varEnv_ext tm1 ctxBase x result1.qualType
               (by simpa [wfTagMeaningCtx, ctxAfter, ctxBase] using hwf_after)
@@ -4243,7 +4265,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
               have hb1 : ctx.nextTag ≤ res1.nextTag' :=
                 typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) res1 htc1p
               let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                                                      nextTag := res1.nextTag',
+                                                      nextTag := res1.nextTag', nextBind := res1.nextBind',
                                                       declaredExternRefs := res1.declared' }
               have htc2' : typecheck ctxTrue e2 (fuel' - 1) = .ok res2 := by
                 simpa [typecheck, ctxTrue] using htc2
@@ -4277,11 +4299,11 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                 have hb1 : ctx.nextTag ≤ res1.nextTag' :=
                   typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) res1 htc1p
                 let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ({ value := true, deps := deps } : TagVal),
-                                                        nextTag := res1.nextTag',
+                                                        nextTag := res1.nextTag', nextBind := res1.nextBind',
                                                         declaredExternRefs := res1.declared' }
                 let ctxFalse : TypeContext :=
                   { ctx with tagEnv := ctx.tagEnv.insert k ({ value := false, deps := deps } : TagVal),
-                             nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                             nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind',
                              declaredExternRefs := res2.declared' }
                 have htc2' : typecheck ctxTrue e2 (fuel' - 1) = .ok res2 := by
                   simpa [typecheck, ctxTrue] using htc2
@@ -4317,7 +4339,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                     hetyp_res, hpred_res⟩ := hstd
                 let ctx1 : TypeContext :=
                   { ctx with memEnv := res1.memEnv', tagEnv := res1.tagEnv',
-                             nextLoc := res1.nextLoc', nextTag := res1.nextTag', regime := res1.regime',
+                             nextLoc := res1.nextLoc', nextTag := res1.nextTag', nextBind := res1.nextBind', regime := res1.regime',
                              declaredExternRefs := res1.declared' }
                 let pc' := joinPoison ctx.pc res1.qualType.poison
                 let ctx'' := { ctx1 with pc := pc' }
@@ -4340,7 +4362,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
                     hP1 hLstd.left.right htc2' with
                   ⟨tm2, hcanon2, hP2⟩
                 let ctxForE3 :=
-                  { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
+                  { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind', declaredExternRefs := res2.declared' }
                 have htc3' : typecheck ctxForE3 e3 (fuel' - 1) = .ok res3 := by
                   simpa [typecheck, ctxForE3, ctx'', ctx1, pc'] using htc3_raw
                 have hwf_mid3 : wfTagMeaningCtx tm2 ctxForE3 := by
@@ -4521,7 +4543,7 @@ private theorem typecheck_canonical_sub
                       (allTcls := tcls) (todo := tcls)
                       (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
                       (result1 := result1) (cursor := (result1.nextTag', result1.nextLoc'))
-                      (fuel := fuel'')
+                      (bn := result1.nextBind') (fuel := fuel'')
                       (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i hL_i =>
                         IH m (by omega) tm_i ctx_i e_i res_i
                           hwf_i hb_i h_laws_i hL_i htc_i)
@@ -4568,7 +4590,7 @@ private theorem typecheck_canonical_sub
                       (allTcls := tcls) (todo := tcls)
                       (argEtyp := etyp2) (argPoison := p2) (argPred := pred2)
                       (result1 := result1) (cursor := (result1.nextTag', result1.nextLoc'))
-                      (fuel := fuel'')
+                      (bn := result1.nextBind') (fuel := fuel'')
                       (IH := fun m hm tm_i ctx_i e_i res_i htc_i hwf_i hb_i h_laws_i hL_i =>
                         IH m (by omega) tm_i ctx_i e_i res_i
                           hwf_i hb_i h_laws_i hL_i htc_i)
@@ -4631,26 +4653,44 @@ private theorem typecheck_canonical_sub
       exact nonAppCase (by intro e1 e2 h; cases h)
         (by intro id typ poison pred h; cases h)
 
-/-- For any successful typecheck in a frame (a lawful table containing the
-    input table and every allocation of the run), there is a canonical
-    extension `tm'` of the input table; it adds only allocations of the run,
-    and `PredSatLaws predSat tm'` holds. -/
-theorem typecheck_preserves_predSatLaws
-    (predSat : PredSat)
+/-- For any successful typecheck there is a canonical extension `tm'` of the
+    input table that adds only allocations of the run; `tm'` does not depend on
+    a relation, and every relation with a frame for the run (a lawful table,
+    under that relation's view, containing the input table and every
+    allocation of the run) satisfies the laws on `tm'` under the same view. -/
+theorem typecheck_preserves_predSatLaws_uniform
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
     (fuel : Nat) (res : TypeResult)
     (h_wf : wfTagMeaningCtx tm ctx)
     (h_bounded : TagMeaningBounded tm ctx.nextTag)
-    (hframe : TagFrame predSat tm res.tagLog')
     (htc : typecheck ctx e fuel = .ok res) :
-    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ PredSatLaws predSat tm' ∧
-      WithinLog tm res.tagLog' tm' := by
+    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ WithinLog tm res.tagLog' tm' ∧
+      ∀ (predSat : PredSat) (β : BindVals),
+        TagFrame predSat β tm res.tagLog' → PredSatLaws predSat tm' β := by
   obtain ⟨hsub, hlog, hwithinQ⟩ := typecheck_programTable tm ctx e fuel res h_bounded htc
   obtain ⟨tm', hcanon, hsubQ⟩ :=
     typecheck_canonical_sub (programTable tm res.tagLog') tm ctx e fuel res
       h_wf h_bounded hsub hlog htc
   have hwithin : WithinLog tm res.tagLog' tm' := hwithinQ.of_submap hsubQ
-  exact ⟨tm', hcanon, hframe.laws_of_within hwithin, hwithin⟩
+  exact ⟨tm', hcanon, hwithin, fun _ _ hframe => hframe.laws_of_within hwithin⟩
+
+/-- For any successful typecheck in a frame (a lawful table, under the view
+    `β`, containing the input table and every allocation of the run), there is
+    a canonical extension `tm'` of the input table; it adds only allocations
+    of the run, and `PredSatLaws predSat tm' β` holds. -/
+theorem typecheck_preserves_predSatLaws
+    (predSat : PredSat) (β : BindVals)
+    (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
+    (fuel : Nat) (res : TypeResult)
+    (h_wf : wfTagMeaningCtx tm ctx)
+    (h_bounded : TagMeaningBounded tm ctx.nextTag)
+    (hframe : TagFrame predSat β tm res.tagLog')
+    (htc : typecheck ctx e fuel = .ok res) :
+    ∃ tm', IsCanonicalExtension tm ctx e res tm' ∧ PredSatLaws predSat tm' β ∧
+      WithinLog tm res.tagLog' tm' := by
+  obtain ⟨tm', hcanon, hwithin, hlaws⟩ :=
+    typecheck_preserves_predSatLaws_uniform tm ctx e fuel res h_wf h_bounded htc
+  exact ⟨tm', hcanon, hlaws predSat β hframe, hwithin⟩
 
 lemma applyPFnTClosure_regular_inv
   (ctx : TypeContext) (st1 st2 : Typ) (p p1 : Poison)
@@ -4668,9 +4708,11 @@ lemma applyPFnTClosure_regular_inv
         memEnv := result2.memEnv'
         varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        bindEnv := BindEnv.bindParam tenv x result2.nextBind'
         tagEnv := result2.tagEnv'
         pureCtx := true
         nextTag := result2.nextTag'
+        nextBind := result2.nextBind' + 1
         nextLoc := result2.nextLoc'
         regime := result2.regime'
         externRefAllowed := false
@@ -4690,9 +4732,11 @@ lemma applyPFnTClosure_regular_inv
         memEnv := result2.memEnv'
         varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+        bindEnv := BindEnv.bindParam tenv x result2.nextBind'
         tagEnv := result2.tagEnv'
         pureCtx := true
         nextTag := result2.nextTag'
+        nextBind := result2.nextBind' + 1
         nextLoc := result2.nextLoc'
         regime := result2.regime'
         externRefAllowed := false
@@ -5614,8 +5658,10 @@ lemma applyPFnTClosure_mem_subset
               memEnv := result2.memEnv'
               varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              bindEnv := BindEnv.bindParam env x result2.nextBind'
               tagEnv := result2.tagEnv'
               nextTag := result2.nextTag'
+              nextBind := result2.nextBind' + 1
               nextLoc := result2.nextLoc'
               regime := result2.regime'
               pureCtx := true
@@ -5659,8 +5705,10 @@ lemma applyPFnTClosure_preserves_memEnv_lookup
               memEnv := result2.memEnv'
               varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured env) x
                 ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩
+              bindEnv := BindEnv.bindParam env x result2.nextBind'
               tagEnv := result2.tagEnv'
               nextTag := result2.nextTag'
+              nextBind := result2.nextBind' + 1
               nextLoc := result2.nextLoc'
               regime := result2.regime'
               pureCtx := true
@@ -6179,14 +6227,14 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             have hb1 : ctx.nextTag ≤ _res1.nextTag' :=
               typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) _res1 htc1p
             let ctxTrue : TypeContext := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                                                    nextTag := _res1.nextTag',
+                                                    nextTag := _res1.nextTag', nextBind := _res1.nextBind',
                                                     declaredExternRefs := _res1.declared' }
             have hpcTrue : ctxTrue.pc = true := by
               simpa [ctxTrue] using hpc
             have hwf_ctxTrue : wfTypeContext ctxTrue := by
               exact ⟨hwf.1, hwf.2.1, hwf.2.2⟩
             have hk_lt : k < ctx.nextTag :=
-              matchGuard_tag_bounded e1 ctx.memEnv ctx.varEnv (fuel' - 1) k deps ctx.nextTag
+              matchGuard_tag_bounded e1 ctx.memEnv ctx.varEnv ctx.bindEnv (fuel' - 1) k deps ctx.nextTag
                 hmg hbnd.2.1.1 hbnd.2.1.2
             have hbnd_ctxTrue : TagBoundedCtx ctxTrue :=
               ⟨tagEnvBounded_mono _ _ _
@@ -6212,27 +6260,27 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
               typecheck_nextTag_mono { ctx with pureCtx := true } e1 (fuel' - 1) _res1 htc1p
             let ctxFalse : TypeContext :=
               { ctx with tagEnv := ctx.tagEnv.insert k ⟨false, deps⟩,
-                         nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                         nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind',
                          declaredExternRefs := res2.declared' }
             have hpcFalse : ctxFalse.pc = true := by
               simpa [ctxFalse] using hpc
             have hmonoT : ctx.nextTag ≤ res2.nextTag' :=
               Nat.le_trans hb1 (typecheck_nextTag_mono
                 { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                           nextTag := _res1.nextTag',
+                           nextTag := _res1.nextTag', nextBind := _res1.nextBind',
                            declaredExternRefs := _res1.declared' }
                 e2 (fuel' - 1) res2 htc2_true)
             have hwf_ctxFalse : wfTypeContext ctxFalse := by
               have hmono : ctx.nextLoc ≤ res2.nextLoc' :=
                 typecheck_nextLoc_mono { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
-                                                  nextTag := _res1.nextTag',
+                                                  nextTag := _res1.nextTag', nextBind := _res1.nextBind',
                                                   declaredExternRefs := _res1.declared' }
                   e2 (fuel' - 1) res2 (by simpa using! htc2_true)
               exact ⟨fun l hl => Nat.lt_of_lt_of_le (hwf.1 l hl) hmono,
                      varEnvRefLocsBounded_mono hwf.2.1 hmono,
                      varEnvClosuresCapturedRefLocsBounded_mono hwf.2.2 hmono⟩
             have hk_lt : k < ctx.nextTag :=
-              matchGuard_tag_bounded e1 ctx.memEnv ctx.varEnv (fuel' - 1) k deps ctx.nextTag
+              matchGuard_tag_bounded e1 ctx.memEnv ctx.varEnv ctx.bindEnv (fuel' - 1) k deps ctx.nextTag
                 hmg hbnd.2.1.1 hbnd.2.1.2
             have hbnd_ctxFalse : TagBoundedCtx ctxFalse :=
               ⟨tagEnvBounded_insert_of_lt ctx.tagEnv res2.nextTag' k ⟨false, deps⟩
@@ -6263,7 +6311,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
             let pc' := joinPoison ctx.pc res1.qualType.poison
             let ctx'' : TypeContext := { ctx' with pc := pc' }
             let ctxForE3 : TypeContext :=
-              { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
+              { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind', declaredExternRefs := res2.declared' }
             have hpc'' : ctx''.pc = true := by
               simp [ctx'', pc', hpc, joinPoison]
             have hpre_r1 : res1.memEnv'.contains l :=
@@ -6397,7 +6445,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                   memEnv := result2.memEnv'
                   tagEnv := result2.tagEnv'
                   nextLoc := result2.nextLoc'
-                  nextTag := result2.nextTag'
+                  nextTag := result2.nextTag', nextBind := result2.nextBind'
                   regime := result2.regime'
                   declaredExternRefs := result2.declared' }
               have hpcFun : ctxFun.pc = true := by
@@ -6470,21 +6518,21 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       have hsrc_results : srcRes ∈ results := by
                         simpa [heq_results] using hsrc_mem
                       rcases applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bounds
-                          (applyOne := fun tcl cursor =>
+                          (applyOne := fun tcl cursor bn =>
                             applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
-                              ctx result1 cursor fuelApp)
+                              ctx result1 cursor bn fuelApp)
                           (baseTag := result1.nextTag') (baseLoc := result1.nextLoc')
                           (hmono := by
-                            intro tcl cursor result hct hcl happly
+                            intro tcl cursor bn result hct hcl happly
                             refine ⟨?_, ?_⟩
                             · exact Nat.le_trans hct (applyFnTClosureAtCursor_nextTag_advance tcl ctx
-                                st1 st2 p p1 etyp2 p2 pred2 result1 result cursor fuelApp happly)
+                                st1 st2 p p1 etyp2 p2 pred2 result1 result cursor bn fuelApp happly)
                             · exact applyFnTClosureAtCursor_nextLoc_mono tcl ctx st1 st2 p p1
-                                etyp2 p2 pred2 result1 result cursor fuelApp hcl
+                                etyp2 p2 pred2 result1 result cursor bn fuelApp hcl
                                 (fun m hm e c r htc => typecheck_nextLoc_mono c e m r htc)
                                 happly)
                           (hbaseTag := Nat.le_refl _) (hbaseLoc := Nat.le_refl _) hmap hsrc_results with
-                        ⟨tcl, _htcl_mem, cursor, hcursorTag, hcursorLoc, happly_src⟩
+                        ⟨tcl, _htcl_mem, cursor, bn, hcursorTag, hcursorLoc, happly_src⟩
                       rcases memEnv_lookup_some_of_contains srcRes.memEnv' l hsrc_contains with
                         ⟨qt_src, hlookup_src⟩
                       have hlookup_src_ctx :
@@ -6497,7 +6545,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       cases tcl with
                       | regular x body tenv =>
                           let rCursor : TypeResult :=
-                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                           have happly_old :
                               applyFnTClosure (.regular x body tenv) st1 st2 p p1 etyp2 p2 pred2
                                 ctx rCursor fuelApp = .ok srcRes := by
@@ -6522,8 +6570,10 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               memEnv := result1.memEnv'
                               varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
                                 ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+                              bindEnv := BindEnv.bindParam tenv x bn
                               tagEnv := result1.tagEnv'
                               nextTag := cursor.1
+                              nextBind := bn + 1
                               nextLoc := cursor.2
                               regime := result1.regime'
                               externRefAllowed := false
@@ -6607,7 +6657,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               hpoison_mid
                       | extern id x retSpec effects capturedEnv declaredArgQt captures =>
                           let rCursor : TypeResult :=
-                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                           have happly_old :
                               applyFnTClosure (.extern id x retSpec effects capturedEnv declaredArgQt captures) st1 st2 p p1
                                 etyp2 p2 pred2 ctx rCursor fuelApp = .ok srcRes := by
@@ -6634,11 +6684,11 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       have hsrc_results : srcRes ∈ results := by
                         simpa [heq_results] using hsrc_mem
                       rcases applyClosuresThreaded_ok_mem_output_exists_input
-                          (applyOne := fun tcl cursor =>
+                          (applyOne := fun tcl cursor bn =>
                             applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
-                              ctx result1 cursor fuelApp)
+                              ctx result1 cursor bn fuelApp)
                           hmap hsrc_results with
-                        ⟨tcl, _htcl_mem, cursor, happly_src⟩
+                        ⟨tcl, _htcl_mem, cursor, bn, happly_src⟩
                       rcases memEnv_lookup_some_of_contains srcRes.memEnv' l hsrc_contains with
                         ⟨qt_src, hlookup_src⟩
                       have hlookup_src_ctx :
@@ -6651,7 +6701,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       cases tcl with
                       | regular x pbody tenv =>
                           let rCursor : TypeResult :=
-                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                           have happly_old :
                               applyPFnTClosure (.regular x pbody tenv) st1 st2 p p1
                                 etyp2 p2 pred2 ctx rCursor fuelApp = .ok srcRes := by
@@ -6684,7 +6734,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                           exact hbackToCtx_poison qt_mid hlookup_mid (by simpa [hqt_mid] using hpoison_src)
                       | extern id x retSpec capturedEnv declaredArgQt captures =>
                           let rCursor : TypeResult :=
-                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                           have happly_old :
                               applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                                 etyp2 p2 pred2 ctx rCursor fuelApp = .ok srcRes := by
@@ -6719,21 +6769,21 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       have hsrc_results : srcRes ∈ results := by
                         simpa [heq_results] using hsrc_mem
                       rcases applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_bounds
-                          (applyOne := fun tcl cursor =>
+                          (applyOne := fun tcl cursor bn =>
                             applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
-                              ctx result1 cursor fuelApp)
+                              ctx result1 cursor bn fuelApp)
                           (baseTag := result1.nextTag') (baseLoc := result1.nextLoc')
                           (hmono := by
-                            intro tcl cursor result hct hcl happly
+                            intro tcl cursor bn result hct hcl happly
                             refine ⟨?_, ?_⟩
                             · exact Nat.le_trans hct (applyFnTClosureAtCursor_nextTag_advance tcl ctx
-                                st1 st2 p p1 etyp2 p2 pred2 result1 result cursor fuelApp happly)
+                                st1 st2 p p1 etyp2 p2 pred2 result1 result cursor bn fuelApp happly)
                             · exact applyFnTClosureAtCursor_nextLoc_mono tcl ctx st1 st2 p p1
-                                etyp2 p2 pred2 result1 result cursor fuelApp hcl
+                                etyp2 p2 pred2 result1 result cursor bn fuelApp hcl
                                 (fun m hm e c r htc => typecheck_nextLoc_mono c e m r htc)
                                 happly)
                           (hbaseTag := Nat.le_refl _) (hbaseLoc := Nat.le_refl _) hmap hsrc_results with
-                        ⟨tcl, _htcl_mem, cursor, hcursorTag, hcursorLoc, happly_src⟩
+                        ⟨tcl, _htcl_mem, cursor, bn, hcursorTag, hcursorLoc, happly_src⟩
                       rcases memEnv_lookup_some_of_contains srcRes.memEnv' l hsrc_contains with
                         ⟨qt_src, hlookup_src⟩
                       have hlookup_src_ctx :
@@ -6756,7 +6806,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       cases tcl with
                       | regular x body tenv =>
                           let rCursor : TypeResult :=
-                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                           have happly_old :
                               applyFnTClosure (.regular x body tenv) st1 st2 p p1 etyp2 p2 pred2
                                 ctx rCursor fuelApp = .ok srcRes := by
@@ -6782,8 +6832,10 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               memEnv := result1.memEnv'
                               varEnv := VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
                                 ⟨etyp2, joinPoison ctx.pc p2, pred2⟩
+                              bindEnv := BindEnv.bindParam tenv x bn
                               tagEnv := result1.tagEnv'
                               nextTag := cursor.1
+                              nextBind := bn + 1
                               nextLoc := cursor.2
                               regime := result1.regime'
                               externRefAllowed := false
@@ -6872,7 +6924,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                               hnotfun_mid
                       | extern id x retSpec effects capturedEnv declaredArgQt captures =>
                           let rCursor : TypeResult :=
-                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                           have happly_old :
                               applyFnTClosure (.extern id x retSpec effects capturedEnv declaredArgQt captures) st1 st2 p p1
                                 etyp2 p2 pred2 ctx rCursor fuelApp = .ok srcRes := by
@@ -6926,15 +6978,15 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       have hsrc_results : srcRes ∈ results := by
                         simpa [heq_results] using hsrc_mem
                       rcases applyClosuresThreaded_ok_mem_output_exists_input_with_cursor_tag_bound
-                          (applyOne := fun tcl cursor =>
+                          (applyOne := fun tcl cursor bn =>
                             applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
-                              ctx result1 cursor fuelApp)
+                              ctx result1 cursor bn fuelApp)
                           (base := result1.nextTag')
-                          (hmono := fun tcl cursor result hct happly =>
+                          (hmono := fun tcl cursor bn result hct happly =>
                             Nat.le_trans hct (applyPFnTClosureAtCursor_nextTag_advance tcl ctx
-                              st1 st2 p p1 etyp2 p2 pred2 result1 result cursor fuelApp happly))
+                              st1 st2 p p1 etyp2 p2 pred2 result1 result cursor bn fuelApp happly))
                           (hbase := Nat.le_refl _) hmap hsrc_results with
-                        ⟨tcl, _htcl_mem, cursor, hcursorTag, happly_src⟩
+                        ⟨tcl, _htcl_mem, cursor, bn, hcursorTag, happly_src⟩
                       rcases memEnv_lookup_some_of_contains srcRes.memEnv' l hsrc_contains with
                         ⟨qt_src, hlookup_src⟩
                       have hlookup_src_ctx :
@@ -6957,7 +7009,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                       cases tcl with
                       | regular x pbody tenv =>
                           let rCursor : TypeResult :=
-                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                           have happly_old :
                               applyPFnTClosure (.regular x pbody tenv) st1 st2 p p1
                                 etyp2 p2 pred2 ctx rCursor fuelApp = .ok srcRes := by
@@ -7016,7 +7068,7 @@ private lemma typecheckExpr_lookup_origin_of_pc_true_split
                           exact hbackToCtx_guard qt_mid k hlookup_mid htag_mid hreg_mid hnotfun_mid
                       | extern id x retSpec capturedEnv declaredArgQt captures =>
                           let rCursor : TypeResult :=
-                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2 }
+                            { result1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn }
                           have happly_old :
                               applyPFnTClosure (.extern id x retSpec capturedEnv declaredArgQt captures) st1 st2 p p1
                                 etyp2 p2 pred2 ctx rCursor fuelApp = .ok srcRes := by

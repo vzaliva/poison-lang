@@ -105,11 +105,11 @@ private theorem TrustedRegistryAgreesWithReachable.resolvePfnDeclaration
 theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
     {masked : Tag → Prop} {postExpr : Expr} {ctx : TypeContext} {res : TypeResult}
-    {predSat : PredSat} {tm : TagMeaning}
+    {predSat : PredSat} {β : BindVals} {tm : TagMeaning}
     {d : ExternDeclaration} {impl : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
     (hreachable : ExternDeclarationReachableFromContext root ctxRoot d.id d) :
-    ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm
+    ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat β tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl := by
   intro hpredlaws hframe hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
     hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun hpc hvm
@@ -129,7 +129,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
   exact
     ExternDeclBoundarySingleMaskedContract.of_spec
       (masked := masked) (postExpr := postExpr) (ctx := ctx) (res := res)
-      (predSat := predSat)
+      (predSat := predSat) (β := β)
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
       hpredlaws hframe hwfTm hTmBounded htypedEntry μ ρ θ cf o hθwf hwf hric
@@ -139,13 +139,13 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
 theorem ExternDeclBoundaryFRContract.of_trustedReachable
     {tr : TrustedRegistry} {root : Expr} {ctxRoot : TypeContext}
     {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
-    {predSat : PredSat} {tm : TagMeaning}
+    {predSat₀ predSat₁ : PredSat} {β₀ β₁ : BindVals} {tm : TagMeaning}
     {d : ExternDeclaration} {impl₀ impl₁ : ExternImpl}
     (hagrees : TrustedRegistryAgreesWithReachable root ctxRoot tr)
     (hreachable : ExternDeclarationReachableFromContext root ctxRoot d.id d) :
-    ExternDeclBoundaryFRContract ctx postExpr res predSat tm
+    ExternDeclBoundaryFRContract ctx postExpr res predSat₀ predSat₁ β₀ β₁ tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl₀ impl₁ := by
-  intro hpredlaws hframe hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+  intro hpredlaws₀ hpredlaws₁ hframe₀ hframe₁ hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
     a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁ hvm₀ hvm₁
   have hlookupRun₀ := ExternDeclBoundaryRun.lookup hrun₀.run
@@ -173,10 +173,11 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
     simpa [hdecl] using htyped
   exact
     ExternDeclBoundaryFRContract.of_spec
-      (ctx := ctx) (postExpr := postExpr) (res := res) (predSat := predSat)
+      (ctx := ctx) (postExpr := postExpr) (res := res)
+      (predSat₀ := predSat₀) (predSat₁ := predSat₁) (β₀ := β₀) (β₁ := β₁)
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
-      hpredlaws hframe hwfTm hTmBounded htypedEntry μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+      hpredlaws₀ hpredlaws₁ hframe₀ hframe₁ hwfTm hTmBounded htypedEntry μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrunEntry₀ hrunEntry₁
       (fun hk => hvm₀ (by rw [← hdecl]; exact hk))
@@ -375,49 +376,49 @@ private lemma list_lookup_mem {α β : Type} [BEq α] [LawfulBEq α]
 
 private theorem of_mem
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
-    {x : Name} {qt : QTyp} {id : ExternId} {d : ExternDeclaration}
-    (hmem : (x, qt) ∈ σcap)
+    {x : Name} {qt : QTyp} {n : Nat} {id : ExternId} {d : ExternDeclaration}
+    (hmem : (x, qt, n) ∈ σcap)
     (hqt : ExternDeclarationReachableFromQTyp root ctxRoot qt id d) :
     ExternDeclarationReachableFromCapturedEnv root ctxRoot σcap id d := by
   induction σcap with
   | nil =>
       cases hmem
   | cons hd tl ih =>
-      cases hd with
-      | mk y qt' =>
-          cases hmem with
-          | head =>
-              exact ExternDeclarationReachableFromCapturedEnv.head hqt
-          | tail _ htail =>
-              exact ExternDeclarationReachableFromCapturedEnv.tail (ih htail)
+      rcases hd with ⟨y, qt', m⟩
+      cases hmem with
+      | head =>
+          exact ExternDeclarationReachableFromCapturedEnv.head hqt
+      | tail _ htail =>
+          exact ExternDeclarationReachableFromCapturedEnv.tail (ih htail)
 
 private theorem of_list_lookup
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
     {x : Name} {qt : QTyp} {id : ExternId} {d : ExternDeclaration}
     (hlookup : σcap.lookup x = some qt)
     (hqt : ExternDeclarationReachableFromQTyp root ctxRoot qt id d) :
-    ExternDeclarationReachableFromCapturedEnv root ctxRoot σcap id d :=
-  of_mem (list_lookup_mem σcap x qt hlookup) hqt
+    ExternDeclarationReachableFromCapturedEnv root ctxRoot σcap id d := by
+  obtain ⟨n, h⟩ : ∃ n, List.lookup x σcap = some (qt, n) := by
+    simpa [CapturedVarEnv.lookup_eq] using hlookup
+  exact of_mem (list_lookup_mem σcap x (qt, n) h) hqt
 
 private theorem exists_mem
     {root : Expr} {ctxRoot : TypeContext} {σcap : CapturedVarEnv}
     {id : ExternId} {d : ExternDeclaration}
     (hcap : ExternDeclarationReachableFromCapturedEnv root ctxRoot σcap id d) :
-    ∃ x qt,
-      (x, qt) ∈ σcap ∧
+    ∃ x qt n,
+      (x, qt, n) ∈ σcap ∧
       ExternDeclarationReachableFromQTyp root ctxRoot qt id d := by
   induction σcap with
   | nil =>
       cases hcap
   | cons hd tl ih =>
-      cases hd with
-      | mk x qt =>
-          cases hcap with
-          | head hqt =>
-              exact ⟨x, qt, by simp, hqt⟩
-          | tail htail =>
-              rcases ih htail with ⟨y, qty, hmem, hqt⟩
-              exact ⟨y, qty, by simp [hmem], hqt⟩
+      rcases hd with ⟨x, qt, n⟩
+      cases hcap with
+      | head hqt =>
+          exact ⟨x, qt, n, by simp, hqt⟩
+      | tail htail =>
+          rcases ih htail with ⟨y, qty, m, hmem, hqt⟩
+          exact ⟨y, qty, m, by simp [hmem], hqt⟩
 
 end ExternDeclarationReachableFromCapturedEnv
 
@@ -426,11 +427,11 @@ namespace CapturedEnvReachableFrom
 private theorem of_toCaptured
     {root : Expr} {ctxRoot ctx : TypeContext}
     (hctx : ContextReachableFrom root ctxRoot ctx) :
-    CapturedEnvReachableFrom root ctxRoot (VarTypeEnv.toCaptured ctx.varEnv) := by
+    CapturedEnvReachableFrom root ctxRoot (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) := by
   intro _id _d hcap
   rcases ExternDeclarationReachableFromCapturedEnv.exists_mem hcap with
-    ⟨x, qt, hmem, hqt⟩
-  have hlookup := VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv x qt hmem
+    ⟨x, qt, n, hmem, hqt⟩
+  have hlookup := VarTypeEnv_lookup_of_toCaptured_mem ctx.varEnv ctx.bindEnv x qt n hmem
   exact hctx hlookup hqt
 
 private theorem qtyp_of_ofCaptured_lookup
@@ -701,7 +702,7 @@ private theorem of_fn_result
     QTypReachableFrom root ctxRoot
       { etyp :=
           ETyp.arrow st1 st2 ctx.pc
-            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+            [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
         poison := ctx.pc,
         pred := Predicate.noPred } := by
   intro _id _d hreach
@@ -738,7 +739,7 @@ private theorem of_pfn_result
     QTypReachableFrom root ctxRoot
       { etyp :=
           ETyp.parrow st1 st2 ctx.pc
-            [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+            [PFnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
         poison := ctx.pc,
         pred := Predicate.noPred } := by
   intro _id _d hreach
@@ -775,7 +776,7 @@ private theorem of_externFn_result
       { etyp :=
           ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
             [FnTClosure.extern id x retSpec effects
-              (VarTypeEnv.toCaptured ctx.varEnv) argQt cap],
+              (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt cap],
         poison := ctx.pc,
         pred := Predicate.noPred } := by
   intro _nestedId _d hreach
@@ -816,7 +817,7 @@ private theorem of_externPfn_result
       { etyp :=
           ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
             [PFnTClosure.extern id x retSpec
-              (VarTypeEnv.toCaptured ctx.varEnv) argQt cap],
+              (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt cap],
         poison := ctx.pc,
         pred := Predicate.noPred } := by
   intro _nestedId _d hreach
@@ -854,7 +855,7 @@ private theorem of_typecheckFn
   show QTypReachableFrom root ctxRoot
     { etyp :=
         ETyp.arrow st1 st2 ctx.pc
-          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv)],
+          [FnTClosure.regular x body (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
       poison := ctx.pc, pred := Predicate.noPred }
   exact of_fn_result hctx hcurrent
 
@@ -881,7 +882,7 @@ private theorem of_typecheckPfn
       change ∀ {id : ExternId} {d : ExternDeclaration},
         ExternDeclarationReachableFromQTyp root ctxRoot
           { etyp := ETyp.parrow st1 st2 ctx.pc
-              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctx.varEnv)],
+              [PFnTClosure.regular x pbody (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv)],
             poison := ctx.pc, pred := Predicate.noPred } id d →
         ExternDeclarationReachableFromContext root ctxRoot id d
       exact of_pfn_result hctx hcurrent
@@ -904,7 +905,7 @@ private theorem of_typecheckExternFn
     ExternDeclarationReachableFromQTyp root ctxRoot
       { etyp := ETyp.arrow argTyp (parseReturnType retSpec) ctx.pc
           [FnTClosure.extern id x retSpec effects
-            (VarTypeEnv.toCaptured ctx.varEnv) argQt cap],
+            (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt cap],
         poison := ctx.pc, pred := Predicate.noPred } nestedId d →
     ExternDeclarationReachableFromContext root ctxRoot nestedId d
   exact of_externFn_result hpoison hctx hcurrent
@@ -927,7 +928,7 @@ private theorem of_typecheckExternPfn
     ExternDeclarationReachableFromQTyp root ctxRoot
       { etyp := ETyp.parrow argTyp (parseReturnType retSpec) ctx.pc
           [PFnTClosure.extern id x retSpec
-            (VarTypeEnv.toCaptured ctx.varEnv) argQt cap],
+            (VarTypeEnv.toCaptured ctx.varEnv ctx.bindEnv) argQt cap],
         poison := ctx.pc, pred := Predicate.noPred } nestedId d →
     ExternDeclarationReachableFromContext root ctxRoot nestedId d
   exact of_externPfn_result hpoison hctx hcurrent
@@ -1593,15 +1594,15 @@ namespace QTypReachableFrom
 
 private theorem applyClosuresThreaded_forall_reachable_mem
     {α : Type} {root : Expr} {ctxRoot : TypeContext}
-    (applyOne : α → Tag × Loc → TypecheckM TypeResult)
-    (items : List α) (cursor : Tag × Loc) (results : List TypeResult)
+    (applyOne : α → Tag × Loc → Nat → TypecheckM TypeResult)
+    (items : List α) (cursor : Tag × Loc) (bn : Nat) (results : List TypeResult)
     (hOne :
-      ∀ item, item ∈ items → ∀ cursor result,
-        applyOne item cursor = .ok result →
+      ∀ item, item ∈ items → ∀ cursor bn result,
+        applyOne item cursor bn = .ok result →
         QTypReachableFrom root ctxRoot result.qualType)
-    (hthread : applyClosuresThreaded applyOne items cursor = .ok results) :
+    (hthread : applyClosuresThreaded applyOne items cursor bn = .ok results) :
     ∀ result ∈ results, QTypReachableFrom root ctxRoot result.qualType := by
-  induction items generalizing cursor results with
+  induction items generalizing cursor bn results with
   | nil =>
       simp [applyClosuresThreaded, pure, Except.pure] at hthread
       cases hthread
@@ -1609,13 +1610,13 @@ private theorem applyClosuresThreaded_forall_reachable_mem
       cases hmem
   | cons item rest ih =>
       simp [applyClosuresThreaded, bind, Except.bind] at hthread
-      cases hfirst : applyOne item cursor with
+      cases hfirst : applyOne item cursor bn with
       | error _err =>
           simp [hfirst] at hthread
       | ok first =>
           simp [hfirst] at hthread
           cases hrest : applyClosuresThreaded applyOne rest
-              (first.nextTag', first.nextLoc') with
+              (first.nextTag', first.nextLoc') first.nextBind' with
           | error _err =>
               simp [hrest] at hthread
           | ok restResults =>
@@ -1626,13 +1627,13 @@ private theorem applyClosuresThreaded_forall_reachable_mem
               cases hmem with
               | inl hfirstEq =>
                   subst result
-                  exact hOne item (by simp) cursor first hfirst
+                  exact hOne item (by simp) cursor bn first hfirst
               | inr htail =>
                   exact
-                    ih (first.nextTag', first.nextLoc') restResults
-                      (fun tailItem htailMem cursor result happly =>
+                    ih (first.nextTag', first.nextLoc') first.nextBind' restResults
+                      (fun tailItem htailMem cursor bn result happly =>
                         hOne tailItem (List.mem_cons_of_mem item htailMem)
-                          cursor result happly)
+                          cursor bn result happly)
                       hrest result htail
 
 /-- Mirrors the post-effects "finish" tail of the `FnTClosure.extern` branch of
@@ -1652,20 +1653,20 @@ private theorem applyClosuresThreaded_forall_reachable_mem
     regime determines a guard of the call whose dependency set cannot be
     computed. -/
 private def fnExternFinishAtCursor
-    (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc)
-    (p p1 : Poison) (unifiedEnv : VarTypeEnv)
+    (ctx : TypeContext) (result2 : TypeResult) (cursor : Tag × Loc) (bn : Nat)
+    (p p1 : Poison) (unifiedEnv : VarTypeEnv) (unifiedBinds : BindEnv)
     (tagMapping : ExtTreeMap TagIndex Tag compare) (nextTag' : Tag)
     (id : ExternId) (effects : List Effect)
     (retSpec : ExternReturn) (fuel : Nat) (memEnv : MemoryTypeEnv) : TypecheckM TypeResult :=
   match retSpec with
   | ExternReturn.simple typ poison pred =>
-      match resolveSyntaxPred pred unifiedEnv tagMapping with
+      match resolveSyntaxPred pred unifiedEnv unifiedBinds tagMapping with
       | Except.error err => Except.error err
       | Except.ok v_1 =>
           match returnSpecToQTyp typ poison v_1 cursor.2 with
           | Except.error err => Except.error err
           | Except.ok v_2 =>
-              match requireExternGuardDeps v_1 effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+              match requireExternGuardDeps v_1 effects unifiedEnv unifiedBinds tagMapping (joinPoison p (joinPoison p1 ctx.pc))
                   (applyExternRegimePolicy
                     (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                     id ctx.externRegime tagMapping) fuel with
@@ -1687,23 +1688,24 @@ private def fnExternFinishAtCursor
                             (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                             id ctx.externRegime tagMapping)
                           fuel)
-                        effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+                        effects unifiedEnv unifiedBinds tagMapping (joinPoison p (joinPoison p1 ctx.pc))
                         (applyExternRegimePolicy
                           (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                           id ctx.externRegime tagMapping)
                         fuel,
                       nextLoc' := v_2.2,
                       nextTag' := nextTag',
+                      nextBind' := bn + 1,
                       regime' := applyExternRegimePolicy
                         (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                         id ctx.externRegime tagMapping,
                       declared' := result2.declared',
-                      tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
+                      tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv unifiedBinds tagMapping }
   | ExternReturn.nestedFn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerEffects innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
       | Except.ok (innerArgQt, nextTag'') =>
-          match requireExternGuardDeps Predicate.noPred effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+          match requireExternGuardDeps Predicate.noPred effects unifiedEnv unifiedBinds tagMapping (joinPoison p (joinPoison p1 ctx.pc))
               (applyExternRegimePolicy
                 (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                 id ctx.externRegime tagMapping) fuel with
@@ -1715,29 +1717,30 @@ private def fnExternFinishAtCursor
                       { etyp :=
                           ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc
                             [FnTClosure.extern innerId innerArg innerRet innerEffects
-                              (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
+                              (VarTypeEnv.toCaptured unifiedEnv unifiedBinds) innerArgQt innerCaptures],
                         poison := joinPoison p1 (joinPoison p ctx.pc),
                         pred := Predicate.noPred },
                   memEnv' := memEnv,
                   tagEnv' := installEffectGuards
                     (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                    effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+                    effects unifiedEnv unifiedBinds tagMapping (joinPoison p (joinPoison p1 ctx.pc))
                     (applyExternRegimePolicy
                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                       id ctx.externRegime tagMapping)
                     fuel,
                   nextLoc' := cursor.2,
                   nextTag' := nextTag'',
+                  nextBind' := bn + 1,
                   regime' := applyExternRegimePolicy
                     (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                     id ctx.externRegime tagMapping,
                   declared' := result2.declared',
-                  tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
+                  tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv unifiedBinds tagMapping }
   | ExternReturn.nestedPfn innerId innerArg innerArgTyp innerArgPoison innerArgPred innerRet innerCaptures =>
       match resolveArgCondQTyp innerArgTyp innerArgPoison innerArgPred unifiedEnv nextTag' with
       | Except.error err => Except.error err
       | Except.ok (innerArgQt, nextTag'') =>
-          match requireExternGuardDeps Predicate.noPred effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+          match requireExternGuardDeps Predicate.noPred effects unifiedEnv unifiedBinds tagMapping (joinPoison p (joinPoison p1 ctx.pc))
               (applyExternRegimePolicy
                 (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                 id ctx.externRegime tagMapping) fuel with
@@ -1749,30 +1752,31 @@ private def fnExternFinishAtCursor
                       { etyp :=
                           ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                             [PFnTClosure.extern innerId innerArg innerRet
-                              (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
+                              (VarTypeEnv.toCaptured unifiedEnv unifiedBinds) innerArgQt innerCaptures],
                         poison := joinPoison p1 (joinPoison p ctx.pc),
                         pred := Predicate.noPred },
                   memEnv' := memEnv,
                   tagEnv' := installEffectGuards
                     (invalidateTagDeps result2.tagEnv' (effectTargetLocs effects unifiedEnv))
-                    effects unifiedEnv tagMapping (joinPoison p (joinPoison p1 ctx.pc))
+                    effects unifiedEnv unifiedBinds tagMapping (joinPoison p (joinPoison p1 ctx.pc))
                     (applyExternRegimePolicy
                       (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                       id ctx.externRegime tagMapping)
                     fuel,
                   nextLoc' := cursor.2,
                   nextTag' := nextTag'',
+                  nextBind' := bn + 1,
                   regime' := applyExternRegimePolicy
                     (invalidateRegimeDepsEffect result2.regime' result2.tagEnv' (effectTargetLocs effects unifiedEnv))
                     id ctx.externRegime tagMapping,
                   declared' := result2.declared',
-                  tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv tagMapping }
+                  tagLog' := externTagLog (collectExternPreds retSpec effects) unifiedEnv unifiedBinds tagMapping }
 
 private theorem of_applyFnTClosureAtCursor
     {root : Expr} {ctxRoot ctx : TypeContext}
     {tcl : FnTClosure} {st1 st2 : Typ} {p p1 : Poison}
     {argEtyp : ETyp} {argPoison : Poison} {argPred : Predicate}
-    {result1 result : TypeResult} {cursor : Tag × Loc}
+    {result1 result : TypeResult} {cursor : Tag × Loc} {bn : Nat}
     {fuel : Nat} {tcls : List FnTClosure}
     (IH :
       ∀ m < fuel, ∀ {ctx : TypeContext} {e : Expr} {res : TypeResult},
@@ -1790,7 +1794,7 @@ private theorem of_applyFnTClosureAtCursor
     (hmem : tcl ∈ tcls)
     (happly :
       applyFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-        ctx result1 cursor fuel = .ok result) :
+        ctx result1 cursor bn fuel = .ok result) :
     QTypReachableFrom root ctxRoot result.qualType := by
   have hqtArrow :
       QTypReachableFrom root ctxRoot
@@ -1814,8 +1818,10 @@ private theorem of_applyFnTClosureAtCursor
                     { etyp := argEtyp,
                       poison := joinPoison ctx.pc argPoison,
                       pred := argPred },
+                  bindEnv := BindEnv.bindParam σcap x bn,
                   tagEnv := result1.tagEnv',
                   nextTag := cursor.1,
+                  nextBind := bn + 1,
                   nextLoc := cursor.2,
                   regime := result1.regime',
                   externRefAllowed := false,
@@ -1844,8 +1850,10 @@ private theorem of_applyFnTClosureAtCursor
                               { etyp := argEtyp,
                                 poison := joinPoison ctx.pc argPoison,
                                 pred := argPred },
+                            bindEnv := BindEnv.bindParam σcap x bn,
                             tagEnv := result1.tagEnv',
                             nextTag := cursor.1,
+                            nextBind := bn + 1,
                             nextLoc := cursor.2,
                             regime := result1.regime',
                             externRefAllowed := false,
@@ -1895,6 +1903,7 @@ private theorem of_applyFnTClosureAtCursor
               { etyp := argEtyp,
                 poison := joinPoison ctx.pc argPoison,
                 pred := argPred }
+          let unifiedBinds : BindEnv := BindEnv.bindParam capturedEnv x bn
           simp [bind, Except.bind] at happly
           -- Leading argument-condition gate: throw branch is impossible on .ok.
           split at happly
@@ -1909,7 +1918,7 @@ private theorem of_applyFnTClosureAtCursor
               | mk tagMapping nextTag' =>
                   simp [htag] at happly
                   let finish : MemoryTypeEnv → TypecheckM TypeResult :=
-                    fnExternFinishAtCursor ctx result1 cursor p p1 unifiedEnv tagMapping
+                    fnExternFinishAtCursor ctx result1 cursor bn p p1 unifiedEnv unifiedBinds tagMapping
                       nextTag' id effects retSpec fuel'
                   -- Split the effects-loop bind of `happly` directly; the error leaf is impossible.
                   split at happly
@@ -1917,9 +1926,9 @@ private theorem of_applyFnTClosureAtCursor
                   case h_2 memEnv _hfor =>
                       have hfinishOk : finish memEnv = Except.ok result := by
                         rw [← happly]
-                        cases retSpec <;> simp [finish, fnExternFinishAtCursor, unifiedEnv]
+                        cases retSpec <;> simp [finish, fnExternFinishAtCursor, unifiedEnv, unifiedBinds]
                         · rename_i typ poison pred
-                          cases resolveSyntaxPred pred unifiedEnv tagMapping <;> simp
+                          cases resolveSyntaxPred pred unifiedEnv unifiedBinds tagMapping <;> simp
                           · rename_i resolvedPred
                             cases returnSpecToQTyp typ poison resolvedPred cursor.2
                             · rfl
@@ -1936,7 +1945,7 @@ private theorem of_applyFnTClosureAtCursor
                       | simple typ poison pred =>
                           simp [finish, fnExternFinishAtCursor] at hfinishOk
                           cases hresPred :
-                              resolveSyntaxPred pred unifiedEnv tagMapping with
+                              resolveSyntaxPred pred unifiedEnv unifiedBinds tagMapping with
                           | error _err =>
                               simp [hresPred] at hfinishOk
                           | ok resolvedPred =>
@@ -2002,13 +2011,14 @@ private theorem of_applyFnTClosureAtCursor
                                   { etyp :=
                                       ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc
                                         [FnTClosure.extern innerId innerArg innerRet innerEffects
-                                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
+                                          (VarTypeEnv.toCaptured unifiedEnv unifiedBinds) innerArgQt innerCaptures],
                                     poison := ctx.pc,
                                     pred := Predicate.noPred } := by
                               intro nestedId d hreach
                               exact (QTypReachableFrom.of_externFn_result
+                                  (ctx := { ctx with varEnv := unifiedEnv, bindEnv := unifiedBinds })
                                   (resolveArgCondQTyp_fst_poison hresolve) hunifiedCtx hcurrent)
-                                (by simpa [unifiedEnv] using hreach)
+                                (by simpa [unifiedEnv, unifiedBinds] using hreach)
                             intro nestedId d hreach
                             cases hgate : joinPoison p1 p
                             · exact
@@ -2045,13 +2055,14 @@ private theorem of_applyFnTClosureAtCursor
                                   { etyp :=
                                       ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                                         [PFnTClosure.extern innerId innerArg innerRet
-                                          (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures],
+                                          (VarTypeEnv.toCaptured unifiedEnv unifiedBinds) innerArgQt innerCaptures],
                                     poison := ctx.pc,
                                     pred := Predicate.noPred } := by
                               intro nestedId d hreach
                               exact (QTypReachableFrom.of_externPfn_result
+                                  (ctx := { ctx with varEnv := unifiedEnv, bindEnv := unifiedBinds })
                                   (resolveArgCondQTyp_fst_poison hresolve) hunifiedCtx hcurrent)
-                                (by simpa [unifiedEnv] using hreach)
+                                (by simpa [unifiedEnv, unifiedBinds] using hreach)
                             intro nestedId d hreach
                             cases hgate : joinPoison p1 p
                             · exact
@@ -2068,7 +2079,7 @@ private theorem of_applyPFnTClosureAtCursor
     {root : Expr} {ctxRoot ctx : TypeContext}
     {tcl : PFnTClosure} {st1 st2 : Typ} {p p1 : Poison}
     {argEtyp : ETyp} {argPoison : Poison} {argPred : Predicate}
-    {result1 result : TypeResult} {cursor : Tag × Loc}
+    {result1 result : TypeResult} {cursor : Tag × Loc} {bn : Nat}
     {fuel : Nat} {tcls : List PFnTClosure}
     (IH :
       ∀ m < fuel, ∀ {ctx : TypeContext} {e : Expr} {res : TypeResult},
@@ -2086,7 +2097,7 @@ private theorem of_applyPFnTClosureAtCursor
     (hmem : tcl ∈ tcls)
     (happly :
       applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred
-        ctx result1 cursor fuel = .ok result) :
+        ctx result1 cursor bn fuel = .ok result) :
     QTypReachableFrom root ctxRoot result.qualType := by
   have hqtParrow :
       QTypReachableFrom root ctxRoot
@@ -2110,10 +2121,12 @@ private theorem of_applyPFnTClosureAtCursor
                     { etyp := argEtyp,
                       poison := joinPoison ctx.pc argPoison,
                       pred := argPred },
+                  bindEnv := BindEnv.bindParam σcap x bn,
                   tagEnv := result1.tagEnv',
                   pureCtx := true,
                   nextLoc := cursor.2,
                   nextTag := cursor.1,
+                  nextBind := bn + 1,
                   regime := result1.regime',
                   externRefAllowed := false,
                   declaredExternRefs := result1.declared' } (PExpr.toExpr body) fuel' with
@@ -2141,10 +2154,12 @@ private theorem of_applyPFnTClosureAtCursor
                               { etyp := argEtyp,
                                 poison := joinPoison ctx.pc argPoison,
                                 pred := argPred },
+                            bindEnv := BindEnv.bindParam σcap x bn,
                             tagEnv := result1.tagEnv',
                             pureCtx := true,
                             nextLoc := cursor.2,
                             nextTag := cursor.1,
+                            nextBind := bn + 1,
                             regime := result1.regime',
                             externRefAllowed := false,
                             declaredExternRefs := result1.declared' } :=
@@ -2194,6 +2209,7 @@ private theorem of_applyPFnTClosureAtCursor
               { etyp := argEtyp,
                 poison := joinPoison ctx.pc argPoison,
                 pred := argPred }
+          let unifiedBinds : BindEnv := BindEnv.bindParam capturedEnv x bn
           -- Leading argument-condition gate: throw branch is impossible on .ok.
           simp only [bind, Except.bind] at happly
           split at happly
@@ -2210,7 +2226,7 @@ private theorem of_applyPFnTClosureAtCursor
                   | mk tagMapping nextTag' =>
                       simp [htag] at happly
                       cases hresPred :
-                          resolveSyntaxPred pred unifiedEnv tagMapping with
+                          resolveSyntaxPred pred unifiedEnv unifiedBinds tagMapping with
                       | error _err =>
                           rw [hresPred] at happly
                           simp at happly
@@ -2276,13 +2292,14 @@ private theorem of_applyPFnTClosureAtCursor
                       { etyp :=
                           ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc
                             [FnTClosure.extern innerId innerArg innerRet innerEffects
-                              (VarTypeEnv.toCaptured unifiedEnv) v.1 innerCaptures],
+                              (VarTypeEnv.toCaptured unifiedEnv unifiedBinds) v.1 innerCaptures],
                         poison := ctx.pc,
                         pred := Predicate.noPred } := by
                   intro nestedId d hreach
                   exact (QTypReachableFrom.of_externFn_result
+                      (ctx := { ctx with varEnv := unifiedEnv, bindEnv := unifiedBinds })
                       (resolveArgCondQTyp_fst_poison hresolve) hunifiedCtx hcurrent)
-                    (by simpa [unifiedEnv] using hreach)
+                    (by simpa [unifiedEnv, unifiedBinds] using hreach)
                 intro nestedId d hreach
                 cases hgate : joinPoison p1 p
                 · exact
@@ -2317,13 +2334,14 @@ private theorem of_applyPFnTClosureAtCursor
                       { etyp :=
                           ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc
                             [PFnTClosure.extern innerId innerArg innerRet
-                              (VarTypeEnv.toCaptured unifiedEnv) v.1 innerCaptures],
+                              (VarTypeEnv.toCaptured unifiedEnv unifiedBinds) v.1 innerCaptures],
                         poison := ctx.pc,
                         pred := Predicate.noPred } := by
                   intro nestedId d hreach
                   exact (QTypReachableFrom.of_externPfn_result
+                      (ctx := { ctx with varEnv := unifiedEnv, bindEnv := unifiedBinds })
                       (resolveArgCondQTyp_fst_poison hresolve) hunifiedCtx hcurrent)
-                    (by simpa [unifiedEnv] using hreach)
+                    (by simpa [unifiedEnv, unifiedBinds] using hreach)
                 intro nestedId d hreach
                 cases hgate : joinPoison p1 p
                 · exact
@@ -2378,6 +2396,7 @@ private theorem of_typecheckApp
           tagEnv := result2.tagEnv',
           nextLoc := result2.nextLoc',
           nextTag := result2.nextTag',
+          nextBind := result2.nextBind',
           regime := result2.regime',
           declaredExternRefs := result2.declared' }
       have hctxFun : ContextReachableFrom root ctxRoot ctxFun := by
@@ -2396,11 +2415,11 @@ private theorem of_typecheckApp
               ∀ result ∈ results,
                 QTypReachableFrom root ctxRoot result.qualType :=
             applyClosuresThreaded_forall_reachable_mem
-              (fun tcl cursor =>
+              (fun tcl cursor bn =>
                 applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
-                  ctx result1 cursor fuel')
-              tcls (result1.nextTag', result1.nextLoc') results
-              (fun tcl hmem cursor result happly =>
+                  ctx result1 cursor bn fuel')
+              tcls (result1.nextTag', result1.nextLoc') result1.nextBind' results
+              (fun tcl hmem cursor bn result happly =>
                 of_applyFnTClosureAtCursor IH' hctx hfnReach hfnEtyp harg hmem happly)
               hthread
           have hfirstReach : QTypReachableFrom root ctxRoot first.qualType :=
@@ -2420,11 +2439,11 @@ private theorem of_typecheckApp
               ∀ result ∈ results,
                 QTypReachableFrom root ctxRoot result.qualType :=
             applyClosuresThreaded_forall_reachable_mem
-              (fun tcl cursor =>
+              (fun tcl cursor bn =>
                 applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2
-                  ctx result1 cursor fuel')
-              tcls (result1.nextTag', result1.nextLoc') results
-              (fun tcl hmem cursor result happly =>
+                  ctx result1 cursor bn fuel')
+              tcls (result1.nextTag', result1.nextLoc') result1.nextBind' results
+              (fun tcl hmem cursor bn result happly =>
                 of_applyPFnTClosureAtCursor IH' hctx hfnReach hpfnEtyp harg hmem happly)
               hthread
           have hfirstReach : QTypReachableFrom root ctxRoot first.qualType :=
@@ -2627,6 +2646,7 @@ theorem of_typecheck
                 let ctxTrue : TypeContext :=
                   { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
                              nextTag := _res1.nextTag',
+                             nextBind := _res1.nextBind',
                              declaredExternRefs := _res1.declared' }
                 have hctxTrue : ContextReachableFrom root ctxRoot ctxTrue := by
                   intro x qt hlookup
@@ -2657,9 +2677,10 @@ theorem of_typecheck
                     _hnextTag, _hregime, _hdecl, _hpoison, hetyp⟩
                 let ctxFalse : TypeContext :=
                   { pc := ctx.pc, regime := ctx.regime, memEnv := ctx.memEnv,
-                    varEnv := ctx.varEnv,
+                    varEnv := ctx.varEnv, bindEnv := ctx.bindEnv,
                     tagEnv := ctx.tagEnv.insert k { value := false, deps := deps },
                     nextLoc := res2.nextLoc', nextTag := res2.nextTag',
+                    nextBind := res2.nextBind',
                     pureCtx := ctx.pureCtx,
                     externRegime := ctx.externRegime,
                     externRefAllowed := ctx.externRefAllowed,
@@ -2697,8 +2718,9 @@ theorem of_typecheck
                     (by simpa [typecheck] using htc1)
                 let ctx' : TypeContext :=
                   { pc := ctx.pc, regime := res1.regime', memEnv := res1.memEnv',
-                    varEnv := ctx.varEnv, tagEnv := res1.tagEnv',
+                    varEnv := ctx.varEnv, bindEnv := ctx.bindEnv, tagEnv := res1.tagEnv',
                     nextLoc := res1.nextLoc', nextTag := res1.nextTag',
+                    nextBind := res1.nextBind',
                     pureCtx := ctx.pureCtx,
                     externRegime := ctx.externRegime,
                     externRefAllowed := ctx.externRefAllowed,
@@ -2713,7 +2735,8 @@ theorem of_typecheck
                     (ExternDeclarationReachableFromExpr.ite_then hcurrent)
                     (by simpa [typecheck, ctx'', ctx'] using htc2)
                 let ctxForE3 : TypeContext :=
-                  { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', declaredExternRefs := res2.declared' }
+                  { ctx'' with nextLoc := res2.nextLoc', nextTag := res2.nextTag', nextBind := res2.nextBind',
+                               declaredExternRefs := res2.declared' }
                 have hctxE3 : ContextReachableFrom root ctxRoot ctxForE3 := by
                   intro x qt hlookup
                   exact hctx'' (by simpa [ctxForE3] using hlookup)

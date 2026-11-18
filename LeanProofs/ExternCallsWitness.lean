@@ -64,7 +64,7 @@ def ctxWith (policy : ExternId → Tag → Option Bool) : TypeContext :=
 private theorem refute_gen {predSat : PredSat} {P : TagMeaning} {root s : Step}
     {effects : List Effect} {entry : ExternCallEntry}
     {res : TypeResult} {cf : Config} {k : Tag} {n : Int} {b : Bool}
-    (hlaws : PredSatLaws predSat P) (hd : descGe P k = true)
+    {β : BindVals} (hlaws : PredSatLaws predSat P β) (hd : descGe P k = true)
     (hreach : Reach root s) (hcall : ExternCallAt s effects entry res cf (.num n))
     (ht : res.tagLog'.map (·.tag) = [k]) (hg : guardAt res.qualType.pred k = true)
     (hr : res.regime'.lookup? k = some b) (hb : ¬ (0 ≤ n ↔ b = true)) :
@@ -176,19 +176,19 @@ private theorem runU (n : Int) (cfg : Config) :
 def wBody (C : TypeContext) (arg : Expr) (G : Nat) : TypeContext :=
   let E := (iFun C (.var "f") arg G).qualType.etyp
   fnBodyCtx C (iArg C arg G) (iFun C (.var "f") arg G) (arrowP E) "u" (regTenv (arrowM E))
-    (iCursor C (.var "f") arg G)
+    (iCursor C (.var "f") arg G) (iBind C (.var "f") arg G)
 
 /-- The parts of the call `f arg`: the argument, the function, or the body of
     the wrapper. -/
 private theorem wrap_sub {C : TypeContext} {arg : Expr} {H : Nat} {cfg : Config} {n : Int}
     (hrunF : ∀ c, c.varEnv = cfg.varEnv → terminatesTo (.var "f") c c fClo)
     (hrunA : terminatesTo arg cfg cfg (.num n))
-    (harg : noApp arg = true)
+    (harg : noAppIte arg = true)
     (hok2 : isOkB (typecheckExpr C arg (H + 1)) = true)
     (hok1 : isOkB (typecheckExpr (ctxAfter C (iArg C arg (H + 1))) (.var "f") (H + 1)) = true)
     (hshape : isArrow1 (iFun C (.var "f") arg (H + 1)).qualType.etyp = true)
     {s' : Step} (h : SubStep ⟨C, .app (.var "f") arg, H + 3, cfg⟩ s') :
-    noApp s'.e = true ∨ s' = ⟨wBody C arg (H + 1), bodyF, H, wBodyCfg cfg n⟩ := by
+    noAppIte s'.e = true ∨ s' = ⟨wBody C arg (H + 1), bodyF, H, wBodyCfg cfg n⟩ := by
   have hh := SubStep.app_inv h
   clear h
   obtain ⟨G, hG, h⟩ := hh
@@ -196,7 +196,7 @@ private theorem wrap_sub {C : TypeContext} {arg : Expr} {H : Nat} {cfg : Config}
   rcases h with h | h | h | h
   · subst h; exact Or.inl harg
   · obtain ⟨_, _, _, _, _, rfl⟩ := h; exact Or.inl rfl
-  · obtain ⟨H', r2, r1, rb, c2, c1, v2, x, body, env', st1, st2, p, tcls, tenv, cursor,
+  · obtain ⟨H', r2, r1, rb, c2, c1, v2, x, body, env', st1, st2, p, tcls, tenv, cursor, bn,
       hH, h2, hr2, h1, hr1, hety, hthr, rfl⟩ := h
     obtain rfl : H = H' := by omega
     obtain rfl : r2 = iArg C arg (H + 1) := ok_inj h2 (eq_okVal hok2)
@@ -210,11 +210,11 @@ private theorem wrap_sub {C : TypeContext} {arg : Expr} {H : Nat} {cfg : Config}
     rw [arrow1_eq hshape] at hety
     simp only [ETyp.arrow.injEq] at hety
     obtain ⟨rfl, rfl, rfl, rfl⟩ := hety
-    obtain ⟨hm, rfl, _⟩ := ThreadedAt.single_inv hthr
+    obtain ⟨hm, rfl, rfl, _⟩ := ThreadedAt.single_inv hthr
     refine Or.inr ?_
     simp only [wBody, wBodyCfg, ← hm, regTenv]
     rfl
-  · obtain ⟨H', r2, r1, rb, c2, c1, v2, x, body, pbody, env', st1, st2, p, tcls, tenv, cursor,
+  · obtain ⟨H', r2, r1, rb, c2, c1, v2, x, body, pbody, env', st1, st2, p, tcls, tenv, cursor, bn,
       hH, h2, hr2, h1, hr1, _⟩ := h
     obtain ⟨hc2, rfl⟩ := terminatesTo_det hr2 hrunA
     subst c2
@@ -233,7 +233,7 @@ private theorem wrap_call {C : TypeContext} {arg : Expr} {H : Nat} {cfg : Config
   obtain ⟨G, _, h⟩ := hh
   rcases h with
     ⟨r2, r1, c2, c1, v2, vRaw, x, y, env', id, argTyp, argPoison, argPred, retSpec, captures,
-      memberCaptures, st1, st2, p, tcls, tenv, declaredArgQt, cursor, implFn,
+      memberCaptures, st1, st2, p, tcls, tenv, declaredArgQt, cursor, bn, implFn,
       _, hr2, _, hr1, _⟩ |
     ⟨r2, r1, c2, c1, v2, x, y, env', id, argTyp, argPoison, argPred, retSpec, effs, captures,
       _, hr2, _, hr1⟩
@@ -252,13 +252,22 @@ def C0 (pol : ExternId → Tag → Option Bool) : TypeContext := ctxWith pol
 def r0 (pol : ExternId → Tag → Option Bool) : TypeResult :=
   okVal (typecheckExpr (C0 pol) (readD false) 58)
 def C1 (pol : ExternId → Tag → Option Bool) : TypeContext :=
-  { ctxAfter (C0 pol) (r0 pol) with varEnv := (C0 pol).varEnv.update "read" (r0 pol).qualType }
+  { ctxAfter (C0 pol) (r0 pol) with
+    varEnv := (C0 pol).varEnv.update "read" (r0 pol).qualType,
+    bindEnv := (C0 pol).bindEnv.insert "read" (r0 pol).nextBind',
+    nextBind := (r0 pol).nextBind' + 1 }
 def rF (pol : ExternId → Tag → Option Bool) : TypeResult := okVal (typecheckExpr (C1 pol) fnF 56)
 def C2 (pol : ExternId → Tag → Option Bool) : TypeContext :=
-  { ctxAfter (C1 pol) (rF pol) with varEnv := (C1 pol).varEnv.update "f" (rF pol).qualType }
+  { ctxAfter (C1 pol) (rF pol) with
+    varEnv := (C1 pol).varEnv.update "f" (rF pol).qualType,
+    bindEnv := (C1 pol).bindEnv.insert "f" (rF pol).nextBind',
+    nextBind := (rF pol).nextBind' + 1 }
 def rA (pol : ExternId → Tag → Option Bool) : TypeResult := okVal (typecheckExpr (C2 pol) A1 54)
 def C3 (pol : ExternId → Tag → Option Bool) : TypeContext :=
-  { ctxAfter (C2 pol) (rA pol) with varEnv := (C2 pol).varEnv.update "a" (rA pol).qualType }
+  { ctxAfter (C2 pol) (rA pol) with
+    varEnv := (C2 pol).varEnv.update "a" (rA pol).qualType,
+    bindEnv := (C2 pol).bindEnv.insert "a" (rA pol).nextBind',
+    nextBind := (rA pol).nextBind' + 1 }
 
 def rootRes (pol : ExternId → Tag → Option Bool) : TypeResult :=
   okVal (typecheckExpr (C0 pol) prog 60)
@@ -347,7 +356,7 @@ private inductive InSet (pol : ExternId → Tag → Option Bool) : Step → Prop
   | s9 : InSet pol (S9 pol)
   | s10 : InSet pol (S10 pol)
   | s13 : InSet pol (S13 pol)
-  | leaf {s : Step} : noApp s.e = true → InSet pol s
+  | leaf {s : Step} : noAppIte s.e = true → InSet pol s
 
 private theorem inSet_step {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
     {s s' : Step} (hs : InSet pol s) (h : SubStep s s') : InSet pol s' := by
@@ -404,7 +413,7 @@ private theorem inSet_step {pol : ExternId → Tag → Option Bool} (hf : facts 
   | s13 =>
       exact InSet.leaf (readCall_sub (B := BB pol) (fe := .var "read") (arg := .var "u")
         (F := 49) (cfgB := wBodyCfg cfg3 (-3)) rfl rfl (runRead (-3) cfg3) (runU (-3) cfg3) h)
-  | leaf hl => exact InSet.leaf (SubStep.noApp h hl)
+  | leaf hl => exact InSet.leaf (SubStep.noAppIte h hl)
 
 private theorem inSet_reach {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
     {s : Step} (h : Reach (S0 pol) s) : InSet pol s := by
@@ -440,7 +449,8 @@ private theorem inSet_call {pol : ExternId → Tag → Option Bool} (hf : facts 
         (arg := .var "u") (G := 47) (cfgB := wBodyCfg cfg3 (-3)) (runRead (-3) cfg3)
         (runU (-3) cfg3) rfl hu13 hr13 hp13 h
       exact Or.inr ⟨rfl, rfl, rfl⟩
-  | leaf hl => exact absurd h (ExternCallAt.not_of_reach_noApp hl (Reach.refl _))
+  | leaf hl =>
+      exact absurd h (ExternCallAt.not_of_reach_noApp (noApp_of_noAppIte hl) (Reach.refl _))
 
 /-- No step of the set declares an `extern val`. -/
 private theorem inSet_val {pol : ExternId → Tag → Option Bool} {s : Step} {res : TypeResult} {cf : Config} {o : Value}
@@ -448,7 +458,7 @@ private theorem inSet_val {pol : ExternId → Tag → Option Bool} {s : Step} {r
     ¬ ExternValAt s res cf o := by
   intro h
   cases hs with
-  | leaf hl => exact ExternValAt.not_of_reach_noApp hl (Reach.refl _) h
+  | leaf hl => exact ExternValAt.not_of_reach_noApp (noApp_of_noAppIte hl) (Reach.refl _) h
   | _ => cases h
 
 /-- **The premise holds for the vector the run follows** (tag 0 true, tag 1
@@ -456,14 +466,15 @@ private theorem inSet_val {pol : ExternId → Tag → Option Bool} {s : Step} {r
     `predSat` exists. -/
 theorem prog_real :
     typecheck (C0 real) prog 60 = .ok (rootRes real) ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ (rootRes real).tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals),
+      PredSatLaws predSat (programTable ∅ (rootRes real).tagLog') β →
       ExternCallsMatch predSat (S0 real)) ∧
-    PredSatLaws geSat (programTable ∅ (rootRes real).tagLog') := by
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ (rootRes real).tagLog') β) := by
   have hf := facts_real
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨hp, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht9, ht13, hd0, hd1, hall⟩ := hf
-  refine ⟨eq_okVal hp, ?_, predSatLaws_geSat (geTable_of_allGe hall)⟩
-  intro predSat hlaws
+  refine ⟨eq_okVal hp, ?_, fun _ => predSatLaws_geSat (geTable_of_allGe hall)⟩
+  intro predSat _ hlaws
   refine ⟨fun s effects entry res cf o hreach hcall => ?_,
     fun _ _ _ _ hreach hv => absurd hv (inSet_val (inSet_reach facts_real hreach))⟩
   rcases inSet_call facts_real (inSet_reach facts_real hreach) hcall with
@@ -494,14 +505,16 @@ private theorem facts_bad_chain :
     let E' := (iFun (BB bad) (.var "read") (.var "u") 47).qualType.etyp
     arrowM E = .regular "u" bodyF (regTenv (arrowM E)) ∧
     isOkB (fnApply (C3 bad) (iArg (C3 bad) neg3 50) (iFun (C3 bad) (.var "f") neg3 50)
-      (arrowS1 E) (arrowS2 E) (arrowP E) 50 (arrowM E) (iCursor (C3 bad) (.var "f") neg3 50))
+      (arrowS1 E) (arrowS2 E) (arrowP E) 50 (arrowM E) (iCursor (C3 bad) (.var "f") neg3 50)
+        (iBind (C3 bad) (.var "f") neg3 50))
       = true ∧
     parrowM E' = .extern 7 "b" readRet (extParts (parrowM E')).1 (extParts (parrowM E')).2.1
       (extParts (parrowM E')).2.2 ∧
     isOkB (pfnApply (BB bad) (iArg (BB bad) (.var "u") 47)
       (iFun (BB bad) (.var "read") (.var "u") 47)
       (parrowS1 E') (parrowS2 E') (parrowP E') 47 (parrowM E')
-      (iCursor (BB bad) (.var "read") (.var "u") 47)) = true ∧
+      (iCursor (BB bad) (.var "read") (.var "u") 47)
+        (iBind (BB bad) (.var "read") (.var "u") 47)) = true ∧
     guardAt (iRes (BB bad) (.var "read") (.var "u") 47).qualType.pred 1 = true := by
   decide +kernel
 
@@ -542,14 +555,15 @@ private theorem call_bad : ∃ entry,
     on the program table; such a `predSat` exists. -/
 theorem prog_bad :
     typecheck (C0 bad) prog 60 = .ok (rootRes bad) ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ (rootRes bad).tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals),
+      PredSatLaws predSat (programTable ∅ (rootRes bad).tagLog') β →
       ¬ ExternCallsMatch predSat (S0 bad)) ∧
-    PredSatLaws geSat (programTable ∅ (rootRes bad).tagLog') := by
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ (rootRes bad).tagLog') β) := by
   have hf := facts_bad
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨hp, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht13, _, hd1, hall⟩ := hf
-  refine ⟨eq_okVal hp, ?_, predSatLaws_geSat (geTable_of_allGe hall)⟩
-  intro predSat hlaws
+  refine ⟨eq_okVal hp, ?_, fun _ => predSatLaws_geSat (geTable_of_allGe hall)⟩
+  intro predSat _ hlaws
   obtain ⟨entry, hcall⟩ := call_bad
   obtain ⟨_, _, _, _, hg⟩ := facts_bad_chain
   exact refute_of hlaws hd1 reach_bad hcall ht13 hg regime_bad (by decide)
@@ -571,24 +585,26 @@ private def Chain (pol : ExternId → Tag → Option Bool) : Prop :=
   arrowM E1 = .regular "u" bodyF (regTenv (arrowM E1)) ∧
   isOkB (fnApply (C2 pol) (iArg (C2 pol) (.num 1) 52) (iFun (C2 pol) (.var "f") (.num 1) 52)
     (arrowS1 E1) (arrowS2 E1) (arrowP E1) 52 (arrowM E1)
-    (iCursor (C2 pol) (.var "f") (.num 1) 52)) = true ∧
+    (iCursor (C2 pol) (.var "f") (.num 1) 52) (iBind (C2 pol) (.var "f") (.num 1) 52)) = true ∧
   parrowM E1' = .extern 7 "b" readRet (extParts (parrowM E1')).1 (extParts (parrowM E1')).2.1
     (extParts (parrowM E1')).2.2 ∧
   isOkB (pfnApply (BA pol) (iArg (BA pol) (.var "u") 49)
     (iFun (BA pol) (.var "read") (.var "u") 49)
     (parrowS1 E1') (parrowS2 E1') (parrowP E1') 49 (parrowM E1')
-    (iCursor (BA pol) (.var "read") (.var "u") 49)) = true ∧
+    (iCursor (BA pol) (.var "read") (.var "u") 49)
+      (iBind (BA pol) (.var "read") (.var "u") 49)) = true ∧
   guardAt (iRes (BA pol) (.var "read") (.var "u") 49).qualType.pred 0 = true ∧
   arrowM E2 = .regular "u" bodyF (regTenv (arrowM E2)) ∧
   isOkB (fnApply (C3 pol) (iArg (C3 pol) neg3 50) (iFun (C3 pol) (.var "f") neg3 50)
     (arrowS1 E2) (arrowS2 E2) (arrowP E2) 50 (arrowM E2)
-    (iCursor (C3 pol) (.var "f") neg3 50)) = true ∧
+    (iCursor (C3 pol) (.var "f") neg3 50) (iBind (C3 pol) (.var "f") neg3 50)) = true ∧
   parrowM E2' = .extern 7 "b" readRet (extParts (parrowM E2')).1 (extParts (parrowM E2')).2.1
     (extParts (parrowM E2')).2.2 ∧
   isOkB (pfnApply (BB pol) (iArg (BB pol) (.var "u") 47)
     (iFun (BB pol) (.var "read") (.var "u") 47)
     (parrowS1 E2') (parrowS2 E2') (parrowP E2') 47 (parrowM E2')
-    (iCursor (BB pol) (.var "read") (.var "u") 47)) = true ∧
+    (iCursor (BB pol) (.var "read") (.var "u") 47)
+      (iBind (BB pol) (.var "read") (.var "u") 47)) = true ∧
   guardAt (iRes (BB pol) (.var "read") (.var "u") 47).qualType.pred 1 = true
 
 private theorem chain_real : Chain real := by unfold Chain; decide +kernel
@@ -675,17 +691,36 @@ theorem prog_live :
     call, which returns 1. -/
 theorem prog_tag0 :
     typecheck (C0 allF) prog 60 = .ok (rootRes allF) ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ (rootRes allF).tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals),
+      PredSatLaws predSat (programTable ∅ (rootRes allF).tagLog') β →
       ¬ ExternCallsMatch predSat (S0 allF)) ∧
-    PredSatLaws geSat (programTable ∅ (rootRes allF).tagLog') := by
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ (rootRes allF).tagLog') β) := by
   have hf := facts_allF
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨hp, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht9, _, hd0, _, hall⟩ := hf
-  refine ⟨eq_okVal hp, ?_, predSatLaws_geSat (geTable_of_allGe hall)⟩
-  intro predSat hlaws
+  refine ⟨eq_okVal hp, ?_, fun _ => predSatLaws_geSat (geTable_of_allGe hall)⟩
+  intro predSat _ hlaws
   obtain ⟨entry, cf, hcall⟩ := callA facts_allF chain_allF
   exact refute_gen hlaws hd0 (reachA facts_allF chain_allF) hcall ht9 chain_allF.2.2.2.2.1
     regime_allF (by decide)
+
+/-! ### The guards the run tests -/
+
+/-- The run reaches no conditional, so the condition on the guards it tests
+    holds for every view. -/
+private theorem tests_of {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
+    (β : BindVals) : TestsAgreeWithView β (S0 pol) := by
+  refine ⟨?_⟩
+  intro ctx e1 e2 e3 f cfg _ _ _ _ hreach _ _ _
+  have hs := inSet_reach hf hreach
+  generalize hst : (⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ : Step) = st at hs
+  exfalso
+  cases hs with
+  | leaf hl => subst hst; exact noAppIte_ne_ite hl rfl
+  | _ => simp [S0, S2, S4, S5, S6, S9, S10, S13, prog, B1, B2, B3, A1, A2, bodyF] at hst
+
+/-- `TestsAgreeWithView` for the run under the vector it follows, for every view. -/
+theorem tests_real (β : BindVals) : TestsAgreeWithView β (S0 real) := tests_of facts_real β
 
 end Wrapper
 
@@ -736,20 +771,24 @@ private theorem runReadA :
 
 def rR1 (pol : ExternId → Tag → Option Bool) : TypeResult := okVal (typecheckExpr (C1 pol) R1 56)
 def D2 (pol : ExternId → Tag → Option Bool) : TypeContext :=
-  { ctxAfter (C1 pol) (rR1 pol) with varEnv := (C1 pol).varEnv.update "a" (rR1 pol).qualType }
+  { ctxAfter (C1 pol) (rR1 pol) with
+    varEnv := (C1 pol).varEnv.update "a" (rR1 pol).qualType,
+    bindEnv := (C1 pol).bindEnv.insert "a" (rR1 pol).nextBind',
+    nextBind := (rR1 pol).nextBind' + 1 }
 
 private def mgOk (pol : ExternId → Tag → Option Bool) : Bool :=
-  match matchGuard (ge0 "a") (D2 pol).memEnv (D2 pol).varEnv 54 with
+  match matchGuard (ge0 "a") (D2 pol).memEnv (D2 pol).varEnv (D2 pol).bindEnv 54 with
   | .ok (k, _) => k == 0
   | .error _ => false
 
 def mgDeps (pol : ExternId → Tag → Option Bool) : Deps :=
-  match matchGuard (ge0 "a") (D2 pol).memEnv (D2 pol).varEnv 54 with
+  match matchGuard (ge0 "a") (D2 pol).memEnv (D2 pol).varEnv (D2 pol).bindEnv 54 with
   | .ok (_, d) => d
   | .error _ => ∅
 
 private theorem mg_eq {pol : ExternId → Tag → Option Bool} (h : mgOk pol = true) :
-    matchGuard (ge0 "a") (D2 pol).memEnv (D2 pol).varEnv 54 = .ok (0, mgDeps pol) := by
+    matchGuard (ge0 "a") (D2 pol).memEnv (D2 pol).varEnv (D2 pol).bindEnv 54 =
+      .ok (0, mgDeps pol) := by
   unfold mgOk at h
   unfold mgDeps
   split at h
@@ -833,7 +872,7 @@ private inductive InSet (pol : ExternId → Tag → Option Bool) : Step → Prop
   | t2 : InSet pol (T2 pol)
   | t3 : InSet pol (T3 pol)
   | t4 : InSet pol (T4 pol)
-  | leaf {s : Step} : noApp s.e = true → InSet pol s
+  | leaf {s : Step} : noAppIte s.e = true → InSet pol s
 
 private theorem inSet_step {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
     {s s' : Step} (hs : InSet pol s) (h : SubStep s s') : InSet pol s' := by
@@ -891,7 +930,7 @@ private theorem inSet_step {pol : ExternId → Tag → Option Bool} (hf : facts 
   | t4 =>
       exact InSet.leaf (readCall_sub (B := DT pol) (fe := .var "read") (arg := neg3)
         (F := 54) (cfgB := cfgA) rfl rfl runReadA (run_neg3 _) h)
-  | leaf hl => exact InSet.leaf (SubStep.noApp h hl)
+  | leaf hl => exact InSet.leaf (SubStep.noAppIte h hl)
 
 private theorem inSet_reach {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
     {s : Step} (h : Reach (T0 pol) s) : InSet pol s := by
@@ -921,7 +960,8 @@ private theorem inSet_call {pol : ExternId → Tag → Option Bool} (hf : facts 
       obtain ⟨rfl, rfl, _, rfl, _⟩ := readCall_call (B := DT pol) (fe := .var "read")
         (arg := neg3) (G := 52) (cfgB := cfgA) runReadA (run_neg3 _) rfl hu4 hr4 hp4 h
       exact Or.inr ⟨rfl, rfl, rfl⟩
-  | leaf hl => exact absurd h (ExternCallAt.not_of_reach_noApp hl (Reach.refl _))
+  | leaf hl =>
+      exact absurd h (ExternCallAt.not_of_reach_noApp (noApp_of_noAppIte hl) (Reach.refl _))
 
 /-- No step of the set declares an `extern val`. -/
 private theorem inSet_val {pol : ExternId → Tag → Option Bool} {s : Step} {res : TypeResult} {cf : Config} {o : Value}
@@ -929,13 +969,14 @@ private theorem inSet_val {pol : ExternId → Tag → Option Bool} {s : Step} {r
     ¬ ExternValAt s res cf o := by
   intro h
   cases hs with
-  | leaf hl => exact ExternValAt.not_of_reach_noApp hl (Reach.refl _) h
+  | leaf hl => exact ExternValAt.not_of_reach_noApp (noApp_of_noAppIte hl) (Reach.refl _) h
   | _ => cases h
 
 private theorem match_of {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
     (h0 : (iRes (C1 pol) (.var "read") (.num 1) 54).regime'.lookup? 0 = some true)
     (h1 : (iRes (DT pol) (.var "read") neg3 52).regime'.lookup? 1 = some false)
-    (predSat : PredSat) (hlaws : PredSatLaws predSat (programTable ∅ (rootRes pol).tagLog')) :
+    (predSat : PredSat) {β : BindVals}
+      (hlaws : PredSatLaws predSat (programTable ∅ (rootRes pol).tagLog') β) :
     ExternCallsMatch predSat (T0 pol) := by
   have hf' := hf
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf'
@@ -954,20 +995,22 @@ theorem prog_real :
     typecheck (C0 realF) prog 60 = .ok (rootRes realF) ∧
     typecheck (C0 realT) prog 60 = .ok (rootRes realT) ∧
     realF 7 2 = some false ∧ realT 7 2 = some true ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ (rootRes realF).tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals),
+      PredSatLaws predSat (programTable ∅ (rootRes realF).tagLog') β →
       ExternCallsMatch predSat (T0 realF)) ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ (rootRes realT).tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals),
+      PredSatLaws predSat (programTable ∅ (rootRes realT).tagLog') β →
       ExternCallsMatch predSat (T0 realT)) ∧
-    PredSatLaws geSat (programTable ∅ (rootRes realF).tagLog') ∧
-    PredSatLaws geSat (programTable ∅ (rootRes realT).tagLog') := by
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ (rootRes realF).tagLog') β) ∧
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ (rootRes realT).tagLog') β) := by
   obtain ⟨hF0, hF1, hT0, hT1, _, htags⟩ := regimes
   have hF := facts_realF
   have hT := facts_realT
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hF hT
   refine ⟨htags, eq_okVal hF.1, eq_okVal hT.1, rfl, rfl,
     match_of facts_realF hF0 hF1, match_of facts_realT hT0 hT1,
-    predSatLaws_geSat (geTable_of_allGe hF.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2),
-    predSatLaws_geSat (geTable_of_allGe hT.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2)⟩
+    fun _ => predSatLaws_geSat (geTable_of_allGe hF.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2),
+    fun _ => predSatLaws_geSat (geTable_of_allGe hT.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2)⟩
 
 /-- *Agreement* holds for two copies of the run under the vector `realF`: its
     two calls have different member results. -/
@@ -1017,7 +1060,7 @@ private theorem facts_bad_chain :
       (extParts (parrowM E')).2.2 ∧
     isOkB (pfnApply (DT bad) (iArg (DT bad) neg3 52) (iFun (DT bad) (.var "read") neg3 52)
       (parrowS1 E') (parrowS2 E') (parrowP E') 52 (parrowM E')
-      (iCursor (DT bad) (.var "read") neg3 52)) = true ∧
+      (iCursor (DT bad) (.var "read") neg3 52) (iBind (DT bad) (.var "read") neg3 52)) = true ∧
     guardAt (iRes (DT bad) (.var "read") neg3 52).qualType.pred 1 = true := by
   decide +kernel
 
@@ -1025,14 +1068,15 @@ private theorem facts_bad_chain :
     branch returns -3 under a true tag. -/
 theorem prog_bad :
     typecheck (C0 bad) prog 60 = .ok (rootRes bad) ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ (rootRes bad).tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals),
+      PredSatLaws predSat (programTable ∅ (rootRes bad).tagLog') β →
       ¬ ExternCallsMatch predSat (T0 bad)) ∧
-    PredSatLaws geSat (programTable ∅ (rootRes bad).tagLog') := by
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ (rootRes bad).tagLog') β) := by
   have hf := facts_bad
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨hp, h0, hR1, _, _, _, hmg, hreg0, hrC, hu4, hr4, hp4, _, ht4, _, hd1, hall⟩ := hf
-  refine ⟨eq_okVal hp, ?_, predSatLaws_geSat (geTable_of_allGe hall)⟩
-  intro predSat hlaws
+  refine ⟨eq_okVal hp, ?_, fun _ => predSatLaws_geSat (geTable_of_allGe hall)⟩
+  intro predSat _ hlaws
   obtain ⟨hm, hap, hg⟩ := facts_bad_chain
   have e1 : SubStep (T0 bad) (T1 bad) :=
     SubStep.vletBody (c1 := cfg0) (v1 := readV) (eq_okVal h0) (run_readD false cfg0 rfl)
@@ -1060,7 +1104,8 @@ private def ChainA (pol : ExternId → Tag → Option Bool) : Prop :=
     (extParts (parrowM E)).2.2 ∧
   isOkB (pfnApply (C1 pol) (iArg (C1 pol) (.num 1) 54) (iFun (C1 pol) (.var "read") (.num 1) 54)
     (parrowS1 E) (parrowS2 E) (parrowP E) 54 (parrowM E)
-    (iCursor (C1 pol) (.var "read") (.num 1) 54)) = true ∧
+    (iCursor (C1 pol) (.var "read") (.num 1) 54)
+      (iBind (C1 pol) (.var "read") (.num 1) 54)) = true ∧
   guardAt (iRes (C1 pol) (.var "read") (.num 1) 54).qualType.pred 0 = true
 
 /-- The member result and guard of the call in the taken branch. -/
@@ -1070,7 +1115,7 @@ private def ChainB (pol : ExternId → Tag → Option Bool) : Prop :=
     (extParts (parrowM E)).2.2 ∧
   isOkB (pfnApply (DT pol) (iArg (DT pol) neg3 52) (iFun (DT pol) (.var "read") neg3 52)
     (parrowS1 E) (parrowS2 E) (parrowP E) 52 (parrowM E)
-    (iCursor (DT pol) (.var "read") neg3 52)) = true ∧
+    (iCursor (DT pol) (.var "read") neg3 52) (iBind (DT pol) (.var "read") neg3 52)) = true ∧
   guardAt (iRes (DT pol) (.var "read") neg3 52).qualType.pred 1 = true
 
 /-- What the first call needs from the typing; holds whatever the regime of
@@ -1157,17 +1202,45 @@ theorem prog_live :
     call, which returns 1. -/
 theorem prog_tag0 :
     typecheck (C0 allF) prog 60 = .ok (rootRes allF) ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ (rootRes allF).tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals),
+      PredSatLaws predSat (programTable ∅ (rootRes allF).tagLog') β →
       ¬ ExternCallsMatch predSat (T0 allF)) ∧
-    PredSatLaws geSat (programTable ∅ (rootRes allF).tagLog') := by
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ (rootRes allF).tagLog') β) := by
   have hf := factsA_allF
   simp only [factsA, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨hp, _, _, _, _, ht, hd0, hall⟩ := hf
-  refine ⟨eq_okVal hp, ?_, predSatLaws_geSat (geTable_of_allGe hall)⟩
-  intro predSat hlaws
+  refine ⟨eq_okVal hp, ?_, fun _ => predSatLaws_geSat (geTable_of_allGe hall)⟩
+  intro predSat _ hlaws
   obtain ⟨entry, cf, hcall⟩ := callA factsA_allF chainA_allF
   exact refute_gen hlaws hd0 (reachA factsA_allF) hcall ht chainA_allF.2.2 regime_allF
     (by decide)
+
+/-! ### The guards the run tests -/
+
+/-- The one conditional the run reaches is `IT`, in the context `D2`. -/
+private theorem tests_of {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
+    (harg : envArgOnly (D2 pol).varEnv (D2 pol).memEnv = true) (β : BindVals) :
+    TestsAgreeWithView β (T0 pol) := by
+  refine ⟨?_⟩
+  intro ctx e1 e2 e3 f cfg _ _ _ _ hreach _ _ hd
+  have hs := inSet_reach hf hreach
+  generalize hst : (⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ : Step) = st at hs
+  cases hs with
+  | t3 =>
+      simp only [T3, Step.mk.injEq] at hst
+      obtain ⟨rfl, -, -, -⟩ := hst
+      exact viewAgrees_of_envArgOnly harg β _ hd
+  | leaf hl => subst hst; exact absurd rfl (noAppIte_ne_ite hl)
+  | _ => simp [T0, T1, T2, T4, prog, Q1, R1, R2] at hst
+
+/-- Every guard of the context of the conditional reads only its argument. -/
+private theorem argOnly_realF : envArgOnly (D2 realF).varEnv (D2 realF).memEnv = true := by
+  decide +kernel
+
+/-- `TestsAgreeWithView` for the run under `realF`, for every view: the guards
+    at the conditional read only their argument. -/
+theorem tests_realF (β : BindVals) : TestsAgreeWithView β (T0 realF) :=
+  tests_of facts_realF argOnly_realF β
 
 end Skipped
 
@@ -1193,7 +1266,10 @@ def K0 : TypeContext :=
   { ctxWith allT with varEnv := (∅ : VarTypeEnv).update "x" pInt }
 private def rD : TypeResult := okVal (typecheckExpr K0 (readD true) 58)
 private def K1 : TypeContext :=
-  { ctxAfter K0 rD with varEnv := K0.varEnv.update "read" rD.qualType }
+  { ctxAfter K0 rD with
+    varEnv := K0.varEnv.update "read" rD.qualType,
+    bindEnv := K0.bindEnv.insert "read" rD.nextBind',
+    nextBind := rD.nextBind' + 1 }
 def rootRes : TypeResult := okVal (typecheckExpr K0 prog 60)
 private def callRes : TypeResult := iRes K1 (.var "read") (.var "x") 56
 
@@ -1240,7 +1316,7 @@ private theorem call_chain :
       (extParts (parrowM E)).2.2 ∧
     isOkB (pfnApply K1 (iArg K1 (.var "x") 56) (iFun K1 (.var "read") (.var "x") 56)
       (parrowS1 E) (parrowS2 E) (parrowP E) 56 (parrowM E)
-      (iCursor K1 (.var "read") (.var "x") 56)) = true := by
+      (iCursor K1 (.var "read") (.var "x") 56) (iBind K1 (.var "read") (.var "x") 56)) = true := by
   decide +kernel
 
 /-! ### The steps a run reaches -/
@@ -1248,7 +1324,7 @@ private theorem call_chain :
 private inductive InSet (n : Int) : Step → Prop
   | u0 : InSet n (U0 n)
   | u1 : InSet n (U1 n)
-  | leaf {s : Step} : noApp s.e = true → InSet n s
+  | leaf {s : Step} : noAppIte s.e = true → InSet n s
 
 private theorem inSet_step {n : Int} {s s' : Step} (hs : InSet n s) (h : SubStep s s') :
     InSet n s' := by
@@ -1268,7 +1344,7 @@ private theorem inSet_step {n : Int} {s s' : Step} (hs : InSet n s) (h : SubStep
   | u1 =>
       exact InSet.leaf (readCall_sub (B := K1) (fe := .var "read") (arg := .var "x")
         (F := 58) (cfgB := cfgX1 n) rfl rfl (runRead n) (runX n) h)
-  | leaf hl => exact InSet.leaf (SubStep.noApp h hl)
+  | leaf hl => exact InSet.leaf (SubStep.noAppIte h hl)
 
 private theorem inSet_reach {n : Int} {s : Step} (h : Reach (U0 n) s) : InSet n s := by
   induction h with
@@ -1289,14 +1365,15 @@ private theorem inSet_call {n : Int} {s : Step} {effects : List Effect}
       obtain ⟨h1, h2, _, h3, _⟩ := readCall_call (B := K1) (fe := .var "read") (arg := .var "x")
         (G := 56) (cfgB := cfgX1 n) (runRead n) (runX n) rfl hu hr hp h
       exact ⟨h1, h2, h3⟩
-  | leaf hl => exact absurd h (ExternCallAt.not_of_reach_noApp hl (Reach.refl _))
+  | leaf hl =>
+      exact absurd h (ExternCallAt.not_of_reach_noApp (noApp_of_noAppIte hl) (Reach.refl _))
 
 /-- No step of the set declares an `extern val`. -/
 private theorem inSet_val {n : Int} {s : Step} {res : TypeResult} {cf : Config} {o : Value} (hs : InSet n s) :
     ¬ ExternValAt s res cf o := by
   intro h
   cases hs with
-  | leaf hl => exact ExternValAt.not_of_reach_noApp hl (Reach.refl _) h
+  | leaf hl => exact ExternValAt.not_of_reach_noApp (noApp_of_noAppIte hl) (Reach.refl _) h
   | _ => cases h
 
 private theorem reach_call (n : Int) :
@@ -1315,7 +1392,7 @@ private theorem reach_call (n : Int) :
 
 /-- *Match* holds in a run whose output passes the check. -/
 theorem match_of {n : Int} (hn : 0 ≤ n) (predSat : PredSat)
-    (hlaws : PredSatLaws predSat (programTable ∅ rootRes.tagLog')) :
+    {β : BindVals} (hlaws : PredSatLaws predSat (programTable ∅ rootRes.tagLog') β) :
     ExternCallsMatch predSat (U0 n) := by
   have hf := facts_ok
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
@@ -1351,19 +1428,33 @@ theorem agree_iff (n₀ n₁ : Int) : ExternCallsAgree (U0 n₀) (U0 n₁) ↔ n
 theorem agree_case :
     typecheck K0 prog 60 = .ok rootRes ∧
     qtypGuardTag rootRes.qualType = some 0 ∧ rootRes.regime'.lookup? 0 = some true ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ rootRes.tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals), PredSatLaws predSat (programTable ∅ rootRes.tagLog') β →
       ExternCallsMatch predSat (U0 5) ∧ ExternCallsMatch predSat (U0 7)) ∧
-    PredSatLaws geSat (programTable ∅ rootRes.tagLog') ∧
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ rootRes.tagLog') β) ∧
     ExternCallsAgree (U0 5) (U0 5) ∧
     ¬ ExternCallsAgree (U0 5) (U0 7) := by
   have hf := facts_ok
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨hp, _, _, _, _, _, _, _, _, _, hall, hg, hreg, _⟩ := hf
-  refine ⟨eq_okVal hp, hg, hreg, fun predSat hlaws =>
+  refine ⟨eq_okVal hp, hg, hreg, fun predSat _ hlaws =>
     ⟨match_of (by decide) predSat hlaws, match_of (by decide) predSat hlaws⟩,
-    predSatLaws_geSat (geTable_of_allGe hall), (agree_iff 5 5).2 rfl, ?_⟩
+    fun _ => predSatLaws_geSat (geTable_of_allGe hall), (agree_iff 5 5).2 rfl, ?_⟩
   rw [agree_iff]
   decide
+
+/-! ### The guards the run tests -/
+
+/-- The run reaches no conditional, so the condition on the guards it tests
+    holds for every view. -/
+theorem tests (n : Int) (β : BindVals) : TestsAgreeWithView β (U0 n) := by
+  refine ⟨?_⟩
+  intro ctx e1 e2 e3 f cfg _ _ _ _ hreach _ _ _
+  have hs := inSet_reach hreach
+  generalize hst : (⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ : Step) = st at hs
+  exfalso
+  cases hs with
+  | leaf hl => subst hst; exact noAppIte_ne_ite hl rfl
+  | _ => simp [U0, U1, prog, call] at hst
 
 end TwoRuns
 
@@ -1401,9 +1492,15 @@ def K0 : TypeContext :=
     varEnv := ((∅ : VarTypeEnv).update "x" pInt).update "y" pInt, tagEnv := ∅,
     nextLoc := 0, nextTag := 0, pureCtx := false, externRegime := allT }
 def rD : TypeResult := okVal (typecheckExpr K0 (readD true) 58)
-def K1 : TypeContext := { ctxAfter K0 rD with varEnv := K0.varEnv.update "read" rD.qualType }
+def K1 : TypeContext := { ctxAfter K0 rD with
+                          varEnv := K0.varEnv.update "read" rD.qualType,
+                          bindEnv := K0.bindEnv.insert "read" rD.nextBind',
+                          nextBind := rD.nextBind' + 1 }
 def rC1 : TypeResult := okVal (typecheckExpr K1 C1 56)
-def K2 : TypeContext := { ctxAfter K1 rC1 with varEnv := K1.varEnv.update "a" rC1.qualType }
+def K2 : TypeContext := { ctxAfter K1 rC1 with
+                          varEnv := K1.varEnv.update "a" rC1.qualType,
+                          bindEnv := K1.bindEnv.insert "a" rC1.nextBind',
+                          nextBind := rC1.nextBind' + 1 }
 def rootRes : TypeResult := okVal (typecheckExpr K0 prog 60)
 
 /-- The member results of the two calls. -/
@@ -1457,13 +1554,14 @@ private theorem calls_chain :
        (extParts (parrowM E)).2.2 ∧
      isOkB (pfnApply K1 (iArg K1 (.var "x") 54) (iFun K1 (.var "read") (.var "x") 54)
        (parrowS1 E) (parrowS2 E) (parrowP E) 54 (parrowM E)
-       (iCursor K1 (.var "read") (.var "x") 54)) = true) ∧
+       (iCursor K1 (.var "read") (.var "x") 54) (iBind K1 (.var "read") (.var "x") 54)) = true) ∧
     (let E := (iFun K2 (.var "read") (.var "y") 54).qualType.etyp
      parrowM E = .extern 7 "b" readRet (extParts (parrowM E)).1 (extParts (parrowM E)).2.1
        (extParts (parrowM E)).2.2 ∧
      isOkB (pfnApply K2 (iArg K2 (.var "y") 54) (iFun K2 (.var "read") (.var "y") 54)
        (parrowS1 E) (parrowS2 E) (parrowP E) 54 (parrowM E)
-       (iCursor K2 (.var "read") (.var "y") 54)) = true) := by
+       (iCursor K2 (.var "read") (.var "y") 54)
+         (iBind K2 (.var "read") (.var "y") 54)) = true) := by
   decide +kernel
 
 /-! ### The runs -/
@@ -1496,7 +1594,7 @@ private inductive InSet (m n : Int) : Step → Prop
   | v1 : InSet m n (V1 m n)
   | v2 : InSet m n (V2 m n)
   | v3 : InSet m n (V3 m n)
-  | leaf {s : Step} : noApp s.e = true → InSet m n s
+  | leaf {s : Step} : noAppIte s.e = true → InSet m n s
 
 private theorem inSet_step {m n : Int} {s s' : Step} (hs : InSet m n s) (h : SubStep s s') :
     InSet m n s' := by
@@ -1528,7 +1626,7 @@ private theorem inSet_step {m n : Int} {s s' : Step} (hs : InSet m n s) (h : Sub
   | v3 =>
       exact InSet.leaf (readCall_sub (B := K2) (fe := .var "read") (arg := .var "y")
         (F := 56) (cfgB := cfg2 m n) rfl rfl (runRead2 m n) (runY m n) h)
-  | leaf hl => exact InSet.leaf (SubStep.noApp h hl)
+  | leaf hl => exact InSet.leaf (SubStep.noAppIte h hl)
 
 private theorem inSet_reach {m n : Int} {s : Step} (h : Reach (V0 m n) s) : InSet m n s := by
   induction h with
@@ -1556,14 +1654,15 @@ private theorem inSet_call {m n : Int} {s : Step} {effects : List Effect} {entry
       obtain ⟨hres, ho, _, heff, _⟩ := readCall_call (B := K2) (fe := .var "read")
         (arg := .var "y") (G := 54) (cfgB := cfg2 m n) (runRead2 m n) (runY m n) rfl hy2 hr2 hp2 h
       exact Or.inr ⟨rfl, hres, ho, heff⟩
-  | leaf hl => exact absurd h (ExternCallAt.not_of_reach_noApp hl (Reach.refl _))
+  | leaf hl =>
+      exact absurd h (ExternCallAt.not_of_reach_noApp (noApp_of_noAppIte hl) (Reach.refl _))
 
 /-- No step of the set declares an `extern val`. -/
 private theorem inSet_val {m n : Int} {s : Step} {res : TypeResult} {cf : Config} {o : Value} (hs : InSet m n s) :
     ¬ ExternValAt s res cf o := by
   intro h
   cases hs with
-  | leaf hl => exact ExternValAt.not_of_reach_noApp hl (Reach.refl _) h
+  | leaf hl => exact ExternValAt.not_of_reach_noApp (noApp_of_noAppIte hl) (Reach.refl _) h
   | _ => cases h
 
 /-- Both calls are reached; the first returns `m`, the second `n`; and their
@@ -1605,7 +1704,7 @@ theorem crossed_not_same (m₀ n₀ m₁ n₁ : Int) :
 
 /-- *Match* holds in a run whose two outputs pass the check. -/
 theorem match_of {m n : Int} (hm : 0 ≤ m) (hn : 0 ≤ n) (predSat : PredSat)
-    (hlaws : PredSatLaws predSat (programTable ∅ rootRes.tagLog')) :
+    {β : BindVals} (hlaws : PredSatLaws predSat (programTable ∅ rootRes.tagLog') β) :
     ExternCallsMatch predSat (V0 m n) := by
   have hf := facts_ok
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
@@ -1651,20 +1750,34 @@ theorem agree_iff (m₀ n₀ m₁ n₁ : Int) :
     and (5, 8). -/
 theorem two_calls_case :
     typecheck K0 prog 60 = .ok rootRes ∧
-    (∀ predSat : PredSat, PredSatLaws predSat (programTable ∅ rootRes.tagLog') →
+    (∀ (predSat : PredSat) (β : BindVals), PredSatLaws predSat (programTable ∅ rootRes.tagLog') β →
       ExternCallsMatch predSat (V0 5 7) ∧ ExternCallsMatch predSat (V0 5 8)) ∧
-    PredSatLaws geSat (programTable ∅ rootRes.tagLog') ∧
+    (∀ β : BindVals, PredSatLaws geSat (programTable ∅ rootRes.tagLog') β) ∧
     ExternCallsAgree (V0 5 7) (V0 5 7) ∧
     ¬ ExternCallsAgree (V0 5 7) (V0 5 8) := by
   have hf := facts_ok
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨hp, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hall, -⟩ := hf
-  refine ⟨eq_okVal hp, fun predSat hlaws =>
+  refine ⟨eq_okVal hp, fun predSat _ hlaws =>
     ⟨match_of (by decide) (by decide) predSat hlaws,
      match_of (by decide) (by decide) predSat hlaws⟩,
-    predSatLaws_geSat (geTable_of_allGe hall), (agree_iff 5 7 5 7).2 ⟨rfl, rfl⟩, ?_⟩
+    fun _ => predSatLaws_geSat (geTable_of_allGe hall), (agree_iff 5 7 5 7).2 ⟨rfl, rfl⟩, ?_⟩
   rw [agree_iff]
   decide
+
+/-! ### The guards the run tests -/
+
+/-- The run reaches no conditional, so the condition on the guards it tests
+    holds for every view. -/
+theorem tests (m n : Int) (β : BindVals) : TestsAgreeWithView β (V0 m n) := by
+  refine ⟨?_⟩
+  intro ctx e1 e2 e3 f cfg _ _ _ _ hreach _ _ _
+  have hs := inSet_reach hreach
+  generalize hst : (⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ : Step) = st at hs
+  exfalso
+  cases hs with
+  | leaf hl => subst hst; exact noAppIte_ne_ite hl rfl
+  | _ => simp [V0, V1, V2, V3, prog, Q, C1, C2] at hst
 
 end TwoCalls
 

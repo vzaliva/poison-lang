@@ -52,17 +52,18 @@ private theorem simplePfn_shape
     {id : ExternId} {x : Name} {typ : Typ} {poison : Bool} {spred : SyntaxPredicate}
     {tenv : CapturedVarEnv} {declaredArgQt : QTyp} {captures : List Capture}
     {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison} {argPred : Predicate}
-    {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {fuel : Nat}
+    {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {bn : Nat} {fuel : Nat}
     {res : TypeResult}
     (happly : applyPFnTClosureAtCursor
       (PFnTClosure.extern id x (.simple typ poison spred) tenv declaredArgQt captures)
-      st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res) :
+      st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor bn fuel = .ok res) :
     ∃ fuel' tagMapping nextTag' resolvedPred retQt nextLoc',
       fuel = fuel' + 1 ∧
       collectAndAllocExternTags [spred] cursor.1 = .ok (tagMapping, nextTag') ∧
       resolveSyntaxPred spred
         (VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) tagMapping = .ok resolvedPred ∧
+          ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+        (BindEnv.bindParam tenv x bn) tagMapping = .ok resolvedPred ∧
       returnSpecToQTyp typ poison resolvedPred cursor.2 = .ok (retQt, nextLoc') ∧
       res =
         { qualType := normalizeAppResultByProvenance (joinPoison p1 p)
@@ -72,11 +73,13 @@ private theorem simplePfn_shape
             (applyExternRegimePolicy bodyState.regime' id ctx.externRegime tagMapping) fuel'
           nextLoc' := nextLoc'
           nextTag' := nextTag'
+          nextBind' := bn + 1
           regime' := applyExternRegimePolicy bodyState.regime' id ctx.externRegime tagMapping
           declared' := bodyState.declared'
           tagLog' := externTagLog [spred]
             (VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) tagMapping } := by
+              ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+            (BindEnv.bindParam tenv x bn) tagMapping } := by
   cases fuel with
   | zero => simp [applyPFnTClosureAtCursor] at happly
   | succ fuel' =>
@@ -90,7 +93,8 @@ private theorem simplePfn_shape
           simp only [hcol] at happly
           cases hres : resolveSyntaxPred spred
               (VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
-                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩) tagMapping with
+                ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
+              (BindEnv.bindParam tenv x bn) tagMapping with
           | error _ => simp [hres] at happly
           | ok resolvedPred =>
               simp only [hres] at happly
@@ -128,11 +132,11 @@ private theorem simplePfn_guardTag_mem
     {id : ExternId} {x : Name} {typ : Typ} {poison : Bool} {spred : SyntaxPredicate}
     {tenv : CapturedVarEnv} {declaredArgQt : QTyp} {captures : List Capture}
     {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp} {argPoison : Poison} {argPred : Predicate}
-    {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {fuel : Nat}
+    {ctx : TypeContext} {bodyState : TypeResult} {cursor : Tag × Loc} {bn : Nat} {fuel : Nat}
     {res : TypeResult}
     (happly : applyPFnTClosureAtCursor
       (PFnTClosure.extern id x (.simple typ poison spred) tenv declaredArgQt captures)
-      st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor fuel = .ok res)
+      st1 st2 p p1 argEtyp argPoison argPred ctx bodyState cursor bn fuel = .ok res)
     {k : Tag} (hk : qtypGuardTag res.qualType = some k) :
     ∃ a ∈ res.tagLog', a.tag = k := by
   obtain ⟨fuel', tagMapping, nextTag', resolvedPred, retQt, nextLoc', _hfuel, hcol, hresolve,
@@ -199,7 +203,7 @@ private theorem valueConsistent_of_callMatches {predSat : PredSat} {entry : Exte
 
 /-- From *agreement*: a poisoned result that is clean through a guard of the
     call agrees in the two runs. -/
-private theorem resultAgreesIfClean_of_callAgrees {predSat : PredSat} {μ₀ μ₁ : Memory}
+private theorem resultAgreesIfClean_of_callAgrees {predSat₀ predSat₁ : PredSat} {μ₀ μ₁ : Memory}
     {θ₀ θ₁ : RealizationMap} {entry₀ entry₁ : ExternCallEntry} {effects : List Effect}
     {res : TypeResult} {cf₀ cf₁ : Config} {o₀ o₁ : Value}
     (hhinge : ∀ k, qtypGuardTag res.qualType = some k → ∃ a ∈ res.tagLog', a.tag = k)
@@ -207,7 +211,7 @@ private theorem resultAgreesIfClean_of_callAgrees {predSat : PredSat} {μ₀ μ�
     (hnotfun : res.qualType.etyp.isFunctionType = false)
     (hnotref : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls)
     (hagree : CallAgrees entry₀ entry₁ effects res cf₀ cf₁ o₀ o₁) :
-    resultAgreesIfClean predSat res.regime' μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
+    resultAgreesIfClean predSat₀ predSat₁ res.regime' μ₀ μ₁ θ₀ θ₁ res.qualType o₀ o₁ := by
   intro hclean
   cases hclean with
   | clean hp => rw [hpoison] at hp; cases hp
@@ -221,11 +225,11 @@ private theorem resultAgreesIfClean_of_callAgrees {predSat : PredSat} {μ₀ μ�
 /-- From the cursor form of a member application to the plain form. -/
 private theorem pfnAtCursor_plain {tcl : PFnTClosure} {st1 st2 : Typ} {p p1 : Poison} {argEtyp : ETyp}
     {argPoison : Poison} {argPred : Predicate} {ctx : TypeContext} {r1 : TypeResult}
-    {cursor : Tag × Loc} {fuel : Nat} {r : TypeResult}
+    {cursor : Tag × Loc} {bn : Nat} {fuel : Nat} {r : TypeResult}
     (happly : applyPFnTClosureAtCursor tcl st1 st2 p p1 argEtyp argPoison argPred ctx r1 cursor
-      fuel = .ok r) :
+      bn fuel = .ok r) :
     applyPFnTClosure tcl st1 st2 p p1 argEtyp argPoison argPred ctx
-      { r1 with nextTag' := cursor.1, nextLoc' := cursor.2 } fuel = .ok r := by
+      { r1 with nextTag' := cursor.1, nextLoc' := cursor.2, nextBind' := bn } fuel = .ok r := by
   unfold applyPFnTClosure
   unfold applyPFnTClosureAtCursor at happly
   simpa using happly
@@ -259,7 +263,7 @@ private theorem simplePfnCall_facts {d : ExternDeclaration} {poison : Bool} {spr
   | fnExternMember _ hkind' => rw [hkind] at hkind'; cases hkind'
   | pfnExternMember _hid _hkind' _htyp _harg hret' _hcap _hpin hbody happly _heffects =>
       rename_i ctx bodyState cursor fuel st1 st2 p p1 argEtyp argPoison argPred
-        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv
+        id x y argTyp argPoisonAst argPredAst declaredArgQt retSpec captures bodyCaptures tenv bn
       have hrs : retSpec = .simple .int poison spred := by
         rw [hret] at hret'; exact (Option.some.inj hret').symm
       subst hrs
@@ -303,11 +307,12 @@ private theorem simplePfnCall_facts {d : ExternDeclaration} {poison : Bool} {spr
         obtain ⟨tm', hext⟩ := ExternBatchTagMeaningExtension.canonical_general tm [spred]
           (VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
             ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
-          tagMapping cursor.1 nextTag' hbnd hcol
+          (BindEnv.bindParam tenv x bn) tagMapping cursor.1 nextTag' hbnd hcol
         refine ⟨tm', hext.extends_tm, ?_, ?_, ?_⟩
         · rw [hres]; exact hext.bounded
         · have hpr : PredRespectsTagMeaning tm' resolvedPred :=
-            resolveSyntaxPred_respectsTagMeaning tm' spred _ tagMapping [spred] resolvedPred hext.2.2.1
+            resolveSyntaxPred_respectsTagMeaning tm' spred _ _ tagMapping [spred] resolvedPred
+              hext.2.2.1
               (List.mem_singleton_self _) hresolve
           intro qt' k dsc hin hdesc
           have hq := QTypInQTyp_eq_of_nonFunctionTarget hin (by rw [hetypRes]; rfl)
@@ -383,7 +388,7 @@ private theorem SimplePfnCallFacts.consistent {predSat : PredSat} {ctx : TypeCon
   exact h
 
 private theorem read_callSingle (ap : Bool) : ExternCallBoundarySingle (readDecl ap) readImpl := by
-  intro typedExpr res predSat tm entry ctx htyped _hpredlaws hframe hwfTm hTmBounded
+  intro typedExpr res predSat β tm entry ctx htyped _hpredlaws hframe hwfTm hTmBounded
     θ cf o _hθwf _hwfCtx htagBnd hric _hreg hcons _hwfcfg hrdIn hrun hmatch _hpc
   have hf : SimplePfnCallFacts ctx res true := read_facts htyped
   obtain ⟨⟨n, ho⟩, hcf⟩ := read_callRun_output hrun
@@ -410,11 +415,13 @@ private theorem read_callSingle (ap : Bool) : ExternCallBoundarySingle (readDecl
     exact absurd (memEnv_contains_of_lookup_some ctx.memEnv l _qt hlookup) hnot
   · rw [hboc, hf.declared]; exact hrdIn
 
-private theorem SimplePfnCallFacts.agree {predSat : PredSat} {ctx : TypeContext} {res : TypeResult}
+private theorem SimplePfnCallFacts.agree {predSat₀ predSat₁ : PredSat} {ctx : TypeContext}
+    {res : TypeResult}
     {poison : Bool} {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv} {θ₀ θ₁ : RealizationMap}
     (hf : SimplePfnCallFacts ctx res poison) (htag : TagBoundedCtx ctx)
-    (hagree : agreeOnClean predSat ctx.regime ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁) :
-    agreeOnClean predSat (ctxAfter ctx res).regime (ctxAfter ctx res) μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁ := by
+    (hagree : agreeOnClean predSat₀ predSat₁ ctx.regime ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁) :
+    agreeOnClean predSat₀ predSat₁ (ctxAfter ctx res).regime (ctxAfter ctx res) μ₀ ρ₀ θ₀ μ₁ ρ₁
+      θ₁ := by
   refine ⟨fun l qt hlookup hclean => ?_, fun x qt hlookup hclean => ?_⟩
   · have hl : ctx.memEnv.lookup l = some qt := by
       have h : res.memEnv'.lookup l = some qt := by simpa [ctxAfter] using hlookup
@@ -487,9 +494,9 @@ private theorem SimplePfnCallFacts.runtime {ctx : TypeContext} {res : TypeResult
   rw [hf.memEnv]; exact hric.1 l a hl
 
 private theorem read_callFR (ap : Bool) : ExternCallBoundaryFR (readDecl ap) readImpl := by
-  intro postExpr typedExpr₀ _typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
-    htyped₀ _htyped₁ _hpredlaws hframe hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
-    hmatch₀ hmatch₁ hagree
+  intro postExpr typedExpr₀ _typedExpr₁ res predSat₀ predSat₁ β₀ β₁ tm entry₀ entry₁ ctx hctx₁
+    htyped₀ _htyped₁ _hpredlaws₀ _hpredlaws₁ hframe₀ hframe₁ hwfTm hTmBounded θ₀ θ₁ hbody
+    cf₀ cf₁ o₀ o₁ hrun₀ hrun₁ hmatch₀ hmatch₁ hagree
   have hf : SimplePfnCallFacts ctx res true := read_facts htyped₀
   obtain ⟨⟨n₀, ho₀⟩, hcf₀⟩ := read_callRun_output hrun₀
   obtain ⟨⟨n₁, ho₁⟩, hcf₁⟩ := read_callRun_output hrun₁
@@ -498,7 +505,8 @@ private theorem read_callFR (ap : Bool) : ExternCallBoundaryFR (readDecl ap) rea
   have hboc₁ : entry₁.bodyOutputConfig cf₁ = entry₁.bodyConfig := by
     rw [hcf₁]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
   obtain ⟨tm', hext, hbnd', hresp', hwithin⟩ := hf.tagMeaning tm hTmBounded
-  have hlaws' := TagFrame.laws_of_within hframe hwithin
+  have hlaws₀' := TagFrame.laws_of_within hframe₀ hwithin
+  have hlaws₁' := TagFrame.laws_of_within hframe₁ hwithin
   have hvt₀ : valueHasETyp θ₀ o₀ res.qualType.etyp := by
     rw [ho₀, hf.etyp]; exact valueHasETyp.num _
   have hvt₁ : valueHasETyp θ₁ o₁ res.qualType.etyp := by
@@ -510,14 +518,15 @@ private theorem read_callFR (ap : Bool) : ExternCallBoundaryFR (readDecl ap) rea
   have hvc₀ := valueConsistent_of_callMatches hf.guard_mem hmatch₀ hvt₀ hf.notfun
   have hvc₁ := valueConsistent_of_callMatches hf.guard_mem hmatch₁ hvt₁ hf.notfun
   have hrai := resultAgreesIfClean_of_callAgrees (μ₀ := entry₀.bodyConfig.memory)
-    (μ₁ := entry₁.bodyConfig.memory) (θ₀ := θ₀) (θ₁ := θ₁) (predSat := predSat)
+    (μ₁ := entry₁.bodyConfig.memory) (θ₀ := θ₀) (θ₁ := θ₁) (predSat₀ := predSat₀)
+    (predSat₁ := predSat₁)
     hf.guard_mem (hf.poison_true rfl) hf.notfun hf.notref hagree
   have hmem₀ : (entry₀.bodyOutputConfig cf₀).memory = cf₀.memory := rfl
   have hmem₁ : (entry₁.bodyOutputConfig cf₁).memory = cf₁.memory := rfl
   rw [hboc₀] at hmem₀
   rw [hboc₁] at hmem₁
   rw [hboc₀, hboc₁]
-  refine ⟨tm', ⟨hext, hbnd', hwfTm', hresp', hlaws', hwithin⟩, hlaws', hresp',
+  refine ⟨tm', ⟨hext, hbnd', hwfTm', hresp', hlaws₀', hwithin⟩, hlaws₁', hresp',
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩, hvt₀, hvt₁, hwfTm',
     hf.wfCtx hbody.wfCtx, hf.tagBounded hbody.tagBounded, hbody.wfConfig₀, ?_,
     hf.runtime hbody.runtime₀, ?_, hf.regimeConsistent hbody.regime,
@@ -750,7 +759,7 @@ private theorem tmBounded : TagMeaningBounded ∅ (ctxOf pol vars).nextTag := by
   intro k d h
   simp [TagMeaning.lookup] at h
 
-private theorem lawsEmpty : PredSatLaws geSat ∅ :=
+private theorem lawsEmpty {β : BindVals} : PredSatLaws geSat ∅ β :=
   predSatLaws_geSat (fun k d h => by simp [TagMeaning.lookup] at h)
 
 private theorem wfRegime₀ : wfRegime (ctxOf pol vars).regime sRead := by
@@ -815,7 +824,8 @@ private theorem consistent {ρ : VarEnv} :
   exact ⟨trivial, trivial⟩
 
 private theorem agreeCritical {ρ₁ ρ₂ : VarEnv} :
-    agreeOnCriticalInputsUnderRegimeSpec geSat (ctxOf pol vars).regime sRead ∅ ρ₁ ∅ ∅ ρ₂ ∅ := by
+    agreeOnCriticalInputsUnderRegimeSpec geSat geSat (ctxOf pol vars).regime sRead ∅ ρ₁ ∅ ∅ ρ₂
+      ∅ := by
   refine And.intro ?_ ?_
   · intro l qt h
     simp [sRead, MemoryTypeEnv.lookup] at h
@@ -824,7 +834,7 @@ private theorem agreeCritical {ρ₁ ρ₂ : VarEnv} :
 
 private theorem agreeTrusted {ρ₁ ρ₂ : VarEnv}
     (hvars : ∀ x qt, vars.lookup x = some qt → qt = pInt) :
-    agreeOnTrustedInputs geSat (ctxOf pol vars).regime sRead (ctxOf pol vars)
+    agreeOnTrustedInputs geSat geSat (ctxOf pol vars).regime sRead (ctxOf pol vars)
       ∅ ρ₁ ∅ ∅ ρ₂ ∅ := by
   refine And.intro ?_ ?_
   · intro l qt h
@@ -844,14 +854,16 @@ end Premises
     applies: every other premise is proved here. -/
 theorem closed_of {pol : ExternId → Tag → Option Bool} {vars : VarTypeEnv} {ap : Bool}
     {prog : Expr} {fuel : Nat} {res : TypeResult} {ρ₁ ρ₂ : VarEnv} {cf₁ cf₂ : Config}
-    {o₁ o₂ : Value}
+    {o₁ o₂ : Value} {β₁ β₂ : BindVals}
     (hpol : ∀ id, id ≠ 7 → ∀ k, pol id k = none) (hpol7 : ∀ k, ∃ b, pol 7 k = some b)
     (hvars : ∀ x qt, vars.lookup x = some qt → qt = pInt) (hprog : ReadOnly ap prog)
     (htc : typecheck (ctxOf pol vars) prog fuel = .ok res)
-    (hlaws : PredSatLaws geSat (programTable ∅ res.tagLog'))
+    (hlaws : ∀ β, PredSatLaws geSat (programTable ∅ res.tagLog') β)
     (hρ₁ : IntRun vars ρ₁) (hρ₂ : IntRun vars ρ₂)
     (hm₁ : ExternCallsMatch geSat ⟨ctxOf pol vars, prog, fuel, runCfg ρ₁⟩)
     (hm₂ : ExternCallsMatch geSat ⟨ctxOf pol vars, prog, fuel, runCfg ρ₂⟩)
+    (ht₁ : TestsAgreeWithView β₁ ⟨ctxOf pol vars, prog, fuel, runCfg ρ₁⟩)
+    (ht₂ : TestsAgreeWithView β₂ ⟨ctxOf pol vars, prog, fuel, runCfg ρ₂⟩)
     (hag : ExternCallsAgree ⟨ctxOf pol vars, prog, fuel, runCfg ρ₁⟩
       ⟨ctxOf pol vars, prog, fuel, runCfg ρ₂⟩)
     (hrun₁ : terminatesTo prog (runCfg ρ₁) cf₁ o₁)
@@ -860,18 +872,19 @@ theorem closed_of {pol : ExternId → Tag → Option Bool} {vars : VarTypeEnv} {
       observablesEqual obsNone θ₁' θ₂' cf₁ cf₂ o₁ o₂ :=
   TypeSystemEnforcesFaultRobustness (readReg ap) prog sRead obsNone (ctxOf pol vars)
     (externRegimeMatches hpol hpol7) (trusted hprog hvars) wfSpec wfObs (ctxMatches hvars)
-    (wfCtx hvars) rfl rfl rfl (tagBounded hvars) geSat ∅ (wfTm hvars) tmBounded lawsEmpty
+    (wfCtx hvars) rfl rfl rfl (tagBounded hvars) ∅ (wfTm hvars) tmBounded
     fuel res htc
     (And.intro (fun _ h => by simp [obsNone] at h)
       (fun _ _ h => by simp [obsNone, MemoryETypEnv.lookup] at h))
-    hlaws ∅ ∅ ρ₁ ρ₂ ∅ ∅ 0 0 false cf₁ cf₂ o₁ o₂ wfRegime₀ wfθ₀ wfθ₀ (wfC hρ₁) (wfC hρ₂)
+    ∅ ∅ ρ₁ ρ₂ ∅ ∅ 0 0 false cf₁ cf₂ o₁ o₂ geSat geSat β₁ β₂ lawsEmpty lawsEmpty
+    (hlaws β₁) (hlaws β₂) wfRegime₀ wfθ₀ wfθ₀ (wfC hρ₁) (wfC hρ₂)
     reservedWF reservedWF discipline discipline
     (And.intro (fun h _ => by simp [sRead] at h)
       (fun h _ => by simp [sRead, VarTypeEnv.lookup] at h))
     (And.intro (fun h _ => by simp [sRead] at h)
       (fun h _ => by simp [sRead, VarTypeEnv.lookup] at h))
     (instantiates hvars hρ₁) (instantiates hvars hρ₂) (trustedInit hρ₁) (trustedInit hρ₂)
-    consistent consistent hm₁ hm₂ agreeCritical (agreeTrusted hvars) hag hrun₁ hrun₂
+    consistent consistent hm₁ hm₂ ht₁ ht₂ agreeCritical (agreeTrusted hvars) hag hrun₁ hrun₂
 
 /-! ## The theorem at the four programs
 
@@ -949,8 +962,11 @@ theorem wrapper_closed : ConclusionAt Wrapper.prog Wrapper.cfg0 Wrapper.cfg0 := 
         List.lookup, evalOp, runOk])
   exact ⟨cf, cf, o, o, hrun, hrun,
     closed_of (pol := Wrapper.real) (vars := ∅) (ρ₁ := []) (ρ₂ := []) (on7_ne _) (on7_7 _)
+      (β₁ := fun _ => none) (β₂ := fun _ => none)
       vars_empty (by repeat constructor) htc hlaws intRun_empty intRun_empty
-      (hmatch geSat hlaws) (hmatch geSat hlaws) Wrapper.agree_self hrun hrun⟩
+      (hmatch geSat (fun _ => none) (hlaws _)) (hmatch geSat (fun _ => none) (hlaws _))
+        (Wrapper.tests_real _)
+      (Wrapper.tests_real _) Wrapper.agree_self hrun hrun⟩
 
 /-- **The theorem at `Skipped`**, two copies of its run under the vector
     `realF` (tag 0 true, tags 1 and 2 false). -/
@@ -963,8 +979,11 @@ theorem skipped_closed : ConclusionAt Skipped.prog Wrapper.cfg0 Wrapper.cfg0 := 
         validateExternReturn, valueMatchesTyp, idImpl, List.lookup, evalOp, runOk])
   exact ⟨cf, cf, o, o, hrun, hrun,
     closed_of (pol := Skipped.realF) (vars := ∅) (ρ₁ := []) (ρ₂ := []) (on7_ne _) (on7_7 _)
+      (β₁ := fun _ => none) (β₂ := fun _ => none)
       vars_empty (by repeat constructor) htc hlaws intRun_empty intRun_empty
-      (hmatch geSat hlaws) (hmatch geSat hlaws) Skipped.agree_self hrun hrun⟩
+      (hmatch geSat (fun _ => none) (hlaws _)) (hmatch geSat (fun _ => none) (hlaws _))
+        (Skipped.tests_realF _)
+      (Skipped.tests_realF _) Skipped.agree_self hrun hrun⟩
 
 /-- **The theorem at `TwoRuns`**, two runs from `x = 5`. -/
 theorem twoRuns_closed : ConclusionAt TwoRuns.prog (TwoRuns.cfgX 5) (TwoRuns.cfgX 5) := by
@@ -979,7 +998,10 @@ theorem twoRuns_closed : ConclusionAt TwoRuns.prog (TwoRuns.cfgX 5) (TwoRuns.cfg
       (ρ₁ := VarEnv.update [] "x" (.num 5)) (ρ₂ := VarEnv.update [] "x" (.num 5))
       (on7_ne _) (on7_7 _) (vars_update vars_empty "x") (by repeat constructor) htc hlaws
       (intRun_empty.update "x" 5) (intRun_empty.update "x" 5)
-      (hmatch geSat hlaws).1 (hmatch geSat hlaws).1 hagree hrun hrun⟩
+      (β₁ := fun _ => none) (β₂ := fun _ => none)
+      (hmatch geSat (fun _ => none) (hlaws _)).1 (hmatch geSat (fun _ => none) (hlaws _)).1
+        (TwoRuns.tests 5 _)
+      (TwoRuns.tests 5 _) hagree hrun hrun⟩
 
 /-- **The theorem at `TwoCalls`**, two runs from `x = 5, y = 7`. Each run makes
     two tagged calls, which return 5 and 7. -/
@@ -996,7 +1018,9 @@ theorem twoCalls_closed :
     closed_of (pol := TwoCalls.allT)
       (vars := ((∅ : VarTypeEnv).update "x" pInt).update "y" pInt)
       (on7_ne _) (on7_7 _) (vars_update (vars_update vars_empty "x") "y")
-      (by repeat constructor) htc hlaws hρ hρ (hmatch geSat hlaws).1 (hmatch geSat hlaws).1
-      hagree hrun hrun⟩
+      (β₁ := fun _ => none) (β₂ := fun _ => none)
+      (by repeat constructor) htc hlaws hρ hρ (hmatch geSat (fun _ => none) (hlaws _)).1
+      (hmatch geSat (fun _ => none) (hlaws _)).1 (TwoCalls.tests 5 7 _) (TwoCalls.tests 5 7 _)
+        hagree hrun hrun⟩
 
 end ExternCallsWitness

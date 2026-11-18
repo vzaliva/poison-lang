@@ -359,9 +359,10 @@ private theorem desc_of_lookup {P : TagMeaning} {ctx : TypeContext} {k : Tag}
     (by simp [qtypGuardDesc?, hpred]))
 
 /-- `geSat` is lawful for every table of `a => a >= 0` guards. -/
-theorem predSatLaws_geSat {P : TagMeaning} (hP : GeTable P) : PredSatLaws geSat P := by
+theorem predSatLaws_geSat {P : TagMeaning} {β : BindVals} (hP : GeTable P) :
+    PredSatLaws geSat P β := by
   refine ⟨?_, ?_⟩
-  · intro condition ctx fuel k deps μ ρ θ addr pm registry cfg b hwf hmatch hric hterm
+  · intro condition ctx fuel k deps μ ρ θ addr pm registry cfg b hwf hmatch _hview hric hterm
     obtain ⟨pe, hpe, hown⟩ := matchGuard_ok_matched_owner ctx condition k deps hmatch
     rcases hown with
       ⟨x, qt, arg, body, cap, hlookup, hpred, heq⟩ |
@@ -482,7 +483,8 @@ private theorem pinRic (k : Tag) (cap : CapturedVarEnv) (μ : Memory) (n : Int) 
 private def pinCond : Expr := Expr.op (Expr.var "y") Op.gte (Expr.num 0)
 
 private theorem pinCond_matches (k : Tag) (cap : CapturedVarEnv) :
-    ∃ deps, matchGuard pinCond (pinCtx k cap).memEnv (pinCtx k cap).varEnv 10 = .ok (k, deps) :=
+    ∃ deps, matchGuard pinCond (pinCtx k cap).memEnv (pinCtx k cap).varEnv (pinCtx k cap).bindEnv
+      10 = .ok (k, deps) :=
   ⟨_, rfl⟩
 
 private theorem pinCond_runs (μ : Memory) (n : Int) :
@@ -494,15 +496,16 @@ private theorem pinCond_runs (μ : Memory) (n : Int) :
 /-- The laws fix `predSat` at a tag whose guard is `w => w >= 0`: on an integer
     `n` it holds exactly when `0 ≤ n`. The table, the tag and the captured
     environment of the guard are arbitrary. -/
-theorem pin_ge (predSat : PredSat) (P : TagMeaning) (k : Tag) (cap : CapturedVarEnv)
-    (hlaws : PredSatLaws predSat P)
+theorem pin_ge (predSat : PredSat) (P : TagMeaning) {β : BindVals} (k : Tag)
+    (cap : CapturedVarEnv) (hlaws : PredSatLaws predSat P β)
     (hP : P.lookup k = some { argName := "w", body := geBody "w", capEnv := cap })
     (μ : Memory) (n : Int) :
     predSat k μ (Value.num n) ↔ 0 ≤ n := by
   obtain ⟨deps, hmatch⟩ := pinCond_matches k cap
   obtain ⟨v, hown, hiff⟩ :=
     hlaws.match_iff pinCond (pinCtx k cap) 10 k deps μ (pinRho n) ∅ 0 false default (pinCfg μ n)
-      (decide (n ≥ 0)) (pinCtx_wf hP) hmatch (pinRic k cap μ n) (pinCond_runs μ n)
+      (decide (n ≥ 0)) (pinCtx_wf hP) hmatch
+      (fun _ _ _ _ _ hget _ => by simp [pinCtx] at hget) (pinRic k cap μ n) (pinCond_runs μ n)
   have hv : v = Value.num n := by
     rcases hown with ⟨x, qt, _, _, _, hlookup, hpred, hρ⟩ |
       ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hmem, _⟩
@@ -536,7 +539,8 @@ theorem descGe_spec {P : TagMeaning} {k : Tag} (h : descGe P k = true) :
       exact ⟨_, rfl⟩
 
 /-- The predicate of a lawful `predSat` at a `w => w >= 0` tag. -/
-theorem pin {predSat : PredSat} {P : TagMeaning} {k : Tag} (hlaws : PredSatLaws predSat P)
+theorem pin {predSat : PredSat} {P : TagMeaning} {β : BindVals} {k : Tag}
+    (hlaws : PredSatLaws predSat P β)
     (hd : descGe P k = true) (μ : Memory) (n : Int) : predSat k μ (.num n) ↔ 0 ≤ n := by
   obtain ⟨cap, hP⟩ := descGe_spec hd
   exact pin_ge predSat P k cap hlaws hP μ n
@@ -560,7 +564,7 @@ def okVal (x : TypecheckM TypeResult) : TypeResult :=
   match x with
   | .ok r => r
   | .error _ => { qualType := ⟨.int, false, .noPred⟩, memEnv' := ∅, tagEnv' := ∅,
-                  nextLoc' := 0, nextTag' := 0, regime' := ∅, declared' := [] }
+                  nextLoc' := 0, nextTag' := 0, nextBind' := 0, regime' := ∅, declared' := [] }
 
 def isOkB (x : TypecheckM TypeResult) : Bool :=
   match x with
@@ -585,7 +589,10 @@ theorem SubStep.vlet_inv {ctx : TypeContext} {x : Name} {e1 e2 : Expr} {F : Nat}
     ∃ f, F = f + 2 ∧
       (s' = ⟨ctx, e1, f, cfg⟩ ∨
        ∃ r1 c1 v1, typecheckExpr ctx e1 f = .ok r1 ∧ terminatesTo e1 cfg c1 v1 ∧
-         s' = ⟨{ ctxAfter ctx r1 with varEnv := ctx.varEnv.update x r1.qualType }, e2, f,
+         s' = ⟨{ ctxAfter ctx r1 with
+                  varEnv := ctx.varEnv.update x r1.qualType,
+                  bindEnv := ctx.bindEnv.insert x r1.nextBind',
+                  nextBind := r1.nextBind' + 1 }, e2, f,
                { c1 with varEnv := cfg.varEnv.update x v1 }⟩) := by
   cases h with
   | vletBound => exact ⟨_, rfl, Or.inl rfl⟩
@@ -595,13 +602,13 @@ theorem SubStep.vlet_inv {ctx : TypeContext} {x : Name} {e1 e2 : Expr} {F : Nat}
 theorem SubStep.ite_inv {ctx : TypeContext} {e1 e2 e3 : Expr} {F : Nat} {cfg : Config}
     {s' : Step} (h : SubStep ⟨ctx, .ite e1 e2 e3, F, cfg⟩ s') :
     ∃ f, F = f + 2 ∧
-      ((∃ k deps b, matchGuard e1 ctx.memEnv ctx.varEnv f = .ok (k, deps) ∧
+      ((∃ k deps b, matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) ∧
           ctx.regime.lookup? k = some b ∧ s' = ⟨{ ctx with pureCtx := true }, e1, f, cfg⟩) ∨
-       (∃ k deps b r1 c1, matchGuard e1 ctx.memEnv ctx.varEnv f = .ok (k, deps) ∧
+       (∃ k deps b r1 c1, matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) ∧
           ctx.regime.lookup? k = some b ∧
           typecheckExpr { ctx with pureCtx := true } e1 f = .ok r1 ∧
           terminatesTo e1 cfg c1 (.bool true) ∧ s' = ⟨ctxTrue ctx k deps r1, e2, f, c1⟩) ∨
-       (∃ k deps b r1 r2 c1, matchGuard e1 ctx.memEnv ctx.varEnv f = .ok (k, deps) ∧
+       (∃ k deps b r1 r2 c1, matchGuard e1 ctx.memEnv ctx.varEnv ctx.bindEnv f = .ok (k, deps) ∧
           ctx.regime.lookup? k = some b ∧
           typecheckExpr { ctx with pureCtx := true } e1 f = .ok r1 ∧
           terminatesTo e1 cfg c1 (.bool false) ∧
@@ -633,34 +640,34 @@ theorem SubStep.app_inv {ctx : TypeContext} {e1 e2 : Expr} {F : Nat} {cfg : Conf
       (s' = ⟨ctx, e2, G, cfg⟩ ∨
        (∃ r2 c2 v2, typecheckExpr ctx e2 G = .ok r2 ∧ terminatesTo e2 cfg c2 v2 ∧
          s' = ⟨ctxAfter ctx r2, e1, G, { c2 with varEnv := cfg.varEnv }⟩) ∨
-       (∃ H r2 r1 rb c2 c1 v2 x body env st1 st2 p tcls tenv cursor, G = H + 1 ∧
+       (∃ H r2 r1 rb c2 c1 v2 x body env st1 st2 p tcls tenv cursor bn, G = H + 1 ∧
          typecheckExpr ctx e2 G = .ok r2 ∧ terminatesTo e2 cfg c2 v2 ∧
          typecheckExpr (ctxAfter ctx r2) e1 G = .ok r1 ∧
          terminatesTo e1 { c2 with varEnv := cfg.varEnv } c1 (.closure x body env) ∧
          r1.qualType.etyp = .arrow st1 st2 p tcls ∧
          ThreadedAt (fnApply ctx r2 r1 st1 st2 p G) tcls (r1.nextTag', r1.nextLoc')
-           (.regular x body tenv) cursor rb ∧
-         s' = ⟨fnBodyCtx ctx r2 r1 p x tenv cursor, body, H,
+           r1.nextBind' (.regular x body tenv) cursor bn rb ∧
+         s' = ⟨fnBodyCtx ctx r2 r1 p x tenv cursor bn, body, H,
                { c1 with varEnv := VarEnv.update env x v2, pureMode := false }⟩) ∨
-       (∃ H r2 r1 rb c2 c1 v2 x body pbody env st1 st2 p tcls tenv cursor, G = H + 1 ∧
+       (∃ H r2 r1 rb c2 c1 v2 x body pbody env st1 st2 p tcls tenv cursor bn, G = H + 1 ∧
          typecheckExpr ctx e2 G = .ok r2 ∧ terminatesTo e2 cfg c2 v2 ∧
          typecheckExpr (ctxAfter ctx r2) e1 G = .ok r1 ∧
          terminatesTo e1 { c2 with varEnv := cfg.varEnv } c1 (.peClosure x body env) ∧
          r1.qualType.etyp = .parrow st1 st2 p tcls ∧
          Expr.toPExpr? body = some pbody ∧
          ThreadedAt (pfnApply ctx r2 r1 st1 st2 p G) tcls (r1.nextTag', r1.nextLoc')
-           (.regular x pbody tenv) cursor rb ∧
-         s' = ⟨pfnBodyCtx ctx r2 r1 p x tenv cursor, PExpr.toExpr pbody, H,
+           r1.nextBind' (.regular x pbody tenv) cursor bn rb ∧
+         s' = ⟨pfnBodyCtx ctx r2 r1 p x tenv cursor bn, PExpr.toExpr pbody, H,
                { c1 with varEnv := VarEnv.update env x v2, pureMode := true }⟩)) := by
   cases h with
   | appArg => exact ⟨_, rfl, Or.inl rfl⟩
   | appFun h1 h2 => exact ⟨_, rfl, Or.inr (Or.inl ⟨_, _, _, h1, h2, rfl⟩)⟩
   | appFnBody h1 h2 h3 h4 h5 h6 =>
     exact ⟨_, rfl, Or.inr (Or.inr (Or.inl
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, h1, h2, h3, h4, h5, h6, rfl⟩))⟩
+      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, h1, h2, h3, h4, h5, h6, rfl⟩))⟩
   | appPfnBody h1 h2 h3 h4 h5 h6 h7 =>
     exact ⟨_, rfl, Or.inr (Or.inr (Or.inr
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, h1, h2, h3, h4, h5, h6, h7,
+      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, h1, h2, h3, h4, h5, h6, h7,
         rfl⟩))⟩
 
 /-- The calls of an application step. A pure call declares no effects. -/
@@ -672,7 +679,7 @@ theorem ExternCallAt.app_inv {ctx : TypeContext} {e1 e2 : Expr} {F : Nat} {cfg :
           (id : ExternId) (argTyp : Typ) (argPoison : Bool) (argPred : SyntaxPredicate)
           (retSpec : ExternReturn) (captures memberCaptures : List Capture)
           (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure) (tenv : CapturedVarEnv)
-          (declaredArgQt : QTyp) (cursor : Tag × Loc)
+          (declaredArgQt : QTyp) (cursor : Tag × Loc) (bn : Nat)
           (implFn : VarEnv → Value → Memory → Except ExternError Value),
         typecheckExpr ctx e2 G = .ok r2 ∧ terminatesTo e2 cfg c2 v2 ∧
         typecheckExpr (ctxAfter ctx r2) e1 G = .ok r1 ∧
@@ -680,13 +687,13 @@ theorem ExternCallAt.app_inv {ctx : TypeContext} {e1 e2 : Expr} {F : Nat} {cfg :
           (.peClosure x (.externPfn id y argTyp argPoison argPred retSpec captures) env) ∧
         r1.qualType.etyp = .parrow st1 st2 p tcls ∧
         ThreadedAt (pfnApply ctx r2 r1 st1 st2 p G) tcls (r1.nextTag', r1.nextLoc')
-          (.extern id x retSpec tenv declaredArgQt memberCaptures) cursor res ∧
+          r1.nextBind' (.extern id x retSpec tenv declaredArgQt memberCaptures) cursor bn res ∧
         c1.registry.get? id = some (.pfn implFn) ∧
         valueMatchesTyp v2 argTyp = true ∧
         implFn (env.update x v2) v2 c1.memory = .ok vRaw ∧
         validateExternReturn id retSpec vRaw = .ok o ∧
         effects = [] ∧
-        entry = ExternCallEntry.ofRuntime (pfnBodyCtx ctx r2 r1 p x tenv cursor) c1 env x v2 ∧
+        entry = ExternCallEntry.ofRuntime (pfnBodyCtx ctx r2 r1 p x tenv cursor bn) c1 env x v2 ∧
         cf = c1) ∨
        (∃ (r2 r1 : TypeResult) (c2 c1 : Config) (v2 : Value) (x y : Name) (env : VarEnv)
           (id : ExternId) (argTyp : Typ) (argPoison : Bool) (argPred : SyntaxPredicate)
@@ -698,7 +705,7 @@ theorem ExternCallAt.app_inv {ctx : TypeContext} {e1 e2 : Expr} {F : Nat} {cfg :
   cases h with
   | pfn h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 =>
     exact ⟨_, rfl, Or.inl ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, rfl, rfl, rfl⟩⟩
+      _, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, rfl, rfl, rfl⟩⟩
   | fn h1 h2 h3 h4 =>
     exact ⟨_, rfl, Or.inr ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, h1, h2, h3, h4⟩⟩
 
@@ -745,6 +752,132 @@ theorem ExternValAt.not_of_reach_noApp {s s' : Step} {res : TypeResult} {cf : Co
   have hs' := Reach.noApp hreach hs
   cases h
   simp [ExternCallsWitness.noApp] at hs'
+
+/-! ## Conditionals and the guards they test -/
+
+/-- The expression has no conditional at a place that a step recurses into. -/
+def noIte : Expr → Bool
+  | .ite .. => false
+  | .op e1 _ e2 => noIte e1 && noIte e2
+  | .unaryop _ e => noIte e
+  | .newRef e => noIte e
+  | .deref e => noIte e
+  | .assign e1 e2 => noIte e1 && noIte e2
+  | .seq e1 e2 => noIte e1 && noIte e2
+  | .vlet _ e1 e2 => noIte e1 && noIte e2
+  | _ => true
+
+/-- No application and no conditional. -/
+def noAppIte (e : Expr) : Bool := noApp e && noIte e
+
+theorem noApp_of_noAppIte {e : Expr} (h : noAppIte e = true) : noApp e = true := by
+  simp only [noAppIte, Bool.and_eq_true] at h
+  exact h.1
+
+theorem SubStep.noAppIte {s s' : Step} (h : SubStep s s') (hs : noAppIte s.e = true) :
+    noAppIte s'.e = true := by
+  cases h <;> simp_all [ExternCallsWitness.noAppIte, ExternCallsWitness.noApp,
+    ExternCallsWitness.noIte]
+
+/-- The parts of a conditional without applications or conditionals have
+    none. -/
+theorem SubStep.ite_noAppIte {ctx : TypeContext} {e1 e2 e3 : Expr} {F : Nat} {cfg : Config}
+    {s' : Step} (h : SubStep ⟨ctx, .ite e1 e2 e3, F, cfg⟩ s')
+    (h1 : ExternCallsWitness.noAppIte e1 = true) (h2 : ExternCallsWitness.noAppIte e2 = true)
+    (h3 : ExternCallsWitness.noAppIte e3 = true) : ExternCallsWitness.noAppIte s'.e = true := by
+  cases h <;> assumption
+
+/-- A step whose expression is not a conditional. -/
+theorem noAppIte_ne_ite {s : Step} (h : noAppIte s.e = true) {e1 e2 e3 : Expr} :
+    s.e ≠ .ite e1 e2 e3 := by
+  intro he
+  rw [he] at h
+  simp [noAppIte, noApp, noIte] at h
+
+/-- The guard of a predicate reads only its argument. -/
+def predArgOnly : Predicate → Bool
+  | .guardClosure _ arg body _ => (PExpr.freeVars [arg] body).isEmpty
+  | _ => true
+
+/-- The types that the members of a function type capture. -/
+def capturedQTyps (qt : QTyp) : List QTyp :=
+  match qt.etyp with
+  | .arrow _ _ _ tcls => tcls.flatMap fun tcl => (fnCapturedEnv tcl).map (·.2.1)
+  | .parrow _ _ _ tcls => tcls.flatMap fun tcl => (pfnCapturedEnv tcl).map (·.2.1)
+  | _ => []
+
+/-- A type that captures no type contains only itself. -/
+theorem QTypInQTyp.eq_of_capturedQTyps_nil {a b : QTyp} (h : QTypInQTyp a b)
+    (hb : capturedQTyps b = []) : a = b := by
+  induction h with
+  | self => rfl
+  | in_arrow qtInner qtOuter _ _ _ tcls tcl _ hety hmem hcap =>
+      exfalso
+      have hin : qtInner ∈ capturedQTyps qtOuter := by
+        simp only [capturedQTyps, hety]
+        exact List.mem_flatMap.mpr ⟨tcl, hmem, List.mem_map.mpr ⟨_, hcap, rfl⟩⟩
+      rw [hb] at hin
+      cases hin
+  | in_parrow qtInner qtOuter _ _ _ tcls tcl _ hety hmem hcap =>
+      exfalso
+      have hin : qtInner ∈ capturedQTyps qtOuter := by
+        simp only [capturedQTyps, hety]
+        exact List.mem_flatMap.mpr ⟨tcl, hmem, List.mem_map.mpr ⟨_, hcap, rfl⟩⟩
+      rw [hb] at hin
+      cases hin
+  | trans _ _ _ _ _ ih₁ ih₂ =>
+      obtain rfl := ih₂ hb
+      exact ih₁ hb
+
+/-- Every guard of the variable types reads only its argument and no variable
+    type captures a type; every guard of the memory types reads only its
+    argument. -/
+def envArgOnly (σ : VarTypeEnv) (Γ : MemoryTypeEnv) : Bool :=
+  σ.toList.all (fun p => predArgOnly p.2.pred && (capturedQTyps p.2).isEmpty) &&
+    Γ.toList.all (fun p => predArgOnly p.2.pred)
+
+/-- Under `envArgOnly`, every guard in the environments reads only its argument. -/
+theorem guards_argOnly {σ : VarTypeEnv} {Γ : MemoryTypeEnv} (h : envArgOnly σ Γ = true)
+    {k : Tag} {d : GuardDesc} (hd : GuardDescInEnvsDeep σ Γ k d) :
+    PExpr.freeVars [d.argName] d.body = [] := by
+  simp only [envArgOnly, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨hσ, hΓ⟩ := h
+  obtain ⟨qt, _, _, hin, hdesc⟩ := hd
+  have hpred := qtypGuardDesc?_eq_some_pred_guardClosure hdesc
+  have hok : predArgOnly qt.pred = true := by
+    cases hin with
+    | inVar _ _ x _ qtRoot hlookup hinq =>
+        have hl : σ[x]? = some qtRoot := hlookup
+        obtain ⟨x', -, hx'⟩ :=
+          ExtTreeMap.getElem?_eq_some_iff_exists_compare_eq_eq_and_mem_toList.mp hl
+        have h1 := hσ _ hx'
+        simp only [List.isEmpty_iff] at h1
+        rw [QTypInQTyp.eq_of_capturedQTyps_nil hinq h1.2]
+        exact h1.1
+    | inMem _ _ l _ qtRoot hlookup hinq =>
+        simp only [MemoryTypeEnv.lookup, Option.map_eq_some_iff] at hlookup
+        obtain ⟨me, hme, rfl⟩ := hlookup
+        have hl : Γ[l]? = some me := hme
+        obtain ⟨l', -, hl'⟩ :=
+          ExtTreeMap.getElem?_eq_some_iff_exists_compare_eq_eq_and_mem_toList.mp hl
+        rw [QTypInQTyp.eq_of_capturedQTyps_nil hinq (by simp [capturedQTyps])]
+        exact hΓ _ hl'
+  rw [hpred] at hok
+  simpa [predArgOnly] using hok
+
+/-- At a context whose guards read only their argument, the variables a guard
+    reads agree with every view. -/
+theorem viewAgrees_of_envArgOnly {ctx : TypeContext}
+    (h : envArgOnly ctx.varEnv ctx.memEnv = true) (β : BindVals) (ρ : VarEnv) {k : Tag}
+    {d : GuardDesc} (hd : GuardDescInEnvsDeep ctx.varEnv ctx.memEnv k d) :
+    ViewAgreesOn β ctx.bindEnv ρ (PExpr.freeVars [d.argName] d.body) := by
+  rw [guards_argOnly h hd]
+  intro _ hx
+  cases hx
+
+/-- The guard `a => a >= 0` reads only its argument. -/
+theorem freeVars_geBody (a : Name) : PExpr.freeVars [a] (geBody a) = [] := by
+  simp [geBody, PExpr.freeVars]
 
 /-! ## The extern `read` -/
 
@@ -842,16 +975,17 @@ def extParts : PFnTClosure → CapturedVarEnv × QTyp × List Capture
   | .extern _ _ _ t q c => (t, q, c)
   | .regular _ _ _ => ([], ⟨.int, false, .noPred⟩, [])
 
-theorem ThreadedAt.single_inv {α : Type} {f : α → Tag × Loc → TypecheckM TypeResult}
-    {m x : α} {c c' : Tag × Loc} {r : TypeResult} (h : ThreadedAt f [m] c x c' r) :
-    x = m ∧ c' = c ∧ f m c = .ok r := by
+theorem ThreadedAt.single_inv {α : Type} {f : α → Tag × Loc → Nat → TypecheckM TypeResult}
+    {m x : α} {c c' : Tag × Loc} {b b' : Nat} {r : TypeResult}
+    (h : ThreadedAt f [m] c b x c' b' r) :
+    x = m ∧ c' = c ∧ b' = b ∧ f m c b = .ok r := by
   cases h with
-  | here h => exact ⟨rfl, rfl, h⟩
+  | here h => exact ⟨rfl, rfl, rfl, h⟩
   | there _ h => cases h
 
-theorem ThreadedAt.here_of_eq {α : Type} {f : α → Tag × Loc → TypecheckM TypeResult}
-    {m m' : α} {rest : List α} {c : Tag × Loc} {r : TypeResult}
-    (h : f m c = .ok r) (hm : m = m') : ThreadedAt f (m :: rest) c m' c r := by
+theorem ThreadedAt.here_of_eq {α : Type} {f : α → Tag × Loc → Nat → TypecheckM TypeResult}
+    {m m' : α} {rest : List α} {c : Tag × Loc} {b : Nat} {r : TypeResult}
+    (h : f m c b = .ok r) (hm : m = m') : ThreadedAt f (m :: rest) c b m' c b r := by
   cases hm; exact .here h
 
 /-- The typing of the parts of a call `fe arg` whose function evaluates to
@@ -866,38 +1000,41 @@ def iFun (B : TypeContext) (fe arg : Expr) (G : Nat) : TypeResult :=
 def iCursor (B : TypeContext) (fe arg : Expr) (G : Nat) : Tag × Loc :=
   ((iFun B fe arg G).nextTag', (iFun B fe arg G).nextLoc')
 
+def iBind (B : TypeContext) (fe arg : Expr) (G : Nat) : Nat :=
+  (iFun B fe arg G).nextBind'
+
 def iRes (B : TypeContext) (fe arg : Expr) (G : Nat) : TypeResult :=
   let E := (iFun B fe arg G).qualType.etyp
   okVal (pfnApply B (iArg B arg G) (iFun B fe arg G) (parrowS1 E) (parrowS2 E) (parrowP E) G
-    (parrowM E) (iCursor B fe arg G))
+    (parrowM E) (iCursor B fe arg G) (iBind B fe arg G))
 
 def iBody (B : TypeContext) (fe arg : Expr) (G : Nat) : TypeContext :=
   let E := (iFun B fe arg G).qualType.etyp
   pfnBodyCtx B (iArg B arg G) (iFun B fe arg G) (parrowP E) "b" (extParts (parrowM E)).1
-    (iCursor B fe arg G)
+    (iCursor B fe arg G) (iBind B fe arg G)
 
 /-- The parts of a call whose function evaluates to `read` have no applications
     when the function and the argument have none. -/
 theorem readCall_sub {B : TypeContext} {fe arg : Expr} {F : Nat} {cfgB : Config}
     {ap : Bool} {env : VarEnv} {v : Value}
-    (hfe : noApp fe = true) (harg : noApp arg = true)
+    (hfe : noAppIte fe = true) (harg : noAppIte arg = true)
     (hrunF : ∀ c, c.varEnv = cfgB.varEnv → terminatesTo fe c c (readClo ap env))
     (hrunA : terminatesTo arg cfgB cfgB v)
-    {s' : Step} (h : SubStep ⟨B, .app fe arg, F, cfgB⟩ s') : noApp s'.e = true := by
+    {s' : Step} (h : SubStep ⟨B, .app fe arg, F, cfgB⟩ s') : noAppIte s'.e = true := by
   have hh := SubStep.app_inv h
   clear h
   obtain ⟨G, rfl, h⟩ := hh
   rcases h with h | h | h | h
   · subst h; exact harg
   · obtain ⟨_, _, _, _, _, rfl⟩ := h; exact hfe
-  · obtain ⟨H, r2, r1, rb, c2, c1, v2, x, body, env', st1, st2, p, tcls, tenv, cursor,
+  · obtain ⟨H, r2, r1, rb, c2, c1, v2, x, body, env', st1, st2, p, tcls, tenv, cursor, bn,
       hG, h2, hr2, h1, hr1, _⟩ := h
     obtain ⟨hc2, rfl⟩ := terminatesTo_det hr2 hrunA
     subst c2
     have := terminatesTo_det hr1 (hrunF _ rfl)
     simp [readClo] at this
   · obtain ⟨H, r2, r1, rb, c2, c1, v2, x, body, pbody, env', st1, st2, p, tcls, tenv, cursor,
-      hG, h2, hr2, h1, hr1, _, hpe, _⟩ := h
+      bn, hG, h2, hr2, h1, hr1, _, hpe, _⟩ := h
     obtain ⟨hc2, rfl⟩ := terminatesTo_det hr2 hrunA
     subst c2
     have := terminatesTo_det hr1 (hrunF _ rfl)
@@ -927,7 +1064,7 @@ theorem readCall_call {B : TypeContext} {fe arg : Expr} {G : Nat} {cfgB : Config
   obtain rfl : G = G' := by omega
   rcases h with
     ⟨r2, r1, c2, c1, v2, vRaw, x, y, env', id, argTyp, argPoison, argPred, retSpec, captures,
-      memberCaptures, st1, st2, p, tcls, tenv, declaredArgQt, cursor, implFn,
+      memberCaptures, st1, st2, p, tcls, tenv, declaredArgQt, cursor, bn, implFn,
       h2, hr2, h1, hr1, hety, hthr, hregl, _, himpl, hval, rfl, rfl, rfl⟩ |
     ⟨r2, r1, c2, c1, v2, x, y, env', id, argTyp, argPoison, argPred, retSpec, effs, captures,
       h2, hr2, h1, hr1⟩
@@ -942,14 +1079,14 @@ theorem readCall_call {B : TypeContext} {fe arg : Expr} {G : Nat} {cfgB : Config
     rw [hE] at hety
     simp only [ETyp.parrow.injEq] at hety
     obtain ⟨rfl, rfl, rfl, rfl⟩ := hety
-    obtain ⟨hm, rfl, happ⟩ := ThreadedAt.single_inv hthr
+    obtain ⟨hm, rfl, rfl, happ⟩ := ThreadedAt.single_inv hthr
     refine ⟨(okVal_of_eq happ).symm, ?_, rfl, rfl, ?_⟩
     · simp only [hreg, reg_get, Option.some.injEq, ExternImpl.pfn.injEq] at hregl
       subst hregl
       simp only [idImpl, Except.ok.injEq] at himpl
       subst himpl
       simpa [validateExternReturn, readRet, valueMatchesTyp] using hval.symm
-    · simp only [ExternCallEntry.ofRuntime, iBody, ← hm, extParts, iCursor]
+    · simp only [ExternCallEntry.ofRuntime, iBody, ← hm, extParts, iCursor, iBind]
   · obtain ⟨hc2, rfl⟩ := terminatesTo_det hr2 hrunA
     subst c2
     have := terminatesTo_det hr1 (hrunF _ rfl)
@@ -969,7 +1106,7 @@ theorem readCall_mk {B : TypeContext} {fe arg : Expr} {G : Nat} {cfgB : Config}
         (extParts (parrowM E)).2.2)
     (hap : let E := (iFun B fe arg G).qualType.etyp
       isOkB (pfnApply B (iArg B arg G) (iFun B fe arg G) (parrowS1 E) (parrowS2 E) (parrowP E) G
-        (parrowM E) (iCursor B fe arg G)) = true) :
+        (parrowM E) (iCursor B fe arg G) (iBind B fe arg G)) = true) :
     ∃ entry, entry.bodyCtx = iBody B fe arg G ∧
       ExternCallAt ⟨B, .app fe arg, G + 2, cfgB⟩ [] entry (iRes B fe arg G) cfgB (.num n) := by
   have hr1 : terminatesTo fe { cfgB with varEnv := cfgB.varEnv } { cfgB with varEnv := cfgB.varEnv }
@@ -1001,7 +1138,8 @@ theorem guardAt_spec {p : Predicate} {t : Tag} (h : guardAt p t = true) :
     regime entry is `b`. -/
 theorem callMatches_of {predSat : PredSat} {P : TagMeaning} {entry : ExternCallEntry}
     {res : TypeResult} {cf : Config}
-    {k : Tag} {n : Int} {b : Bool} (hlaws : PredSatLaws predSat P) (hd : descGe P k = true)
+    {k : Tag} {n : Int} {b : Bool} {β : BindVals}
+    (hlaws : PredSatLaws predSat P β) (hd : descGe P k = true)
     (ht : res.tagLog'.map (·.tag) = [k]) (hr : res.regime'.lookup? k = some b)
     (hb : (0 ≤ n ↔ b = true)) : CallMatches predSat entry [] res cf (.num n) := by
   refine ⟨?_, fun _ _ _ _ hc => absurd hc EffectCell.not_nil⟩
@@ -1019,7 +1157,7 @@ theorem callMatches_of {predSat : PredSat} {P : TagMeaning} {entry : ExternCallE
 theorem refute_of {predSat : PredSat} {P : TagMeaning} {root s : Step}
     {effects : List Effect} {entry : ExternCallEntry}
     {res : TypeResult} {cf : Config} {k : Tag} {n : Int}
-    (hlaws : PredSatLaws predSat P) (hd : descGe P k = true)
+    {β : BindVals} (hlaws : PredSatLaws predSat P β) (hd : descGe P k = true)
     (hreach : Reach root s) (hcall : ExternCallAt s effects entry res cf (.num n))
     (ht : res.tagLog'.map (·.tag) = [k]) (hg : guardAt res.qualType.pred k = true)
     (hr : res.regime'.lookup? k = some true) (hn : n < 0) :

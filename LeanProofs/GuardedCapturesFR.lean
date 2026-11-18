@@ -88,4 +88,10 @@ theorem guardedCaptures_FR (s : InputSpec) (obs : ObservableSpec) :
   TypeSystemEnforcesFaultRobustness_at guardedCapturesRegistry guardedCapturesProg s obs openEmptyCtx
     guardedCaptures_hagrees
 
+/-- The tests of every run of `guardedCapturesProg` agree with every view: the
+    declaration node has no step below it. -/
+theorem guardedCaptures_tests (β : BindVals) (fuel : Nat) (cfg : Config) :
+    TestsAgreeWithView β ⟨openEmptyCtx, guardedCapturesProg, fuel, cfg⟩ :=
+  testsAgreeWithView_of_leaf (fun _ h => by cases h) (fun h => by cases h)
+
 end GuardedCapturesFR
