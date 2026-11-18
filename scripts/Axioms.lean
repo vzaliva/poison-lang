@@ -3,6 +3,7 @@ import LeanProofs.ExternCallsWitnessClosed
 import LeanProofs.ExternCallsWitnessCell
 import LeanProofs.ExternCallsWitnessCellClosed
 import LeanProofs.ExternCallsWitnessVal
+import LeanProofs.ExternCallsWitnessInt
 
 -- Expected: only Lean's standard axioms propext, Classical.choice, Quot.sound
 -- (no sorryAx, no project-specific axioms).
@@ -37,3 +38,10 @@ import LeanProofs.ExternCallsWitnessVal
 #print axioms ExternCallsWitness.Val.val_case
 #print axioms ExternCallsWitness.Val.true_5
 #print axioms ExternCallsWitness.Val.false_neg3
+
+-- A trusted entry for an extern value whose guard reads a let-bound integer, and
+-- the theorem applied to a program that tests the value against that variable.
+#print axioms ExternCallsWitness.IntGuard.loSpec
+#print axioms ExternCallsWitness.IntGuard.same_return
+#print axioms ExternCallsWitness.IntGuard.true_5
+#print axioms ExternCallsWitness.IntGuard.fails_0
