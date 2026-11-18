@@ -903,12 +903,15 @@ def zeroCapEnvAgainst (envs : List CapturedVarEnv) (env : CapturedVarEnv) : Capt
 
 namespace FnTClosure
 
-/-- Two members that are the same except for their captured environments. -/
+/-- Two members of one group of a union of closure sets: regular members with the
+    same parameter and body; extern members with the same extern, parameter,
+    return specification and effects, the parts an extern call shares with the
+    member it is typed against (their argument types, captured environments and
+    `captures:` lists may differ). -/
 def sameButEnv : FnTClosure → FnTClosure → Bool
   | regular x1 e1 _, regular x2 e2 _ => x1 == x2 && e1 == e2
-  | extern id1 x1 r1 ef1 _ a1 c1, extern id2 x2 r2 ef2 _ a2 c2 =>
+  | extern id1 x1 r1 ef1 _ _ _, extern id2 x2 r2 ef2 _ _ _ =>
       id1 == id2 && x1 == x2 && beqExternReturn r1 r2 && beqEffectList ef1 ef2
-        && beqQTyp a1 a2 && beqCaptureList c1 c2
   | _, _ => false
 
 def capEnv : FnTClosure → CapturedVarEnv
@@ -923,11 +926,15 @@ end FnTClosure
 
 namespace PFnTClosure
 
-/-- Two members that are the same except for their captured environments. -/
+/-- Two members of one group of a union of closure sets: regular members with the
+    same parameter and body; extern members with the same extern, parameter and
+    return specification, the parts an extern call shares with the member it is
+    typed against (their argument types, captured environments and `captures:`
+    lists may differ). -/
 def sameButEnv : PFnTClosure → PFnTClosure → Bool
   | regular x1 e1 _, regular x2 e2 _ => x1 == x2 && e1 == e2
-  | extern id1 x1 r1 _ a1 c1, extern id2 x2 r2 _ a2 c2 =>
-      id1 == id2 && x1 == x2 && beqExternReturn r1 r2 && beqQTyp a1 a2 && beqCaptureList c1 c2
+  | extern id1 x1 r1 _ _ _, extern id2 x2 r2 _ _ _ =>
+      id1 == id2 && x1 == x2 && beqExternReturn r1 r2
   | _, _ => false
 
 def capEnv : PFnTClosure → CapturedVarEnv
@@ -940,17 +947,19 @@ def withCapEnv : PFnTClosure → CapturedVarEnv → PFnTClosure
 
 end PFnTClosure
 
-/-- Members with the same parameter and body (for an extern member: the same
-    in everything but the captured environment) keep an entry of their
-    captured environments only when it is the same, number and type, in every
-    one of them; otherwise every number in it is set to 0. -/
+/-- Members of one group (`FnTClosure.sameButEnv`: the same parameter and body;
+    for extern members, the same extern, parameter, return specification and
+    effects) keep an entry of their captured environments only when it is the
+    same, number and type, in every one of them; otherwise every number in it is
+    set to 0. -/
 def zeroDisagreeingFn (tcls : List FnTClosure) : List FnTClosure :=
   tcls.map fun tcl =>
     let grp := tcls.filter (FnTClosure.sameButEnv tcl)
     if grp.length ≤ 1 then tcl
     else tcl.withCapEnv (zeroCapEnvAgainst (grp.map FnTClosure.capEnv) tcl.capEnv)
 
-/-- See `zeroDisagreeingFn`. -/
+/-- See `zeroDisagreeingFn`; extern members are grouped by extern, parameter and
+    return specification (`PFnTClosure.sameButEnv`). -/
 def zeroDisagreeingPFn (tcls : List PFnTClosure) : List PFnTClosure :=
   tcls.map fun tcl =>
     let grp := tcls.filter (PFnTClosure.sameButEnv tcl)
@@ -962,8 +971,8 @@ def dedupClosures {α : Type} [BEq α] (l : List α) : List α :=
   l.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) []
 
 /-- Merge two lists of FnTClosure as sets: the union, with the numbers of
-    disagreeing entries of same-body members set to 0 (`zeroDisagreeingFn`),
-    and duplicates removed. Order follows the input lists but is semantically
+    disagreeing entries of the members of one group set to 0
+    (`zeroDisagreeingFn`), and duplicates removed. Order follows the input lists but is semantically
     irrelevant (sets). -/
 def mergeFnTClosures (tcls1 tcls2 : List FnTClosure) : List FnTClosure :=
   dedupClosures (zeroDisagreeingFn (dedupClosures (tcls1 ++ tcls2)))
@@ -971,3 +980,24 @@ def mergeFnTClosures (tcls1 tcls2 : List FnTClosure) : List FnTClosure :=
 /-- Merge two lists of PFnTClosure as sets; see `mergeFnTClosures`. -/
 def mergePFnTClosures (tcls1 tcls2 : List PFnTClosure) : List PFnTClosure :=
   dedupClosures (zeroDisagreeingPFn (dedupClosures (tcls1 ++ tcls2)))
+
+/-! The grouping of extern members, checked when this file is built: two members of
+one extern, parameter and return specification are one group whatever their argument
+types, so an entry their captured environments record with different numbers keeps no
+number in either. -/
+
+example :
+    (mergePFnTClosures
+        [.extern 12 "n" (.simple .int true .noPred) [("a", ⟨.int, false, .noPred⟩, 1)]
+          ⟨.int, false, .noPred⟩ []]
+        [.extern 12 "n" (.simple .int true .noPred) [("a", ⟨.int, false, .noPred⟩, 3)]
+          ⟨.int, true, .noPred⟩ []]).map (fun t => t.capEnv.map (·.2.2)) =
+      [[0], [0]] := by decide +kernel
+
+example :
+    (mergeFnTClosures
+        [.extern 12 "n" (.simple .int true .noPred) [] [("a", ⟨.int, false, .noPred⟩, 1)]
+          ⟨.int, false, .noPred⟩ []]
+        [.extern 12 "n" (.simple .int true .noPred) [] [("a", ⟨.int, false, .noPred⟩, 3)]
+          ⟨.int, true, .noPred⟩ []]).map (fun t => t.capEnv.map (·.2.2)) =
+      [[0], [0]] := by decide +kernel

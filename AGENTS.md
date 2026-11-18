@@ -71,7 +71,7 @@ The executable language implementation. **Tests apply to this package.**
 - Fuel-based evaluation (default 1000) ensures termination
 - `EvalResult` has three cases: `success`, `outOfFuel`, `runtimeError`
 - Type checker maintains `MemoryTypeEnv` (Γ), `TagEnv` (ℒ), and `TypeContext`
-- Every typing of a binder gives the bound name a fresh binding number (`TypeContext.nextBind`, recorded in `BindEnv` and in captured environments; 0 is no number). `matchGuard` selects a guard that reads a clean variable of a base type only when the variable has the same number where the guard is made and at the test. A merge of closure sets sets to 0 the number of a captured entry on which members with the same parameter and body disagree (in number or in qualified type), and every number inside the type of such an entry
+- Every typing of a binder gives the bound name a fresh binding number (`TypeContext.nextBind`, recorded in `BindEnv` and in captured environments; 0 is no number). `matchGuard` selects a guard that reads a clean variable of a base type only when the variable has the same number where the guard is made and at the test. A merge of closure sets sets to 0 the number of a captured entry on which members with the same parameter and body (extern members: the same extern, parameter and return specification, and for an impure extern the same effects) disagree (in number or in qualified type), and every number inside the type of such an entry
 
 ### LeanProofs/ - Formal Proofs
 

@@ -151,15 +151,17 @@ ptcl :: 'PTCL_' ::= {{ com pure fn closure }}
   | extern_ptcl @ eid ( x , Q , ER , S ) ::   :: extern_closure {{ com extern pure closure (carries the extern id eid for the extern-regime policy and the declared argument precondition Q consulted at the call site) }} {{ tex \mathsf{extern}@[[eid]]([[x]], [[Q]], [[ER]], [[S]]) }}
 
 % Merged typing closures (non-empty lists treated as sets).
-% In a union, members with the same parameter and body (extern members: the
-% same in everything but the captured environment) are compared. An entry of
+% In a union, members with the same parameter and body are compared; extern
+% members are compared when they have the same extern eid, parameter x and
+% return specification ER (and, for impure externs, the same effects ESL),
+% whatever their argument preconditions Q and captured environments S. An entry of
 % their captured environments is kept as it is only if every one of these
 % members has that variable with the same record (the same binding, or none in
 % each) and the same qualified type. Otherwise the entry records no binding,
 % and neither does any entry of a captured environment inside its type; the
 % captured environments of guard closures are not changed. Members that then
-% coincide are one member. Members with different parameters or bodies are not
-% compared, and keep their entries.
+% coincide are one member. Other members are not compared, and keep their
+% entries.
 tcls :: 'TCLS_' ::= {{ com impure closure set }}
   | tcl                     ::   :: singleton {{ tex \{ [[tcl]] \} }}
   | tcl , tcls              ::   :: cons {{ tex \{ [[tcl]] \} \cup [[tcls]] }}

@@ -1320,14 +1320,16 @@ behaviours.
 
 \textbf{Bindings in a union of closure sets:} wherever closure sets are
 united (here, and at the join of the branches of a conditional), the members
-with the same parameter and body are compared; for extern members, those that
-are the same in everything but the captured environment. A variable of their
+with the same parameter and body are compared; for extern members, those with
+the same extern, parameter and return specification (and, for impure externs,
+the same effects), whatever their argument conditions, captured environments
+and declared captures. A variable of their
 captured environments is kept as it is only if every one of these members
 has it with the same record (the same binding, or none in each) and the same
 qualified type. Otherwise the variable records no binding in the united set,
 and neither do the variables captured inside its type; the captured environments of guard closures are not
-changed. Members that then coincide are one member, and members with
-different parameters or bodies are not compared. A guard that reads a variable
+changed. Members that then coincide are one member, and other members are not
+compared. A guard that reads a variable
 of a base type without a binding is not selected in the body. Two functions
 with the same parameter and body, made under two bindings of a variable,
 disagree on its binding: after the two are joined, a guard that reads the
@@ -1387,9 +1389,9 @@ The specification provides two families of conditional typing rules:
     no guard, or matches one but $\mathcal{R}(k)$ is undetermined, the guard is
     typed in the current mode and its poison is joined into
     the branch contexts and the result poison. Result types are joined
-    with shape-specific rules: closure sets are unioned for functions (with
-    the bindings of members of the same parameter and body kept only where
-    the members agree, as for merged closure sets above), locsets are unioned for references, and
+    with shape-specific rules: closure sets are unioned for functions (as
+    for merged closure sets above, the bindings of the members compared there
+    are kept only where they agree), locsets are unioned for references, and
     base types must agree.
 \end{itemize}
 

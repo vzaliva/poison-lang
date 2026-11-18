@@ -20,11 +20,11 @@ branch joins already merge closure type-members:
 
 * `joinETyps` on `parrow`s merges the two branches' closure-member lists with
   `mergePFnTClosures`, a set-union that *deduplicates by `beqPFnTClosure`*.
-  Before deduplication, members that are the same except for their captured
-  environments (`PFnTClosure.sameButEnv`, which compares the captures) keep an
-  entry of those environments where it is the same in all of them and have every
-  binding number in it set to 0 otherwise; the `captures:` contract is not
-  touched. `beqPFnTClosure` compares the whole member **including its captures**
+  Before deduplication, members of one group (`PFnTClosure.sameButEnv`: for
+  extern members, the same extern, parameter and return specification) keep an
+  entry of their captured environments where it is the same in all of them and
+  have every binding number in it set to 0 otherwise; the `captures:` contract
+  is not touched. `beqPFnTClosure` compares the whole member **including its captures**
   (`beqCaptureList` is one of its conjuncts), so two members that agree on
   everything except their `captures:` contract are **not** deduplicated — they are
   kept as *distinct* members of the merged `parrow`.
@@ -115,9 +115,9 @@ namespace CaptureJoinConjunction
 
     This is the structural core of "capture preconditions combine by
     conjunction": the merge drops no member and (because `mergePFnTClosures`
-    groups members by `PFnTClosure.sameButEnv` and deduplicates via
-    `beqPFnTClosure`, both of which compare `beqCaptureList`) never coalesces two
-    members that differ in their captures. No branch's capture contract is
+    changes only captured environments and deduplicates via `beqPFnTClosure`,
+    which compares `beqCaptureList`) never coalesces two members that differ in
+    their captures. No branch's capture contract is
     dropped, and none is weakened to `noPred`. -/
 private theorem mem_mergePFnTClosures_extern_captures
     (tcls1 tcls2 : List PFnTClosure)
