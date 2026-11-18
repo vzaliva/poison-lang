@@ -1,0 +1,12 @@
+Evaluating file: examples/regime-tag-before-extern-write.poison (verbose mode)
+
+Type checking passed:
+  Type: {type=int, poison=true, pred={}},
+  MemoryTypeEnv: { 0 := (false, {}) },
+  tagEnv: {},
+  nextLoc: 1
+
+Result: 5
+Final state:
+Variable environment: []
+  Memory: [(1000000, 7)]

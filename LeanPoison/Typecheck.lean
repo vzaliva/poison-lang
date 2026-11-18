@@ -161,21 +161,22 @@ def invalidateRegimeDeps (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   let invalidated := env.filter (fun _ tv => not <| tv.deps.any ls.contains)
   R.filter (fun k _ => invalidated.contains k)
 
-/-- Effect-path regime invalidation.  Unlike
-    `invalidateRegimeDeps` (used by assignment), this removes a regime entry ONLY
-    when its tag is a *materialised* guard in `env` whose dependencies intersect the
-    written locations.  Driver-asserted regime tags that are not (yet) in `env` —
-    e.g. an extern's shared return guard supplied via `--regime`, before it enters
-    the tag environment at a later `if`/deref — are KEPT, and a guard the effect's
-    own predicate re-establishes is not spuriously dropped (it survives via its
-    cell type).  In short: a materialised guard whose predicate reads a written
-    effect target is invalidated, while legitimate driver assertions persist
+/-- Effect-path regime invalidation.  A regime entry whose tag `env` records
+    is removed when its dependencies intersect the written locations `ls`, as
+    under `invalidateRegimeDeps` (used by assignment).  A regime entry whose
+    tag `env` does not record has no dependency set: it is removed when the
+    call writes some location (`ls` is non-empty) and kept when the call writes
+    none.  Assignment removes such an entry in every case.  An entry that names
+    a tag by number before the tag is allocated (`--regime`) is therefore lost
+    at a write that precedes the allocation, including the effects of the call
+    that allocates it; `--extern-regime` gives a tag its value where the tag is
+    allocated, after this step, and is not affected
     (see `examples/lp55xx-read.poison`). -/
 def invalidateRegimeDepsEffect (R : Regime) (env : TagEnv) (ls : LocSet) : Regime :=
   R.filter (fun k _ =>
     match env.get? k with
     | some tv => not (tv.deps.any ls.contains)
-    | none => true)
+    | none => ls.isEmpty)
 
 /-- Join two regimes (conservative intersection: keep only entries that agree) -/
 def joinRegimes (R1 R2 : Regime) : Regime :=

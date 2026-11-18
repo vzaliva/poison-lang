@@ -2,9 +2,10 @@
 -- lp55xx_read example (fixed variant), with a shared guard tag between the
 -- return code and the status cell. The return guard is asserted by extern id
 -- (`--extern-regime "238=true"`), so the typechecker interprets whatever output
--- tag it freshly allocates for @238. The equivalent low-level form
--- `--regime "1=true"` names that tag concretely, but is allocation-order
--- dependent (see doc/poison-interpreter.md).
+-- tag it freshly allocates for @238. The low-level form `--regime "1=true"`
+-- does not reach this guard: the call writes the status cell, and a tag named
+-- by number is removed at a write that precedes its allocation (see
+-- doc/poison-interpreter.md).
 --
 -- `status` is a local stack cell that the read writes into; `eng` is the engine
 -- register (extern). The outer `if ret >= 0` checks the return code: on success

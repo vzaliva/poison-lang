@@ -36,8 +36,12 @@ its own traversal order starting from `1` — not strictly textual source order
 (an application, for instance, visits its argument before the function) — so
 naming a tag here is **allocation-order dependent**: inserting an earlier guard
 shifts every subsequent number and silently changes which guard `k` refers to.
-Use this mainly for debugging; prefer `--extern-regime` for extern-produced
-guards. Duplicate tags use last-one-wins.
+A tag named here has no entry in the tag environment until its guard is
+allocated, so the entry is removed by a write that precedes the allocation: an
+assignment, or a call of an extern whose effects write a location, including
+the call that allocates the tag. Use this mainly for debugging; prefer
+`--extern-regime` for extern-produced guards. Duplicate tags use
+last-one-wins.
 
 `--extern-regime "id=true,..."`  
 Id-keyed control, **preferred for extern-produced guards**. Selects externs by

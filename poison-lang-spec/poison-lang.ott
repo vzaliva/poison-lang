@@ -409,7 +409,7 @@ formula :: formula_ ::=
   | resolveEffectsPoisoned ESL TM S G = G' :: :: resolve_effects_poisoned {{ com resolve effect preds via TM and apply memory updates (singleton strong / multi-location weak) with predicate erasure (stored predicate forced to noPred); used by poisoned effect-pc extern application rules, where the gate join pc (join p1 p) is poisoned, mirroring assignment under poisoned pc. As with resolveEffects, the dependency invalidation on the written targets is performed by the surrounding application rule }} {{ tex \mathrm{resolveEffectsPoisoned}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
   | extendExternRegime eid TM R = R' :: :: extend_extern_regime {{ com call-site (and extern\_val) regime extension: insert into R the freshly generated output tags in the codomain of TM that the ambient extern-regime policy (the Ott analogue of the typechecker's ctx.externRegime, not shown in the judgment) selects for extern id eid; unselected extern ids leave R unchanged }} {{ tex [[R']] = \mathrm{extendExternRegime}([[eid]], [[TM]], [[R]]) }}
   | effectTargetLocs ESL S = LS :: :: effect_target_locs {{ com union of the locsets of the effects' !x targets as resolved in the unified environment S (a target that does not resolve to a tracked reference contributes nothing); these are exactly the locations the effect loop writes, so the application rule invalidates guard-tag / regime dependencies on them }} {{ tex [[LS]] = \mathrm{effectTargetLocs}([[ESL]], [[S]]) }}
-  | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R exactly those tags that are materialised in L with a dependency set intersecting LS; tags absent from L are KEPT — unlike assignment's invalidate\_regime\_deps, which drops them — so a driver-asserted regime tag that has not yet entered the tag environment survives an unrelated write effect }} {{ tex \texttt{invalidate\_regime\_deps\_effect}([[R]], [[L]], [[LS]]) = [[R1]] }}
+  | invalidate_regime_deps_effect R L LS = R1 :: :: invalidate_regime_deps_effect {{ com effect-path regime invalidation: drop from R the tags that L records with a dependency set intersecting LS and, when LS is non-empty, the tags that L does not record (they have no dependency set); when LS is empty the tags absent from L are kept, whereas assignment's invalidate\_regime\_deps drops them in every case }} {{ tex \texttt{invalidate\_regime\_deps\_effect}([[R]], [[L]], [[LS]]) = [[R1]] }}
   | installReturnGuard L P R = L1 :: :: install_return_guard {{ com value-correct return-guard materialisation: when P is a guard closure with tag k whose value the regime R determines as b — whether asserted through the initial regime or inserted by the extern-regime policy — insert k |-> (b, deps) into L, with deps the dependency set of the closure's predicate (the locations its body reads through its captured environment, including through every alternative of each pure function it mentions and the declared captures: of extern alternatives); a regime-undetermined guard, a guard whose dependency extraction fails, or a non-closure P leaves L unchanged. Materialising the dependencies is what lets a later write effect (or assignment) invalidate a stale guard whose predicate reads the written cell }} {{ tex [[L1]] = \mathrm{installReturnGuard}([[L]], [[P]], [[R]]) }}
 % installEffectGuards L ESL TM S R = L1: for each effect of ESL whose target
 % resolves in S to a reference with locations LS, clean or poisoned, and whose
@@ -1451,10 +1451,11 @@ impure ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tp
 % (effectTargetLocs ESL S_unified = LS1) and invalidates dependencies on them,
 % mirroring assignment: invalidate_deps drops tag-environment entries whose deps
 % intersect LS1, and invalidate_regime_deps_effect drops the corresponding regime
-% entries — but only for tags MATERIALISED in the tag environment; a regime tag
-% absent from L (e.g. a driver-asserted return guard not yet materialised) is
-% kept, unlike assignment's invalidate_regime_deps. The policy extension
-% (extendExternRegime) then runs on the invalidated regime.
+% entries. A regime tag absent from L has no dependency set: it is dropped when
+% LS1 is non-empty (the call writes some location) and kept when LS1 is empty,
+% whereas assignment's invalidate_regime_deps drops it in every case. The
+% policy extension (extendExternRegime) then runs on the invalidated regime, so
+% a tag that the policy sets at this call is not affected.
 %
 % Return-guard materialisation: the simple-return rules (impure and pure) and the
 % extern_val rule additionally install the resolved return guard into the tag

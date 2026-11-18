@@ -521,20 +521,20 @@ whenever \(p_1^{\text{ref}}\) or the effect pc is poisoned, mirroring
 \(p_1^{\text{ref}}\) is distinct from the function-expression poison \(p_1\)
 that feeds the effect-pc gate above.)
 
-Extern effects invalidate dependencies on the written targets exactly as
-assignment does, with one deliberate refinement on the regime side. After the
-effect loop, every tag-environment entry whose dependency set intersects a
-written target location is dropped (\(\mathrm{invalidate\_deps}\) over
-\(\mathrm{effectTargetLocs}\)), because overwriting a location makes a
+Extern effects invalidate dependencies on the written targets as assignment
+does. After the effect loop, every tag-environment entry whose dependency set
+intersects a written target location is dropped (\(\mathrm{invalidate\_deps}\)
+over \(\mathrm{effectTargetLocs}\)), because overwriting a location makes a
 predicate keyed on its old value stale. The corresponding regime entries are
-dropped by the effect-specific \(\mathrm{invalidate\_regime\_deps\_effect}\),
-which removes a regime tag only when it is \emph{materialised} in the tag
-environment with intersecting dependencies; a regime tag absent from the tag
-environment --- typically a driver-asserted guard that has not yet been
-materialised --- survives an unrelated write, unlike under assignment's
-\(\mathrm{invalidate\_regime\_deps}\), which drops regime tags it cannot find in
-the tag environment. The extern-regime policy extension then runs on the
-invalidated regime.
+dropped by \(\mathrm{invalidate\_regime\_deps\_effect}\). A regime tag that the
+tag environment records is removed when its dependency set intersects a written
+location. A regime tag that the tag environment does not record has no
+dependency set: it is removed when the call writes some location, and kept when
+the call writes none. Assignment's \(\mathrm{invalidate\_regime\_deps}\) removes
+such a tag in every case. The extern-regime policy extension then runs on the
+invalidated regime, so a tag that the policy sets at this call is not affected;
+a tag named by number with \texttt{--regime} before it is allocated is lost at
+a write that precedes its allocation.
 
 For this invalidation to be value-correct it must be able to see the guards
 that matter, so a simple extern return additionally \emph{materialises} its
