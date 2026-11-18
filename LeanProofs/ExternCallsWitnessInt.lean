@@ -34,7 +34,9 @@ true, and the program is typed as a clean `int`.
   environment.
 * The relation `loSat β`: the checked value is a number at least the value
   the view `β` gives the binding number of `lo`. `loSat_lawful`: it satisfies
-  the laws on the table of the program under every view.
+  the laws on the table of the program under every view. `loSat_lawful_cap`:
+  the same on `loTmOf cap`, the table of the guard over any captured
+  environment `cap` that holds `lo` as a clean integer with number 1.
 * The view `βm m` of a run gives `lo` (number 1) the value 3 and `y`
   (number 2) the value `m`. `tests`: every run agrees with it at the
   conditional. `view_needed`: a view that gives number 1 another value does
@@ -44,7 +46,8 @@ true, and the program is typed as a clean `int`.
   exactly when `c ≤ n`. `match_iff_lawful`: for such a relation, with
   `c = 3`, *match* holds in a run exactly when `3 ≤ m`; `match_iff` is the
   case of `loSat (βm m)`. `agree`: *agreement* holds for every pair of runs,
-  which make no extern call.
+  which make no extern call. `pin_lo_cap`: the pin on `loTmOf cap`, for a
+  `cap` with which `y >= lo` is matched to the guard (`pinSelectsOf`).
 * `same_return`: when `3 ≤ m`, two runs from any `x` return the same value.
   `true_5`: the registry holds 5; the runs from `x = 0` and `x = 1` return 1.
   `no_premises_lt`: when `m < 3`, no relation and view meet the laws on the
@@ -81,17 +84,23 @@ def loDesc : GuardDesc := { argName := "v", body := loBody, capEnv := loCap }
 /-- The table of the program: tag `0` is the guard `v >= lo`. -/
 def loTm : TagMeaning := (∅ : TagMeaning).update 0 loDesc
 
+/-- The table whose tag `0` is the guard `v >= lo` over the captured
+    environment `cap`; `loTm` is the table over `loCap`. -/
+def loTmOf (cap : CapturedVarEnv) : TagMeaning :=
+  (∅ : TagMeaning).update 0 { argName := "v", body := loBody, capEnv := cap }
+
 /-- The relation under the view `β`: the checked value is a number at least
     the value `β` gives the binding number of `lo`. -/
 def loSat (β : BindVals) : PredSat := fun _ _ v =>
   ∃ m n : Int, β loNum = some (Value.num m) ∧ v = Value.num n ∧ m ≤ n
 
-private theorem loTm_lookup_eq {k : Tag} {d : GuardDesc} (h : loTm.lookup k = some d) :
-    d = loDesc := by
+private theorem loTmOf_lookup_eq {cap : CapturedVarEnv} {k : Tag} {d : GuardDesc}
+    (h : (loTmOf cap).lookup k = some d) :
+    d = { argName := "v", body := loBody, capEnv := cap } := by
   by_cases hk : (0 : Tag) = k
   · subst hk
-    simpa [loTm, TagMeaning.lookup, TagMeaning.update] using h.symm
-  · simp [loTm, TagMeaning.lookup, TagMeaning.update, hk] at h
+    simpa [loTmOf, TagMeaning.lookup, TagMeaning.update] using h.symm
+  · simp [loTmOf, TagMeaning.lookup, TagMeaning.update, hk] at h
 
 /-- The argument `v`, with the variable `x` substituted, is `x`. -/
 private theorem eq_var_arg {pe : PExpr} {env1 env2 : CapturedVarEnv} {x : Name} :
@@ -196,11 +205,12 @@ private theorem toPExpr?_eq_op {e : Expr} {p1 p2 : PExpr} {o : Op}
     ∃ e1 e2, e = Expr.op e1 o e2 ∧ e1.toPExpr? = some p1 ∧ e2.toPExpr? = some p2 := by
   cases e <;> simp_all [Expr.toPExpr?, Option.bind_eq_some_iff]
 
-/-- The guard is in scope only where `lo` has the guard's binding number. -/
-private theorem scope_lo {S : VarTypeEnv} {B : BindEnv}
-    (h : GuardInScope S B "v" loBody loCap) : B.get? "lo" = some loNum := by
-  have hq : (VarTypeEnv.ofCaptured loCap).lookup "lo" = some intQt := by rfl
-  have hn : (BindEnv.ofCaptured loCap).get? "lo" = some loNum := by rfl
+/-- The guard is in scope only where `lo` has the guard's binding number, when
+    the captured environment `cap` holds `lo` as a clean integer with number 1. -/
+private theorem scope_lo {cap : CapturedVarEnv} {S : VarTypeEnv} {B : BindEnv}
+    (hq : (VarTypeEnv.ofCaptured cap).lookup "lo" = some intQt)
+    (hn : (BindEnv.ofCaptured cap).get? "lo" = some loNum)
+    (h : GuardInScope S B "v" loBody cap) : B.get? "lo" = some loNum := by
   rcases h.reads "lo" (by simp [loBody, PExpr.freeVars]) with
     ⟨qt, ls, l, hq', _, _, he, _⟩ | ⟨q1, q2, n1, n2, _, _, hn1, hn2, hagree, _⟩
   · rw [hq] at hq'
@@ -212,8 +222,12 @@ private theorem scope_lo {S : VarTypeEnv} {B : BindEnv}
     rw [hn2, ← hagree.2]
     rfl
 
-/-- The law holds for the relation under every view. -/
-theorem loSat_lawful (β : BindVals) : PredSatLaws (loSat β) loTm β := by
+/-- The law holds for the relation under every view, on the table over any
+    captured environment that holds `lo` as a clean integer with number 1. -/
+theorem loSat_lawful_cap (gcap : CapturedVarEnv)
+    (hq : (VarTypeEnv.ofCaptured gcap).lookup "lo" = some intQt)
+    (hn : (BindEnv.ofCaptured gcap).get? "lo" = some loNum) (β : BindVals) :
+    PredSatLaws (loSat β) (loTmOf gcap) β := by
   refine ⟨?_, ?_⟩
   · intro condition ctx fuel k deps μ ρ θ addr pm registry cfg b hwf hmatch hview hric hterm
     obtain ⟨pe, hpe, hown⟩ := matchGuard_ok_matched_owner_inScope ctx condition k deps hmatch
@@ -224,11 +238,11 @@ theorem loSat_lawful (β : BindVals) : PredSatLaws (loSat β) loTm β := by
         GuardDescInEnvsDeep.intro qt k ⟨arg, body, cap⟩
           (QTypInEnvs.inVar ctx.varEnv ctx.memEnv x qt qt hlookup (QTypInQTyp.self qt))
           (by simp [qtypGuardDesc?, hpred])
-      have hdesc : (⟨arg, body, cap⟩ : GuardDesc) = loDesc := loTm_lookup_eq (hwf.1 hdeep)
-      simp only [loDesc, GuardDesc.mk.injEq] at hdesc
+      have hdesc := loTmOf_lookup_eq (hwf.1 hdeep)
+      simp only [GuardDesc.mk.injEq] at hdesc
       obtain ⟨rfl, rfl, rfl⟩ := hdesc
       have hloρ : ρ.lookup "lo" = β loNum :=
-        hview _ hdeep "lo" (by simp [loBody, PExpr.freeVars]) loNum (scope_lo hscope)
+        hview _ hdeep "lo" (by simp [loBody, PExpr.freeVars]) loNum (scope_lo hq hn hscope)
           (by decide)
       obtain ⟨f, p1, p2, rfl, rfl, h1, h2⟩ := eq_lo_shape heq
       have hp1 := eq_var_arg h1
@@ -244,7 +258,7 @@ theorem loSat_lawful (β : BindVals) : PredSatLaws (loSat β) loTm β := by
       rename_i n m
       subst hev
       have hβ : β loNum = some (Value.num m) := hloρ ▸ hlo
-      refine ⟨Value.num n, Or.inl ⟨x, qt, "v", loBody, loCap, hlookup, hpred, hx⟩, ?_⟩
+      refine ⟨Value.num n, Or.inl ⟨x, qt, "v", loBody, _, hlookup, hpred, hx⟩, ?_⟩
       constructor
       · intro hb
         exact ⟨m, n, hβ, rfl, by simpa using hb⟩
@@ -264,11 +278,11 @@ theorem loSat_lawful (β : BindVals) : PredSatLaws (loSat β) loTm β := by
         GuardDescInEnvsDeep.intro memQt k ⟨arg, body, cap⟩
           (QTypInEnvs.inMem ctx.varEnv ctx.memEnv l memQt memQt hmem (QTypInQTyp.self memQt))
           (by simp [qtypGuardDesc?, hmpred])
-      have hdesc : (⟨arg, body, cap⟩ : GuardDesc) = loDesc := loTm_lookup_eq (hwf.1 hdeep)
-      simp only [loDesc, GuardDesc.mk.injEq] at hdesc
+      have hdesc := loTmOf_lookup_eq (hwf.1 hdeep)
+      simp only [GuardDesc.mk.injEq] at hdesc
       obtain ⟨rfl, rfl, rfl⟩ := hdesc
       have hloρ : ρ.lookup "lo" = β loNum :=
-        hview _ hdeep "lo" (by simp [loBody, PExpr.freeVars]) loNum (scope_lo hscope)
+        hview _ hdeep "lo" (by simp [loBody, PExpr.freeVars]) loNum (scope_lo hq hn hscope)
           (by decide)
       obtain ⟨f, p1, p2, rfl, rfl, h1, h2⟩ := eq_lo_shape heq
       obtain ⟨_, hp1⟩ := eq_deref_arg f p1 h1
@@ -294,7 +308,7 @@ theorem loSat_lawful (β : BindVals) : PredSatLaws (loSat β) loTm β := by
       | loc hθ hin =>
         rename_i l'
         obtain ⟨memQt', hmem', hmpred'⟩ := hall l' hin
-        refine ⟨Value.num n, Or.inr ⟨x, qt, memQt', ls, l', a, n, "v", loBody, loCap, hlookup,
+        refine ⟨Value.num n, Or.inr ⟨x, qt, memQt', ls, l', a, n, "v", loBody, _, hlookup,
           hetyp, hin, hmem', hmpred', hθ, hμ, rfl⟩, ?_⟩
         constructor
         · intro hb
@@ -306,6 +320,10 @@ theorem loSat_lawful (β : BindVals) : PredSatLaws (loSat β) loTm β := by
           simpa using hle
   · intro _k _pred _fuel _μ _μ' _v _deps _θ _ _
     exact Iff.rfl
+
+/-- The law holds for the relation under every view. -/
+theorem loSat_lawful (β : BindVals) : PredSatLaws (loSat β) loTm β :=
+  loSat_lawful_cap loCap rfl rfl β
 
 /-! ## Consistency under the regime after the declaration
 
@@ -1264,20 +1282,21 @@ value: in a context where `y` carries the guard and `lo` is a clean integer
 with number 1, the conditional `y >= lo` is matched to the tag, and the law
 applies to the run that gives `y` the value `n` and `lo` the value `c`. -/
 
-/-- `y` carries the guard of tag 0. -/
-private def yQt : QTyp :=
-  { etyp := ETyp.int, poison := true, pred := Predicate.guardClosure 0 "v" loBody loCap }
+/-- `y` carries the guard of tag 0 over the captured environment `cap`. -/
+private def yQtOf (cap : CapturedVarEnv) : QTyp :=
+  { etyp := ETyp.int, poison := true, pred := Predicate.guardClosure 0 "v" loBody cap }
 
-/-- `y` with the guard, `lo` a clean integer with number 1. -/
-private def pinCtx : TypeContext :=
+/-- `y` with the guard over `cap`, `lo` a clean integer with number 1. -/
+private def pinCtxOf (cap : CapturedVarEnv) : TypeContext :=
   { pc := false, regime := ∅, memEnv := ∅,
-    varEnv := ((∅ : VarTypeEnv).update "lo" intQt).update "y" yQt,
+    varEnv := ((∅ : VarTypeEnv).update "lo" intQt).update "y" (yQtOf cap),
     bindEnv := (∅ : BindEnv).insert "lo" 1, tagEnv := ∅,
     nextLoc := 0, nextTag := 1, nextBind := 2, pureCtx := false }
 
-private theorem pinCtx_lookup {z : Name} {q : QTyp} (h : pinCtx.varEnv.lookup z = some q) :
-    (z = "y" ∧ q = yQt) ∨ (z = "lo" ∧ q = intQt) := by
-  simp only [pinCtx] at h
+private theorem pinCtx_lookup {cap : CapturedVarEnv} {z : Name} {q : QTyp}
+    (h : (pinCtxOf cap).varEnv.lookup z = some q) :
+    (z = "y" ∧ q = yQtOf cap) ∨ (z = "lo" ∧ q = intQt) := by
+  simp only [pinCtxOf] at h
   by_cases hy : z = "y"
   · subst hy
     rw [VarTypeEnv_lookup_update_eq] at h
@@ -1290,18 +1309,18 @@ private theorem pinCtx_lookup {z : Name} {q : QTyp} (h : pinCtx.varEnv.lookup z 
     · rw [VarTypeEnv_lookup_update_ne _ "lo" z _ hl] at h
       simp [VarTypeEnv.lookup] at h
 
-private theorem pinCtx_wf : wfTagMeaningCtx loTm pinCtx := by
+private theorem pinCtx_wf (cap : CapturedVarEnv) : wfTagMeaningCtx (loTmOf cap) (pinCtxOf cap) := by
   refine EnvRespectsTagMeaning.intro ?_
   intro k d hdeep
   rcases hdeep with ⟨qt, k, d, hin, hdesc⟩
   cases hin with
   | inVar _ _ z _ qtRoot hlookup hinq =>
     rcases pinCtx_lookup hlookup with ⟨_, rfl⟩ | ⟨_, rfl⟩
-    · have hqt : qt = yQt :=
+    · have hqt : qt = yQtOf cap :=
         QTypInQTyp_eq_of_nonFunctionTarget hinq
-          (by simp [yQt, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
+          (by simp [yQtOf, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow])
       subst hqt
-      simp [qtypGuardDesc?, yQt] at hdesc
+      simp [qtypGuardDesc?, yQtOf] at hdesc
       obtain ⟨rfl, rfl⟩ := hdesc
       rfl
     · have hqt : qt = intQt :=
@@ -1310,7 +1329,7 @@ private theorem pinCtx_wf : wfTagMeaningCtx loTm pinCtx := by
       subst hqt
       simp [qtypGuardDesc?, intQt] at hdesc
   | inMem _ _ l _ qtRoot hlookup hinq =>
-    simp [pinCtx, MemoryTypeEnv.lookup] at hlookup
+    simp [pinCtxOf, MemoryTypeEnv.lookup] at hlookup
 
 /-- The run: `y` holds `n`, `lo` holds `c`. -/
 private def pinRho (c n : Int) : VarEnv := [("y", Value.num n), ("lo", Value.num c)]
@@ -1318,8 +1337,8 @@ private def pinRho (c n : Int) : VarEnv := [("y", Value.num n), ("lo", Value.num
 private def pinCfg (μ : Memory) (c n : Int) : Config :=
   { memory := μ, varEnv := pinRho c n, nextAddr := 0, pureMode := false, registry := default }
 
-private theorem pinRic (μ : Memory) (c n : Int) :
-    runtimeInstantiatesCtx pinCtx μ (pinRho c n) (∅ : RealizationMap) := by
+private theorem pinRic (cap : CapturedVarEnv) (μ : Memory) (c n : Int) :
+    runtimeInstantiatesCtx (pinCtxOf cap) μ (pinRho c n) (∅ : RealizationMap) := by
   refine ⟨?_, ?_⟩
   · intro l a h
     simp [RealizationMap.lookup] at h
@@ -1328,23 +1347,25 @@ private theorem pinRic (μ : Memory) (c n : Int) :
     · exact ⟨Value.num n, rfl, valueHasETyp.num _⟩
     · exact ⟨Value.num c, rfl, valueHasETyp.num _⟩
 
-private def pinSelects : Bool :=
-  match matchGuard cond pinCtx.memEnv pinCtx.varEnv pinCtx.bindEnv 10 with
+/-- `matchGuard` matches `y >= lo` to tag `0` in the context where `y` carries
+    the guard over `cap` and `lo` is a clean integer with number 1. -/
+def pinSelectsOf (cap : CapturedVarEnv) : Bool :=
+  match matchGuard cond (pinCtxOf cap).memEnv (pinCtxOf cap).varEnv (pinCtxOf cap).bindEnv 10 with
   | .ok (k, _) => k == 0
   | .error _ => false
 
-private theorem pinSelects_ok : pinSelects = true := by decide +kernel
+private theorem pinSelects_ok : pinSelectsOf loCap = true := by decide +kernel
 
-private theorem pin_matches :
-    ∃ deps, matchGuard cond pinCtx.memEnv pinCtx.varEnv pinCtx.bindEnv 10 = .ok (0, deps) := by
-  have h := pinSelects_ok
-  unfold pinSelects at h
-  split at h
+private theorem pin_matches {cap : CapturedVarEnv} (hsel : pinSelectsOf cap = true) :
+    ∃ deps, matchGuard cond (pinCtxOf cap).memEnv (pinCtxOf cap).varEnv (pinCtxOf cap).bindEnv 10
+      = .ok (0, deps) := by
+  unfold pinSelectsOf at hsel
+  split at hsel
   · rename_i k d heq
-    simp at h
-    subst h
+    simp at hsel
+    subst hsel
     exact ⟨d, heq⟩
-  · simp at h
+  · simp at hsel
 
 private theorem pin_runs (μ : Memory) (c n : Int) :
     terminatesTo cond (pinCfg μ c n) (pinCfg μ c n) (Value.bool (decide (n ≥ c))) := by
@@ -1353,30 +1374,34 @@ private theorem pin_runs (μ : Memory) (c n : Int) :
   have hl : VarEnv.lookup (pinRho c n) "lo" = some (Value.num c) := rfl
   simp [cond, LeanPoison.beval, LeanPoison.evalOp, pinCfg, hy, hl]
 
-/-- The laws fix a relation at the guard's tag: under a view that gives `lo`'s
-    number the value `c`, on an integer `n` it holds exactly when `c ≤ n`. -/
-theorem pin_lo {predSat : PredSat} {β : BindVals} {c : Int}
-    (hlaws : PredSatLaws predSat loTm β) (hβ : β loNum = some (Value.num c)) (μ : Memory)
-    (n : Int) : predSat 0 μ (Value.num n) ↔ c ≤ n := by
-  obtain ⟨deps, hmatch⟩ := pin_matches
-  have hview : ∀ d, GuardDescInEnvsDeep pinCtx.varEnv pinCtx.memEnv 0 d →
-      ViewAgreesOn β pinCtx.bindEnv (pinRho c n) (PExpr.freeVars [d.argName] d.body) := by
+/-- The laws fix a relation at the guard's tag, on the table over any captured
+    environment `cap` for which `y >= lo` is matched to the guard: under a view
+    that gives `lo`'s number the value `c`, on an integer `n` it holds exactly
+    when `c ≤ n`. -/
+theorem pin_lo_cap (cap : CapturedVarEnv) (hsel : pinSelectsOf cap = true) {predSat : PredSat}
+    {β : BindVals} {c : Int} (hlaws : PredSatLaws predSat (loTmOf cap) β)
+    (hβ : β loNum = some (Value.num c)) (μ : Memory) (n : Int) :
+    predSat 0 μ (Value.num n) ↔ c ≤ n := by
+  obtain ⟨deps, hmatch⟩ := pin_matches hsel
+  have hview : ∀ d, GuardDescInEnvsDeep (pinCtxOf cap).varEnv (pinCtxOf cap).memEnv 0 d →
+      ViewAgreesOn β (pinCtxOf cap).bindEnv (pinRho c n) (PExpr.freeVars [d.argName] d.body) := by
     intro d hd
-    have hdesc : d = loDesc := loTm_lookup_eq (pinCtx_wf.1 hd)
+    have hdesc := loTmOf_lookup_eq ((pinCtx_wf cap).1 hd)
     subst hdesc
     intro x hx k hk _
-    have hxlo : x = "lo" := by simpa [loDesc, loBody, PExpr.freeVars] using hx
+    have hxlo : x = "lo" := by simpa [loBody, PExpr.freeVars] using hx
     subst hxlo
     have hk1 : k = 1 := by
-      simp [pinCtx, ExtTreeMap.get?_eq_getElem?] at hk
+      simp [pinCtxOf, ExtTreeMap.get?_eq_getElem?] at hk
       exact hk.symm
     subst hk1
     show _ = β loNum
     rw [hβ]
     rfl
   obtain ⟨v, hown, hiff⟩ :=
-    hlaws.match_iff cond pinCtx 10 0 deps μ (pinRho c n) ∅ 0 false default (pinCfg μ c n)
-      (decide (n ≥ c)) pinCtx_wf hmatch hview (pinRic μ c n) (pin_runs μ c n)
+    hlaws.match_iff cond (pinCtxOf cap) 10 0 deps μ (pinRho c n) ∅ 0 false default
+      (pinCfg μ c n) (decide (n ≥ c)) (pinCtx_wf cap) hmatch hview (pinRic cap μ c n)
+      (pin_runs μ c n)
   have hv : v = Value.num n := by
     rcases hown with ⟨x, qt, _, _, _, hlookup, hpred, hρ⟩ |
       ⟨x, qt, _, _, _, _, _, _, _, _, hlookup, hetyp, _⟩
@@ -1386,11 +1411,18 @@ theorem pin_lo {predSat : PredSat} {β : BindVals} {c : Int}
         exact (Option.some.inj hρ).symm
       · simp [intQt] at hpred
     · rcases pinCtx_lookup hlookup with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-      · simp [yQt] at hetyp
+      · simp [yQtOf] at hetyp
       · simp [intQt] at hetyp
   rw [hv] at hiff
   rw [← hiff]
   simp
+
+/-- The laws fix a relation at the guard's tag: under a view that gives `lo`'s
+    number the value `c`, on an integer `n` it holds exactly when `c ≤ n`. -/
+theorem pin_lo {predSat : PredSat} {β : BindVals} {c : Int}
+    (hlaws : PredSatLaws predSat loTm β) (hβ : β loNum = some (Value.num c)) (μ : Memory)
+    (n : Int) : predSat 0 μ (Value.num n) ↔ c ≤ n :=
+  pin_lo_cap loCap pinSelects_ok hlaws hβ μ n
 
 /-- *Match* holds in a run, for any relation that satisfies the laws on the
     table of the program under a view that gives `lo` the value 3, exactly
@@ -1457,7 +1489,8 @@ def sV : InputSpec := { locs := ∅, vars := ∅, regimeExterns := [250] }
 /-- The observation: the returned integer. -/
 def obsRet : ObservableSpec := { locs := ∅, retEtyp? := some .int }
 
-private theorem K_vars : ∀ x qt, K.varEnv.lookup x = some qt → qt = pInt := by
+/-- Every variable of `K` is a poisoned integer. -/
+theorem K_vars : ∀ x qt, K.varEnv.lookup x = some qt → qt = pInt := by
   intro x qt h
   by_cases hx : x = "x"
   · subst hx
@@ -1473,7 +1506,8 @@ private theorem pInt_not_clean (R : Regime) : ¬ qtypCleanUnder R pInt := by
   | clean hpoison => simp [pInt] at hpoison
   | guard k htag _ _ => simp [qtypGuardTag, pInt] at htag
 
-private theorem externRegimeMatchesK : ExternRegimeMatchesInputSpec sV K := by
+/-- `K`'s assignment of extern tags matches `sV`. -/
+theorem externRegimeMatchesK : ExternRegimeMatchesInputSpec sV K := by
   refine ⟨fun {id} hid k => ?_, fun {id} hid k => ?_⟩
   · have h : id ≠ 250 := by simpa [sV] using hid
     simp [K, polT, h]
@@ -1510,7 +1544,8 @@ private theorem trustedK (m : Int) : InitialContextTrusted (loReg m) prog K := b
       unfold pInt at hqt
       cases hqt
 
-private theorem wfSpecV : wfInputSpec sV := by
+/-- `sV` is well formed. -/
+theorem wfSpecV : wfInputSpec sV := by
   unfold wfInputSpec
   refine And.intro ?_ (And.intro ?_ ?_)
   · intro l qt h
@@ -1525,7 +1560,8 @@ private theorem wfSpecV : wfInputSpec sV := by
   · intro x qt h
     simp [sV, VarTypeEnv.lookup] at h
 
-private theorem ctxMatchesK : ctxMatchesInputSpec sV K := by
+/-- `K` matches `sV`. -/
+theorem ctxMatchesK : ctxMatchesInputSpec sV K := by
   unfold ctxMatchesInputSpec
   refine ⟨?_, ?_, ?_, ?_⟩
   · intro l qt h
@@ -1542,7 +1578,8 @@ private theorem ctxMatchesK : ctxMatchesInputSpec sV K := by
       rw [K_vars x qt h]
       exact deepQTypProperty.other _ _ trivial
 
-private theorem wfCtxK : wfTypeContext K := by
+/-- `K` is well formed. -/
+theorem wfCtxK : wfTypeContext K := by
   unfold wfTypeContext
   refine And.intro ?_ (And.intro ?_ ?_)
   · intro l h
@@ -1554,7 +1591,8 @@ private theorem wfCtxK : wfTypeContext K := by
     rw [K_vars x qt h]
     exact trivial
 
-private theorem tagBoundedK : TagBoundedCtx K := by
+/-- The tags of `K` are below its next tag. -/
+theorem tagBoundedK : TagBoundedCtx K := by
   unfold TagBoundedCtx
   refine And.intro ?_ (And.intro (And.intro ?_ ?_) ?_)
   · intro k hk
@@ -1568,7 +1606,8 @@ private theorem tagBoundedK : TagBoundedCtx K := by
     rw [K_vars x qt h]
     exact trivial
 
-private theorem wfTmK : wfTagMeaningCtx ∅ K := by
+/-- `K` respects the empty table. -/
+theorem wfTmK : wfTagMeaningCtx ∅ K := by
   refine EnvRespectsTagMeaning.intro ?_
   intro k d hdeep
   rcases hdeep with ⟨qt, k, d, hin, hdesc⟩
@@ -1584,11 +1623,13 @@ private theorem wfTmK : wfTagMeaningCtx ∅ K := by
   | inMem _ _ l _ qtRoot hlookup hinq =>
       simp [K, MemoryTypeEnv.lookup] at hlookup
 
-private theorem tmBoundedK : TagMeaningBounded ∅ K.nextTag := by
+/-- The empty table is bounded by `K`'s next tag. -/
+theorem tmBoundedK : TagMeaningBounded ∅ K.nextTag := by
   intro k d h
   simp [TagMeaning.lookup] at h
 
-private theorem wfRegimeK : wfRegime K.regime sV := by
+/-- `K`'s regime is well formed for `sV`. -/
+theorem wfRegimeK : wfRegime K.regime sV := by
   have htags : inputSpecTags sV = [] := rfl
   refine And.intro ?_ ?_
   · intro k hk
@@ -1597,22 +1638,26 @@ private theorem wfRegimeK : wfRegime K.regime sV := by
   · intro k hk
     simp [K, Regime.lookup?] at hk
 
-private theorem wfθ₀ : wfRealizationMap ∅ := by
+/-- The empty realisation map is well formed. -/
+theorem wfθ₀ : wfRealizationMap ∅ := by
   intro l₁ l₂ a h
   simp [RealizationMap.lookup] at h
 
-private theorem wfCX (m n : Int) : wfConfig (cfgX m n) := by
+/-- The starting configurations are well formed. -/
+theorem wfCX (m n : Int) : wfConfig (cfgX m n) := by
   refine And.intro ?_ ?_
   · intro a h
     simp [cfgX] at h
   · exact wfVarEnv.cons _ _ _ (wfValue.num n) wfVarEnv.nil
 
-private theorem reservedWFV (m : Int) : RegistryReservedWF (regV m) ∅ 0 := by
+/-- The registry `regV m` reserves no location. -/
+theorem reservedWFV (m : Int) : RegistryReservedWF (regV m) ∅ 0 := by
   intro a ha
   obtain ⟨id, h⟩ := ha
   exact (regV_noLoc h).elim
 
-private theorem disciplineK (m : Int) : ReservedDiscipline (regV m) K.declaredExternRefs ∅ := by
+/-- The registry `regV m` keeps the reservation discipline of `K`. -/
+theorem disciplineK (m : Int) : ReservedDiscipline (regV m) K.declaredExternRefs ∅ := by
   refine And.intro ?_ ?_
   · intro id₁ id₂ a h _
     exact (regV_noLoc h).elim
@@ -1623,7 +1668,8 @@ private theorem lookupX (n : Int) :
     (VarEnv.update [] "x" (.num n)).lookup "x" = some (.num n) := by
   simp [VarEnv.update, VarEnv.lookup]
 
-private theorem instantiatesK (n : Int) :
+/-- The starting variable environment from `x = n` instantiates `K`. -/
+theorem instantiatesK (n : Int) :
     runtimeInstantiatesCtx K ∅ (VarEnv.update [] "x" (.num n)) ∅ := by
   refine And.intro ?_ ?_
   · intro l a h
@@ -1639,7 +1685,8 @@ private theorem instantiatesK (n : Int) :
     subst hx
     exact ⟨_, lookupX n, valueHasETyp.num n⟩
 
-private theorem trustedInitK {predSat : PredSat} (n : Int) :
+/-- The closures of the trusted variables at the start, from `x = n`. -/
+theorem trustedInitK {predSat : PredSat} (n : Int) :
     trustedVarsClosureRegimeInit predSat K.regime sV K ∅ (VarEnv.update [] "x" (.num n)) ∅ := by
   refine trustedVarsClosureRegimeInit.intro ?_
   intro x qt v h _ hv
@@ -1657,7 +1704,8 @@ private theorem trustedInitK {predSat : PredSat} (n : Int) :
     (deepValueQTypProperty.nonClosure (fun _ _ _ hc => by cases hc)
       (fun _ _ _ hc => by cases hc))
 
-private theorem consistentK {predSat : PredSat} {ρ : VarEnv} :
+/-- The starting regime is consistent with `sV`, which has no critical input. -/
+theorem consistentK {predSat : PredSat} {ρ : VarEnv} :
     consistentRegimeSpec predSat K.regime sV ∅ ρ ∅ := by
   unfold consistentRegimeSpec
   have hnil : memEnvToLocQTypList sV.locs = [] := rfl
@@ -1665,7 +1713,8 @@ private theorem consistentK {predSat : PredSat} {ρ : VarEnv} :
   rw [hnil, hnil']
   exact ⟨trivial, trivial⟩
 
-private theorem agreeCriticalK {predSat₀ predSat₁ : PredSat} {ρ₁ ρ₂ : VarEnv} :
+/-- Two runs agree on the critical inputs of `sV`: there are none. -/
+theorem agreeCriticalK {predSat₀ predSat₁ : PredSat} {ρ₁ ρ₂ : VarEnv} :
     agreeOnCriticalInputsUnderRegimeSpec predSat₀ predSat₁ K.regime sV ∅ ρ₁ ∅ ∅ ρ₂ ∅ := by
   refine And.intro ?_ ?_
   · intro l qt h
@@ -1673,7 +1722,8 @@ private theorem agreeCriticalK {predSat₀ predSat₁ : PredSat} {ρ₁ ρ₂ : 
   · intro x qt h _
     simp [sV, VarTypeEnv.lookup] at h
 
-private theorem agreeTrustedK {predSat₀ predSat₁ : PredSat} {ρ₁ ρ₂ : VarEnv} :
+/-- Two runs agree on the trusted inputs of `K`: its one variable is poisoned. -/
+theorem agreeTrustedK {predSat₀ predSat₁ : PredSat} {ρ₁ ρ₂ : VarEnv} :
     agreeOnTrustedInputs predSat₀ predSat₁ K.regime sV K ∅ ρ₁ ∅ ∅ ρ₂ ∅ := by
   refine And.intro ?_ ?_
   · intro l qt h
