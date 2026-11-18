@@ -3,6 +3,7 @@ import LeanProofs.ExternCallsWitnessClosed
 import LeanProofs.ExternCallsWitnessCell
 import LeanProofs.ExternCallsWitnessCellClosed
 import LeanProofs.ExternCallsWitnessVal
+import LeanProofs.PredSatLawsCellWitness
 
 -- Expected: only Lean's standard axioms propext, Classical.choice, Quot.sound
 -- (no sorryAx, no project-specific axioms).
@@ -37,3 +38,11 @@ import LeanProofs.ExternCallsWitnessVal
 #print axioms ExternCallsWitness.Val.val_case
 #print axioms ExternCallsWitness.Val.true_5
 #print axioms ExternCallsWitness.Val.false_neg3
+
+-- A relation for a guard that reads a cell meets the laws, and the match is
+-- exercised; guards that are never selected admit a constant relation.
+#print axioms PredSatLawsCellWitness.cellSat_lawful
+#print axioms PredSatLawsCellWitness.match_exercised
+#print axioms PredSatLawsCellWitness.TwoTargets.lawful
+#print axioms PredSatLawsCellWitness.DerefArg.lawful
+#print axioms PredSatLawsCellWitness.DerefArg.footprint_forces_constant
