@@ -296,7 +296,7 @@ private theorem vPolicy_lookup (R : Regime) (id : ExternId) (pol : ExternId → 
       | some _ => rfl
 
 /-- What the typing of the declaration gives. -/
-private structure VFacts (ctx : TypeContext) (res : TypeResult) : Prop where
+structure VFacts (ctx : TypeContext) (res : TypeResult) : Prop where
   etyp : res.qualType.etyp = .int
   poison : res.qualType.poison = true
   guard : ∃ arg body cap, res.qualType.pred = .guardClosure ctx.nextTag arg body cap
@@ -307,7 +307,7 @@ private structure VFacts (ctx : TypeContext) (res : TypeResult) : Prop where
   declared : res.declared' = 251 :: ctx.declaredExternRefs
   regime : ∀ k, k ≠ ctx.nextTag → res.regime'.lookup? k = ctx.regime.lookup? k
 
-private theorem v_facts_of {ctx : TypeContext} {poison : Bool} {fuel : Nat} {res : TypeResult}
+theorem v_facts_of {ctx : TypeContext} {poison : Bool} {fuel : Nat} {res : TypeResult}
     (htc : typecheckExternVal ctx 251 .int poison cellGuard fuel = .ok res) : VFacts ctx res := by
   obtain ⟨hpz, tagMapping, nextTag', rp, ⟨qt, ctx'⟩, halloc, hres, hsurf, rfl⟩ :=
     typecheckExternVal_ok_shape htc
@@ -724,7 +724,7 @@ private theorem a_in_scope {S : VarTypeEnv} {cap : CapturedVarEnv} (h : GuardInS
   exact hS
 
 /-- In a context where `a` is `ref {0}`, `a` holds the address of location `0`. -/
-private theorem a_at_zero {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+theorem a_at_zero {ctx : TypeContext} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
     {a0 : Address}
     (hA : ctx.varEnv.lookup "a" = some cRef)
     (hric : runtimeInstantiatesCtx ctx μ ρ θ)
@@ -760,7 +760,7 @@ private theorem cellSat_iff {θ : RealizationMap} {μ : Memory} {a0 : Address} {
     cases hv
     simpa using hlt
 
-private theorem cellSat_cell {θ : RealizationMap} {μ : Memory} {a0 : Address} {n m : Int} {k : Tag}
+theorem cellSat_cell {θ : RealizationMap} {μ : Memory} {a0 : Address} {n m : Int} {k : Tag}
     (hθ : θ.lookup 0 = some a0) (hμ : μ.lookup a0 = some n) :
     cellSat k θ μ (Value.num m) ↔ n < m := by
   constructor
@@ -926,7 +926,7 @@ structure Facts (b : Bool) : Prop where
   etyp : (rootRes b).qualType.etyp = .int
   poison : (rootRes b).qualType.poison = false
 
-private theorem facts_of (b : Bool) : Facts b := by
+theorem facts_of (b : Bool) : Facts b := by
   have hf := factsB_ok b
   simp only [factsB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, and_assoc] at hf
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := hf
@@ -946,7 +946,7 @@ def cA (m n : Int) : Config :=
 def cfgA (m n : Int) : Config :=
   { cA m n with varEnv := (cfgX m n).varEnv.update "a" (.loc 0) }
 
-private theorem run_newRef (m n : Int) : terminatesTo (.newRef (.num 5)) (cfgX m n) (cA m n) (.loc 0) :=
+theorem run_newRef (m n : Int) : terminatesTo (.newRef (.num 5)) (cfgX m n) (cA m n) (.loc 0) :=
   ⟨3, false, by simp [beval, freshAddr, cA, cfgX]⟩
 
 /-- The declaration returns the value of the registry and leaves the state. -/
@@ -1051,7 +1051,7 @@ private theorem val_mk (b : Bool) (m n : Int) : ExternValAt (UD b m n) (rD b) (c
 
 /-! ## The starting state -/
 
-private theorem K_vars (b : Bool) : ∀ x qt, (K b).varEnv.lookup x = some qt → qt = pInt := by
+theorem K_vars (b : Bool) : ∀ x qt, (K b).varEnv.lookup x = some qt → qt = pInt := by
   intro x qt h
   by_cases hx : x = "x"
   · subst hx
@@ -1065,7 +1065,7 @@ private theorem lookupX (n : Int) :
     (VarEnv.update [] "x" (.num n)).lookup "x" = some (.num n) := by
   simp [VarEnv.update, VarEnv.lookup]
 
-private theorem instantiatesK (b : Bool) (n : Int) :
+theorem instantiatesK (b : Bool) (n : Int) :
     runtimeInstantiatesCtx (K b) ∅ (VarEnv.update [] "x" (.num n)) ∅ := by
   refine And.intro ?_ ?_
   · intro l a h
@@ -1099,7 +1099,7 @@ private theorem θ0_lookup {l : Loc} {a : Address} (h : θ0.lookup l = some a) :
 
 private theorem θ0_zero : θ0.lookup 0 = some 0 := by simp [θ0, RealizationMap.lookup]
 
-private theorem ctxA_a (b : Bool) : (ctxA b).varEnv.lookup "a" = some cRef := by
+theorem ctxA_a (b : Bool) : (ctxA b).varEnv.lookup "a" = some cRef := by
   show ((K b).varEnv.update "a" (rN b).qualType).lookup "a" = some cRef
   rw [VarTypeEnv_lookup_update_eq, (facts_of b).rN_qt]
 
@@ -1189,7 +1189,7 @@ private theorem pInt_not_clean (R : Regime) : ¬ qtypCleanUnder R pInt := by
   | clean hpoison => simp [pInt] at hpoison
   | guard k htag _ _ => simp [qtypGuardTag, pInt] at htag
 
-private theorem externRegimeMatchesK (b : Bool) : ExternRegimeMatchesInputSpec sV (K b) := by
+theorem externRegimeMatchesK (b : Bool) : ExternRegimeMatchesInputSpec sV (K b) := by
   refine ⟨fun {id} hid k => ?_, fun {id} hid k => ?_⟩
   · have h : id ≠ 251 := by simpa [sV] using hid
     simp [K, polV, h]
@@ -1197,7 +1197,7 @@ private theorem externRegimeMatchesK (b : Bool) : ExternRegimeMatchesInputSpec s
     subst hid
     exact ⟨b, by simp [K, polV]⟩
 
-private theorem wfSpecV : wfInputSpec sV := by
+theorem wfSpecV : wfInputSpec sV := by
   unfold wfInputSpec
   refine And.intro ?_ (And.intro ?_ ?_)
   · intro l qt h
@@ -1212,7 +1212,7 @@ private theorem wfSpecV : wfInputSpec sV := by
   · intro x qt h
     simp [sV, VarTypeEnv.lookup] at h
 
-private theorem ctxMatchesK (b : Bool) : ctxMatchesInputSpec sV (K b) := by
+theorem ctxMatchesK (b : Bool) : ctxMatchesInputSpec sV (K b) := by
   unfold ctxMatchesInputSpec
   refine ⟨?_, ?_, ?_, ?_⟩
   · intro l qt h
@@ -1229,7 +1229,7 @@ private theorem ctxMatchesK (b : Bool) : ctxMatchesInputSpec sV (K b) := by
       rw [K_vars b x qt h]
       exact deepQTypProperty.other _ _ trivial
 
-private theorem wfCtxK (b : Bool) : wfTypeContext (K b) := by
+theorem wfCtxK (b : Bool) : wfTypeContext (K b) := by
   unfold wfTypeContext
   refine And.intro ?_ (And.intro ?_ ?_)
   · intro l h
@@ -1241,7 +1241,7 @@ private theorem wfCtxK (b : Bool) : wfTypeContext (K b) := by
     rw [K_vars b x qt h]
     exact trivial
 
-private theorem tagBoundedK (b : Bool) : TagBoundedCtx (K b) := by
+theorem tagBoundedK (b : Bool) : TagBoundedCtx (K b) := by
   unfold TagBoundedCtx
   refine And.intro ?_ (And.intro (And.intro ?_ ?_) ?_)
   · intro k hk
@@ -1272,16 +1272,16 @@ private theorem noGuardK (b : Bool) {k : Tag} {d : GuardDesc} :
   | inMem _ _ l _ qtRoot hlookup hinq =>
       simp [K, MemoryTypeEnv.lookup] at hlookup
 
-private theorem wfTmK (b : Bool) : wfTagMeaningCtx ∅ (K b) :=
+theorem wfTmK (b : Bool) : wfTagMeaningCtx ∅ (K b) :=
   EnvRespectsTagMeaning.intro (fun hdeep => absurd hdeep (noGuardK b))
 
-private theorem guardCapsK (b : Bool) : GuardCapsBelow (K b) :=
+theorem guardCapsK (b : Bool) : GuardCapsBelow (K b) :=
   fun _ _ hdeep => absurd hdeep (noGuardK b)
 
-private theorem tmBoundedK (b : Bool) : TagMeaningBounded ∅ (K b).nextTag := by
+theorem tmBoundedK (b : Bool) : TagMeaningBounded ∅ (K b).nextTag := by
   intro k d h
   simp [TagMeaning.lookup] at h
-private theorem wfRegimeK (b : Bool) : wfRegime (K b).regime sV := by
+theorem wfRegimeK (b : Bool) : wfRegime (K b).regime sV := by
   have htags : inputSpecTags sV = [] := rfl
   refine And.intro ?_ ?_
   · intro k hk
@@ -1290,22 +1290,22 @@ private theorem wfRegimeK (b : Bool) : wfRegime (K b).regime sV := by
   · intro k hk
     simp [K, Regime.lookup?] at hk
 
-private theorem wfθ₀ : wfRealizationMap ∅ := by
+theorem wfθ₀ : wfRealizationMap ∅ := by
   intro l₁ l₂ a h
   simp [RealizationMap.lookup] at h
 
-private theorem wfCX (m n : Int) : wfConfig (cfgX m n) := by
+theorem wfCX (m n : Int) : wfConfig (cfgX m n) := by
   refine And.intro ?_ ?_
   · intro a h
     simp [cfgX] at h
   · exact wfVarEnv.cons _ _ _ (wfValue.num n) wfVarEnv.nil
 
-private theorem reservedWFV (m : Int) : RegistryReservedWF (regA m) ∅ 0 := by
+theorem reservedWFV (m : Int) : RegistryReservedWF (regA m) ∅ 0 := by
   intro a ha
   obtain ⟨id, h⟩ := ha
   exact (regA_noLoc h).elim
 
-private theorem disciplineK (b : Bool) (m : Int) :
+theorem disciplineK (b : Bool) (m : Int) :
     ReservedDiscipline (regA m) (K b).declaredExternRefs ∅ := by
   refine And.intro ?_ ?_
   · intro id₁ id₂ a h _
@@ -1313,7 +1313,7 @@ private theorem disciplineK (b : Bool) (m : Int) :
   · intro id a h _ l
     exact (regA_noLoc h).elim
 
-private theorem trustedInitK (b : Bool) (n : Int) :
+theorem trustedInitK (b : Bool) (n : Int) :
     trustedVarsClosureRegimeInit cellSat (K b).regime sV (K b) ∅
       (VarEnv.update [] "x" (.num n)) ∅ := by
   refine trustedVarsClosureRegimeInit.intro ?_
@@ -1332,7 +1332,7 @@ private theorem trustedInitK (b : Bool) (n : Int) :
     (deepValueQTypProperty.nonClosure (fun _ _ _ hc => by cases hc)
       (fun _ _ _ hc => by cases hc))
 
-private theorem consistentK (b : Bool) {ρ : VarEnv} :
+theorem consistentK (b : Bool) {ρ : VarEnv} :
     consistentRegimeSpec cellSat (K b).regime sV ∅ ρ ∅ := by
   unfold consistentRegimeSpec
   have hnil : memEnvToLocQTypList sV.locs = [] := rfl
@@ -1340,7 +1340,7 @@ private theorem consistentK (b : Bool) {ρ : VarEnv} :
   rw [hnil, hnil']
   exact ⟨trivial, trivial⟩
 
-private theorem agreeCriticalK (b : Bool) {ρ₁ ρ₂ : VarEnv} :
+theorem agreeCriticalK (b : Bool) {ρ₁ ρ₂ : VarEnv} :
     agreeOnCriticalInputsUnderRegimeSpec cellSat (K b).regime sV ∅ ρ₁ ∅ ∅ ρ₂ ∅ := by
   refine And.intro ?_ ?_
   · intro l qt h
@@ -1348,7 +1348,7 @@ private theorem agreeCriticalK (b : Bool) {ρ₁ ρ₂ : VarEnv} :
   · intro x qt h _
     simp [sV, VarTypeEnv.lookup] at h
 
-private theorem agreeTrustedK (b : Bool) {ρ₁ ρ₂ : VarEnv} :
+theorem agreeTrustedK (b : Bool) {ρ₁ ρ₂ : VarEnv} :
     agreeOnTrustedInputs cellSat (K b).regime sV (K b) ∅ ρ₁ ∅ ∅ ρ₂ ∅ := by
   refine And.intro ?_ ?_
   · intro l qt h
@@ -1357,7 +1357,7 @@ private theorem agreeTrustedK (b : Bool) {ρ₁ ρ₂ : VarEnv} :
     rw [K_vars b x qt h] at hclean
     exact absurd hclean (pInt_not_clean _)
 
-private theorem inProg_test {id : ExternId} {d : ExternDeclaration}
+theorem inProg_test {id : ExternId} {d : ExternDeclaration}
     (h : ExternDeclarationInProgram test id d) : False := by
   simp only [test] at h
   cases h with

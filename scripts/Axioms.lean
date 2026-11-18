@@ -6,6 +6,7 @@ import LeanProofs.ExternCallsWitnessVal
 import LeanProofs.PredSatLawsCellWitness
 import LeanProofs.GuardCapsBelowWitness
 import LeanProofs.ExternCallsWitnessValCell
+import LeanProofs.ExternCallsWitnessValCellWrite
 
 -- Expected: only Lean's standard axioms propext, Classical.choice, Quot.sound
 -- (no sorryAx, no project-specific axioms).
@@ -63,3 +64,11 @@ import LeanProofs.ExternCallsWitnessValCell
 #print axioms ExternCallsWitness.ValCell.same_return
 #print axioms ExternCallsWitness.ValCell.true_7
 #print axioms ExternCallsWitness.ValCell.false_3
+
+-- The same guarded value with a write to another cell between the declaration and
+-- the test: the guard stays in the regime and the theorem applies.
+#print axioms ExternCallsWitness.ValCellWrite.typing_case
+#print axioms ExternCallsWitness.ValCellWrite.same_return
+#print axioms ExternCallsWitness.ValCellWrite.true_7
+#print axioms ExternCallsWitness.ValCellWrite.false_3
+#print axioms ExternCallsWitness.ValCellWrite.write_a_poisoned
