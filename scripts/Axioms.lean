@@ -5,6 +5,7 @@ import LeanProofs.ExternCallsWitnessCellClosed
 import LeanProofs.ExternCallsWitnessVal
 import LeanProofs.PredSatLawsCellWitness
 import LeanProofs.GuardCapsBelowWitness
+import LeanProofs.ExternCallsWitnessValCell
 
 -- Expected: only Lean's standard axioms propext, Classical.choice, Quot.sound
 -- (no sorryAx, no project-specific axioms).
@@ -53,3 +54,12 @@ import LeanProofs.GuardCapsBelowWitness
 #print axioms GuardCapsBelowWitness.guardCapsBelow_of_guardLocsBelow
 #print axioms GuardCapsBelowWitness.converse_fails
 #print axioms GuardCapsBelowWitness.converse_fails_argQ
+
+-- A trusted entry for an extern value whose guard reads a cell, and the theorem
+-- applied to a program that declares it and tests the guard.
+#print axioms ExternCallsWitness.ValCell.vSpec
+#print axioms ExternCallsWitness.ValCell.cellSat_lawful
+#print axioms ExternCallsWitness.ValCell.typing_case
+#print axioms ExternCallsWitness.ValCell.same_return
+#print axioms ExternCallsWitness.ValCell.true_7
+#print axioms ExternCallsWitness.ValCell.false_3
