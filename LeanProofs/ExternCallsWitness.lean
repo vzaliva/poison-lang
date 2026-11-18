@@ -332,6 +332,68 @@ private theorem facts_real : facts real = true := by decide +kernel
 private theorem facts_bad : facts bad = true := by decide +kernel
 private theorem facts_allF : facts allF = true := by decide +kernel
 
+/-- The member of `read`'s type: its extern member, with no captured variables. -/
+private def readMemberOk : PFnTClosure → Bool
+  | .extern i x r [] _ _ => i == 7 && x == "b" && r == readRet
+  | _ => false
+
+/-- The captured environment of the wrapper's member: `read` alone, at a pure
+    function type over `int` with `read`'s extern member. -/
+private def tenvReadOk : CapturedVarEnv → Bool
+  | [(y, ⟨.parrow a r _ tcl, _, _⟩, _)] =>
+      y == "read" && a == Typ.int && r == parseReturnType readRet && tcl.any readMemberOk
+  | _ => false
+
+/-- The wrapper's closure environment is typed by a captured environment that
+    passes `tenvReadOk`. -/
+private theorem typing_of_tenvReadOk {tenv : CapturedVarEnv} (h : tenvReadOk tenv = true) :
+    ∃ θ, capturedVarsTypingProperty θ tenv cfg1.varEnv := by
+  refine ⟨∅, ?_⟩
+  match tenv, h with
+  | [(y, ⟨.parrow a r p tcl, ps, pr⟩, n)], h =>
+    simp only [tenvReadOk, Bool.and_eq_true, beq_iff_eq, List.any_eq_true] at h
+    obtain ⟨⟨⟨rfl, rfl⟩, rfl⟩, m, hm, hmok⟩ := h
+    match m, hmok with
+    | .extern i x rr [] aq c, hmok =>
+      simp only [readMemberOk, Bool.and_eq_true, beq_iff_eq] at hmok
+      obtain ⟨⟨rfl, rfl⟩, rfl⟩ := hmok
+      refine ⟨by simp, fun z qt hz => ?_, fun z qt v hz hv => ?_⟩
+      · simp only [CapturedVarEnv.lookup, List.lookup] at hz
+        split at hz
+        · rename_i heq
+          have : z = "read" := beq_iff_eq.mp heq
+          subst this
+          exact ⟨readV, by simp [cfg1, cfg0, VarEnv.update, VarEnv.lookup]⟩
+        · simp at hz
+      · simp only [CapturedVarEnv.lookup, List.lookup] at hz
+        split at hz
+        · rename_i heq
+          have : z = "read" := beq_iff_eq.mp heq
+          subst this
+          simp only [Option.map_some, Option.some.injEq] at hz
+          subst hz
+          have hv' : v = readV := by
+            simpa [cfg1, cfg0, VarEnv.update, VarEnv.lookup] using hv.symm
+          subst hv'
+          exact valueHasETyp.peClosure_extern (htcl := hm)
+            (henv := fun _ _ _ h _ => by simp [CapturedVarEnv.lookup] at h)
+            (hcover := fun _ _ h => by simp [CapturedVarEnv.lookup] at h)
+        · simp at hz
+
+private theorem tenvA_real :
+    tenvReadOk (regTenv (arrowM (iFun (C2 real) (.var "f") (.num 1) 52).qualType.etyp)) = true := by
+  decide +kernel
+private theorem tenvA_allF :
+    tenvReadOk (regTenv (arrowM (iFun (C2 allF) (.var "f") (.num 1) 52).qualType.etyp)) = true := by
+  decide +kernel
+private theorem tenvB_real :
+    tenvReadOk (regTenv (arrowM (iFun (C3 real) (.var "f") neg3 50).qualType.etyp)) = true := by
+  decide +kernel
+private theorem tenvB_bad :
+    tenvReadOk (regTenv (arrowM (iFun (C3 bad) (.var "f") neg3 50).qualType.etyp)) = true := by
+  decide +kernel
+
+
 private theorem regime_real :
     (iRes (BA real) (.var "read") (.var "u") 49).regime'.lookup? 0 = some true ∧
     (iRes (BB real) (.var "read") (.var "u") 47).regime'.lookup? 1 = some false := by
@@ -535,7 +597,7 @@ private theorem reach_bad : Reach (S0 bad) (S13 bad) := by
     SubStep.appFnBody (H := 49) (c2 := cfg3) (v2 := .num (-3))
       (c1 := { cfg3 with varEnv := cfg3.varEnv })
       (eq_okVal hn3) (run_neg3 cfg3) (eq_okVal hf3) (runF cfg3 rfl _ rfl) (arrow1_eq ha3)
-      (ThreadedAt.here_of_eq (eq_okVal hap) hm)
+      (ThreadedAt.here_of_eq (eq_okVal hap) hm) (typing_of_tenvReadOk tenvB_bad)
   exact .tail (.tail (.tail (.tail (.tail .refl e1) e2) e3) e4) e5
 
 /-- At the second call, `read` returns -3. -/
@@ -612,7 +674,10 @@ private theorem chain_allF : Chain allF := by unfold Chain; decide +kernel
 
 /-- The run reaches the first call (inside the wrapper, applied to 1). -/
 private theorem reachA {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
-    (hc : Chain pol) : Reach (S0 pol) (S9 pol) := by
+    (hc : Chain pol)
+    (ht : tenvReadOk (regTenv (arrowM (iFun (C2 pol) (.var "f") (.num 1) 52).qualType.etyp))
+      = true) :
+    Reach (S0 pol) (S9 pol) := by
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨_, h0, hF, _, _, hn1, hf1, ha1, _⟩ := hf
   obtain ⟨hm, hap, _⟩ := hc
@@ -625,7 +690,7 @@ private theorem reachA {pol : ExternId → Tag → Option Bool} (hf : facts pol 
     SubStep.appFnBody (H := 51) (c2 := cfg2) (v2 := .num 1)
       (c1 := { cfg2 with varEnv := cfg2.varEnv })
       (eq_okVal hn1) (run_num cfg2 1) (eq_okVal hf1) (runF cfg2 rfl _ rfl) (arrow1_eq ha1)
-      (ThreadedAt.here_of_eq (eq_okVal hap) hm)
+      (ThreadedAt.here_of_eq (eq_okVal hap) hm) (typing_of_tenvReadOk ht)
   exact .tail (.tail (.tail (.tail .refl e1) e2) e3) e4
 
 private theorem callA {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
@@ -641,7 +706,9 @@ private theorem callA {pol : ExternId → Tag → Option Bool} (hf : facts pol =
 
 /-- The run reaches the second call (inside the wrapper, applied to -3). -/
 private theorem reachB {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
-    (hc : Chain pol) : Reach (S0 pol) (S13 pol) := by
+    (hc : Chain pol)
+    (ht : tenvReadOk (regTenv (arrowM (iFun (C3 pol) (.var "f") neg3 50).qualType.etyp)) = true) :
+    Reach (S0 pol) (S13 pol) := by
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨_, h0, hF, hA1, _, _, _, _, hn3, hf3, ha3, _⟩ := hf
   obtain ⟨_, _, _, _, _, hm, hap, _⟩ := hc
@@ -656,7 +723,7 @@ private theorem reachB {pol : ExternId → Tag → Option Bool} (hf : facts pol 
     SubStep.appFnBody (H := 49) (c2 := cfg3) (v2 := .num (-3))
       (c1 := { cfg3 with varEnv := cfg3.varEnv })
       (eq_okVal hn3) (run_neg3 cfg3) (eq_okVal hf3) (runF cfg3 rfl _ rfl) (arrow1_eq ha3)
-      (ThreadedAt.here_of_eq (eq_okVal hap) hm)
+      (ThreadedAt.here_of_eq (eq_okVal hap) hm) (typing_of_tenvReadOk ht)
   exact .tail (.tail (.tail (.tail (.tail .refl e1) e2) e3) e4) e5
 
 private theorem callB {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
@@ -683,8 +750,8 @@ theorem prog_live :
         (.num (-3))) ∧
     guardAt (iRes (BA real) (.var "read") (.var "u") 49).qualType.pred 0 = true ∧
     guardAt (iRes (BB real) (.var "read") (.var "u") 47).qualType.pred 1 = true :=
-  ⟨⟨reachA facts_real chain_real, callA facts_real chain_real⟩,
-   ⟨reachB facts_real chain_real, callB facts_real chain_real⟩,
+  ⟨⟨reachA facts_real chain_real tenvA_real, callA facts_real chain_real⟩,
+   ⟨reachB facts_real chain_real tenvB_real, callB facts_real chain_real⟩,
    chain_real.2.2.2.2.1, chain_real.2.2.2.2.2.2.2.2.2⟩
 
 /-- **The premise reads tag 0**: with every tag false it fails at the first
@@ -701,7 +768,8 @@ theorem prog_tag0 :
   refine ⟨eq_okVal hp, ?_, fun _ => predSatLaws_geSat (geTable_of_allGe hall)⟩
   intro predSat _ hlaws
   obtain ⟨entry, cf, hcall⟩ := callA facts_allF chain_allF
-  exact refute_gen hlaws hd0 (reachA facts_allF chain_allF) hcall ht9 chain_allF.2.2.2.2.1
+  exact refute_gen hlaws hd0 (reachA facts_allF chain_allF tenvA_allF)
+    hcall ht9 chain_allF.2.2.2.2.1
     regime_allF (by decide)
 
 /-! ### The guards the run tests -/

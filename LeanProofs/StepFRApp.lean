@@ -7463,7 +7463,9 @@ private lemma appFnBody_step {P : Step → Prop}
     (hthr : ThreadedAt
       (fun tcl cursor bn =>
         applyFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel')
-      tcls (result1.nextTag', result1.nextLoc') result1.nextBind' (.regular x body σcap) cursor bn first) :
+      tcls (result1.nextTag', result1.nextLoc') result1.nextBind' (.regular x body σcap) cursor bn
+      first)
+    (htyping : ∃ θ, capturedVarsTypingProperty θ σcap env) :
     P ⟨{ ctx with
           pc := joinPoison p (joinPoison p1 ctx.pc)
           memEnv := result1.memEnv'
@@ -7485,7 +7487,7 @@ private lemma appFnBody_step {P : Step → Prop}
     rw [hqt2]; exact ⟨rfl, rfl, rfl⟩
   subst hE hP2 hPred2 hp1 hfuel
   rw [← app_arg_varEnv ht2] at ht1
-  exact hclosed hroot (SubStep.appFnBody (H := fuelBody) htc2 ht2 htc1 ht1 hetyp1 hthr)
+  exact hclosed hroot (SubStep.appFnBody (H := fuelBody) htc2 ht2 htc1 ht1 hetyp1 hthr htyping)
 
 /-- The body of the regular member of a pure function type that the run
     calls. -/
@@ -7509,7 +7511,9 @@ private lemma appPfnBody_step {P : Step → Prop}
     (hthr : ThreadedAt
       (fun tcl cursor bn =>
         applyPFnTClosureAtCursor tcl st1 st2 p p1 etyp2 p2 pred2 ctx result1 cursor bn fuel')
-      tcls (result1.nextTag', result1.nextLoc') result1.nextBind' (.regular x pbody σcap) cursor bn first) :
+      tcls (result1.nextTag', result1.nextLoc') result1.nextBind' (.regular x pbody σcap) cursor bn
+      first)
+    (htyping : ∃ θ, capturedVarsTypingProperty θ σcap env) :
     P ⟨{ ctx with
           pc := joinPoison p (joinPoison ctx.pc p1)
           memEnv := result1.memEnv'
@@ -7533,7 +7537,7 @@ private lemma appPfnBody_step {P : Step → Prop}
   subst hE hP2 hPred2 hp1 hfuel
   rw [← app_arg_varEnv ht2] at ht1
   exact hclosed hroot
-    (SubStep.appPfnBody (H := fuelBody) htc2 ht2 htc1 ht1 hetyp1 hpbody hthr)
+    (SubStep.appPfnBody (H := fuelBody) htc2 ht2 htc1 ht1 hetyp1 hpbody hthr htyping)
 
 /-- An impure extern call made by an application, typed against the member
     `FnTClosure.extern …` of the function type at its cursor. -/
@@ -8190,7 +8194,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_arrow_parametric_maskedReg
             hP hT (by
               rw [← hreg_c₁]
               exact appFnBody_step hP.closed hroot hqt2 hp1 hfuelA htc2' ht_e2 htc1' ht_e1
-                hetyp1 hthrA)
+                hetyp1 hthrA ⟨_, hσcap_typing⟩)
           with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body, _hrd_body⟩
         have hθext : wfExtendsMap θ θ_body :=
           wfExtendsMap_trans hθext2 (wfExtendsMap_trans hθext1 hθext_body)
@@ -9798,7 +9802,7 @@ private lemma stepFRSingleRunFinalCleanPcTrue_app_parrow_parametric_maskedReg
             hP hT (by
               rw [← hbody_eq, hcf, ← hreg_c₁_p]
               exact appPfnBody_step hP.closed hroot hqt2 hp1 hfuelA htc2' ht_e2 htc1' ht_e1
-                hetyp1 htoPExpr hthrA)
+                hetyp1 htoPExpr hthrA ⟨_, hσcap_typing⟩)
           with ⟨θ_body, hθext_body, hv_body_typed, hric_body_final, hcwr_body_final, hvalc_body, hpres_body, _hfresh_body, _hrd_body⟩
         have hθext : wfExtendsMap θ θ_body :=
           wfExtendsMap_trans hθext2 (wfExtendsMap_trans hθext1 hθext_body)
@@ -11430,7 +11434,9 @@ lemma stepFR_app_with_expr_proof
                       MemberVarsRegimeEvidence predSat₁ (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                         c₁₁.memory σcap env₁ ∧
                       MemberCvcrEvidence predSat₁ (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                        c₁₁.memory θ₁1 σcap env₁)
+                        c₁₁.memory θ₁1 σcap env₁ ∧
+                      capturedVarsTypingProperty θ₀1 σcap env₀ ∧
+                      capturedVarsTypingProperty θ₁1 σcap env₁)
                   ∨ (¬ internalPoisonClean result1.qualType) :=
             fun hclean1_e1 => by
               rcases
@@ -11449,8 +11455,8 @@ lemma stepFR_app_with_expr_proof
                 · left
                   rcases hregular with
                     ⟨σcap, hmem, _hbodyG, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁,
-                      _htyping₀, _htyping₁⟩
-                  exact ⟨σcap, hmem, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁⟩
+                      htyping₀, htyping₁⟩
+                  exact ⟨σcap, hmem, hx, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁, htyping₀, htyping₁⟩
                 · rcases hextern with
                     ⟨id, _x, y, argTyp, argPoison, argPred, retSpec, effects, _σcap, _declaredArgQt, cap, _memberCap,
                       _hargEq, _hmem,
@@ -11479,6 +11485,8 @@ lemma stepFR_app_with_expr_proof
                         c₁₁.memory σcap env₁ ∧
                       MemberCvcrEvidence predSat₁ (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                         c₁₁.memory θ₁1 σcap env₁ ∧
+                      capturedVarsTypingProperty θ₀1 σcap env₀ ∧
+                      capturedVarsTypingProperty θ₁1 σcap env₁ ∧
                       applyFnTClosureAtCursor (FnTClosure.regular x₀ body₀ σcap) st1 st2 p p1
                         etyp2 p2 pred2 ctxᵢ result1 cursor bn fuel' = .ok firstShared ∧
                     fuel' = Nat.succ fuelBody ∧
@@ -11513,14 +11521,15 @@ lemma stepFR_app_with_expr_proof
             rcases _hsync1_of_clean hclean1_e1 with hsync | hdirty
             · left
               rcases hsync with
-                ⟨σcap, hmem, hx, hbody, hcap, hmemberVars₀, hmemberCvcr₀, hmemberVars₁, hmemberCvcr₁⟩
+                ⟨σcap, hmem, hx, hbody, hcap, hmemberVars₀, hmemberCvcr₀, hmemberVars₁,
+                  hmemberCvcr₁, htypingS₀, htypingS₁⟩
               rcases applyFnTClosure_regular_inv_of_threaded_mem
                   ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
                   x₀ body₀ σcap hmap hmem with
                 ⟨cursor, bn, fuelBody, firstShared, result3Shared, hcursorTag, hcursorLoc, hfirstMem,
                   happly', hfuel', htc', hsub', hfirst', hthr'⟩
               exact ⟨σcap, cursor, bn, fuelBody, firstShared, result3Shared, hmem, hcursorTag, hcursorLoc, hfirstMem, hx, hbody, hcap,
-                hmemberVars₀, hmemberCvcr₀, hmemberVars₁, hmemberCvcr₁,
+                hmemberVars₀, hmemberCvcr₀, hmemberVars₁, hmemberCvcr₁, htypingS₀, htypingS₁,
                 happly', hfuel', htc', hsub', hfirst', hthr'⟩
             · right
               exact hdirty
@@ -11878,7 +11887,7 @@ lemma stepFR_app_with_expr_proof
                   hprem.run₀ hprem.tests₀ (by
                     rw [← hreg_c₁₀_A]
                     exact appFnBody_step hprem.run₀.closed hroot₀ hqt2 hp1 hfuelA₀ htc2' ht₀_e2
-                      htc1' ht₀_e1 hetyp1 hthrA₀)
+                      htc1' ht₀_e1 hetyp1 hthrA₀ ⟨_, hσcapA₀_typing⟩)
               rcases hsr₀ with
                 ⟨θ₀_body, hθext₀_body, hv₀_body_typed,
                   hric_bodyA₀_final, hcwr_bodyA₀_final, hvalc_bodyA₀, _hpres₀, _hfresh₀_body, _hrdB₀⟩
@@ -12121,7 +12130,7 @@ lemma stepFR_app_with_expr_proof
                   hprem.run₁ hprem.tests₁ (by
                     rw [← hreg_c₁₁_A]
                     exact appFnBody_step hprem.run₁.closed hroot₁ hqt2 hp1 hfuelA₁ htc2' ht₁_e2
-                      htc1' ht₁_e1 hetyp1 hthrA₁)
+                      htc1' ht₁_e1 hetyp1 hthrA₁ ⟨_, hσcapA₁_typing⟩)
               rcases hsr₁ with
                 ⟨θ₁_body, hθext₁_body, hv₁_body_typed,
                   hric_bodyA₁_final, hcwr_bodyA₁_final, hvalc_bodyA₁, _hpres₁, _hfresh₁_body, _hrdB₁⟩
@@ -12604,7 +12613,7 @@ lemma stepFR_app_with_expr_proof
               · rcases hshared with
                   ⟨σcap, cursorShared, bnShared, fuelBody, firstShared, result3Shared,
                     hmem, hcursorSharedTag, hcursorSharedLoc, hfirstSharedMem, hx, hbody, hcap,
-                    hmemberVars₀, hmemberCvcr₀, hmemberVars₁, hmemberCvcr₁,
+                    hmemberVars₀, hmemberCvcr₀, hmemberVars₁, hmemberCvcr₁, htypingS₀, htypingS₁,
                     happly, hfuel, htcBody, hsubBody, hfirstShared, hthrShared⟩
                 let bodyCtx : TypeContext :=
                   { ctxᵢ with
@@ -13263,12 +13272,12 @@ lemma stepFR_app_with_expr_proof
                   (by
                     rw [← hreg_c₁₀_B]
                     exact appFnBody_step hprem.run₀.closed hroot₀ hqt2 hp1 hfuel htc2' ht₀_e2
-                      htc1' ht₀_e1 hetyp1 hthrShared)
+                      htc1' ht₀_e1 hetyp1 hthrShared ⟨_, htypingS₀⟩)
                   (by
                     subst hx hbody
                     rw [← hreg_c₁₁_B]
                     exact appFnBody_step hprem.run₁.closed hroot₁ hqt2 hp1 hfuel htc2' ht₁_e2
-                      htc1' ht₁_e1 hetyp1 hthrShared)
+                      htc1' ht₁_e1 hetyp1 hthrShared ⟨_, htypingS₁⟩)
                 rcases hstep_body with ⟨_tm_body, _hcanon_body, _hpredlaws_body₁, _hresTm_body, hstep_body⟩
                 have _hpredlaws_body₀ := _hcanon_body.laws
                 rcases hstep_body with
@@ -14400,7 +14409,7 @@ lemma stepFR_app_with_expr_proof
                   (hprem.run₀) hprem.tests₀ (by
                     rw [← hreg_c₁₀]
                     exact appFnBody_step hprem.run₀.closed hroot₀ hqt2 hp1 hfuelU₀ htc2' ht₀_e2
-                      htc1' ht₀_e1 hetyp1 hthrU₀)
+                      htc1' ht₀_e1 hetyp1 hthrU₀ ⟨_, hσcap₀_typing⟩)
               have hboundary₀ :
                   ExternBoundarySinglePost bodyCtxU₀ firstU₀ predSat₀ β₀ tm1
                     θ₀1 c₁₀.memory evalCfg₀ o₀ :=
@@ -15265,7 +15274,7 @@ lemma stepFR_app_with_expr_proof
                   (hprem.run₁) hprem.tests₁ (by
                     rw [← hreg_c₁₁]
                     exact appFnBody_step hprem.run₁.closed hroot₁ hqt2 hp1 hfuelU₁ htc2' ht₁_e2
-                      htc1' ht₁_e1 hetyp1 hthrU₁)
+                      htc1' ht₁_e1 hetyp1 hthrU₁ ⟨_, hσcap₁_typing⟩)
               have hboundary₁ :
                   ExternBoundarySinglePost bodyCtxU₁ firstU₁ predSat₁ β₁ tm1
                     θ₁1 c₁₁.memory evalCfg₁ o₁ :=
@@ -17524,7 +17533,9 @@ lemma stepFR_app_with_expr_proof
                     MemberVarsRegimeEvidence predSat₁ (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                       c₁₁.memory σcap env₁ ∧
                     MemberCvcrEvidence predSat₁ (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
-                      c₁₁.memory θ₁1 σcap env₁)
+                      c₁₁.memory θ₁1 σcap env₁ ∧
+                    capturedVarsTypingProperty θ₀1 σcap env₀ ∧
+                    capturedVarsTypingProperty θ₁1 σcap env₁)
                 ∨ (¬ internalPoisonClean result1.qualType) :=
             fun hclean1_e1 => by
               rcases
@@ -17543,9 +17554,9 @@ lemma stepFR_app_with_expr_proof
                 · left
                   rcases hregular with
                     ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody, hcap,
-                      hmv₀, hmc₀, hmv₁, hmc₁, _htyping₀, _htyping₁⟩
+                      hmv₀, hmc₀, hmv₁, hmc₁, htyping₀, htyping₁⟩
                   exact ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody, hcap,
-                    hmv₀, hmc₀, hmv₁, hmc₁⟩
+                    hmv₀, hmc₀, hmv₁, hmc₁, htyping₀, htyping₁⟩
                 · rcases hextern with
                     ⟨_id, _x, _y, _argTyp, _argPoison, _argPred, _retSpec, _σcap, _declaredArgQt, _cap, _memberCap,
                       _hargEq, _hmem,
@@ -17573,6 +17584,8 @@ lemma stepFR_app_with_expr_proof
                       c₁₁.memory σcap env₁ ∧
                     MemberCvcrEvidence predSat₁ (ctxAfter (ctxAfter ctxᵢ result2) result1).regime
                       c₁₁.memory θ₁1 σcap env₁ ∧
+                    capturedVarsTypingProperty θ₀1 σcap env₀ ∧
+                    capturedVarsTypingProperty θ₁1 σcap env₁ ∧
                     result1.nextTag' ≤ cursorShared.1 ∧
                     result1.nextLoc' ≤ cursorShared.2 ∧
                     firstShared ∈ results ∧
@@ -17610,14 +17623,15 @@ lemma stepFR_app_with_expr_proof
             intro hclean1_e1
             rcases _hsync1_of_clean hclean1_e1 with hsync | hdirty
             · left
-              rcases hsync with ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁⟩
+              rcases hsync with ⟨x, pbody, σcap, htoPExpr, hmem, hx₀, hx₁, hbody, hcap, hmv₀, hmc₀,
+                hmv₁, hmc₁, htypingS₀, htypingS₁⟩
               rcases applyPFnTClosure_regular_inv_of_threaded_mem
                   ctxᵢ st1 st2 p p1 etyp2 p2 pred2 result1 fuel' tcls results
                   x pbody σcap hmap hmem with
                 ⟨cursorShared, bnShared, fuelBody, firstShared, result3Shared, hcursorTag, hcursorLoc,
                   hfirstMem, happly', hfuel', htc', hsub', hfirst', hthr'⟩
               exact ⟨x, pbody, σcap, cursorShared, bnShared, fuelBody, firstShared, result3Shared,
-                htoPExpr, hmem, hx₀, hx₁, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁,
+                htoPExpr, hmem, hx₀, hx₁, hbody, hcap, hmv₀, hmc₀, hmv₁, hmc₁, htypingS₀, htypingS₁,
                 hcursorTag, hcursorLoc, hfirstMem, happly', hfuel', htc', hsub', hfirst', hthr'⟩
             · right
               exact hdirty
@@ -18093,7 +18107,7 @@ lemma stepFR_app_with_expr_proof
                 hprem.run₀ hprem.tests₀ (by
                   rw [← hbody₀_eq, ← hreg_cf₀_pp]
                   exact appPfnBody_step hprem.run₀.closed hroot₀ hqt2 hp1 hfuelA₀ htc2' ht₀_e2
-                    htc1' ht₀_e1 hetyp1 htoPExprA₀ hthrA₀)
+                    htc1' ht₀_e1 hetyp1 htoPExprA₀ hthrA₀ ⟨_, hσcapA₀_typing⟩)
             rcases hsr₀ with
               ⟨θ₀_body, hθext₀_body, hv₀_body_typed,
                 hric_bodyA₀_final, hcwr_bodyA₀_final, hvalc_bodyA₀, hpres₀, _hfresh₀_body, _hrdB₀⟩
@@ -18345,7 +18359,7 @@ lemma stepFR_app_with_expr_proof
                 hprem.run₁ hprem.tests₁ (by
                   rw [← hbody₁_eq, ← hreg_cf₁_pp]
                   exact appPfnBody_step hprem.run₁.closed hroot₁ hqt2 hp1 hfuelA₁ htc2' ht₁_e2
-                    htc1' ht₁_e1 hetyp1 htoPExprA₁ hthrA₁)
+                    htc1' ht₁_e1 hetyp1 htoPExprA₁ hthrA₁ ⟨_, hσcapA₁_typing⟩)
             rcases hsr₁ with
               ⟨θ₁_body, hθext₁_body, hv₁_body_typed,
                 hric_bodyA₁_final, hcwr_bodyA₁_final, hvalc_bodyA₁, hpres₁, _hfresh₁_body, _hrdB₁⟩
@@ -18823,8 +18837,8 @@ lemma stepFR_app_with_expr_proof
             · rcases hshared with
                 ⟨x, pbody, σcap, cursorShared, bnShared, fuelBody, firstShared, result3Shared,
                   htoPExpr, hmem, hx₀, hx₁, hbody,
-                  hcap, hmemberVars₀, hmemberCvcr₀, hmemberVars₁, hmemberCvcr₁,
-                  hcursorSharedTag, hcursorSharedLoc, hfirstSharedMem,
+                  hcap, hmemberVars₀, hmemberCvcr₀, hmemberVars₁, hmemberCvcr₁, htypingS₀,
+                  htypingS₁, hcursorSharedTag, hcursorSharedLoc, hfirstSharedMem,
                   happly, hfuel, htcBody, hsubBody, hfirstShared, hthrShared⟩
               -- Phase 1: Define bodyCtx (parrow: pureCtx := true, pc order swapped vs arrow)
               let bodyCtx : TypeContext :=
@@ -19478,12 +19492,13 @@ lemma stepFR_app_with_expr_proof
                   subst hx₀
                   rw [← hreg_cf₀_pp2]
                   exact appPfnBody_step hprem.run₀.closed hroot₀ hqt2 hp1 hfuel htc2' ht₀_e2
-                    htc1' ht₀_e1 hetyp1 htoPExpr hthrShared)
+                    htc1' ht₀_e1 hetyp1 htoPExpr hthrShared ⟨_, htypingS₀⟩)
                 (by
                   subst hx₀ hx₁
                   rw [← hreg_cf₁_pp2]
                   exact appPfnBody_step hprem.run₁.closed hroot₁ hqt2 hp1 hfuel htc2' ht₁_e2
-                    htc1' ht₁_e1 hetyp1 (by rw [← hbody]; exact htoPExpr) hthrShared)
+                    htc1' ht₁_e1 hetyp1 (by rw [← hbody]; exact htoPExpr) hthrShared
+                    ⟨_, htypingS₁⟩)
               rcases hstep_body with ⟨_tm_body, _hcanon_body, _hpredlaws_body₁, _hresTm_body, hstep_body⟩
               have _hpredlaws_body₀ := _hcanon_body.laws
               rcases hstep_body with
@@ -20657,7 +20672,7 @@ lemma stepFR_app_with_expr_proof
                   (hprem.run₀) hprem.tests₀ (by
                     rw [← hreg_c₁₀]
                     exact appPfnBody_step hprem.run₀.closed hroot₀ hqt2 hp1 hfuelU₀ htc2' ht₀_e2
-                      htc1' ht₀_e1 hetyp1 htoPExpr₀ hthrU₀)
+                      htc1' ht₀_e1 hetyp1 htoPExpr₀ hthrU₀ ⟨_, htyping₀⟩)
               have hboundary₀ :
                   ExternBoundarySinglePost bodyCtxU₀ firstU₀ predSat₀ β₀ tm1
                     θ₀1 c₁₀.memory evalCfg₀ o₀ :=
@@ -21468,7 +21483,7 @@ lemma stepFR_app_with_expr_proof
                   (hprem.run₁) hprem.tests₁ (by
                     rw [← hreg_c₁₁]
                     exact appPfnBody_step hprem.run₁.closed hroot₁ hqt2 hp1 hfuelU₁ htc2' ht₁_e2
-                      htc1' ht₁_e1 hetyp1 htoPExpr₁ hthrU₁)
+                      htc1' ht₁_e1 hetyp1 htoPExpr₁ hthrU₁ ⟨_, htyping₁⟩)
               have hboundary₁ :
                   ExternBoundarySinglePost bodyCtxU₁ firstU₁ predSat₁ β₁ tm1
                     θ₁1 c₁₁.memory evalCfg₁ o₁ :=

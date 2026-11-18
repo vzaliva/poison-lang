@@ -241,7 +241,8 @@ inductive SubStep : Step → Step → Prop where
       typecheckExpr (ctxStd ctx r1) e2 f = .ok r2 →
       SubStep ⟨ctx, .ite e1 e2 e3, f + 2, cfg⟩ ⟨ctxStdElse ctx r1 r2, e3, f, c1⟩
   -- Application: argument, function, then the body of the member the run
-  -- calls, at the cursor `applyClosuresThreaded` gives that member.
+  -- calls, at the cursor `applyClosuresThreaded` gives that member, whose
+  -- captured types type the closure's environment.
   | appArg {ctx : TypeContext} {e1 e2 : Expr} {G : Nat} {cfg : Config} :
       SubStep ⟨ctx, .app e1 e2, G + 2, cfg⟩ ⟨ctx, e2, G, cfg⟩
   | appFun {ctx : TypeContext} {e1 e2 : Expr} {G : Nat} {cfg : Config}
@@ -262,6 +263,7 @@ inductive SubStep : Step → Step → Prop where
       r1.qualType.etyp = .arrow st1 st2 p tcls →
       ThreadedAt (fnApply ctx r2 r1 st1 st2 p (H + 1)) tcls (r1.nextTag', r1.nextLoc')
         r1.nextBind' (.regular x body tenv) cursor bn rb →
+      (∃ θ, capturedVarsTypingProperty θ tenv env) →
       SubStep ⟨ctx, .app e1 e2, H + 3, cfg⟩
         ⟨fnBodyCtx ctx r2 r1 p x tenv cursor bn, body, H,
          { c1 with varEnv := env.update x v2, pureMode := false }⟩
@@ -278,6 +280,7 @@ inductive SubStep : Step → Step → Prop where
       Expr.toPExpr? body = some pbody →
       ThreadedAt (pfnApply ctx r2 r1 st1 st2 p (H + 1)) tcls (r1.nextTag', r1.nextLoc')
         r1.nextBind' (.regular x pbody tenv) cursor bn rb →
+      (∃ θ, capturedVarsTypingProperty θ tenv env) →
       SubStep ⟨ctx, .app e1 e2, H + 3, cfg⟩
         ⟨pfnBodyCtx ctx r2 r1 p x tenv cursor bn, PExpr.toExpr pbody, H,
          { c1 with varEnv := env.update x v2, pureMode := true }⟩
