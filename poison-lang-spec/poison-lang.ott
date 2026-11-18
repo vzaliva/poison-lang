@@ -34,6 +34,10 @@ metavar extern_id, eid ::=
   {{ com Extern identifiers (author-chosen natural numbers) }}
   {{ phantom }}
 
+metavar binding, bn ::=
+  {{ com Binding numbers: each typing of a binder introduces a fresh one }}
+  {{ phantom }}
+
 grammar
 
 locset, LS, deps :: 'LS_' ::= {{ com location sets }}
@@ -334,6 +338,8 @@ formula :: formula_ ::=
   | m ( a ) = n            :: :: lookup      {{ coq (List.find [[a]] [[m]] = Some ([[n]])) }}   
   | G ( l ) = me       :: :: mem_lookup {{ coq (lookup_location_mem [[l]] [[G]] = Some ([[me]])) }}   
   | S ( x ) = Q        :: :: var_type_lookup {{ coq (lookup_var_type [[x]] [[S]] = Some ([[Q]])) }}   
+  | bind S x = bn      :: :: bind_lookup {{ com the entry of x in S records the binding bn (an entry made by a binder records the binding it comes from; a variable of the starting environment, or one whose record a union of closure sets has erased, records none) }} {{ tex \mathrm{bind}_{[[S]]}([[x]]) = [[bn]] }}
+  | base_type T        :: :: base_type {{ com T is one of int, bool, unit, string }} {{ tex [[T]] \in \{ \mathsf{int}, \mathsf{bool}, \mathsf{unit}, \mathsf{string} \} }}
   | r ( x ) = v           :: :: var_lookup {{ coq (lookup_var [[x]] [[r]] = Some ([[v]])) }}   
   | L ( k ) = b using deps :: :: tag_lookup {{ coq (lookup_tag [[k]] [[L]] = Some ([[b]], [[deps]])) }} {{ tex [[L]]([[k]]) = ([[b]],\, [[deps]]) }}   
   | R ( k ) = b           :: :: regime_lookup {{ coq (lookup_regime [[k]] [[R]] = Some ([[b]])) }}
@@ -367,12 +373,12 @@ formula :: formula_ ::=
 % that binds another name occurring in the owner value does not match. A body
 % with a unary operator matches nothing. The closure is in scope at e: pe does
 % not dereference x, and every free variable z of pe other than x (a name bound
-% by a let of pe is not free, and is not checked) either
-%   - is a clean reference to a single location, with the same qualified type
-%     in r and in S, or
-%   - is the same binding in r and in S, clean in both, with the same enriched
-%     type in both, one of int, bool, unit and string (its predicates are not
-%     compared).
+% by a let of pe is not free, and is not checked) is in scope:
+% r |- z guard_in_scope S (rules GS_single_ref and GS_same_binding): either a
+% clean reference to a single location, with the same qualified type in r and
+% in S, or the same binding in r and in S, clean in both, with the same
+% enriched type in both, one of int, bool, unit and string (its predicates are
+% not compared).
 % Exactly one candidate must be found.
 %
 % Bindings. Every typing of a binder introduces a distinct binding of the bound
@@ -479,6 +485,24 @@ defns
 
 
 Jop :: '' ::=
+
+% --- Scope of a guard's free variables (used by match_guard) ---
+
+defn
+S1 |- x guard_in_scope S2 :: :: guard_in_scope :: GS_ {{ com a free variable x of a guard body, read in the guard's captured environment S1, is in scope in the environment S2 of a test }} {{ tex [[S1]] \vdash [[x]] \sqsubseteq [[S2]] }} by
+
+S1 ( x ) = ref @ { l } :> clean { P }
+S2 ( x ) = ref @ { l } :> clean { P }
+---------------------------------------- :: single_ref
+S1 |- x guard_in_scope S2
+
+S1 ( x ) = T :> clean { P1 }
+S2 ( x ) = T :> clean { P2 }
+base_type T
+bind S1 x = bn
+bind S2 x = bn
+---------------------------------------- :: same_binding
+S1 |- x guard_in_scope S2
 
 % --- Big-step (natural) semantics below ---
 

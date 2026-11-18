@@ -83,6 +83,12 @@
     This section defines the auxiliary notation used in
     inference rule premises.\par\bigskip
     \ottrulesyntax
+    \par\bigskip
+    A free variable of a guard body is in scope at a test when one of the
+    following rules holds; \texttt{match\_guard} selects a guard only when
+    every free variable of its body other than the argument is in
+    scope.\par\bigskip
+    \ottdefnguardXXinXXscope{}%
     \clearpage
     \section{Semantics}%
     The operational semantics is given by a big-step evaluation relation.
