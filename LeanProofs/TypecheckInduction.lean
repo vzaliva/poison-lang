@@ -4402,7 +4402,7 @@ private lemma typecheck_extends_tagMeaning_nonApp_byIH
     through the sub-runs, each of whose allocations are allocations of the
     whole run.  At extern allocation steps the batch table adds only the
     allocations the batch logs, so it stays inside `Q`. -/
-private theorem typecheck_canonical_sub
+theorem typecheck_canonical_sub
     (Q : TagMeaning)
     (tm : TagMeaning) (ctx : TypeContext) (e : Expr)
     (fuel : Nat) (res : TypeResult)

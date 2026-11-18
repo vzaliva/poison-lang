@@ -26,7 +26,7 @@ def idDesc : GuardDesc := { argName := "v", body := PExpr.var "v", capEnv := [] 
 def idTm : TagMeaning := (∅ : TagMeaning).update 0 idDesc
 
 /-- Satisfaction relation of the guard `v => v`: the checked value is `true`. -/
-def idSat : PredSat := fun _ _ v => v = Value.bool true
+def idSat : PredSat := fun _ _ _ v => v = Value.bool true
 
 private theorem idTm_lookup_eq {k : Tag} {d : GuardDesc} (h : idTm.lookup k = some d) :
     d = idDesc := by
@@ -86,7 +86,7 @@ private theorem toPExpr?_eq_deref {e : Expr} {pe : PExpr}
     evaluates to the owner's value.  A reference owner cannot arise for a condition of
     type `bool`, because a dereference evaluates to a number.
 
-    `mem_monotone`: the relation does not read memory. -/
+    `mem_footprint`: the relation reads neither the realisation map nor the memory. -/
 theorem predSatLaws_idSat : PredSatLaws idSat idTm := by
   refine ⟨?_, ?_⟩
   · intro condition ctx fuel k deps μ ρ θ addr pm registry cfg b hwf hmatch hric hterm
@@ -126,7 +126,7 @@ theorem predSatLaws_idSat : PredSatLaws idSat idTm := by
       obtain ⟨e', rfl⟩ := toPExpr?_eq_deref hpe
       obtain ⟨_, _, n, _, _, hv, _⟩ := terminatesTo_deref_inv' e' _ _ _ hterm
       cases hv
-  · intro k pred fuel μ μ' v deps θ _ _
+  · intro _ _ _ _ _ _ _ _ _
     exact Iff.rfl
 
 /-! ### The law is exercised

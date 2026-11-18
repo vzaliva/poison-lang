@@ -111,7 +111,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
     (hreachable : ExternDeclarationReachableFromContext root ctxRoot d.id d) :
     ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl := by
-  intro hpredlaws hframe hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
+  intro hpredlaws hframe hwfTm hTmBounded hfp htyped μ ρ θ cf o hθwf hwf hric
     hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun hpc hvm
   have hlookupRun := ExternDeclBoundaryRun.lookup hrun
   have hlookupRuntime :
@@ -132,7 +132,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_trustedReachable
       (predSat := predSat)
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
-      hpredlaws hframe hwfTm hTmBounded htypedEntry μ ρ θ cf o hθwf hwf hric
+      hpredlaws hframe hwfTm hTmBounded hfp htypedEntry μ ρ θ cf o hθwf hwf hric
       hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrunEntry hpc
       (fun hk => hvm (by rw [← hdecl]; exact hk))
 
@@ -145,7 +145,7 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
     (hreachable : ExternDeclarationReachableFromContext root ctxRoot d.id d) :
     ExternDeclBoundaryFRContract ctx postExpr res predSat tm
       (TrustedRegistry.toRuntimeRegistry tr) d impl₀ impl₁ := by
-  intro hpredlaws hframe hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+  intro hpredlaws hframe hwfTm hTmBounded hfp htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
     a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁ hvm₀ hvm₁
   have hlookupRun₀ := ExternDeclBoundaryRun.lookup hrun₀.run
@@ -176,7 +176,7 @@ theorem ExternDeclBoundaryFRContract.of_trustedReachable
       (ctx := ctx) (postExpr := postExpr) (res := res) (predSat := predSat)
       (tm := tm) (registry := TrustedRegistry.toRuntimeRegistry tr)
       (d := entry.decl) (impl := entry.impl) entry.spec
-      hpredlaws hframe hwfTm hTmBounded htypedEntry μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+      hpredlaws hframe hwfTm hTmBounded hfp htypedEntry μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
       o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
       a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrunEntry₀ hrunEntry₁
       (fun hk => hvm₀ (by rw [← hdecl]; exact hk))

@@ -181,6 +181,7 @@ def ExternDeclBoundaryFR
     TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
+    FootprintCtx tm ctx →
     ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv)
       (θ₀ θ₁ : RealizationMap)
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
@@ -209,9 +210,15 @@ def ExternDeclBoundaryFR
         ExternDeclBoundaryRunForExpr postExpr d impl ctx res
           { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
             registry := registry } cf₁ o₁ →
-        (d.kind = .val → ValMatches predSat res cf₀ o₀) →
-        (d.kind = .val → ValMatches predSat res cf₁ o₁) →
-        StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
+        (d.kind = .val → ValMatches predSat
+          ⟨ctx, postExpr, 0,
+           { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
+             registry := registry }⟩ res cf₀ o₀) →
+        (d.kind = .val → ValMatches predSat
+          ⟨ctx, postExpr, 0,
+           { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
+             registry := registry }⟩ res cf₁ o₁) →
+        StepFRPost ctx postExpr res predSat tm θ₀ θ₁ μ₀ μ₁ cf₀ cf₁ o₀ o₁
 
 /-- Paired extern-call boundary runs produce the same post as the surrounding
     expression step. -/
@@ -228,6 +235,7 @@ def ExternCallBoundaryFR
     TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
+    FootprintCtx tm ctx →
     ∀ (θ₀ θ₁ : RealizationMap),
       BodyEntryInputsAgree predSat ctx entry₀ entry₁ θ₀ θ₁ →
       ∀ (cf₀ cf₁ : Config) (o₀ o₁ : Value),
@@ -237,6 +245,7 @@ def ExternCallBoundaryFR
         CallMatches predSat entry₁ d.effects res cf₁ o₁ →
         CallAgrees entry₀ entry₁ d.effects res cf₀ cf₁ o₀ o₁ →
         StepFRPost ctx postExpr res predSat tm θ₀ θ₁
+          entry₀.bodyConfig.memory entry₁.bodyConfig.memory
           (entry₀.bodyOutputConfig cf₀) (entry₁.bodyOutputConfig cf₁) o₀ o₁
 
 def ExternBoundarySinglePost
@@ -256,7 +265,9 @@ def ExternBoundarySinglePost
       res.qualType cf.memory θ' o ∧
     PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
     FreshCleanLocsUnrealizedOneRun ctx res θ' ∧
-    ReservedDiscipline cf.registry res.declared' θ'
+    ReservedDiscipline cf.registry res.declared' θ' ∧
+    MapKeepsBelow ctx.nextLoc θ θ' ∧
+    KeepsFootprints tm (ctxAfter ctx res).regime θ μ cf.memory
 
 namespace ExternBoundarySinglePost
 
@@ -283,12 +294,12 @@ private theorem to_maskedRegParamPost
       masked
       (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      ctx res (registry := registry) μ ρ θ cf o
+      ctx res tm (registry := registry) μ ρ θ cf o
       hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg := by
-  rcases h with ⟨_tm', _htag, θ', hθext, hvtyp, hric', hcwr', hvalc', hpres, hfresh, hrd⟩
+  rcases h with ⟨_tm', _htag, θ', hθext, hvtyp, hric', hcwr', hvalc', hpres, hfresh, hrd, hM, hF⟩
   exact
     ⟨θ', hθext, hvtyp, hric', consistentWithRegime_to_masked hcwr',
-      valueConsistentWithRegime_to_masked hvalc', hpres, hfresh, hrd⟩
+      valueConsistentWithRegime_to_masked hvalc', hpres, hfresh, hrd, hM, hF⟩
 
 end ExternBoundarySinglePost
 
@@ -301,6 +312,7 @@ def ExternDeclBoundarySingle
     TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
+    FootprintCtx tm ctx →
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
       wfRealizationMap θ →
@@ -317,7 +329,10 @@ def ExternDeclBoundarySingle
           { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
             registry := registry } cf o →
         ctx.pc = true →
-        (d.kind = .val → ValMatches predSat res cf o) →
+        (d.kind = .val → ValMatches predSat
+          ⟨ctx, postExpr, 0,
+           { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+             registry := registry }⟩ res cf o) →
         ExternBoundarySinglePost ctx res predSat tm θ μ cf o
 
 def ExternCallBoundarySingle
@@ -330,6 +345,7 @@ def ExternCallBoundarySingle
     TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
+    FootprintCtx tm ctx →
     ∀ (θ : RealizationMap) (cf : Config) (o : Value),
       wfRealizationMap θ →
       wfTypeContext ctx →
@@ -364,6 +380,7 @@ def ExternDeclBoundarySingleMaskedContract
   TagFrame predSat tm res.tagLog' →
   wfTagMeaningCtx tm ctx →
   TagMeaningBounded tm ctx.nextTag →
+  FootprintCtx tm ctx →
   ExternBoundaryTyping.Decl d postExpr ctx res →
   ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
     (cf : Config) (o : Value),
@@ -386,12 +403,15 @@ def ExternDeclBoundarySingleMaskedContract
         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
           registry := registry } cf o →
       ctx.pc = true →
-      (d.kind = .val → ValMatches predSat res cf o) →
+      (d.kind = .val → ValMatches predSat
+        ⟨ctx, postExpr, 0,
+         { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm,
+           registry := registry }⟩ res cf o) →
       StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
         masked
         (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
         (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-        ctx res (registry := registry) μ ρ θ cf o
+        ctx res tm (registry := registry) μ ρ θ cf o
         hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg
 
 theorem ExternDeclBoundarySingleMaskedContract.of_spec
@@ -401,7 +421,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_spec
     (hspec : ExternBoundarySpec d impl) :
     ExternDeclBoundarySingleMaskedContract masked postExpr ctx res predSat tm registry
       d impl := by
-  intro hpredlaws hframe hwfTm hTmBounded htyped μ ρ θ cf o hθwf hwf hric
+  intro hpredlaws hframe hwfTm hTmBounded hfp htyped μ ρ θ cf o hθwf hwf hric
     hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg hres hrd hrun hpc hvm
   have hregOrd : regimeConsistentWithCtx ctx :=
     regimeConsistentWithCtxMasked_unmask hreg hmasked_absent
@@ -410,7 +430,7 @@ theorem ExternDeclBoundarySingleMaskedContract.of_spec
     consistentWithRegimeMasked_unmask hmasked_none hctxCons
   have hsingle :
       ExternBoundarySinglePost ctx res predSat tm θ μ cf o :=
-    hspec.declSingle postExpr ctx res predSat tm htyped hpredlaws hframe hwfTm hTmBounded
+    hspec.declSingle postExpr ctx res predSat tm htyped hpredlaws hframe hwfTm hTmBounded hfp
       μ ρ θ cf o hθwf hwf hric hregOrd hctxConsOrd a pm registry hwfcfg hres hrd hrun hpc hvm
   exact
     ExternBoundarySinglePost.to_maskedRegParamPost
@@ -429,6 +449,7 @@ def ExternDeclBoundaryFRContract
   TagFrame predSat tm res.tagLog' →
   wfTagMeaningCtx tm ctx →
   TagMeaningBounded tm ctx.nextTag →
+  FootprintCtx tm ctx →
   ExternBoundaryTyping.Decl d postExpr ctx res →
   ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
     (cf₀ cf₁ : Config) (o₀ o₁ : Value),
@@ -457,9 +478,15 @@ def ExternDeclBoundaryFRContract
       ExternDeclBoundaryRunForExpr postExpr d impl₁ ctx res
         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
           registry := registry } cf₁ o₁ →
-      (d.kind = .val → ValMatches predSat res cf₀ o₀) →
-      (d.kind = .val → ValMatches predSat res cf₁ o₁) →
-      StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
+      (d.kind = .val → ValMatches predSat
+        ⟨ctx, postExpr, 0,
+         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm,
+           registry := registry }⟩ res cf₀ o₀) →
+      (d.kind = .val → ValMatches predSat
+        ⟨ctx, postExpr, 0,
+         { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm,
+           registry := registry }⟩ res cf₁ o₁) →
+      StepFRPost ctx postExpr res predSat tm θ₀ θ₁ μ₀ μ₁ cf₀ cf₁ o₀ o₁
 
 theorem ExternDeclBoundaryFRContract.of_spec
     {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
@@ -468,11 +495,11 @@ theorem ExternDeclBoundaryFRContract.of_spec
     (hspec : ExternBoundarySpec d impl) :
     ExternDeclBoundaryFRContract ctx postExpr res predSat tm registry
       d impl impl := by
-  intro hpredlaws hframe hwfTm hTmBounded htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
+  intro hpredlaws hframe hwfTm hTmBounded hfp htyped μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁
     o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
     a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁ hvm₀ hvm₁
   exact
-    hspec.declFR postExpr ctx res predSat tm htyped hpredlaws hframe hwfTm hTmBounded
+    hspec.declFR postExpr ctx res predSat tm htyped hpredlaws hframe hwfTm hTmBounded hfp
       μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded
       hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm
       registry hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ hrun₀ hrun₁ hvm₀ hvm₁

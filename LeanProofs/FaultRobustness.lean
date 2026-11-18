@@ -220,13 +220,13 @@ inductive valueConsistentWithRegime (predSat : PredSat) (R : Regime)
   | inRegimeTrue (k : Tag) :
       qtypGuardTag qt = some k →
       R.lookup? k = some true →
-      qtypPredHolds predSat qt μ v →
+      qtypPredHolds predSat θ qt μ v →
       closureCapturedVarsRegime predSat R qt μ θ v →
       valueConsistentWithRegime predSat R qt μ θ v
   | inRegimeFalse (k : Tag) :
       qtypGuardTag qt = some k →
       R.lookup? k = some false →
-      ¬qtypPredHolds predSat qt μ v →
+      ¬qtypPredHolds predSat θ qt μ v →
       closureCapturedVarsRegime predSat R qt μ θ v →
       valueConsistentWithRegime predSat R qt μ θ v
 
@@ -245,13 +245,13 @@ private lemma guardTag_inj_of_guardClosure
   simp only [qtypGuardTag, hclos] at hguard
   exact Option.some.inj hguard
 
-lemma varsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ : VarEnv}
+lemma varsRegime_monotone {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap} {ρ : VarEnv}
     {entry : Name × QTyp} {k : Tag} {b : Bool}
     (h_mono : Regime.monotoneStep R R')
     (hguard : qtypGuardTag entry.snd = some k)
     (hkR' : R'.lookup? k = some b)
-    (h_var : varsRegime predSat R μ ρ entry) :
-    varsRegime predSat R' μ ρ entry := by
+    (h_var : varsRegime predSat R μ θ ρ entry) :
+    varsRegime predSat R' μ θ ρ entry := by
   cases h_var with
   | noPred_ok hpred =>
       exact varsRegime.noPred_ok entry hpred
@@ -289,14 +289,14 @@ lemma locsRegime_monotoneExt {predSat : PredSat} {R R' : Regime} {μ : Memory} {
             hclos h_eq hreal hmem hconsist
       | inr h_none => rw [hk_eq] at h_none; simp [h_none] at hkR'
 
-lemma varsRegime_monotoneExt {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ : VarEnv}
+lemma varsRegime_monotoneExt {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap} {ρ : VarEnv}
     {entry : Name × QTyp} {k : Tag} {b : Bool} {newTags : Tag → Prop}
     (h_mono : Regime.monotoneStepExt R R' newTags)
     (hguard : qtypGuardTag entry.snd = some k)
     (hknew : ¬ newTags k)
     (hkR' : R'.lookup? k = some b)
-    (h_var : varsRegime predSat R μ ρ entry) :
-    varsRegime predSat R' μ ρ entry := by
+    (h_var : varsRegime predSat R μ θ ρ entry) :
+    varsRegime predSat R' μ θ ρ entry := by
   cases h_var with
   | noPred_ok hpred => exact varsRegime.noPred_ok entry hpred
   | guardOnly_ok k' hgo => exact varsRegime.guardOnly_ok entry k' hgo
@@ -315,7 +315,7 @@ def memEnvToLocQTypList (m : MemoryTypeEnv) : List (Loc × QTyp) :=
 
 def consistentRegimeSpec (predSat : PredSat) (R : Regime) (s : InputSpec) (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) : Prop :=
   List.Forall (locsRegime predSat R μ θ) (memEnvToLocQTypList s.locs) ∧
-  List.Forall (varsRegime predSat R μ ρ) s.vars.toList
+  List.Forall (varsRegime predSat R μ θ ρ) s.vars.toList
 
 -- A qualified type is considered clean under regime R if it is clean outright
 -- or if its guard tag is true under R (de-poisoned).
@@ -391,14 +391,14 @@ lemma joinETyps_preserves_dirty_parrow
 /-- Direct member-level active-guard facts
 for a fixed captured member `(σcap, ρcap)` at the current regime/memory. -/
 def MemberVarsRegimeEvidence
-    (predSat : PredSat) (R : Regime) (μ : Memory)
+    (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap)
     (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
   ∀ (y : Name) (qt_y : QTyp) (k_y : Tag) (v_y : Value),
     (VarTypeEnv.ofCaptured σcap).lookup y = some qt_y →
     ρcap.lookup y = some v_y →
     qtypGuardTag qt_y = some k_y →
     R.lookup? k_y ≠ none →
-    varsRegime predSat R μ ρcap (y, qt_y)
+    varsRegime predSat R μ θ ρcap (y, qt_y)
 
 /-- Direct recursive captured-value
 closure-regime facts for a fixed captured member `(σcap, ρcap)` at the current regime/memory. -/
@@ -436,9 +436,9 @@ mutual
         (htcl : tcl ∈ tcls)
         (hmatch : tcl = FnTClosure.regular x body σcap)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
-        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
@@ -462,9 +462,9 @@ mutual
         -- is independent of body `cap` (two-track discipline).
         (hmatch : tcl = FnTClosure.extern id x retSpec effects σcap argQt memberCap)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
-        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
@@ -486,9 +486,9 @@ mutual
         (htcl : tcl ∈ tcls)
         (hmatch : Expr.toPExpr? body = some pbody ∧ tcl = PFnTClosure.regular x pbody σcap)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
-        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
@@ -512,9 +512,9 @@ mutual
         -- `hmemberVars*`, `hmemberCvcr*`) carries the relational obligation.
         (hmatch : tcl = PFnTClosure.extern id x retSpec σcap argQt memberCap)
         (hcap : agreeCapturedEnv predSat R μ₁ μ₂ θ₁ θ₂ σcap ρcap₁ ρcap₂)
-        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap₁)
+        (hmemberVars₁ : MemberVarsRegimeEvidence predSat R μ₁ θ₁ σcap ρcap₁)
         (hmemberCvcr₁ : MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap₁)
-        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ σcap ρcap₂)
+        (hmemberVars₂ : MemberVarsRegimeEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (hmemberCvcr₂ : MemberCvcrEvidence predSat R μ₂ θ₂ σcap ρcap₂)
         (htyping₁ : capturedVarsTypingProperty θ₁ σcap ρcap₁)
         (htyping₂ : capturedVarsTypingProperty θ₂ σcap ρcap₂)
@@ -831,6 +831,13 @@ private def FaultRobustnessPointwise
       wfExtendsMap θ₂ θ₂' ∧
       observablesEqual obs θ₁' θ₂' cf₁ cf₂ o₁ o₂
 
+/-- The start condition: every guard of the context captures an environment whose
+    reference locations, at every closure depth, are below `nextLoc` (a guard
+    names only locations that already exist). -/
+def GuardCapsBelow (ctx : TypeContext) : Prop :=
+  ∀ k d, GuardDescInEnvsDeep ctx.varEnv ctx.memEnv k d →
+    CapturedEnvRefLocsFullBounded d.capEnv ctx.nextLoc
+
 /-- Per-context fault-robustness specification: the pointwise two-run FR
     relation for one fixed initial type context `ctx` (rather than universally
     over all spec-matching contexts).  This is the per-context core out of which
@@ -852,6 +859,7 @@ def FaultRobustnessSpecForCtx
   -- satisfy it.
   ctx.declaredExternRefs = [] →
   TagBoundedCtx ctx →
+  GuardCapsBelow ctx →
   ∀ (predSat : PredSat) (tm : TagMeaning),
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →

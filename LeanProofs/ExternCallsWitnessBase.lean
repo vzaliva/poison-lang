@@ -213,7 +213,7 @@ def GeTable (P : TagMeaning) : Prop :=
   ∀ k d, P.lookup k = some d → d.body = geBody d.argName
 
 /-- The checked value is a non-negative integer. -/
-def geSat : PredSat := fun _ _ v => ∃ n : Int, v = Value.num n ∧ 0 ≤ n
+def geSat : PredSat := fun _ _ _ v => ∃ n : Int, v = Value.num n ∧ 0 ≤ n
 
 private theorem eq_num {n : Int} {p : PExpr} {cap sCap : CapturedVarEnv}
     {subst : Option (Name × PExpr)} {fuel : Nat}
@@ -420,7 +420,7 @@ theorem predSatLaws_geSat {P : TagMeaning} (hP : GeTable P) : PredSatLaws geSat 
               hmem0, hpred0, hθ, hcell, rfl⟩, ?_⟩
           rw [hb]
           simp [geSat]
-  · intro k pred fuel μ μ' v deps θ _ _
+  · intro _ _ _ _ _ _ _ _ _
     exact Iff.rfl
 
 /-! ### The laws fix `predSat` at a `w => w >= 0` guard
@@ -491,29 +491,51 @@ private theorem pinCond_runs (μ : Memory) (n : Int) :
   have hy : VarEnv.lookup (pinRho n) "y" = some (Value.num n) := rfl
   simp [pinCond, LeanPoison.beval, LeanPoison.evalOp, pinCfg, hy]
 
+/-- The guard closure `w => w >= 0` reads no location: every set that the extraction
+    computes for it is empty. -/
+private theorem ge_deps_empty {k : Tag} {cap : CapturedVarEnv} {fuel : Nat} {deps : Deps}
+    (h : extractDepsFromPred (Predicate.guardClosure k "w" (geBody "w") cap) fuel = .ok deps) :
+    ∀ l, l ∉ deps := by
+  intro l hl
+  unfold extractDepsFromPred at h
+  rcases fuel with _ | _ | f
+  · simp [extractDepsFromPred.extractDepsFromPExpr] at h
+  · simp [extractDepsFromPred.extractDepsFromPExpr, geBody, throw, throwThe,
+      MonadExceptOf.throw, Except.bind, Bind.bind] at h
+  · simp [extractDepsFromPred.extractDepsFromPExpr, geBody, Pure.pure, Except.pure,
+      Except.bind, Bind.bind] at h
+    subst h
+    simp [LocSet.union, LocSet.empty, ExtTreeSet.mem_union_iff] at hl
+
 /-- The laws fix `predSat` at a tag whose guard is `w => w >= 0`: on an integer
-    `n` it holds exactly when `0 ≤ n`. The table, the tag and the captured
-    environment of the guard are arbitrary. -/
+    `n` it holds exactly when `0 ≤ n`, under every realisation map and memory.
+    The table, the tag and the captured environment of the guard are
+    arbitrary. -/
 theorem pin_ge (predSat : PredSat) (P : TagMeaning) (k : Tag) (cap : CapturedVarEnv)
     (hlaws : PredSatLaws predSat P)
     (hP : P.lookup k = some { argName := "w", body := geBody "w", capEnv := cap })
-    (μ : Memory) (n : Int) :
-    predSat k μ (Value.num n) ↔ 0 ≤ n := by
-  obtain ⟨deps, hmatch⟩ := pinCond_matches k cap
-  obtain ⟨v, hown, hiff⟩ :=
-    hlaws.match_iff pinCond (pinCtx k cap) 10 k deps μ (pinRho n) ∅ 0 false default (pinCfg μ n)
-      (decide (n ≥ 0)) (pinCtx_wf hP) hmatch (pinRic k cap μ n) (pinCond_runs μ n)
-  have hv : v = Value.num n := by
-    rcases hown with ⟨x, qt, _, _, _, hlookup, hpred, hρ⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hmem, _⟩
-    · obtain ⟨rfl, rfl⟩ := pinCtx_lookup hlookup
-      have hl : (pinRho n).lookup "y" = some (Value.num n) := rfl
-      rw [hl] at hρ
-      exact (Option.some.inj hρ).symm
-    · simp [pinCtx, MemoryTypeEnv.lookup] at hmem
-  rw [hv] at hiff
-  rw [← hiff]
-  simp
+    (θ : RealizationMap) (μ : Memory) (n : Int) :
+    predSat k θ μ (Value.num n) ↔ 0 ≤ n := by
+  have h0 : predSat k ∅ μ (Value.num n) ↔ 0 ≤ n := by
+    obtain ⟨deps, hmatch⟩ := pinCond_matches k cap
+    obtain ⟨v, hown, hiff⟩ :=
+      hlaws.match_iff pinCond (pinCtx k cap) 10 k deps μ (pinRho n) ∅ 0 false default
+        (pinCfg μ n) (decide (n ≥ 0)) (pinCtx_wf hP) hmatch (pinRic k cap μ n) (pinCond_runs μ n)
+    have hv : v = Value.num n := by
+      rcases hown with ⟨x, qt, _, _, _, hlookup, hpred, hρ⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hmem, _⟩
+      · obtain ⟨rfl, rfl⟩ := pinCtx_lookup hlookup
+        have hl : (pinRho n).lookup "y" = some (Value.num n) := rfl
+        rw [hl] at hρ
+        exact (Option.some.inj hρ).symm
+      · simp [pinCtx, MemoryTypeEnv.lookup] at hmem
+    rw [hv] at hiff
+    rw [← hiff]
+    simp
+  rw [← h0]
+  exact hlaws.mem_footprint k _ θ ∅ μ μ (Value.num n) hP
+    (fun _ _ hdeps => ⟨fun l hl => absurd hl (ge_deps_empty hdeps l),
+      fun l hl => absurd hl (ge_deps_empty hdeps l)⟩)
 
 /-- The descriptor at `k` is `w => w >= 0`. -/
 def descGe (P : TagMeaning) (k : Tag) : Bool :=
@@ -537,9 +559,10 @@ theorem descGe_spec {P : TagMeaning} {k : Tag} (h : descGe P k = true) :
 
 /-- The predicate of a lawful `predSat` at a `w => w >= 0` tag. -/
 theorem pin {predSat : PredSat} {P : TagMeaning} {k : Tag} (hlaws : PredSatLaws predSat P)
-    (hd : descGe P k = true) (μ : Memory) (n : Int) : predSat k μ (.num n) ↔ 0 ≤ n := by
+    (hd : descGe P k = true) (θ : RealizationMap) (μ : Memory) (n : Int) :
+    predSat k θ μ (.num n) ↔ 0 ≤ n := by
   obtain ⟨cap, hP⟩ := descGe_spec hd
-  exact pin_ge predSat P k cap hlaws hP μ n
+  exact pin_ge predSat P k cap hlaws hP θ μ n
 
 /-- Every descriptor of the log is `a => a >= 0`. -/
 def allGe (log : List TagAlloc) : Bool :=
@@ -907,7 +930,9 @@ theorem readCall_sub {B : TypeContext} {fe arg : Expr} {F : Nat} {cfgB : Config}
     cases hpe
 
 /-- The one extern call of a call of `read` on `n`: it is typed against the
-    member result `iRes`, returns `n` and leaves the configuration. -/
+    member result `iRes`, returns `n` and leaves the configuration. The body
+    context of its entry is `iBody` and its unified environment extends the
+    captured environment of the closure by the argument. -/
 theorem readCall_call {B : TypeContext} {fe arg : Expr} {G : Nat} {cfgB : Config}
     {ap : Bool} {env : VarEnv} {n : Int}
     (hrunF : ∀ c, c.varEnv = cfgB.varEnv → terminatesTo fe c c (readClo ap env))
@@ -920,7 +945,7 @@ theorem readCall_call {B : TypeContext} {fe arg : Expr} {G : Nat} {cfgB : Config
     {o : Value}
     (h : ExternCallAt ⟨B, .app fe arg, G + 2, cfgB⟩ effects entry res cf o) :
     res = iRes B fe arg G ∧ o = .num n ∧ cf = cfgB ∧ effects = [] ∧
-      entry.bodyCtx = iBody B fe arg G := by
+      entry.bodyCtx = iBody B fe arg G ∧ entry.unifiedEnv = VarEnv.update env "b" (.num n) := by
   have hh := ExternCallAt.app_inv h
   clear h
   obtain ⟨G', hG, h⟩ := hh
@@ -943,17 +968,57 @@ theorem readCall_call {B : TypeContext} {fe arg : Expr} {G : Nat} {cfgB : Config
     simp only [ETyp.parrow.injEq] at hety
     obtain ⟨rfl, rfl, rfl, rfl⟩ := hety
     obtain ⟨hm, rfl, happ⟩ := ThreadedAt.single_inv hthr
-    refine ⟨(okVal_of_eq happ).symm, ?_, rfl, rfl, ?_⟩
+    refine ⟨(okVal_of_eq happ).symm, ?_, rfl, rfl, ?_, ?_⟩
     · simp only [hreg, reg_get, Option.some.injEq, ExternImpl.pfn.injEq] at hregl
       subst hregl
       simp only [idImpl, Except.ok.injEq] at himpl
       subst himpl
       simpa [validateExternReturn, readRet, valueMatchesTyp] using hval.symm
     · simp only [ExternCallEntry.ofRuntime, iBody, ← hm, extParts, iCursor]
+    · rfl
   · obtain ⟨hc2, rfl⟩ := terminatesTo_det hr2 hrunA
     subst c2
     have := terminatesTo_det hr1 (hrunF _ rfl)
     simp [readClo] at this
+
+/-- The typing of a call of `read` that realises its body context by the empty
+    map: the member captures nothing and the argument is an `int`. -/
+def ReadBodyEmpty (B : TypeContext) (fe arg : Expr) (G : Nat) : Prop :=
+  (extParts (parrowM (iFun B fe arg G).qualType.etyp)).1 = [] ∧
+    (iArg B arg G).qualType.etyp = ETyp.int
+
+/-- The empty map realises the body context of the entry of a call of `read`
+    whose typing satisfies `ReadBodyEmpty`: the body context binds the argument
+    `"b"` to an `int` and nothing else, and the unified environment binds `"b"`
+    to the integer argument. -/
+theorem readCall_realised {B : TypeContext} {fe arg : Expr} {G : Nat} {cfgB : Config}
+    {ap : Bool} {env : VarEnv} {n : Int}
+    (hrunF : ∀ c, c.varEnv = cfgB.varEnv → terminatesTo fe c c (readClo ap env))
+    (hrunA : terminatesTo arg cfgB cfgB (.num n))
+    (hreg : cfgB.registry = reg)
+    (hok2 : isOkB (typecheckExpr B arg G) = true)
+    (hok1 : isOkB (typecheckExpr (ctxAfter B (iArg B arg G)) fe G) = true)
+    (hshape : isParrow1 (iFun B fe arg G).qualType.etyp = true)
+    (hb : ReadBodyEmpty B fe arg G)
+    {effects : List Effect} {entry : ExternCallEntry} {res : TypeResult} {cf : Config}
+    {o : Value}
+    (h : ExternCallAt ⟨B, .app fe arg, G + 2, cfgB⟩ effects entry res cf o) :
+    runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv ∅ := by
+  obtain ⟨_, _, _, _, hbody, hun⟩ := readCall_call hrunF hrunA hreg hok2 hok1 hshape h
+  refine ⟨fun l a hl => ?_, fun {x qt} hx => ?_⟩
+  · simp [RealizationMap.lookup] at hl
+  · rw [hbody] at hx
+    simp only [iBody, pfnBodyCtx, hb.1] at hx
+    by_cases hxb : x = "b"
+    · subst hxb
+      simp only [VarTypeEnv_lookup_update_eq, Option.some.injEq] at hx
+      subst hx
+      refine ⟨.num n, ?_, ?_⟩
+      · rw [hun]; simp [VarEnv.update, VarEnv.lookup]
+      · show valueHasETyp ∅ (.num n) (iArg B arg G).qualType.etyp
+        rw [hb.2]; exact valueHasETyp.num n
+    · rw [VarTypeEnv_lookup_update_ne _ "b" x _ hxb] at hx
+      simp [VarTypeEnv.ofCaptured, VarTypeEnv.lookup] at hx
 
 /-- The extern call of a call of `read` on `n`, built from the computed typing. -/
 theorem readCall_mk {B : TypeContext} {fe arg : Expr} {G : Nat} {cfgB : Config}
@@ -1005,7 +1070,7 @@ theorem callMatches_of {predSat : PredSat} {P : TagMeaning} {entry : ExternCallE
     (ht : res.tagLog'.map (·.tag) = [k]) (hr : res.regime'.lookup? k = some b)
     (hb : (0 ≤ n ↔ b = true)) : CallMatches predSat entry [] res cf (.num n) := by
   refine ⟨?_, fun _ _ _ _ hc => absurd hc EffectCell.not_nil⟩
-  intro a ha _ _ _ b' _ hreg
+  intro a ha _ _ _ b' _ hreg θ _
   have hmem : a.tag ∈ res.tagLog'.map (·.tag) := List.mem_map_of_mem ha
   rw [ht, List.mem_singleton] at hmem
   rw [hmem] at hreg ⊢
@@ -1015,11 +1080,13 @@ theorem callMatches_of {predSat : PredSat} {P : TagMeaning} {entry : ExternCallE
   exact hb
 
 /-- *Match* fails at a reachable call that allocated the one tag `k`, whose
-    regime entry is true, and that returned a negative value. -/
+    regime entry is true, and that returned a negative value, when some
+    realisation map `θ` realises the body context of the call. -/
 theorem refute_of {predSat : PredSat} {P : TagMeaning} {root s : Step}
     {effects : List Effect} {entry : ExternCallEntry}
-    {res : TypeResult} {cf : Config} {k : Tag} {n : Int}
+    {res : TypeResult} {cf : Config} {k : Tag} {n : Int} {θ : RealizationMap}
     (hlaws : PredSatLaws predSat P) (hd : descGe P k = true)
+    (hθ : runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv θ)
     (hreach : Reach root s) (hcall : ExternCallAt s effects entry res cf (.num n))
     (ht : res.tagLog'.map (·.tag) = [k]) (hg : guardAt res.qualType.pred k = true)
     (hr : res.regime'.lookup? k = some true) (hn : n < 0) :
@@ -1030,6 +1097,7 @@ theorem refute_of {predSat : PredSat} {P : TagMeaning} {root s : Step}
   have hmem : k ∈ res.tagLog'.map (·.tag) := by rw [ht]; simp
   obtain ⟨a, ha, hat⟩ := List.mem_map.mp hmem
   have h := hcm.ret a ha argName body cap true (by rw [hat]; exact hpred) (by rw [hat]; exact hr)
+    θ hθ
   rw [hat, pin hlaws hd] at h
   simp at h
   omega

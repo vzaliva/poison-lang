@@ -60,11 +60,13 @@ def ctxWith (policy : ExternId → Tag → Option Bool) : TypeContext :=
     nextLoc := 0, nextTag := 0, pureCtx := false, externRegime := policy }
 
 /-- *Match* fails at a reachable call that allocated the one tag `k`, whose
-    regime entry `b` disagrees with the check on the returned value. -/
+    regime entry `b` disagrees with the check on the returned value, when some
+    realisation map `θ` realises the body context of the call. -/
 private theorem refute_gen {predSat : PredSat} {P : TagMeaning} {root s : Step}
     {effects : List Effect} {entry : ExternCallEntry}
-    {res : TypeResult} {cf : Config} {k : Tag} {n : Int} {b : Bool}
+    {res : TypeResult} {cf : Config} {k : Tag} {n : Int} {b : Bool} {θ : RealizationMap}
     (hlaws : PredSatLaws predSat P) (hd : descGe P k = true)
+    (hθ : runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv θ)
     (hreach : Reach root s) (hcall : ExternCallAt s effects entry res cf (.num n))
     (ht : res.tagLog'.map (·.tag) = [k]) (hg : guardAt res.qualType.pred k = true)
     (hr : res.regime'.lookup? k = some b) (hb : ¬ (0 ≤ n ↔ b = true)) :
@@ -75,6 +77,7 @@ private theorem refute_gen {predSat : PredSat} {P : TagMeaning} {root s : Step}
   have hmem : k ∈ res.tagLog'.map (·.tag) := by rw [ht]; simp
   obtain ⟨a, ha, hat⟩ := List.mem_map.mp hmem
   have h := hcm.ret a ha argName body cap b (by rw [hat]; exact hpred) (by rw [hat]; exact hr)
+    θ hθ
   rw [hat, pin hlaws hd] at h
   exact hb h
 
@@ -525,10 +528,12 @@ private theorem reach_bad : Reach (S0 bad) (S13 bad) := by
       (ThreadedAt.here_of_eq (eq_okVal hap) hm)
   exact .tail (.tail (.tail (.tail (.tail .refl e1) e2) e3) e4) e5
 
-/-- At the second call, `read` returns -3. -/
+/-- At the second call, `read` returns -3, and the empty map realises the body
+    context of the call. -/
 private theorem call_bad : ∃ entry,
     ExternCallAt (S13 bad) [] entry (iRes (BB bad) (.var "read") (.var "u") 47)
-      (wBodyCfg cfg3 (-3)) (.num (-3)) := by
+      (wBodyCfg cfg3 (-3)) (.num (-3)) ∧
+    runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv ∅ := by
   have hf := facts_bad
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hu13, hr13, hp13, _⟩ := hf
@@ -536,7 +541,9 @@ private theorem call_bad : ∃ entry,
   obtain ⟨entry, -, h⟩ := readCall_mk (B := BB bad) (fe := .var "read") (arg := .var "u")
     (G := 47) (cfgB := wBodyCfg cfg3 (-3)) (runRead (-3) cfg3) (runU (-3) cfg3) rfl hu13 hr13
     hp13 hm' hap'
-  exact ⟨entry, h⟩
+  have hb : ReadBodyEmpty (BB bad) (.var "read") (.var "u") 47 := by
+    unfold ReadBodyEmpty; decide +kernel
+  exact ⟨entry, h, readCall_realised (runRead (-3) cfg3) (runU (-3) cfg3) rfl hu13 hr13 hp13 hb h⟩
 
 /-- **The premise fails for the vector true, true**, for every `predSat` lawful
     on the program table; such a `predSat` exists. -/
@@ -550,9 +557,9 @@ theorem prog_bad :
   obtain ⟨hp, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht13, _, hd1, hall⟩ := hf
   refine ⟨eq_okVal hp, ?_, predSatLaws_geSat (geTable_of_allGe hall)⟩
   intro predSat hlaws
-  obtain ⟨entry, hcall⟩ := call_bad
+  obtain ⟨entry, hcall, hθ⟩ := call_bad
   obtain ⟨_, _, _, _, hg⟩ := facts_bad_chain
-  exact refute_of hlaws hd1 reach_bad hcall ht13 hg regime_bad (by decide)
+  exact refute_of hlaws hd1 hθ reach_bad hcall ht13 hg regime_bad (by decide)
 
 /-! ### Both calls are reached, and the first tag is read
 
@@ -623,6 +630,17 @@ private theorem callA {pol : ExternId → Tag → Option Bool} (hf : facts pol =
     (G := 49) (cfgB := wBodyCfg cfg2 1) (runRead 1 cfg2) (runU 1 cfg2) rfl hu9 hr9 hp9 hm' hap'
   exact ⟨entry, _, h⟩
 
+/-- The empty map realises the body context of the first call. -/
+private theorem callA_realised {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
+    (hb : ReadBodyEmpty (BA pol) (.var "read") (.var "u") 49)
+    {effects : List Effect} {entry : ExternCallEntry} {res : TypeResult} {cf : Config}
+    {o : Value} (h : ExternCallAt (S9 pol) effects entry res cf o) :
+    runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv ∅ := by
+  simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hu9, hr9, hp9, _⟩ := hf
+  exact readCall_realised (B := BA pol) (fe := .var "read") (arg := .var "u") (G := 49)
+    (cfgB := wBodyCfg cfg2 1) (runRead 1 cfg2) (runU 1 cfg2) rfl hu9 hr9 hp9 hb h
+
 /-- The run reaches the second call (inside the wrapper, applied to -3). -/
 private theorem reachB {pol : ExternId → Tag → Option Bool} (hf : facts pol = true)
     (hc : Chain pol) : Reach (S0 pol) (S13 pol) := by
@@ -684,8 +702,10 @@ theorem prog_tag0 :
   refine ⟨eq_okVal hp, ?_, predSatLaws_geSat (geTable_of_allGe hall)⟩
   intro predSat hlaws
   obtain ⟨entry, cf, hcall⟩ := callA facts_allF chain_allF
-  exact refute_gen hlaws hd0 (reachA facts_allF chain_allF) hcall ht9 chain_allF.2.2.2.2.1
-    regime_allF (by decide)
+  have hb : ReadBodyEmpty (BA allF) (.var "read") (.var "u") 49 := by
+    unfold ReadBodyEmpty; decide +kernel
+  exact refute_gen hlaws hd0 (callA_realised facts_allF hb hcall)
+    (reachA facts_allF chain_allF) hcall ht9 chain_allF.2.2.2.2.1 regime_allF (by decide)
 
 end Wrapper
 
@@ -1043,7 +1063,12 @@ theorem prog_bad :
   have hreach : Reach (T0 bad) (T4 bad) := .tail (.tail (.tail .refl e1) e2) e3
   obtain ⟨entry, -, hcall⟩ := readCall_mk (B := DT bad) (fe := .var "read") (arg := neg3)
     (G := 52) (cfgB := cfgA) runReadA (run_neg3 _) rfl hu4 hr4 hp4 hm hap
-  exact refute_of hlaws hd1 hreach hcall ht4 hg regimes.2.2.2.2.1 (by decide)
+  have hb : ReadBodyEmpty (DT bad) (.var "read") neg3 52 := by
+    unfold ReadBodyEmpty; decide +kernel
+  exact refute_of hlaws hd1
+    (readCall_realised (B := DT bad) (fe := .var "read") (arg := neg3) (G := 52) (cfgB := cfgA)
+      runReadA (run_neg3 _) rfl hu4 hr4 hp4 hb hcall)
+    hreach hcall ht4 hg regimes.2.2.2.2.1 (by decide)
 
 /-! ### Both calls the run makes are reached, and the first tag is read
 
@@ -1114,6 +1139,17 @@ private theorem callA {pol : ExternId → Tag → Option Bool} (hf : factsA pol 
     (G := 54) (cfgB := cfg1) runRead1 (run_num _ _) rfl hu2 hr2 hp2 hm hap
   exact ⟨entry, _, h⟩
 
+/-- The empty map realises the body context of the first call. -/
+private theorem callA_realised {pol : ExternId → Tag → Option Bool} (hf : factsA pol = true)
+    (hb : ReadBodyEmpty (C1 pol) (.var "read") (.num 1) 54)
+    {effects : List Effect} {entry : ExternCallEntry} {res : TypeResult} {cf : Config}
+    {o : Value} (h : ExternCallAt (T2 pol) effects entry res cf o) :
+    runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv ∅ := by
+  simp only [factsA, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
+  obtain ⟨_, _, hu2, hr2, hp2, _⟩ := hf
+  exact readCall_realised (B := C1 pol) (fe := .var "read") (arg := .num 1) (G := 54)
+    (cfgB := cfg1) runRead1 (run_num _ _) rfl hu2 hr2 hp2 hb h
+
 private theorem reachB {pol : ExternId → Tag → Option Bool} (hf : facts pol = true) :
     Reach (T0 pol) (T4 pol) := by
   simp only [facts, Bool.and_eq_true, beq_iff_eq, and_assoc] at hf
@@ -1166,8 +1202,10 @@ theorem prog_tag0 :
   refine ⟨eq_okVal hp, ?_, predSatLaws_geSat (geTable_of_allGe hall)⟩
   intro predSat hlaws
   obtain ⟨entry, cf, hcall⟩ := callA factsA_allF chainA_allF
-  exact refute_gen hlaws hd0 (reachA factsA_allF) hcall ht chainA_allF.2.2 regime_allF
-    (by decide)
+  have hb : ReadBodyEmpty (C1 allF) (.var "read") (.num 1) 54 := by
+    unfold ReadBodyEmpty; decide +kernel
+  exact refute_gen hlaws hd0 (callA_realised factsA_allF hb hcall) (reachA factsA_allF) hcall ht
+    chainA_allF.2.2 regime_allF (by decide)
 
 end Skipped
 

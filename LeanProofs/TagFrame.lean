@@ -57,7 +57,8 @@ theorem PredSatLaws.anti_mono {predSat : PredSat} {tm tm' : TagMeaning}
   ⟨fun condition ctx fuel k deps μ ρ θ addr pm registry cfg b hwf hmatch hric hterm =>
       h.match_iff condition ctx fuel k deps μ ρ θ addr pm registry cfg b
         (wfTagMeaningCtx_mono hsub hwf) hmatch hric hterm,
-    h.mem_monotone⟩
+    fun k d θ θ' μ μ' v hd hagree =>
+      h.mem_footprint k d θ θ' μ μ' v (TagMeaningExtends.lookup hsub hd) hagree⟩
 
 /-! ### `LogIn` -/
 

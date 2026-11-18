@@ -136,13 +136,13 @@ lemma externBoundarySinglePost_of_singleRun_normalized_app
     (hdecl3 : result3.declared' = bodyCtx.declaredExternRefs)
     (htag : StepFRSingleRunTagMeaningPost bodyCtx body result3 predSat tm)
     (hpost :
-      StepFRSingleRunFinalCleanPcTruePost bodyCtx result3 predSat
+      StepFRSingleRunFinalCleanPcTruePost bodyCtx result3 predSat tm
         (registry := registry) μ ρ θ cf o hθwf hwf hric hreg hcwr a pm hwfcfg) :
     ExternBoundarySinglePost bodyCtx first predSat tm θ μ cf o := by
   rcases StepFRSingleRunTagMeaningPost.to_boundary htag with ⟨tm', htag_post⟩
   rcases htag_post with ⟨hext, hbounded, hwfCtx, hresTm, hpredlaws, hwithin⟩
   rcases hpost with
-    ⟨θ', hθext, hv, hric_final, hcwr_final, hval_final, hpres, hfresh, hrd⟩
+    ⟨θ', hθext, hv, hric_final, hcwr_final, hval_final, hpres, hfresh, hrd, hM, hF⟩
   have hctxAfter_eq : ctxAfter bodyCtx first = ctxAfter bodyCtx result3 := by
     rw [hfirst_eq]
     simp [ctxAfter, hdecl3]
@@ -156,7 +156,7 @@ lemma externBoundarySinglePost_of_singleRun_normalized_app
   have hfirst_no_guard : qtypGuardDesc? first.qualType = none := by
     rw [hfirst_eq]
     simp [normalizeAppResultByProvenance, h_p1p, qtypGuardDesc?]
-  refine ⟨tm', ?_, θ', hθext, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨tm', ?_, θ', hθext, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hM, by simpa [hctxAfter_eq] using hF⟩
   · refine ⟨hext, ?_, ?_, ?_, hpredlaws, ?_⟩
     · simpa [hfirst_eq, normalizeAppResultByProvenance] using hbounded
     · simpa [hctxAfter_eq] using hwfCtx
@@ -614,6 +614,7 @@ private theorem externCallBoundaryRun_singlePost
     (hframeBody : TagFrame predSatBody tmBody result3.tagLog')
     (hwfTmBody : wfTagMeaningCtx tmBody callEntry.bodyCtx)
     (hTmBoundedBody : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag)
+    (hfpBody : FootprintCtx tmBody callEntry.bodyCtx)
     (hθBodyWf : wfRealizationMap θBody)
     (hwfBody : wfTypeContext callEntry.bodyCtx)
     (hbndBody : TagBoundedCtx callEntry.bodyCtx)
@@ -632,7 +633,7 @@ private theorem externCallBoundaryRun_singlePost
     ExternBoundarySinglePost callEntry.bodyCtx result3 predSatBody tmBody
       θBody callEntry.bodyConfig.memory (callEntry.bodyOutputConfig cf) o :=
   entry.spec.callSingle typedExpr result3 predSatBody tmBody callEntry
-    htypedCall hpredlawsBody hframeBody hwfTmBody hTmBoundedBody θBody cf o
+    htypedCall hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hfpBody θBody cf o
     hθBodyWf hwfBody hbndBody hricBody htagRBody hcwrBody hwfcfgBody hrdBody hrun hmatch hpcBody
 
 /-- Body-local single-run contract for successful impure extern app dispatch.
@@ -670,6 +671,7 @@ def ExternCallBoundarySingleFnContract
     (_hframeBody : TagFrame predSatBody tmBody result3.tagLog')
     (_hwfTmBody : wfTagMeaningCtx tmBody bodyCtx)
     (_hTmBoundedBody : TagMeaningBounded tmBody bodyCtx.nextTag)
+    (_hfpBody : FootprintCtx tmBody bodyCtx)
     (_hθBodyWf : wfRealizationMap θBody)
     (_hwfBody : wfTypeContext bodyCtx)
     (_hbndBody : TagBoundedCtx bodyCtx)
@@ -737,7 +739,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
-        hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hbndBody hricBody
+        hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hfpBody hθBodyWf hwfBody hbndBody hricBody
         htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec eff tenv memberCap cap env impl vRaw mem' addr'
         hstatic htypedCallProvider ht_e2 ht_e1 hpure hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
@@ -787,6 +789,8 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
     simpa [hbodyCtx] using hTmBoundedBody
+  have hfpCall : FootprintCtx tmBody callEntry.bodyCtx := by
+    rw [hbodyCtx]; exact hfpBody
   have hwfCall : wfTypeContext callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfBody
   have hbndCall : TagBoundedCtx callEntry.bodyCtx := by
@@ -810,7 +814,7 @@ theorem ExternCallBoundarySingleFnContract.of_trustedReachable
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      htypedEntryCall hpredlawsBody hframeBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hbndCall
+      htypedEntryCall hpredlawsBody hframeBody hwfTmCall hTmBoundedCall hfpCall hθBodyWf hwfCall hbndCall
       hricCall htagRCall hcwrCall hwfcfgBody hrdCall hrun hmatchCall hpcCall
 
 /-- Body-local single-run contract for successful pure extern app dispatch. -/
@@ -843,6 +847,7 @@ def ExternCallBoundarySinglePfnContract
     (_hframeBody : TagFrame predSatBody tmBody result3.tagLog')
     (_hwfTmBody : wfTagMeaningCtx tmBody bodyCtx)
     (_hTmBoundedBody : TagMeaningBounded tmBody bodyCtx.nextTag)
+    (_hfpBody : FootprintCtx tmBody bodyCtx)
     (_hθBodyWf : wfRealizationMap θBody)
     (_hwfBody : wfTypeContext bodyCtx)
     (_hbndBody : TagBoundedCtx bodyCtx)
@@ -908,7 +913,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
       (registry := TrustedRegistry.toRuntimeRegistry tr) := by
   intro μ ρ θ cf o _hθwf _hwf _hric _hreg _hmasked_none _hctxCons a pm _hwfcfg
         bodyCtx result3 predSatBody tmBody θBody callEntry
-        hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hbndBody hricBody
+        hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hfpBody hθBodyWf hwfBody hbndBody hricBody
         htagRBody hcwrBody hwfcfgBody hrdBody hpcBody
         c₂' v₂ c₁ id x y argTyp argPoison declaredArgPoison argPred retSpec tenv memberCap cap env impl vRaw
         hstatic htypedCallProvider ht_e2 ht_e1 hGet hArg hImpl hValRet hcf hbodyCtx hcallCfg
@@ -952,6 +957,8 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
     simpa [hbodyCtx] using hwfTmBody
   have hTmBoundedCall : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag := by
     simpa [hbodyCtx] using hTmBoundedBody
+  have hfpCall : FootprintCtx tmBody callEntry.bodyCtx := by
+    rw [hbodyCtx]; exact hfpBody
   have hwfCall : wfTypeContext callEntry.bodyCtx := by
     simpa [hbodyCtx] using hwfBody
   have hbndCall : TagBoundedCtx callEntry.bodyCtx := by
@@ -975,7 +982,7 @@ theorem ExternCallBoundarySinglePfnContract.of_trustedReachable
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      htypedEntryCall hpredlawsBody hframeBody hwfTmCall hTmBoundedCall hθBodyWf hwfCall hbndCall
+      htypedEntryCall hpredlawsBody hframeBody hwfTmCall hTmBoundedCall hfpCall hθBodyWf hwfCall hbndCall
       hricCall htagRCall hcwrCall hwfcfgBody hrdCall hrun hmatchCall hpcCall
 
 /-- Keying evidence attached to a trusted extern entry returned by a local
@@ -1017,6 +1024,7 @@ theorem externCallBoundaryRunProvider_singlePost
     (hframeBody : TagFrame predSatBody tmBody result3.tagLog')
     (hwfTmBody : wfTagMeaningCtx tmBody callEntry.bodyCtx)
     (hTmBoundedBody : TagMeaningBounded tmBody callEntry.bodyCtx.nextTag)
+    (hfpBody : FootprintCtx tmBody callEntry.bodyCtx)
     (hθBodyWf : wfRealizationMap θBody)
     (hwfBody : wfTypeContext callEntry.bodyCtx)
     (hbndBody : TagBoundedCtx callEntry.bodyCtx)
@@ -1042,7 +1050,7 @@ theorem externCallBoundaryRunProvider_singlePost
       (entry := entry) (result3 := result3) (predSatBody := predSatBody)
       (tmBody := tmBody) (θBody := θBody) (callEntry := callEntry)
       (cf := cf) (o := o)
-      htypedCall hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hθBodyWf hwfBody hbndBody
+      htypedCall hpredlawsBody hframeBody hwfTmBody hTmBoundedBody hfpBody hθBodyWf hwfBody hbndBody
       hricBody htagRBody hcwrBody hwfcfgBody hrdBody hrun (hmatch entry htypedCall) hpcBody
 
 /-- Single-run "tail" of the impure (`fn`) extern-call boundary contract.

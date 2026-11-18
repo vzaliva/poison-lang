@@ -155,7 +155,7 @@ private lemma var_valueConsistentWithRegime_of_typecheck
               | some b =>
                   have htag_qt : qtypGuardTag qt = some k := by
                     simp [qtypGuardTag, hpred]
-                  have hvr : varsRegime predSat ctxᵢ.regime μ ρ (name, qt) :=
+                  have hvr : varsRegime predSat ctxᵢ.regime μ θ ρ (name, qt) :=
                     hcwr.2.1 name qt k hlookup_ctx htag_qt (by simp [hk])
                   cases hvr with
                   | noPred_ok hnp =>
@@ -182,16 +182,16 @@ private lemma var_valueConsistentWithRegime_of_typecheck
                       cases hv'
                       cases b with
                       | false =>
-                          have hnot_qt : ¬ qtypPredHolds predSat qt μ v := (hconsist.2 rfl)
-                          have hnot_res : ¬ qtypPredHolds predSat res.qualType μ v :=
+                          have hnot_qt : ¬ qtypPredHolds predSat θ qt μ v := (hconsist.2 rfl)
+                          have hnot_res : ¬ qtypPredHolds predSat θ res.qualType μ v :=
                             qtypPredHolds_transport_pred_not (predSat := predSat) (qt := qt) (qt' := res.qualType)
                               (by simp [hres]) hnot_qt
                           exact valueConsistentWithRegime.inRegimeFalse k
                             (by simp [qtypGuardTag, hres, hpred]) hk hnot_res
                             hnclos
                       | true =>
-                          have hholds_qt : qtypPredHolds predSat qt μ v := (hconsist.1 rfl)
-                          have hholds_res : qtypPredHolds predSat res.qualType μ v :=
+                          have hholds_qt : qtypPredHolds predSat θ qt μ v := (hconsist.1 rfl)
+                          have hholds_res : qtypPredHolds predSat θ res.qualType μ v :=
                             qtypPredHolds_transport_pred (predSat := predSat) (qt := qt) (qt' := res.qualType)
                               (by simp [hres]) hholds_qt
                           exact valueConsistentWithRegime.inRegimeTrue k
@@ -375,7 +375,7 @@ private lemma var_valueConsistentWithRegimeMasked_of_typecheck
               | some b =>
                   have htag_qt : qtypGuardTag qt = some k := by
                     simp [qtypGuardTag, hpred]
-                  have hvr_masked : masked k ∨ varsRegime predSat ctxᵢ.regime μ ρ (name, qt) :=
+                  have hvr_masked : masked k ∨ varsRegime predSat ctxᵢ.regime μ θ ρ (name, qt) :=
                     hcwr.2.1 name qt k hlookup_ctx htag_qt (by simp [hk])
                   cases hvr_masked with
                   | inl hmasked =>
@@ -407,16 +407,16 @@ private lemma var_valueConsistentWithRegimeMasked_of_typecheck
                           cases hv'
                           cases b with
                           | false =>
-                              have hnot_qt : ¬ qtypPredHolds predSat qt μ v := hconsist.2 rfl
-                              have hnot_res : ¬ qtypPredHolds predSat res.qualType μ v :=
+                              have hnot_qt : ¬ qtypPredHolds predSat θ qt μ v := hconsist.2 rfl
+                              have hnot_res : ¬ qtypPredHolds predSat θ res.qualType μ v :=
                                 qtypPredHolds_transport_pred_not
                                   (predSat := predSat) (qt := qt) (qt' := res.qualType)
                                   (by simp [hres]) hnot_qt
                               exact valueConsistentWithRegimeMasked.inRegimeFalse k
                                 (by simp [qtypGuardTag, hres, hpred]) hk hnot_res hnclos
                           | true =>
-                              have hholds_qt : qtypPredHolds predSat qt μ v := hconsist.1 rfl
-                              have hholds_res : qtypPredHolds predSat res.qualType μ v :=
+                              have hholds_qt : qtypPredHolds predSat θ qt μ v := hconsist.1 rfl
+                              have hholds_res : qtypPredHolds predSat θ res.qualType μ v :=
                                 qtypPredHolds_transport_pred
                                   (predSat := predSat) (qt := qt) (qt' := res.qualType)
                                   (by simp [hres]) hholds_qt
@@ -514,7 +514,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
       typecheckVar_preserves_nextTag ctxᵢ name res htc',
       typecheckVar_preserves_regime ctxᵢ name res htc',
       hdeclared]
-  intro hpredlaws hframe hwfTm hTmBounded
+  intro hpredlaws hframe hwfTm hTmBounded _hfp
   refine ⟨?_, ?_⟩
   · exact
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
@@ -535,7 +535,8 @@ lemma stepFRSingleRunFinalCleanPcTrue_var_maskedReg
     exact
       stepFRVar_ctxToValCons_masked masked predSat
         ctxᵢ name res μ ρ θ v htc' hlookup hctxCons
-  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_, ?_, ?_⟩
+  refine ⟨θ, ?_, hvaltyp, ?_, ?_, hvalc, ?_, ?_, ?_, MapKeepsBelow.refl _ _,
+    KeepsFootprints.refl _ _ _ _⟩
   · exact ⟨fun _ _ hlookup => hlookup, fun hθwf' => hθwf'⟩
   · simpa [hctxAfter] using hric
   · simpa [hctxAfter] using hctxCons
@@ -554,7 +555,7 @@ lemma stepFR_var
   (name : Name) (res : TypeResult) (fuel : Nat)
   (htc : typecheck ctxᵢ (Expr.var name) (Nat.succ fuel) = .ok res) :
   StepFR ctxᵢ (Expr.var name) res predSat tm (Nat.succ fuel) (registry := registry) := by
-  intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
+  intro hpredlaws _hframe hwfTm hTmBounded _hfp μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
   have htagR : tagEnvConsistentWithRegime ctxᵢ.tagEnv ctxᵢ.regime := hreg
   -- Use inversion lemma to extract config and value
   have hinv₀ := terminatesTo_var_inv' name
@@ -778,7 +779,9 @@ lemma stepFR_var
     · simpa [ctxAfter, hmem] using! hwfTm
   refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
     (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _, KeepsFootprints.refl _ _ _ _,
+    KeepsFootprints.refl _ _ _ _⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup

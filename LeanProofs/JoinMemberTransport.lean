@@ -31,16 +31,16 @@ private lemma agreeCapturedEnv_transport_by_lookupTrueBack
     (hlookup_true_back : ∀ (k : Tag), R'.lookup? k = some true → R.lookup? k = some true)
     (hmemberVars₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberVarsRegimeEvidence predSat R μ₀ σcap ρcap →
-          MemberVarsRegimeEvidence predSat R' μ₀ σcap ρcap)
+        MemberVarsRegimeEvidence predSat R μ₀ θ₀ σcap ρcap →
+          MemberVarsRegimeEvidence predSat R' μ₀ θ₀ σcap ρcap)
     (hmemberCvcr₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
         MemberCvcrEvidence predSat R μ₀ θ₀ σcap ρcap →
           MemberCvcrEvidence predSat R' μ₀ θ₀ σcap ρcap)
     (hmemberVars₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap →
-          MemberVarsRegimeEvidence predSat R' μ₁ σcap ρcap)
+        MemberVarsRegimeEvidence predSat R μ₁ θ₁ σcap ρcap →
+          MemberVarsRegimeEvidence predSat R' μ₁ θ₁ σcap ρcap)
     (hmemberCvcr₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
         MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap →
@@ -511,8 +511,8 @@ lemma joinTypeResults_transport_valueConsistentWithRegime_from_member
           have hlookup_src :
               (ctxAfter ctx src).regime.lookup? k = some b := hlookup_back k b hlookupR
           have hcons_src :
-              (b = true → qtypPredHolds predSat src.qualType μ v) ∧
-              (b = false → ¬ qtypPredHolds predSat src.qualType μ v) :=
+              (b = true → qtypPredHolds predSat θ src.qualType μ v) ∧
+              (b = false → ¬ qtypPredHolds predSat θ src.qualType μ v) :=
             valueConsistentWithRegime_guardClosure_consistency
               (predSat := predSat) (R := (ctxAfter ctx src).regime)
               (qt := src.qualType) (μ := μ) (v := v)
@@ -520,15 +520,15 @@ lemma joinTypeResults_transport_valueConsistentWithRegime_from_member
               (b := b) h_src hpred_src hlookup_src
           cases b with
           | false =>
-              have hnot_src : ¬ qtypPredHolds predSat src.qualType μ v := hcons_src.2 rfl
-              have hnot_res : ¬ qtypPredHolds predSat res.qualType μ v :=
+              have hnot_src : ¬ qtypPredHolds predSat θ src.qualType μ v := hcons_src.2 rfl
+              have hnot_res : ¬ qtypPredHolds predSat θ res.qualType μ v :=
                 qtypPredHolds_transport_pred_not
                   (predSat := predSat) (qt := src.qualType) (qt' := res.qualType)
                   (μ := μ) (v := v) hpred_eq hnot_src
               exact valueConsistentWithRegime.inRegimeFalse k htag_res hlookupR hnot_res hcap_res
           | true =>
-              have hholds_src : qtypPredHolds predSat src.qualType μ v := hcons_src.1 rfl
-              have hholds_res : qtypPredHolds predSat res.qualType μ v :=
+              have hholds_src : qtypPredHolds predSat θ src.qualType μ v := hcons_src.1 rfl
+              have hholds_res : qtypPredHolds predSat θ res.qualType μ v :=
                 qtypPredHolds_transport_pred
                   (predSat := predSat) (qt := src.qualType) (qt' := res.qualType)
                   (μ := μ) (v := v) hpred_eq hholds_src

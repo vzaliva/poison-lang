@@ -138,7 +138,7 @@ end BoundaryTagMeaningPost
     their consumption sites. -/
 def StepFRPost
     (ctx : TypeContext) (_e : Expr) (res : TypeResult) (predSat : PredSat) (tm : TagMeaning)
-    (θ₀ θ₁ : RealizationMap)
+    (θ₀ θ₁ : RealizationMap) (μ₀ μ₁ : Memory)
   (cf₀ cf₁ : Config) (o₀ o₁ : Value) : Prop :=
   ∃ (tm' : TagMeaning),
     BoundaryTagMeaningPost ctx res predSat tm tm' ∧
@@ -170,7 +170,11 @@ def StepFRPost
       resultAgreesIfClean predSat (ctxAfter ctx res).regime
         cf₀.memory cf₁.memory θ₀' θ₁' res.qualType o₀ o₁ ∧
       ReservedDiscipline cf₀.registry res.declared' θ₀' ∧
-      ReservedDiscipline cf₁.registry res.declared' θ₁'
+      ReservedDiscipline cf₁.registry res.declared' θ₁' ∧
+      MapKeepsBelow ctx.nextLoc θ₀ θ₀' ∧
+      MapKeepsBelow ctx.nextLoc θ₁ θ₁' ∧
+      KeepsFootprints tm (ctxAfter ctx res).regime θ₀ μ₀ cf₀.memory ∧
+      KeepsFootprints tm (ctxAfter ctx res).regime θ₁ μ₁ cf₁.memory
 
 -- Bridge lemma: connect spec-indexed consistency to context-indexed consistency
 lemma consistentRegimeSpec_implies_consistentWithRegime
@@ -281,7 +285,7 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
           rw [Std.ExtTreeMap.mem_toList_iff_getElem?_eq_some]
           dsimp [VarTypeEnv.lookup] at hlookup_s'
           simpa using hlookup_s'
-        have h_var_regime : varsRegime predSat R μ ρ (x, qt_s) :=
+        have h_var_regime : varsRegime predSat R μ θ ρ (x, qt_s) :=
           h_vars_forall (x, qt_s) hmem'
         simpa [hqt] using h_var_regime
   · -- Third conjunct: closureCapturedVarsRegime for all variable-value pairs.
@@ -344,6 +348,41 @@ lemma consistentRegimeSpec_implies_consistentWithRegime
                 simp [ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow] at hnotfun
     · exact htrusted_init x qt v hlookup hkey hlookup_v
 
+/-- A successful typing run, from a well-formed context, keeps the records of
+    its tag environment covering the footprints of their descriptors, for every
+    table that extends the starting one with allocations of the run. -/
+def TypingKeepsRecordsCover : Prop :=
+  ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) (tm tm' : TagMeaning),
+    typecheckExpr ctx e fuel = .ok res →
+    wfTagMeaningCtx tm ctx → TagMeaningBounded tm ctx.nextTag → TagBoundedCtx ctx →
+    wfTypeContext ctx →
+    tm ⊑ tm' → WithinLog tm res.tagLog' tm' →
+    RecordsCover tm ctx.tagEnv → RecordsCover tm' res.tagEnv'
+
+/-- A successful typing run, from a well-formed context, keeps every footprint
+    location of a descriptor below `nextLoc`, for every table that extends the
+    starting one with allocations of the run. -/
+def TypingKeepsFootprintBelow : Prop :=
+  ∀ (ctx : TypeContext) (e : Expr) (fuel : Nat) (res : TypeResult) (tm tm' : TagMeaning),
+    typecheckExpr ctx e fuel = .ok res →
+    wfTagMeaningCtx tm ctx → TagMeaningBounded tm ctx.nextTag → TagBoundedCtx ctx →
+    wfTypeContext ctx →
+    tm ⊑ tm' → WithinLog tm res.tagLog' tm' →
+    FootprintBelow tm ctx.nextLoc → FootprintBelow tm' res.nextLoc'
+
+/-- A successful typing run keeps the footprint invariant (`FootprintCtx`). -/
+def TypingKeepsFootprintCtx : Prop :=
+  TypingKeepsRecordsCover ∧ TypingKeepsFootprintBelow
+
+theorem TypingKeepsFootprintCtx.apply (h : TypingKeepsFootprintCtx)
+    {ctx : TypeContext} {e : Expr} {fuel : Nat} {res : TypeResult} {tm tm' : TagMeaning}
+    (htc : typecheckExpr ctx e fuel = .ok res) (hwfTm : wfTagMeaningCtx tm ctx)
+    (hb : TagMeaningBounded tm ctx.nextTag) (htb : TagBoundedCtx ctx) (hwf : wfTypeContext ctx)
+    (hext : tm ⊑ tm') (hw : WithinLog tm res.tagLog' tm') (hfp : FootprintCtx tm ctx) :
+    FootprintCtx tm' (ctxAfter ctx res) :=
+  ⟨by simpa [ctxAfter] using h.1 ctx e fuel res tm tm' htc hwfTm hb htb hwf hext hw hfp.1,
+   by simpa [ctxAfter] using h.2 ctx e fuel res tm tm' htc hwfTm hb htb hwf hext hw hfp.2⟩
+
 -- Step theorem (context-driven, no input/output specs).
 -- It assumes agreement on clean items in the initial context and preserves it
 -- for the post-context, plus result agreement when the result is clean under R.
@@ -362,6 +401,7 @@ def StepFR
     TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
+    FootprintCtx tm ctx →
     ∀ (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap)
       (cf₀ cf₁ : Config) (o₀ o₁ : Value),
       wfRealizationMap θ₀ → wfRealizationMap θ₁ →
@@ -384,7 +424,7 @@ def StepFR
         ∀ {P₀ P₁ : Step → Prop}, ExternStepPremises predSat P₀ P₁ →
         P₀ ⟨ctx, e, fuel, { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry }⟩ →
         P₁ ⟨ctx, e, fuel, { memory := μ₁, varEnv := ρ₁, nextAddr := a₁, pureMode := pm, registry := registry }⟩ →
-        StepFRPost ctx e res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁
+        StepFRPost ctx e res predSat tm θ₀ θ₁ μ₀ μ₁ cf₀ cf₁ o₀ o₁
 
 -- Step theorem spec derived from typing (context-driven).
 -- No input/output specs here; they are handled by the top-level FR statement
@@ -420,7 +460,7 @@ lemma memberVarsRegimeEvidence_of_toCaptured
   (predSat : PredSat) (R : Regime) (ctx : TypeContext)
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (hcwr : consistentWithRegime predSat R ctx μ ρ θ) :
-  MemberVarsRegimeEvidence predSat R μ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
+  MemberVarsRegimeEvidence predSat R μ θ (VarTypeEnv.toCaptured ctx.varEnv) ρ := by
   intro y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR
   have hlookup_list :
       (VarTypeEnv.toCaptured ctx.varEnv).lookup y = some qt_y :=
@@ -645,6 +685,7 @@ def StepFRSingleRunFinalCleanPcTruePost
   (ctx : TypeContext)
   (res : TypeResult)
   (predSat : PredSat)
+  (tm : TagMeaning)
   {registry : ExternRegistry}
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (cf : Config) (o : Value)
@@ -666,7 +707,9 @@ def StepFRSingleRunFinalCleanPcTruePost
       cf.memory θ' o ∧
     PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
     FreshCleanLocsUnrealizedOneRun ctx res θ' ∧
-    ReservedDiscipline cf.registry res.declared' θ'
+    ReservedDiscipline cf.registry res.declared' θ' ∧
+    MapKeepsBelow ctx.nextLoc θ θ' ∧
+    KeepsFootprints tm (ctxAfter ctx res).regime θ μ cf.memory
 
 def StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
   (masked : Tag → Prop)
@@ -674,6 +717,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
   (ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop)
   (ctx : TypeContext)
   (res : TypeResult)
+  (tm : TagMeaning)
   {registry : ExternRegistry}
   (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
   (cf : Config) (o : Value)
@@ -697,7 +741,9 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
     ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
     PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
     FreshCleanLocsUnrealizedOneRun ctx res θ' ∧
-    ReservedDiscipline cf.registry res.declared' θ'
+    ReservedDiscipline cf.registry res.declared' θ' ∧
+    MapKeepsBelow ctx.nextLoc θ θ' ∧
+    KeepsFootprints tm (ctxAfter ctx res).regime θ μ cf.memory
 
 def StepFRSingleRunTagMeaningPost
   (ctx : TypeContext)
@@ -732,6 +778,7 @@ def StepFRSingleRunFinalCleanPcTrue
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
     TagBoundedCtx ctx →
+    FootprintCtx tm ctx →
     StepFRSingleRunTagMeaningPost ctx e res predSat tm ∧
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
@@ -748,7 +795,7 @@ def StepFRSingleRunFinalCleanPcTrue
         ctx.pc = true →
         ∀ {P : Step → Prop}, ExternCallsMatchOn predSat P →
         P ⟨ctx, e, fuel, { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}⟩ →
-        StepFRSingleRunFinalCleanPcTruePost ctx res predSat
+        StepFRSingleRunFinalCleanPcTruePost ctx res predSat tm
           (registry := registry) μ ρ θ cf o
           hθwf hwf hric hreg hcwr a pm hwfcfg
 
@@ -767,6 +814,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
     TagFrame predSat tm res.tagLog' →
     wfTagMeaningCtx tm ctx →
     TagMeaningBounded tm ctx.nextTag →
+    FootprintCtx tm ctx →
     StepFRSingleRunTagMeaningPost ctx e res predSat tm ∧
     ∀ (μ : Memory) (ρ : VarEnv) (θ : RealizationMap)
       (cf : Config) (o : Value),
@@ -788,7 +836,7 @@ def StepFRSingleRunFinalCleanPcTrueMaskedRegParam
         ∀ {P : Step → Prop}, ExternCallsMatchOn predSat P →
         P ⟨ctx, e, fuel, { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry}⟩ →
         StepFRSingleRunFinalCleanPcTrueMaskedRegParamPost
-          masked CtxCons ValCons ctx res (registry := registry) μ ρ θ cf o
+          masked CtxCons ValCons ctx res tm (registry := registry) μ ρ θ cf o
           hθwf hwf hric hreg hmasked_none hmasked_absent hmasked_bounded hbnd hctxCons a pm hwfcfg
 
 -- Helper lemmas: transport predicate-based properties across qualified types
@@ -807,9 +855,9 @@ private lemma qtypGuardTag_of_pred_eq {qt qt' : QTyp}
       rfl
 
 lemma qtypPredHolds_transport_pred
-  {predSat : PredSat} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {θ : RealizationMap} {qt qt' : QTyp} {μ : Memory} {v : Value}
   (hpred : qt.pred = qt'.pred) :
-  qtypPredHolds predSat qt μ v → qtypPredHolds predSat qt' μ v := by
+  qtypPredHolds predSat θ qt μ v → qtypPredHolds predSat θ qt' μ v := by
   intro h
   cases h with
   | noPred_ok hnp =>
@@ -832,52 +880,93 @@ lemma qtypPredHolds_transport_pred
         _ = Predicate.guardOnly k := by exact hgo
 
 lemma qtypPredHolds_transport_pred_not
-  {predSat : PredSat} {qt qt' : QTyp} {μ : Memory} {v : Value}
+  {predSat : PredSat} {θ : RealizationMap} {qt qt' : QTyp} {μ : Memory} {v : Value}
   (hpred : qt.pred = qt'.pred) :
-  (¬ qtypPredHolds predSat qt μ v) → (¬ qtypPredHolds predSat qt' μ v) := by
+  (¬ qtypPredHolds predSat θ qt μ v) → (¬ qtypPredHolds predSat θ qt' μ v) := by
   intro hnot hholds
   -- Transport back to `qt` and contradict.
-  have hback : qtypPredHolds predSat qt μ v :=
+  have hback : qtypPredHolds predSat θ qt μ v :=
     qtypPredHolds_transport_pred (predSat := predSat) (qt := qt') (qt' := qt) (μ := μ) (v := v) (by simp [hpred]) hholds
   exact hnot hback
 
-lemma predSat_mem_noPred_compat
-  {predSat : PredSat} {tm : TagMeaning}
-  (hpredlaws : PredSatLaws predSat tm)
-  (θ : RealizationMap) :
-  ∀ (k : Tag) (μ μ' : Memory) (v : Value), predSat k μ v ↔ predSat k μ' v := by
-  intro k μ μ' v
-  exact
-    hpredlaws.mem_monotone (k := k) (pred := Predicate.noPred) (fuel := 0) (μ := μ) (μ' := μ') (v := v)
-      (deps := LocSet.empty) (θ := θ) (by simp [extractDepsFromPred, pure, Except.pure])
-      (by intro l hl; cases hl)
+/-- Every type bound in a captured environment respects the table. -/
+def CapturedRespects (tm : TagMeaning) (σcap : CapturedVarEnv) : Prop :=
+  ∀ x qt, (x, qt) ∈ σcap → QTypRespectsTagMeaning tm qt
 
-lemma qtypPredHolds_mem_compat_of_predSatLaws
-  {predSat : PredSat} {tm : TagMeaning}
-  (hpredlaws : PredSatLaws predSat tm)
-  (θ : RealizationMap) (μ μ' : Memory) :
-  ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v := by
-  have hPredSat_mem :
-      ∀ (k : Tag) (μ₀ μ₁ : Memory) (v : Value), predSat k μ₀ v ↔ predSat k μ₁ v := by
-    intro k μ₀ μ₁ v
-    exact predSat_mem_noPred_compat hpredlaws θ k μ₀ μ₁ v
-  intro qt v
-  constructor <;> intro h
-  · cases h with
-    | noPred_ok hp =>
-        exact qtypPredHolds.noPred_ok hp
-    | guardClosure_ok hp hs =>
-        exact qtypPredHolds.guardClosure_ok hp ((hPredSat_mem _ _ _ v).1 hs)
-    | guardOnly_ok hp hs =>
-        exact qtypPredHolds.guardOnly_ok hp ((hPredSat_mem _ _ _ v).1 hs)
-  · cases h with
-    | noPred_ok hp =>
-        exact qtypPredHolds.noPred_ok hp
-    | guardClosure_ok hp hs =>
-        exact qtypPredHolds.guardClosure_ok hp ((hPredSat_mem _ _ _ v).2 hs)
-    | guardOnly_ok hp hs =>
-        exact qtypPredHolds.guardOnly_ok hp ((hPredSat_mem _ _ _ v).2 hs)
+/-- A guard-closure type that respects the table has its closure as the
+    descriptor of its tag. -/
+lemma QTypRespectsTagMeaning.desc {tm : TagMeaning} {qt : QTyp} {k : Tag} {arg : Name}
+    {body : PExpr} {cap : CapturedVarEnv}
+    (h : QTypRespectsTagMeaning tm qt) (hclos : qt.pred = Predicate.guardClosure k arg body cap) :
+    tm.lookup k = some { argName := arg, body := body, capEnv := cap } :=
+  h (QTypInQTyp.self qt) (by simp [qtypGuardDesc?, hclos])
+
+lemma QTypRespectsTagMeaning.inner {tm : TagMeaning} {qt qt' : QTyp}
+    (h : QTypRespectsTagMeaning tm qt) (hin : QTypInQTyp qt' qt) :
+    QTypRespectsTagMeaning tm qt' :=
+  fun hin' hd => h (QTypInQTyp.trans _ _ _ hin' hin) hd
+
+lemma CapturedRespects.of_arrow {tm : TagMeaning} {qt : QTyp} {st1 st2 : Typ} {p : Poison}
+    {tcls : List FnTClosure} {tcl : FnTClosure}
+    (h : QTypRespectsTagMeaning tm qt) (hetyp : qt.etyp = ETyp.arrow st1 st2 p tcls)
+    (htcl : tcl ∈ tcls) : CapturedRespects tm (fnCapturedEnv tcl) :=
+  fun x qtx hmem => h.inner (QTypInQTyp.in_arrow qtx qt st1 st2 p tcls tcl x hetyp htcl hmem)
+
+lemma CapturedRespects.of_parrow {tm : TagMeaning} {qt : QTyp} {st1 st2 : Typ} {p : Poison}
+    {tcls : List PFnTClosure} {tcl : PFnTClosure}
+    (h : QTypRespectsTagMeaning tm qt) (hetyp : qt.etyp = ETyp.parrow st1 st2 p tcls)
+    (htcl : tcl ∈ tcls) : CapturedRespects tm (pfnCapturedEnv tcl) :=
+  fun x qtx hmem => h.inner (QTypInQTyp.in_parrow qtx qt st1 st2 p tcls tcl x hetyp htcl hmem)
+
+lemma CapturedRespects.lookup {tm : TagMeaning} {σcap : CapturedVarEnv} {x : Name} {qt : QTyp}
+    (h : CapturedRespects tm σcap) (hl : σcap.lookup x = some qt) :
+    QTypRespectsTagMeaning tm qt :=
+  h x qt (List_lookup_some_mem x qt σcap hl)
+
+lemma CapturedRespects.ofCaptured_lookup {tm : TagMeaning} {σcap : CapturedVarEnv} {x : Name}
+    {qt : QTyp} (h : CapturedRespects tm σcap)
+    (hl : (VarTypeEnv.ofCaptured σcap).lookup x = some qt) :
+    QTypRespectsTagMeaning tm qt :=
+  h.lookup (list_lookup_of_ofCaptured_lookup σcap x qt hl)
+
+lemma CapturedRespects.head {tm : TagMeaning} {x : Name} {qt : QTyp} {σcap : CapturedVarEnv}
+    (h : CapturedRespects tm ((x, qt) :: σcap)) : QTypRespectsTagMeaning tm qt :=
+  h x qt (List.mem_cons_self ..)
+
+lemma CapturedRespects.tail {tm : TagMeaning} {e : Name × QTyp} {σcap : CapturedVarEnv}
+    (h : CapturedRespects tm (e :: σcap)) : CapturedRespects tm σcap :=
+  fun x qt hm => h x qt (List.mem_cons_of_mem _ hm)
+
+/-- `deepValueQTypProperty_mono` for a property that changes only at the
+    captured environments of a type that respects the table. -/
+lemma deepValueQTypProperty_mono_resp {tm : TagMeaning}
+    {P P' : CapturedVarEnv → VarEnv → Prop}
+    (hPP : ∀ σcap ρcap, CapturedRespects tm σcap → P σcap ρcap → P' σcap ρcap)
+    {qt : QTyp} {v : Value} (hresp : QTypRespectsTagMeaning tm qt)
+    (h : deepValueQTypProperty P qt v) : deepValueQTypProperty P' qt v := by
+  revert hresp
+  induction h with
+  | nonClosure hv hpe => intro _; exact .nonClosure hv hpe
+  | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hP _hdeep hbody ih =>
+      intro hresp
+      have hσ : CapturedRespects tm σcap := CapturedRespects.of_arrow hresp hetyp hmem
+      exact .closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem (hPP σcap ρcap hσ hP)
+        (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr (hσ.lookup hs)) hbody
+  | closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls hval hetyp hmem hP _hdeep ih =>
+      intro hresp
+      have hσ : CapturedRespects tm σcap := CapturedRespects.of_arrow hresp hetyp hmem
+      exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p tcls hval hetyp hmem
+        (hPP σcap ρcap hσ hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr (hσ.lookup hs))
+  | peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp hpure hmem hP _hdeep ih =>
+      intro hresp
+      have hσ : CapturedRespects tm σcap := CapturedRespects.of_parrow hresp hetyp hmem
+      exact .peClosure xp body pbody ρcap σcap st1 st2 p tcls hval hetyp hpure hmem
+        (hPP σcap ρcap hσ hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr (hσ.lookup hs))
+  | peClosure_extern id xp y argTyp retSpec ρcap σcap p tcls hval hetyp hmem hP _hdeep ih =>
+      intro hresp
+      have hσ : CapturedRespects tm σcap := CapturedRespects.of_parrow hresp hetyp hmem
+      exact .peClosure_extern id xp y argTyp retSpec ρcap σcap p tcls hval hetyp hmem
+        (hPP σcap ρcap hσ hP) (fun x qt_x v_x hs hr => ih x qt_x v_x hs hr (hσ.lookup hs))
 
 lemma not_qtypCleanUnder_of_poison_true_noPred
   {R : Regime} {qt : QTyp}
@@ -894,11 +983,11 @@ lemma not_qtypCleanUnder_of_poison_true_noPred
 
 -- Monotonicity of capturedVarsRegimeProperty under Regime.monotoneStep.
 private lemma capturedVarsRegimeProperty_monotone
-  {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
   (h_mono : Regime.monotoneStep R R')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : capturedVarsRegimeProperty predSat R μ σcap ρcap) :
-  capturedVarsRegimeProperty predSat R' μ σcap ρcap := by
+  (h : capturedVarsRegimeProperty predSat R μ θ σcap ρcap) :
+  capturedVarsRegimeProperty predSat R' μ θ σcap ρcap := by
   intro x qt_x k_x hlook hguard hkR'
   have hkR : R.lookup? k_x ≠ none := fun habs => h_mono.2 k_x hkR' habs
   have hvr_R := h x qt_x k_x hlook hguard hkR
@@ -915,12 +1004,12 @@ private lemma capturedVarsRegimeProperty_monotone
     `hfresh` discharge at use sites comes from `closureEnvBoundedInCtx`/`TagBoundedCtx`
     (captured-var tags are `< nextTag` while `newTags = fun k => nextTag ≤ k`). -/
 private lemma capturedVarsRegimeProperty_monotoneExt
-  {predSat : PredSat} {R R' : Regime} {μ : Memory} {newTags : Tag → Prop}
+  {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap} {newTags : Tag → Prop}
   (h_mono : Regime.monotoneStepExt R R' newTags)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
   (hfresh : ∀ x qt_x k_x, σcap.lookup x = some qt_x → qtypGuardTag qt_x = some k_x → ¬ newTags k_x)
-  (h : capturedVarsRegimeProperty predSat R μ σcap ρcap) :
-  capturedVarsRegimeProperty predSat R' μ σcap ρcap := by
+  (h : capturedVarsRegimeProperty predSat R μ θ σcap ρcap) :
+  capturedVarsRegimeProperty predSat R' μ θ σcap ρcap := by
   intro x qt_x k_x hlook hguard hkR'
   have hkR : R.lookup? k_x ≠ none := by
     rcases h_mono.2 k_x hkR' with h2 | h2
@@ -960,10 +1049,10 @@ private lemma deepValueQTypProperty_capturedVarsRegime_monotoneExt
     (hnewB : ∀ k, newTags k → B ≤ k)
     {qt : QTyp} {v : Value}
     (hdeep : deepValueQTypProperty (fun σcap ρcap =>
-        capturedVarsRegimeProperty predSat R μ σcap ρcap ∧ capturedVarsTypingProperty θ σcap ρcap) qt v) :
+        capturedVarsRegimeProperty predSat R μ θ σcap ρcap ∧ capturedVarsTypingProperty θ σcap ρcap) qt v) :
     etypClosuresFullBounded qt.etyp B →
     deepValueQTypProperty (fun σcap ρcap =>
-        capturedVarsRegimeProperty predSat R' μ σcap ρcap ∧ capturedVarsTypingProperty θ σcap ρcap) qt v := by
+        capturedVarsRegimeProperty predSat R' μ θ σcap ρcap ∧ capturedVarsTypingProperty θ σcap ρcap) qt v := by
   induction hdeep with
   | nonClosure hv hpe => intro _; exact .nonClosure hv hpe
   | closure xp body ρcap σcap st1 st2 p tcls hval hetyp hmem hPT _hrec _hbody ih =>
@@ -1036,13 +1125,13 @@ lemma closureCapturedVarsRegime_monotoneExt
 
 -- Lookup-back transport helpers used by both the `ite` and join transport proofs.
 lemma varsRegime_transport_active_lookup_back
-  {ρ : VarEnv}
+  {θ : RealizationMap} {ρ : VarEnv}
   {entry : Name × QTyp} {k : Tag} {b : Bool}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   (hguard : qtypGuardTag entry.snd = some k)
   (hreg' : R'.lookup? k = some b)
-  (h : varsRegime predSat R μ ρ entry) :
-  varsRegime predSat R' μ ρ entry := by
+  (h : varsRegime predSat R μ θ ρ entry) :
+  varsRegime predSat R' μ θ ρ entry := by
   cases h with
   | noPred_ok hpred =>
       rw [hpred] at hguard
@@ -1070,10 +1159,11 @@ lemma varsRegime_transport_active_lookup_back
       exact varsRegime.withPred_ok entry k' arg_name pred_body var_env v b' hclos hreg'' hvar hcons
 
 private lemma capturedVarsRegimeProperty_transport_lookup_back
+  {θ : RealizationMap}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : capturedVarsRegimeProperty predSat R μ σcap ρcap) :
-  capturedVarsRegimeProperty predSat R' μ σcap ρcap := by
+  (h : capturedVarsRegimeProperty predSat R μ θ σcap ρcap) :
+  capturedVarsRegimeProperty predSat R' μ θ σcap ρcap := by
   intro x qt_x k_x hlook hguard hkR'
   cases hkR'some : R'.lookup? k_x with
   | none =>
@@ -1087,7 +1177,7 @@ private lemma capturedVarsRegimeProperty_transport_lookup_back
       exact
         varsRegime_transport_active_lookup_back
           (predSat := predSat) (R := R) (R' := R')
-          (μ := μ) (ρ := ρcap) (entry := (x, qt_x))
+          (μ := μ) (θ := θ) (ρ := ρcap) (entry := (x, qt_x))
           hlookup_back hguard hkR'some hvr_R
 
 lemma closureCapturedVarsRegime_transport_lookup_back
@@ -1105,10 +1195,11 @@ lemma closureCapturedVarsRegime_transport_lookup_back
         hdeep)
 
 lemma memberVarsRegimeEvidence_transport_lookup_back
+  {θ : RealizationMap}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : MemberVarsRegimeEvidence predSat R μ σcap ρcap) :
-  MemberVarsRegimeEvidence predSat R' μ σcap ρcap := by
+  (h : MemberVarsRegimeEvidence predSat R μ θ σcap ρcap) :
+  MemberVarsRegimeEvidence predSat R' μ θ σcap ρcap := by
   intro y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR'
   cases hkR'some : R'.lookup? k_y with
   | none =>
@@ -1119,12 +1210,12 @@ lemma memberVarsRegimeEvidence_transport_lookup_back
         have hback := hlookup_back k_y b hkR'some
         simp [hnone] at hback
       have hvr_R :
-          varsRegime predSat R μ ρcap (y, qt_y) :=
+          varsRegime predSat R μ θ ρcap (y, qt_y) :=
         h y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR
       exact
         varsRegime_transport_active_lookup_back
           (predSat := predSat) (R := R) (R' := R')
-          (μ := μ) (ρ := ρcap) (entry := (y, qt_y))
+          (μ := μ) (θ := θ) (ρ := ρcap) (entry := (y, qt_y))
           hlookup_back hguard hkR'some hvr_R
 
 lemma memberCvcrEvidence_transport_lookup_back
@@ -1509,20 +1600,20 @@ lemma valueConsistentWithRegime_closureCapturedVarsRegime
   | inRegimeFalse _k _ _ _ hcap => exact hcap
 
 private def capturedVarsRegimePropertyMasked
-    (masked : Tag → Prop) (predSat : PredSat) (R : Regime) (μ : Memory)
+    (masked : Tag → Prop) (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap)
     (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
   ∀ (x : Name) (qt_x : QTyp) (k_x : Tag),
     σcap.lookup x = some qt_x →
     qtypGuardTag qt_x = some k_x →
     R.lookup? k_x ≠ none →
-    masked k_x ∨ varsRegime predSat R μ ρcap (x, qt_x)
+    masked k_x ∨ varsRegime predSat R μ θ ρcap (x, qt_x)
 
 def closureCapturedVarsRegimeMasked
     (masked : Tag → Prop) (predSat : PredSat) (R : Regime)
     (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value) : Prop :=
   deepValueQTypProperty
     (fun σcap ρcap =>
-      capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap ∧
+      capturedVarsRegimePropertyMasked masked predSat R μ θ σcap ρcap ∧
       capturedVarsTypingProperty θ σcap ρcap)
     qt v
 
@@ -1536,7 +1627,7 @@ def consistentWithRegimeMasked
   (∀ x qt k, ctx.varEnv.lookup x = some qt →
      qtypGuardTag qt = some k →
      R.lookup? k ≠ none →
-     masked k ∨ varsRegime predSat R μ ρ (x, qt)) ∧
+     masked k ∨ varsRegime predSat R μ θ ρ (x, qt)) ∧
   (∀ x qt v, ctx.varEnv.lookup x = some qt →
      ρ.lookup x = some v →
      closureCapturedVarsRegimeMasked masked predSat R qt μ θ v)
@@ -1565,13 +1656,13 @@ inductive valueConsistentWithRegimeMasked
   | inRegimeFalse (k : Tag)
       (htag : qtypGuardTag qt = some k)
       (hkfalse : R.lookup? k = some false)
-      (hnot : ¬ qtypPredHolds predSat qt μ v)
+      (hnot : ¬ qtypPredHolds predSat θ qt μ v)
       (hcap : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
       valueConsistentWithRegimeMasked masked predSat R qt μ θ v
   | inRegimeTrue (k : Tag)
       (htag : qtypGuardTag qt = some k)
       (hktrue : R.lookup? k = some true)
-      (hholds : qtypPredHolds predSat qt μ v)
+      (hholds : qtypPredHolds predSat θ qt μ v)
       (hcap : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
       valueConsistentWithRegimeMasked masked predSat R qt μ θ v
 
@@ -1609,12 +1700,12 @@ lemma valueConsistentWithRegimeMasked_closureCapturedVarsRegime
   | inRegimeTrue _ _ _ _ hcap => exact hcap
 
 private lemma capturedVarsRegimePropertyMasked_unmask
-  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ : Memory}
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap}
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
   (hmasked_none : ∀ k, masked k → R.lookup? k = none)
   (h :
-    capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
-  capturedVarsRegimeProperty predSat R μ σcap ρcap := by
+    capturedVarsRegimePropertyMasked masked predSat R μ θ σcap ρcap) :
+  capturedVarsRegimeProperty predSat R μ θ σcap ρcap := by
   intro x qt_x k_x hlookup hguard hRdef
   specialize h x qt_x k_x hlookup hguard hRdef
   rcases h with hmasked | hvars
@@ -1633,7 +1724,7 @@ private lemma closureCapturedVarsRegimeMasked_unmask
         (fun _ _ hP =>
           ⟨capturedVarsRegimePropertyMasked_unmask
               (masked := masked) (predSat := predSat)
-              (R := R) (μ := μ) hmasked_none hP.1,
+              (R := R) (μ := μ) (θ := θ) hmasked_none hP.1,
             hP.2⟩)
         h
 
@@ -1708,10 +1799,10 @@ lemma valueConsistentWithRegimeMasked_unmask
           hmasked_none hcap)
 
 private lemma capturedVarsRegimeProperty_to_masked
-  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ : Memory}
+  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap}
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : capturedVarsRegimeProperty predSat R μ σcap ρcap) :
-  capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap := by
+  (h : capturedVarsRegimeProperty predSat R μ θ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R μ θ σcap ρcap := by
   intro x qt_x k_x hlookup hguard hRdef
   exact Or.inr (h x qt_x k_x hlookup hguard hRdef)
 
@@ -1771,8 +1862,8 @@ lemma valueConsistentWithRegime_guardClosure_consistency
   (hvalc : valueConsistentWithRegime predSat R qt μ θ v)
   (hpred : qt.pred = Predicate.guardClosure k arg_name pred_body var_env)
   (hreg : R.lookup? k = some b) :
-  (b = true → qtypPredHolds predSat qt μ v) ∧
-  (b = false → ¬ qtypPredHolds predSat qt μ v) := by
+  (b = true → qtypPredHolds predSat θ qt μ v) ∧
+  (b = false → ¬ qtypPredHolds predSat θ qt μ v) := by
   cases hvalc with
   | noTag htag _ =>
       have : qtypGuardTag qt = some k := by
@@ -1852,7 +1943,7 @@ lemma varsRegime_of_valueConsistentWithRegimeMasked_active
   (hguard : qtypGuardTag qt = some k)
   (hRdef : R.lookup? k ≠ none)
   (hvalc : valueConsistentWithRegimeMasked masked predSat R qt μ θ v) :
-  masked k ∨ varsRegime predSat R μ ρ (x, qt) := by
+  masked k ∨ varsRegime predSat R μ θ ρ (x, qt) := by
   cases hpred : qt.pred with
   | noPred =>
       simp [qtypGuardTag, hpred] at hguard
@@ -1917,8 +2008,8 @@ lemma varsRegime_of_valueConsistentWithRegimeMasked_active
                 exact Option.some.inj this
               have hk_false : R.lookup? k0 = some false := by simpa [hk0_eq, hk_eq] using hk
               have hcons :
-                  (false = true → qtypPredHolds predSat qt μ v) ∧
-                  (false = false → ¬ qtypPredHolds predSat qt μ v) := by
+                  (false = true → qtypPredHolds predSat θ qt μ v) ∧
+                  (false = false → ¬ qtypPredHolds predSat θ qt μ v) := by
                 constructor
                 · intro hbtrue
                   cases hbtrue
@@ -1929,33 +2020,36 @@ lemma varsRegime_of_valueConsistentWithRegimeMasked_active
                   hpred hk_false hlookup
                   hcons
 
--- Transport `varsRegime` across a memory change when predicate truth is preserved.
+-- Transport `varsRegime` between two states in which every tag of the regime
+-- with a descriptor means the same, for a type that respects the table.
 lemma varsRegime_transport_predHolds
-  {predSat : PredSat} {R : Regime} {μ μ' : Memory} {ρ : VarEnv} {entry : Name × QTyp}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
-  (h : varsRegime predSat R μ ρ entry) :
-  varsRegime predSat R μ' ρ entry := by
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ μ' : Memory} {θ θ' : RealizationMap}
+  {ρ : VarEnv} {entry : Name × QTyp}
+  (hS : PredSatStable predSat tm R θ θ' μ μ')
+  (hresp : QTypRespectsTagMeaning tm entry.snd)
+  (h : varsRegime predSat R μ θ ρ entry) :
+  varsRegime predSat R μ' θ' ρ entry := by
   cases h with
   | noPred_ok hnp =>
       exact varsRegime.noPred_ok entry hnp
   | guardOnly_ok k hgo =>
       exact varsRegime.guardOnly_ok entry k hgo
   | withPred_ok k arg_name pred_body var_env v b hclos hreg hvar hcons =>
+      have hc := qtypPredHolds_of_stable (v := v) hS hclos (hresp.desc hclos) (by simp [hreg])
       exact varsRegime.withPred_ok entry k arg_name pred_body var_env v b hclos hreg hvar
-        ⟨fun hbtrue => (hpred_compat _ v).1 (hcons.1 hbtrue),
-         fun hbfalse hholds => hcons.2 hbfalse ((hpred_compat _ v).2 hholds)⟩
+        ⟨fun hbtrue => hc.1 (hcons.1 hbtrue),
+         fun hbfalse hholds => hcons.2 hbfalse (hc.2 hholds)⟩
 
 lemma memberVarsRegimeEvidence_monotone
-  {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
   (h_mono : Regime.monotoneStep R R')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : MemberVarsRegimeEvidence predSat R μ σcap ρcap) :
-  MemberVarsRegimeEvidence predSat R' μ σcap ρcap := by
+  (h : MemberVarsRegimeEvidence predSat R μ θ σcap ρcap) :
+  MemberVarsRegimeEvidence predSat R' μ θ σcap ρcap := by
   intro y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR'
   have hkR : R.lookup? k_y ≠ none := fun hnone => h_mono.2 k_y hkR' hnone
   have hvr_R :
-      varsRegime predSat R μ ρcap (y, qt_y) :=
+      varsRegime predSat R μ θ ρcap (y, qt_y) :=
     h y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR
   cases hRk : R.lookup? k_y with
   | none =>
@@ -1968,47 +2062,43 @@ lemma memberVarsRegimeEvidence_monotone
           exact (hkR' hkR'_none).elim
 
 private lemma memberVarsRegimeEvidence_transport_μ
-  {predSat : PredSat} {R : Regime} {μ μ' : Memory}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ μ' : Memory} {θ θ' : RealizationMap}
+  (hS : PredSatStable predSat tm R θ θ' μ μ')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : MemberVarsRegimeEvidence predSat R μ σcap ρcap) :
-  MemberVarsRegimeEvidence predSat R μ' σcap ρcap := by
+  (hresp : CapturedRespects tm σcap)
+  (h : MemberVarsRegimeEvidence predSat R μ θ σcap ρcap) :
+  MemberVarsRegimeEvidence predSat R μ' θ' σcap ρcap := by
   intro y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR
   exact
-    varsRegime_transport_predHolds hpred_compat
+    varsRegime_transport_predHolds hS (hresp.ofCaptured_lookup hlookup_σ)
       (h y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR)
 
--- Transport capturedVarsRegimeProperty across memory change given a predicate iff.
+-- Transport capturedVarsRegimeProperty between two states in which the regime's
+-- tags with a descriptor are stable, for a captured environment that respects the table.
 private lemma capturedVarsRegimeProperty_transport_predHolds
-  {predSat : PredSat} {R : Regime} {μ μ' : Memory}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ μ' : Memory} {θ θ' : RealizationMap}
+  (hS : PredSatStable predSat tm R θ θ' μ μ')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : capturedVarsRegimeProperty predSat R μ σcap ρcap) :
-  capturedVarsRegimeProperty predSat R μ' σcap ρcap := by
+  (hresp : CapturedRespects tm σcap)
+  (h : capturedVarsRegimeProperty predSat R μ θ σcap ρcap) :
+  capturedVarsRegimeProperty predSat R μ' θ' σcap ρcap := by
   intro x qt_x k_x hlook hguard hkR
-  have hvr := h x qt_x k_x hlook hguard hkR
-  cases hvr with
-  | noPred_ok hnp => exact varsRegime.noPred_ok _ hnp
-  | guardOnly_ok k hgo => exact varsRegime.guardOnly_ok _ k hgo
-  | withPred_ok k arg_name pred_body var_env v b hclos hreg hvar hconsist =>
-      exact varsRegime.withPred_ok _ k arg_name pred_body var_env v b hclos hreg hvar
-        ⟨fun hbtrue => (hpred_compat _ v).1 (hconsist.1 hbtrue),
-         fun hbfalse hholds => hconsist.2 hbfalse ((hpred_compat _ v).2 hholds)⟩
+  exact varsRegime_transport_predHolds hS (hresp.lookup hlook) (h x qt_x k_x hlook hguard hkR)
 
--- Transport closureCapturedVarsRegime across memory change given a predicate iff.
+-- Transport closureCapturedVarsRegime across a memory change that keeps the
+-- regime's tags with a descriptor, for a type that respects the table.
 lemma closureCapturedVarsRegime_transport_μ
-  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ μ' : Memory} {θ : RealizationMap} {v : Value}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {qt : QTyp} {μ μ' : Memory}
+  {θ : RealizationMap} {v : Value}
+  (hS : PredSatStable predSat tm R θ θ μ μ')
+  (hresp : QTypRespectsTagMeaning tm qt)
   (h : closureCapturedVarsRegime predSat R qt μ θ v) :
   closureCapturedVarsRegime predSat R qt μ' θ v := by
   cases h with
   | intro hdeep =>
-      exact .intro (deepValueQTypProperty_mono
-        (fun σcap ρcap ⟨hP, hT⟩ => ⟨capturedVarsRegimeProperty_transport_predHolds hpred_compat hP, hT⟩)
-        hdeep)
+      exact .intro (deepValueQTypProperty_mono_resp
+        (fun σcap ρcap hσ ⟨hP, hT⟩ => ⟨capturedVarsRegimeProperty_transport_predHolds hS hσ hP, hT⟩)
+        hresp hdeep)
 
 -- Monotonicity of valueHasETyp under θ extension.
 private lemma valueHasETyp_extends'
@@ -2041,23 +2131,24 @@ private lemma valueHasETyp_extends'
       exact ih y qt v hlookupT hlookupV hExt
 
 -- Transport closureCapturedVarsRegime across both memory and θ (map extension).
--- The regime property is insensitive to θ; the typing property is monotone
--- under θ extension via valueHasETyp_extends'.
+-- The regime property moves with the stability of the regime's tags; the typing
+-- property is monotone under θ extension via valueHasETyp_extends'.
 lemma closureCapturedVarsRegime_transport_μ_θ
-  {predSat : PredSat} {R : Regime} {qt : QTyp} {μ μ' : Memory} {θ θ' : RealizationMap} {v : Value}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {qt : QTyp} {μ μ' : Memory}
+  {θ θ' : RealizationMap} {v : Value}
+  (hS : PredSatStable predSat tm R θ θ' μ μ')
   (hθ : θ.extendsMap θ')
+  (hresp : QTypRespectsTagMeaning tm qt)
   (h : closureCapturedVarsRegime predSat R qt μ θ v) :
   closureCapturedVarsRegime predSat R qt μ' θ' v := by
   cases h with
   | intro hdeep =>
-      exact .intro (deepValueQTypProperty_mono
-        (fun σcap ρcap ⟨hP, hnd, hcover, htyp⟩ =>
-          ⟨capturedVarsRegimeProperty_transport_predHolds hpred_compat hP,
+      exact .intro (deepValueQTypProperty_mono_resp
+        (fun σcap ρcap hσ ⟨hP, hnd, hcover, htyp⟩ =>
+          ⟨capturedVarsRegimeProperty_transport_predHolds hS hσ hP,
            hnd, hcover,
-           fun y qt_y v_y hσ hρ => valueHasETyp_extends' hθ (htyp y qt_y v_y hσ hρ)⟩)
-        hdeep)
+           fun y qt_y v_y hσ' hρ => valueHasETyp_extends' hθ (htyp y qt_y v_y hσ' hρ)⟩)
+        hresp hdeep)
 
 lemma memberCvcrEvidence_monotone
   {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
@@ -2071,38 +2162,38 @@ lemma memberCvcrEvidence_monotone
       (h y qt_y v_y hlookup_σ hlookup_ρ)
 
 private lemma memberCvcrEvidence_transport_μ
-  {predSat : PredSat} {R : Regime} {μ μ' : Memory} {θ : RealizationMap}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ μ' : Memory} {θ : RealizationMap}
+  (hS : PredSatStable predSat tm R θ θ μ μ')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
+  (hresp : CapturedRespects tm σcap)
   (h : MemberCvcrEvidence predSat R μ θ σcap ρcap) :
   MemberCvcrEvidence predSat R μ' θ σcap ρcap := by
   intro y qt_y v_y hlookup_σ hlookup_ρ
   exact
-    closureCapturedVarsRegime_transport_μ hpred_compat
+    closureCapturedVarsRegime_transport_μ hS (hresp.ofCaptured_lookup hlookup_σ)
       (h y qt_y v_y hlookup_σ hlookup_ρ)
 
 -- Transport MemberCvcrEvidence across both μ and θ (extends).
 -- The θ transport requires recursing through deepValueQTypProperty to update
 -- capturedVarsTypingProperty via valueHasETyp_extends at every nesting level.
 private lemma memberCvcrEvidence_transport_μ_θ
-  {predSat : PredSat} {R : Regime} {μ μ' : Memory} {θ θ' : RealizationMap}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ μ' : Memory} {θ θ' : RealizationMap}
+  (hS : PredSatStable predSat tm R θ θ' μ μ')
   (hθ : θ.extendsMap θ')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
+  (hresp : CapturedRespects tm σcap)
   (h : MemberCvcrEvidence predSat R μ θ σcap ρcap) :
   MemberCvcrEvidence predSat R μ' θ' σcap ρcap := by
   intro y qt_y v_y hlookup_σ hlookup_ρ
-  exact closureCapturedVarsRegime_transport_μ_θ hpred_compat hθ
+  exact closureCapturedVarsRegime_transport_μ_θ hS hθ (hresp.ofCaptured_lookup hlookup_σ)
     (h y qt_y v_y hlookup_σ hlookup_ρ)
 
 private lemma capturedVarsRegimePropertyMasked_transport_lookup_back
-  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
   (hlookup_back : ∀ k b, R'.lookup? k = some b → R.lookup? k = some b)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
-  capturedVarsRegimePropertyMasked masked predSat R' μ σcap ρcap := by
+  (h : capturedVarsRegimePropertyMasked masked predSat R μ θ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R' μ θ σcap ρcap := by
   intro x qt_x k_x hlook hguard hkR'
   cases hkR'some : R'.lookup? k_x with
   | none =>
@@ -2120,7 +2211,7 @@ private lemma capturedVarsRegimePropertyMasked_transport_lookup_back
           exact Or.inr <|
             varsRegime_transport_active_lookup_back
               (predSat := predSat) (R := R) (R' := R')
-              (μ := μ) (ρ := ρcap) (entry := (x, qt_x))
+              (μ := μ) (θ := θ) (ρ := ρcap) (entry := (x, qt_x))
               hlookup_back hguard hkR'some hvr
 
 lemma closureCapturedVarsRegimeMasked_transport_lookup_back
@@ -2139,11 +2230,11 @@ lemma closureCapturedVarsRegimeMasked_transport_lookup_back
       h
 
 private lemma capturedVarsRegimePropertyMasked_monotone
-  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
   (h_mono : Regime.monotoneStep R R')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
-  capturedVarsRegimePropertyMasked masked predSat R' μ σcap ρcap := by
+  (h : capturedVarsRegimePropertyMasked masked predSat R μ θ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R' μ θ σcap ρcap := by
   intro x qt_x k_x hlook hguard hkR'
   have hkR : R.lookup? k_x ≠ none := fun hnone => h_mono.2 k_x hkR' hnone
   have hmasked_or_hvr := h x qt_x k_x hlook hguard hkR
@@ -2177,53 +2268,54 @@ lemma closureCapturedVarsRegimeMasked_monotone
       h
 
 private lemma capturedVarsRegimePropertyMasked_transport_predHolds
-  {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ μ' : Memory}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  {masked : Tag → Prop} {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ μ' : Memory}
+  {θ θ' : RealizationMap}
+  (hS : PredSatStable predSat tm R θ θ' μ μ')
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
-  (h : capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
-  capturedVarsRegimePropertyMasked masked predSat R μ' σcap ρcap := by
+  (hresp : CapturedRespects tm σcap)
+  (h : capturedVarsRegimePropertyMasked masked predSat R μ θ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R μ' θ' σcap ρcap := by
   intro x qt_x k_x hlook hguard hkR
   have hmasked_or_hvr := h x qt_x k_x hlook hguard hkR
   cases hmasked_or_hvr with
   | inl hmasked =>
       exact Or.inl hmasked
   | inr hvr =>
-      exact Or.inr (varsRegime_transport_predHolds hpred_compat hvr)
+      exact Or.inr (varsRegime_transport_predHolds hS (hresp.lookup hlook) hvr)
 
 lemma closureCapturedVarsRegimeMasked_transport_μ
-  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {masked : Tag → Prop} {predSat : PredSat} {tm : TagMeaning} {R : Regime}
   {qt : QTyp} {μ μ' : Memory} {θ : RealizationMap} {v : Value}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  (hS : PredSatStable predSat tm R θ θ μ μ')
+  (hresp : QTypRespectsTagMeaning tm qt)
   (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
   closureCapturedVarsRegimeMasked masked predSat R qt μ' θ v := by
   exact
-    deepValueQTypProperty_mono
-      (fun σcap ρcap ⟨hP, hT⟩ =>
+    deepValueQTypProperty_mono_resp
+      (fun σcap ρcap hσ ⟨hP, hT⟩ =>
         ⟨capturedVarsRegimePropertyMasked_transport_predHolds
             (masked := masked) (predSat := predSat) (R := R)
-            hpred_compat hP,
+            hS hσ hP,
           hT⟩)
-      h
+      hresp h
 
 lemma closureCapturedVarsRegimeMasked_transport_μ_θ
-  {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
+  {masked : Tag → Prop} {predSat : PredSat} {tm : TagMeaning} {R : Regime}
   {qt : QTyp} {μ μ' : Memory} {θ θ' : RealizationMap} {v : Value}
-  (hpred_compat : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ v ↔ qtypPredHolds predSat qt μ' v)
+  (hS : PredSatStable predSat tm R θ θ' μ μ')
   (hθ : θ.extendsMap θ')
+  (hresp : QTypRespectsTagMeaning tm qt)
   (h : closureCapturedVarsRegimeMasked masked predSat R qt μ θ v) :
   closureCapturedVarsRegimeMasked masked predSat R qt μ' θ' v := by
   exact
-    deepValueQTypProperty_mono
-      (fun σcap ρcap ⟨hP, hnd, hcover, htyp⟩ =>
+    deepValueQTypProperty_mono_resp
+      (fun σcap ρcap hσ ⟨hP, hnd, hcover, htyp⟩ =>
         ⟨capturedVarsRegimePropertyMasked_transport_predHolds
             (masked := masked) (predSat := predSat) (R := R)
-            hpred_compat hP,
+            hS hσ hP,
           hnd, hcover,
-          fun y qt_y v_y hσ hρ => valueHasETyp_extends' hθ (htyp y qt_y v_y hσ hρ)⟩)
-      h
+          fun y qt_y v_y hσ' hρ => valueHasETyp_extends' hθ (htyp y qt_y v_y hσ' hρ)⟩)
+      hresp h
 
 private lemma valueConsistentWithRegimeMasked_transport_pred'
   {masked : Tag → Prop} {predSat : PredSat} {R : Regime}
@@ -3160,36 +3252,33 @@ private lemma capturedVarsTypingProperty_extends
   exact valueHasETyp_extends hθ (h.2.2 y qt v hσ hρ)
 
 lemma agreeValueUnder_clean_extends
-  {predSat : PredSat} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
   {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {qt : QTyp} {v₀ v₁ : Value} :
-  (∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v) →
-  (∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v) →
+  PredSatStable predSat tm R θ₀ θ₀' μ₀ μ₀' →
+  PredSatStable predSat tm R θ₁ θ₁' μ₁ μ₁' →
+  QTypRespectsTagMeaning tm qt →
   qtypCleanUnder R qt →
   θ₀.extendsMap θ₀' →
   θ₁.extendsMap θ₁' →
   agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
   agreeValueUnder predSat R μ₀' μ₁' θ₀' θ₁' qt v₀ v₁ := by
-  intro hpred_compat₀ hpred_compat₁ hclean hθ₀ hθ₁ hagree
+  intro hpred_compat₀ hpred_compat₁ hresp hclean hθ₀ hθ₁ hagree
   let motive₁ :
       (a : QTyp) → (a_1 a_2 : Value) → agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
     fun qt v₁ v₂ _ =>
       qtypCleanUnder R qt →
-        (∀ (qt : QTyp) (v : Value),
-          qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v) →
-          (∀ (qt : QTyp) (v : Value),
-            qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v) →
+        QTypRespectsTagMeaning tm qt →
+        PredSatStable predSat tm R θ₀ θ₀' μ₀ μ₀' →
+          PredSatStable predSat tm R θ₁ θ₁' μ₁ μ₁' →
             θ₀.extendsMap θ₀' →
               θ₁.extendsMap θ₁' →
                 agreeValueUnder predSat R μ₀' μ₁' θ₀' θ₁' qt v₁ v₂
   let motive₂ :
       (a : CapturedVarEnv) → (a_1 a_2 : VarEnv) → agreeCapturedEnv predSat R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
     fun σcap ρcap₁ ρcap₂ _ =>
-      (∀ (qt : QTyp) (v : Value),
-        qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v) →
-        (∀ (qt : QTyp) (v : Value),
-          qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v) →
+      CapturedRespects tm σcap →
+      PredSatStable predSat tm R θ₀ θ₀' μ₀ μ₀' →
+        PredSatStable predSat tm R θ₁ θ₁' μ₁ μ₁' →
           θ₀.extendsMap θ₀' →
             θ₁.extendsMap θ₁' →
               agreeCapturedEnv predSat R μ₀' μ₁' θ₀' θ₁' σcap ρcap₁ ρcap₂
@@ -3197,18 +3286,22 @@ lemma agreeValueUnder_clean_extends
     agreeValueUnder.rec (predSat := predSat) (R := R) (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
       (motive_1 := motive₁) (motive_2 := motive₂)
       (clean_eq_nonref_nonarrow := by
-        intro qt v₁ v₂ hpoison hnotfun hnotref hagree _hclean _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
+        intro qt v₁ v₂ hpoison hnotfun hnotref hagree _hclean _hresp _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
         exact agreeValueUnder.clean_eq_nonref_nonarrow hpoison hnotfun hnotref hagree)
       (clean_internal_arrow := by
         intro st1 st2 p tcls qt tcl x body σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap
           hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ hbody ihCap
-          _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+          _hclean hresp hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+        have hσ : CapturedRespects tm σcap := by
+          have h := CapturedRespects.of_arrow hresp hetyp htcl
+          rw [hmatch] at h
+          exact h
         exact agreeValueUnder.clean_internal_arrow hclean_internal hetyp htcl hmatch
-          (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
+          (ihCap hσ hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
+          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hσ hmemberVars₁)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hσ hmemberCvcr₁)
+          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hσ hmemberVars₂)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hσ hmemberCvcr₂)
           (capturedVarsTypingProperty_extends hθ₀ htyping₁)
           (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂ hbody)
@@ -3216,30 +3309,38 @@ lemma agreeValueUnder_clean_extends
         intro id x y argTyp argPoison argPred retSpec effects p tcls qt tcl σcap argQt cap memberCap ρcap₁ ρcap₂ v₁ v₂
           hclean_internal hetyp htcl hmatch hcap
           hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
-          _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+          _hclean hresp hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+        have hσ : CapturedRespects tm σcap := by
+          have h := CapturedRespects.of_arrow hresp hetyp htcl
+          rw [hmatch] at h
+          exact h
         exact agreeValueUnder.clean_internal_arrow_extern hclean_internal hetyp htcl hmatch
-          (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
+          (ihCap hσ hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
+          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hσ hmemberVars₁)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hσ hmemberCvcr₁)
+          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hσ hmemberVars₂)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hσ hmemberCvcr₂)
           (capturedVarsTypingProperty_extends hθ₀ htyping₁)
           (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂)
       (dirty_internal_arrow := by
-        intro qt v₁ v₂ hdirty hisArrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
+        intro qt v₁ v₂ hdirty hisArrow htyp1 htyp2 _hclean _hresp _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.dirty_internal_arrow hdirty hisArrow
           (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
       (clean_internal_parrow := by
         intro st1 st2 p tcls qt tcl x body pbody σcap ρcap₁ ρcap₂ v₁ v₂ hclean_internal hetyp htcl hmatch hcap
           hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
-          _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+          _hclean hresp hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+        have hσ : CapturedRespects tm σcap := by
+          have h := CapturedRespects.of_parrow hresp hetyp htcl
+          rw [hmatch.2] at h
+          exact h
         exact agreeValueUnder.clean_internal_parrow hclean_internal hetyp htcl hmatch
-          (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
+          (ihCap hσ hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
+          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hσ hmemberVars₁)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hσ hmemberCvcr₁)
+          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hσ hmemberVars₂)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hσ hmemberCvcr₂)
           (capturedVarsTypingProperty_extends hθ₀ htyping₁)
           (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂)
@@ -3247,65 +3348,68 @@ lemma agreeValueUnder_clean_extends
         intro id x y argTyp argPoison argPred retSpec p tcls qt tcl σcap argQt cap memberCap ρcap₁ ρcap₂ v₁ v₂
           hclean_internal hetyp htcl hmatch hcap
           hmemberVars₁ hmemberCvcr₁ hmemberVars₂ hmemberCvcr₂ htyping₁ htyping₂ hv₁ hv₂ ihCap
-          _hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+          _hclean hresp hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+        have hσ : CapturedRespects tm σcap := by
+          have h := CapturedRespects.of_parrow hresp hetyp htcl
+          rw [hmatch] at h
+          exact h
         exact agreeValueUnder.clean_internal_parrow_extern hclean_internal hetyp htcl hmatch
-          (ihCap hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hmemberVars₁)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hmemberCvcr₁)
-          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hmemberVars₂)
-          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hmemberCvcr₂)
+          (ihCap hσ hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
+          (memberVarsRegimeEvidence_transport_μ hpred_compat₀ hσ hmemberVars₁)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₀ hθ₀ hσ hmemberCvcr₁)
+          (memberVarsRegimeEvidence_transport_μ hpred_compat₁ hσ hmemberVars₂)
+          (memberCvcrEvidence_transport_μ_θ hpred_compat₁ hθ₁ hσ hmemberCvcr₂)
           (capturedVarsTypingProperty_extends hθ₀ htyping₁)
           (capturedVarsTypingProperty_extends hθ₁ htyping₂)
           hv₁ hv₂)
       (dirty_internal_parrow := by
-        intro qt v₁ v₂ hdirty hisParrow htyp1 htyp2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
+        intro qt v₁ v₂ hdirty hisParrow htyp1 htyp2 _hclean _hresp _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.dirty_internal_parrow hdirty hisParrow
           (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2))
       (clean_ref := by
-        intro ls l a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin hv1 hlookup2 hv2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
+        intro ls l a₁ a₂ qt v₁ v₂ hpoison hetyp hlookup1 hin hv1 hlookup2 hv2 _hclean _hresp _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.clean_ref hpoison hetyp (hθ₀ _ _ hlookup1) hin hv1 (hθ₁ _ _ hlookup2) hv2)
       (withPred_true_eq := by
-        intro k qt v₁ v₂ htag hregime hnotfun hnotref hagree _hclean _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
+        intro k qt v₁ v₂ htag hregime hnotfun hnotref hagree _hclean _hresp _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
         exact agreeValueUnder.withPred_true_eq k htag hregime hnotfun hnotref hagree)
       (withPred_true_ref := by
-        intro k ls l a₁ a₂ qt v₁ v₂ htag hregime hetyp hlookup1 hin hv1 hlookup2 hv2 _hclean _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
+        intro k ls l a₁ a₂ qt v₁ v₂ htag hregime hetyp hlookup1 hin hv1 hlookup2 hv2 _hclean _hresp _hpred_compat₀ _hpred_compat₁ hθ₀ hθ₁
         exact agreeValueUnder.withPred_true_ref k htag hregime hetyp
           (hθ₀ _ _ hlookup1) hin hv1 (hθ₁ _ _ hlookup2) hv2)
       (nil := by
-        intro ρcap₁ ρcap₂ _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
+        intro ρcap₁ ρcap₂ _hσ _hpred_compat₀ _hpred_compat₁ _hθ₀ _hθ₁
         exact agreeCapturedEnv.nil)
       (cons_clean := by
         intro x qt σcap ρcap₁ ρcap₂ v₁ v₂ hclean hlookup1 hlookup2 htyp1 htyp2 hagree htail ihAgree ihTail
-          hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+          hσ hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
         exact agreeCapturedEnv.cons_clean hclean hlookup1 hlookup2
           (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2)
-          (ihAgree hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
-          (ihTail hpred_compat₀ hpred_compat₁ hθ₀ hθ₁))
+          (ihAgree hclean hσ.head hpred_compat₀ hpred_compat₁ hθ₀ hθ₁)
+          (ihTail hσ.tail hpred_compat₀ hpred_compat₁ hθ₀ hθ₁))
       (cons_dirty := by
         intro x qt σcap ρcap₁ ρcap₂ v₁ v₂ hdirty hlookup1 hlookup2 htyp1 htyp2 htail ihTail
-          hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+          hσ hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
         exact agreeCapturedEnv.cons_dirty hdirty hlookup1 hlookup2
           (valueHasETyp_extends hθ₀ htyp1) (valueHasETyp_extends hθ₁ htyp2)
-          (ihTail hpred_compat₀ hpred_compat₁ hθ₀ hθ₁))
+          (ihTail hσ.tail hpred_compat₀ hpred_compat₁ hθ₀ hθ₁))
       hagree
-  exact htransport hclean hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
+  exact htransport hclean hresp hpred_compat₀ hpred_compat₁ hθ₀ hθ₁
 
--- Explicit memory-transport interface (with predicate-compatibility witnesses):
--- a call-site wrapper around `agreeValueUnder_clean_extends`.
+-- Explicit state-transport interface (with stability witnesses for the two
+-- runs): a call-site wrapper around `agreeValueUnder_clean_extends`.
 lemma agreeValueUnder_clean_extends_transport_mem
-  {predSat : PredSat} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
+  {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ₀ μ₁ μ₀' μ₁' : Memory}
   {θ₀ θ₁ θ₀' θ₁' : RealizationMap} {qt : QTyp} {v₀ v₁ : Value}
-  (_hpred_compat₀ : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v)
-  (_hpred_compat₁ : ∀ (qt : QTyp) (v : Value),
-    qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v) :
+  (hS₀ : PredSatStable predSat tm R θ₀ θ₀' μ₀ μ₀')
+  (hS₁ : PredSatStable predSat tm R θ₁ θ₁' μ₁ μ₁')
+  (hresp : QTypRespectsTagMeaning tm qt) :
   qtypCleanUnder R qt →
   θ₀.extendsMap θ₀' →
   θ₁.extendsMap θ₁' →
   agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ →
   agreeValueUnder predSat R μ₀' μ₁' θ₀' θ₁' qt v₀ v₁ := by
   intro hclean hθ₀ hθ₁ hagree
-  exact agreeValueUnder_clean_extends _hpred_compat₀ _hpred_compat₁ hclean hθ₀ hθ₁ hagree
+  exact agreeValueUnder_clean_extends hS₀ hS₁ hresp hclean hθ₀ hθ₁ hagree
 
 private lemma agreeCapturedEnv_of_agreeOnClean_aux
   (predSat : PredSat) (R : Regime) (ctx : TypeContext)
@@ -3477,7 +3581,7 @@ lemma Memory_lookup_some_of_contains {μ : Memory} {a : Address} :
       exact ⟨n, by simp [Memory.lookup, ExtTreeMap.get?_eq_getElem?, hlookup]⟩
 
 lemma agreeOnClean_newRef_extend
-  (predSat : PredSat) (R : Regime) (ctxᵢ : TypeContext)
+  (predSat : PredSat) {tm : TagMeaning} (R : Regime) (ctxᵢ : TypeContext)
   (res1 res : TypeResult) (l : Loc) (etyp : ETyp)
   (cfg₀' cfg₁' cf₀ cf₁ : Config) (n₀ n₁ : Int) (a₀_new a₁_new : Address)
   (θ₀1 θ₁1 θ₀' θ₁' : RealizationMap)
@@ -3500,12 +3604,9 @@ lemma agreeOnClean_newRef_extend
   (hθext₁' : wfExtendsMap θ₁1 θ₁')
   (hwfcf₀1 : wfConfig cfg₀')
   (hwfcf₁1 : wfConfig cfg₁')
-  (hqtypPredHolds_mem₀ :
-      ∀ (qt : QTyp) (v : Value),
-        qtypPredHolds predSat qt cfg₀'.memory v ↔ qtypPredHolds predSat qt cf₀.memory v)
-  (hqtypPredHolds_mem₁ :
-      ∀ (qt : QTyp) (v : Value),
-        qtypPredHolds predSat qt cfg₁'.memory v ↔ qtypPredHolds predSat qt cf₁.memory v)
+  (hS₀ : PredSatStable predSat tm R θ₀1 θ₀' cfg₀'.memory cf₀.memory)
+  (hS₁ : PredSatStable predSat tm R θ₁1 θ₁' cfg₁'.memory cf₁.memory)
+  (hwfTm : wfTagMeaningCtx tm (ctxAfter ctxᵢ res))
   (hagree_clean_e :
       agreeOnClean predSat R (ctxAfter ctxᵢ res1)
         cfg₀'.memory cfg₀'.varEnv θ₀1 cfg₁'.memory cfg₁'.varEnv θ₁1)
@@ -3517,6 +3618,8 @@ lemma agreeOnClean_newRef_extend
       if ctxᵢ.pc = true then Predicate.noPred else res1.qualType.pred⟩
   constructor
   · intro l' qt hlookup hclean
+    have hrespQt : QTypRespectsTagMeaning tm qt :=
+      wfTagMeaningCtx_mem_lookup_qtyp tm _ l' qt hwfTm hlookup
     by_cases h_eq : l' = l
     · subst l'
       have hqt : qt = storedQt := by
@@ -3575,7 +3678,7 @@ lemma agreeOnClean_newRef_extend
       have hagree_stored :
           agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀' θ₁' storedQt (Value.num n₀) (Value.num n₁) :=
         agreeValueUnder_clean_extends_transport_mem
-          hqtypPredHolds_mem₀ hqtypPredHolds_mem₁ hclean hθext₀'.1 hθext₁'.1 hagree_stored_old
+          hS₀ hS₁ hrespQt hclean hθext₀'.1 hθext₁'.1 hagree_stored_old
       exact agreeLocUnder.agree_values l storedQt a₀_new a₁_new n₀ n₁ hreal0 hreal1 hlookup0 hlookup1 hagree_stored
     · have hlookup_old : (ctxAfter ctxᵢ res1).memEnv.lookup l' = some qt := by
         have hlookup' : res.memEnv'.lookup l' = some qt := by
@@ -3635,9 +3738,11 @@ lemma agreeOnClean_newRef_extend
           have hagree' :
               agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀' θ₁' qt (Value.num m0) (Value.num m1) :=
             agreeValueUnder_clean_extends_transport_mem
-              hqtypPredHolds_mem₀ hqtypPredHolds_mem₁ hclean hθext₀'.1 hθext₁'.1 hagree
+              hS₀ hS₁ hrespQt hclean hθext₀'.1 hθext₁'.1 hagree
           exact agreeLocUnder.agree_values l' qt a0 a1 m0 m1 hreal0' hreal1' hm0' hm1' hagree'
   · intro x qt hlookup hclean
+    have hrespQt : QTypRespectsTagMeaning tm qt :=
+      wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup
     have hlookup_old : (ctxAfter ctxᵢ res1).varEnv.lookup x = some qt := by
       simpa [ctxAfter] using hlookup
     have hagree_old := hagree_clean_e.2 x qt hlookup_old hclean
@@ -3650,7 +3755,7 @@ lemma agreeOnClean_newRef_extend
         have hagree' :
             agreeValueUnder predSat R cf₀.memory cf₁.memory θ₀' θ₁' qt v0 v1 :=
           agreeValueUnder_clean_extends_transport_mem
-            hqtypPredHolds_mem₀ hqtypPredHolds_mem₁ hclean hθext₀'.1 hθext₁'.1 hagree
+            hS₀ hS₁ hrespQt hclean hθext₀'.1 hθext₁'.1 hagree
         refine agreeVarUnder.agree_values x qt v0 v1 ?_ ?_ hagree'
         · simpa [hvar₀] using hlook0
         · simpa [hvar₁] using hlook1
@@ -3728,13 +3833,13 @@ private lemma deepValueQTypProperty_mono_bounded
           (CapturedEnvFullBounded_member_etypClosures hσbound (List_lookup_some_mem x qt_x σcap hs)))
 
 private lemma capturedVarsRegimePropertyMasked_monotoneExt
-  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime} {μ : Memory}
+  {masked : Tag → Prop} {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
   {newTags : Tag → Prop} {B : Tag}
   (h_mono : Regime.monotoneStepExt R R' newTags) (hnewB : ∀ k, newTags k → B ≤ k)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
   (hσbound : CapturedEnvFullBounded σcap B)
-  (h : capturedVarsRegimePropertyMasked masked predSat R μ σcap ρcap) :
-  capturedVarsRegimePropertyMasked masked predSat R' μ σcap ρcap := by
+  (h : capturedVarsRegimePropertyMasked masked predSat R μ θ σcap ρcap) :
+  capturedVarsRegimePropertyMasked masked predSat R' μ θ σcap ρcap := by
   intro x qt_x k_x hlook hguard hkR'
   have hknew : ¬ newTags k_x := fun h2 => absurd (hnewB k_x h2) (Nat.not_le.2
     (CapturedEnvFullBounded_guardTag_lt hσbound (List_lookup_some_mem x qt_x σcap hlook) hguard))
@@ -3765,12 +3870,13 @@ lemma closureCapturedVarsRegimeMasked_monotoneExt
     h hbound
 
 private lemma memberVarsRegimeEvidence_monotoneExt
-  {predSat : PredSat} {R R' : Regime} {μ : Memory} {newTags : Tag → Prop} {B : Tag}
+  {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
+  {newTags : Tag → Prop} {B : Tag}
   (h_mono : Regime.monotoneStepExt R R' newTags) (hnewB : ∀ k, newTags k → B ≤ k)
   {σcap : CapturedVarEnv} {ρcap : VarEnv}
   (hσbound : CapturedEnvFullBounded σcap B)
-  (h : MemberVarsRegimeEvidence predSat R μ σcap ρcap) :
-  MemberVarsRegimeEvidence predSat R' μ σcap ρcap := by
+  (h : MemberVarsRegimeEvidence predSat R μ θ σcap ρcap) :
+  MemberVarsRegimeEvidence predSat R' μ θ σcap ρcap := by
   intro y qt_y k_y v_y hlookup_σ hlookup_ρ hguard hkR'
   have hknew : ¬ newTags k_y := fun h2 => absurd (hnewB k_y h2)
     (Nat.not_le.2 (ofCaptured_guardTag_lt_of_fullBounded hσbound hlookup_σ hguard))
@@ -3967,16 +4073,16 @@ lemma agreeValueUnder_clean_transport_by_cleanBack
     (h_clean_back : ∀ qt, qtypCleanUnder R' qt → qtypCleanUnder R qt)
     (hmemberVars₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberVarsRegimeEvidence predSat R μ₀ σcap ρcap →
-          MemberVarsRegimeEvidence predSat R' μ₀ σcap ρcap)
+        MemberVarsRegimeEvidence predSat R μ₀ θ₀ σcap ρcap →
+          MemberVarsRegimeEvidence predSat R' μ₀ θ₀ σcap ρcap)
     (hmemberCvcr₀_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
         MemberCvcrEvidence predSat R μ₀ θ₀ σcap ρcap →
           MemberCvcrEvidence predSat R' μ₀ θ₀ σcap ρcap)
     (hmemberVars₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
-        MemberVarsRegimeEvidence predSat R μ₁ σcap ρcap →
-          MemberVarsRegimeEvidence predSat R' μ₁ σcap ρcap)
+        MemberVarsRegimeEvidence predSat R μ₁ θ₁ σcap ρcap →
+          MemberVarsRegimeEvidence predSat R' μ₁ θ₁ σcap ρcap)
     (hmemberCvcr₁_transport :
       ∀ {σcap : CapturedVarEnv} {ρcap : VarEnv},
         MemberCvcrEvidence predSat R μ₁ θ₁ σcap ρcap →

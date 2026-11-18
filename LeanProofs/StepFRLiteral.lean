@@ -24,7 +24,7 @@ lemma stepFR_literal
   (hpredNo : res.qualType.pred = Predicate.noPred)
   (hctxAfter : ctxAfter ctx res = ctx) :
   StepFR ctx e res predSat tm fuel (registry := registry) := by
-  intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
+  intro hpredlaws _hframe hwfTm hTmBounded _hfp μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
   -- Use inversion lemma for literals
   have ⟨hcf₀, ho₀⟩ := terminatesTo_literal_inv' e v hval
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -53,7 +53,9 @@ lemma stepFR_literal
   --   runtimeInstantiatesCtx ... ∧ runtimeInstantiatesCtx ... ∧
   --   regimeConsistentWithCtx ... ∧ consistentWithRegime ... ∧ consistentWithRegime ... ∧
   --   agreeOnClean ... ∧ valueConsistentWithRegime ... ∧ valueConsistentWithRegime ... ∧ resultAgreesIfClean ...
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _, KeepsFootprints.refl _ _ _ _,
+    KeepsFootprints.refl _ _ _ _⟩
   · -- wfExtendsMap θ₀ θ₀ (θ₀ = θ₀')
     refine ⟨?_, ?_⟩
     · intro l a hlookup; exact hlookup
@@ -119,7 +121,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
     (fun ctx μ ρ θ => consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
     (fun R qt μ θ v => valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
     ctx e res predSat tm fuel (registry := registry) := by
-  intro hpredlaws _hframe hwfTm hTmBounded
+  intro hpredlaws _hframe hwfTm hTmBounded _hfp
   refine ⟨?_, ?_⟩
   · exact
       StepFRSingleRunTagMeaningPost.refl_of_ctxAfter_eq
@@ -136,16 +138,15 @@ lemma stepFRSingleRunFinalCleanPcTrue_literal_maskedReg
       (by simp [qtypGuardTag, hpredNo])
       (ho ▸ closureCapturedVarsRegimeMasked_nonClosure_of_nonFunctionType
         (hvtyp θ) hnotfun)
-  exact
-    singleRunFinalCleanWitness_of_same_state_maskedReg_param
-      (masked := masked)
-      (CtxCons := fun ctx μ ρ θ =>
-        consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
-      (ValCons := fun R qt μ θ v =>
-        valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      (_predSat := predSat) (ctx := ctx) (res := res) (tm := tm)
-      (μ := μ) (ρ := ρ) (θ := θ)
-      (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry })
-      (o := o) (a := a) (pm := pm)
-      hctxAfter rfl (ho ▸ hvtyp θ) hcwr hvalc hwfTm hwf hric hreg hmasked_none
-      hmasked_absent hwfcfg hrd
+  have hdecl : res.declared' = ctx.declaredExternRefs := by
+    have := congrArg TypeContext.declaredExternRefs hctxAfter
+    simpa [ctxAfter] using this
+  refine ⟨θ, ⟨fun _ _ hlookup => hlookup, fun hθwf' => hθwf'⟩, ho ▸ hvtyp θ, ?_, ?_, ?_, ?_, ?_, ?_,
+    MapKeepsBelow.refl _ _, KeepsFootprints.refl _ _ _ _⟩
+  · simpa [hctxAfter] using hric
+  · simpa [hctxAfter] using hcwr
+  · simpa [hctxAfter] using hvalc
+  · exact PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+  · rw [hdecl]
+    exact hrd

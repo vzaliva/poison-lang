@@ -379,7 +379,7 @@ theorem pfnExternDecl_declSingle
     (id : ExternId) (argName : Name) (argTyp : Typ) (retSpec : ExternReturn)
     (memberCap : List Capture) (impl : ExternImpl) (argPoison : Bool := false) :
     ExternDeclBoundarySingle (pfnExternDecl id argName argTyp retSpec memberCap argPoison) impl := by
-  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded
+  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg _hreserved hrdIn hrun _hpc _hvm
   obtain ⟨argQt, hres⟩ := pfnExternDecl_shape id argName argTyp retSpec memberCap argPoison htyped
   obtain ⟨hcf, argPred, captures, ho⟩ :=
@@ -401,7 +401,8 @@ theorem pfnExternDecl_declSingle
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hcf]; exact ReservedDiscipline.mono_declared hd_res hrdIn)⟩
+    ⟨by rw [hcf]; exact ReservedDiscipline.mono_declared hd_res hrdIn, MapKeepsBelow.refl _ _,
+      by rw [hcfmem]; exact KeepsFootprints.refl _ _ _ _⟩⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho', hres]; exact pfnExternDecl_valueHasETyp id argName argTyp retSpec memberCap argPoison hric
@@ -417,7 +418,7 @@ theorem pfnExternDecl_declFR
     (id : ExternId) (argName : Name) (argTyp : Typ) (retSpec : ExternReturn)
     (memberCap : List Capture) (impl : ExternImpl) (argPoison : Bool := false) :
     ExternDeclBoundaryFR (pfnExternDecl id argName argTyp retSpec memberCap argPoison) impl := by
-  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded
+  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
     hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ _hres₀ _hres₁ hrdIn₀ hrdIn₁ hrun₀ hrun₁
     _hvm₀ _hvm₁
@@ -454,7 +455,10 @@ theorem pfnExternDecl_declFR
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     (by rw [hcf₀]; exact ReservedDiscipline.mono_declared hd_res hrdIn₀),
-    (by rw [hcf₁]; exact ReservedDiscipline.mono_declared hd_res hrdIn₁)⟩
+    (by rw [hcf₁]; exact ReservedDiscipline.mono_declared hd_res hrdIn₁),
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _,
+    (by rw [hcf₀mem]; exact KeepsFootprints.refl _ _ _ _),
+    (by rw [hcf₁mem]; exact KeepsFootprints.refl _ _ _ _)⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho₀, hres]; exact pfnExternDecl_valueHasETyp id argName argTyp retSpec memberCap argPoison hric₀
@@ -495,11 +499,11 @@ theorem pfnExternDecl_declFR
         have hcap : agreeCapturedEnv predSat ctx.regime μ₀ μ₁ θ₀ θ₁
             (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ ρ₁ :=
           agreeCapturedEnv_of_agreeOnClean predSat ctx.regime ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
-        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime μ₀
+        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime μ₀ θ₀
             (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
           memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
             (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
-        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime μ₁
+        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime μ₁ θ₁
             (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
           memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
             (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
@@ -660,15 +664,16 @@ why `builtinAbsDecl` requires a clean argument.
 theorem builtinAbs_cleanPost_obstruction
     {ctx : TypeContext} {postExpr : Expr} {res : TypeResult}
     {predSat : PredSat} {tm : TagMeaning} {θ₀ θ₁ : RealizationMap}
-    {cf₀ cf₁ : Config}
+    {μ₀ μ₁ : Memory} {cf₀ cf₁ : Config}
     (hres : res.qualType = builtinAbsReturnQTyp) :
-    ¬ StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁
+    ¬ StepFRPost ctx postExpr res predSat tm θ₀ θ₁ μ₀ μ₁ cf₀ cf₁
       (Value.num 1) (Value.num 2) := by
   intro hpost
   rcases hpost with
     ⟨_tm', _htag, _hlaws, _hrespects, _θ₀', _θ₁', _hθ₀, _hθ₁, _htyp₀, _htyp₁,
       _hwftm, _hwfctx, _hbounded, _hwfcfg₀, _hwfcfg₁, _hric₀, _hric₁, _hreg,
-      _hcons₀, _hcons₁, _hagree, _hvalc₀, _hvalc₁, hresult, _hrdA, _hrdB⟩
+      _hcons₀, _hcons₁, _hagree, _hvalc₀, _hvalc₁, hresult, _hrdA, _hrdB,
+      _hM₀, _hM₁, _hF₀, _hF₁⟩
   exact not_resultAgreesIfClean_builtinAbsReturn_num_ne (by norm_num : (1 : Int) ≠ 2)
     (by simpa [hres] using hresult)
 
@@ -840,7 +845,7 @@ private theorem builtinAbs_callRun_argEq
     dirty is vacuous (`noPred` return), clean runs the argument-equality chain. -/
 private theorem builtinAbs_callFR : ExternCallBoundaryFR builtinAbsDecl builtinAbsImpl := by
   intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
-    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded _hfp θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
     _hmatch₀ _hmatch₁ _hagree
   obtain ⟨hetyp, hpred, hctxAfter, _argQt, _hbind, _hcleanB⟩ := builtinAbs_call_clean_shape htyped₀
   obtain ⟨n₀, harg₀, ho₀, hcf₀⟩ := builtinAbs_callRun_output hrun₀
@@ -870,7 +875,9 @@ private theorem builtinAbs_callFR : ExternCallBoundaryFR builtinAbsDecl builtinA
       WithinLog.refl tm _⟩, hpredlaws, hrespects,
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁)⟩
+    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁),
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _,
+    KeepsFootprints.refl _ _ _ _, KeepsFootprints.refl _ _ _ _⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho₀, hetyp]; exact valueHasETyp.num _
@@ -898,7 +905,7 @@ private theorem builtinAbs_callFR : ExternCallBoundaryFR builtinAbsDecl builtinA
     (transported through `ctxAfter = ctx` and `bodyOutputConfig cf = bodyConfig`)
     or reflexive/vacuous (`tm' = tm`, `θ' = θ`). -/
 private theorem builtinAbs_callSingle : ExternCallBoundarySingle builtinAbsDecl builtinAbsImpl := by
-  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     θ cf o _hθwf _hwfCtx _htagBnd hric _hreg hcons _hwfcfg hrdIn hrun _hmatch _hpc
   obtain ⟨hetyp, hpred, hctxAfter, _argQt, _hbind, _hcleanB⟩ := builtinAbs_call_clean_shape htyped
   obtain ⟨n, _harg, ho, hcf⟩ := builtinAbs_callRun_output hrun
@@ -917,7 +924,8 @@ private theorem builtinAbs_callSingle : ExternCallBoundarySingle builtinAbsDecl 
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hboc, hd_res]; exact hrdIn)⟩
+    ⟨by rw [hboc, hd_res]; exact hrdIn, MapKeepsBelow.refl _ _,
+      by rw [hboc]; exact KeepsFootprints.refl _ _ _ _⟩⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho, hetyp]; exact valueHasETyp.num _
@@ -1220,7 +1228,7 @@ private theorem builtinMax11Captures_callRun_bEq
 
 private theorem builtinMax11_callFR : ExternCallBoundaryFR builtinMax11CapturesDecl builtinMax11Impl := by
   intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
-    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded _hfp θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
     _hmatch₀ _hmatch₁ _hagree
   obtain ⟨hetyp, hpred, hctxAfter, _, _⟩ := builtinMax11Captures_call_clean_shape htyped₀
   obtain ⟨a₀, b₀, harg₀, ha₀, ho₀, hcf₀⟩ := builtinMax11Captures_callRun_output hrun₀
@@ -1255,7 +1263,9 @@ private theorem builtinMax11_callFR : ExternCallBoundaryFR builtinMax11CapturesD
       WithinLog.refl tm _⟩, hpredlaws, hrespects,
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁)⟩
+    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁),
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _,
+    KeepsFootprints.refl _ _ _ _, KeepsFootprints.refl _ _ _ _⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho₀, hetyp]; exact valueHasETyp.num _
@@ -1299,7 +1309,7 @@ private theorem builtinMax11Captures_declFR :
 
 private theorem builtinMax11Captures_callSingle :
     ExternCallBoundarySingle builtinMax11CapturesDecl builtinMax11Impl := by
-  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     θ cf o _hθwf _hwfCtx _htagBnd hric _hreg hcons _hwfcfg hrdIn hrun _hmatch _hpc
   obtain ⟨hetyp, hpred, hctxAfter, _argQt, _hbind, _hcleanB⟩ := builtinMax11Captures_call_clean_shape htyped
   obtain ⟨a, b, _harg, _ha, ho, hcf⟩ := builtinMax11Captures_callRun_output hrun
@@ -1318,7 +1328,8 @@ private theorem builtinMax11Captures_callSingle :
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hboc, hd_res]; exact hrdIn)⟩
+    ⟨by rw [hboc, hd_res]; exact hrdIn, MapKeepsBelow.refl _ _,
+      by rw [hboc]; exact KeepsFootprints.refl _ _ _ _⟩⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho, hetyp]; exact valueHasETyp.num _
@@ -1628,7 +1639,7 @@ private theorem builtinMax11Guarded_callRun_bEq
     dependencies at extern call time. -/
 theorem builtinMax11Guarded_callFR : ExternCallBoundaryFR builtinMax11GuardedDecl builtinMax11Impl := by
   intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
-    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded _hfp θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
     _hmatch₀ _hmatch₁ _hagree
   obtain ⟨hetyp, hpred, hctxAfter, _, _⟩ := builtinMax11Guarded_call_clean_shape htyped₀
   obtain ⟨a₀, b₀, harg₀, ha₀, ho₀, hcf₀⟩ := builtinMax11Guarded_callRun_output hrun₀
@@ -1663,7 +1674,9 @@ theorem builtinMax11Guarded_callFR : ExternCallBoundaryFR builtinMax11GuardedDec
       WithinLog.refl tm _⟩, hpredlaws, hrespects,
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁)⟩
+    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁),
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _,
+    KeepsFootprints.refl _ _ _ _, KeepsFootprints.refl _ _ _ _⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho₀, hetyp]; exact valueHasETyp.num _
@@ -1686,7 +1699,7 @@ theorem builtinMax11Guarded_callFR : ExternCallBoundaryFR builtinMax11GuardedDec
 
 private theorem builtinMax11Guarded_callSingle :
     ExternCallBoundarySingle builtinMax11GuardedDecl builtinMax11Impl := by
-  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     θ cf o _hθwf _hwfCtx _htagBnd hric _hreg hcons _hwfcfg hrdIn hrun _hmatch _hpc
   obtain ⟨hetyp, hpred, hctxAfter, _argQt, _hbind, _hcleanB⟩ := builtinMax11Guarded_call_clean_shape htyped
   obtain ⟨a, b, _harg, _ha, ho, hcf⟩ := builtinMax11Guarded_callRun_output hrun
@@ -1705,7 +1718,8 @@ private theorem builtinMax11Guarded_callSingle :
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hboc, hd_res]; exact hrdIn)⟩
+    ⟨by rw [hboc, hd_res]; exact hrdIn, MapKeepsBelow.refl _ _,
+      by rw [hboc]; exact KeepsFootprints.refl _ _ _ _⟩⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho, hetyp]; exact valueHasETyp.num _
@@ -2063,7 +2077,7 @@ private theorem builtinMax10_call_valueConsistent
     pure closure satisfying `ExternBoundarySinglePost` (closure result; tag-meaning
     respect via the poison-generic `pfn`-extern lemma). -/
 private theorem builtinMax10_callSingle : ExternCallBoundarySingle builtinMax10Decl builtinMax10Impl := by
-  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     θ cf o _hθwf _hwfCtx _htagBnd hric _hreg hcons _hwfcfg hrdIn hrun _hmatch _hpc
   obtain ⟨pc, innerArgQt, hetyp, hpred, hctxAfter, _hpcclean⟩ := builtinMax10_call_clean_shape htyped
   obtain ⟨_a, _harg, ho, hcf⟩ := builtinMax10_callRun_output hrun
@@ -2097,7 +2111,8 @@ private theorem builtinMax10_callSingle : ExternCallBoundarySingle builtinMax10D
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hboc, hd_res]; exact hrdIn)⟩
+    ⟨by rw [hboc, hd_res]; exact hrdIn, MapKeepsBelow.refl _ _,
+      by rw [hboc]; exact KeepsFootprints.refl _ _ _ _⟩⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho, hetyp]; exact builtinMax10_call_valueHasETyp hricN
@@ -2119,7 +2134,7 @@ private theorem builtinMax10_callSingle : ExternCallBoundarySingle builtinMax10D
     `hric := hbody.runtime₀/₁`). -/
 private theorem builtinMax10_callFR : ExternCallBoundaryFR builtinMax10Decl builtinMax10Impl := by
   intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
-    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded _hfp θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
     _hmatch₀ _hmatch₁ _hagree
   obtain ⟨pc, innerArgQt, hetyp, hpred, hctxAfter, hpcclean⟩ := builtinMax10_call_clean_shape htyped₀
   obtain ⟨_a₀, _harg₀, ho₀, hcf₀⟩ := builtinMax10_callRun_output hrun₀
@@ -2163,7 +2178,9 @@ private theorem builtinMax10_callFR : ExternCallBoundaryFR builtinMax10Decl buil
       WithinLog.refl tm _⟩, hpredlaws, hrespects,
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁)⟩
+    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁),
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _,
+    KeepsFootprints.refl _ _ _ _, KeepsFootprints.refl _ _ _ _⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho₀, hetyp]
@@ -2206,11 +2223,11 @@ private theorem builtinMax10_callFR : ExternCallBoundaryFR builtinMax10Decl buil
             entry₀.unifiedEnv entry₁.unifiedEnv :=
           agreeCapturedEnv_of_agreeOnClean predSat ctx.regime ctx entry₀.bodyConfig.memory
             entry₁.bodyConfig.memory entry₀.unifiedEnv entry₁.unifiedEnv θ₀ θ₁ hric₀ hric₁ hbody.agree
-        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime entry₀.bodyConfig.memory
+        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime entry₀.bodyConfig.memory θ₀
             (VarTypeEnv.toCaptured ctx.varEnv) entry₀.unifiedEnv :=
           memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
             (μ := entry₀.bodyConfig.memory) (ρ := entry₀.unifiedEnv) (θ := θ₀) hcons₀
-        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime entry₁.bodyConfig.memory
+        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime entry₁.bodyConfig.memory θ₁
             (VarTypeEnv.toCaptured ctx.varEnv) entry₁.unifiedEnv :=
           memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
             (μ := entry₁.bodyConfig.memory) (ρ := entry₁.unifiedEnv) (θ := θ₁) hcons₁
@@ -2598,7 +2615,7 @@ private theorem builtinMemDeref_callRun_nEq
 theorem builtinMemDeref_callFR :
     ExternCallBoundaryFR builtinMemDerefDecl builtinMemDerefImpl := by
   intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
-    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+    htyped₀ htyped₁ hpredlaws _hframe hwfTm hTmBounded _hfp θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
     _hmatch₀ _hmatch₁ _hagree
   obtain ⟨hetyp, hpred, hctxAfter, _⟩ := builtinMemDeref_call_clean_shape htyped₀
   obtain ⟨addr₀, n₀, harg₀, hlk₀, ho₀, hcf₀⟩ := builtinMemDeref_callRun_output hrun₀
@@ -2630,7 +2647,9 @@ theorem builtinMemDeref_callFR :
       WithinLog.refl tm _⟩, hpredlaws, hrespects,
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁)⟩
+    (by rw [hd_res]; exact hbody.reserved₀), (by rw [hd_res]; exact hbody.reserved₁),
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _,
+    KeepsFootprints.refl _ _ _ _, KeepsFootprints.refl _ _ _ _⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho₀, hetyp]; exact valueHasETyp.num _
@@ -2653,7 +2672,7 @@ theorem builtinMemDeref_callFR :
 
 private theorem builtinMemDeref_callSingle :
     ExternCallBoundarySingle builtinMemDerefDecl builtinMemDerefImpl := by
-  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     θ cf o _hθwf _hwfCtx _htagBnd hric _hreg hcons _hwfcfg hrdIn hrun _hmatch _hpc
   obtain ⟨hetyp, hpred, hctxAfter, _⟩ := builtinMemDeref_call_clean_shape htyped
   obtain ⟨addr, n, _harg, _hlk, ho, hcf⟩ := builtinMemDeref_callRun_output hrun
@@ -2672,7 +2691,8 @@ private theorem builtinMemDeref_callSingle :
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hboc, hd_res]; exact hrdIn)⟩
+    ⟨by rw [hboc, hd_res]; exact hrdIn, MapKeepsBelow.refl _ _,
+      by rw [hboc]; exact KeepsFootprints.refl _ _ _ _⟩⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter']; exact hwfTm
   · rw [ho, hetyp]; exact valueHasETyp.num _
@@ -3037,6 +3057,33 @@ private theorem builtinSetErr_call_clean_shape
             · rw [hbody]
               exact argConditionSatisfied_cleanRegime_of_declClean hcond hpin'
 
+/-- A write that keeps the footprint cells of the tags of `R` leaves the meaning of
+    those tags unchanged when the realization map is the same on both sides. -/
+private theorem setErr_predSatStable_of_keeps {predSat : PredSat} {tm : TagMeaning} {R : Regime}
+    {θ : RealizationMap} {μ μ' : Memory}
+    (hlaws : PredSatLaws predSat tm) (hF : KeepsFootprints tm R θ μ μ') :
+    PredSatStable predSat tm R θ θ μ μ' := by
+  intro k d hd hR v
+  refine hlaws.mem_footprint k d θ θ μ μ' v hd fun fuel deps hx => ⟨fun _ _ => rfl, ?_⟩
+  intro l hl a ha
+  exact hF k d hd hR l ⟨fuel, deps, hx, Std.ExtTreeSet.contains_iff_mem.mpr hl⟩ a ha
+
+/-- The write of `set_err` at an address that a location `l` of the cell the effect
+    targets realises keeps the footprint cells of the tags of the invalidated
+    regime (`keepsFootprints_write_effect`, at the locations of `errno`'s type). -/
+private theorem setErr_keepsFootprints {tm : TagMeaning} {ctx : TypeContext}
+    {θ : RealizationMap} {μ : Memory} {a : Address} {n : Int} {qt : QTyp} {ls : LocSet}
+    {l : Loc}
+    (hfp : FootprintCtx tm ctx) (hθwf : wfRealizationMap θ)
+    (hlk : VarTypeEnv.lookup ctx.varEnv "errno" = some qt) (hety : qt.etyp = ETyp.ref ls)
+    (hl : l ∈ ls) (hθl : θ.lookup l = some a) :
+    KeepsFootprints tm
+      (invalidateRegimeDepsEffect ctx.regime ctx.tagEnv
+        (effectTargetLocs [builtinSetErrEffect] ctx.varEnv)) θ μ (μ.update a n) := by
+  refine keepsFootprints_write_effect hfp.1 hθwf ⟨l, ?_, hθl⟩
+  simp only [effectTargetLocs, builtinSetErrEffect, List.foldl, hlk, hety, LocSet.union]
+  simp [Std.ExtTreeSet.contains_union, Std.ExtTreeSet.contains_iff_mem.mpr hl]
+
 /-- The single-run call-boundary field for `@22` (`set_err`): a `.fn`
     (memory-writing) `callSingle`.  Under `ctx.pc = true` the effect poisons the
     written errno cell (`storedPoison = true`, `storedPred = noPred`), so the
@@ -3045,7 +3092,7 @@ private theorem builtinSetErr_call_clean_shape
     written address. -/
 private theorem builtinSetErr_callSingle :
     ExternCallBoundarySingle builtinSetErrDecl builtinSetErrImpl := by
-  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded
+  intro typedExpr res predSat tm entry ctx htyped hpredlaws _hframe hwfTm hTmBounded hfp
     θ cf o hθwf hwfCtx _htagBnd hric hreg hcons hwfcfg hrdIn hrun _hmatch hpc
   obtain ⟨hetyp, hpred, htagEnv, hregime, hnextTag, heffect, _hnextLoc, hdeclEq, _argQt, _hbindN, _hcleanN⟩ :=
     builtinSetErr_call_clean_shape htyped
@@ -3085,14 +3132,20 @@ private theorem builtinSetErr_callSingle :
     intro l hnin
     rw [hmemE]
     exact assign_memEnv_formula_lookup_eq_of_not_mem entry.bodyCtx.memEnv ls _ _ l hnin
+  -- The frame: the write keeps the footprint cells of the tags of the final regime.
+  have hF : KeepsFootprints tm (ctxAfter ctx res).regime θ entry.bodyConfig.memory
+      (entry.bodyOutputConfig cf).memory := by
+    show KeepsFootprints tm res.regime' θ entry.callConfig.memory cf.memory
+    rw [hregime, hcfmem]
+    exact setErr_keepsFootprints hfp hθwf hlkE hetypE hle_in hθ_le
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hrespects, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by
+    ⟨(by
       have hreg_eq : (entry.bodyOutputConfig cf).registry = entry.bodyConfig.registry := by
         rw [hcfshape]; simp [ExternCallEntry.bodyOutputConfig, ExternCallEntry.bodyConfig]
       rw [hreg_eq, hdeclEq]
-      exact hrdIn)⟩
+      exact hrdIn), MapKeepsBelow.refl _ _, hF⟩⟩
   · -- TagMeaningBounded tm res.nextTag'
     rw [hnextTag]; exact hTmBounded
   · -- wfTagMeaningCtx tm (ctxAfter ctx res): the effect writes poison=true/noPred
@@ -3136,14 +3189,11 @@ private theorem builtinSetErr_callSingle :
     -- regime (the invalidation is a value-preserving sub-map), so the input
     -- consistency transports: an unwritten cell's realized address differs from
     -- the written errno address by `θ`-injectivity, and `predSat`-level facts
-    -- move across the memory change by the `PredSatLaws` mem-compatibility law
+    -- move across the memory change by the footprint law, given the frame `hF`
     -- (a materialised errno-reading guard has been dropped from the regime, so
     -- its obligation is vacuous).
-    have hmemc : ∀ (qt' : QTyp) (v' : Value),
-        qtypPredHolds predSat qt' entry.bodyConfig.memory v' ↔
-        qtypPredHolds predSat qt' cf.memory v' :=
-      fun qt' v' => qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ
-        entry.bodyConfig.memory cf.memory qt' v'
+    have hS : PredSatStable predSat tm (ctxAfter ctx res).regime θ θ
+        entry.bodyConfig.memory cf.memory := setErr_predSatStable_of_keeps hpredlaws hF
     have hmono : Regime.monotoneStep entry.bodyCtx.regime (ctxAfter ctx res).regime := by
       show Regime.monotoneStep entry.bodyCtx.regime res.regime'
       rw [hregime]
@@ -3206,8 +3256,11 @@ private theorem builtinSetErr_callSingle :
                 simpa [ExternCallEntry.bodyConfig] using hmem
               simpa [Memory.update, Memory.lookup, Std.ExtTreeMap.getElem?_insert, hcmp] using hbody
             refine locsRegime.withPred_ok (l, qt) k' an pb ve a' n' b' hclos hregk_out hreal hmem' ?_
-            exact ⟨fun hb => (hmemc qt (Value.num n')).1 (hconsist.1 hb),
-              fun hb hh => (hconsist.2 hb) ((hmemc qt (Value.num n')).2 hh)⟩
+            have hc := qtypPredHolds_of_stable (v := Value.num n') hS hclos'
+              (QTypRespectsTagMeaning.desc (wfTagMeaningCtx_mem_lookup_qtyp tm _ l qt hwfTm hlookup')
+                hclos')
+              (by simp [hregk_out])
+            exact ⟨fun hb => hc.1 (hconsist.1 hb), fun hb hh => (hconsist.2 hb) (hc.2 hh)⟩
     · -- variables (the variable environment and its values are unchanged)
       intro x qt k hlookup hguard hkR
       have hold := hcons.2.1 x qt k hlookup hguard (hgate_ne k hkR)
@@ -3234,14 +3287,18 @@ private theorem builtinSetErr_callSingle :
             rw [hk'k, ← hbb']
             exact hbout
           refine varsRegime.withPred_ok (x, qt) k' an pb ve v b' hclos hregk_out hvar ?_
-          exact ⟨fun hb => (hmemc qt v).1 (hconsist.1 hb),
-            fun hb hh => (hconsist.2 hb) ((hmemc qt v).2 hh)⟩
+          have hc := qtypPredHolds_of_stable (v := v) hS hclos'
+            (QTypRespectsTagMeaning.desc (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup)
+              hclos')
+            (by simp [hregk_out])
+          exact ⟨fun hb => hc.1 (hconsist.1 hb), fun hb hh => (hconsist.2 hb) (hc.2 hh)⟩
     · -- captured closures: the regime shrinks monotonically and `predSat`-level
       -- facts move across the memory change
       intro x qt v hlookup hvlookup
       have hold := hcons.2.2 x qt v hlookup hvlookup
-      exact closureCapturedVarsRegime_monotone hmono
-        (closureCapturedVarsRegime_transport_μ hmemc hold)
+      exact closureCapturedVarsRegime_transport_μ hS
+        (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup)
+        (closureCapturedVarsRegime_monotone hmono hold)
   · -- valueConsistentWithRegime
     rw [ho]
     exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred])
@@ -3334,29 +3391,26 @@ private lemma setErr_qtypCleanUnder_of_monotone
           · simp [hkNone] at hreg
 
 private lemma setErr_agreeValueUnder_transport
-    {predSat : PredSat} {R R' : Regime}
+    {predSat : PredSat} {tm : TagMeaning} {R R' : Regime}
     {μ₀ μ₁ μ₀' μ₁' : Memory}
     {θ₀ θ₁ : RealizationMap} {qt : QTyp} {v₀ v₁ : Value}
-    (hpred_compat₀ : ∀ (qt : QTyp) (v : Value),
-      qtypPredHolds predSat qt μ₀ v ↔ qtypPredHolds predSat qt μ₀' v)
-    (hpred_compat₁ : ∀ (qt : QTyp) (v : Value),
-      qtypPredHolds predSat qt μ₁ v ↔ qtypPredHolds predSat qt μ₁' v)
+    (hS₀ : PredSatStable predSat tm R' θ₀ θ₀ μ₀ μ₀')
+    (hS₁ : PredSatStable predSat tm R' θ₁ θ₁ μ₁ μ₁')
+    (hresp : QTypRespectsTagMeaning tm qt)
     (hmono : Regime.monotoneStep R R')
     (hclean : qtypCleanUnder R' qt)
     (hagree : agreeValueUnder predSat R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁) :
     agreeValueUnder predSat R' μ₀' μ₁' θ₀ θ₁ qt v₀ v₁ := by
-  have hcleanR : qtypCleanUnder R qt := setErr_qtypCleanUnder_of_monotone hmono hclean
-  have hmem : agreeValueUnder predSat R μ₀' μ₁' θ₀ θ₁ qt v₀ v₁ :=
-    agreeValueUnder_clean_extends_transport_mem hpred_compat₀ hpred_compat₁ hcleanR
-      (by intro l a h; exact h) (by intro l a h; exact h) hagree
-  exact
+  have hreg : agreeValueUnder predSat R' μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
     agreeValueUnder_clean_transport_by_cleanBack
       (fun qt hclean' => setErr_qtypCleanUnder_of_monotone hmono hclean')
       (fun h => memberVarsRegimeEvidence_monotone hmono h)
       (fun h => memberCvcrEvidence_monotone hmono h)
       (fun h => memberVarsRegimeEvidence_monotone hmono h)
       (fun h => memberCvcrEvidence_monotone hmono h)
-      hclean hmem
+      hclean hagree
+  exact agreeValueUnder_clean_extends_transport_mem hS₀ hS₁ hresp hclean
+    (by intro l a h; exact h) (by intro l a h; exact h) hreg
 
 /-- Two agreeing integer values are equal (the closure/ref constructors are
     impossible at an `int` type carried by `Value.num`). -/
@@ -3432,7 +3486,7 @@ private theorem builtinSetErr_callRun_argEq
 private theorem builtinSetErr_callFR :
     ExternCallBoundaryFR builtinSetErrDecl builtinSetErrImpl := by
   intro postExpr typedExpr₀ typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
-    htyped₀ _htyped₁ hpredlaws _hframe hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+    htyped₀ _htyped₁ hpredlaws _hframe hwfTm hTmBounded hfp θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
     _hmatch₀ _hmatch₁ _hagree
   obtain ⟨hetyp, hpred, htagEnv, hregime, hnextTag, heffect, hnextLoc, hdeclEq, argQtN, hbindN, _hcleanN⟩ :=
     builtinSetErr_call_clean_shape htyped₀
@@ -3487,17 +3541,7 @@ private theorem builtinSetErr_callFR :
     intro l hnin
     rw [hmemE]
     exact assign_memEnv_formula_lookup_eq_of_not_mem ctx.memEnv ls _ _ l hnin
-  -- Memory compatibility and the regime shrink.
-  have hmemc₀ : ∀ (qt' : QTyp) (v' : Value),
-      qtypPredHolds predSat qt' entry₀.bodyConfig.memory v' ↔
-      qtypPredHolds predSat qt' cf₀.memory v' :=
-    fun qt' v' => qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ₀
-      entry₀.bodyConfig.memory cf₀.memory qt' v'
-  have hmemc₁ : ∀ (qt' : QTyp) (v' : Value),
-      qtypPredHolds predSat qt' entry₁.bodyConfig.memory v' ↔
-      qtypPredHolds predSat qt' cf₁.memory v' :=
-    fun qt' v' => qtypPredHolds_mem_compat_of_predSatLaws hpredlaws θ₁
-      entry₁.bodyConfig.memory cf₁.memory qt' v'
+  -- The regime shrink.
   have hmono : Regime.monotoneStep ctx.regime (ctxAfter ctx res).regime := by
     show Regime.monotoneStep ctx.regime res.regime'
     rw [hregime]
@@ -3548,6 +3592,21 @@ private theorem builtinSetErr_callFR :
     have hl_e : θ₁.lookup l_e₁ = some a' := by rw [heq]; exact hθ_le₁
     have hll : l = l_e₁ := hbody.wfRealization₁ _ _ _ hθl hl_e
     rw [hll]; exact hle_in₁
+  -- The frames: each write keeps the footprint cells of the tags of the final regime.
+  have hF₀ : KeepsFootprints tm (ctxAfter ctx res).regime θ₀ entry₀.bodyConfig.memory
+      (entry₀.bodyOutputConfig cf₀).memory := by
+    show KeepsFootprints tm res.regime' θ₀ entry₀.callConfig.memory cf₀.memory
+    rw [hregime, hcfmem₀]
+    exact setErr_keepsFootprints hfp hbody.wfRealization₀ hlkE hetypE hle_in₀ hθ_le₀
+  have hF₁ : KeepsFootprints tm (ctxAfter ctx res).regime θ₁ entry₁.bodyConfig.memory
+      (entry₁.bodyOutputConfig cf₁).memory := by
+    show KeepsFootprints tm res.regime' θ₁ entry₁.callConfig.memory cf₁.memory
+    rw [hregime, hcfmem₁]
+    exact setErr_keepsFootprints hfp hbody.wfRealization₁ hlkE hetypE hle_in₁ hθ_le₁
+  have hS₀ : PredSatStable predSat tm (ctxAfter ctx res).regime θ₀ θ₀
+      entry₀.bodyConfig.memory cf₀.memory := setErr_predSatStable_of_keeps hpredlaws hF₀
+  have hS₁ : PredSatStable predSat tm (ctxAfter ctx res).regime θ₁ θ₁
+      entry₁.bodyConfig.memory cf₁.memory := setErr_predSatStable_of_keeps hpredlaws hF₁
   -- Shared wfTagMeaningCtx for the effect-updated context.
   have hwfTmAfter : wfTagMeaningCtx tm (ctxAfter ctx res) := by
     rcases hwfTm with ⟨hwfTm'⟩
@@ -3744,8 +3803,11 @@ private theorem builtinSetErr_callFR :
               rw [hfinal₀ a' (hne₀ l a' hin hreal)]
               exact hmem
             refine locsRegime.withPred_ok (l, qt) k' an pb ve a' n' b' hclos hregk_out hreal hmem' ?_
-            exact ⟨fun hb => (hmemc₀ qt (Value.num n')).1 (hconsist.1 hb),
-              fun hb hh => (hconsist.2 hb) ((hmemc₀ qt (Value.num n')).2 hh)⟩
+            have hc := qtypPredHolds_of_stable (v := Value.num n') hS₀ hclos'
+              (QTypRespectsTagMeaning.desc (wfTagMeaningCtx_mem_lookup_qtyp tm _ l qt hwfTm hlookup')
+                hclos')
+              (by simp [hregk_out])
+            exact ⟨fun hb => hc.1 (hconsist.1 hb), fun hb hh => (hconsist.2 hb) (hc.2 hh)⟩
     · intro x qt k hlookup hguard hkR
       have hold := hbody.consistent₀.2.1 x qt k hlookup hguard (hgate_ne k hkR)
       cases hold with
@@ -3771,12 +3833,16 @@ private theorem builtinSetErr_callFR :
             rw [hk'k, ← hbb']
             exact hbout
           refine varsRegime.withPred_ok (x, qt) k' an pb ve v b' hclos hregk_out hvar ?_
-          exact ⟨fun hb => (hmemc₀ qt v).1 (hconsist.1 hb),
-            fun hb hh => (hconsist.2 hb) ((hmemc₀ qt v).2 hh)⟩
+          have hc := qtypPredHolds_of_stable (v := v) hS₀ hclos'
+            (QTypRespectsTagMeaning.desc (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup)
+              hclos')
+            (by simp [hregk_out])
+          exact ⟨fun hb => hc.1 (hconsist.1 hb), fun hb hh => (hconsist.2 hb) (hc.2 hh)⟩
     · intro x qt v hlookup hvlookup
       have hold := hbody.consistent₀.2.2 x qt v hlookup hvlookup
-      exact closureCapturedVarsRegime_monotone hmono
-        (closureCapturedVarsRegime_transport_μ hmemc₀ hold)
+      exact closureCapturedVarsRegime_transport_μ hS₀
+        (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup)
+        (closureCapturedVarsRegime_monotone hmono hold)
   · -- consistentWithRegime (run 1)
     refine ⟨?_, ?_, ?_⟩
     · intro l qt k hlookup hguard hkR
@@ -3812,8 +3878,11 @@ private theorem builtinSetErr_callFR :
               rw [hfinal₁ a' (hne₁ l a' hin hreal)]
               exact hmem
             refine locsRegime.withPred_ok (l, qt) k' an pb ve a' n' b' hclos hregk_out hreal hmem' ?_
-            exact ⟨fun hb => (hmemc₁ qt (Value.num n')).1 (hconsist.1 hb),
-              fun hb hh => (hconsist.2 hb) ((hmemc₁ qt (Value.num n')).2 hh)⟩
+            have hc := qtypPredHolds_of_stable (v := Value.num n') hS₁ hclos'
+              (QTypRespectsTagMeaning.desc (wfTagMeaningCtx_mem_lookup_qtyp tm _ l qt hwfTm hlookup')
+                hclos')
+              (by simp [hregk_out])
+            exact ⟨fun hb => hc.1 (hconsist.1 hb), fun hb hh => (hconsist.2 hb) (hc.2 hh)⟩
     · intro x qt k hlookup hguard hkR
       have hold := hbody.consistent₁.2.1 x qt k hlookup hguard (hgate_ne k hkR)
       cases hold with
@@ -3839,12 +3908,16 @@ private theorem builtinSetErr_callFR :
             rw [hk'k, ← hbb']
             exact hbout
           refine varsRegime.withPred_ok (x, qt) k' an pb ve v b' hclos hregk_out hvar ?_
-          exact ⟨fun hb => (hmemc₁ qt v).1 (hconsist.1 hb),
-            fun hb hh => (hconsist.2 hb) ((hmemc₁ qt v).2 hh)⟩
+          have hc := qtypPredHolds_of_stable (v := v) hS₁ hclos'
+            (QTypRespectsTagMeaning.desc (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup)
+              hclos')
+            (by simp [hregk_out])
+          exact ⟨fun hb => hc.1 (hconsist.1 hb), fun hb hh => (hconsist.2 hb) (hc.2 hh)⟩
     · intro x qt v hlookup hvlookup
       have hold := hbody.consistent₁.2.2 x qt v hlookup hvlookup
-      exact closureCapturedVarsRegime_monotone hmono
-        (closureCapturedVarsRegime_transport_μ hmemc₁ hold)
+      exact closureCapturedVarsRegime_transport_μ hS₁
+        (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup)
+        (closureCapturedVarsRegime_monotone hmono hold)
   · -- agreeOnClean across the two effect-updated runs
     refine ⟨?_, ?_⟩
     · -- locations
@@ -4044,7 +4117,8 @@ private theorem builtinSetErr_callFR :
             · show cf₁.memory.lookup a1 = some m₁
               rw [hfinal₁ a1 (hne₁ l a1 hin hreal₁)]
               exact hlkm₁
-            · exact setErr_agreeValueUnder_transport hmemc₀ hmemc₁ hmono hclean hagreeV
+            · exact setErr_agreeValueUnder_transport hS₀ hS₁
+                (wfTagMeaningCtx_mem_lookup_qtyp tm _ l qt hwfTm hlk') hmono hclean hagreeV
     · -- variables: the environments and values are unchanged
       intro x qt hlk hclean
       have hvar := hbody.agree.2 x qt hlk (hcleanIn hclean)
@@ -4053,7 +4127,8 @@ private theorem builtinSetErr_callFR :
           exact agreeVarUnder.both_none x qt h0 h1
       | agree_values _ _ v₀ v₁ hl0 hl1 hval =>
           refine agreeVarUnder.agree_values x qt v₀ v₁ hl0 hl1 ?_
-          exact setErr_agreeValueUnder_transport hmemc₀ hmemc₁ hmono hclean hval
+          exact setErr_agreeValueUnder_transport hS₀ hS₁
+            (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlk) hmono hclean hval
   · -- valueConsistentWithRegime (run 0)
     rw [ho₀]
     exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred])
@@ -4062,8 +4137,9 @@ private theorem builtinSetErr_callFR :
     rw [ho₁]
     exact valueConsistentWithRegime.noTag (by simp [qtypGuardTag, hpred])
       (closureCapturedVarsRegime_nonClosure_of_nonFunctionType (hetyp ▸ valueHasETyp.unit) hnotfun)
-  · -- resultAgreesIfClean (both outputs are `unit`) + reserved-discipline transports
-    refine ⟨?_, ?_, ?_⟩
+  · -- resultAgreesIfClean (both outputs are `unit`), reserved-discipline transports,
+    -- the maps keep every location below `ctx.nextLoc`, and the frames
+    refine ⟨?_, ?_, ?_, MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _, hF₀, hF₁⟩
     · intro hclean
       rw [ho₀, ho₁]
       cases hclean with
@@ -4295,7 +4371,7 @@ private theorem builtinSetErr_declRun_shape
 /-- The `set_err` single-run declaration-boundary field. -/
 private theorem builtinSetErr_declSingle :
     ExternDeclBoundarySingle builtinSetErrDecl builtinSetErrImpl := by
-  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded
+  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg _hreserved hrdIn hrun _hpc _hvm
   obtain ⟨argQt, hres⟩ := builtinSetErr_decl_shape htyped
   obtain ⟨hcf, argPred, captures, ho⟩ := builtinSetErr_declRun_shape hrun
@@ -4316,7 +4392,8 @@ private theorem builtinSetErr_declSingle :
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hcf]; exact ReservedDiscipline.mono_declared hd_res hrdIn)⟩
+    ⟨by rw [hcf]; exact ReservedDiscipline.mono_declared hd_res hrdIn, MapKeepsBelow.refl _ _,
+      by rw [hcfmem]; exact KeepsFootprints.refl _ _ _ _⟩⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho', hres]; exact builtinSetErr_decl_valueHasETyp hric
@@ -4331,7 +4408,7 @@ private theorem builtinSetErr_declSingle :
     agree via `agreeValueUnder.clean_internal_arrow_extern`. -/
 private theorem builtinSetErr_declFR :
     ExternDeclBoundaryFR builtinSetErrDecl builtinSetErrImpl := by
-  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded
+  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded _hfp
     μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg
     hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ _hres₀ _hres₁ hrdIn₀ hrdIn₁ hrun₀ hrun₁
     _hvm₀ _hvm₁
@@ -4365,7 +4442,10 @@ private theorem builtinSetErr_declFR :
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     (by rw [hcf₀]; exact ReservedDiscipline.mono_declared hd_res hrdIn₀),
-    (by rw [hcf₁]; exact ReservedDiscipline.mono_declared hd_res hrdIn₁)⟩
+    (by rw [hcf₁]; exact ReservedDiscipline.mono_declared hd_res hrdIn₁),
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _,
+    (by rw [hcf₀mem]; exact KeepsFootprints.refl _ _ _ _),
+    (by rw [hcf₁mem]; exact KeepsFootprints.refl _ _ _ _)⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho₀, hres]; exact builtinSetErr_decl_valueHasETyp hric₀
@@ -4400,11 +4480,11 @@ private theorem builtinSetErr_declFR :
         have hcap : agreeCapturedEnv predSat ctx.regime μ₀ μ₁ θ₀ θ₁
             (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ ρ₁ :=
           agreeCapturedEnv_of_agreeOnClean predSat ctx.regime ctx μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ hric₀ hric₁ hagree
-        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime μ₀
+        have hmemberVars₀ : MemberVarsRegimeEvidence predSat ctx.regime μ₀ θ₀
             (VarTypeEnv.toCaptured ctx.varEnv) ρ₀ :=
           memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
             (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀
-        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime μ₁
+        have hmemberVars₁ : MemberVarsRegimeEvidence predSat ctx.regime μ₁ θ₁
             (VarTypeEnv.toCaptured ctx.varEnv) ρ₁ :=
           memberVarsRegimeEvidence_of_toCaptured (predSat := predSat) (R := ctx.regime) (ctx := ctx)
             (μ := μ₁) (ρ := ρ₁) (θ := θ₁) hcwr₁
@@ -4646,20 +4726,35 @@ private lemma ric_extended
     obtain ⟨v, hv, hvtyp⟩ := hric.2 hx
     exact ⟨v, hv, valueHasETyp_extends (theta_extends hnone) hvtyp⟩
 
+/-- Extending the map at the location `nl`, with the memory unchanged, keeps the
+    meaning of every tag of the table `tm` whose footprint lies below `nl`. -/
+private lemma predSatStable_extended
+    {predSat : PredSat} {tm : TagMeaning} {R : Regime} {μ : Memory} {θ : RealizationMap}
+    {nl : Loc} {a : Address}
+    (hlaws : PredSatLaws predSat tm) (hbelow : FootprintBelow tm nl) :
+    PredSatStable predSat tm R θ (θ.update nl a) μ μ :=
+  predSatStable_of_frame hlaws hbelow (MapKeepsBelow.update (MapKeepsBelow.refl _ _) (Nat.le_refl _))
+    (KeepsFootprints.refl _ _ _ _)
+
 /-- Regime consistency for the extended context: the fresh cell carries
     `noPred` (no guard tag), inherited locations transport along the θ
-    extension with unchanged memory, variables and closure evidence are
-    unchanged. -/
+    extension with unchanged memory (the guards of the table keep their meaning
+    because their footprints lie below the fresh location), variables and closure
+    evidence are unchanged. -/
 private lemma cwr_extended
-    (ctx : TypeContext) (id : ExternId) (predSat : PredSat)
+    (ctx : TypeContext) (id : ExternId) (predSat : PredSat) (tm : TagMeaning)
     (μ : Memory) (ρ : VarEnv) (θ : RealizationMap) (a : Address)
     (hnone : θ.lookup ctx.nextLoc = none)
+    (hlaws : PredSatLaws predSat tm) (hwfTm : wfTagMeaningCtx tm ctx)
+    (hbelow : FootprintBelow tm ctx.nextLoc)
     (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ) :
     consistentWithRegime predSat
       (ctxAfter ctx (externRefDeclResult ctx id)).regime
       (ctxAfter ctx (externRefDeclResult ctx id)) μ ρ
       (θ.update ctx.nextLoc a) := by
   have hext : θ.extendsMap (θ.update ctx.nextLoc a) := theta_extends hnone
+  have hS : PredSatStable predSat tm ctx.regime θ (θ.update ctx.nextLoc a) μ μ :=
+    predSatStable_extended hlaws hbelow
   refine ⟨?_, ?_, ?_⟩
   · intro l qt k hlookup hguard hkR
     have hlookup' :
@@ -4678,26 +4773,36 @@ private lemma cwr_extended
       | noPred_ok hpred => exact locsRegime.noPred_ok (l, qt) hpred
       | guardOnly_ok k' hgo => exact locsRegime.guardOnly_ok (l, qt) k' hgo
       | withPred_ok k' arg_name pred_body var_env a_old n_old b hclos hreg hreal hmem hcons =>
-          exact locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a_old n_old b
-            hclos hreg (hext l a_old hreal) hmem hcons
+          refine locsRegime.withPred_ok (l, qt) k' arg_name pred_body var_env a_old n_old b
+            hclos hreg (hext l a_old hreal) hmem ?_
+          have hc := qtypPredHolds_of_stable (v := Value.num n_old) hS hclos
+            (QTypRespectsTagMeaning.desc (wfTagMeaningCtx_mem_lookup_qtyp tm _ l qt hwfTm hlookup')
+              hclos)
+            (by simp [hreg])
+          exact ⟨fun hb => hc.1 (hcons.1 hb), fun hb hh => (hcons.2 hb) (hc.2 hh)⟩
   · intro x qt k hlookup hguard hkR
     have hlookup' : ctx.varEnv.lookup x = some qt := by
       simpa [ctxAfter, externRefDeclResult] using hlookup
-    exact hcwr.2.1 x qt k hlookup' hguard hkR
+    exact varsRegime_transport_predHolds hS
+      (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup')
+      (hcwr.2.1 x qt k hlookup' hguard hkR)
   · intro x qt v hlookup hv
     have hlookup' : ctx.varEnv.lookup x = some qt := by
       simpa [ctxAfter, externRefDeclResult] using hlookup
-    exact closureCapturedVarsRegime_transport_μ_θ (fun _ _ => Iff.rfl) hext
+    exact closureCapturedVarsRegime_transport_μ_θ hS hext
+      (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup')
       (hcwr.2.2 x qt v hlookup' hv)
 
 /-- Clean agreement for the extended context: the fresh cell is poisoned (so
     vacuous), inherited locations and variables transport along the two θ
     extensions with unchanged memories. -/
 private lemma agree_extended
-    (ctx : TypeContext) (id : ExternId) (predSat : PredSat)
+    (ctx : TypeContext) (id : ExternId) (predSat : PredSat) (tm : TagMeaning)
     (μ₀ μ₁ : Memory) (ρ₀ ρ₁ : VarEnv) (θ₀ θ₁ : RealizationMap) (a : Address)
     (hnone₀ : θ₀.lookup ctx.nextLoc = none)
     (hnone₁ : θ₁.lookup ctx.nextLoc = none)
+    (hlaws : PredSatLaws predSat tm) (hwfTm : wfTagMeaningCtx tm ctx)
+    (hbelow : FootprintBelow tm ctx.nextLoc)
     (hagree : agreeOnClean predSat ctx.regime ctx μ₀ ρ₀ θ₀ μ₁ ρ₁ θ₁) :
     agreeOnClean predSat
       (ctxAfter ctx (externRefDeclResult ctx id)).regime
@@ -4728,7 +4833,8 @@ private lemma agree_extended
           refine agreeLocUnder.agree_values l qt a0 a1 n0 n1
             (hext₀ l a0 hr0) (hext₁ l a1 hr1) hm0 hm1 ?_
           exact agreeValueUnder_clean_extends_transport_mem
-            (fun _ _ => Iff.rfl) (fun _ _ => Iff.rfl) hclean hext₀ hext₁ hag
+            (predSatStable_extended hlaws hbelow) (predSatStable_extended hlaws hbelow)
+            (wfTagMeaningCtx_mem_lookup_qtyp tm _ l qt hwfTm hlookup') hclean hext₀ hext₁ hag
   · intro x qt hlookup hclean
     have hlookup' : ctx.varEnv.lookup x = some qt := by
       simpa [ctxAfter, externRefDeclResult] using hlookup
@@ -4738,7 +4844,8 @@ private lemma agree_extended
     | agree_values _ _ v0 v1 hl0 hl1 hag =>
         exact agreeVarUnder.agree_values x qt v0 v1 hl0 hl1
           (agreeValueUnder_clean_extends_transport_mem
-            (fun _ _ => Iff.rfl) (fun _ _ => Iff.rfl) hclean hext₀ hext₁ hag)
+            (predSatStable_extended hlaws hbelow) (predSatStable_extended hlaws hbelow)
+            (wfTagMeaningCtx_var_lookup_qtyp tm _ x qt hwfTm hlookup') hclean hext₀ hext₁ hag)
 
 /-- The two clean ref results agree: both runs return the same reserved
     address, realized at the shared fresh logical location. -/
@@ -4902,6 +5009,7 @@ private theorem externRef_declSinglePost
     (hpredlaws : PredSatLaws predSat tm)
     (hwfTm : wfTagMeaningCtx tm ctx)
     (hTmBounded : TagMeaningBounded tm ctx.nextTag)
+    (hfp : FootprintCtx tm ctx)
     (hwf : wfTypeContext ctx)
     (hric : runtimeInstantiatesCtx ctx μ ρ θ)
     (hcwr : consistentWithRegime predSat ctx.regime ctx μ ρ θ)
@@ -4918,15 +5026,17 @@ private theorem externRef_declSinglePost
   have hfresh : ∀ l, θ.lookup l ≠ some a :=
     hrd.fresh_addr hlookup_reg hnotdecl
   have hnone : θ.lookup ctx.nextLoc = none := theta_fresh_none ctx μ ρ θ hwf hric
+  have hbelow : FootprintBelow tm ctx.nextLoc := hfp.2
   refine ⟨tm, boundaryTagMeaningPost ctx id predSat tm hpredlaws hwfTm hTmBounded,
     θ.update ctx.nextLoc a, theta_wfExtends hnone hfresh,
     result_valueHasETyp ctx id θ a,
     ric_extended ctx id μ ρ θ a hwf hric hpresent,
-    cwr_extended ctx id predSat μ ρ θ a hnone hcwr,
+    cwr_extended ctx id predSat tm μ ρ θ a hnone hpredlaws hwfTm hbelow hcwr,
     result_valueConsistent ctx id predSat _ μ _ a,
     preservesInherited ctx id μ ρ θ a hwf hric,
     freshCleanUnrealized ctx id θ a,
-    hrd.declare hlookup_reg⟩
+    hrd.declare hlookup_reg, MapKeepsBelow.update (MapKeepsBelow.refl _ _) (Nat.le_refl _),
+    KeepsFootprints.refl _ _ _ _⟩
 
 open ExternRefDecl in
 /-- Two-run FR field shape: paired successful `extern ref`
@@ -4944,6 +5054,7 @@ private theorem externRef_declFRPost
     (hpredlaws : PredSatLaws predSat tm)
     (hwfTm : wfTagMeaningCtx tm ctx)
     (hTmBounded : TagMeaningBounded tm ctx.nextTag)
+    (hfp : FootprintCtx tm ctx)
     (hwf : wfTypeContext ctx)
     (hbnd : TagBoundedCtx ctx)
     (hric₀ : runtimeInstantiatesCtx ctx μ₀ ρ₀ θ₀)
@@ -4968,7 +5079,7 @@ private theorem externRef_declFRPost
     (hrd₁ : ReservedDiscipline registry ctx.declaredExternRefs θ₁)
     (hlookup_reg : registry.get? id = some (ExternImpl.val (Value.loc a)))
     (hnotdecl : id ∉ ctx.declaredExternRefs) :
-    StepFRPost ctx postExpr res predSat tm θ₀ θ₁ cf₀ cf₁ o₀ o₁ := by
+    StepFRPost ctx postExpr res predSat tm θ₀ θ₁ μ₀ μ₁ cf₀ cf₁ o₀ o₁ := by
   subst hres ho₀ ho₁ hcf₀ hcf₁
   have hpresent₀ : μ₀.contains a := (hreserved₀ a ⟨id, hlookup_reg⟩).1
   have hpresent₁ : μ₁.contains a := (hreserved₁ a ⟨id, hlookup_reg⟩).1
@@ -4979,6 +5090,7 @@ private theorem externRef_declFRPost
   have hnone₀ : θ₀.lookup ctx.nextLoc = none := theta_fresh_none ctx μ₀ ρ₀ θ₀ hwf hric₀
   have hnone₁ : θ₁.lookup ctx.nextLoc = none := theta_fresh_none ctx μ₁ ρ₁ θ₁ hwf hric₁
   have hpost := boundaryTagMeaningPost ctx id predSat tm hpredlaws hwfTm hTmBounded
+  have hbelow : FootprintBelow tm ctx.nextLoc := hfp.2
   refine ⟨tm, hpost, hpredlaws, hpost.2.2.2.1,
     θ₀.update ctx.nextLoc a, θ₁.update ctx.nextLoc a,
     theta_wfExtends hnone₀ hfresh₀,
@@ -4993,14 +5105,18 @@ private theorem externRef_declFRPost
     ric_extended ctx id μ₀ ρ₀ θ₀ a hwf hric₀ hpresent₀,
     ric_extended ctx id μ₁ ρ₁ θ₁ a hwf hric₁ hpresent₁,
     hreg,
-    cwr_extended ctx id predSat μ₀ ρ₀ θ₀ a hnone₀ hcwr₀,
-    cwr_extended ctx id predSat μ₁ ρ₁ θ₁ a hnone₁ hcwr₁,
-    agree_extended ctx id predSat μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ a hnone₀ hnone₁ hagree,
+    cwr_extended ctx id predSat tm μ₀ ρ₀ θ₀ a hnone₀ hpredlaws hwfTm hbelow hcwr₀,
+    cwr_extended ctx id predSat tm μ₁ ρ₁ θ₁ a hnone₁ hpredlaws hwfTm hbelow hcwr₁,
+    agree_extended ctx id predSat tm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ a hnone₀ hnone₁ hpredlaws hwfTm hbelow
+      hagree,
     result_valueConsistent ctx id predSat _ μ₀ _ a,
     result_valueConsistent ctx id predSat _ μ₁ _ a,
     result_agrees ctx id predSat μ₀ μ₁ θ₀ θ₁ a,
     hrd₀.declare hlookup_reg,
-    hrd₁.declare hlookup_reg⟩
+    hrd₁.declare hlookup_reg,
+    MapKeepsBelow.update (MapKeepsBelow.refl _ _) (Nat.le_refl _),
+    MapKeepsBelow.update (MapKeepsBelow.refl _ _) (Nat.le_refl _),
+    KeepsFootprints.refl _ _ _ _, KeepsFootprints.refl _ _ _ _⟩
 
 /-! ## The trusted `@21` (`errno`) reference-extern entry
 
@@ -5101,7 +5217,7 @@ end ExternRefDecl
 open ExternRefDecl in
 /-- The `@21` two-run declaration-boundary field. -/
 private theorem builtinErrno_declFR : ExternDeclBoundaryFR builtinErrnoDecl builtinErrnoImpl := by
-  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded
+  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded hfp
     μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ hwf hbnd hric₀ hric₁ hreg
     hcwr₀ hcwr₁ hagree a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁
     hrun₀ hrun₁ _hvm₀ _hvm₁
@@ -5110,20 +5226,20 @@ private theorem builtinErrno_declFR : ExternDeclBoundaryFR builtinErrnoDecl buil
   obtain ⟨hcf₁, ho₁, _⟩ := builtinErrno_declRun_shape hrun₁.run
   exact externRef_declFRPost postExpr ctx res predSat tm μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁
     cf₀ cf₁ o₀ o₁ a₀ a₁ pm registry 21 errnoAddr hres hpredlaws hwfTm hTmBounded
-    hwf hbnd hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree hwfcfg₀ hwfcfg₁ hcf₀ hcf₁
+    hfp hwf hbnd hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree hwfcfg₀ hwfcfg₁ hcf₀ hcf₁
     ho₀ ho₁ hres₀ hres₁ hrd₀ hrd₁ (by simpa using hlookup₀) hnotdecl
 
 open ExternRefDecl in
 /-- The `@21` single-run declaration-boundary field. -/
 private theorem builtinErrno_declSingle :
     ExternDeclBoundarySingle builtinErrnoDecl builtinErrnoImpl := by
-  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded
+  intro postExpr ctx res predSat tm htyped hpredlaws _hframe hwfTm hTmBounded hfp
     μ ρ θ cf o _hθwf hwf hric _hreg hcwr a pm registry _hwfcfg hreserved hrd
     hrun _hpc _hvm
   obtain ⟨hres, hnotdecl⟩ := builtinErrno_decl_shape htyped
   obtain ⟨hcf, ho, hlookup⟩ := builtinErrno_declRun_shape hrun
   exact externRef_declSinglePost ctx res predSat tm μ ρ θ cf o a pm registry
-    21 errnoAddr hres hpredlaws hwfTm hTmBounded hwf hric hcwr hreserved hrd
+    21 errnoAddr hres hpredlaws hwfTm hTmBounded hfp hwf hric hcwr hreserved hrd
     (by simpa using hlookup) hnotdecl hcf ho
 
 open ExternRefDecl in

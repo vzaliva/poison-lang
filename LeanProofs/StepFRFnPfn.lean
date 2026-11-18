@@ -13,6 +13,48 @@ open scoped MemoryTypeEnv
 
 variable {registry : ExternRegistry}
 
+/-- A run that leaves memory, variables and map unchanged: the witness map is
+    the start map, which keeps every location and every footprint cell. -/
+private lemma sameState_witness_footprints
+  {CtxCons : TypeContext → Memory → VarEnv → RealizationMap → Prop}
+  {ValCons : Regime → QTyp → Memory → RealizationMap → Value → Prop}
+  {ctx : TypeContext} {res : TypeResult} {tm : TagMeaning}
+  {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
+  {cf : Config} {o : Value}
+  {a : Address} {pm : Bool}
+  (hctxAfter : ctxAfter ctx res = ctx)
+  (hcf : cf = { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry})
+  (hvaltyp : valueHasETyp θ o res.qualType.etyp)
+  (hctxCons : CtxCons ctx μ ρ θ)
+  (hvalc : ValCons ctx.regime res.qualType μ θ o)
+  (hric : runtimeInstantiatesCtx ctx μ ρ θ)
+  (hrd : ReservedDiscipline registry ctx.declaredExternRefs θ) :
+  ∃ (θ' : RealizationMap),
+    wfExtendsMap θ θ' ∧
+    valueHasETyp θ' o res.qualType.etyp ∧
+    runtimeInstantiatesCtx (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    CtxCons (ctxAfter ctx res) cf.memory cf.varEnv θ' ∧
+    ValCons (ctxAfter ctx res).regime res.qualType cf.memory θ' o ∧
+    PreservesInheritedFinalCleanLocsOneRun ctx res μ cf.memory θ θ' ∧
+    FreshCleanLocsUnrealizedOneRun ctx res θ' ∧
+    ReservedDiscipline cf.registry res.declared' θ' ∧
+    MapKeepsBelow ctx.nextLoc θ θ' ∧
+    KeepsFootprints tm (ctxAfter ctx res).regime θ μ cf.memory := by
+  have hdecl : res.declared' = ctx.declaredExternRefs := by
+    have := congrArg TypeContext.declaredExternRefs hctxAfter
+    simpa [ctxAfter] using this
+  refine ⟨θ, ⟨fun _ _ hlookup => hlookup, fun hθwf => hθwf⟩, hvaltyp, ?_, ?_, ?_, ?_, ?_, ?_,
+    MapKeepsBelow.refl _ _, ?_⟩
+  · simpa [hctxAfter, hcf] using hric
+  · simpa [hctxAfter, hcf] using hctxCons
+  · simpa [hctxAfter, hcf] using hvalc
+  · simpa [hcf] using (PreservesInheritedFinalCleanLocsOneRun.refl (ctx := ctx) (res := res) (ρ := ρ) hric)
+  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+  · rw [hcf, hdecl]
+    exact hrd
+  · rw [hcf]
+    exact KeepsFootprints.refl _ _ _ _
+
 lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   (masked : Tag → Prop)
   
@@ -44,7 +86,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
   have hres : res = res_expected := typecheckFn_ok_eq htcFn
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro hpredlaws hframe hwfTm hTmBounded
+  intro hpredlaws hframe hwfTm hTmBounded _hfp
   refine ⟨?_, ?_⟩
   · exact
       StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
@@ -113,18 +155,16 @@ lemma stepFRSingleRunFinalCleanPcTrue_fn_maskedReg
         hlookup_ρ
     · exact typecheckFn_ok_not_externFnAst htcFn
   exact
-    singleRunFinalCleanWitness_of_same_state_maskedReg_param
-      (masked := masked)
+    sameState_witness_footprints
       (CtxCons := fun ctx μ ρ θ =>
         consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
       (ValCons := fun R qt μ θ v =>
         valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-      (_predSat := predSat) (ctx := ctxᵢ) (res := res) (tm := tm)
+      (ctx := ctxᵢ) (res := res) (tm := tm)
       (μ := μ) (ρ := ρ) (θ := θ)
       (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry })
       (o := o) (a := a) (pm := pm)
-      hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hmasked_none
-      hmasked_absent hwfcfg _hrd
+      hctxAfter rfl hvaltyp hcwr hvalc hric _hrd
 
 
 lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
@@ -166,7 +206,7 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro hpredlaws hframe hwfTm hTmBounded
+      intro hpredlaws hframe hwfTm hTmBounded _hfp
       refine ⟨?_, ?_⟩
       · exact
           StepFRSingleRunTagMeaningPost.of_typecheck_preserves predSat tm ctxᵢ
@@ -238,18 +278,16 @@ lemma stepFRSingleRunFinalCleanPcTrue_pfn_maskedReg
             (VarTypeEnv_lookup_of_toCaptured_lookup ctxᵢ.varEnv y qt_y hlookup_σ)
             hlookup_ρ
       exact
-        singleRunFinalCleanWitness_of_same_state_maskedReg_param
-          (masked := masked)
+        sameState_witness_footprints
           (CtxCons := fun ctx μ ρ θ =>
             consistentWithRegimeMasked masked predSat ctx.regime ctx μ ρ θ)
           (ValCons := fun R qt μ θ v =>
             valueConsistentWithRegimeMasked masked predSat R qt μ θ v)
-          (_predSat := predSat) (ctx := ctxᵢ) (res := res) (tm := tm)
+          (ctx := ctxᵢ) (res := res) (tm := tm)
           (μ := μ) (ρ := ρ) (θ := θ)
           (cf := { memory := μ, varEnv := ρ, nextAddr := a, pureMode := pm, registry := registry })
           (o := o) (a := a) (pm := pm)
-          hctxAfter rfl hvaltyp hcwr hvalc hwfTm hwf hric hreg hmasked_none
-          hmasked_absent hwfcfg _hrd
+          hctxAfter rfl hvaltyp hcwr hvalc hric _hrd
 
 
 lemma stepFR_fn
@@ -279,7 +317,7 @@ lemma stepFR_fn
   have hres : res = res_expected := typecheckFn_ok_eq htcFn
   have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
     simp [ctxAfter, hres, res_expected]
-  intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
+  intro hpredlaws _hframe hwfTm hTmBounded _hfp μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
   -- Use inversion lemma
   have ⟨hcf₀, ho₀⟩ := terminatesTo_fn_inv' x paramType body returnType
     { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -311,7 +349,9 @@ lemma stepFR_fn
     · simpa [hctxAfter] using hwfTm
   refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
     (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
-  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _, KeepsFootprints.refl _ _ _ _,
+    KeepsFootprints.refl _ _ _ _⟩
   · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
     refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
   · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
@@ -465,14 +505,14 @@ lemma stepFR_fn
         have hclean_internal : internalPoisonClean res.qualType := by
           simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
         have hmemberVars₀ :
-            MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₀
+            MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₀ θ₀
               (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
           simpa [hctxAfter] using
             (memberVarsRegimeEvidence_of_toCaptured
               (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
               (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀)
         have hmemberVars₁ :
-            MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₁
+            MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₁ θ₁
               (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
           simpa [hctxAfter] using
             (memberVarsRegimeEvidence_of_toCaptured
@@ -554,7 +594,7 @@ lemma stepFR_pfn
         rfl
       have hctxAfter : ctxAfter ctxᵢ res = ctxᵢ := by
         simp [ctxAfter, hres, res_expected]
-      intro hpredlaws _hframe hwfTm hTmBounded μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
+      intro hpredlaws _hframe hwfTm hTmBounded _hfp μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ hθ₀ hθ₁ hwf htagBounded hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree a₀ a₁ pm hwfcfg₀ hwfcfg₁ hres₀ hres₁ hrd₀ hrd₁ ht₀ ht₁ _P₀ _P₁ _hprem _hroot₀ _hroot₁
       -- Use inversion lemma
       have ⟨hcf₀, ho₀⟩ := terminatesTo_pfn_inv' x paramType body returnType
         { memory := μ₀, varEnv := ρ₀, nextAddr := a₀, pureMode := pm, registry := registry } cf₀ o₀ ht₀
@@ -588,7 +628,9 @@ lemma stepFR_pfn
         · simpa [hctxAfter] using hwfTm
       refine ⟨tm, BoundaryTagMeaningPost.of_isCanonical_predSat hcanon hpredlaws
     (WithinLog.refl tm _), hpredlaws, hresTm, ?_⟩
-      refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨θ₀, θ₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hwfcfg₀, hwfcfg₁, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _, KeepsFootprints.refl _ _ _ _,
+    KeepsFootprints.refl _ _ _ _⟩
       · -- wfExtendsMap θ₀ θ₀ (maps unchanged)
         refine ⟨fun l a hlookup => hlookup, fun hwf' => hwf'⟩
       · -- wfExtendsMap θ₁ θ₁ (maps unchanged)
@@ -747,14 +789,14 @@ lemma stepFR_pfn
             have hclean_internal : internalPoisonClean res.qualType := by
               simp [internalPoisonClean, getInternalPoison, hetyp, hpc_clean]
             have hmemberVars₀ :
-                MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₀
+                MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₀ θ₀
                   (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₀ := by
               simpa [hctxAfter] using
                 (memberVarsRegimeEvidence_of_toCaptured
                   (predSat := predSat) (R := ctxᵢ.regime) (ctx := ctxᵢ)
                   (μ := μ₀) (ρ := ρ₀) (θ := θ₀) hcwr₀)
             have hmemberVars₁ :
-                MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₁
+                MemberVarsRegimeEvidence predSat (ctxAfter ctxᵢ res).regime μ₁ θ₁
                   (VarTypeEnv.toCaptured ctxᵢ.varEnv) ρ₁ := by
               simpa [hctxAfter] using
                 (memberVarsRegimeEvidence_of_toCaptured

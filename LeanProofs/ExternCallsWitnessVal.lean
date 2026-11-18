@@ -23,14 +23,21 @@ program that declares the value and tests it, under both values of the tag.
   contracts (no call is typed against a declaration of kind `val`) and
   operational safety, and `vReg` is the trusted registry that holds `@250`
   alone. The single-run contract moves the consistency of the context to the
-  regime after the declaration from the tag meaning of the context. The
-  two-run contract proves *agreement* of the declared value: both runs read
-  the same implementation.
+  regime after the declaration from the tag meaning of the context, and takes
+  *match* of the declared value under the realisation map of the contract,
+  which realises the start context. The two-run contract proves *agreement*
+  of the declared value: both runs read the same implementation. A
+  declaration returns its start configuration, so both contracts end with the
+  start map and the start memory: the map keeps every location below
+  `nextLoc` (`MapKeepsBelow.refl`) and the memory keeps every footprint
+  (`KeepsFootprints.refl`).
 * The program `prog`,
   `let v = extern val @250 : (int :> poisoned { 0, w => w >= 0 }) in if v >= 0 then v else 0`,
   typed under the assignment `polV b`, which gives every tag of `@250` the
-  value `b`. Under both assignments it is a clean `int`. `match_iff`: *match*
-  holds in a run exactly when `0 ≤ m ↔ b = true`; `val_case` proves it for
+  value `b`. Under both assignments it is a clean `int`. The start context
+  has no guard, so `GuardCapsBelow` holds of it vacuously. `match_iff`: *match*
+  holds in a run exactly when `0 ≤ m ↔ b = true`, under the map that realises
+  the start context (`∅`); `val_case` proves it for
   the tag true with `m = 5` and the tag false with `m = -3`, and refutes it
   for the two other pairs. `agree`: *agreement* holds for every pair of runs,
   which make no extern call.
@@ -62,10 +69,10 @@ private def GoodIn (R R' : Regime) (qt : QTyp) : Prop :=
   ∀ qt', QTypInQTyp qt' qt → ∀ k a b c, qt'.pred = .guardClosure k a b c →
     R'.lookup? k = R.lookup? k
 
-private theorem varsRegime_transport {predSat : PredSat} {R R' : Regime} {μ : Memory} {ρ : VarEnv}
-    {e : Name × QTyp}
+private theorem varsRegime_transport {predSat : PredSat} {R R' : Regime} {μ : Memory}
+    {θ : RealizationMap} {ρ : VarEnv} {e : Name × QTyp}
     (hk : ∀ k a b c, e.2.pred = .guardClosure k a b c → R'.lookup? k = R.lookup? k)
-    (h : varsRegime predSat R μ ρ e) : varsRegime predSat R' μ ρ e := by
+    (h : varsRegime predSat R μ θ ρ e) : varsRegime predSat R' μ θ ρ e := by
   cases h with
   | noPred_ok hp => exact .noPred_ok _ hp
   | guardOnly_ok k hgo => exact .guardOnly_ok _ k hgo
@@ -85,11 +92,11 @@ private theorem locsRegime_transport {predSat : PredSat} {R R' : Regime} {μ : M
 
 /-- One level: an entry of a captured environment. -/
 private theorem captured_transport {predSat : PredSat} {R R' : Regime} {μ : Memory}
-    {σcap : CapturedVarEnv} {ρcap : VarEnv}
+    {θ : RealizationMap} {σcap : CapturedVarEnv} {ρcap : VarEnv}
     (hgood : ∀ x qt_x, σcap.lookup x = some qt_x →
       ∀ k a b c, qt_x.pred = .guardClosure k a b c → R'.lookup? k = R.lookup? k)
-    (h : capturedVarsRegimeProperty predSat R μ σcap ρcap) :
-    capturedVarsRegimeProperty predSat R' μ σcap ρcap := by
+    (h : capturedVarsRegimeProperty predSat R μ θ σcap ρcap) :
+    capturedVarsRegimeProperty predSat R' μ θ σcap ρcap := by
   intro x qt_x k_x hlook hg hR'
   cases hp : qt_x.pred with
   | noPred => simp [qtypGuardTag, hp] at hg
@@ -106,11 +113,11 @@ private theorem captured_transport {predSat : PredSat} {R R' : Regime} {μ : Mem
 private theorem deep_transport {predSat : PredSat} {R R' : Regime} {μ : Memory} {θ : RealizationMap}
     {qt : QTyp} {v : Value}
     (hdeep : deepValueQTypProperty (fun σcap ρcap =>
-        capturedVarsRegimeProperty predSat R μ σcap ρcap ∧
+        capturedVarsRegimeProperty predSat R μ θ σcap ρcap ∧
           capturedVarsTypingProperty θ σcap ρcap) qt v) :
     GoodIn R R' qt →
     deepValueQTypProperty (fun σcap ρcap =>
-        capturedVarsRegimeProperty predSat R' μ σcap ρcap ∧
+        capturedVarsRegimeProperty predSat R' μ θ σcap ρcap ∧
           capturedVarsTypingProperty θ σcap ρcap) qt v := by
   induction hdeep with
   | nonClosure hv hpe => intro _; exact .nonClosure hv hpe
@@ -392,11 +399,12 @@ private theorem agree_regime {ctx : TypeContext} {R' : Regime} (htb : TagBounded
     | both_none _ _ h0 h1 => exact agreeVarUnder.both_none x qt h0 h1
 
 /-- From *match*: the declared value is consistent with the regime after the
-    declaration. -/
-private theorem valueConsistent_of_valMatches {predSat : PredSat} {res : TypeResult} {cf : Config}
-    {o : Value} {θ : RealizationMap}
+    declaration, under a map that realises the context of the step at its start. -/
+private theorem valueConsistent_of_valMatches {predSat : PredSat} {s : Step} {res : TypeResult}
+    {cf : Config} {o : Value} {θ : RealizationMap}
     (hhinge : ∀ k, qtypGuardTag res.qualType = some k → ∃ a ∈ res.tagLog', a.tag = k)
-    (hmatch : ValMatches predSat res cf o)
+    (hmatch : ValMatches predSat s res cf o)
+    (hθ : runtimeInstantiatesCtx s.ctx s.cfg.memory s.cfg.varEnv θ)
     (hvt : valueHasETyp θ o res.qualType.etyp)
     (hnotfun : res.qualType.etyp.isFunctionType = false) :
     valueConsistentWithRegime predSat res.regime' res.qualType cf.memory θ o := by
@@ -412,7 +420,7 @@ private theorem valueConsistent_of_valMatches {predSat : PredSat} {res : TypeRes
       | none => exact .notInRegime k htag hR hccv
       | some b =>
           have hiff := hmatch a ha arg body cap b (by rw [hak]; exact hpred)
-            (by rw [hak]; exact hR)
+            (by rw [hak]; exact hR) θ hθ
           rw [hak] at hiff
           cases b with
           | true => exact .inRegimeTrue k htag hR (.guardClosure_ok hpred (hiff.mpr rfl)) hccv
@@ -432,7 +440,7 @@ private theorem valueConsistent_of_valMatches {predSat : PredSat} {res : TypeRes
 /-- The single-run contract: the declared value is consistent with the regime
     after the declaration by *match* (`ValMatches`). -/
 theorem v_declSingle (n : Int) : ExternDeclBoundarySingle vDecl (vI n) := by
-  intro postExpr ctx res predSat tm htyped _hpredlaws hframe hwfTm hTmBounded
+  intro postExpr ctx res predSat tm htyped _hpredlaws hframe hwfTm hTmBounded _hfp
     μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg _hreserved hrdIn hrun _hpc hvm
   obtain ⟨fuel, poison, _htc, htcV⟩ := v_typed htyped
   have hf : VFacts ctx res := v_facts_of htcV
@@ -450,17 +458,18 @@ theorem v_declSingle (n : Int) : ExternDeclBoundarySingle vDecl (vI n) := by
     PreservesInheritedFinalCleanLocsOneRun.refl hric, ?_, ?_⟩
   · exact consistent_envs hf.memEnv_after hf.varEnv_after
       (consistentWithRegime_of_agreeBelow hwfTm hTmBounded hf.below hcons)
-  · exact valueConsistent_of_valMatches hf.guard_mem (hvm rfl) hvt hf.notfun
+  · exact valueConsistent_of_valMatches hf.guard_mem (hvm rfl) hric hvt hf.notfun
   · intro l qt hnc hlk _hclean
     rw [hf.memEnv] at hlk
     exact absurd (memEnv_contains_of_lookup_some _ l qt hlk) hnc
-  · show ReservedDiscipline registry res.declared' θ
+  · refine ⟨?_, MapKeepsBelow.refl _ _, KeepsFootprints.refl _ _ _ _⟩
+    show ReservedDiscipline registry res.declared' θ
     rw [hf.declared]; exact ReservedDiscipline.mono_declared (fun _ hx => List.mem_cons_of_mem _ hx) hrdIn
 
 /-- The two-run contract. *Agreement* of the declared value is proved here: the
     two runs read the same implementation, so they declare the same value. -/
 theorem v_declFR (n : Int) : ExternDeclBoundaryFR vDecl (vI n) := by
-  intro postExpr ctx res predSat tm htyped _hpredlaws hframe hwfTm hTmBounded
+  intro postExpr ctx res predSat tm htyped _hpredlaws hframe hwfTm hTmBounded _hfp
     μ₀ μ₁ ρ₀ ρ₁ θ₀ θ₁ cf₀ cf₁ o₀ o₁ _hθ₀ _hθ₁ hwf htb hric₀ hric₁ hreg hcwr₀ hcwr₁ hagree
     a₀ a₁ pm registry hwfcfg₀ hwfcfg₁ _hres₀ _hres₁ hrd₀ hrd₁ hrun₀ hrun₁ hvm₀ hvm₁
   obtain ⟨fuel, poison, htc, htcV⟩ := v_typed htyped
@@ -489,9 +498,11 @@ theorem v_declFR (n : Int) : ExternDeclBoundaryFR vDecl (vI n) := by
     consistent_envs hf.memEnv_after hf.varEnv_after
       (consistentWithRegime_of_agreeBelow hwfTm hTmBounded hf.below hcwr₁),
     agree_envs hf.memEnv_after hf.varEnv_after (agree_regime htb hmono hagree),
-    valueConsistent_of_valMatches hf.guard_mem (hvm₀ rfl) (hvt θ₀) hf.notfun,
-    valueConsistent_of_valMatches hf.guard_mem (hvm₁ rfl) (hvt θ₁) hf.notfun,
-    ?_, ?_, ?_⟩
+    valueConsistent_of_valMatches hf.guard_mem (hvm₀ rfl) hric₀ (hvt θ₀) hf.notfun,
+    valueConsistent_of_valMatches hf.guard_mem (hvm₁ rfl) hric₁ (hvt θ₁) hf.notfun,
+    ?_, ?_, ?_,
+    MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _,
+    KeepsFootprints.refl _ _ _ _, KeepsFootprints.refl _ _ _ _⟩
   · -- Agreement: the two runs declare the same value.
     intro hclean
     cases hclean with
@@ -687,6 +698,38 @@ private theorem reach_val (b : Bool) (m n : Int) : Reach (U0 b m n) (U1 b m n) :
 private theorem val_mk (b : Bool) (m n : Int) : ExternValAt (U1 b m n) (r1 b) (cfgX m n) (.num m) :=
   ExternValAt.mk (facts_of b).2.1 (run_valD m n)
 
+/-! ## The starting state -/
+
+private theorem K_vars (b : Bool) : ∀ x qt, (K b).varEnv.lookup x = some qt → qt = pInt := by
+  intro x qt h
+  by_cases hx : x = "x"
+  · subst hx
+    simp only [K, VarTypeEnv_lookup_update_eq, Option.some.injEq] at h
+    exact h.symm
+  · simp only [K] at h
+    rw [VarTypeEnv_lookup_update_ne _ "x" x pInt hx] at h
+    simp [VarTypeEnv.lookup] at h
+
+private theorem lookupX (n : Int) :
+    (VarEnv.update [] "x" (.num n)).lookup "x" = some (.num n) := by
+  simp [VarEnv.update, VarEnv.lookup]
+
+private theorem instantiatesK (b : Bool) (n : Int) :
+    runtimeInstantiatesCtx (K b) ∅ (VarEnv.update [] "x" (.num n)) ∅ := by
+  refine And.intro ?_ ?_
+  · intro l a h
+    simp [RealizationMap.lookup] at h
+  · intro x qt h
+    have hq := K_vars b x qt h
+    subst hq
+    have hx : x = "x" := by
+      by_contra hx
+      simp only [K] at h
+      rw [VarTypeEnv_lookup_update_ne _ "x" x pInt hx] at h
+      simp [VarTypeEnv.lookup] at h
+    subst hx
+    exact ⟨_, lookupX n, valueHasETyp.num n⟩
+
 /-! ## The premises -/
 
 /-- *Match* holds exactly when the value satisfies the guard as the assignment
@@ -703,8 +746,8 @@ theorem match_iff (b : Bool) (m n : Int) (predSat : PredSat)
     obtain ⟨arg, body, cap, hp⟩ := hf.guard
     obtain ⟨a, ha, hat⟩ := hf.logged
     have hiff := hv a ha arg body cap b (by rw [hat]; exact hp) (by rw [hat]; exact hreg)
-    rw [hat, show (K b).nextTag = 0 from rfl, hpin] at hiff
-    exact hiff
+    rw [hat, show (K b).nextTag = 0 from rfl] at hiff
+    exact (hpin _ _ _).symm.trans (hiff ∅ (instantiatesK b n))
   · intro hm
     refine ⟨fun _ _ _ _ _ _ hreach hcall => absurd hcall (inSet_call (inSet_reach hreach)),
       fun s res cf o hreach hval => ?_⟩
@@ -718,6 +761,7 @@ theorem match_iff (b : Bool) (m n : Int) (predSat : PredSat)
     rw [hat] at hR ⊢
     rw [hreg, Option.some.injEq] at hR
     subst hR
+    intro θ _
     rw [hpin]
     exact hm
 
@@ -733,16 +777,6 @@ def sV : InputSpec := { locs := ∅, vars := ∅, regimeExterns := [250] }
 
 /-- The observation: the returned integer. -/
 def obsRet : ObservableSpec := { locs := ∅, retEtyp? := some .int }
-
-private theorem K_vars (b : Bool) : ∀ x qt, (K b).varEnv.lookup x = some qt → qt = pInt := by
-  intro x qt h
-  by_cases hx : x = "x"
-  · subst hx
-    simp only [K, VarTypeEnv_lookup_update_eq, Option.some.injEq] at h
-    exact h.symm
-  · simp only [K] at h
-    rw [VarTypeEnv_lookup_update_ne _ "x" x pInt hx] at h
-    simp [VarTypeEnv.lookup] at h
 
 private theorem pInt_not_clean (R : Regime) : ¬ qtypCleanUnder R pInt := by
   intro h
@@ -842,9 +876,10 @@ private theorem tagBoundedK (b : Bool) : TagBoundedCtx (K b) := by
     rw [K_vars b x qt h]
     exact trivial
 
-private theorem wfTmK (b : Bool) : wfTagMeaningCtx ∅ (K b) := by
-  refine EnvRespectsTagMeaning.intro ?_
-  intro k d hdeep
+/-- The starting context has no guard: `x` is a poisoned `int` without predicate. -/
+private theorem noGuardK (b : Bool) {k : Tag} {d : GuardDesc} :
+    ¬ GuardDescInEnvsDeep (K b).varEnv (K b).memEnv k d := by
+  intro hdeep
   rcases hdeep with ⟨qt, k, d, hin, hdesc⟩
   cases hin with
   | inVar _ _ x _ qtRoot hlookup hinq =>
@@ -857,6 +892,12 @@ private theorem wfTmK (b : Bool) : wfTagMeaningCtx ∅ (K b) := by
       simp [qtypGuardDesc?, pInt] at hdesc
   | inMem _ _ l _ qtRoot hlookup hinq =>
       simp [K, MemoryTypeEnv.lookup] at hlookup
+
+private theorem wfTmK (b : Bool) : wfTagMeaningCtx ∅ (K b) :=
+  EnvRespectsTagMeaning.intro (fun hdeep => absurd hdeep (noGuardK b))
+
+private theorem guardCapsK (b : Bool) : GuardCapsBelow (K b) :=
+  fun _ _ hdeep => absurd hdeep (noGuardK b)
 
 private theorem tmBoundedK (b : Bool) : TagMeaningBounded ∅ (K b).nextTag := by
   intro k d h
@@ -896,26 +937,6 @@ private theorem disciplineK (b : Bool) (m : Int) :
     exact (regV_noLoc h).elim
   · intro id a h _ l
     exact (regV_noLoc h).elim
-
-private theorem lookupX (n : Int) :
-    (VarEnv.update [] "x" (.num n)).lookup "x" = some (.num n) := by
-  simp [VarEnv.update, VarEnv.lookup]
-
-private theorem instantiatesK (b : Bool) (n : Int) :
-    runtimeInstantiatesCtx (K b) ∅ (VarEnv.update [] "x" (.num n)) ∅ := by
-  refine And.intro ?_ ?_
-  · intro l a h
-    simp [RealizationMap.lookup] at h
-  · intro x qt h
-    have hq := K_vars b x qt h
-    subst hq
-    have hx : x = "x" := by
-      by_contra hx
-      simp only [K] at h
-      rw [VarTypeEnv_lookup_update_ne _ "x" x pInt hx] at h
-      simp [VarTypeEnv.lookup] at h
-    subst hx
-    exact ⟨_, lookupX n, valueHasETyp.num n⟩
 
 private theorem trustedInitK (b : Bool) (n : Int) :
     trustedVarsClosureRegimeInit geSat (K b).regime sV (K b) ∅
@@ -996,7 +1017,7 @@ theorem same_return (b : Bool) (m : Int) (hm : 0 ≤ m ↔ b = true) (n₀ n₁ 
   obtain ⟨_, _, _, _, hobs⟩ :=
     TypeSystemEnforcesFaultRobustness (vReg m) prog sV obsRet (K b) (externRegimeMatchesK b)
       (trustedK b m) wfSpecV rfl (ctxMatchesK b) (wfCtxK b) rfl rfl rfl (tagBoundedK b)
-      geSat ∅ (wfTmK b) (tmBoundedK b) lawsEmpty 60 (rootRes b) htc
+      (guardCapsK b) geSat ∅ (wfTmK b) (tmBoundedK b) lawsEmpty 60 (rootRes b) htc
       (And.intro (fun et h => by
           simp only [obsRet, Option.some.injEq] at h
           subst h

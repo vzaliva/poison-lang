@@ -163,11 +163,12 @@ private theorem simplePfn_guardTag_mem
                 simp [externTagLog, hget, hpb]
 
 /-- From *match*: the value returned by the call is consistent with the regime
-    after the call. -/
+    after the call, under a map that realises the body context of the call. -/
 private theorem valueConsistent_of_callMatches {predSat : PredSat} {entry : ExternCallEntry}
     {effects : List Effect} {res : TypeResult} {cf : Config} {o : Value} {θ : RealizationMap}
     (hhinge : ∀ k, qtypGuardTag res.qualType = some k → ∃ a ∈ res.tagLog', a.tag = k)
     (hmatch : CallMatches predSat entry effects res cf o)
+    (hθ : runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv θ)
     (hvt : valueHasETyp θ o res.qualType.etyp)
     (hnotfun : res.qualType.etyp.isFunctionType = false) :
     valueConsistentWithRegime predSat res.regime' res.qualType cf.memory θ o := by
@@ -182,7 +183,8 @@ private theorem valueConsistent_of_callMatches {predSat : PredSat} {entry : Exte
       cases hR : res.regime'.lookup? k with
       | none => exact .notInRegime k htag hR hccv
       | some b =>
-          have hiff := hmatch.ret a ha arg body cap b (by rw [hak]; exact hpred) (by rw [hak]; exact hR)
+          have hiff := hmatch.ret a ha arg body cap b (by rw [hak]; exact hpred)
+            (by rw [hak]; exact hR) θ hθ
           rw [hak] at hiff
           cases b with
           | true => exact .inRegimeTrue k htag hR (.guardClosure_ok hpred (hiff.mpr rfl)) hccv
@@ -383,7 +385,7 @@ private theorem SimplePfnCallFacts.consistent {predSat : PredSat} {ctx : TypeCon
   exact h
 
 private theorem read_callSingle (ap : Bool) : ExternCallBoundarySingle (readDecl ap) readImpl := by
-  intro typedExpr res predSat tm entry ctx htyped _hpredlaws hframe hwfTm hTmBounded
+  intro typedExpr res predSat tm entry ctx htyped _hpredlaws hframe hwfTm hTmBounded _hfp
     θ cf o _hθwf _hwfCtx htagBnd hric _hreg hcons _hwfcfg hrdIn hrun hmatch _hpc
   have hf : SimplePfnCallFacts ctx res true := read_facts htyped
   obtain ⟨⟨n, ho⟩, hcf⟩ := read_callRun_output hrun
@@ -402,13 +404,15 @@ private theorem read_callSingle (ap : Bool) : ExternCallBoundarySingle (readDecl
     show res.memEnv'.contains l ∧ _
     rw [hf.memEnv]; exact hric.1 l a hl
   · rw [hboc]; exact hf.consistent htagBnd hcons
-  · have h := valueConsistent_of_callMatches hf.guard_mem hmatch hvt hf.notfun
+  · have h := valueConsistent_of_callMatches hf.guard_mem hmatch hric hvt hf.notfun
     simpa [ExternCallEntry.bodyOutputConfig, ctxAfter] using h
   · rw [hboc]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
   · intro l _qt hnot hlookup _hclean
     rw [hf.memEnv] at hlookup
     exact absurd (memEnv_contains_of_lookup_some ctx.memEnv l _qt hlookup) hnot
-  · rw [hboc, hf.declared]; exact hrdIn
+  · rw [hboc]
+    refine ⟨?_, MapKeepsBelow.refl _ _, KeepsFootprints.refl _ _ _ _⟩
+    rw [hf.declared]; exact hrdIn
 
 private theorem SimplePfnCallFacts.agree {predSat : PredSat} {ctx : TypeContext} {res : TypeResult}
     {poison : Bool} {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv} {θ₀ θ₁ : RealizationMap}
@@ -488,7 +492,7 @@ private theorem SimplePfnCallFacts.runtime {ctx : TypeContext} {res : TypeResult
 
 private theorem read_callFR (ap : Bool) : ExternCallBoundaryFR (readDecl ap) readImpl := by
   intro postExpr typedExpr₀ _typedExpr₁ res predSat tm entry₀ entry₁ ctx hctx₁
-    htyped₀ _htyped₁ _hpredlaws hframe hwfTm hTmBounded θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
+    htyped₀ _htyped₁ _hpredlaws hframe hwfTm hTmBounded _hfp θ₀ θ₁ hbody cf₀ cf₁ o₀ o₁ hrun₀ hrun₁
     hmatch₀ hmatch₁ hagree
   have hf : SimplePfnCallFacts ctx res true := read_facts htyped₀
   obtain ⟨⟨n₀, ho₀⟩, hcf₀⟩ := read_callRun_output hrun₀
@@ -507,8 +511,8 @@ private theorem read_callFR (ap : Bool) : ExternCallBoundaryFR (readDecl ap) rea
     show EnvRespectsTagMeaning tm' ctx.varEnv res.memEnv'
     rw [hf.memEnv]
     exact EnvRespectsTagMeaning_mono hext hwfTm
-  have hvc₀ := valueConsistent_of_callMatches hf.guard_mem hmatch₀ hvt₀ hf.notfun
-  have hvc₁ := valueConsistent_of_callMatches hf.guard_mem hmatch₁ hvt₁ hf.notfun
+  have hvc₀ := valueConsistent_of_callMatches hf.guard_mem hmatch₀ hbody.runtime₀ hvt₀ hf.notfun
+  have hvc₁ := valueConsistent_of_callMatches hf.guard_mem hmatch₁ (hctx₁ ▸ hbody.runtime₁) hvt₁ hf.notfun
   have hrai := resultAgreesIfClean_of_callAgrees (μ₀ := entry₀.bodyConfig.memory)
     (μ₁ := entry₁.bodyConfig.memory) (θ₀ := θ₀) (θ₁ := θ₁) (predSat := predSat)
     hf.guard_mem (hf.poison_true rfl) hf.notfun hf.notref hagree
@@ -530,7 +534,9 @@ private theorem read_callFR (ap : Bool) : ExternCallBoundaryFR (readDecl ap) rea
   · rw [hmem₀]; exact hvc₀
   · rw [hmem₁]; exact hvc₁
   · rw [hf.declared]; exact hbody.reserved₀
-  · rw [hf.declared]; exact hbody.reserved₁
+  · refine ⟨?_, MapKeepsBelow.refl _ _, MapKeepsBelow.refl _ _, KeepsFootprints.refl _ _ _ _,
+      KeepsFootprints.refl _ _ _ _⟩
+    rw [hf.declared]; exact hbody.reserved₁
 
 /-- `read` returns its argument, so a well-formed argument gives a well-formed
     result. -/
@@ -729,10 +735,11 @@ private theorem tagBounded (hvars : ∀ x qt, vars.lookup x = some qt → qt = p
     rw [hvars x qt h]
     exact trivial
 
-private theorem wfTm (hvars : ∀ x qt, vars.lookup x = some qt → qt = pInt) :
-    wfTagMeaningCtx ∅ (ctxOf pol vars) := by
-  refine EnvRespectsTagMeaning.intro ?_
-  intro k d hdeep
+/-- The starting context has no guard: its variables are poisoned `int`s without
+    predicate and it stores nothing. -/
+private theorem noGuard (hvars : ∀ x qt, vars.lookup x = some qt → qt = pInt) {k : Tag}
+    {d : GuardDesc} : ¬ GuardDescInEnvsDeep (ctxOf pol vars).varEnv (ctxOf pol vars).memEnv k d := by
+  intro hdeep
   rcases hdeep with ⟨qt, k, d, hin, hdesc⟩
   cases hin with
   | inVar _ _ x _ qtRoot hlookup hinq =>
@@ -745,6 +752,14 @@ private theorem wfTm (hvars : ∀ x qt, vars.lookup x = some qt → qt = pInt) :
       simp [qtypGuardDesc?, pInt] at hdesc
   | inMem _ _ l _ qtRoot hlookup hinq =>
       simp [ctxOf, MemoryTypeEnv.lookup] at hlookup
+
+private theorem wfTm (hvars : ∀ x qt, vars.lookup x = some qt → qt = pInt) :
+    wfTagMeaningCtx ∅ (ctxOf pol vars) :=
+  EnvRespectsTagMeaning.intro (fun hdeep => absurd hdeep (noGuard hvars))
+
+private theorem guardCaps (hvars : ∀ x qt, vars.lookup x = some qt → qt = pInt) :
+    GuardCapsBelow (ctxOf pol vars) :=
+  fun _ _ hdeep => absurd hdeep (noGuard hvars)
 
 private theorem tmBounded : TagMeaningBounded ∅ (ctxOf pol vars).nextTag := by
   intro k d h
@@ -860,7 +875,8 @@ theorem closed_of {pol : ExternId → Tag → Option Bool} {vars : VarTypeEnv} {
       observablesEqual obsNone θ₁' θ₂' cf₁ cf₂ o₁ o₂ :=
   TypeSystemEnforcesFaultRobustness (readReg ap) prog sRead obsNone (ctxOf pol vars)
     (externRegimeMatches hpol hpol7) (trusted hprog hvars) wfSpec wfObs (ctxMatches hvars)
-    (wfCtx hvars) rfl rfl rfl (tagBounded hvars) geSat ∅ (wfTm hvars) tmBounded lawsEmpty
+    (wfCtx hvars) rfl rfl rfl (tagBounded hvars) (guardCaps hvars) geSat ∅ (wfTm hvars) tmBounded
+    lawsEmpty
     fuel res htc
     (And.intro (fun _ h => by simp [obsNone] at h)
       (fun _ _ h => by simp [obsNone, MemoryETypEnv.lookup] at h))

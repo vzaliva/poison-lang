@@ -14,8 +14,9 @@ import Std.Data.ExtTreeMap
 open Std
 
 -- Abstract predicate satisfaction: does a predicate with the given tag hold
--- for a value in a given memory state?
-abbrev PredSat := Tag → Memory → Value → Prop
+-- for a value in a given state, given by a realisation map (where each
+-- logical location lives) and a memory (what each address holds)?
+abbrev PredSat := Tag → RealizationMap → Memory → Value → Prop
 
 -- Guard descriptor (arg name, body, captured env) for tag-meaning tracking
 structure GuardDesc where
@@ -1024,27 +1025,34 @@ structure PredSatLaws (predSat : PredSat) (tm : TagMeaning) : Prop where
             θ.lookup l0 = some a ∧
             μ.lookup a = some n ∧
             v = Value.num n) ) ∧
-      (b = true ↔ predSat k μ v)
+      (b = true ↔ predSat k θ μ v)
 
-  mem_monotone : ∀ (k : Tag) (pred : Predicate) (fuel : Nat)
-      (μ μ' : Memory) (v : Value) (deps : Deps) (θ : RealizationMap),
-    extractDepsFromPred pred fuel = .ok deps →
-    (∀ l, l ∈ deps → ∀ a, θ.lookup l = some a → μ.lookup a = μ'.lookup a) →
-    (predSat k μ v ↔ predSat k μ' v)
+  -- Footprint law: for a tag with a descriptor, two states that agree on
+  -- every set of locations the extraction computes for the descriptor's guard
+  -- closure (where each location lives, and what its address holds) give the
+  -- same answer. When no fuel extracts a set, the meaning does not depend on
+  -- the state.
+  mem_footprint : ∀ (k : Tag) (d : GuardDesc) (θ θ' : RealizationMap) (μ μ' : Memory) (v : Value),
+    tm.lookup k = some d →
+    (∀ fuel deps,
+      extractDepsFromPred (Predicate.guardClosure k d.argName d.body d.capEnv) fuel = .ok deps →
+      (∀ l, l ∈ deps → θ.lookup l = θ'.lookup l) ∧
+      (∀ l, l ∈ deps → ∀ a, θ.lookup l = some a → μ.lookup a = μ'.lookup a)) →
+    (predSat k θ μ v ↔ predSat k θ' μ' v)
 
 -- Check if a QTyp-attached predicate holds using abstract satisfaction relation
-inductive qtypPredHolds (predSat : PredSat) : QTyp → Memory → Value → Prop where
+inductive qtypPredHolds (predSat : PredSat) (θ : RealizationMap) : QTyp → Memory → Value → Prop where
   | noPred_ok {qt : QTyp} {μ v}
       (h : qt.pred = Predicate.noPred) :
-      qtypPredHolds predSat qt μ v
+      qtypPredHolds predSat θ qt μ v
   | guardClosure_ok {qt : QTyp} {μ v k arg_name pred_body var_env}
       (h : qt.pred = Predicate.guardClosure k arg_name pred_body var_env)
-      (hSat : predSat k μ v) :
-      qtypPredHolds predSat qt μ v
+      (hSat : predSat k θ μ v) :
+      qtypPredHolds predSat θ qt μ v
   | guardOnly_ok {qt : QTyp} {μ v k}
       (h : qt.pred = Predicate.guardOnly k)
-      (hSat : predSat k μ v) :
-      qtypPredHolds predSat qt μ v
+      (hSat : predSat k θ μ v) :
+      qtypPredHolds predSat θ qt μ v
 
 -- Elementwise predicate for location regime consistency (inductive for easy inversion)
 inductive locsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap) : (Loc × QTyp) → Prop where
@@ -1062,28 +1070,28 @@ inductive locsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (θ : Realiz
       (hregime : R.lookup? k = some b)
       (hreal : θ.lookup entry.fst = some a)
       (hmem : μ.lookup a = some n)
-      (hconsist : (b = true → qtypPredHolds predSat entry.snd μ (Value.num n)) ∧
-                  (b = false → ¬qtypPredHolds predSat entry.snd μ (Value.num n))) :
+      (hconsist : (b = true → qtypPredHolds predSat θ entry.snd μ (Value.num n)) ∧
+                  (b = false → ¬qtypPredHolds predSat θ entry.snd μ (Value.num n))) :
       locsRegime predSat R μ θ entry
 
 -- Elementwise predicate for variable regime consistency (inductive for easy inversion)
-inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (ρ : VarEnv) : (Name × QTyp) → Prop where
+inductive varsRegime (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap) (ρ : VarEnv) : (Name × QTyp) → Prop where
   | noPred_ok (entry : Name × QTyp)
       (hpred : qtypGuardTag entry.snd = none) :
-      varsRegime predSat R μ ρ entry
+      varsRegime predSat R μ θ ρ entry
   -- Guard-only predicates impose no regime consistency beyond tag presence in S
   | guardOnly_ok (entry : Name × QTyp) (k : Tag)
       (hgo : entry.snd.pred = Predicate.guardOnly k) :
-      varsRegime predSat R μ ρ entry
+      varsRegime predSat R μ θ ρ entry
   -- Guard-closure predicates must align with the regime: holds iff R(k)=true
   | withPred_ok (entry : Name × QTyp) (k : Tag) (arg_name : Name) (pred_body : PExpr) (var_env : CapturedVarEnv)
       (v : Value) (b : Bool)
       (hclos : entry.snd.pred = Predicate.guardClosure k arg_name pred_body var_env)
       (hregime : R.lookup? k = some b)
       (hvar : ρ.lookup entry.fst = some v)
-      (hconsist : (b = true → qtypPredHolds predSat entry.snd μ v) ∧
-                  (b = false → ¬qtypPredHolds predSat entry.snd μ v)) :
-      varsRegime predSat R μ ρ entry
+      (hconsist : (b = true → qtypPredHolds predSat θ entry.snd μ v) ∧
+                  (b = false → ¬qtypPredHolds predSat θ entry.snd μ v)) :
+      varsRegime predSat R μ θ ρ entry
 
 -- Generic combinator: recurse through closure/peClosure values, checking
 -- property P on (σcap, ρcap) at each nesting level. The recursive descent
@@ -1190,13 +1198,13 @@ lemma deepValueQTypProperty_mono
 
 -- Property checked at each closure nesting level: all captured variables
 -- whose type has an active guard tag satisfy varsRegime.
-def capturedVarsRegimeProperty (predSat : PredSat) (R : Regime) (μ : Memory)
+def capturedVarsRegimeProperty (predSat : PredSat) (R : Regime) (μ : Memory) (θ : RealizationMap)
     (σcap : CapturedVarEnv) (ρcap : VarEnv) : Prop :=
   ∀ (x : Name) (qt_x : QTyp) (k_x : Tag),
     σcap.lookup x = some qt_x →
     qtypGuardTag qt_x = some k_x →
     R.lookup? k_x ≠ none →
-    varsRegime predSat R μ ρcap (x, qt_x)
+    varsRegime predSat R μ θ ρcap (x, qt_x)
 
 -- Typing property for captured variables: each binding in σcap is realised in
 -- ρcap with a value whose ETyp is justified by θ.  Carried alongside the
@@ -1216,7 +1224,8 @@ def capturedVarsTypingProperty (θ : RealizationMap)
 -- Checked against the CURRENT regime R rather than the regime at capture time.
 -- This is sound because Regime.monotoneStep only removes entries, so any
 -- obligation that held under a larger regime still holds under the current
--- (smaller) one; memory growth is handled by PredSatLaws.mem_monotone.
+-- (smaller) one; a change of state is handled by PredSatLaws.mem_footprint
+-- for the tags the regime keeps.
 --
 -- The property P carried at each nesting level is the conjunction of the
 -- regime property and the typing property for the SAME σcap, eliminating
@@ -1225,7 +1234,7 @@ inductive closureCapturedVarsRegime (predSat : PredSat) (R : Regime)
     (qt : QTyp) (μ : Memory) (θ : RealizationMap) (v : Value) : Prop where
   | intro :
       deepValueQTypProperty (fun σcap ρcap =>
-        capturedVarsRegimeProperty predSat R μ σcap ρcap ∧
+        capturedVarsRegimeProperty predSat R μ θ σcap ρcap ∧
         capturedVarsTypingProperty θ σcap ρcap) qt v →
       closureCapturedVarsRegime predSat R qt μ θ v
 
@@ -1242,10 +1251,348 @@ def consistentWithRegime (predSat : PredSat) (R : Regime) (ctx : TypeContext)
   (∀ x qt k, ctx.varEnv.lookup x = some qt →
      qtypGuardTag qt = some k →
      R.lookup? k ≠ none →
-     varsRegime predSat R μ ρ (x, qt)) ∧
+     varsRegime predSat R μ θ ρ (x, qt)) ∧
   (∀ x qt v, ctx.varEnv.lookup x = some qt →
      ρ.lookup x = some v →
      closureCapturedVarsRegime predSat R qt μ θ v)
+
+/-! ### Footprints of guards and stability of their meaning -/
+
+/-- `l` is in the footprint of the descriptor `d` of the tag `k`: some fuel
+    extracts, for the guard closure of `d`, a set that contains `l`. -/
+def InFootprint (k : Tag) (d : GuardDesc) (l : Loc) : Prop :=
+  ∃ fuel deps,
+    extractDepsFromPred (Predicate.guardClosure k d.argName d.body d.capEnv) fuel = .ok deps ∧
+    deps.contains l = true
+
+/-- The set a tag environment records for a tag covers the footprint of the
+    tag's descriptor in `tm`. -/
+def RecordsCover (tm : TagMeaning) (env : TagEnv) : Prop :=
+  ∀ k tv d, env.get? k = some tv → tm.lookup k = some d →
+    ∀ l, InFootprint k d l → tv.deps.contains l = true
+
+/-- Every location in the footprint of a descriptor of `tm` is below `nl`. -/
+def FootprintBelow (tm : TagMeaning) (nl : Loc) : Prop :=
+  ∀ k d, tm.lookup k = some d → ∀ l, InFootprint k d l → l < nl
+
+/-- Every tag with a descriptor in `tm` that `R` defines means the same in the
+    two states `(θ, μ)` and `(θ', μ')`. -/
+def PredSatStable (predSat : PredSat) (tm : TagMeaning) (R : Regime)
+    (θ θ' : RealizationMap) (μ μ' : Memory) : Prop :=
+  ∀ k d, tm.lookup k = some d → R.lookup? k ≠ none →
+    ∀ v, (predSat k θ μ v ↔ predSat k θ' μ' v)
+
+/-- The footprint invariant of a typing context under a table: the records of
+    its tag environment cover the footprints of their descriptors, and every
+    footprint location of a descriptor is below the context's `nextLoc`. -/
+def FootprintCtx (tm : TagMeaning) (ctx : TypeContext) : Prop :=
+  RecordsCover tm ctx.tagEnv ∧ FootprintBelow tm ctx.nextLoc
+
+private theorem LocSet_any_eq_toList_any (s : LocSet) (p : Loc → Bool) :
+    s.any p = s.toList.any p := by
+  rcases s with ⟨⟨⟨q⟩⟩⟩
+  induction q using Quotient.ind with
+  | _ m =>
+    show m.inner.any (fun a _ => p a) = (m.inner.keys).any p
+    unfold DTreeMap.Internal.Impl.any
+    simp only [Id.run]
+    have h : (forIn (m := Id) m.inner ((none : Option Bool), ())
+          fun (x : (_ : Loc) × Unit) (_ : Option Bool × Unit) =>
+            if p x.fst = true then pure (ForInStep.done (some true, ()))
+            else pure (ForInStep.yield (none, ()))) =
+        forIn m.inner.toList ((none : Option Bool), ())
+          fun (x : (_ : Loc) × Unit) (_ : Option Bool × Unit) =>
+            if p x.fst = true then pure (ForInStep.done (some true, ()))
+            else pure (ForInStep.yield (none, ())) := by
+      rw [← DTreeMap.Internal.Impl.forIn_eq_forIn_toList (m := Id) (init := ((none : Option Bool), ()))
+        (f := fun (x : (_ : Loc) × Unit) (_ : Option Bool × Unit) =>
+          if p x.fst = true then pure (ForInStep.done (some true, ()))
+          else pure (ForInStep.yield (none, ())))]
+      rfl
+    rw [h, ← DTreeMap.Internal.Impl.map_fst_toList_eq_keys]
+    generalize m.inner.toList = L
+    induction L with
+    | nil => rfl
+    | cons x L ih =>
+        by_cases hp : p x.fst = true
+        · simp [hp]; rfl
+        · have hp' : p x.fst = false := by simpa using hp
+          simp only [List.forIn_cons, hp'] at ih ⊢
+          simpa [hp'] using ih
+
+/-- A location set none of whose elements satisfies `p` (by `any`) has no
+    element that satisfies it. -/
+theorem LocSet_any_eq_false_mem {s : LocSet} {p : Loc → Bool} (h : s.any p = false) {x : Loc}
+    (hx : s.contains x = true) : p x = false := by
+  rw [LocSet_any_eq_toList_any] at h
+  have hmem : x ∈ s.toList := ExtTreeSet.mem_toList.mpr (ExtTreeSet.contains_iff_mem.mp hx)
+  cases hpx : p x with
+  | false => rfl
+  | true =>
+      have : s.toList.any p = true := List.any_eq_true.mpr ⟨x, hmem, hpx⟩
+      rw [h] at this; cases this
+
+/-- A tag the invalidation by a write to `ls` keeps is recorded with a set
+    disjoint from `ls`. -/
+theorem invalidateRegimeDeps_survivor (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
+    (hlookup : (invalidateRegimeDeps R env ls).lookup? k ≠ none) :
+    ∃ tv, env.get? k = some tv ∧ tv.deps.any ls.contains = false := by
+  unfold invalidateRegimeDeps Regime.lookup? at hlookup
+  have hmapEq :
+      (R.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k =
+        Option.filter (fun _ => (invalidateTagDeps env ls).contains k) (R.get? k) := by
+    rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter']
+    rw [← Std.ExtTreeMap.get?_eq_getElem?]
+  have hkeep : (invalidateTagDeps env ls).contains k = true := by
+    by_contra hk
+    apply hlookup
+    have : (R.filter (fun k _ => (invalidateTagDeps env ls).contains k)).get? k = none := by
+      rw [hmapEq]; simp [hk]
+    simpa [invalidateTagDeps] using this
+  unfold invalidateTagDeps at hkeep
+  rw [Std.ExtTreeMap.contains_eq_isSome_getElem?] at hkeep
+  have hsome : ((env.filter (fun _ tv => !tv.deps.any ls.contains))[k]?).isSome = true := by
+    simpa using hkeep
+  rw [Std.ExtTreeMap.getElem?_filter'] at hsome
+  cases hget : env[k]? with
+  | none => simp [hget] at hsome
+  | some tv =>
+      have hdeps : tv.deps.any ls.contains = false := by
+        cases hdep : tv.deps.any ls.contains with
+        | false => rfl
+        | true => simp [hget, hdep] at hsome
+      exact ⟨tv, by simpa [Std.ExtTreeMap.get?_eq_getElem?] using hget, hdeps⟩
+
+/-- A tag the effect invalidation by a write to `ls` keeps is recorded in `env` with
+    a set disjoint from `ls`: the invalidation drops a regime tag that `env` does not
+    record, and a recorded tag whose set meets `ls`. -/
+theorem invalidateRegimeDepsEffect_survivor (R : Regime) (env : TagEnv) (ls : LocSet) (k : Tag)
+    (hne : ∃ l, ls.contains l = true)
+    (hlookup : (invalidateRegimeDepsEffect R env ls).lookup? k ≠ none) :
+    ∃ tv, env.get? k = some tv ∧ tv.deps.any ls.contains = false := by
+  unfold invalidateRegimeDepsEffect Regime.lookup? at hlookup
+  rw [Std.ExtTreeMap.get?_eq_getElem?, Std.ExtTreeMap.getElem?_filter'] at hlookup
+  obtain ⟨b, hb⟩ := Option.ne_none_iff_exists'.mp hlookup
+  have hp := (Option.filter_eq_some_iff.mp hb).2
+  cases henv : env[k]? with
+  | none =>
+      rw [Std.ExtTreeMap.get?_eq_getElem?, henv] at hp
+      obtain ⟨l, hl⟩ := hne
+      have hls : ls = ∅ := ExtTreeSet.isEmpty_iff.mp hp
+      subst hls
+      simp at hl
+  | some tv =>
+      refine ⟨tv, by rw [Std.ExtTreeMap.get?_eq_getElem?]; exact henv, ?_⟩
+      simpa [henv] using hp
+
+/-- The write of an assignment, at an address that realises a location of
+    `ls`, keeps the meaning of every tag the invalidated regime defines: such a
+    tag is recorded with a set disjoint from `ls` that covers its footprint, and
+    the map is injective. -/
+theorem predSatStable_write {predSat : PredSat} {tm : TagMeaning} {R : Regime} {env : TagEnv}
+    {ls : LocSet} {θ : RealizationMap} {μ : Memory} {a : Address} {n : Int}
+    (hlaws : PredSatLaws predSat tm)
+    (hcover : RecordsCover tm env)
+    (hinj : θ.isInjective)
+    (hl : ∃ l, ls.contains l = true ∧ θ.lookup l = some a) :
+    PredSatStable predSat tm (invalidateRegimeDeps R env ls) θ θ μ (μ.insert a n) := by
+  intro k d hd hR v
+  obtain ⟨tv, htv, hdisj⟩ := invalidateRegimeDeps_survivor R env ls k hR
+  obtain ⟨l, hlls, hla⟩ := hl
+  refine hlaws.mem_footprint k d θ θ μ (μ.insert a n) v hd fun fuel deps hx => ⟨fun _ _ => rfl, ?_⟩
+  intro l' hl' a' ha'
+  have hrec : tv.deps.contains l' = true :=
+    hcover k tv d htv hd l' ⟨fuel, deps, hx, ExtTreeSet.contains_iff_mem.mpr hl'⟩
+  have hnot : ls.contains l' = false := LocSet_any_eq_false_mem hdisj hrec
+  have hne : a' ≠ a := by
+    rintro rfl
+    have : l' = l := hinj l' l a' ha' hla
+    subst this
+    rw [hlls] at hnot; cases hnot
+  simp only [Memory.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert]
+  split <;> simp_all
+
+/-- An allocation (the map gains `l ↦ a`, the memory gains the cell `a`) keeps
+    the meaning of every tag with a descriptor: the new location is not below
+    `nl`, so it is in no footprint, and the new address is not one the map
+    already realises. -/
+theorem predSatStable_alloc {predSat : PredSat} {tm : TagMeaning} {R : Regime}
+    {θ : RealizationMap} {μ : Memory} {nl l : Loc} {a : Address} {n : Int}
+    (hlaws : PredSatLaws predSat tm)
+    (hbelow : FootprintBelow tm nl)
+    (hl : nl ≤ l)
+    (hrange : ∀ l' a', θ.lookup l' = some a' → μ.contains a' = true)
+    (hfresh : μ.contains a = false) :
+    PredSatStable predSat tm R θ (θ.insert l a) μ (μ.insert a n) := by
+  intro k d hd _ v
+  refine hlaws.mem_footprint k d θ (θ.insert l a) μ (μ.insert a n) v hd
+    fun fuel deps hx => ⟨?_, ?_⟩
+  · intro l' hl'
+    have hlt : l' < nl := hbelow k d hd l' ⟨fuel, deps, hx, ExtTreeSet.contains_iff_mem.mpr hl'⟩
+    have hne : l ≠ l' := Nat.ne_of_gt (Nat.lt_of_lt_of_le hlt hl)
+    simp only [RealizationMap.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert]
+    split <;> simp_all
+  · intro l' _ a' ha'
+    have hne : a ≠ a' := by
+      rintro rfl
+      rw [hrange l' a ha'] at hfresh; cases hfresh
+    simp only [Memory.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert]
+    split <;> simp_all
+
+/-- The map `θ'` agrees with `θ` on every location below `nl`. -/
+def MapKeepsBelow (nl : Loc) (θ θ' : RealizationMap) : Prop :=
+  ∀ l, l < nl → θ'.lookup l = θ.lookup l
+
+/-- Every tag of `R` with a descriptor in `tm` keeps, from `μ` to `μ'`, the
+    content of every cell of its footprint that `θ` realises. -/
+def KeepsFootprints (tm : TagMeaning) (R : Regime) (θ : RealizationMap) (μ μ' : Memory) : Prop :=
+  ∀ k d, tm.lookup k = some d → R.lookup? k ≠ none →
+    ∀ l, InFootprint k d l → ∀ a, θ.lookup l = some a → μ.lookup a = μ'.lookup a
+
+theorem MapKeepsBelow.refl (nl : Loc) (θ : RealizationMap) : MapKeepsBelow nl θ θ :=
+  fun _ _ => rfl
+
+theorem MapKeepsBelow.trans {nl nl' : Loc} {θ θ' θ'' : RealizationMap}
+    (h₁ : MapKeepsBelow nl θ θ') (h₂ : MapKeepsBelow nl' θ' θ'') (hle : nl ≤ nl') :
+    MapKeepsBelow nl θ θ'' :=
+  fun l hl => (h₂ l (Nat.lt_of_lt_of_le hl hle)).trans (h₁ l hl)
+
+theorem KeepsFootprints.refl (tm : TagMeaning) (R : Regime) (θ : RealizationMap) (μ : Memory) :
+    KeepsFootprints tm R θ μ μ :=
+  fun _ _ _ _ _ _ _ _ => rfl
+
+/-- Two runs in sequence: a tag of the final regime with a descriptor in the
+    starting table is a tag of the intermediate regime (`hR`), and the second
+    run's map extends the first's. -/
+theorem KeepsFootprints.trans {tm tm' : TagMeaning} {R R' : Regime} {θ θ' : RealizationMap}
+    {μ μ' μ'' : Memory}
+    (h₁ : KeepsFootprints tm R θ μ μ') (h₂ : KeepsFootprints tm' R' θ' μ' μ'')
+    (hsub : tm ⊑ tm') (hext : θ.extendsMap θ')
+    (hR : ∀ k d, tm.lookup k = some d → R'.lookup? k ≠ none → R.lookup? k ≠ none) :
+    KeepsFootprints tm R' θ μ μ'' := by
+  intro k d hd hk l hl a ha
+  exact (h₁ k d hd (hR k d hd hk) l hl a ha).trans
+    (h₂ k d (TagMeaningExtends.lookup hsub hd) hk l hl a (hext l a ha))
+
+/-- With the law, the footprint locations below `nl`, a map that keeps every
+    location below `nl` and the footprint cells, every tag of `R` with a
+    descriptor in `tm` means the same in the two states. -/
+theorem predSatStable_of_frame {predSat : PredSat} {tm : TagMeaning} {R : Regime} {nl : Loc}
+    {θ θ' : RealizationMap} {μ μ' : Memory}
+    (hlaws : PredSatLaws predSat tm) (hbelow : FootprintBelow tm nl)
+    (hM : MapKeepsBelow nl θ θ') (hF : KeepsFootprints tm R θ μ μ') :
+    PredSatStable predSat tm R θ θ' μ μ' := by
+  intro k d hd hR v
+  refine hlaws.mem_footprint k d θ θ' μ μ' v hd fun fuel deps hx => ⟨?_, ?_⟩
+  · intro l hl
+    exact (hM l (hbelow k d hd l ⟨fuel, deps, hx, ExtTreeSet.contains_iff_mem.mpr hl⟩)).symm
+  · intro l hl a ha
+    exact hF k d hd hR l ⟨fuel, deps, hx, ExtTreeSet.contains_iff_mem.mpr hl⟩ a ha
+
+/-- A tag of a table bounded by `nt` that the later regime defines was defined
+    before, when the regime only loses entries or gains tags at or above `nt`. -/
+theorem regime_defined_back {tm : TagMeaning} {R R' : Regime} {nt : Tag}
+    (hmono : Regime.monotoneStepExt R R' (fun k => nt ≤ k)) (hb : TagMeaningBounded tm nt) :
+    ∀ k d, tm.lookup k = some d → R'.lookup? k ≠ none → R.lookup? k ≠ none := by
+  intro k d hd hk
+  rcases hmono.2 k hk with h | h
+  · exact h
+  · exact absurd h (Nat.not_le.mpr (hb k d hd))
+
+/-- The write of an assignment, at an address that realises a location of `ls`,
+    leaves the footprint cells of every tag the invalidated regime defines. -/
+theorem keepsFootprints_write {tm : TagMeaning} {R : Regime} {env : TagEnv}
+    {ls : LocSet} {θ : RealizationMap} {μ : Memory} {a : Address} {n : Int}
+    (hcover : RecordsCover tm env) (hinj : θ.isInjective)
+    (hl : ∃ l, ls.contains l = true ∧ θ.lookup l = some a) :
+    KeepsFootprints tm (invalidateRegimeDeps R env ls) θ μ (μ.insert a n) := by
+  intro k d hd hR l' hl' a' ha'
+  obtain ⟨tv, htv, hdisj⟩ := invalidateRegimeDeps_survivor R env ls k hR
+  obtain ⟨l, hlls, hla⟩ := hl
+  have hrec : tv.deps.contains l' = true := hcover k tv d htv hd l' hl'
+  have hnot : ls.contains l' = false := LocSet_any_eq_false_mem hdisj hrec
+  have hne : a' ≠ a := by
+    rintro rfl
+    have : l' = l := hinj l' l a' ha' hla
+    subst this
+    rw [hlls] at hnot; cases hnot
+  simp only [Memory.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert]
+  split <;> simp_all
+
+/-- The write of an extern effect, at an address that realises a location of `ls`,
+    leaves the footprint cells of every tag the effect-invalidated regime defines.
+
+    Argument.  Such a tag `k` has `env.get? k = some tv` with `tv.deps` disjoint from
+    `ls` (`invalidateRegimeDepsEffect_survivor`: when `ls` is not empty, the
+    invalidation drops a regime tag that `env` does not record).  As `env` covers the footprints of `tm`, every
+    footprint location `l'` of `k` is in `tv.deps`, so `ls` does not contain `l'`.
+    If `θ` realised `l'` at the written address `a`, injectivity would give `l' = l`
+    for the location `l` of `ls` realised at `a`, contradicting `l' ∉ ls`.  So `a` is
+    not the address of a footprint cell and the write leaves it. -/
+theorem keepsFootprints_write_effect {tm : TagMeaning} {R : Regime} {env : TagEnv}
+    {ls : LocSet} {θ : RealizationMap} {μ : Memory} {a : Address} {n : Int}
+    (hcover : RecordsCover tm env) (hinj : θ.isInjective)
+    (hl : ∃ l, ls.contains l = true ∧ θ.lookup l = some a) :
+    KeepsFootprints tm (invalidateRegimeDepsEffect R env ls) θ μ (μ.insert a n) := by
+  intro k d hd hR l' hl' a' ha'
+  obtain ⟨l, hlls, hla⟩ := hl
+  obtain ⟨tv, htv, hdisj⟩ := invalidateRegimeDepsEffect_survivor R env ls k ⟨l, hlls⟩ hR
+  have hrec : tv.deps.contains l' = true := hcover k tv d htv hd l' hl'
+  have hnot : ls.contains l' = false := LocSet_any_eq_false_mem hdisj hrec
+  have hne : a' ≠ a := by
+    rintro rfl
+    have : l' = l := hinj l' l a' ha' hla
+    subst this
+    rw [hlls] at hnot; cases hnot
+  simp only [Memory.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert]
+  split <;> simp_all
+
+/-- Realising a location not below `nl` keeps the map below `nl`. -/
+theorem MapKeepsBelow.update {nl l : Loc} {θ θ' : RealizationMap} {a : Address}
+    (h : MapKeepsBelow nl θ θ') (hl : nl ≤ l) : MapKeepsBelow nl θ (θ'.update l a) := by
+  intro l' hl'
+  have hne : l ≠ l' := Nat.ne_of_gt (Nat.lt_of_lt_of_le hl' hl)
+  rw [← h l' hl']
+  simp only [RealizationMap.update, RealizationMap.lookup, ExtTreeMap.get?_eq_getElem?,
+    ExtTreeMap.getElem?_insert]
+  split <;> simp_all
+
+/-- A write at a fresh address leaves every cell the map realises. -/
+theorem keepsFootprints_alloc {tm : TagMeaning} {R : Regime} {θ : RealizationMap} {μ : Memory}
+    {a : Address} {n : Int}
+    (hrange : ∀ l a', θ.lookup l = some a' → μ.contains a' = true) (hfresh : μ.contains a = false) :
+    KeepsFootprints tm R θ μ (μ.insert a n) := by
+  intro _ _ _ _ l _ a' ha'
+  have hne : a ≠ a' := by
+    rintro rfl
+    rw [hrange l a ha'] at hfresh; cases hfresh
+  simp only [Memory.lookup, ExtTreeMap.get?_eq_getElem?, ExtTreeMap.getElem?_insert]
+  split <;> simp_all
+
+/-- `qtypPredHolds` of a guard-closure type whose tag has the closure as its
+    descriptor and is stable carries over between the two states. -/
+theorem qtypPredHolds_of_stable {predSat : PredSat} {tm : TagMeaning} {R : Regime}
+    {θ θ' : RealizationMap} {μ μ' : Memory} {qt : QTyp} {v : Value}
+    {k : Tag} {arg : Name} {body : PExpr} {cap : CapturedVarEnv}
+    (hS : PredSatStable predSat tm R θ θ' μ μ')
+    (hclos : qt.pred = Predicate.guardClosure k arg body cap)
+    (hd : tm.lookup k = some { argName := arg, body := body, capEnv := cap })
+    (hR : R.lookup? k ≠ none) :
+    qtypPredHolds predSat θ qt μ v ↔ qtypPredHolds predSat θ' qt μ' v := by
+  have hk := hS k _ hd hR v
+  constructor <;> intro h
+  · cases h with
+    | noPred_ok hp => rw [hclos] at hp; cases hp
+    | guardClosure_ok hp hs =>
+        rw [hclos] at hp; cases hp
+        exact qtypPredHolds.guardClosure_ok hclos (hk.1 hs)
+    | guardOnly_ok hp _ => rw [hclos] at hp; cases hp
+  · cases h with
+    | noPred_ok hp => rw [hclos] at hp; cases hp
+    | guardClosure_ok hp hs =>
+        rw [hclos] at hp; cases hp
+        exact qtypPredHolds.guardClosure_ok hclos (hk.2 hs)
+    | guardOnly_ok hp _ => rw [hclos] at hp; cases hp
 
 -- Tag-environment consistency for a regime: tags known true in the typing
 -- context must be true in the regime interpretation.

@@ -364,19 +364,23 @@ theorem EffectCell.not_nil {entry : ExternCallEntry} {res : TypeResult} {v : Nam
     constructors `inRegimeTrue` and `inRegimeFalse` of
     `valueConsistentWithRegime` ask of the value, and the constructor
     `withPred_ok` of `locsRegime` asks of the cell; a guard without predicate
-    asks nothing. -/
+    asks nothing. The predicate is read under every realisation map that
+    realises the body context at the call (`runtimeInstantiatesCtx` of the
+    body context, at the memory and the environment the body starts from). -/
 structure CallMatches (predSat : PredSat) (entry : ExternCallEntry) (effects : List Effect)
     (res : TypeResult) (cf : Config) (o : Value) : Prop where
   ret : ∀ a ∈ res.tagLog', ∀ (argName : Name) (body : PExpr) (cap : CapturedVarEnv) (b : Bool),
     res.qualType.pred = .guardClosure a.tag argName body cap →
     res.regime'.lookup? a.tag = some b →
-    (predSat a.tag cf.memory o ↔ b = true)
+    ∀ θ, runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv θ →
+    (predSat a.tag θ cf.memory o ↔ b = true)
   cells : ∀ (v : Name) (addr : Address) (qt : QTyp) (n : Int),
     EffectCell entry effects res v addr qt → cf.memory.lookup addr = some n →
     ∀ a ∈ res.tagLog', ∀ (argName : Name) (body : PExpr) (cap : CapturedVarEnv) (b : Bool),
     qt.pred = .guardClosure a.tag argName body cap →
     res.regime'.lookup? a.tag = some b →
-    (predSat a.tag cf.memory (.num n) ↔ b = true)
+    ∀ θ, runtimeInstantiatesCtx entry.bodyCtx entry.bodyConfig.memory entry.unifiedEnv θ →
+    (predSat a.tag θ cf.memory (.num n) ↔ b = true)
 
 /-- *Agreement* for one call made by both runs: where a tag the call allocated
     is true, a returned value that is not a function or a reference is the
@@ -410,12 +414,14 @@ inductive ExternValAt : Step → TypeResult → Config → Value → Prop where
 
 /-- *Match* for one `extern val`: for each tag the declaration allocated that
     carries a predicate on the declared value, the predicate holds exactly
-    when the regime after the declaration says true. -/
-def ValMatches (predSat : PredSat) (res : TypeResult) (cf : Config) (o : Value) : Prop :=
+    when the regime after the declaration says true, under every realisation
+    map that realises the context of the step `s` at its start. -/
+def ValMatches (predSat : PredSat) (s : Step) (res : TypeResult) (cf : Config) (o : Value) : Prop :=
   ∀ a ∈ res.tagLog', ∀ (argName : Name) (body : PExpr) (cap : CapturedVarEnv) (b : Bool),
     res.qualType.pred = .guardClosure a.tag argName body cap →
     res.regime'.lookup? a.tag = some b →
-    (predSat a.tag cf.memory o ↔ b = true)
+    ∀ θ, runtimeInstantiatesCtx s.ctx s.cfg.memory s.cfg.varEnv θ →
+    (predSat a.tag θ cf.memory o ↔ b = true)
 
 /-! ## The premises on runs -/
 
@@ -424,7 +430,7 @@ def ValMatches (predSat : PredSat) (res : TypeResult) (cf : Config) (o : Value) 
 structure ExternCallsMatch (predSat : PredSat) (root : Step) : Prop where
   calls : ∀ s effects entry res cf o, Reach root s → ExternCallAt s effects entry res cf o →
     CallMatches predSat entry effects res cf o
-  vals : ∀ s res cf o, Reach root s → ExternValAt s res cf o → ValMatches predSat res cf o
+  vals : ∀ s res cf o, Reach root s → ExternValAt s res cf o → ValMatches predSat s res cf o
 
 /-- Every extern call that both runs make satisfies *agreement*. Two calls are
     the same call when they are made at the same typing step (context,
@@ -453,7 +459,7 @@ structure ExternCallsMatchOn (predSat : PredSat) (P : Step → Prop) : Prop wher
     {cf : Config} {o : Value},
     P s → ExternCallAt s effects entry res cf o → CallMatches predSat entry effects res cf o
   vals : ∀ {s : Step} {res : TypeResult} {cf : Config} {o : Value},
-    P s → ExternValAt s res cf o → ValMatches predSat res cf o
+    P s → ExternValAt s res cf o → ValMatches predSat s res cf o
 
 /-- The extern calls of two sets of steps that are the same call satisfy
     *agreement* (see `ExternCallsAgree`). -/

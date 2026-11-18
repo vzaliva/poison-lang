@@ -102,7 +102,7 @@ lemma varsRegime_of_valueConsistentWithRegime_active
   (hguard : qtypGuardTag qt = some k)
   (hRdef : R.lookup? k ≠ none)
   (hvalc : valueConsistentWithRegime predSat R qt μ θ v) :
-  varsRegime predSat R μ ρ (x, qt) := by
+  varsRegime predSat R μ θ ρ (x, qt) := by
   cases hpred : qt.pred with
   | noPred =>
       simp [qtypGuardTag, hpred] at hguard
@@ -124,8 +124,8 @@ lemma varsRegime_of_valueConsistentWithRegime_active
           exact (hk0_ne hlookupR).elim
       | some b =>
           have hcons :
-              (b = true → qtypPredHolds predSat qt μ v) ∧
-              (b = false → ¬ qtypPredHolds predSat qt μ v) :=
+              (b = true → qtypPredHolds predSat θ qt μ v) ∧
+              (b = false → ¬ qtypPredHolds predSat θ qt μ v) :=
             valueConsistentWithRegime_guardClosure_consistency
               (predSat := predSat) (R := R) (qt := qt) (μ := μ) (v := v)
               (k := k0) (arg_name := arg_name) (pred_body := pred_body) (var_env := var_env)
@@ -285,12 +285,12 @@ lemma consistentWithRegime_closure_body_start
       (VarTypeEnv.ofCaptured σcap).lookup x = some qt →
       qtypGuardTag qt = some k →
       result1.regime'.lookup? k ≠ none →
-      varsRegime predSat result1.regime' μ ρcap (x, qt))
+      varsRegime predSat result1.regime' μ θ ρcap (x, qt))
   (hvars_arg :
     ∀ k,
       qtypGuardTag argQt = some k →
       result1.regime'.lookup? k ≠ none →
-      varsRegime predSat result1.regime' μ (VarEnv.update ρcap xArg vArg) (xArg, argQt))
+      varsRegime predSat result1.regime' μ θ (VarEnv.update ρcap xArg vArg) (xArg, argQt))
   (h_cap_cvcr :
     ∀ x qt v,
       (VarTypeEnv.ofCaptured σcap).lookup x = some qt →
