@@ -6,6 +6,7 @@ import LeanProofs.ExternCallsWitnessVal
 import LeanProofs.ExternCallsWitnessInt
 import LeanProofs.ExternCallsWitnessIntCall
 import LeanProofs.ExternCallsWitnessIntCallFalse
+import LeanProofs.ExternCallsWitnessCallInBody
 
 -- Expected: only Lean's standard axioms propext, Classical.choice, Quot.sound
 -- (no sorryAx, no project-specific axioms).
@@ -71,3 +72,16 @@ import LeanProofs.ExternCallsWitnessIntCallFalse
 #print axioms ExternCallsWitness.IntCallFalse.same_return
 #print axioms ExternCallsWitness.IntCallFalse.false_5
 #print axioms ExternCallsWitness.IntCallFalse.fails_10
+#print axioms ExternCallsWitness.CallInBody.gSpec
+#print axioms ExternCallsWitness.CallInBody.typed_clean
+#print axioms ExternCallsWitness.CallInBody.call_reached
+#print axioms ExternCallsWitness.CallInBody.laws_program
+#print axioms ExternCallsWitness.CallInBody.tests
+#print axioms ExternCallsWitness.CallInBody.view_needed
+#print axioms ExternCallsWitness.CallInBody.match_iff
+#print axioms ExternCallsWitness.CallInBody.match_iff_lawful
+#print axioms ExternCallsWitness.CallInBody.no_premises_lt
+#print axioms ExternCallsWitness.CallInBody.agree
+#print axioms ExternCallsWitness.CallInBody.same_return
+#print axioms ExternCallsWitness.CallInBody.true_5
+#print axioms ExternCallsWitness.CallInBody.fails_0
