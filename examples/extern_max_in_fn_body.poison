@@ -1,0 +1,9 @@
+-- The `max` pair (`@10`, `@11`) declared outside a function and applied in its
+-- body, with the function applied twice.  h 3 + h 9 = 7 + 9 = 16.
+let m =
+  extern pfn @10 a : (int :> clean {}) -> (
+    extern pfn @11 b : (int :> clean {}) -> ((int :> clean {}))
+  )
+in
+let h = fn y : int => (m y) 7 : int in
+h 3 + h 9

@@ -1,0 +1,6 @@
+-- One table holds the ids of extern declarations of every kind: an
+-- `extern val` under the id of an earlier `extern ref` is a second
+-- declaration and is rejected.
+let r = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in
+let v = extern val @21 : (int :> clean {}) in
+v

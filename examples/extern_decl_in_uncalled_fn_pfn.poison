@@ -1,0 +1,4 @@
+-- A `fn` whose body declares an `extern pfn` is rejected even when it is
+-- never applied.
+let f = fn x : int => (let g = extern pfn @5 n : (int :> clean {}) -> ((int :> clean {})) in g x) : int in
+42

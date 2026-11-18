@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_fn_nonbare_body_reject.poison (verbose mode)
+
+Type checking error: fn body may not declare an extern (extern val, extern ref, extern fn or extern pfn)
+

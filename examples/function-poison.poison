@@ -1,5 +1,6 @@
 -- Function poison example
-let get_sensor = fn x : unit => extern val @216 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int in
+let sensor_value = extern val @216 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
+let get_sensor = fn x : unit => sensor_value : int in
 let poisoned_cond = get_sensor unit in    --  poisoned
 let f = if poisoned_cond > 0 then          -- pc becomes poisoned
     fn x : int => x + 1 : int             --  Function itself gets poisoned

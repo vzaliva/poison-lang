@@ -213,6 +213,15 @@ by `rfl` — the `pfnExternDecl` record and each concrete declaration record
 reduce to the same term, the `captures` field defaulting to `[]` when a
 declaration omits it. -/
 
+/-- A declaration whose typing leaves the memory typing unchanged allocates no
+    fresh location, so no fresh clean location needs to be unrealized. -/
+private lemma freshCleanLocs_vacuous_of_memEnv_eq {ctx : TypeContext} {res : TypeResult}
+    {θ : RealizationMap} (h : res.memEnv' = ctx.memEnv) :
+    FreshCleanLocsUnrealizedOneRun ctx res θ := by
+  intro l qt hnotContains hlookup _hclean
+  rw [h] at hlookup
+  exact absurd (memEnv_contains_of_lookup_some ctx.memEnv l qt hlookup) hnotContains
+
 /-- The declaration of a generic `extern pfn`. -/
 def pfnExternDecl (id : ExternId) (argName : Name) (argTyp : Typ)
     (retSpec : ExternReturn) (memberCap : List Capture) (argPoison : Bool := false) :
@@ -243,7 +252,7 @@ private def pfnDeclResult (id : ExternId) (argName : Name) (argTyp : Typ)
   nextLoc' := ctx.nextLoc
   nextTag' := ctx.nextTag
   regime' := ctx.regime
-  declared' := ctx.declaredExternRefs
+  declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs)
 }
 
 private theorem pfnExternDecl_shape
@@ -375,7 +384,8 @@ theorem pfnExternDecl_declSingle
   obtain ⟨argQt, hres⟩ := pfnExternDecl_shape id argName argTyp retSpec memberCap argPoison htyped
   obtain ⟨hcf, argPred, captures, ho⟩ :=
     pfnExternDecl_declRun_shape id argName argTyp retSpec memberCap argPoison impl hrun
-  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, pfnDeclResult]
+  have hctxAfter : ctxAfter ctx res = { ctx with declaredExternRefs := res.declared' } := by
+    rw [hres]; simp [ctxAfter, pfnDeclResult]
   have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     rw [hres]
@@ -386,13 +396,12 @@ theorem pfnExternDecl_declSingle
   have ho' : o = Value.peClosure argName
       (Expr.externPfn id argName argTyp argPoison argPred retSpec captures) ρ := by
     rw [ho]
-  have hd_res : res.declared' = ctx.declaredExternRefs := by
-    have h := congrArg TypeContext.declaredExternRefs hctxAfter
-    simpa [ctxAfter] using h
+  have hd_res : ∀ x, x ∈ ctx.declaredExternRefs → x ∈ res.declared' := by
+    intro x hx; rw [hres]; simp [pfnDeclResult, hx]
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hcf, hd_res]; exact hrdIn)⟩
+    (by rw [hcf]; exact ReservedDiscipline.mono_declared hd_res hrdIn)⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho', hres]; exact pfnExternDecl_valueHasETyp id argName argTyp retSpec memberCap argPoison hric
@@ -401,7 +410,7 @@ theorem pfnExternDecl_declSingle
   · rw [hctxAfter, hcfmem, hres, ho']
     exact pfnExternDecl_valueConsistent id argName argTyp retSpec memberCap argPoison hric hcons
   · rw [hcfmem]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
-  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+  · exact freshCleanLocs_vacuous_of_memEnv_eq (by rw [hres]; rfl)
 
 /-- The two-run declaration boundary of a generic `extern pfn`. -/
 theorem pfnExternDecl_declFR
@@ -427,7 +436,8 @@ theorem pfnExternDecl_declFR
       (Expr.externPfn id argName argTyp argPoison argPredT retSpec capturesT) ρ₁ := by
     have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
     simpa [declRunOutputMatchesExpr] using hfe
-  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, pfnDeclResult]
+  have hctxAfter : ctxAfter ctx res = { ctx with declaredExternRefs := res.declared' } := by
+    rw [hres]; simp [ctxAfter, pfnDeclResult]
   have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     rw [hres]
@@ -437,14 +447,14 @@ theorem pfnExternDecl_declFR
   have hcf₀var : cf₀.varEnv = ρ₀ := by rw [hcf₀]
   have hcf₁mem : cf₁.memory = μ₁ := by rw [hcf₁]
   have hcf₁var : cf₁.varEnv = ρ₁ := by rw [hcf₁]
-  have hd_res : res.declared' = ctx.declaredExternRefs := by
-    have h := congrArg TypeContext.declaredExternRefs hctxAfter
-    simpa [ctxAfter] using h
+  have hd_res : ∀ x, x ∈ ctx.declaredExternRefs → x ∈ res.declared' := by
+    intro x hx; rw [hres]; simp [pfnDeclResult, hx]
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws,
       WithinLog.refl tm _⟩, hpredlaws, hresTm,
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hcf₀, hd_res]; exact hrdIn₀), (by rw [hcf₁, hd_res]; exact hrdIn₁)⟩
+    (by rw [hcf₀]; exact ReservedDiscipline.mono_declared hd_res hrdIn₀),
+    (by rw [hcf₁]; exact ReservedDiscipline.mono_declared hd_res hrdIn₁)⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho₀, hres]; exact pfnExternDecl_valueHasETyp id argName argTyp retSpec memberCap argPoison hric₀
@@ -4145,7 +4155,7 @@ private def builtinSetErrDeclResult (ctx : TypeContext) (argQt : QTyp) : TypeRes
   nextLoc' := ctx.nextLoc
   nextTag' := ctx.nextTag
   regime' := ctx.regime
-  declared' := ctx.declaredExternRefs
+  declared' := 22 :: (builtinSetErrRetSpec.declIds ++ ctx.declaredExternRefs)
 }
 
 /-- Inverting a `set_err` declaration typing witness pins the result to
@@ -4278,7 +4288,8 @@ private theorem builtinSetErr_declSingle :
     μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg _hreserved hrdIn hrun _hpc _hvm
   obtain ⟨argQt, hres⟩ := builtinSetErr_decl_shape htyped
   obtain ⟨hcf, argPred, captures, ho⟩ := builtinSetErr_declRun_shape hrun
-  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinSetErrDeclResult]
+  have hctxAfter : ctxAfter ctx res = { ctx with declaredExternRefs := res.declared' } := by
+    rw [hres]; simp [ctxAfter, builtinSetErrDeclResult]
   have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     rw [hres]
@@ -4289,13 +4300,12 @@ private theorem builtinSetErr_declSingle :
   have ho' : o = Value.closure "n"
       (Expr.externFn 22 "n" Typ.int false argPred builtinSetErrRetSpec [builtinSetErrEffect] captures) ρ := by
     rw [ho]
-  have hd_res : res.declared' = ctx.declaredExternRefs := by
-    have h := congrArg TypeContext.declaredExternRefs hctxAfter
-    simpa [ctxAfter] using h
+  have hd_res : ∀ x, x ∈ ctx.declaredExternRefs → x ∈ res.declared' := by
+    intro x hx; rw [hres]; simp [builtinSetErrDeclResult, hx]
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hcf, hd_res]; exact hrdIn)⟩
+    (by rw [hcf]; exact ReservedDiscipline.mono_declared hd_res hrdIn)⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho', hres]; exact builtinSetErr_decl_valueHasETyp hric
@@ -4303,7 +4313,7 @@ private theorem builtinSetErr_declSingle :
   · rw [hctxAfter, hcfmem, hcfvar]; exact hcons
   · rw [hctxAfter, hcfmem, hres, ho']; exact builtinSetErr_decl_valueConsistent hric hcons
   · rw [hcfmem]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
-  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+  · exact freshCleanLocs_vacuous_of_memEnv_eq (by rw [hres]; rfl)
 
 /-- The `set_err` paired declaration-boundary field: both outputs are the `fn`
     closure of the shared declaration expression, so the two clean extern arrows
@@ -4326,7 +4336,8 @@ private theorem builtinSetErr_declFR :
       (Expr.externFn 22 "n" Typ.int false argPredT builtinSetErrRetSpec [builtinSetErrEffect] capturesT) ρ₁ := by
     have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
     simpa [declRunOutputMatchesExpr] using hfe
-  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, builtinSetErrDeclResult]
+  have hctxAfter : ctxAfter ctx res = { ctx with declaredExternRefs := res.declared' } := by
+    rw [hres]; simp [ctxAfter, builtinSetErrDeclResult]
   have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     rw [hres]
@@ -4336,14 +4347,14 @@ private theorem builtinSetErr_declFR :
   have hcf₀var : cf₀.varEnv = ρ₀ := by rw [hcf₀]
   have hcf₁mem : cf₁.memory = μ₁ := by rw [hcf₁]
   have hcf₁var : cf₁.varEnv = ρ₁ := by rw [hcf₁]
-  have hd_res : res.declared' = ctx.declaredExternRefs := by
-    have h := congrArg TypeContext.declaredExternRefs hctxAfter
-    simpa [ctxAfter] using h
+  have hd_res : ∀ x, x ∈ ctx.declaredExternRefs → x ∈ res.declared' := by
+    intro x hx; rw [hres]; simp [builtinSetErrDeclResult, hx]
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws,
       WithinLog.refl tm _⟩, hpredlaws, hresTm,
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hcf₀, hd_res]; exact hrdIn₀), (by rw [hcf₁, hd_res]; exact hrdIn₁)⟩
+    (by rw [hcf₀]; exact ReservedDiscipline.mono_declared hd_res hrdIn₀),
+    (by rw [hcf₁]; exact ReservedDiscipline.mono_declared hd_res hrdIn₁)⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho₀, hres]; exact builtinSetErr_decl_valueHasETyp hric₀

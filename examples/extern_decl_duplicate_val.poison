@@ -1,0 +1,5 @@
+-- An extern id is declared at most once in a program, also when the two
+-- declarations are equal: the second `extern val @5` is rejected.
+let a = extern val @5 : (int :> clean {}) in
+let b = extern val @5 : (int :> clean {}) in
+a + b

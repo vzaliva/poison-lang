@@ -1,0 +1,10 @@
+-- A declaration nested in the return of an extern declares its own id: `@11`
+-- is declared inside the declaration of `@10`, so a separate declaration of
+-- `@11` is a second one and is rejected.
+let m =
+  extern pfn @10 a : (int :> clean {}) -> (
+    extern pfn @11 b : (int :> clean {}) -> ((int :> clean {}))
+  )
+in
+let n = extern pfn @11 b : (int :> clean {}) -> ((int :> clean {})) in
+(m 7) 2

@@ -332,8 +332,9 @@ partial def replLoop (config : Config) (tmpPath : String) : IO UInt32 := do
     try
       let expr ← parsePoisonFile tmpPath
       -- Run the same typechecker as the file path: this enforces the extern
-      -- declaration rules (`extern ref` identifier uniqueness, first-order
-      -- inputs) and reports any type error visibly to the user before evaluation.
+      -- declaration rules (one declaration per extern id within the entry, no
+      -- declaration in a function body, first-order inputs) and reports any
+      -- type error visibly to the user before evaluation.
       match typecheckExprSimple expr with
       | .error msg =>
           IO.println s!"Type checking error: {msg}"

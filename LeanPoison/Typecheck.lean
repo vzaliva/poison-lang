@@ -309,16 +309,19 @@ structure TypeContext where
   -- nothing into the regime) and threads unchanged through every
   -- `{ ctx with … }` update.
   externRegime : ExternId → Tag → Option Bool := fun _ _ => none
-  -- Reference-valued extern discipline (doc/externs.md, `@21`): `extern
-  -- ref` may only appear in evaluate-at-most-once positions.  The flag is
-  -- cleared when descending into fn/pfn bodies at application time; it flows
-  -- downward only (results never restore it).
+  -- Extern declaration discipline (doc/externs.md): an extern declaration of
+  -- any kind (`val`, `ref`, `fn`, `pfn`) may only appear in an
+  -- evaluate-at-most-once position.  The flag is cleared when descending into
+  -- fn/pfn bodies at application time; it flows downward only (results never
+  -- restore it).  `typecheckFn` also rejects a body that declares an extern,
+  -- so a function that is never applied is checked as well.
   externRefAllowed : Bool := true
-  -- Extern ids already declared by an `extern ref` on this typing path.  Each
-  -- id may be declared at most once per program (the fault-robustness proof
-  -- realizes each registry-reserved address at most once).  Threaded serially
-  -- through subexpressions — including across `if` arms — via
-  -- `TypeResult.declared'`.
+  -- Extern ids already declared on this typing path, by a declaration of any
+  -- kind, including the ids of the declarations nested in the return of an
+  -- `extern fn` / `extern pfn`.  Each id may be declared at most once per
+  -- program (for `extern ref`, the fault-robustness proof realizes each
+  -- registry-reserved address at most once).  Threaded serially through
+  -- subexpressions — including across `if` arms — via `TypeResult.declared'`.
   declaredExternRefs : List ExternId := []
 
 /-- One guard allocated by the typechecker: a fresh tag together with the
@@ -338,7 +341,7 @@ structure TypeResult where
   nextLoc' : Loc -- Updated next logical location
   nextTag' : Tag -- Updated next tag
   regime' : Regime -- Updated regime after typing step
-  declared' : List ExternId -- Updated declared `extern ref` ids (no default: every result must thread it)
+  declared' : List ExternId -- Updated declared extern ids (no default: every result must thread it)
   -- Guards allocated during this typing run, including those of sub-runs
   -- whose result is discarded (the pure typing of a matched condition).
   tagLog' : List TagAlloc := []
@@ -938,6 +941,12 @@ def typecheckFn (ctx : TypeContext) (x : Name) (st1 : Typ) (body : Expr) (st2 : 
   -- `toPExpr?`), which already excludes extern declarations.
   if body.isExternFnAstB then
     throw "fn body may not be a bare 'extern fn' declaration"
+  -- No extern declaration of any kind may appear in a function body, at any
+  -- depth.  The body is typed only at an application (with `externRefAllowed`
+  -- cleared, which rejects a declaration there too); this check also covers a
+  -- function that is never applied.
+  if body.hasExternDeclB then
+    throw "fn body may not declare an extern (extern val, extern ref, extern fn or extern pfn)"
   -- Simply record the body and return type without typechecking the body
   -- (body typechecking is deferred until application time).
   -- Create arrow type ST1 -> ST2 with singleton closure list
@@ -955,14 +964,28 @@ theorem typecheckFn_ok_not_externFnAst {ctx : TypeContext} {x : Name} {st1 : Typ
   have hb : body.isExternFnAstB = false := by
     cases hb' : body.isExternFnAstB with
     | true =>
-        simp [typecheckFn, hb', Except.map, Functor.map, throw, throwThe,
+        simp [typecheckFn, hb', bind, Except.bind, throw, throwThe,
           MonadExceptOf.throw] at h
     | false => rfl
   exact Expr.not_isExternFnAst_of_isExternFnAstB_eq_false hb
 
+/-- A successful `typecheckFn` guarantees the recorded body declares no extern,
+    at any depth. -/
+theorem typecheckFn_ok_not_hasExternDecl {ctx : TypeContext} {x : Name} {st1 : Typ}
+    {body : Expr} {st2 : Typ} {res : TypeResult}
+    (h : typecheckFn ctx x st1 body st2 = .ok res) : ¬ Expr.HasExternDecl body := by
+  have hb : body.hasExternDeclB = false := by
+    cases hb' : body.hasExternDeclB with
+    | true =>
+        cases hf : body.isExternFnAstB <;>
+          simp [typecheckFn, hb', hf, bind, Except.bind, throw, throwThe,
+            MonadExceptOf.throw] at h
+    | false => rfl
+  exact Expr.not_hasExternDecl_of_hasExternDeclB_eq_false hb
+
 /-- The exact result of a successful `typecheckFn` (post-guard): the arrow type
     with the single regular closure member, all context fields threaded.  Lets
-    callers recover the result shape without re-deriving past the body guard. -/
+    callers recover the result shape without re-deriving past the body guards. -/
 theorem typecheckFn_ok_eq {ctx : TypeContext} {x : Name} {st1 : Typ} {body : Expr}
     {st2 : Typ} {res : TypeResult} (htc : typecheckFn ctx x st1 body st2 = .ok res) :
     res =
@@ -975,10 +998,16 @@ theorem typecheckFn_ok_eq {ctx : TypeContext} {x : Name} {st1 : Typ} {body : Exp
   have hb : body.isExternFnAstB = false := by
     cases hb' : body.isExternFnAstB with
     | true =>
-        simp [typecheckFn, hb', Except.map, Functor.map, throw, throwThe,
+        simp [typecheckFn, hb', bind, Except.bind, throw, throwThe,
           MonadExceptOf.throw] at htc
     | false => rfl
-  simp only [typecheckFn, hb, Bool.false_eq_true, ite_false, bind, Except.bind,
+  have hd : body.hasExternDeclB = false := by
+    cases hd' : body.hasExternDeclB with
+    | true =>
+        simp [typecheckFn, hb, hd', bind, Except.bind, throw, throwThe,
+          MonadExceptOf.throw] at htc
+    | false => rfl
+  simp only [typecheckFn, hb, hd, Bool.false_eq_true, ite_false, bind, Except.bind,
     pure, Except.pure] at htc
   exact (Except.ok.inj htc).symm
 
@@ -1151,7 +1180,10 @@ def returnSpecToQTyp (typ : Typ) (poison : Bool) (pred : Predicate)
       limitation);
     * `extern ref` may not appear under fn/pfn bodies (evaluate-at-most-once
       positions only);
-    * each extern id may be declared at most once per program.
+    * each extern id may be declared at most once per program, by a
+      declaration of any kind.
+    The last two are the declaration-site rules every extern declaration
+    obeys; `checkExternDeclSite` states them for `val`, `fn` and `pfn`.
 -/
 def typecheckExternRef (ctx : TypeContext) (id : ExternId)
     (refPoison : Bool) (refPred : SyntaxPredicate)
@@ -1345,12 +1377,49 @@ def checkExternReturnInputsFirstOrder : ExternReturn → TypecheckM Unit
       checkExternInputFirstOrder argTyp
       checkExternReturnInputsFirstOrder inner
 
+/-- The ids of the extern declarations nested in a return specification,
+    outermost first: `extern pfn @10 a : … -> (extern pfn @11 …)` declares `@11`
+    at the declaration of `@10`. -/
+def ExternReturn.declIds : ExternReturn → List ExternId
+  | ExternReturn.simple _ _ _ => []
+  | ExternReturn.nestedFn id _ _ _ _ inner _ _ => id :: inner.declIds
+  | ExternReturn.nestedPfn id _ _ _ _ inner _ => id :: inner.declIds
+
+/-- The first of `ids` that is in `declared` or occurs earlier in `ids`. -/
+def firstRedeclaredExternId : List ExternId → List ExternId → Option ExternId
+  | [], _ => none
+  | id :: ids, declared =>
+      if declared.contains id then some id else firstRedeclaredExternId ids (id :: declared)
+
+/-- Declaration-site rules for `extern val`, `extern fn` and `extern pfn`, the
+    two that `typecheckExternRef` enforces for `extern ref`:
+    * a declaration may not appear where it can be evaluated more than once: in
+      the body of a fn or pfn (typed at application time with
+      `externRefAllowed` cleared) or in the condition of an `if` when the
+      condition matches a guard (typed with `pureCtx` set; such a condition is
+      a pure expression, so it declares nothing in any case);
+    * each extern id may be declared at most once per program.  `id` is the id
+      of the declaration and `nested` the ids declared in its return
+      specification (`ExternReturn.declIds`); none of them may be in the
+      declared table or repeat among themselves.
+    The caller records `id :: nested` in `declared'`. -/
+def checkExternDeclSite (ctx : TypeContext) (kind : String) (id : ExternId)
+    (nested : List ExternId) : TypecheckM Unit := do
+  if ctx.pureCtx || !ctx.externRefAllowed then
+    throw s!"extern {kind} @{id}: extern declarations may not appear in a fn or pfn body or in an if condition that matches a guard"
+  match firstRedeclaredExternId (id :: nested) ctx.declaredExternRefs with
+  | some dup =>
+      throw s!"extern {kind} @{id}: duplicate declaration of extern id @{dup}; each extern id may be declared at most once per program"
+  | none => pure ()
+
 /-- Typecheck extern impure function.  Per-declaration, rejects function-
     typed and non-`ref int` reference inputs — both at the top-level argument
-    and inside every nested return descriptor. -/
+    and inside every nested return descriptor — and enforces the declaration-site
+    rules of `checkExternDeclSite`. -/
 def typecheckExternFn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
     (retSpec : ExternReturn) (effects : List Effect) (captures : List Capture) : TypecheckM TypeResult := do
+  checkExternDeclSite ctx "fn" id retSpec.declIds
   checkExternInputFirstOrder argTyp
   checkExternReturnInputsFirstOrder retSpec
   -- Resolve the declared argument condition (precondition) into a concrete QTyp.
@@ -1368,13 +1437,14 @@ def typecheckExternFn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp :
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
            nextLoc' := ctx.nextLoc, nextTag' := nextTag', regime' := ctx.regime,
-           declared' := ctx.declaredExternRefs }
+           declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) }
 
-/-- Typecheck extern pure function. Same first-order-input rule as
-    `typecheckExternFn`. -/
+/-- Typecheck extern pure function. Same first-order-input rule and
+    declaration-site rules as `typecheckExternFn`. -/
 def typecheckExternPfn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp : Typ)
     (argPoison : Bool) (argPred : SyntaxPredicate)
     (retSpec : ExternReturn) (captures : List Capture) : TypecheckM TypeResult := do
+  checkExternDeclSite ctx "pfn" id retSpec.declIds
   checkExternInputFirstOrder argTyp
   checkExternReturnInputsFirstOrder retSpec
   -- Resolve the declared argument condition (precondition) into a concrete QTyp.
@@ -1392,7 +1462,7 @@ def typecheckExternPfn (ctx : TypeContext) (id : ExternId) (arg : Name) (argTyp 
   let qt : QTyp := ⟨arrowTyp, ctx.pc, Predicate.noPred⟩
   return { qualType := qt, memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
            nextLoc' := ctx.nextLoc, nextTag' := nextTag', regime' := ctx.regime,
-           declared' := ctx.declaredExternRefs }
+           declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) }
 
 
 private def generateFreshVar (ctx : TypeContext) (pref : Name) (suffix : Nat) (fuel : Nat) : Name :=
@@ -1517,10 +1587,13 @@ def applyExternRegimePolicy (R : Regime) (id : ExternId)
     resolves it to a concrete `Predicate`, converts the surface type, gives
     the fresh tags the values that the extern-regime assignment
     `ctx.externRegime` selects for `id` (`applyExternRegimePolicy`), and
-    records the guard in the tag environment (`installReturnGuard`).
+    records the guard in the tag environment (`installReturnGuard`).  The
+    declaration-site rules of `checkExternDeclSite` apply, and `id` is recorded
+    in `declared'`.
 -/
 def typecheckExternVal (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison : Bool)
     (pred : SyntaxPredicate) (fuel : Nat) : TypecheckM TypeResult := do
+    checkExternDeclSite ctx "val" id []
     match (poison,pred) with
     | (false, SyntaxPredicate.guardOnly _)
     | (false, SyntaxPredicate.guardClosure _ _ _) =>
@@ -1533,7 +1606,7 @@ def typecheckExternVal (ctx : TypeContext) (id : ExternId) (typ : Typ) (poison :
       return { qualType := qt, memEnv' := ctx'.memEnv,
                tagEnv' := installReturnGuard ctx.tagEnv resolvedPred regime' fuel,
                nextLoc' := ctx'.nextLoc, nextTag' := nextTag', regime' := regime',
-               declared' := ctx.declaredExternRefs,
+               declared' := id :: ctx.declaredExternRefs,
                tagLog' := externTagLog [pred] ctx.varEnv tagMapping }
 
 mutual
@@ -1832,7 +1905,7 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
         -- Bodies are typechecked with `externRefAllowed := false`, so they cannot
-        -- declare extern refs; pin the result's declared set to the pre-body one so
+        -- declare externs; pin the result's declared set to the pre-body one so
         -- all closure alternatives joined by `joinTypeResults` agree on it syntactically.
         return { result3 with
                  qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt
@@ -1951,7 +2024,7 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
         -- Bodies are typechecked with `externRefAllowed := false`, so they cannot
-        -- declare extern refs; pin the result's declared set to the pre-body one so
+        -- declare externs; pin the result's declared set to the pre-body one so
         -- all closure alternatives joined by `joinTypeResults` agree on it syntactically.
         return { result3 with
                  qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt
@@ -2072,7 +2145,7 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
         -- Bodies are typechecked with `externRefAllowed := false`, so they cannot
-        -- declare extern refs; pin the result's declared set to the pre-body one so
+        -- declare externs; pin the result's declared set to the pre-body one so
         -- all closure alternatives joined by `joinTypeResults` agree on it syntactically.
         return { result3 with
                  qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt
@@ -2172,7 +2245,7 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
         -- Bodies are typechecked with `externRefAllowed := false`, so they cannot
-        -- declare extern refs; pin the result's declared set to the pre-body one so
+        -- declare externs; pin the result's declared set to the pre-body one so
         -- all closure alternatives joined by `joinTypeResults` agree on it syntactically.
         return { result3 with
                  qualType := normalizeAppResultByProvenance (joinPoison p1 p) taintedQt
@@ -2361,11 +2434,12 @@ def typecheckIf (ctx : TypeContext) (e1 e2 e3 : Expr) (fuel : Nat) : TypecheckM 
       let ⟨etyp1, p1, _⟩ := result1.qualType
       if etyp1 != ETyp.bool then throw "Condition of if must be bool"
 
-      -- Setup branch contexts with tag knowledge.  The declared extern-ref set
+      -- Setup branch contexts with tag knowledge.  The declared extern-id set
       -- threads FULLY SERIALLY (like nextLoc): condition, then-arm, else-arm.
       -- The else-arm therefore sees the then-arm's declarations, so the
-      -- per-declaration duplicate gate in typecheckExternRef also rejects
-      -- same-id declarations across the two arms.  The tag counter threads
+      -- per-declaration duplicate gates (typecheckExternRef,
+      -- checkExternDeclSite) also reject same-id declarations across the two
+      -- arms.  The tag counter threads
       -- the same way: the arms allocate after the condition's tags.
       let ctxTrue := { ctx with tagEnv := ctx.tagEnv.insert k ⟨true, deps⟩,
                                 nextTag := result1.nextTag',
@@ -2518,10 +2592,13 @@ lemma normalizeAppResultByProvenance_etyp (p1p : Poison) (qt : QTyp) :
     for callers outside the recursive kernel.  The language-level rule that
     executable extern callables must have first-order input types is enforced
     per-declaration inside `typecheckExpr` (at the `Expr.externFn` /
-    `Expr.externPfn` dispatch).  Global extern-id uniqueness is NOT enforced
-    here (only duplicate `extern ref` declarations are rejected, by
-    `typecheckExternRef`) — the driver's `register` already rejects duplicate
-    ids at registration time, and any mismatch between a declared type and a
-    registered value is caught by `valueMatchesTyp` at runtime. -/
+    `Expr.externPfn` dispatch).  So are the declaration-site rules for externs
+    of every kind (`typecheckExternRef`, `checkExternDeclSite`): each extern id
+    is declared at most once per program — the declared ids thread through
+    typing in `declaredExternRefs` / `declared'` — and no declaration appears
+    in a fn/pfn body (also checked at the definition by `typecheckFn`) or in
+    an `if` condition that matches a guard.  The driver's `register` separately
+    rejects duplicate registrations, and any mismatch between a declared type
+    and a registered value is caught by `valueMatchesTyp` at runtime. -/
 def typecheck (ctx : TypeContext) (e : Expr) (fuel : Nat) : TypecheckM TypeResult :=
   typecheckExpr ctx e fuel

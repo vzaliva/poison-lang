@@ -1,10 +1,8 @@
 Evaluating file: examples/reference-poison1.poison (verbose mode)
 
 Type checking passed:
-  Type: {type=int,
-   poison=true,
-   pred={1, pfn v -> (v >= 0) && (v <= 0), deps: [x : {type=unit, poison=false, pred={}}]}},
-  MemoryTypeEnv: { 0 := (true, {1, pfn v -> (v >= 0) && (v <= 0), deps: [x : {type=unit, poison=false, pred={}}]}) },
+  Type: {type=int, poison=true, pred={1, pfn v -> (v >= 0) && (v <= 0)}},
+  MemoryTypeEnv: { 0 := (true, {1, pfn v -> (v >= 0) && (v <= 0)}) },
   tagEnv: {},
   nextLoc: 1
 

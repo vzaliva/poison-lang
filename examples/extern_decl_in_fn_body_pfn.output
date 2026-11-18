@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_decl_in_fn_body_pfn.poison (verbose mode)
+
+Type checking error: fn body may not declare an extern (extern val, extern ref, extern fn or extern pfn)
+

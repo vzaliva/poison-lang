@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_decl_duplicate_nested.poison (verbose mode)
+
+Type checking error:
+  extern pfn @11: duplicate declaration of extern id @11; each extern id may be declared at most once per program
+

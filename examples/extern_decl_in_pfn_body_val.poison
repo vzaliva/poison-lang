@@ -1,0 +1,4 @@
+-- An `extern val` declared in the body of an applied `pfn` is rejected: a
+-- pure body is a pure expression, and an extern declaration is not one.
+let f = pfn x : int => (let v = extern val @5 : (int :> clean {}) in v + x) : int in
+f 1

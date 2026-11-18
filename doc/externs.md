@@ -69,6 +69,34 @@ are post-state memory summaries: after the call gate succeeds, the typechecker
 resolves and applies them to the memory typing, and the trusted boundary proof
 must justify the resulting post-state.
 
+## Declaration rules
+
+The typechecker enforces two rules for extern declarations of every kind
+(`extern val`, `extern ref`, `extern fn`, `extern pfn`):
+
+- **Declared once.** An extern id is declared at most once in a program. A
+  second declaration of an id is a type error, whatever the kinds of the two
+  declarations, also when the two texts are equal and when they are in the two
+  arms of an `if`. A nested return descriptor declares its own id: the
+  declaration of `@10` below declares `@11` as well, so a separate declaration
+  of `@11` in the same program is rejected. Applying an extern declares
+  nothing, so `max` may be applied any number of times.
+- **Evaluated at most once.** An extern declaration may not appear in the body
+  of a `fn` or `pfn`, at any depth. A `fn` is checked at its definition, so a
+  function that is never applied is rejected as well; a `pfn` body is a pure
+  expression (`toPExpr`), which has no extern-declaration form. Calling an
+  extern in a function body is allowed: declare the extern outside the
+  function and call it inside. The condition of an `if` that matches a guard
+  is typed in pure mode, which rejects a declaration as well; a condition that
+  matches a guard is a pure expression, so a condition that declares an extern
+  is typed by the standard rule.
+
+The declared ids are threaded through typing in
+`TypeContext.declaredExternRefs` / `TypeResult.declared'`, serially across the
+two arms of an `if`. `checkExternDeclSite` (for `extern val`, `fn` and `pfn`)
+and `typecheckExternRef` make both checks at each declaration, and
+`typecheckFn` rejects a body that declares an extern (`Expr.HasExternDecl`).
+
 ## max/2
 
 The shipped curried pair `@10` / `@11` simulates binary `max : int × int → int`.
@@ -125,6 +153,10 @@ the curried-max registry.
 extern pfn @11 b : (int :> clean {}) -> ((int :> clean {})),
   captures: { a :> (int :> clean {}) }
 ```
+
+In a program, `@11` is declared by the nested return of the `@10` declaration
+above; a separate declaration of `@11` in the same program is a second
+declaration and is rejected.
 
 **Implementation:** Reads captured outer argument `a` from the unified environment
 and returns `max a b`.
@@ -224,15 +256,10 @@ cleanness is re-established by writing through the reference (an assignment or
 `@22`'s `!errno` write effect). A ref-typed `extern val` is rejected. Clean
 `points_to:` cells are a documented language limitation, tracked as a
 potential extension in issue #140.
-`extern ref` declarations are unique per extern id per program and may not
-appear under `fn`/`pfn` bodies. The nesting rule is enforced where a body is
-typechecked: at declaration for `pfn` (pure bodies are converted via
-`toPExpr`, which has no extern-declaration form) and at application for `fn`
-(`fn` bodies are typechecked only when applied, so a never-applied `fn` whose
-body lexically contains an `extern ref` typechecks and runs — consistent with
-the language's deferred `fn`-body typechecking, under which *any* type error
-in a never-applied body goes undetected; such a body never evaluates, so the
-declaration never takes effect).
+Like every extern declaration (see *Declaration rules*), `extern ref` declares
+its id at most once per program and may not appear under `fn`/`pfn` bodies;
+for a reference this is what realizes each registry-reserved address at most
+once per run.
 
 **Implementation:** Driver-supplied reference to address `1000000`, initial cell
 value `0` in `defaultInitialState`.
@@ -327,8 +354,9 @@ proof/registry work.
 | `@19` | pfn | `sqrtImpl` | **missing** |
 | `@23` | pfn | `memDerefImpl` | `builtinMemDerefSpec` |
 
-User programs may declare the same ids with richer `captures:` / `effects:`
-clauses; dispatch uses the fixed implementations above. Ids not in this map fail
+User programs may declare the same ids (each at most once per program) with
+richer `captures:` / `effects:` clauses; dispatch uses the fixed
+implementations above. Ids not in this map fail
 at runtime. A default trusted registry should prove the listed shipped
 declarations directly; specialised same-id proof variants, such as guarded
 `@11`, remain auxiliary examples rather than alternatives to the shipped entry.

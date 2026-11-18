@@ -278,6 +278,113 @@ inductive Expr.IsExternPfnAst : Expr → Prop where
       {retSpec : ExternReturn} {cap : List Capture} :
       Expr.IsExternPfnAst (Expr.externPfn id x argTyp argPoison argPred retSpec cap)
 
+/-- `e` contains an extern declaration (`extern val`, `extern ref`, `extern fn`
+    or `extern pfn`) at any depth, including in the bodies of the functions it
+    defines. -/
+inductive Expr.HasExternDecl : Expr → Prop where
+  | externVal {id : ExternId} {t : Typ} {p : Bool} {pred : SyntaxPredicate} :
+      Expr.HasExternDecl (Expr.externVal id t p pred)
+  | externRef {id : ExternId} {rp : Bool} {rpred : SyntaxPredicate} {cp : Bool}
+      {cpred : SyntaxPredicate} :
+      Expr.HasExternDecl (Expr.externRef id rp rpred cp cpred)
+  | externFn {id : ExternId} {x : Name} {t : Typ} {p : Bool} {pred : SyntaxPredicate}
+      {ret : ExternReturn} {eff : List Effect} {cap : List Capture} :
+      Expr.HasExternDecl (Expr.externFn id x t p pred ret eff cap)
+  | externPfn {id : ExternId} {x : Name} {t : Typ} {p : Bool} {pred : SyntaxPredicate}
+      {ret : ExternReturn} {cap : List Capture} :
+      Expr.HasExternDecl (Expr.externPfn id x t p pred ret cap)
+  | opL {e1 e2 : Expr} {o : Op} : Expr.HasExternDecl e1 → Expr.HasExternDecl (Expr.op e1 o e2)
+  | opR {e1 e2 : Expr} {o : Op} : Expr.HasExternDecl e2 → Expr.HasExternDecl (Expr.op e1 o e2)
+  | unaryop {o : UnaryOp} {e : Expr} : Expr.HasExternDecl e → Expr.HasExternDecl (Expr.unaryop o e)
+  | iteC {e1 e2 e3 : Expr} : Expr.HasExternDecl e1 → Expr.HasExternDecl (Expr.ite e1 e2 e3)
+  | iteT {e1 e2 e3 : Expr} : Expr.HasExternDecl e2 → Expr.HasExternDecl (Expr.ite e1 e2 e3)
+  | iteE {e1 e2 e3 : Expr} : Expr.HasExternDecl e3 → Expr.HasExternDecl (Expr.ite e1 e2 e3)
+  | newRef {e : Expr} : Expr.HasExternDecl e → Expr.HasExternDecl (Expr.newRef e)
+  | assignL {e1 e2 : Expr} : Expr.HasExternDecl e1 → Expr.HasExternDecl (Expr.assign e1 e2)
+  | assignR {e1 e2 : Expr} : Expr.HasExternDecl e2 → Expr.HasExternDecl (Expr.assign e1 e2)
+  | deref {e : Expr} : Expr.HasExternDecl e → Expr.HasExternDecl (Expr.deref e)
+  | seqL {e1 e2 : Expr} : Expr.HasExternDecl e1 → Expr.HasExternDecl (Expr.seq e1 e2)
+  | seqR {e1 e2 : Expr} : Expr.HasExternDecl e2 → Expr.HasExternDecl (Expr.seq e1 e2)
+  | vletL {x : Name} {e1 e2 : Expr} : Expr.HasExternDecl e1 → Expr.HasExternDecl (Expr.vlet x e1 e2)
+  | vletR {x : Name} {e1 e2 : Expr} : Expr.HasExternDecl e2 → Expr.HasExternDecl (Expr.vlet x e1 e2)
+  | fn {x : Name} {t r : Typ} {body : Expr} :
+      Expr.HasExternDecl body → Expr.HasExternDecl (Expr.fn x t body r)
+  | pfn {x : Name} {t r : Typ} {body : Expr} :
+      Expr.HasExternDecl body → Expr.HasExternDecl (Expr.pfn x t body r)
+  | appL {e1 e2 : Expr} : Expr.HasExternDecl e1 → Expr.HasExternDecl (Expr.app e1 e2)
+  | appR {e1 e2 : Expr} : Expr.HasExternDecl e2 → Expr.HasExternDecl (Expr.app e1 e2)
+
+/-- Boolean decision procedure for `Expr.HasExternDecl`, used by `typecheckFn` to
+    reject a regular `fn` whose body declares an extern. -/
+def Expr.hasExternDeclB : Expr → Bool
+  | Expr.externVal _ _ _ _ | Expr.externRef _ _ _ _ _
+  | Expr.externFn _ _ _ _ _ _ _ _ | Expr.externPfn _ _ _ _ _ _ _ => true
+  | Expr.unit | Expr.num _ | Expr.bool _ | Expr.str _ | Expr.var _ => false
+  | Expr.op e1 _ e2 => e1.hasExternDeclB || e2.hasExternDeclB
+  | Expr.unaryop _ e => e.hasExternDeclB
+  | Expr.ite e1 e2 e3 => e1.hasExternDeclB || e2.hasExternDeclB || e3.hasExternDeclB
+  | Expr.newRef e => e.hasExternDeclB
+  | Expr.assign e1 e2 => e1.hasExternDeclB || e2.hasExternDeclB
+  | Expr.deref e => e.hasExternDeclB
+  | Expr.seq e1 e2 => e1.hasExternDeclB || e2.hasExternDeclB
+  | Expr.vlet _ e1 e2 => e1.hasExternDeclB || e2.hasExternDeclB
+  | Expr.fn _ _ body _ => body.hasExternDeclB
+  | Expr.pfn _ _ body _ => body.hasExternDeclB
+  | Expr.app e1 e2 => e1.hasExternDeclB || e2.hasExternDeclB
+
+private theorem Expr.hasExternDecl_of_hasExternDeclB :
+    ∀ {e : Expr}, e.hasExternDeclB = true → Expr.HasExternDecl e
+  | Expr.externVal .., _ => .externVal
+  | Expr.externRef .., _ => .externRef
+  | Expr.externFn .., _ => .externFn
+  | Expr.externPfn .., _ => .externPfn
+  | Expr.unit, h | Expr.num _, h | Expr.bool _, h | Expr.str _, h | Expr.var _, h => by
+      simp [Expr.hasExternDeclB] at h
+  | Expr.op e1 _ e2, h => by
+      simp only [Expr.hasExternDeclB, Bool.or_eq_true] at h
+      exact h.elim (fun h => .opL (Expr.hasExternDecl_of_hasExternDeclB h))
+        (fun h => .opR (Expr.hasExternDecl_of_hasExternDeclB h))
+  | Expr.unaryop _ e, h => .unaryop (Expr.hasExternDecl_of_hasExternDeclB (e := e) h)
+  | Expr.ite e1 e2 e3, h => by
+      simp only [Expr.hasExternDeclB, Bool.or_eq_true] at h
+      rcases h with (h | h) | h
+      · exact .iteC (Expr.hasExternDecl_of_hasExternDeclB h)
+      · exact .iteT (Expr.hasExternDecl_of_hasExternDeclB h)
+      · exact .iteE (Expr.hasExternDecl_of_hasExternDeclB h)
+  | Expr.newRef e, h => .newRef (Expr.hasExternDecl_of_hasExternDeclB (e := e) h)
+  | Expr.assign e1 e2, h => by
+      simp only [Expr.hasExternDeclB, Bool.or_eq_true] at h
+      exact h.elim (fun h => .assignL (Expr.hasExternDecl_of_hasExternDeclB h))
+        (fun h => .assignR (Expr.hasExternDecl_of_hasExternDeclB h))
+  | Expr.deref e, h => .deref (Expr.hasExternDecl_of_hasExternDeclB (e := e) h)
+  | Expr.seq e1 e2, h => by
+      simp only [Expr.hasExternDeclB, Bool.or_eq_true] at h
+      exact h.elim (fun h => .seqL (Expr.hasExternDecl_of_hasExternDeclB h))
+        (fun h => .seqR (Expr.hasExternDecl_of_hasExternDeclB h))
+  | Expr.vlet _ e1 e2, h => by
+      simp only [Expr.hasExternDeclB, Bool.or_eq_true] at h
+      exact h.elim (fun h => .vletL (Expr.hasExternDecl_of_hasExternDeclB h))
+        (fun h => .vletR (Expr.hasExternDecl_of_hasExternDeclB h))
+  | Expr.fn _ _ body _, h => .fn (Expr.hasExternDecl_of_hasExternDeclB (e := body) h)
+  | Expr.pfn _ _ body _, h => .pfn (Expr.hasExternDecl_of_hasExternDeclB (e := body) h)
+  | Expr.app e1 e2, h => by
+      simp only [Expr.hasExternDeclB, Bool.or_eq_true] at h
+      exact h.elim (fun h => .appL (Expr.hasExternDecl_of_hasExternDeclB h))
+        (fun h => .appR (Expr.hasExternDecl_of_hasExternDeclB h))
+
+theorem Expr.hasExternDeclB_eq_true_iff {e : Expr} :
+    e.hasExternDeclB = true ↔ Expr.HasExternDecl e := by
+  constructor
+  · exact Expr.hasExternDecl_of_hasExternDeclB
+  · intro h
+    induction h <;> simp_all [Expr.hasExternDeclB]
+
+theorem Expr.not_hasExternDecl_of_hasExternDeclB_eq_false {e : Expr}
+    (h : e.hasExternDeclB = false) : ¬ Expr.HasExternDecl e := by
+  intro hp
+  rw [← Expr.hasExternDeclB_eq_true_iff, h] at hp
+  exact Bool.noConfusion hp
+
 -- Values (corresponds to v in Ott)
 -- Note: In Ott, values are: n | b | s | unit | a | closure(x,e,r) | pe_closure(x,pe,r)
 inductive Value : Type where

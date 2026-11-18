@@ -263,7 +263,7 @@ private structure VFacts (ctx : TypeContext) (res : TypeResult) : Prop where
   nextTag : res.nextTag' = ctx.nextTag + 1
   memEnv : res.memEnv' = ctx.memEnv
   nextLoc : res.nextLoc' = ctx.nextLoc
-  declared : res.declared' = ctx.declaredExternRefs
+  declared : res.declared' = 250 :: ctx.declaredExternRefs
   regime : ∀ k, k ≠ ctx.nextTag → res.regime'.lookup? k = ctx.regime.lookup? k
 
 private theorem v_facts_of {ctx : TypeContext} {poison : Bool} {fuel : Nat} {res : TypeResult}
@@ -455,7 +455,7 @@ theorem v_declSingle (n : Int) : ExternDeclBoundarySingle vDecl (vI n) := by
     rw [hf.memEnv] at hlk
     exact absurd (memEnv_contains_of_lookup_some _ l qt hlk) hnc
   · show ReservedDiscipline registry res.declared' θ
-    rw [hf.declared]; exact hrdIn
+    rw [hf.declared]; exact ReservedDiscipline.mono_declared (fun _ hx => List.mem_cons_of_mem _ hx) hrdIn
 
 /-- The two-run contract. *Agreement* of the declared value is proved here: the
     two runs read the same implementation, so they declare the same value. -/
@@ -498,9 +498,9 @@ theorem v_declFR (n : Int) : ExternDeclBoundaryFR vDecl (vI n) := by
     | clean hp => rw [hf.poison] at hp; cases hp
     | guard k htag hR _ => exact .withPred_true_eq k htag hR hf.notfun hf.notref rfl
   · show ReservedDiscipline registry res.declared' θ₀
-    rw [hf.declared]; exact hrd₀
+    rw [hf.declared]; exact ReservedDiscipline.mono_declared (fun _ hx => List.mem_cons_of_mem _ hx) hrd₀
   · show ReservedDiscipline registry res.declared' θ₁
-    rw [hf.declared]; exact hrd₁
+    rw [hf.declared]; exact ReservedDiscipline.mono_declared (fun _ hx => List.mem_cons_of_mem _ hx) hrd₁
 
 /-! ## The call contracts, operational safety and the registry -/
 

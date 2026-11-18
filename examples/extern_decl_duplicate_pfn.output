@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_decl_duplicate_pfn.poison (verbose mode)
+
+Type checking error:
+  extern pfn @5: duplicate declaration of extern id @5; each extern id may be declared at most once per program
+

@@ -2895,6 +2895,43 @@ lemma resolveArgCondQTyp_fst_poison
       rw [← h]
       exact resolveArgCondQTyp'_poison hq
 
+/-- A successful `checkExternDeclSite` means the declaration is typed where
+    extern declarations may appear: outside fn/pfn bodies and outside an `if`
+    condition that matches a guard. -/
+lemma checkExternDeclSite_ok_allowed {ctx : TypeContext} {kind : String} {id : ExternId}
+    {nested : List ExternId} {u : Unit}
+    (h : checkExternDeclSite ctx kind id nested = .ok u) :
+    ctx.pureCtx = false ∧ ctx.externRefAllowed = true := by
+  unfold checkExternDeclSite at h
+  cases hp : ctx.pureCtx <;> cases ha : ctx.externRefAllowed <;>
+    simp [hp, ha, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h ⊢
+
+/-- A successful `typecheckExternFn` passed the declaration-site check. -/
+lemma typecheckExternFn_ok_declSite {ctx : TypeContext} {id : ExternId} {arg : Name}
+    {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
+    {effects : List Effect} {captures : List Capture} {res : TypeResult}
+    (h : typecheckExternFn ctx id arg argTyp argPoison argPred retSpec effects captures = .ok res) :
+    checkExternDeclSite ctx "fn" id retSpec.declIds = .ok PUnit.unit := by
+  cases c_eq : checkExternDeclSite ctx "fn" id retSpec.declIds with
+  | error e =>
+      unfold typecheckExternFn at h
+      rw [c_eq] at h
+      cases h
+  | ok a => rfl
+
+/-- A successful `typecheckExternPfn` passed the declaration-site check. -/
+lemma typecheckExternPfn_ok_declSite {ctx : TypeContext} {id : ExternId} {arg : Name}
+    {argTyp : Typ} {argPoison : Bool} {argPred : SyntaxPredicate} {retSpec : ExternReturn}
+    {captures : List Capture} {res : TypeResult}
+    (h : typecheckExternPfn ctx id arg argTyp argPoison argPred retSpec captures = .ok res) :
+    checkExternDeclSite ctx "pfn" id retSpec.declIds = .ok PUnit.unit := by
+  cases c_eq : checkExternDeclSite ctx "pfn" id retSpec.declIds with
+  | error e =>
+      unfold typecheckExternPfn at h
+      rw [c_eq] at h
+      cases h
+  | ok a => rfl
+
 /-- Helper: when `typecheckExternFn` accepts an extern, the result is
     structurally the success record (the two front-guards `checkExternInput…`
     have succeeded). We state this as an inversion lemma so downstream proofs
@@ -2916,8 +2953,10 @@ lemma typecheckExternFn_ok_res_eq
           memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
           nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
           regime' := ctx.regime,
-          declared' := ctx.declaredExternRefs } := by
+          declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) } := by
   intro h
+  have h0ok : checkExternDeclSite ctx "fn" id retSpec.declIds = .ok PUnit.unit :=
+    typecheckExternFn_ok_declSite h
   have h1ok : checkExternInputFirstOrder argTyp = .ok PUnit.unit := by
     cases argTyp
     case int | bool | unit | string =>
@@ -2929,18 +2968,18 @@ lemma typecheckExternFn_ok_res_eq
       case bool | unit | string | ref _t' | arrow _t1 _t2 =>
         exfalso
         unfold typecheckExternFn at h
-        simp [checkExternInputFirstOrder, bind, Except.bind] at h
+        simp [h0ok, checkExternInputFirstOrder, bind, Except.bind] at h
     case arrow a b =>
         exfalso
         unfold typecheckExternFn at h
-        simp [checkExternInputFirstOrder, bind, Except.bind] at h
+        simp [h0ok, checkExternInputFirstOrder, bind, Except.bind] at h
   have h2ok : checkExternReturnInputsFirstOrder retSpec = .ok PUnit.unit := by
     let c := checkExternReturnInputsFirstOrder retSpec
     cases c_eq : c with
     | error e =>
       have c_err : checkExternReturnInputsFirstOrder retSpec = .error e := c_eq
       unfold typecheckExternFn at h
-      rw [h1ok, c_err] at h
+      rw [h0ok, h1ok, c_err] at h
       cases h
     | ok a =>
       have hca : checkExternReturnInputsFirstOrder retSpec = .ok a := c_eq
@@ -2950,7 +2989,7 @@ lemma typecheckExternFn_ok_res_eq
   | error e =>
       exfalso
       unfold typecheckExternFn at h
-      simp [h1ok, h2ok, bind, Except.bind, hr] at h
+      simp [h0ok, h1ok, h2ok, bind, Except.bind, hr] at h
   | ok p =>
       obtain ⟨argQt, nt⟩ := p
       have hpoison : argQt.poison = argPoison := resolveArgCondQTyp_fst_poison hr
@@ -2966,8 +3005,8 @@ lemma typecheckExternFn_ok_res_eq
                     memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
                     nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
                     regime' := ctx.regime,
-                    declared' := ctx.declaredExternRefs } := by
-        simp [typecheckExternFn, h1ok, h2ok, hr, bind, Except.bind, TypecheckM_pure_eq]
+                    declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) } := by
+        simp [typecheckExternFn, h0ok, h1ok, h2ok, hr, bind, Except.bind, TypecheckM_pure_eq]
       exact (by injection h.symm.trans hdef)
 
 lemma typecheckExternPfn_ok_res_eq
@@ -2985,8 +3024,10 @@ lemma typecheckExternPfn_ok_res_eq
           memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
           nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
           regime' := ctx.regime,
-          declared' := ctx.declaredExternRefs } := by
+          declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) } := by
   intro h
+  have h0ok : checkExternDeclSite ctx "pfn" id retSpec.declIds = .ok PUnit.unit :=
+    typecheckExternPfn_ok_declSite h
   have h1ok : checkExternInputFirstOrder argTyp = .ok PUnit.unit := by
     cases argTyp
     case int | bool | unit | string =>
@@ -2998,18 +3039,18 @@ lemma typecheckExternPfn_ok_res_eq
       case bool | unit | string | ref _t' | arrow _t1 _t2 =>
         exfalso
         unfold typecheckExternPfn at h
-        simp [checkExternInputFirstOrder, bind, Except.bind] at h
+        simp [h0ok, checkExternInputFirstOrder, bind, Except.bind] at h
     case arrow a b =>
         exfalso
         unfold typecheckExternPfn at h
-        simp [checkExternInputFirstOrder, bind, Except.bind] at h
+        simp [h0ok, checkExternInputFirstOrder, bind, Except.bind] at h
   have h2ok : checkExternReturnInputsFirstOrder retSpec = .ok PUnit.unit := by
     let c := checkExternReturnInputsFirstOrder retSpec
     cases c_eq : c with
     | error e =>
       have c_err : checkExternReturnInputsFirstOrder retSpec = .error e := c_eq
       unfold typecheckExternPfn at h
-      rw [h1ok, c_err] at h
+      rw [h0ok, h1ok, c_err] at h
       cases h
     | ok a =>
       have hca : checkExternReturnInputsFirstOrder retSpec = .ok a := c_eq
@@ -3019,7 +3060,7 @@ lemma typecheckExternPfn_ok_res_eq
   | error e =>
       exfalso
       unfold typecheckExternPfn at h
-      simp [h1ok, h2ok, bind, Except.bind, hr] at h
+      simp [h0ok, h1ok, h2ok, bind, Except.bind, hr] at h
   | ok p =>
       obtain ⟨argQt, nt⟩ := p
       have hpoison : argQt.poison = argPoison := resolveArgCondQTyp_fst_poison hr
@@ -3035,8 +3076,8 @@ lemma typecheckExternPfn_ok_res_eq
                     memEnv' := ctx.memEnv, tagEnv' := ctx.tagEnv,
                     nextLoc' := ctx.nextLoc, nextTag' := ctx.nextTag,
                     regime' := ctx.regime,
-                    declared' := ctx.declaredExternRefs } := by
-        simp [typecheckExternPfn, h1ok, h2ok, hr, bind, Except.bind, TypecheckM_pure_eq]
+                    declared' := id :: (retSpec.declIds ++ ctx.declaredExternRefs) } := by
+        simp [typecheckExternPfn, h0ok, h1ok, h2ok, hr, bind, Except.bind, TypecheckM_pure_eq]
       exact (by injection h.symm.trans hdef)
 
 private lemma typecheckExternRef_ok_res_eq
@@ -4044,6 +4085,18 @@ private lemma resolveSyntaxPred_predTagBounded
     simp [pure, Except.pure] at htc_resolve
     rw [← htc_resolve]; trivial
 
+/-- A successful `typecheckExternVal` passed the declaration-site check. -/
+theorem typecheckExternVal_ok_declSite {ctx : TypeContext} {id : ExternId} {typ : Typ}
+    {poison : Bool} {pred : SyntaxPredicate} {fuel : Nat} {res : TypeResult}
+    (htc : typecheckExternVal ctx id typ poison pred fuel = .ok res) :
+    checkExternDeclSite ctx "val" id [] = .ok PUnit.unit := by
+  cases c_eq : checkExternDeclSite ctx "val" id [] with
+  | error e =>
+      unfold typecheckExternVal at htc
+      rw [c_eq] at htc
+      cases htc
+  | ok a => rfl
+
 /-- The result of a successful `extern val` declaration: the fresh tags, the
     resolved guard and the converted surface type, with the policy applied to
     the fresh tags and the guard installed in the tag environment. A clean
@@ -4062,9 +4115,12 @@ theorem typecheckExternVal_ok_shape {ctx : TypeContext} {id : ExternId} {typ : T
                 (applyExternRegimePolicy ctx.regime id ctx.externRegime tagMapping) fuel,
               nextLoc' := surfResult.2.nextLoc, nextTag' := nextTag',
               regime' := applyExternRegimePolicy ctx.regime id ctx.externRegime tagMapping,
-              declared' := ctx.declaredExternRefs,
+              declared' := id :: ctx.declaredExternRefs,
               tagLog' := externTagLog [pred] ctx.varEnv tagMapping } := by
+  have h0ok := typecheckExternVal_ok_declSite htc
   unfold typecheckExternVal at htc
+  rw [h0ok] at htc
+  simp only [bind, Except.bind] at htc
   split at htc
   · simp at htc
   · simp at htc
@@ -4075,7 +4131,7 @@ theorem typecheckExternVal_ok_shape {ctx : TypeContext} {id : ExternId} {typ : T
       | noPred => rfl
       | guardOnly a => exact absurd rfl (h1 a)
       | guardClosure a b c => exact absurd rfl (h2 a b c)
-    · simp only [bind, Except.bind, pure, Except.pure] at htc
+    · simp only [pure, Except.pure] at htc
       cases halloc : collectAndAllocExternTags [pred] ctx.nextTag with
       | error err => simp [halloc] at htc
       | ok result =>
@@ -11483,7 +11539,9 @@ private lemma typecheck_nextLoc_mono_main : ∀ (ctx : TypeContext) (e : Expr) (
                 subst h_eq
                 exact le_rfl
         | externVal typ poison pred =>
+            have h0ok := typecheckExternVal_ok_declSite htc
             simp only [typecheckExternVal] at htc
+            rw [h0ok] at htc
             simp [Bind.bind, Except.bind, pure, Except.pure] at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
@@ -12285,24 +12343,34 @@ private lemma typecheck_declared'_main : ∀ (ctx : TypeContext) (e : Expr) (fue
                 subst h_eq
                 exact ⟨fun id hid => hid, fun _ => rfl⟩
         | externVal typ poison pred =>
+            have h0ok := typecheckExternVal_ok_declSite htc
             simp only [typecheckExternVal] at htc
+            rw [h0ok] at htc
             simp [Bind.bind, Except.bind, pure, Except.pure] at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             split at htc <;> simp (config := { failIfUnchanged := false }) at htc
             cases htc
-            exact ⟨fun id hid => hid, fun _ => rfl⟩
+            refine ⟨fun id hid => List.mem_cons_of_mem _ hid, fun hallow => ?_⟩
+            have hok := (checkExternDeclSite_ok_allowed h0ok).2
+            simp [hallow] at hok
         | externFn id arg argTyp argPoison argPred retSpec effects =>
+            have hok := (checkExternDeclSite_ok_allowed (typecheckExternFn_ok_declSite htc)).2
             obtain ⟨argQt, _, hres⟩ :=
               typecheckExternFn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec effects res htc
             rw [hres]
-            exact ⟨fun id' hid => hid, fun _ => rfl⟩
+            refine ⟨fun id' hid => List.mem_cons_of_mem _ (List.mem_append_right _ hid),
+              fun hallow => ?_⟩
+            simp [hallow] at hok
         | externPfn id arg argTyp argPoison argPred retSpec =>
+            have hok := (checkExternDeclSite_ok_allowed (typecheckExternPfn_ok_declSite htc)).2
             obtain ⟨argQt, _, hres⟩ :=
               typecheckExternPfn_ok_res_eq ctx id arg argTyp argPoison argPred retSpec res htc
             rw [hres]
-            exact ⟨fun id' hid => hid, fun _ => rfl⟩
+            refine ⟨fun id' hid => List.mem_cons_of_mem _ (List.mem_append_right _ hid),
+              fun hallow => ?_⟩
+            simp [hallow] at hok
         | externRef _id _rp _rpred _cp _cpred =>
             simp at htc
             have hres := typecheckExternRef_ok_res_eq ctx _id _rp _rpred _cp _cpred res htc
@@ -15363,7 +15431,9 @@ private lemma typecheckExpr_preserves_refLocs_main :
       | externVal typ poison pred =>
         -- externVal: result etyp is int, bool, unit, string, or ref with fresh loc
         -- All have trivial or freshly-bounded ref-locs
+        have h0ok := typecheckExternVal_ok_declSite htc
         simp only [typecheckExternVal] at htc
+        rw [h0ok] at htc
         simp [Bind.bind, Except.bind, pure, Except.pure] at htc
         split at htc <;> simp (config := { failIfUnchanged := false }) at htc
         split at htc <;> simp (config := { failIfUnchanged := false }) at htc
@@ -16443,7 +16513,9 @@ private lemma typecheckExpr_mem_contains_preserved_main :
                   cases htc
                   simpa using hcontains
           | externVal typ poison pred =>
+              have h0ok := typecheckExternVal_ok_declSite htc
               simp only [typecheckExternVal] at htc
+              rw [h0ok] at htc
               simp [Bind.bind, Except.bind, pure, Except.pure] at htc
               split at htc <;> simp (config := { failIfUnchanged := false }) at htc
               split at htc <;> simp (config := { failIfUnchanged := false }) at htc

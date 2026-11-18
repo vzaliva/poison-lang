@@ -1,0 +1,5 @@
+Evaluating file: examples/extern_decl_duplicate_kinds.poison (verbose mode)
+
+Type checking error:
+  extern val @21: duplicate declaration of extern id @21; each extern id may be declared at most once per program
+

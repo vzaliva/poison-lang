@@ -1,7 +1,6 @@
--- A never-applied fn whose body contains an `extern ref` declaration is
--- accepted: fn bodies are typechecked at application time (like any other
--- type error in a never-applied body), and an unapplied body never
--- evaluates, so the declaration never takes effect. Compare
--- extern_ref_under_fn.poison, where applying the fn rejects the body.
+-- A fn whose body declares an extern is rejected even when it is never
+-- applied: the rule is checked at the definition of the function, not only
+-- when its body is typed at an application.  Compare extern_ref_under_fn.poison,
+-- where the fn is applied.
 let f = fn x : int => (let r = extern ref @21 : (ref int :> clean {}), points_to: (int :> poisoned {}) in !r) : int in
 42

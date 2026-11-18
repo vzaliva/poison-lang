@@ -1,0 +1,5 @@
+-- A second `extern pfn` declaration of an id is rejected, also when the two
+-- declarations are equal.
+let f = extern pfn @5 a : (int :> clean {}) -> ((int :> clean {})) in
+let g = extern pfn @5 a : (int :> clean {}) -> ((int :> clean {})) in
+f 1

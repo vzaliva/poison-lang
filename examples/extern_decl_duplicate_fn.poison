@@ -1,0 +1,4 @@
+-- A second `extern fn` declaration of an id is rejected.
+let f = extern fn @5 n : (int :> clean {}) -> ((int :> clean {})) in
+let g = extern fn @5 m : (int :> clean {}) -> ((int :> poisoned {})) in
+f 1

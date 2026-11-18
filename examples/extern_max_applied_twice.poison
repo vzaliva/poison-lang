@@ -1,0 +1,8 @@
+-- Applying an extern does not declare it again: `max` (`@10`, with `@11`
+-- declared in its return) is declared once and applied twice.
+-- (max 3) 4 + (max 9) 2 = 4 + 9 = 13.
+let m =
+  extern pfn @10 a : (int :> clean {}) -> (
+    extern pfn @11 b : (int :> clean {}) -> ((int :> clean {}))
+  )
+in (m 3) 4 + (m 9) 2

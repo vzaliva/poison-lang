@@ -1,0 +1,6 @@
+-- Calling an extern in the body of a function is valid; only declaring one
+-- there is an error.  `abs` (`@12`) is declared outside `g` and called in its
+-- body, and `g` is applied twice.  g (0 - 5) + g 2 = 6 + 3 = 9.
+let f = extern pfn @12 x : (int :> clean {}) -> ((int :> clean {})) in
+let g = fn y : int => f y + 1 : int in
+g (0 - 5) + g 2

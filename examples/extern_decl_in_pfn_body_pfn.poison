@@ -1,0 +1,3 @@
+-- An `extern pfn` declared in the body of an applied `pfn` is rejected.
+let f = pfn x : int => (let g = extern pfn @5 n : (int :> clean {}) -> ((int :> clean {})) in g x) : int in
+f 1

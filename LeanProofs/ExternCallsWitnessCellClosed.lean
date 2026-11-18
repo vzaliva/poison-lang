@@ -1173,7 +1173,7 @@ private def rdDeclResult (ctx : TypeContext) (argQt : QTyp) : TypeResult := {
   nextLoc' := ctx.nextLoc
   nextTag' := ctx.nextTag
   regime' := ctx.regime
-  declared' := ctx.declaredExternRefs
+  declared' := 8 :: (readRet.declIds ++ ctx.declaredExternRefs)
 }
 
 /-- Inverting a `rd` declaration typing witness pins the result to
@@ -1306,7 +1306,8 @@ theorem rd_declSingle :
     μ ρ θ cf o _hθwf _hwfCtx hric _hreg hcons a pm registry _hwfcfg _hreserved hrdIn hrun _hpc _hvm
   obtain ⟨argQt, hres⟩ := rd_decl_shape htyped
   obtain ⟨hcf, argPred, captures, ho⟩ := rd_declRun_shape hrun
-  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, rdDeclResult]
+  have hctxAfter : ctxAfter ctx res = { ctx with declaredExternRefs := res.declared' } := by
+    rw [hres]; simp [ctxAfter, rdDeclResult]
   have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     rw [hres]
@@ -1317,13 +1318,12 @@ theorem rd_declSingle :
   have ho' : o = Value.closure "r"
       (Expr.externFn 8 "r" (Typ.ref Typ.int) false argPred readRet [rdEff] captures) ρ := by
     rw [ho]
-  have hd_res : res.declared' = ctx.declaredExternRefs := by
-    have h := congrArg TypeContext.declaredExternRefs hctxAfter
-    simpa [ctxAfter] using h
+  have hd_res : ∀ x, x ∈ ctx.declaredExternRefs → x ∈ res.declared' := by
+    intro x hx; rw [hres]; simp [rdDeclResult, hx]
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws,
       WithinLog.refl tm _⟩, θ,
     ⟨fun _ _ h => h, fun h => h⟩, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hcf, hd_res]; exact hrdIn)⟩
+    (by rw [hcf]; exact ReservedDiscipline.mono_declared hd_res hrdIn)⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho', hres]; exact rd_decl_valueHasETyp hric
@@ -1331,7 +1331,9 @@ theorem rd_declSingle :
   · rw [hctxAfter, hcfmem, hcfvar]; exact hcons
   · rw [hctxAfter, hcfmem, hres, ho']; exact rd_decl_valueConsistent hric hcons
   · rw [hcfmem]; exact PreservesInheritedFinalCleanLocsOneRun.refl hric
-  · exact FreshCleanLocsUnrealizedOneRun.vacuous_of_ctxAfter_eq hctxAfter
+  · intro l qt hnotContains hlookup _hclean
+    rw [hres] at hlookup
+    exact absurd (memEnv_contains_of_lookup_some ctx.memEnv l qt hlookup) hnotContains
 
 /-- The `rd` paired declaration-boundary field: both outputs are the `fn`
     closure of the shared declaration expression, so the two clean extern arrows
@@ -1354,7 +1356,8 @@ theorem rd_declFR :
       (Expr.externFn 8 "r" (Typ.ref Typ.int) false argPredT readRet [rdEff] capturesT) ρ₁ := by
     have hfe := hrun₁.forExpr; rw [hpostExpr] at hfe
     simpa [declRunOutputMatchesExpr] using hfe
-  have hctxAfter : ctxAfter ctx res = ctx := by rw [hres]; simp [ctxAfter, rdDeclResult]
+  have hctxAfter : ctxAfter ctx res = { ctx with declaredExternRefs := res.declared' } := by
+    rw [hres]; simp [ctxAfter, rdDeclResult]
   have hnt : res.nextTag' = ctx.nextTag := by rw [hres]; rfl
   have hresTm : QTypRespectsTagMeaning tm res.qualType := by
     rw [hres]
@@ -1364,14 +1367,14 @@ theorem rd_declFR :
   have hcf₀var : cf₀.varEnv = ρ₀ := by rw [hcf₀]
   have hcf₁mem : cf₁.memory = μ₁ := by rw [hcf₁]
   have hcf₁var : cf₁.varEnv = ρ₁ := by rw [hcf₁]
-  have hd_res : res.declared' = ctx.declaredExternRefs := by
-    have h := congrArg TypeContext.declaredExternRefs hctxAfter
-    simpa [ctxAfter] using h
+  have hd_res : ∀ x, x ∈ ctx.declaredExternRefs → x ∈ res.declared' := by
+    intro x hx; rw [hres]; simp [rdDeclResult, hx]
   refine ⟨tm, ⟨TagMeaningExtends.refl tm, ?_, ?_, hresTm, hpredlaws,
       WithinLog.refl tm _⟩, hpredlaws, hresTm,
     θ₀, θ₁, ⟨fun _ _ h => h, fun h => h⟩, ⟨fun _ _ h => h, fun h => h⟩,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    (by rw [hcf₀, hd_res]; exact hrdIn₀), (by rw [hcf₁, hd_res]; exact hrdIn₁)⟩
+    (by rw [hcf₀]; exact ReservedDiscipline.mono_declared hd_res hrdIn₀),
+    (by rw [hcf₁]; exact ReservedDiscipline.mono_declared hd_res hrdIn₁)⟩
   · rw [hnt]; exact hTmBounded
   · rw [hctxAfter]; exact hwfTm
   · rw [ho₀, hres]; exact rd_decl_valueHasETyp hric₀

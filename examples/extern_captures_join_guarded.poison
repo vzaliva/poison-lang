@@ -1,12 +1,12 @@
 --! poison-interpreter --extern-regime "238=true"
 -- Branch-join capture conjunction, GUARDED (non-`noPred`) predicate dimension.
--- Both branches of the `if`
--- produce `@239` extern closures of
--- the same signature that capture the environment entry `a`, each under a
--- guard-CLOSURE clean dependency, but with distinct guard tags (`{ 5, ... }` vs
--- `{ 6, ... }`).  Distinct captures keep the two members separate in the joined
--- `parrow` (they are not deduplicated and not collapsed to `noPred`), so the
--- `f 2` call gates on BOTH captures: the contracts combine by conjunction.
+-- The two branches of the `if` produce extern closures (`@239` and `@240`:
+-- each extern id is declared at most once in a program) of the same signature
+-- that capture the environment entry `a`, each under a guard-CLOSURE clean
+-- dependency, but with distinct guard tags (`{ 5, ... }` vs `{ 6, ... }`).  The
+-- two members stay separate in the joined `parrow` (they are not deduplicated
+-- and not collapsed to `noPred`), so the `f 2` call gates on BOTH captures: the
+-- contracts combine by conjunction.
 --
 -- `@238` (open-style) returns a poisoned int carrying a guard; `--extern-regime
 -- "238=true"` activates that return tag, so the captured `a` is clean under the
@@ -24,6 +24,6 @@ let f =
     extern pfn @239 b : (int :> clean {}) -> ((int :> clean {})),
       captures: { a :> (int :> clean { 5, v => (v >= 0) }) }
   else
-    extern pfn @239 b : (int :> clean {}) -> ((int :> clean {})),
+    extern pfn @240 b : (int :> clean {}) -> ((int :> clean {})),
       captures: { a :> (int :> clean { 6, v => (v >= 0) }) }
 in f 2

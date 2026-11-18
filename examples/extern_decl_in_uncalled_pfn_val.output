@@ -1,0 +1,4 @@
+Evaluating file: examples/extern_decl_in_uncalled_pfn_val.poison (verbose mode)
+
+Type checking error: Cannot convert expression to PExpr
+

@@ -1,0 +1,8 @@
+-- The declared ids thread through both arms of an `if`: a declaration of the
+-- same id in each arm is a second declaration, even when the two texts are
+-- equal and only one arm runs.
+let c = true in
+let f =
+  if c then extern pfn @5 a : (int :> clean {}) -> ((int :> clean {}))
+  else extern pfn @5 a : (int :> clean {}) -> ((int :> clean {}))
+in f 1

@@ -1,0 +1,12 @@
+-- Counterpart to extern_fn_bare_extern_body_reject.poison: a `fn` whose body
+-- contains extern declarations under other syntax (here an `if`), rather than
+-- as the root of the body, is rejected as well.  The bare-body check does not
+-- apply; the rule that no extern declaration appears in a function body, at any
+-- depth, does.  The function is never applied: the rule is checked at its
+-- definition.
+let c = true in
+let f = fn x : int =>
+  (if c then extern fn @5 n : (int :> clean {}) -> ( (int :> clean {}) )
+        else extern fn @6 m : (int :> clean {}) -> ( (int :> clean {}) ))
+  : int -> int
+in 0

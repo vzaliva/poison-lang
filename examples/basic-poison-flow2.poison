@@ -1,4 +1,5 @@
 -- Basic poison flow example 2: implicit flow (control dependency)
-let get_sensor = fn x : unit => extern val @209 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int in
+let sensor_value = extern val @209 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
+let get_sensor = fn x : unit => sensor_value : int in
 let faulty = get_sensor unit in    -- poisoned
 if faulty > 0 then 42 else 17      -- implicit flow (control dependency)

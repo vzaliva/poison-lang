@@ -72,19 +72,21 @@ Two clarifications on scope.
   realisations of "reject the merge" from the `captures:` model: the precondition
   is never collapsed to `noPred`; it is enforced as a conjunction at the call.
 
-* *Why there is no single-extern two-distinct-member program-FR artifact.* Such
-  a join *can* be exhibited as a program — `examples/extern_captures_join_memread.poison`
-  joins two `@23` members with distinct captures under the same id, typechecks,
-  and even runs end-to-end to `3` — but it falls *outside* the top-level FR
-  theorem's domain: `TrustedRegistryAgreesWithProgram` requires every reachable
+* *Why there is no single-extern two-distinct-member program-FR artifact.* No
+  program joins two members of one extern id with distinct captures: the
+  typechecker rejects a second declaration of an id, also in the other arm of an
+  `if`. Such a pair would in any case fall *outside* the top-level FR theorem's
+  domain: `TrustedRegistryAgreesWithProgram` requires every reachable
   declaration to match its registry entry *exactly* (captures included), and two
-  same-id reachable decls that disagree on captures cannot both equal one entry,
-  so no `TrustedRegistry` satisfies the premise. A two-member join under
-  *distinct* ids (with matching signatures) is FR-reachable and *is* covered by
-  the generic theorem; we ship no such trusted-spec pair only because it would
-  require a second trusted extern whose sole purpose is the join, which is out of
-  scope here. Identical-captures members deduplicate to a single member and
-  exercise nothing multi-member.
+  same-id reachable decls that disagree on captures cannot both equal one entry.
+  A two-member join under *distinct* ids (with matching signatures) is
+  FR-reachable and *is* covered by the generic theorem once each id has a trusted
+  entry; we ship no trusted-spec pair for one only because it would require a
+  second trusted extern whose sole purpose is the join, which is out of scope
+  here. `examples/extern_captures_join_memread.poison` joins the built-in `@23`
+  with a native `pfn` (it typechecks and runs end-to-end to `3`); the join keeps
+  `@23`'s `!r` contract. Identical members (one declaration reaching both arms)
+  deduplicate to a single member and exercise nothing multi-member.
 
 The lemmas in this module are illustrative anchors that verify the structural and
 operational conjunction facts in isolation; they are intentionally *not* on the

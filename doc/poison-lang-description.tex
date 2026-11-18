@@ -232,7 +232,7 @@ the scenes.
 \subsection{Key features}
 \begin{itemize}
     \item \textbf{References}: \texttt{ref e} creates, \texttt{e1 := e2} assigns, \texttt{!e} dereferences. Memory stores only integers
-    \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures. The body \texttt{e} may not be a bare \texttt{extern fn} declaration (such a closure is applied at runtime by dispatching the extern, so its static arrow type would disagree with the runtime result); this mirrors the pure side, where a \texttt{pfn} body is restricted to a pure expression and so cannot be a bare extern declaration
+    \item \textbf{Functions}: \texttt{fn x : ST1 => e : ST2} creates functions with explicit parameter and return type annotations, \texttt{e1 e2} applies, with closures. The body \texttt{e} may not be a bare \texttt{extern fn} declaration (such a closure is applied at runtime by dispatching the extern, so its static arrow type would disagree with the runtime result); this mirrors the pure side, where a \texttt{pfn} body is restricted to a pure expression and so cannot be a bare extern declaration. More generally, no function body declares an extern of any kind, at any depth
     \item \textbf{Pure functions}: \texttt{pfn x : ST1 => pe : ST2} creates pure functions with explicit parameter and return type annotations that cannot have side effects (no nested pure functions)
     \item \textbf{Strings}: literals of type \texttt{string}
     \item \textbf{Let bindings}: \texttt{let x = e1 in e2} uses type inference for bindings.
@@ -278,13 +278,28 @@ immediately after the kind keyword:
 \end{verbatim}
 Nested callable return descriptors use the same \texttt{@N} syntax and carry
 their own identifier.  These identifiers are the runtime handles used for
-registry lookup.  Source programs should not reuse the same identifier across
-multiple extern declarations; for \texttt{extern ref} the type checker
-enforces this (each id may be declared at most once per program, including
-across \texttt{if} arms), while for the other kinds the reuse is not detected:
-ids mentioned in the program are only looked up in the registry during
-evaluation.  The driver-side registry separately rejects duplicate
-registrations for the same identifier.
+registry lookup.  The type checker enforces two rules for extern declarations
+of every kind:
+\begin{itemize}
+  \item \textbf{Declared once.}  An extern id is declared at most once in a
+    program, whatever the kinds of the declarations.  A second declaration of
+    an id is a type error, also when the two texts are equal, when the two
+    declarations are in the two arms of an \texttt{if}, and when one of them
+    is a nested return descriptor (\texttt{@11} in \texttt{max} below is
+    declared by the declaration of \texttt{@10}).  Applying an extern
+    declares nothing, so an extern may be called any number of times.
+  \item \textbf{Evaluated at most once.}  An extern declaration may not
+    appear in the body of a \texttt{fn} or \texttt{pfn}, at any depth.  A
+    \texttt{fn} is checked at its definition, so also when it is never
+    applied; a \texttt{pfn} body is a pure expression, which admits no
+    extern declaration.  Calling an extern in a function body is allowed.
+    The condition of a conditional whose condition matches a guard is typed
+    in pure mode, which rejects a declaration as well; a condition that
+    matches a guard is a pure expression, so a condition that declares an
+    extern is typed by the standard rule.
+\end{itemize}
+The driver-side registry separately rejects duplicate registrations for the
+same identifier.
 
 At runtime, extern declarations are resolved against a registry provided by
 the driver.  The interpreter (\texttt{Main.lean}) starts from the built-in
@@ -359,17 +374,12 @@ rather than an allocation.  In practice little is lost: the
 declare-poisoned / write / read-clean flow covers the \texttt{errno} use
 case.
 
-Two placement restrictions keep the declaration sound for fault-robustness
-(each registry-reserved address is realized at most once per run): each
-extern id may be declared by \texttt{extern ref} at most once per program
-(including across \texttt{if} arms), and \texttt{extern ref} may not appear
-under \texttt{fn}/\texttt{pfn} bodies, whose application-time re-typing and
-re-evaluation would re-realize the address. The nesting rule is enforced
-where a body is typechecked: at declaration for \texttt{pfn} (pure bodies
-admit no extern declarations) and at application for \texttt{fn} (a
-never-applied \texttt{fn} body is not typechecked --- consistent with the
-language's deferred body typechecking --- and never evaluates, so the
-declaration never takes effect).
+The two rules that every extern declaration obeys keep the declaration sound
+for fault-robustness (each registry-reserved address is realized at most once
+per run): the id of an \texttt{extern ref} is declared at most once per
+program (including across \texttt{if} arms), and \texttt{extern ref} may not
+appear under \texttt{fn}/\texttt{pfn} bodies, whose application-time
+re-typing and re-evaluation would re-realize the address.
 
 Extern specifications use \emph{symbolic tag indices} rather than globally
 meaningful concrete tags. Each extern definition has its own local symbolic tag
@@ -757,8 +767,9 @@ The language includes a predicate system that allows selective de-poisoning base
 
 \noindent\textbf{Role of the guard regime.} Whether a matched guard actually
 de-poisons is decided by the guard regime $\mathcal{R}$
-(Section~\ref{sec:regime-aware-typing}): the predicate-matched conditional rules
-apply only when $\mathcal{R}$ assigns a truth value to the matched tag. Under
+(Section~\ref{sec:regime-aware-typing}): the rules for a conditional whose
+condition matches a guard apply only when $\mathcal{R}$ assigns a truth value to
+the matched tag. Under
 the empty regime --- the interpreter's default --- a matched guard is typed by
 the standard conditional rules and no de-poisoning takes place. The examples
 below that show de-poisoned results assume a regime in which the relevant guard
@@ -987,7 +998,8 @@ The qualified type $Q$ encapsulates both the base type, poison status, and any
 associated predicates. The logical environment $\mathcal{L}$ tracks the current
 valuation of predicate guards, enabling predicate-based typing decisions. The
 output logical environment $\mathcal{L}_1$ reflects any updates to guard
-valuations learned during typing (e.g., after a predicate-matched conditional) or
+valuations learned during typing (e.g., after a conditional whose condition
+matches a guard) or
 because of invalidation due to changed dependencies.
 
 \subsection{Key Typing Rules}
@@ -1102,7 +1114,9 @@ the function body and variable typing context at definition time. Both the
 parameter type $ST_1$ and return type $ST_2$ are explicitly provided as surface
 type annotations. The type checker records the body together with the current
 typing environment as a singleton closure set; body typechecking is deferred to
-application time.
+application time.  At the definition the body is only checked to declare no
+extern (and, for \texttt{fn}, not to be a bare \texttt{extern fn}
+declaration); a \texttt{pfn} body is a pure expression.
 \[
 \pi \; ;\; \text{pc} \; ;\; \Gamma \; ;\; \sigma \; ;\; \mathcal{L} \vdash
   \text{fn } x : ST_1 \Rightarrow e : ST_2
@@ -1210,7 +1224,7 @@ poisoned).
 \subsubsection*{Predicate-based conditional typing:}
 The specification provides two families of conditional typing rules:
 \begin{itemize}
-    \item \textbf{Predicate-matched case} (\textsc{if\_depoison\_*}): when
+    \item \textbf{Matched guard} (\textsc{if\_depoison\_*}): when
     $\text{match\_guard}(e_1, \Gamma, \sigma) = k \text{ with } deps$ and the
     regime determines $\mathcal{R}(k)$, the
     guard is typed in pure mode and does not contribute poison to the branches.
@@ -1220,8 +1234,8 @@ The specification provides two families of conditional typing rules:
     output environments are those of the branch selected by $\mathcal{R}(k)$.
     The fresh-tag counter runs through the guard and then through both
     branches, so the branches never reuse a tag that the guard allocated.
-    \item \textbf{Standard case} (\textsc{if\_std\_*}): when no matching predicate
-    is found, or one is found but $\mathcal{R}(k)$ is undetermined, the guard is
+    \item \textbf{Standard case} (\textsc{if\_std\_*}): when the condition matches
+    no guard, or matches one but $\mathcal{R}(k)$ is undetermined, the guard is
     typed in the current mode and its poison is joined into
     the branch contexts and the result poison. Result types are joined
     with shape-specific rules: closure sets are unioned for functions, locsets are
@@ -1237,11 +1251,11 @@ and the purity (impure arrow versus pure arrow) must agree; closure sets and
 arrow-internal poison may differ and are joined separately. Impure and pure
 arrows are never signature-compatible with each other.
 
-The key difference is that when a predicate match is used, the branches are typed
+The key difference is that when the condition matches a guard, the branches are typed
 with different valuations of guard $k$ in $\mathcal{L}$, enabling de-poisoning
 in the then branch and definite poisoning in the else branch.
 
-\paragraph{Note on output environments:} The predicate-matched rules
+\paragraph{Note on output environments:} The rules for a matched guard
 return the output environments of the branch selected by $\mathcal{R}(k)$ rather
 than joining the branch environments. The branches contain
 contradictory valuations for $k$, and the regime fixes which of them every
@@ -1283,7 +1297,7 @@ Memory typing environment $\Gamma$ evolves through:
 Logical environment $\mathcal{L}$ evolves through:
 \begin{itemize}
     \item \textbf{Sequencing and let}: Chained through expressions -- the first subexpression produces $\mathcal{L}_1$, which is used to type the second; the result is the second subexpression's $\mathcal{L}_2$ (\texttt{;}, \texttt{let}).
-    \item \textbf{Conditionals}: In the standard case, the result is the agreement-only join of the two branch environments (\texttt{if\_std\_*} returns $\mathcal{L}_2 \sqcup \mathcal{L}_3$, keeping only the guard valuations on which both branches agree). This standard case covers both ``no predicate match'' and ``predicate match with $\mathcal{R}(k)$ unknown''. In the regime-deterministic predicate-matched cases, the result is the output environment of the selected branch (\texttt{if\_depoison\_*} returns $\mathcal{L}_2$ or $\mathcal{L}_3$).
+    \item \textbf{Conditionals}: In the standard case, the result is the agreement-only join of the two branch environments (\texttt{if\_std\_*} returns $\mathcal{L}_2 \sqcup \mathcal{L}_3$, keeping only the guard valuations on which both branches agree). This standard case covers both a condition that matches no guard and a matched guard whose $\mathcal{R}(k)$ is unknown. In the regime-deterministic cases of a matched guard, the result is the output environment of the selected branch (\texttt{if\_depoison\_*} returns $\mathcal{L}_2$ or $\mathcal{L}_3$).
     \item \textbf{Assignment}: Invalidates entries whose dependencies include the written location set.
     \item \textbf{Most other constructs}: Pass through unchanged.
 \end{itemize}
@@ -2004,7 +2018,7 @@ that share the tag.  An owner must carry the guard closure itself: a variable
 whose predicate is only the guard-only tag \texttt{guard k} is not an owner in
 this sense, since guard-only predicates cannot be matched syntactically.
 
-This bidirectional axiom connects the type system's syntactic predicate matching (which
+This bidirectional axiom connects the type system's syntactic guard matching (which
 returns a tag and dependencies) with the abstract satisfaction relation, while
 keeping the semantics \emph{value--sensitive}: the conclusion relates the
 concrete boolean result to predicate satisfaction for the runtime value observed at check time. The bidirectional form is essential for regime-aware typing: when a regime fixes $\mathcal{R}(k) = \text{false}$, the type system must conclude that the predicate is \emph{not} satisfied, which requires both directions of the equivalence.

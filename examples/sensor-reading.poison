@@ -1,5 +1,6 @@
 -- Basic sensor reading example
-let get_sensor = fn x : unit => extern val @251 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) : int in
+let sensor_value = extern val @251 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
+let get_sensor = fn x : unit => sensor_value : int in
 let reading =  get_sensor unit in  -- Will be poisoned in VarEnv with predicate
 let adjusted = reading + 10 in    -- Becomes poisoned if reading is poisoned 
 adjusted -- Should be poisoned and without predicate.

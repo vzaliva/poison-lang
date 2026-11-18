@@ -1,16 +1,16 @@
 --! poison-interpreter --extern-regime "238=true"
 -- Rejection counterpart to extern_captures_join_guarded.poison, demonstrating
 -- the SHARPEST conjunction case: two branches require INCOMPATIBLE non-`noPred`
--- predicate shapes for the SAME capture target `a`.  The then-branch declares a
--- guard-CLOSURE clean dependency `{ 5, v => v >= 0 }`; the else-branch declares
--- a guard-ONLY clean dependency `{ 5 }`.  The join keeps both members (it must
--- not merge them to a single weaker `noPred` contract), so the `f 2` call gates
--- on both.  A single actual `a` carries exactly one predicate shape, so it
--- cannot satisfy both a guard-closure requirement and a guard-only requirement:
--- here `a` is a guard-closure (from `@238`), which matches the then-branch but
--- NOT the guard-only else-branch.  The conjunction therefore rejects, rather
--- than collapsing the capture predicates to `noPred` and accepting.  Type
--- checking FAILS.
+-- predicate shapes for the SAME capture target `a`.  The then-branch (`@239`)
+-- declares a guard-CLOSURE clean dependency `{ 5, v => v >= 0 }`; the
+-- else-branch (`@240`) declares a guard-ONLY clean dependency `{ 5 }`.  The
+-- join keeps both members (it must not merge them to a single weaker `noPred`
+-- contract), so the `f 2` call gates on both.  A single actual `a` carries
+-- exactly one predicate shape, so it cannot satisfy both a guard-closure
+-- requirement and a guard-only requirement: here `a` is a guard-closure (from
+-- `@238`), which matches the then-branch but NOT the guard-only else-branch.
+-- The conjunction therefore rejects, rather than collapsing the capture
+-- predicates to `noPred` and accepting.  Type checking FAILS.
 let openf = extern fn @238 p : (int :> clean {}) -> ((int :> poisoned { 5, v => (v >= 0) }))
 in
 let a = openf 0
@@ -20,6 +20,6 @@ let f =
     extern pfn @239 b : (int :> clean {}) -> ((int :> clean {})),
       captures: { a :> (int :> clean { 5, v => (v >= 0) }) }
   else
-    extern pfn @239 b : (int :> clean {}) -> ((int :> clean {})),
+    extern pfn @240 b : (int :> clean {}) -> ((int :> clean {})),
       captures: { a :> (int :> clean { 5 }) }
 in f 2

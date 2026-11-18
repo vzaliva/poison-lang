@@ -364,6 +364,7 @@ formula :: formula_ ::=
   | not_harmful_shadow x S R :: :: not_harmful_shadow {{ com no harmful shadow of x in S,R }} {{ tex \neg\mathrm{harmful\_shadow}([[x]], [[S]], [[R]]) }}
   | not_fun T :: :: not_fun {{ com T is not function type }} {{ tex [[T]] \neq \_ \rightarrow \_}}
   | not_extern_fn e :: :: not_extern_fn {{ com e is not a bare extern fn declaration }} {{ tex [[e]] \neq \mathsf{extern}\,\mathsf{fn}\,@\_\,\ldots }}
+  | no_extern_decl e :: :: no_extern_decl {{ com e contains no extern declaration (extern\_val, extern\_ref, extern\_fn, extern\_pfn) at any depth, including in the bodies of the functions it defines }} {{ tex \neg\mathrm{declaresExtern}([[e]]) }}
   | freshTags SP k = k' TM  :: :: fresh_tags {{ com allocate fresh tags for symbolic indices in SP }} {{ tex \mathrm{freshTags}([[SP]], [[k]]) = ([[k']], [[TM]]) }}
   | resolve TM SP S = P     :: :: resolve_pred {{ com resolve symbolic predicate via tag map }} {{ tex \mathrm{resolve}([[TM]], [[SP]], [[S]]) = [[P]] }}
   | TM ( ki ) = k           :: :: tag_map_lookup {{ com tag map lookup }} {{ tex [[TM]]([[ki]]) = [[k]] }}
@@ -372,8 +373,9 @@ formula :: formula_ ::=
   | extern_spec_wf ER ESL :: :: extern_spec_wf {{ com all (p, SP) pairs satisfy extern\_wf; simple return types are base types }} {{ tex \mathrm{specWf}([[ER]], [[ESL]]) }}
   | base_extern_type ST :: :: base_extern_type {{ com $\tau$ is a base type (int, bool, unit, string) }} {{ tex [[ST]] \in \{ \mathsf{int}, \mathsf{bool}, \mathsf{unit}, \mathsf{string} \} }}
   | externValConvert ST G = T G' :: :: extern_val_convert {{ com convert surface base type to enriched type (T = $\tau$, G' = G); ref types have no derivation — reference-valued externs use the extern\_ref form }} {{ tex \mathrm{externValConvert}([[ST]], [[G]]) = ([[T]], [[G']]) }}
-  | extern_ref_fresh_id eid :: :: extern_ref_fresh_id {{ com program-level uniqueness: eid was not previously declared by an extern ref; the typechecker threads a declared-id set through typing results (elided from the judgment) }} {{ tex \mathrm{freshExternRefId}([[eid]]) }}
-  | extern_ref_allowed :: :: extern_ref_allowed {{ com the declaration appears in an evaluate-at-most-once position: not under an fn/pfn body; the typechecker clears this flag for application-time body typing (elided from the judgment) }} {{ tex \mathrm{externRefAllowed} }}
+  | extern_fresh_id eid :: :: extern_fresh_id {{ com program-level uniqueness: eid has not been declared before in the program, by a declaration of any kind (extern\_val, extern\_ref, extern\_fn, extern\_pfn, or a nested\_fn / nested\_pfn return descriptor); the typechecker threads a declared-id set through typing results, serially across both arms of an if, and adds eid to it (elided from the judgment) }} {{ tex \mathrm{freshExternId}([[eid]]) }}
+  | extern_fresh_ids eid ER :: :: extern_fresh_ids {{ com extern\_fresh\_id for eid and for the id of every nested\_fn / nested\_pfn descriptor in ER, all pairwise distinct; all of them are added to the declared-id set }} {{ tex \mathrm{freshExternIds}([[eid]], [[ER]]) }}
+  | extern_decl_allowed :: :: extern_decl_allowed {{ com the declaration appears in an evaluate-at-most-once position: not under an fn/pfn body; the typechecker clears this flag for application-time body typing (elided from the judgment).  Together with the impure mode of the declaration rules (the condition of an if is typed in pure mode when it matches a guard) and the no\_extern\_decl premise of fn\_abs, it keeps every extern declaration out of function bodies and out of conditions that match a guard (such a condition is a pure expression, so it declares nothing in any case) }} {{ tex \mathrm{externDeclAllowed} }}
   | allocReturnEffectTags SP ESL k = k' TM :: :: alloc_return_effect_tags {{ com allocate fresh tags for return pred SP and all effect preds in ESL }} {{ tex \mathrm{allocTags}([[SP]], [[ESL]], [[k]]) = ([[k']], [[TM]]) }}
   | allocEffectTags ESL k = k' TM :: :: alloc_effect_tags {{ com allocate fresh tags for effect preds only }} {{ tex \mathrm{allocEffectTags}([[ESL]], [[k]]) = ([[k']], [[TM]]) }}
   | resolveEffects ESL TM S G = G' :: :: resolve_effects {{ com resolve effect preds via TM and apply memory updates mirroring assignment: a singleton target is strong-updated, a multi-location target weak-updated (stored type joined into each member); the target reference's own poison is folded into the stored poison and erases the stored predicate when that ref is poisoned (cf. the poisoned-ref assign variants). Otherwise predicates are stored as resolved (clean effect-pc rules, gate join pc (join p1 p) clean). Like a heap update, this metafunction performs only the memory update; the guard-tag / regime dependency invalidation on the written targets is performed by the surrounding application rule (the effectTargetLocs / invalidate\_deps / invalidate\_regime\_deps\_effect premises), mirroring assignment }} {{ tex \mathrm{resolveEffects}([[ESL]], [[TM]], [[S]], [[G]]) = [[G']] }}
@@ -834,7 +836,13 @@ pm ; R ; pc ; G ; S ; L |- e1 ; e2  : T2 :> p2 { P2 } -| G2 ; L2 ; R2
 % mirrors the structural restriction on pfn bodies (pe ranges over pure
 % expressions, which exclude extern declarations) and keeps the trusted extern
 % call contract quantifying only over real extern dispatch.
+% More generally, the body may not declare an extern of any kind, at any depth
+% (no_extern_decl): an extern declaration appears only where it is evaluated at
+% most once.  The check is made here, at the definition, so that a function that
+% is never applied is checked as well; the application-time typing of a body
+% rejects a declaration through extern_decl_allowed.
 not_extern_fn e
+no_extern_decl e
 ----------------------------------------------------------------------  :: fn_abs
 pm ; R ; pc ; G ; S ; L |- fn x : ST1 => e : ST2 : ST1 -> ST2 # pc tclosures ( x , e , S ) :> pc { no_pred } -| G ; L ; R
 
@@ -1248,6 +1256,11 @@ pm ; R ; pc ; G ; S ; L |- if e1 then e2 else e3 : T :> join pc join p1 join p2 
 % values that the assignment of values to extern tags (the ambient extern-regime
 % policy) selects for eid, and installReturnGuard records the guard in the tag
 % environment with the value that the resulting regime R' gives it.
+% Like every extern declaration, it appears only in an evaluate-at-most-once
+% position (extern_decl_allowed, impure mode) and declares a fresh id
+% (extern_fresh_id).
+extern_decl_allowed
+extern_fresh_id eid
 extern_wf p SP
 externValConvert ST G = T G'
 freshTags SP k = k' TM
@@ -1255,7 +1268,7 @@ resolve TM SP S = P
 extendExternRegime eid TM R = R'
 installReturnGuard L P R' = L1
 ----------------------------------------------------------------------  :: extern_val
-pm ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L1 ; R'
+impure ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L1 ; R'
 
 % Reference-valued extern:
 %   extern ref @ eid : (ref int :> clean {}), points_to: (int :> poisoned {})
@@ -1267,11 +1280,12 @@ pm ; R ; pc ; G ; S ; L |- extern_val @ eid ST p SP : T :> p { P } -| G' ; L1 ; 
 % clean with no predicate, and the pointed-to cell poisoned with no predicate — a
 % clean (or predicated) initial cell would assert a cross-run agreement that no
 % mid-evaluation declaration can supply (a documented language limitation).
-% extern ref may not appear under fn/pfn bodies (extern_ref_allowed) and each
-% extern id may be declared at most once per program (extern_ref_fresh_id).
+% Like every extern declaration, extern ref may not appear under fn/pfn bodies
+% (extern_decl_allowed) and each extern id may be declared at most once per
+% program (extern_fresh_id).
 fresh l
-extern_ref_allowed
-extern_ref_fresh_id eid
+extern_decl_allowed
+extern_fresh_id eid
 ----------------------------------------------------------------------  :: extern_ref
 impure ; R ; pc ; G ; S ; L |- extern_ref @ eid clean no_pred poisoned no_pred : ref @ { l } :> clean { no_pred } -| G[l |-> poisoned { no_pred }] ; L ; R
 
@@ -1305,11 +1319,16 @@ impure ; R ; pc ; G ; S ; L |- extern_ref @ eid clean no_pred poisoned no_pred :
 % extern_spec_wf ensures all (poison, SP) pairs in ER and ESL satisfy extern_wf
 % (clean types cannot carry predicates); it is NOT applied to the argument Q1.
 % This is enforced at parse time.
+% Like every extern declaration, it appears only in an evaluate-at-most-once
+% position (extern_decl_allowed, impure mode); eid and the ids of the nested
+% descriptors in ER are fresh (extern_fresh_ids).
+extern_decl_allowed
+extern_fresh_ids eid ER
 extern_spec_wf ER ESL
 base_of Q1 = ST1
 returnType ER = ST2
 ----------------------------------------------------------------------  :: extern_fn
-pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x Q1 ER ESL CSL : ST1 -> ST2 # pc tclosures extern_tcl @ eid ( x , Q1 , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
+impure ; R ; pc ; G ; S ; L |- extern_fn @ eid x Q1 ER ESL CSL : ST1 -> ST2 # pc tclosures extern_tcl @ eid ( x , Q1 , ER , ESL , S ) :> pc { no_pred } -| G ; L ; R
 
 % Extern pure function: extern pfn @ eid x : Q1 -> ER
 % The argument qualified type Q1 is the caller-side precondition (as for extern_fn).
@@ -1324,16 +1343,20 @@ pm ; R ; pc ; G ; S ; L |- extern_fn @ eid x Q1 ER ESL CSL : ST1 -> ST2 # pc tcl
 % qualified type is unchanged.
 % extern_spec_wf ensures all predicates in ER satisfy extern_wf; it is NOT applied
 % to the argument Q1.
+% The position and uniqueness conditions are those of extern_fn.
+extern_decl_allowed
+extern_fresh_ids eid ER
 extern_spec_wf ER empty
 base_of Q1 = ST1
 returnType ER = ST2
 ----------------------------------------------------------------------  :: extern_pfn
-pm ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tpclosures extern_ptcl @ eid ( x , Q1 , ER , S ) :> pc { no_pred } -| G ; L ; R
+impure ; R ; pc ; G ; S ; L |- extern_pfn @ eid x Q1 ER CSL : ST1 -> ST2 # pc tpclosures extern_ptcl @ eid ( x , Q1 , ER , S ) :> pc { no_pred } -| G ; L ; R
 
-% Side condition (not a typing rule): within a program, the set of extern
-% identifiers @eid appearing in extern_val / extern_fn / extern_pfn forms
-% (including those inside nested_fn / nested_pfn return descriptors) must be
-% globally unique.  Duplicates are rejected during typechecking.
+% Within a program, each extern identifier @eid is declared at most once, by an
+% extern_val / extern_ref / extern_fn / extern_pfn form or by a nested_fn /
+% nested_pfn return descriptor; the extern_fresh_id / extern_fresh_ids premises
+% above enforce it.  Applying an extern closure, including one whose return is a
+% nested descriptor, declares nothing.
 
 % --- Extern closure application rules ---
 % When an extern typing closure is applied, tags are resolved fresh at each call site.
