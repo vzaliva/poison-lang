@@ -168,7 +168,7 @@ private theorem simplePfn_guardTag_mem
 
 /-- From *match*: the value returned by the call is consistent with the regime
     after the call. -/
-private theorem valueConsistent_of_callMatches {predSat : PredSat} {entry : ExternCallEntry}
+theorem valueConsistent_of_callMatches {predSat : PredSat} {entry : ExternCallEntry}
     {effects : List Effect} {res : TypeResult} {cf : Config} {o : Value} {θ : RealizationMap}
     (hhinge : ∀ k, qtypGuardTag res.qualType = some k → ∃ a ∈ res.tagLog', a.tag = k)
     (hmatch : CallMatches predSat entry effects res cf o)
@@ -203,7 +203,7 @@ private theorem valueConsistent_of_callMatches {predSat : PredSat} {entry : Exte
 
 /-- From *agreement*: a poisoned result that is clean through a guard of the
     call agrees in the two runs. -/
-private theorem resultAgreesIfClean_of_callAgrees {predSat₀ predSat₁ : PredSat} {μ₀ μ₁ : Memory}
+theorem resultAgreesIfClean_of_callAgrees {predSat₀ predSat₁ : PredSat} {μ₀ μ₁ : Memory}
     {θ₀ θ₁ : RealizationMap} {entry₀ entry₁ : ExternCallEntry} {effects : List Effect}
     {res : TypeResult} {cf₀ cf₁ : Config} {o₀ o₁ : Value}
     (hhinge : ∀ k, qtypGuardTag res.qualType = some k → ∃ a ∈ res.tagLog', a.tag = k)
@@ -236,7 +236,7 @@ private theorem pfnAtCursor_plain {tcl : PFnTClosure} {st1 st2 : Typ} {p p1 : Po
 
 /-- What the typing of a call to a pure extern with a simple `int` return gives
     about the member result, in terms of the body context. -/
-private structure SimplePfnCallFacts (ctx : TypeContext) (res : TypeResult) (poison : Bool) : Prop where
+structure SimplePfnCallFacts (ctx : TypeContext) (res : TypeResult) (poison : Bool) : Prop where
   etyp : res.qualType.etyp = ETyp.int
   poison_true : poison = true → res.qualType.poison = true
   memEnv : res.memEnv' = ctx.memEnv
@@ -254,7 +254,9 @@ private structure SimplePfnCallFacts (ctx : TypeContext) (res : TypeResult) (poi
     ∃ tm', tm ⊑ tm' ∧ TagMeaningBounded tm' res.nextTag' ∧
       QTypRespectsTagMeaning tm' res.qualType ∧ WithinLog tm res.tagLog' tm'
 
-private theorem simplePfnCall_facts {d : ExternDeclaration} {poison : Bool} {spred : SyntaxPredicate}
+/-- The facts of `SimplePfnCallFacts` hold for every typed call of a pure extern
+    with a simple `int` return, whatever its guard. -/
+theorem simplePfnCall_facts {d : ExternDeclaration} {poison : Bool} {spred : SyntaxPredicate}
     {typedExpr : Expr} {entry : ExternCallEntry} {res : TypeResult}
     (hkind : d.kind = .pfn) (hret : d.retSpec = some (.simple .int poison spred))
     (htyped : ExternBoundaryTyping.Call d typedExpr entry res) :
@@ -366,16 +368,18 @@ private theorem SimplePfnCallFacts.monotoneExt {ctx : TypeContext} {res : TypeRe
     | some b => rw [hf.regime_back k b hlt hb]; simp
   · exact Or.inr (Nat.le_of_not_lt hlt)
 
-private theorem SimplePfnCallFacts.notfun {ctx : TypeContext} {res : TypeResult} {poison : Bool}
+/-- The result of the call is not a function. -/
+theorem SimplePfnCallFacts.notfun {ctx : TypeContext} {res : TypeResult} {poison : Bool}
     (hf : SimplePfnCallFacts ctx res poison) : res.qualType.etyp.isFunctionType = false := by
   rw [hf.etyp]; rfl
 
-private theorem SimplePfnCallFacts.notref {ctx : TypeContext} {res : TypeResult} {poison : Bool}
+/-- The result of the call is not a reference. -/
+theorem SimplePfnCallFacts.notref {ctx : TypeContext} {res : TypeResult} {poison : Bool}
     (hf : SimplePfnCallFacts ctx res poison) : ¬ ∃ ls, res.qualType.etyp = ETyp.ref ls := by
   rw [hf.etyp]; rintro ⟨_, h⟩; cases h
 
 /-- The regime after the call is consistent with the stored and bound types. -/
-private theorem SimplePfnCallFacts.consistent {predSat : PredSat} {ctx : TypeContext} {res : TypeResult}
+theorem SimplePfnCallFacts.consistent {predSat : PredSat} {ctx : TypeContext} {res : TypeResult}
     {poison : Bool} {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
     (hf : SimplePfnCallFacts ctx res poison) (htag : TagBoundedCtx ctx)
     (hcons : consistentWithRegime predSat ctx.regime ctx μ ρ θ) :
@@ -415,7 +419,8 @@ private theorem read_callSingle (ap : Bool) : ExternCallBoundarySingle (readDecl
     exact absurd (memEnv_contains_of_lookup_some ctx.memEnv l _qt hlookup) hnot
   · rw [hboc, hf.declared]; exact hrdIn
 
-private theorem SimplePfnCallFacts.agree {predSat₀ predSat₁ : PredSat} {ctx : TypeContext}
+/-- Agreement on clean entries is kept by the call. -/
+theorem SimplePfnCallFacts.agree {predSat₀ predSat₁ : PredSat} {ctx : TypeContext}
     {res : TypeResult}
     {poison : Bool} {μ₀ μ₁ : Memory} {ρ₀ ρ₁ : VarEnv} {θ₀ θ₁ : RealizationMap}
     (hf : SimplePfnCallFacts ctx res poison) (htag : TagBoundedCtx ctx)
@@ -452,7 +457,8 @@ private theorem SimplePfnCallFacts.agree {predSat₀ predSat₁ : PredSat} {ctx 
             (TagBoundedCtx_varEnv_etypClosures htag hx) hclean' hv
     | both_none _ _ h0 h1 => exact agreeVarUnder.both_none x qt h0 h1
 
-private theorem SimplePfnCallFacts.tagBounded {ctx : TypeContext} {res : TypeResult} {poison : Bool}
+/-- The context after the call is tag-bounded. -/
+theorem SimplePfnCallFacts.tagBounded {ctx : TypeContext} {res : TypeResult} {poison : Bool}
     (hf : SimplePfnCallFacts ctx res poison) (htag : TagBoundedCtx ctx) :
     TagBoundedCtx (ctxAfter ctx res) := by
   obtain ⟨hte, ⟨hpv, hpm⟩, hcl⟩ := htag
@@ -470,7 +476,8 @@ private theorem SimplePfnCallFacts.tagBounded {ctx : TypeContext} {res : TypeRes
     rw [hf.memEnv]; exact predTagsBoundedInMemEnv_mono hpm hf.nextTag_le
   · exact varEnvClosuresCapturedBounded_mono hcl hf.nextTag_le
 
-private theorem SimplePfnCallFacts.regimeConsistent {ctx : TypeContext} {res : TypeResult}
+/-- The regime after the call is consistent with the context after it. -/
+theorem SimplePfnCallFacts.regimeConsistent {ctx : TypeContext} {res : TypeResult}
     {poison : Bool} (hf : SimplePfnCallFacts ctx res poison) (hreg : regimeConsistentWithCtx ctx) :
     regimeConsistentWithCtx (ctxAfter ctx res) := by
   intro k deps h
@@ -478,14 +485,16 @@ private theorem SimplePfnCallFacts.regimeConsistent {ctx : TypeContext} {res : T
   · exact hf.regime_some k true (hreg k deps h')
   · simpa [ctxAfter] using hr
 
-private theorem SimplePfnCallFacts.wfCtx {ctx : TypeContext} {res : TypeResult} {poison : Bool}
+/-- The context after the call is well formed. -/
+theorem SimplePfnCallFacts.wfCtx {ctx : TypeContext} {res : TypeResult} {poison : Bool}
     (hf : SimplePfnCallFacts ctx res poison) (hwf : wfTypeContext ctx) :
     wfTypeContext (ctxAfter ctx res) := by
   simp only [wfTypeContext, ctxAfter]
   rw [hf.memEnv, hf.nextLoc]
   exact hwf
 
-private theorem SimplePfnCallFacts.runtime {ctx : TypeContext} {res : TypeResult} {poison : Bool}
+/-- The runtime state instantiates the context after the call. -/
+theorem SimplePfnCallFacts.runtime {ctx : TypeContext} {res : TypeResult} {poison : Bool}
     {μ : Memory} {ρ : VarEnv} {θ : RealizationMap}
     (hf : SimplePfnCallFacts ctx res poison) (hric : runtimeInstantiatesCtx ctx μ ρ θ) :
     runtimeInstantiatesCtx (ctxAfter ctx res) μ ρ θ := by

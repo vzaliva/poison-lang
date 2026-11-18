@@ -4,6 +4,7 @@ import LeanProofs.ExternCallsWitnessCell
 import LeanProofs.ExternCallsWitnessCellClosed
 import LeanProofs.ExternCallsWitnessVal
 import LeanProofs.ExternCallsWitnessInt
+import LeanProofs.ExternCallsWitnessIntCall
 
 -- Expected: only Lean's standard axioms propext, Classical.choice, Quot.sound
 -- (no sorryAx, no project-specific axioms).
@@ -45,3 +46,11 @@ import LeanProofs.ExternCallsWitnessInt
 #print axioms ExternCallsWitness.IntGuard.same_return
 #print axioms ExternCallsWitness.IntGuard.true_5
 #print axioms ExternCallsWitness.IntGuard.fails_0
+
+-- A trusted entry for an extern function whose result guard reads a let-bound
+-- integer, and the theorem applied to a program that calls it and tests the
+-- result against that variable.
+#print axioms ExternCallsWitness.IntCall.gSpec
+#print axioms ExternCallsWitness.IntCall.same_return
+#print axioms ExternCallsWitness.IntCall.true_5
+#print axioms ExternCallsWitness.IntCall.fails_0
