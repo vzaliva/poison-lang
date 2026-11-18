@@ -5,6 +5,7 @@ import LeanProofs.ExternCallsWitnessCellClosed
 import LeanProofs.ExternCallsWitnessVal
 import LeanProofs.ExternCallsWitnessInt
 import LeanProofs.ExternCallsWitnessIntCall
+import LeanProofs.ExternCallsWitnessIntCallFalse
 
 -- Expected: only Lean's standard axioms propext, Classical.choice, Quot.sound
 -- (no sorryAx, no project-specific axioms).
@@ -54,3 +55,19 @@ import LeanProofs.ExternCallsWitnessIntCall
 #print axioms ExternCallsWitness.IntCall.same_return
 #print axioms ExternCallsWitness.IntCall.true_5
 #print axioms ExternCallsWitness.IntCall.fails_0
+
+-- The program of the extern-function witness under a false tag, and the
+-- theorem applied to it.
+#print axioms ExternCallsWitness.IntCallFalse.gSpec
+#print axioms ExternCallsWitness.IntCallFalse.typed_clean
+#print axioms ExternCallsWitness.IntCallFalse.call_reached
+#print axioms ExternCallsWitness.IntCallFalse.laws_program
+#print axioms ExternCallsWitness.IntCallFalse.tests
+#print axioms ExternCallsWitness.IntCallFalse.view_needed
+#print axioms ExternCallsWitness.IntCallFalse.match_iff
+#print axioms ExternCallsWitness.IntCallFalse.match_iff_lawful
+#print axioms ExternCallsWitness.IntCallFalse.no_premises_ge
+#print axioms ExternCallsWitness.IntCallFalse.agree
+#print axioms ExternCallsWitness.IntCallFalse.same_return
+#print axioms ExternCallsWitness.IntCallFalse.false_5
+#print axioms ExternCallsWitness.IntCallFalse.fails_10
