@@ -1,10 +1,10 @@
 --! poison-interpreter --extern-regime "12=false"
--- The guard of x reads the integer lo, and the test x >= lo reads the same lo.
--- A variable the guard reads, other than its argument, must be a clean
--- reference to a single location: lo is an integer, so the guard is not
--- selected even here. The regime gives the guard the value false (5 >= 10 is
--- false); a selected guard would make the then branch dead. The branches are
--- joined and the result is poisoned. The else branch runs.
+-- The guard of x reads the integer lo, and the test x >= lo reads the same lo:
+-- lo is bound once, before the guard is made, and is not bound again before
+-- the test. A variable of a base type that the guard reads must have the same
+-- binding at the guard and at the test, so the guard is selected. The regime
+-- gives it the value false (5 >= 10 is false): the then branch is dead and the
+-- result is the clean else branch. The else branch runs.
 let bad = extern pfn @19 n : (int :> clean {}) -> ((int :> poisoned {})) in
 let y = bad 3 in
 let lo = 10 in
