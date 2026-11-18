@@ -2770,8 +2770,32 @@ private lemma EnvRespectsTagMeaning_joinMemEnvsStrong'
               exact hlookup
             exact (QTypRespectsTagMeaning_joinMem_lookup tm σ Γ1 Γ2 l qtRoot h1 hlookupW h1some h2some) hsub hdesc
 
+/-- `qt'` is a type inside `qt₁` or inside `qt₂`, possibly with its binding
+    numbers set to 0. -/
+private def InEitherZeroed (qt' qt₁ qt₂ : QTyp) : Prop :=
+  ∃ q0, (QTypInQTyp q0 qt₁ ∨ QTypInQTyp q0 qt₂) ∧ (qt' = q0 ∨ qt' = zeroQTyp q0)
+
+private lemma InEitherZeroed.trans {a b qt₁ qt₂ : QTyp} (h : QTypInQTyp a b)
+    (hb : InEitherZeroed b qt₁ qt₂) : InEitherZeroed a qt₁ qt₂ := by
+  obtain ⟨q0, hq0, rfl | rfl⟩ := hb
+  · exact ⟨a, hq0.imp (QTypInQTyp.trans a _ _ h) (QTypInQTyp.trans a _ _ h), Or.inl rfl⟩
+  · obtain ⟨a0, ha0, rfl⟩ := QTypInQTyp_zeroQTyp_inv h
+    exact ⟨a0, hq0.imp (QTypInQTyp.trans a0 _ _ ha0) (QTypInQTyp.trans a0 _ _ ha0), Or.inr rfl⟩
+
+private lemma InEitherZeroed.of_left {q qt₁ qt₂ : QTyp}
+    (h : ∃ q0, QTypInQTyp q0 qt₁ ∧ (q = q0 ∨ q = zeroQTyp q0)) : InEitherZeroed q qt₁ qt₂ := by
+  obtain ⟨q0, hq0, hrel⟩ := h
+  exact ⟨q0, Or.inl hq0, hrel⟩
+
+private lemma InEitherZeroed.of_right {q qt₁ qt₂ : QTyp}
+    (h : ∃ q0, QTypInQTyp q0 qt₂ ∧ (q = q0 ∨ q = zeroQTyp q0)) : InEitherZeroed q qt₁ qt₂ := by
+  obtain ⟨q0, hq0, hrel⟩ := h
+  exact ⟨q0, Or.inr hq0, hrel⟩
+
 -- A single join-step for QTypRespectsTagMeaning: joining two tag-meaning-respecting
--- qualified types produces another tag-meaning-respecting qualified type.
+-- qualified types produces another tag-meaning-respecting qualified type. A type
+-- captured by a member of a merged closure list is captured by a member of an
+-- input, kept or with its binding numbers set to 0, which keeps its guard.
 private lemma QTypRespectsTagMeaning_joinStep
     (tm : TagMeaning) (e1 e2 : ETyp) (p1 p2 : Poison) (pred1 pred2 : Predicate)
     (h1 : QTypRespectsTagMeaning tm ⟨e1, p1, pred1⟩)
@@ -2779,16 +2803,15 @@ private lemma QTypRespectsTagMeaning_joinStep
     QTypRespectsTagMeaning tm ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ := by
   intro qt' k d hinq hqd
   have hdecomp :
-      QTypInQTyp qt' ⟨e1, p1, pred1⟩ ∨
-      QTypInQTyp qt' ⟨e2, p2, pred2⟩ ∨
+      InEitherZeroed qt' ⟨e1, p1, pred1⟩ ⟨e2, p2, pred2⟩ ∨
       qt' = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ :=
     (QTypInQTyp.recOn
         (motive := fun qt' qt₂ _ =>
           qt₂ = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩ →
-          QTypInQTyp qt' ⟨e1, p1, pred1⟩ ∨ QTypInQTyp qt' ⟨e2, p2, pred2⟩ ∨
+          InEitherZeroed qt' ⟨e1, p1, pred1⟩ ⟨e2, p2, pred2⟩ ∨
           qt' = ⟨joinETyps e1 e2 p1 p2, joinPoison p1 p2, joinPredicates pred1 pred2⟩)
         hinq
-        (fun _ hn => Or.inr (Or.inr hn))
+        (fun _ hn => Or.inr hn)
         (fun qtInner qtOuter st₁ st₂ _p tcls tcl x _n hetyp htcl hcap hjoined => by
           subst hjoined
           cases e1 with
@@ -2799,22 +2822,25 @@ private lemma QTypRespectsTagMeaning_joinStep
                   by_cases hshape : st1a == st1b && st2a == st2b
                   · simp only [hshape, ↓reduceIte] at hetyp
                     obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
-                    cases mem_mergeFnTClosures_inv tcls1 tcls2 tcl htcl with
-                    | inl h =>
-                        exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
-                          st1a st2a pa1 tcls1 tcl x rfl h hcap)
-                    | inr h =>
-                        exact Or.inr (Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1b st2b pb1 tcls2, p2, pred2⟩
-                          st1b st2b pb1 tcls2 tcl x rfl h hcap))
+                    obtain ⟨tcl0, hsrc, hz⟩ := mem_mergeFnTClosures_inv tcls1 tcls2 tcl htcl
+                    rcases hsrc with h | h
+                    · exact Or.inl (InEitherZeroed.of_left
+                        (QTypInQTyp.in_arrow_zeroedFrom
+                          (qtOuter := ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩) rfl h hz hcap))
+                    · exact Or.inl (InEitherZeroed.of_right
+                        (QTypInQTyp.in_arrow_zeroedFrom
+                          (qtOuter := ⟨ETyp.arrow st1b st2b pb1 tcls2, p2, pred2⟩) rfl h hz hcap))
                   · simp only [hshape, Bool.false_eq_true, ↓reduceIte] at hetyp
                     obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
-                    exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
-                      st1a st2a pa1 tcls1 tcl x rfl htcl hcap)
+                    exact Or.inl ⟨qtInner, Or.inl (QTypInQTyp.in_arrow qtInner
+                      ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩ st1a st2a pa1 tcls1 tcl x rfl htcl
+                        hcap), Or.inl rfl⟩
               | _ =>
                   simp only [joinETyps] at hetyp
                   obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.arrow.inj hetyp
-                  exact Or.inl (QTypInQTyp.in_arrow qtInner ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩
-                    st1a st2a pa1 tcls1 tcl x rfl htcl hcap)
+                  exact Or.inl ⟨qtInner, Or.inl (QTypInQTyp.in_arrow qtInner
+                    ⟨ETyp.arrow st1a st2a pa1 tcls1, p1, pred1⟩ st1a st2a pa1 tcls1 tcl x rfl htcl
+                      hcap), Or.inl rfl⟩
           | int | bool | unit | string => simp [joinETyps] at hetyp
           | ref ls =>
               cases e2 with
@@ -2837,22 +2863,25 @@ private lemma QTypRespectsTagMeaning_joinStep
                   by_cases hshape : st1a == st1b && st2a == st2b
                   · simp only [hshape, ↓reduceIte] at hetyp
                     obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
-                    cases mem_mergePFnTClosures_inv ptcls1 ptcls2 tcl htcl with
-                    | inl h =>
-                        exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
-                          st1a st2a pa1 ptcls1 tcl x rfl h hcap)
-                    | inr h =>
-                        exact Or.inr (Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1b st2b pb1 ptcls2, p2, pred2⟩
-                          st1b st2b pb1 ptcls2 tcl x rfl h hcap))
+                    obtain ⟨tcl0, hsrc, hz⟩ := mem_mergePFnTClosures_inv ptcls1 ptcls2 tcl htcl
+                    rcases hsrc with h | h
+                    · exact Or.inl (InEitherZeroed.of_left
+                        (QTypInQTyp.in_parrow_zeroedFrom
+                          (qtOuter := ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩) rfl h hz hcap))
+                    · exact Or.inl (InEitherZeroed.of_right
+                        (QTypInQTyp.in_parrow_zeroedFrom
+                          (qtOuter := ⟨ETyp.parrow st1b st2b pb1 ptcls2, p2, pred2⟩) rfl h hz hcap))
                   · simp only [hshape, Bool.false_eq_true, ↓reduceIte] at hetyp
                     obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
-                    exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
-                      st1a st2a pa1 ptcls1 tcl x rfl htcl hcap)
+                    exact Or.inl ⟨qtInner, Or.inl (QTypInQTyp.in_parrow qtInner
+                      ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩ st1a st2a pa1 ptcls1 tcl x rfl
+                        htcl hcap), Or.inl rfl⟩
               | _ =>
                   simp only [joinETyps] at hetyp
                   obtain ⟨rfl, rfl, _, rfl⟩ := ETyp.parrow.inj hetyp
-                  exact Or.inl (QTypInQTyp.in_parrow qtInner ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩
-                    st1a st2a pa1 ptcls1 tcl x rfl htcl hcap)
+                  exact Or.inl ⟨qtInner, Or.inl (QTypInQTyp.in_parrow qtInner
+                    ⟨ETyp.parrow st1a st2a pa1 ptcls1, p1, pred1⟩ st1a st2a pa1 ptcls1 tcl x rfl
+                      htcl hcap), Or.inl rfl⟩
           | int | bool | unit | string => simp [joinETyps] at hetyp
           | ref ls =>
               cases e2 with
@@ -2867,13 +2896,16 @@ private lemma QTypRespectsTagMeaning_joinStep
               | _ => simp [joinETyps] at hetyp)
         (fun a b _c h₁₂ _h₂₃ ih₁₂ ih₂₃ hjoined =>
           (ih₂₃ hjoined).elim
-            (fun h_e1 => Or.inl (QTypInQTyp.trans a b _ h₁₂ h_e1))
-            (fun h => h.elim
-              (fun h_e2 => Or.inr (Or.inl (QTypInQTyp.trans a b _ h₁₂ h_e2)))
-              (fun heq => ih₁₂ heq)))) rfl
-  rcases hdecomp with (h_e1 | h_e2 | h_self)
-  · exact h1 h_e1 hqd
-  · exact h2 h_e2 hqd
+            (fun hb => Or.inl (InEitherZeroed.trans h₁₂ hb))
+            (fun heq => ih₁₂ heq))) rfl
+  rcases hdecomp with ⟨q0, hin0, hq0⟩ | h_self
+  · have hqd0 : qtypGuardDesc? q0 = some (k, d) := by
+      rcases hq0 with rfl | rfl
+      · exact hqd
+      · simpa using hqd
+    rcases hin0 with h | h
+    · exact h1 h hqd0
+    · exact h2 h hqd0
   · subst h_self
     have hpj := qtypGuardDesc?_eq_some_pred_guardClosure hqd
     have hp1 := (joinPredicates_eq_guardClosure hpj).1

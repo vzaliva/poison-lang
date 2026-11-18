@@ -855,18 +855,119 @@ def beqETypSignature : ETyp → ETyp → Bool
 -- - Merge operations produce consistent ordering
 -- - Deduplication ensures no duplicates
 
-/-- Merge two lists of FnTClosure as sets, removing duplicates.
-    The result is the union of tcls1 and tcls2, with duplicates removed.
-    Order follows the input lists but is semantically irrelevant (sets). -/
-def mergeFnTClosures (tcls1 tcls2 : List FnTClosure) : List FnTClosure :=
-  -- Start with tcls1 (deduplicated), then add elements from tcls2 that aren't already present
-  let withTcls1 := tcls1.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) []
-  tcls2.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) withTcls1
+mutual
 
-/-- Merge two lists of PFnTClosure as sets, removing duplicates.
-    The result is the union of tcls1 and tcls2, with duplicates removed.
-    Order follows the input lists but is semantically irrelevant (sets). -/
+/-- Every binding number in a captured environment set to 0: the number of
+    each entry and the numbers of the captured environments of the closure
+    members in its type, at any depth. Guard environments are kept. -/
+def zeroCapEnv : CapturedVarEnv → CapturedVarEnv
+  | [] => []
+  | (x, qt, _) :: env => (x, zeroQTyp qt, 0) :: zeroCapEnv env
+
+def zeroQTyp : QTyp → QTyp
+  | QTyp.mk etyp p pred => QTyp.mk (zeroETyp etyp) p pred
+
+def zeroETyp : ETyp → ETyp
+  | ETyp.arrow st1 st2 p tcls => ETyp.arrow st1 st2 p (zeroFnTClosureList tcls)
+  | ETyp.parrow st1 st2 p tcls => ETyp.parrow st1 st2 p (zeroPFnTClosureList tcls)
+  | t => t
+
+def zeroFnTClosureList : List FnTClosure → List FnTClosure
+  | [] => []
+  | tcl :: tcls => zeroFnTClosure tcl :: zeroFnTClosureList tcls
+
+def zeroPFnTClosureList : List PFnTClosure → List PFnTClosure
+  | [] => []
+  | tcl :: tcls => zeroPFnTClosure tcl :: zeroPFnTClosureList tcls
+
+def zeroFnTClosure : FnTClosure → FnTClosure
+  | FnTClosure.regular x body env => FnTClosure.regular x body (zeroCapEnv env)
+  | FnTClosure.extern id x ret eff env argQt cap =>
+      FnTClosure.extern id x ret eff (zeroCapEnv env) argQt cap
+
+def zeroPFnTClosure : PFnTClosure → PFnTClosure
+  | PFnTClosure.regular x body env => PFnTClosure.regular x body (zeroCapEnv env)
+  | PFnTClosure.extern id x ret env argQt cap =>
+      PFnTClosure.extern id x ret (zeroCapEnv env) argQt cap
+
+end
+
+/-- The entries of `env` that are not the same, in number and type, in every
+    environment of `envs` have every number set to 0 (`zeroCapEnv`). -/
+def zeroCapEnvAgainst (envs : List CapturedVarEnv) (env : CapturedVarEnv) : CapturedVarEnv :=
+  env.map fun (x, qt, n) =>
+    if envs.all (fun env' => match List.lookup x env' with
+        | some (qt', n') => n' == n && beqQTyp qt' qt
+        | none => false)
+    then (x, qt, n) else (x, zeroQTyp qt, 0)
+
+namespace FnTClosure
+
+/-- Two members that are the same except for their captured environments. -/
+def sameButEnv : FnTClosure → FnTClosure → Bool
+  | regular x1 e1 _, regular x2 e2 _ => x1 == x2 && e1 == e2
+  | extern id1 x1 r1 ef1 _ a1 c1, extern id2 x2 r2 ef2 _ a2 c2 =>
+      id1 == id2 && x1 == x2 && beqExternReturn r1 r2 && beqEffectList ef1 ef2
+        && beqQTyp a1 a2 && beqCaptureList c1 c2
+  | _, _ => false
+
+def capEnv : FnTClosure → CapturedVarEnv
+  | regular _ _ env => env
+  | extern _ _ _ _ env _ _ => env
+
+def withCapEnv : FnTClosure → CapturedVarEnv → FnTClosure
+  | regular x body _, env => regular x body env
+  | extern id x r ef _ a c, env => extern id x r ef env a c
+
+end FnTClosure
+
+namespace PFnTClosure
+
+/-- Two members that are the same except for their captured environments. -/
+def sameButEnv : PFnTClosure → PFnTClosure → Bool
+  | regular x1 e1 _, regular x2 e2 _ => x1 == x2 && e1 == e2
+  | extern id1 x1 r1 _ a1 c1, extern id2 x2 r2 _ a2 c2 =>
+      id1 == id2 && x1 == x2 && beqExternReturn r1 r2 && beqQTyp a1 a2 && beqCaptureList c1 c2
+  | _, _ => false
+
+def capEnv : PFnTClosure → CapturedVarEnv
+  | regular _ _ env => env
+  | extern _ _ _ env _ _ => env
+
+def withCapEnv : PFnTClosure → CapturedVarEnv → PFnTClosure
+  | regular x body _, env => regular x body env
+  | extern id x r _ a c, env => extern id x r env a c
+
+end PFnTClosure
+
+/-- Members with the same parameter and body (for an extern member: the same
+    in everything but the captured environment) keep an entry of their
+    captured environments only when it is the same, number and type, in every
+    one of them; otherwise every number in it is set to 0. -/
+def zeroDisagreeingFn (tcls : List FnTClosure) : List FnTClosure :=
+  tcls.map fun tcl =>
+    let grp := tcls.filter (FnTClosure.sameButEnv tcl)
+    if grp.length ≤ 1 then tcl
+    else tcl.withCapEnv (zeroCapEnvAgainst (grp.map FnTClosure.capEnv) tcl.capEnv)
+
+/-- See `zeroDisagreeingFn`. -/
+def zeroDisagreeingPFn (tcls : List PFnTClosure) : List PFnTClosure :=
+  tcls.map fun tcl =>
+    let grp := tcls.filter (PFnTClosure.sameButEnv tcl)
+    if grp.length ≤ 1 then tcl
+    else tcl.withCapEnv (zeroCapEnvAgainst (grp.map PFnTClosure.capEnv) tcl.capEnv)
+
+/-- A list without repeated members, in the order of first occurrence. -/
+def dedupClosures {α : Type} [BEq α] (l : List α) : List α :=
+  l.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) []
+
+/-- Merge two lists of FnTClosure as sets: the union, with the numbers of
+    disagreeing entries of same-body members set to 0 (`zeroDisagreeingFn`),
+    and duplicates removed. Order follows the input lists but is semantically
+    irrelevant (sets). -/
+def mergeFnTClosures (tcls1 tcls2 : List FnTClosure) : List FnTClosure :=
+  dedupClosures (zeroDisagreeingFn (dedupClosures (tcls1 ++ tcls2)))
+
+/-- Merge two lists of PFnTClosure as sets; see `mergeFnTClosures`. -/
 def mergePFnTClosures (tcls1 tcls2 : List PFnTClosure) : List PFnTClosure :=
-  -- Start with tcls1 (deduplicated), then add elements from tcls2 that aren't already present
-  let withTcls1 := tcls1.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) []
-  tcls2.foldl (fun acc tcl => if acc.contains tcl then acc else acc ++ [tcl]) withTcls1
+  dedupClosures (zeroDisagreeingPFn (dedupClosures (tcls1 ++ tcls2)))

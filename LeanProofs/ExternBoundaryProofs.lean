@@ -956,26 +956,146 @@ private theorem ETypReachableFrom.of_qtyp
       intro _qpoison' _qpred'
       exact QTypReachableFrom.etyp_redecorate hqt
 
+private theorem zeroQTyp_eq_arrow_inv {qt : QTyp} {st1 st2 : Typ} {p qpoison : Poison}
+    {qpred : Predicate} {tcls : List FnTClosure}
+    (hq : ({ etyp := ETyp.arrow st1 st2 p tcls, poison := qpoison, pred := qpred } : QTyp) =
+      zeroQTyp qt) :
+    ∃ tcls0, qt = { etyp := ETyp.arrow st1 st2 p tcls0, poison := qpoison, pred := qpred } ∧
+      tcls = tcls0.map zeroFnTClosure := by
+  obtain ⟨e0, p0, pr0⟩ := qt
+  simp only [zeroQTyp, QTyp.mk.injEq] at hq
+  obtain ⟨he, rfl, rfl⟩ := hq
+  obtain ⟨tcls0, rfl, rfl⟩ := zeroETyp_eq_arrow he.symm
+  exact ⟨tcls0, rfl, rfl⟩
+
+private theorem zeroQTyp_eq_parrow_inv {qt : QTyp} {st1 st2 : Typ} {p qpoison : Poison}
+    {qpred : Predicate} {tcls : List PFnTClosure}
+    (hq : ({ etyp := ETyp.parrow st1 st2 p tcls, poison := qpoison, pred := qpred } : QTyp) =
+      zeroQTyp qt) :
+    ∃ tcls0, qt = { etyp := ETyp.parrow st1 st2 p tcls0, poison := qpoison, pred := qpred } ∧
+      tcls = tcls0.map zeroPFnTClosure := by
+  obtain ⟨e0, p0, pr0⟩ := qt
+  simp only [zeroQTyp, QTyp.mk.injEq] at hq
+  obtain ⟨he, rfl, rfl⟩ := hq
+  obtain ⟨tcls0, rfl, rfl⟩ := zeroETyp_eq_parrow he.symm
+  exact ⟨tcls0, rfl, rfl⟩
+
+/-- Reachability through a captured environment zeroed entry by entry is
+    reachability through the original environment: zeroing changes binding
+    numbers only, and keeps the members, their bodies and the extern
+    declarations they carry. -/
+private theorem reachableFromCapturedEnv_of_zeroedFrom
+    {root : Expr} {ctxRoot : TypeContext} {σ σ' : CapturedVarEnv} {id : ExternId}
+    {d : ExternDeclaration}
+    (h : ExternDeclarationReachableFromCapturedEnv root ctxRoot σ' id d)
+    (hz : CapEnvZeroedFrom σ σ') :
+    ExternDeclarationReachableFromCapturedEnv root ctxRoot σ id d :=
+  ExternDeclarationReachableFromCapturedEnv.rec
+    (motive_1 := fun σ' id d _ => ∀ σ, CapEnvZeroedFrom σ σ' →
+      ExternDeclarationReachableFromCapturedEnv root ctxRoot σ id d)
+    (motive_2 := fun qt' id d _ => ∀ qt, qt' = zeroQTyp qt →
+      ExternDeclarationReachableFromQTyp root ctxRoot qt id d)
+    (head := by
+      intro _ _ _ _ _ _ hq ih σ hz
+      unfold CapEnvZeroedFrom at hz
+      cases hz with
+      | cons hr _ =>
+          cases hr with
+          | keep => exact .head hq
+          | zero => exact .head (ih _ rfl))
+    (tail := by
+      intro _ _ _ _ _ _ _ ih σ hz
+      unfold CapEnvZeroedFrom at hz
+      cases hz with
+      | cons _ ht => exact .tail (ih _ ht))
+    (arrow_regular_body := by
+      intro _ _ _ _ _ _ _ _ _ _ _ hmem hprog qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_arrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroFnTClosure_eq_regular htcl0
+      exact .arrow_regular_body hmem0 hprog)
+    (arrow_regular_captured := by
+      intro _ _ _ _ _ _ _ _ _ _ _ hmem _ ih qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_arrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroFnTClosure_eq_regular htcl0
+      exact .arrow_regular_captured hmem0 (ih env0 (capEnvZeroedFrom_zeroCapEnv env0)))
+    (arrow_extern_member := by
+      intro _ _ _ _ _ _ _ _ _ _ _ _ _ hmem qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_arrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroFnTClosure_eq_extern htcl0
+      exact .arrow_extern_member hmem0)
+    (arrow_extern_return := by
+      intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hmem hret qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_arrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroFnTClosure_eq_extern htcl0
+      exact .arrow_extern_return hmem0 hret)
+    (arrow_extern_captured := by
+      intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hmem _ ih qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_arrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroFnTClosure_eq_extern htcl0
+      exact .arrow_extern_captured hmem0 (ih env0 (capEnvZeroedFrom_zeroCapEnv env0)))
+    (arrow_regular_extern_body := by
+      intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hmem qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_arrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroFnTClosure_eq_regular htcl0
+      exact .arrow_regular_extern_body hmem0)
+    (parrow_regular_body := by
+      intro _ _ _ _ _ _ _ _ _ _ _ hmem hprog qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_parrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroPFnTClosure_eq_regular htcl0
+      exact .parrow_regular_body hmem0 hprog)
+    (parrow_regular_captured := by
+      intro _ _ _ _ _ _ _ _ _ _ _ hmem _ ih qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_parrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroPFnTClosure_eq_regular htcl0
+      exact .parrow_regular_captured hmem0 (ih env0 (capEnvZeroedFrom_zeroCapEnv env0)))
+    (parrow_extern_member := by
+      intro _ _ _ _ _ _ _ _ _ _ _ _ hmem qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_parrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroPFnTClosure_eq_extern htcl0
+      exact .parrow_extern_member hmem0)
+    (parrow_extern_return := by
+      intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ hmem hret qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_parrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroPFnTClosure_eq_extern htcl0
+      exact .parrow_extern_return hmem0 hret)
+    (parrow_extern_captured := by
+      intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ hmem _ ih qt hq
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroQTyp_eq_parrow_inv hq
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp hmem
+      obtain ⟨env0, rfl, rfl⟩ := zeroPFnTClosure_eq_extern htcl0
+      exact .parrow_extern_captured hmem0 (ih env0 (capEnvZeroedFrom_zeroCapEnv env0)))
+    h σ hz
+
 private theorem fnArrowSource
     {st1a st2a st1 st2 : Typ} {pa : Poison}
-    {tcls1 : List FnTClosure} {tcl : FnTClosure}
+    {tcls1 : List FnTClosure} {tcl0 tcl : FnTClosure}
     (hst1 : st1a = st1) (hst2 : st2a = st2)
-    (hmem : tcl ∈ tcls1) :
-    ∃ psrc tclsSrc,
+    (hmem : tcl0 ∈ tcls1) (hz : FnTClosure.ZeroedFrom tcl0 tcl) :
+    ∃ psrc tclsSrc tcl0,
       ETyp.arrow st1a st2a pa tcls1 = ETyp.arrow st1 st2 psrc tclsSrc ∧
-      tcl ∈ tclsSrc := by
-  refine ⟨pa, tcls1, ?_, hmem⟩
+      tcl0 ∈ tclsSrc ∧ FnTClosure.ZeroedFrom tcl0 tcl := by
+  refine ⟨pa, tcls1, tcl0, ?_, hmem, hz⟩
   rw [hst1, hst2]
 
 private theorem pfnArrowSource
     {st1a st2a st1 st2 : Typ} {pa : Poison}
-    {tcls1 : List PFnTClosure} {tcl : PFnTClosure}
+    {tcls1 : List PFnTClosure} {tcl0 tcl : PFnTClosure}
     (hst1 : st1a = st1) (hst2 : st2a = st2)
-    (hmem : tcl ∈ tcls1) :
-    ∃ psrc tclsSrc,
+    (hmem : tcl0 ∈ tcls1) (hz : PFnTClosure.ZeroedFrom tcl0 tcl) :
+    ∃ psrc tclsSrc tcl0,
       ETyp.parrow st1a st2a pa tcls1 = ETyp.parrow st1 st2 psrc tclsSrc ∧
-      tcl ∈ tclsSrc := by
-  refine ⟨pa, tcls1, ?_, hmem⟩
+      tcl0 ∈ tclsSrc ∧ PFnTClosure.ZeroedFrom tcl0 tcl := by
+  refine ⟨pa, tcls1, tcl0, ?_, hmem, hz⟩
   rw [hst1, hst2]
 
 private theorem typPair_eq_of_and_beq
@@ -991,10 +1111,12 @@ private theorem joinETyps_arrow_member_source
     {st1 st2 : Typ} {p : Poison} {tcls : List FnTClosure} {tcl : FnTClosure}
     (heq : joinETyps etyp1 etyp2 p1 p2 = ETyp.arrow st1 st2 p tcls)
     (hmem : tcl ∈ tcls) :
-    (∃ psrc tclsSrc,
-      etyp1 = ETyp.arrow st1 st2 psrc tclsSrc ∧ tcl ∈ tclsSrc) ∨
-    (∃ psrc tclsSrc,
-      etyp2 = ETyp.arrow st1 st2 psrc tclsSrc ∧ tcl ∈ tclsSrc) := by
+    (∃ psrc tclsSrc tcl0,
+      etyp1 = ETyp.arrow st1 st2 psrc tclsSrc ∧ tcl0 ∈ tclsSrc ∧
+        FnTClosure.ZeroedFrom tcl0 tcl) ∨
+    (∃ psrc tclsSrc tcl0,
+      etyp2 = ETyp.arrow st1 st2 psrc tclsSrc ∧ tcl0 ∈ tclsSrc ∧
+        FnTClosure.ZeroedFrom tcl0 tcl) := by
   cases etyp1 with
   | int => cases etyp2 <;> simp [joinETyps] at heq
   | bool => cases etyp2 <;> simp [joinETyps] at heq
@@ -1023,52 +1145,55 @@ private theorem joinETyps_arrow_member_source
             have htcls : mergeFnTClosures tcls1 tcls2 = tcls := heq.2.2.2
             have hmemMerge : tcl ∈ mergeFnTClosures tcls1 tcls2 := by
               simpa [htcls] using hmem
-            rcases mem_mergeFnTClosures_inv tcls1 tcls2 tcl hmemMerge with hleft | hright
-            · exact Or.inl (fnArrowSource hst1 hst2 hleft)
+            rcases mem_mergeFnTClosures_inv tcls1 tcls2 tcl hmemMerge with
+              ⟨tcl0, hleft | hright, hz⟩
+            · exact Or.inl (fnArrowSource hst1 hst2 hleft hz)
             · rcases typPair_eq_of_and_beq hshape with ⟨hst1ab, hst2ab⟩
               have hst1b : st1b = st1 := by rw [← hst1ab, hst1]
               have hst2b : st2b = st2 := by rw [← hst2ab, hst2]
-              exact Or.inr (fnArrowSource hst1b hst2b hright)
+              exact Or.inr (fnArrowSource hst1b hst2b hright hz)
           · simp [joinETyps, hshape] at heq
             have hst1 : st1a = st1 := heq.1
             have hst2 : st2a = st2 := heq.2.1
             have htcls : tcls1 = tcls := heq.2.2.2
             have hmem1 : tcl ∈ tcls1 := by simpa [htcls] using hmem
-            exact Or.inl (fnArrowSource hst1 hst2 hmem1)
+            exact Or.inl (fnArrowSource hst1 hst2 hmem1 (.refl _))
       | int =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | bool =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | unit =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | string =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | ref ls =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | parrow st1p st2p pp tclsp =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (fnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
 
 private theorem joinETyps_parrow_member_source
     {etyp1 etyp2 : ETyp} {p1 p2 : Poison}
     {st1 st2 : Typ} {p : Poison} {tcls : List PFnTClosure} {tcl : PFnTClosure}
     (heq : joinETyps etyp1 etyp2 p1 p2 = ETyp.parrow st1 st2 p tcls)
     (hmem : tcl ∈ tcls) :
-    (∃ psrc tclsSrc,
-      etyp1 = ETyp.parrow st1 st2 psrc tclsSrc ∧ tcl ∈ tclsSrc) ∨
-    (∃ psrc tclsSrc,
-      etyp2 = ETyp.parrow st1 st2 psrc tclsSrc ∧ tcl ∈ tclsSrc) := by
+    (∃ psrc tclsSrc tcl0,
+      etyp1 = ETyp.parrow st1 st2 psrc tclsSrc ∧ tcl0 ∈ tclsSrc ∧
+        PFnTClosure.ZeroedFrom tcl0 tcl) ∨
+    (∃ psrc tclsSrc tcl0,
+      etyp2 = ETyp.parrow st1 st2 psrc tclsSrc ∧ tcl0 ∈ tclsSrc ∧
+        PFnTClosure.ZeroedFrom tcl0 tcl) := by
   cases etyp1 with
   | int => cases etyp2 <;> simp [joinETyps] at heq
   | bool => cases etyp2 <;> simp [joinETyps] at heq
@@ -1097,42 +1222,43 @@ private theorem joinETyps_parrow_member_source
             have htcls : mergePFnTClosures tcls1 tcls2 = tcls := heq.2.2.2
             have hmemMerge : tcl ∈ mergePFnTClosures tcls1 tcls2 := by
               simpa [htcls] using hmem
-            rcases mem_mergePFnTClosures_inv tcls1 tcls2 tcl hmemMerge with hleft | hright
-            · exact Or.inl (pfnArrowSource hst1 hst2 hleft)
+            rcases mem_mergePFnTClosures_inv tcls1 tcls2 tcl hmemMerge with
+              ⟨tcl0, hleft | hright, hz⟩
+            · exact Or.inl (pfnArrowSource hst1 hst2 hleft hz)
             · rcases typPair_eq_of_and_beq hshape with ⟨hst1ab, hst2ab⟩
               have hst1b : st1b = st1 := by rw [← hst1ab, hst1]
               have hst2b : st2b = st2 := by rw [← hst2ab, hst2]
-              exact Or.inr (pfnArrowSource hst1b hst2b hright)
+              exact Or.inr (pfnArrowSource hst1b hst2b hright hz)
           · simp [joinETyps, hshape] at heq
             have hst1 : st1a = st1 := heq.1
             have hst2 : st2a = st2 := heq.2.1
             have htcls : tcls1 = tcls := heq.2.2.2
             have hmem1 : tcl ∈ tcls1 := by simpa [htcls] using hmem
-            exact Or.inl (pfnArrowSource hst1 hst2 hmem1)
+            exact Or.inl (pfnArrowSource hst1 hst2 hmem1 (.refl _))
       | int =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | bool =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | unit =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | string =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | ref ls =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
       | arrow st1f st2f pf tclsf =>
           simp [joinETyps] at heq
           have hmem1 : tcl ∈ tcls1 := by simpa [heq.2.2.2] using hmem
-          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1)
+          exact Or.inl (pfnArrowSource heq.1 heq.2.1 hmem1 (.refl _))
 
 private theorem ETypReachableFrom.of_joinETyps
     {root : Expr} {ctxRoot : TypeContext} {etyp1 etyp2 : ETyp}
@@ -1144,126 +1270,101 @@ private theorem ETypReachableFrom.of_joinETyps
   generalize hetyp : _root_.joinETyps etyp1 etyp2 p1 p2 = etyp at hreach
   cases hreach with
   | arrow_regular_body hmem hprog =>
-      rcases
-          joinETyps_arrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
+      rcases joinETyps_arrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, -, rfl⟩ := hz.regular_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.arrow_regular_body hmemSrc hprog)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.arrow_regular_body hmemSrc hprog)
   | arrow_regular_captured hmem hcap =>
-      rcases
-          joinETyps_arrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
-          (ExternDeclarationReachableFromQTyp.arrow_regular_captured hmemSrc hcap)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
-          (ExternDeclarationReachableFromQTyp.arrow_regular_captured hmemSrc hcap)
+      rcases joinETyps_arrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, hze, rfl⟩ := hz.regular_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
+          (ExternDeclarationReachableFromQTyp.arrow_regular_captured hmemSrc
+            (reachableFromCapturedEnv_of_zeroedFrom hcap hze))
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
+          (ExternDeclarationReachableFromQTyp.arrow_regular_captured hmemSrc
+            (reachableFromCapturedEnv_of_zeroedFrom hcap hze))
   | arrow_extern_member hmem =>
-      rcases
-          joinETyps_arrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
+      rcases joinETyps_arrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, -, rfl⟩ := hz.extern_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.arrow_extern_member hmemSrc)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.arrow_extern_member hmemSrc)
   | arrow_extern_return hmem hret =>
-      rcases
-          joinETyps_arrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
+      rcases joinETyps_arrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, -, rfl⟩ := hz.extern_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.arrow_extern_return hmemSrc hret)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.arrow_extern_return hmemSrc hret)
   | arrow_extern_captured hmem hcap =>
-      rcases
-          joinETyps_arrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
-          (ExternDeclarationReachableFromQTyp.arrow_extern_captured hmemSrc hcap)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
-          (ExternDeclarationReachableFromQTyp.arrow_extern_captured hmemSrc hcap)
+      rcases joinETyps_arrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, hze, rfl⟩ := hz.extern_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
+          (ExternDeclarationReachableFromQTyp.arrow_extern_captured hmemSrc
+            (reachableFromCapturedEnv_of_zeroedFrom hcap hze))
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
+          (ExternDeclarationReachableFromQTyp.arrow_extern_captured hmemSrc
+            (reachableFromCapturedEnv_of_zeroedFrom hcap hze))
   | arrow_regular_extern_body hmem =>
-      rcases
-          joinETyps_arrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
+      rcases joinETyps_arrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, -, rfl⟩ := hz.regular_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.arrow_regular_extern_body hmemSrc)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.arrow_regular_extern_body hmemSrc)
   | parrow_regular_body hmem hprog =>
-      rcases
-          joinETyps_parrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
+      rcases joinETyps_parrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, -, rfl⟩ := hz.regular_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.parrow_regular_body hmemSrc hprog)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.parrow_regular_body hmemSrc hprog)
   | parrow_regular_captured hmem hcap =>
-      rcases
-          joinETyps_parrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
-          (ExternDeclarationReachableFromQTyp.parrow_regular_captured hmemSrc hcap)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
-          (ExternDeclarationReachableFromQTyp.parrow_regular_captured hmemSrc hcap)
+      rcases joinETyps_parrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, hze, rfl⟩ := hz.regular_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
+          (ExternDeclarationReachableFromQTyp.parrow_regular_captured hmemSrc
+            (reachableFromCapturedEnv_of_zeroedFrom hcap hze))
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
+          (ExternDeclarationReachableFromQTyp.parrow_regular_captured hmemSrc
+            (reachableFromCapturedEnv_of_zeroedFrom hcap hze))
   | parrow_extern_member hmem =>
-      rcases
-          joinETyps_parrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
+      rcases joinETyps_parrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, -, rfl⟩ := hz.extern_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.parrow_extern_member hmemSrc)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.parrow_extern_member hmemSrc)
   | parrow_extern_return hmem hret =>
-      rcases
-          joinETyps_parrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
+      rcases joinETyps_parrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, -, rfl⟩ := hz.extern_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.parrow_extern_return hmemSrc hret)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
           (ExternDeclarationReachableFromQTyp.parrow_extern_return hmemSrc hret)
   | parrow_extern_captured hmem hcap =>
-      rcases
-          joinETyps_parrow_member_source hetyp hmem with hsrc | hsrc
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp1
-        exact h1 (qpoison := qpoison) (qpred := qpred)
-          (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmemSrc hcap)
-      · rcases hsrc with ⟨psrc, tclsSrc, heq, hmemSrc⟩
-        subst etyp2
-        exact h2 (qpoison := qpoison) (qpred := qpred)
-          (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmemSrc hcap)
+      rcases joinETyps_parrow_member_source hetyp hmem with
+          ⟨_, _, _, heq, hmemSrc, hz⟩ | ⟨_, _, _, heq, hmemSrc, hz⟩ <;>
+        obtain ⟨_, hze, rfl⟩ := hz.extern_inv <;> subst heq
+      · exact h1 (qpoison := qpoison) (qpred := qpred)
+          (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmemSrc
+            (reachableFromCapturedEnv_of_zeroedFrom hcap hze))
+      · exact h2 (qpoison := qpoison) (qpred := qpred)
+          (ExternDeclarationReachableFromQTyp.parrow_extern_captured hmemSrc
+            (reachableFromCapturedEnv_of_zeroedFrom hcap hze))
 
 private theorem of_joinETyps
     {root : Expr} {ctxRoot : TypeContext} {qt1 qt2 : QTyp}

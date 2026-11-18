@@ -20,7 +20,11 @@ branch joins already merge closure type-members:
 
 * `joinETyps` on `parrow`s merges the two branches' closure-member lists with
   `mergePFnTClosures`, a set-union that *deduplicates by `beqPFnTClosure`*.
-  Crucially `beqPFnTClosure` compares the whole member **including its captures**
+  Before deduplication, members that are the same except for their captured
+  environments (`PFnTClosure.sameButEnv`, which compares the captures) keep an
+  entry of those environments where it is the same in all of them and have every
+  binding number in it set to 0 otherwise; the `captures:` contract is not
+  touched. `beqPFnTClosure` compares the whole member **including its captures**
   (`beqCaptureList` is one of its conjuncts), so two members that agree on
   everything except their `captures:` contract are **not** deduplicated — they are
   kept as *distinct* members of the merged `parrow`.
@@ -37,9 +41,13 @@ branch joins already merge closure type-members:
 The lemmas below make this explicit:
 
 * `mem_mergePFnTClosures_extern_captures` — every extern member of either branch
-  (with its `captures:` contract verbatim) survives into the merged member list:
-  no capture is dropped or weakened by the merge (the structural "conjunction not
+  has a copy in the merged member list with its `captures:` contract verbatim and
+  its captured environment kept or zeroed entry by entry (`CapEnvZeroedFrom`): no
+  capture is dropped or weakened by the merge (the structural "conjunction not
   collapse" fact, anchored on `beqPFnTClosure ⊇ beqCaptureList`).
+* `capturesSatisfied_update_ofCaptured_zeroedFrom` — the capture gate reads the
+  surface type, the poison and the predicate of each captured variable, never a
+  binding number, so it has the same value on the zeroed copy.
 * `applyPFnTClosureAtCursor_extern_captures` — a successful extern-member
   application implies that member's `capturesSatisfied` gate held.
 * `applyClosuresThreaded_ok_mem` — a successful threaded application of a member
@@ -101,25 +109,99 @@ open Std
 namespace CaptureJoinConjunction
 
 /-- **Captures survive the merge.** Every extern closure member of either branch
-    — together with its `captures:` contract *verbatim* — is a member of the
-    merged closure list `mergePFnTClosures tcls1 tcls2`.
+    has a copy in the merged closure list `mergePFnTClosures tcls1 tcls2` with
+    its `captures:` contract *verbatim* and its captured environment kept or
+    zeroed entry by entry.
 
     This is the structural core of "capture preconditions combine by
-    conjunction": the merge is a union that drops nothing and (because
-    `mergePFnTClosures` deduplicates via `beqPFnTClosure`, which compares
-    `beqCaptureList`) never coalesces two members that differ in their captures.
-    No branch's capture contract is dropped, and none is weakened to `noPred`. -/
+    conjunction": the merge drops no member and (because `mergePFnTClosures`
+    groups members by `PFnTClosure.sameButEnv` and deduplicates via
+    `beqPFnTClosure`, both of which compare `beqCaptureList`) never coalesces two
+    members that differ in their captures. No branch's capture contract is
+    dropped, and none is weakened to `noPred`. -/
 private theorem mem_mergePFnTClosures_extern_captures
     (tcls1 tcls2 : List PFnTClosure)
     (id : ExternId) (x : Name) (retSpec : ExternReturn) (tenv : CapturedVarEnv)
     (declaredArgQt : QTyp) (captures : List Capture)
     (h : PFnTClosure.extern id x retSpec tenv declaredArgQt captures ∈ tcls1 ∨
          PFnTClosure.extern id x retSpec tenv declaredArgQt captures ∈ tcls2) :
-    PFnTClosure.extern id x retSpec tenv declaredArgQt captures
-      ∈ mergePFnTClosures tcls1 tcls2 := by
-  cases h with
-  | inl h => exact mem_mergePFnTClosures_left _ _ _ h
-  | inr h => exact mem_mergePFnTClosures_right _ _ _ h
+    ∃ tenv', CapEnvZeroedFrom tenv tenv' ∧
+      PFnTClosure.extern id x retSpec tenv' declaredArgQt captures
+        ∈ mergePFnTClosures tcls1 tcls2 := by
+  obtain ⟨tcl', hz, hmem⟩ := h.elim (mem_mergePFnTClosures_left _ _ _)
+    (mem_mergePFnTClosures_right _ _ _)
+  obtain ⟨tenv', he, rfl⟩ := hz.extern
+  exact ⟨tenv', he, hmem⟩
+
+private lemma ofCaptured_lookup_zeroedFrom {σ σ' : CapturedVarEnv}
+    (hz : CapEnvZeroedFrom σ σ') (v : Name) :
+    (VarTypeEnv.ofCaptured σ').lookup v = (VarTypeEnv.ofCaptured σ).lookup v ∨
+      (VarTypeEnv.ofCaptured σ').lookup v = ((VarTypeEnv.ofCaptured σ).lookup v).map zeroQTyp := by
+  unfold CapEnvZeroedFrom at hz
+  induction hz with
+  | nil => exact Or.inl rfl
+  | @cons e e' l l' hr _ ih =>
+      obtain ⟨x, q, n⟩ := e
+      obtain ⟨x', q', n'⟩ := e'
+      obtain ⟨rfl, hq⟩ := hr.qtyp
+      have hfold : ∀ (y : Name) (qq : QTyp) (m : Nat) (t : CapturedVarEnv),
+          VarTypeEnv.ofCaptured ((y, qq, m) :: t) = (VarTypeEnv.ofCaptured t).update y qq :=
+        fun _ _ _ _ => rfl
+      rw [hfold, hfold]
+      by_cases hv : v = x'
+      · subst hv
+        rw [VarTypeEnv_lookup_update_eq, VarTypeEnv_lookup_update_eq]
+        rcases hq with rfl | rfl
+        · exact Or.inl rfl
+        · exact Or.inr rfl
+      · rw [VarTypeEnv_lookup_update_ne _ _ _ _ hv, VarTypeEnv_lookup_update_ne _ _ _ _ hv]
+        exact ih
+
+private lemma captureSatisfied_zeroedEnv {c : Capture} {E E' : VarTypeEnv}
+    {memEnv : MemoryTypeEnv} {R : Regime}
+    (hE : ∀ v, E'.lookup v = E.lookup v ∨ E'.lookup v = (E.lookup v).map zeroQTyp) :
+    captureSatisfied c E' memEnv R = captureSatisfied c E memEnv R := by
+  unfold captureSatisfied
+  cases c.target with
+  | bareVar v =>
+      dsimp only
+      rcases hE v with h | h
+      · rw [h]
+      · rw [h]
+        cases E.lookup v with
+        | none => rfl
+        | some qt => obtain ⟨e, p, pr⟩ := qt; cases e <;> rfl
+  | memVar v =>
+      dsimp only
+      rcases hE v with h | h
+      · rw [h]
+      · rw [h]
+        cases E.lookup v with
+        | none => rfl
+        | some qt => obtain ⟨e, p, pr⟩ := qt; cases e <;> rfl
+
+/-- The capture gate of an extern member does not read binding numbers: it has
+    the same value on a captured environment zeroed entry by entry. -/
+private theorem capturesSatisfied_update_ofCaptured_zeroedFrom {caps : List Capture}
+    {σ σ' : CapturedVarEnv} (hz : CapEnvZeroedFrom σ σ') {x : Name} {q : QTyp}
+    {memEnv : MemoryTypeEnv} {R : Regime} :
+    capturesSatisfied caps (VarTypeEnv.update (VarTypeEnv.ofCaptured σ') x q) memEnv R =
+      capturesSatisfied caps (VarTypeEnv.update (VarTypeEnv.ofCaptured σ) x q) memEnv R := by
+  have hE : ∀ v, (VarTypeEnv.update (VarTypeEnv.ofCaptured σ') x q).lookup v =
+      (VarTypeEnv.update (VarTypeEnv.ofCaptured σ) x q).lookup v ∨
+      (VarTypeEnv.update (VarTypeEnv.ofCaptured σ') x q).lookup v =
+        ((VarTypeEnv.update (VarTypeEnv.ofCaptured σ) x q).lookup v).map zeroQTyp := by
+    intro v
+    by_cases hv : v = x
+    · subst hv
+      left
+      rw [VarTypeEnv_lookup_update_eq, VarTypeEnv_lookup_update_eq]
+    · rw [VarTypeEnv_lookup_update_ne _ _ _ _ hv, VarTypeEnv_lookup_update_ne _ _ _ _ hv]
+      exact ofCaptured_lookup_zeroedFrom hz v
+  unfold capturesSatisfied
+  congr 1
+  funext c
+  exact captureSatisfied_zeroedEnv hE
 
 /-- A successful extern-member application implies that member's `capturesSatisfied`
     call gate held. The argument condition and the `captures:` contract are fused
@@ -194,9 +276,10 @@ theorem mergedParrow_apply_captures_conjunction
         (VarTypeEnv.update (VarTypeEnv.ofCaptured tenv) x
           ⟨argEtyp, joinPoison ctx.pc argPoison, argPred⟩)
         result2.memEnv' result2.regime' = true := by
-  have hmerge := mem_mergePFnTClosures_extern_captures tcls1 tcls2 id x retSpec tenv
-    declaredArgQt captures hmem
+  obtain ⟨tenv', hz, hmerge⟩ := mem_mergePFnTClosures_extern_captures tcls1 tcls2 id x
+    retSpec tenv declaredArgQt captures hmem
   obtain ⟨_c, _b, _r, hone⟩ := applyClosuresThreaded_ok_mem happly _ hmerge
+  rw [← capturesSatisfied_update_ofCaptured_zeroedFrom hz]
   exact applyPFnTClosureAtCursor_extern_captures hone
 
 end CaptureJoinConjunction

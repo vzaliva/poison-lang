@@ -1031,6 +1031,9 @@ private structure FunctionShapeFacts where
   mkE : Typ → Typ → Poison → List Cls → ETyp
   isShape : ETyp → Bool
   merge : List Cls → List Cls → List Cls
+  zeroedFrom : Cls → Cls → Prop
+  zeroedFrom_refl : ∀ x : Cls, zeroedFrom x x
+  zeroedFrom_trans : ∀ {a b c : Cls}, zeroedFrom a b → zeroedFrom b c → zeroedFrom a c
   getIP_mk : ∀ {st1 st2 : Typ} {p : Poison} {tcls : List Cls},
     getInternalPoison (mkE st1 st2 p tcls) = some p
   isShape_mk : ∀ {st1 st2 : Typ} {p : Poison} {tcls : List Cls},
@@ -1057,14 +1060,17 @@ private structure FunctionShapeFacts where
     isShape t2 = true → beqETypSignature (mkE st1 st2 p1 tcls1) t2 = true →
     ∃ (p' : Poison) (tcls' : List Cls),
       joinETyps (mkE st1 st2 p1 tcls1) t2 p1' p2' = mkE st1 st2 p' tcls' ∧
-      (∀ tcl, tcl ∈ tcls1 → tcl ∈ tcls')
-  mem_merge_right : ∀ {a b : List Cls} {x : Cls}, x ∈ b → x ∈ merge a b
+      (∀ tcl ∈ tcls1, ∃ tcl', zeroedFrom tcl tcl' ∧ tcl' ∈ tcls')
+  mem_merge_right : ∀ {a b : List Cls} {x : Cls}, x ∈ b → ∃ x', zeroedFrom x x' ∧ x' ∈ merge a b
 
 private def arrowFacts : FunctionShapeFacts where
   Cls := FnTClosure
   mkE := ETyp.arrow
   isShape := ETyp.isArrow
   merge := mergeFnTClosures
+  zeroedFrom := FnTClosure.ZeroedFrom
+  zeroedFrom_refl := FnTClosure.ZeroedFrom.refl
+  zeroedFrom_trans := FnTClosure.ZeroedFrom.trans
   getIP_mk := by intros; rfl
   isShape_mk := by intros; rfl
   sig_mk_mk := by intros; rfl
@@ -1085,6 +1091,9 @@ private def parrowFacts : FunctionShapeFacts where
   mkE := ETyp.parrow
   isShape := ETyp.isParrow
   merge := mergePFnTClosures
+  zeroedFrom := PFnTClosure.ZeroedFrom
+  zeroedFrom_refl := PFnTClosure.ZeroedFrom.refl
+  zeroedFrom_trans := PFnTClosure.ZeroedFrom.trans
   getIP_mk := by intros; rfl
   isShape_mk := by intros; rfl
   sig_mk_mk := by intros; rfl
@@ -1498,7 +1507,8 @@ private lemma joinTypeResults_qualType_member_from_member_shape
   {st1 st2 : Typ} {p_src : Poison} {tcls_src : List S.Cls} {tcl : S.Cls}
   (hetyp_src : src.qualType.etyp = S.mkE st1 st2 p_src tcls_src)
   (htcl_src : tcl ∈ tcls_src) :
-  ∃ p_res tcls_res, res.qualType.etyp = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
+  ∃ p_res tcls_res tcl', res.qualType.etyp = S.mkE st1 st2 p_res tcls_res ∧
+    S.zeroedFrom tcl tcl' ∧ tcl' ∈ tcls_res := by
   let joinStep : (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) →
       TypeResult → Except String (ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag) :=
     fun acc result =>
@@ -1514,8 +1524,10 @@ private lemma joinTypeResults_qualType_member_from_member_shape
           ETyp × MemoryTypeEnv × Poison × Predicate × TagEnv × Regime × Loc × Tag),
         (∀ r ∈ rs', beqETypSignature acc.1 r.qualType.etyp = true) →
         List.foldlM joinStep acc rs' = .ok acc' →
-        (∃ p_acc tcls_acc, acc.1 = S.mkE st1 st2 p_acc tcls_acc ∧ tcl ∈ tcls_acc) →
-        ∃ p_res tcls_res, acc'.1 = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
+        (∃ p_acc tcls_acc tcl', acc.1 = S.mkE st1 st2 p_acc tcls_acc ∧
+          S.zeroedFrom tcl tcl' ∧ tcl' ∈ tcls_acc) →
+        ∃ p_res tcls_res tcl', acc'.1 = S.mkE st1 st2 p_res tcls_res ∧
+          S.zeroedFrom tcl tcl' ∧ tcl' ∈ tcls_res := by
     intro rs' acc acc' hcompat hfold hshape_acc
     induction rs' generalizing acc with
     | nil =>
@@ -1547,7 +1559,7 @@ private lemma joinTypeResults_qualType_member_from_member_shape
               rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison by rfl]
               rw [← beqETypSignature_joinETyps_left hcompat_x]
               exact hcomp
-            rcases hshape_acc with ⟨p_acc, tcls_acc, hacc_shape, htcl_acc⟩
+            rcases hshape_acc with ⟨p_acc, tcls_acc, tcl_acc, hacc_shape, hz_acc, htcl_acc⟩
             have hisShape_x : S.isShape resEtyp = true := by
               have hEq := S.isShape_eq_of_sig hcompat_x
               calc
@@ -1561,10 +1573,11 @@ private lemma joinTypeResults_qualType_member_from_member_shape
                   (by rw [← hacc_shape]; exact hcompat_x))
               with ⟨p_acc1, tcls_acc1, hjoin_acc1, hmem_pres_left⟩
             have hshape_acc1 :
-                ∃ p_mid tcls_mid, acc1.1 = S.mkE st1 st2 p_mid tcls_mid ∧ tcl ∈ tcls_mid := by
-              refine ⟨p_acc1, tcls_acc1, ?_, ?_⟩
-              · simpa [acc1, hacc_shape] using hjoin_acc1
-              · exact hmem_pres_left tcl htcl_acc
+                ∃ p_mid tcls_mid tcl', acc1.1 = S.mkE st1 st2 p_mid tcls_mid ∧
+                  S.zeroedFrom tcl tcl' ∧ tcl' ∈ tcls_mid := by
+              obtain ⟨tcl_mid, hz_mid, htcl_mid⟩ := hmem_pres_left tcl_acc htcl_acc
+              refine ⟨p_acc1, tcls_acc1, tcl_mid, ?_, S.zeroedFrom_trans hz_acc hz_mid, htcl_mid⟩
+              simpa [acc1, hacc_shape] using hjoin_acc1
             exact ih (acc := acc1) hcompat_tail hfold_tail hshape_acc1
   have h_fold_member_shape :
       ∀ (rs' : List TypeResult) (acc acc' :
@@ -1574,7 +1587,8 @@ private lemma joinTypeResults_qualType_member_from_member_shape
         List.foldlM joinStep acc rs' = .ok acc' →
         src' ∈ rs' →
         src'.qualType.etyp = S.mkE st1 st2 p_src tcls_src →
-        ∃ p_res tcls_res, acc'.1 = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res := by
+        ∃ p_res tcls_res tcl', acc'.1 = S.mkE st1 st2 p_res tcls_res ∧
+          S.zeroedFrom tcl tcl' ∧ tcl' ∈ tcls_res := by
     intro rs' acc acc' src' hcompat hfold hmem_src' hetyp_src'
     induction rs' generalizing acc acc' src' with
     | nil =>
@@ -1614,7 +1628,8 @@ private lemma joinTypeResults_qualType_member_from_member_shape
                   S.isShape acc.1 = S.isShape resEtyp := hEq
                   _ = true := by rw [hsrc_resEtyp]; exact S.isShape_mk
               have hshape_acc1 :
-                  ∃ p_mid tcls_mid, acc1.1 = S.mkE st1 st2 p_mid tcls_mid ∧ tcl ∈ tcls_mid := by
+                  ∃ p_mid tcls_mid tcl', acc1.1 = S.mkE st1 st2 p_mid tcls_mid ∧
+                    S.zeroedFrom tcl tcl' ∧ tcl' ∈ tcls_mid := by
                 obtain ⟨st1l, st2l, pl, tclsl, hacc⟩ := S.shape_inv hisShape_acc
                 have hshape : (st1l == st1 && st2l == st2) = true := by
                   have h := hcompat_x
@@ -1622,11 +1637,11 @@ private lemma joinTypeResults_qualType_member_from_member_shape
                   exact h
                 have hshape_eq : st1l = st1 ∧ st2l = st2 := by simpa using hshape
                 rcases hshape_eq with ⟨rfl, rfl⟩
-                refine ⟨joinPoison pl p_src, S.merge tclsl tcls_src, ?_, ?_⟩
-                · rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison from rfl,
-                      hacc, hsrc_resEtyp]
-                  exact S.joinETyps_mk_mk
-                · exact S.mem_merge_right htcl_src
+                obtain ⟨tcl', hz', htcl'⟩ := S.mem_merge_right (a := tclsl) htcl_src
+                refine ⟨joinPoison pl p_src, S.merge tclsl tcls_src, tcl', ?_, hz', htcl'⟩
+                rw [show acc1.1 = joinETyps acc.1 resEtyp acc.2.2.1 resPoison from rfl,
+                    hacc, hsrc_resEtyp]
+                exact S.joinETyps_mk_mk
               exact h_fold_left_shape xs acc1 acc' hcompat_tail hfold_tail hshape_acc1
             · exact ih (acc := acc1) (acc' := acc') (src' := src') hcompat_tail hfold_tail hsrc_tail hetyp_src'
   cases hqt : first.qualType with
@@ -1665,25 +1680,28 @@ private lemma joinTypeResults_qualType_member_from_member_shape
               rcases (List.mem_cons.mp _hmem_src) with hsrc_head | hsrc_tail
               · subst src
                 have hshape_a :
-                    ∃ p_res tcls_res, a.1 = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
+                    ∃ p_res tcls_res tcl', a.1 = S.mkE st1 st2 p_res tcls_res ∧
+                      S.zeroedFrom tcl tcl' ∧ tcl' ∈ tcls_res :=
                   h_fold_left_shape
                     rest
                     (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
                       first.nextTag')
                     a hcompat hfold
-                    ⟨p_src, tcls_src, by simpa [hqt] using hetyp_src, htcl_src⟩
-                rcases hshape_a with ⟨p_res, tcls_res, hetyp_a, htcl_res⟩
-                exact ⟨p_res, tcls_res, by simpa [ctxAfter] using hetyp_a, htcl_res⟩
+                    ⟨p_src, tcls_src, tcl, by simpa [hqt] using hetyp_src, S.zeroedFrom_refl tcl,
+                      htcl_src⟩
+                rcases hshape_a with ⟨p_res, tcls_res, tcl', hetyp_a, hz', htcl_res⟩
+                exact ⟨p_res, tcls_res, tcl', by simpa [ctxAfter] using hetyp_a, hz', htcl_res⟩
               · have hshape_a :
-                    ∃ p_res tcls_res, a.1 = S.mkE st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
+                    ∃ p_res tcls_res tcl', a.1 = S.mkE st1 st2 p_res tcls_res ∧
+                      S.zeroedFrom tcl tcl' ∧ tcl' ∈ tcls_res :=
                   h_fold_member_shape
                     rest
                     (etyp, first.memEnv', poison, pred, first.tagEnv', first.regime', first.nextLoc',
                       first.nextTag')
                     a src hcompat hfold hsrc_tail
                     (by simpa [ctxAfter] using hetyp_src)
-                rcases hshape_a with ⟨p_res, tcls_res, hetyp_a, htcl_res⟩
-                exact ⟨p_res, tcls_res, by simpa [ctxAfter] using hetyp_a, htcl_res⟩
+                rcases hshape_a with ⟨p_res, tcls_res, tcl', hetyp_a, hz', htcl_res⟩
+                exact ⟨p_res, tcls_res, tcl', by simpa [ctxAfter] using hetyp_a, hz', htcl_res⟩
 
 private lemma joinTypeResults_qualType_arrow_member_from_member
   (ctx : TypeContext) (first src : TypeResult) (rest : List TypeResult) (res : TypeResult)
@@ -1692,7 +1710,8 @@ private lemma joinTypeResults_qualType_arrow_member_from_member
   {st1 st2 : Typ} {p_src : Poison} {tcls_src : List FnTClosure} {tcl : FnTClosure}
   (hetyp_src : src.qualType.etyp = ETyp.arrow st1 st2 p_src tcls_src)
   (htcl_src : tcl ∈ tcls_src) :
-  ∃ p_res tcls_res, res.qualType.etyp = ETyp.arrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
+  ∃ p_res tcls_res tcl', res.qualType.etyp = ETyp.arrow st1 st2 p_res tcls_res ∧
+    FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls_res :=
   joinTypeResults_qualType_member_from_member_shape arrowFacts
     ctx first src rest res _h_join _hmem_src hetyp_src htcl_src
 
@@ -1703,7 +1722,8 @@ private lemma joinTypeResults_qualType_parrow_member_from_member
   {st1 st2 : Typ} {p_src : Poison} {tcls_src : List PFnTClosure} {tcl : PFnTClosure}
   (hetyp_src : src.qualType.etyp = ETyp.parrow st1 st2 p_src tcls_src)
   (htcl_src : tcl ∈ tcls_src) :
-  ∃ p_res tcls_res, res.qualType.etyp = ETyp.parrow st1 st2 p_res tcls_res ∧ tcl ∈ tcls_res :=
+  ∃ p_res tcls_res tcl', res.qualType.etyp = ETyp.parrow st1 st2 p_res tcls_res ∧
+    PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls_res :=
   joinTypeResults_qualType_member_from_member_shape parrowFacts
     ctx first src rest res _h_join _hmem_src hetyp_src htcl_src
 
@@ -1835,11 +1855,18 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               joinTypeResults_qualType_arrow_member_from_member
                 (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
                 _h_join _hmem_src hetyp_src htcl
-            with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
+            with ⟨p_res, tcls_res, tcl_res, hetyp_res, hz_res, htcl_res⟩
           by_cases hclean_internal_res : internalPoisonClean res.qualType
-          · exact agreeValueUnder.clean_internal_arrow hclean_internal_res hetyp_res htcl_res hmatch hcap_res
-              hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
-              htyping₀_src htyping₁_src hv₁ hv₂ hbody
+          · rw [hmatch] at hz_res
+            obtain ⟨σres, hσres, rfl⟩ := hz_res.regular
+            exact agreeValueUnder.clean_internal_arrow hclean_internal_res hetyp_res htcl_res
+              rfl (agreeCapturedEnv_zeroedFrom hσres hcap_res)
+              (memberVarsRegimeEvidence_zeroedFrom hσres hmemberVars₀_res)
+              (memberCvcrEvidence_zeroedFrom hσres hmemberCvcr₀_res)
+              (memberVarsRegimeEvidence_zeroedFrom hσres hmemberVars₁_res)
+              (memberCvcrEvidence_zeroedFrom hσres hmemberCvcr₁_res)
+              (capturedVarsTypingProperty_zeroedFrom hσres htyping₀_src)
+              (capturedVarsTypingProperty_zeroedFrom hσres htyping₁_src) hv₁ hv₂ hbody
           · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
               have htyped_closure :
                   valueHasETyp θ₀ (Value.closure x body ρcap₀) (ETyp.arrow st1 st2 p tcls) := by
@@ -1986,11 +2013,19 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
                 joinTypeResults_qualType_arrow_member_from_member
                   (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
                   _h_join _hmem_src hetyp_src htcl
-              with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
+              with ⟨p_res, tcls_res, tcl_res, hetyp_res, hz_res, htcl_res⟩
             by_cases hclean_internal_res : internalPoisonClean res.qualType
-            · exact agreeValueUnder.clean_internal_arrow_extern hclean_internal_res hetyp_res htcl_res hmatch hcap_res
-                hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
-                htyping₀_src htyping₁_src hv₁ hv₂
+            · rw [hmatch] at hz_res
+              obtain ⟨σres, hσres, rfl⟩ := hz_res.extern
+              exact agreeValueUnder.clean_internal_arrow_extern hclean_internal_res hetyp_res
+                htcl_res
+                rfl (agreeCapturedEnv_zeroedFrom hσres hcap_res)
+                (memberVarsRegimeEvidence_zeroedFrom hσres hmemberVars₀_res)
+                (memberCvcrEvidence_zeroedFrom hσres hmemberCvcr₀_res)
+                (memberVarsRegimeEvidence_zeroedFrom hσres hmemberVars₁_res)
+                (memberCvcrEvidence_zeroedFrom hσres hmemberCvcr₁_res)
+                (capturedVarsTypingProperty_zeroedFrom hσres htyping₀_src)
+                (capturedVarsTypingProperty_zeroedFrom hσres htyping₁_src) hv₁ hv₂
             · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
                 have htyped_closure :
                     valueHasETyp θ₀
@@ -2141,11 +2176,18 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
               joinTypeResults_qualType_parrow_member_from_member
                 (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
                 _h_join _hmem_src hetyp_src htcl
-            with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
+            with ⟨p_res, tcls_res, tcl_res, hetyp_res, hz_res, htcl_res⟩
           by_cases hclean_internal_res : internalPoisonClean res.qualType
-          · exact agreeValueUnder.clean_internal_parrow hclean_internal_res hetyp_res htcl_res hmatch hcap_res
-              hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
-              htyping₀_src htyping₁_src hv₁ hv₂
+          · rw [hmatch.2] at hz_res
+            obtain ⟨σres, hσres, rfl⟩ := hz_res.regular
+            exact agreeValueUnder.clean_internal_parrow hclean_internal_res hetyp_res htcl_res
+              ⟨hmatch.1, rfl⟩ (agreeCapturedEnv_zeroedFrom hσres hcap_res)
+              (memberVarsRegimeEvidence_zeroedFrom hσres hmemberVars₀_res)
+              (memberCvcrEvidence_zeroedFrom hσres hmemberCvcr₀_res)
+              (memberVarsRegimeEvidence_zeroedFrom hσres hmemberVars₁_res)
+              (memberCvcrEvidence_zeroedFrom hσres hmemberCvcr₁_res)
+              (capturedVarsTypingProperty_zeroedFrom hσres htyping₀_src)
+              (capturedVarsTypingProperty_zeroedFrom hσres htyping₁_src) hv₁ hv₂
           · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
               have hpure : Expr.toPExpr? body = some pbody := hmatch.1
               have htyped_closure :
@@ -2294,11 +2336,19 @@ lemma joinTypeResults_transport_resultAgreesIfClean_from_member
                 joinTypeResults_qualType_parrow_member_from_member
                   (ctx := ctx) (first := first) (src := src) (rest := rest) (res := res)
                   _h_join _hmem_src hetyp_src htcl
-              with ⟨p_res, tcls_res, hetyp_res, htcl_res⟩
+              with ⟨p_res, tcls_res, tcl_res, hetyp_res, hz_res, htcl_res⟩
             by_cases hclean_internal_res : internalPoisonClean res.qualType
-            · exact agreeValueUnder.clean_internal_parrow_extern hclean_internal_res hetyp_res htcl_res hmatch hcap_res
-                hmemberVars₀_res hmemberCvcr₀_res hmemberVars₁_res hmemberCvcr₁_res
-                htyping₀_src htyping₁_src hv₁ hv₂
+            · rw [hmatch] at hz_res
+              obtain ⟨σres, hσres, rfl⟩ := hz_res.extern
+              exact agreeValueUnder.clean_internal_parrow_extern hclean_internal_res hetyp_res
+                htcl_res
+                rfl (agreeCapturedEnv_zeroedFrom hσres hcap_res)
+                (memberVarsRegimeEvidence_zeroedFrom hσres hmemberVars₀_res)
+                (memberCvcrEvidence_zeroedFrom hσres hmemberCvcr₀_res)
+                (memberVarsRegimeEvidence_zeroedFrom hσres hmemberVars₁_res)
+                (memberCvcrEvidence_zeroedFrom hσres hmemberCvcr₁_res)
+                (capturedVarsTypingProperty_zeroedFrom hσres htyping₀_src)
+                (capturedVarsTypingProperty_zeroedFrom hσres htyping₁_src) hv₁ hv₂
             · have htyp1_src : valueHasETyp θ₀ o₀ src.qualType.etyp := by
                 have htyped_closure :
                     valueHasETyp θ₀
@@ -2498,62 +2548,24 @@ private lemma closureCapturedVarsRegimeMasked_weaken_fnTClosures'
   {θ : RealizationMap} {v : Value}
   {st1 st2 : Typ} {p p' : Poison} {tcls tcls' : List FnTClosure}
   {poison : Poison} {pred : Predicate}
-  (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
+  (hmem : ∀ tcl ∈ tcls, ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls')
   (h : closureCapturedVarsRegimeMasked masked predSat R
     ⟨ETyp.arrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
   closureCapturedVarsRegimeMasked masked predSat R
-    ⟨ETyp.arrow st1 st2 p' tcls', poison, pred⟩ μ θ v := by
-  cases h with
-  | nonClosure hv hpe =>
-      exact .nonClosure hv hpe
-  | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec hbody =>
-      have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-      subst heq_tcls
-      exact .closure xp body ρcap σcap st1 st2 p' tcls' hval rfl (hmem _ hmem_src) hP hrec hbody
-  | closure_extern id xp y argTyp retSpec effects ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
-      have heq_arg : argTyp = st1 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.1).symm
-      have heq_ret : parseReturnType retSpec = st2 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.1).symm
-      have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-      subst heq_tcls
-      exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p' tcls'
-        hval (by simp [heq_arg, heq_ret]) (hmem _ hmem_src) hP hrec
-  | peClosure _ _ _ _ _ _ _ _ _ _ hetyp_eq_parr _ _ =>
-      exfalso
-      simp at hetyp_eq_parr
-  | peClosure_extern _id _xp _y _argTyp _retSpec _ρcap _σcap _p _tcls _hval hetyp_eq_parr _hmem _hP _hrec =>
-      exfalso
-      simp at hetyp_eq_parr
+    ⟨ETyp.arrow st1 st2 p' tcls', poison, pred⟩ μ θ v :=
+  closureCapturedVarsRegimeMasked_arrow_zeroedFrom hmem h
 
 private lemma closureCapturedVarsRegimeMasked_weaken_pFnTClosures'
   {masked : Tag → Prop} {predSat : PredSat} {R : Regime} {μ : Memory}
   {θ : RealizationMap} {v : Value}
   {st1 st2 : Typ} {p p' : Poison} {tcls tcls' : List PFnTClosure}
   {poison : Poison} {pred : Predicate}
-  (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
+  (hmem : ∀ tcl ∈ tcls, ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls')
   (h : closureCapturedVarsRegimeMasked masked predSat R
     ⟨ETyp.parrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
   closureCapturedVarsRegimeMasked masked predSat R
-    ⟨ETyp.parrow st1 st2 p' tcls', poison, pred⟩ μ θ v := by
-  cases h with
-  | nonClosure hv hpe =>
-      exact .nonClosure hv hpe
-  | closure _ _ _ _ _ _ _ _ _ hetyp_eq_arr _ _ =>
-      exfalso
-      simp at hetyp_eq_arr
-  | closure_extern _id _xp _y _argTyp _retSpec _effects _ρcap _σcap _p _tcls _hval hetyp_eq_arr _hmem _hP _hrec =>
-      exfalso
-      simp at hetyp_eq_arr
-  | peClosure xp body pbody ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hpure hmem_src hP hrec =>
-      have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-      subst heq_tcls
-      exact .peClosure xp body pbody ρcap σcap st1 st2 p' tcls' hval rfl hpure (hmem _ hmem_src) hP hrec
-  | peClosure_extern id xp y argTyp retSpec ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
-      have heq_arg : argTyp = st1 := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.1).symm
-      have heq_ret : parseReturnType retSpec = st2 := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.1).symm
-      have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-      subst heq_tcls
-      exact .peClosure_extern id xp y argTyp retSpec ρcap σcap p' tcls'
-        hval (by simp [heq_arg, heq_ret]) (hmem _ hmem_src) hP hrec
+    ⟨ETyp.parrow st1 st2 p' tcls', poison, pred⟩ μ θ v :=
+  closureCapturedVarsRegimeMasked_parrow_zeroedFrom hmem h
 
 theorem closureCapturedVarsRegimeMasked_joinETyps_step
   (masked : Tag → Prop) (predSat : PredSat) (R : Regime)

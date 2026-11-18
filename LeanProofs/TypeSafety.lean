@@ -7484,43 +7484,880 @@ lemma TagBoundedCtx_varEnv_etypClosures {ctx : TypeContext} {x : Name} {qt : QTy
     etypClosuresFullBounded qt.etyp ctx.nextTag :=
   h.2.2 x qt hlook
 
-/-- Dedup fold: every element in the result was in init or xs. -/
-private lemma foldl_dedup_mem {α : Type} [BEq α]
-    (init : List α) (xs : List α) (a : α) :
-    a ∈ List.foldl (fun acc x => if acc.contains x then acc else acc ++ [x]) init xs →
-    a ∈ init ∨ a ∈ xs := by
-  induction xs generalizing init with
-  | nil => intro h; left; exact h
+/-! ## Binding numbers set to 0
+
+`zeroQTyp`, `zeroETyp` and `zeroCapEnv` set every binding number of a captured
+environment to 0, at every depth, and keep everything else. The lemmas below
+show that the shape of a type, its poison, its predicate and the typing of a
+value against it do not depend on these numbers. -/
+section ZeroBindNumbers
+
+@[simp] lemma zeroQTyp_etyp (qt : QTyp) : (zeroQTyp qt).etyp = zeroETyp qt.etyp := by
+  cases qt; rfl
+
+@[simp] lemma zeroQTyp_poison (qt : QTyp) : (zeroQTyp qt).poison = qt.poison := by
+  cases qt; rfl
+
+@[simp] lemma zeroQTyp_pred (qt : QTyp) : (zeroQTyp qt).pred = qt.pred := by
+  cases qt; rfl
+
+private lemma zeroFnTClosureList_eq_map (tcls : List FnTClosure) :
+    zeroFnTClosureList tcls = tcls.map zeroFnTClosure := by
+  induction tcls with
+  | nil => rfl
+  | cons a l ih => simp [zeroFnTClosureList, ih]
+
+private lemma zeroPFnTClosureList_eq_map (tcls : List PFnTClosure) :
+    zeroPFnTClosureList tcls = tcls.map zeroPFnTClosure := by
+  induction tcls with
+  | nil => rfl
+  | cons a l ih => simp [zeroPFnTClosureList, ih]
+
+@[simp] lemma zeroETyp_arrow (st1 st2 : Typ) (p : Poison) (tcls : List FnTClosure) :
+    zeroETyp (ETyp.arrow st1 st2 p tcls) = ETyp.arrow st1 st2 p (tcls.map zeroFnTClosure) := by
+  simp [zeroETyp, zeroFnTClosureList_eq_map]
+
+@[simp] lemma zeroETyp_parrow (st1 st2 : Typ) (p : Poison) (tcls : List PFnTClosure) :
+    zeroETyp (ETyp.parrow st1 st2 p tcls) =
+      ETyp.parrow st1 st2 p (tcls.map zeroPFnTClosure) := by
+  simp [zeroETyp, zeroPFnTClosureList_eq_map]
+
+private lemma zeroETyp_of_isFunctionType_false {t : ETyp} (h : t.isFunctionType = false) :
+    zeroETyp t = t := by
+  cases t <;> simp_all [zeroETyp, ETyp.isFunctionType, ETyp.isArrow, ETyp.isParrow]
+
+@[simp] lemma isArrow_zeroETyp (t : ETyp) : (zeroETyp t).isArrow = t.isArrow := by
+  cases t <;> simp [zeroETyp, ETyp.isArrow]
+
+@[simp] lemma isParrow_zeroETyp (t : ETyp) : (zeroETyp t).isParrow = t.isParrow := by
+  cases t <;> simp [zeroETyp, ETyp.isParrow]
+
+@[simp] lemma isFunctionType_zeroETyp (t : ETyp) :
+    (zeroETyp t).isFunctionType = t.isFunctionType := by
+  simp [ETyp.isFunctionType]
+
+lemma zeroETyp_eq_ref_iff {t : ETyp} {ls : LocSet} :
+    zeroETyp t = ETyp.ref ls ↔ t = ETyp.ref ls := by
+  cases t <;> simp [zeroETyp]
+
+lemma zeroETyp_eq_arrow {t : ETyp} {st1 st2 : Typ} {p : Poison} {tcls' : List FnTClosure}
+    (h : zeroETyp t = ETyp.arrow st1 st2 p tcls') :
+    ∃ tcls, t = ETyp.arrow st1 st2 p tcls ∧ tcls' = tcls.map zeroFnTClosure := by
+  cases t with
+  | arrow a b q tcls =>
+      simp only [zeroETyp_arrow, ETyp.arrow.injEq] at h
+      obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+      exact ⟨tcls, rfl, rfl⟩
+  | parrow => simp [zeroETyp] at h
+  | _ => simp [zeroETyp] at h
+
+lemma zeroETyp_eq_parrow {t : ETyp} {st1 st2 : Typ} {p : Poison} {tcls' : List PFnTClosure}
+    (h : zeroETyp t = ETyp.parrow st1 st2 p tcls') :
+    ∃ tcls, t = ETyp.parrow st1 st2 p tcls ∧ tcls' = tcls.map zeroPFnTClosure := by
+  cases t with
+  | parrow a b q tcls =>
+      simp only [zeroETyp_parrow, ETyp.parrow.injEq] at h
+      obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+      exact ⟨tcls, rfl, rfl⟩
+  | arrow => simp [zeroETyp] at h
+  | _ => simp [zeroETyp] at h
+
+@[simp] lemma qtypGuardTag_zeroQTyp (qt : QTyp) : qtypGuardTag (zeroQTyp qt) = qtypGuardTag qt := by
+  simp [qtypGuardTag]
+
+lemma zeroCapEnv_lookup (env : CapturedVarEnv) (x : Name) :
+    (zeroCapEnv env).lookup x = (env.lookup x).map zeroQTyp := by
+  induction env with
+  | nil => rfl
+  | cons e l ih =>
+      obtain ⟨y, q, n⟩ := e
+      simp only [zeroCapEnv, CapturedVarEnv.lookup, List.lookup] at ih ⊢
+      split <;> simp_all
+
+lemma zeroCapEnv_lookup_eq_some {env : CapturedVarEnv} {x : Name} {qt' : QTyp}
+    (h : (zeroCapEnv env).lookup x = some qt') :
+    ∃ qt, env.lookup x = some qt ∧ qt' = zeroQTyp qt := by
+  rw [zeroCapEnv_lookup] at h
+  obtain ⟨qt, hqt, rfl⟩ := Option.map_eq_some_iff.mp h
+  exact ⟨qt, hqt, rfl⟩
+
+lemma zeroCapEnv_map_fst (env : CapturedVarEnv) :
+    (zeroCapEnv env).map Prod.fst = env.map Prod.fst := by
+  induction env with
+  | nil => rfl
+  | cons e l ih => obtain ⟨y, q, n⟩ := e; simp [zeroCapEnv, ih]
+
+lemma zeroFnTClosure_eq_regular {tcl : FnTClosure} {x : Name} {e : Expr} {env' : CapturedVarEnv}
+    (h : zeroFnTClosure tcl = FnTClosure.regular x e env') :
+    ∃ env, tcl = FnTClosure.regular x e env ∧ env' = zeroCapEnv env := by
+  cases tcl with
+  | regular y b env => simp only [zeroFnTClosure, FnTClosure.regular.injEq] at h; grind
+  | extern => simp [zeroFnTClosure] at h
+
+lemma zeroFnTClosure_eq_extern {tcl : FnTClosure} {id : ExternId} {x : Name} {r : ExternReturn}
+    {ef : List Effect} {env' : CapturedVarEnv} {a : QTyp} {c : List Capture}
+    (h : zeroFnTClosure tcl = FnTClosure.extern id x r ef env' a c) :
+    ∃ env, tcl = FnTClosure.extern id x r ef env a c ∧ env' = zeroCapEnv env := by
+  cases tcl with
+  | regular => simp [zeroFnTClosure] at h
+  | extern id0 y r0 ef0 env a0 c0 =>
+      simp only [zeroFnTClosure, FnTClosure.extern.injEq] at h; grind
+
+lemma zeroPFnTClosure_eq_regular {tcl : PFnTClosure} {x : Name} {e : PExpr}
+    {env' : CapturedVarEnv} (h : zeroPFnTClosure tcl = PFnTClosure.regular x e env') :
+    ∃ env, tcl = PFnTClosure.regular x e env ∧ env' = zeroCapEnv env := by
+  cases tcl with
+  | regular y b env => simp only [zeroPFnTClosure, PFnTClosure.regular.injEq] at h; grind
+  | extern => simp [zeroPFnTClosure] at h
+
+lemma zeroPFnTClosure_eq_extern {tcl : PFnTClosure} {id : ExternId} {x : Name}
+    {r : ExternReturn} {env' : CapturedVarEnv} {a : QTyp} {c : List Capture}
+    (h : zeroPFnTClosure tcl = PFnTClosure.extern id x r env' a c) :
+    ∃ env, tcl = PFnTClosure.extern id x r env a c ∧ env' = zeroCapEnv env := by
+  cases tcl with
+  | regular => simp [zeroPFnTClosure] at h
+  | extern id0 y r0 env a0 c0 =>
+      simp only [zeroPFnTClosure, PFnTClosure.extern.injEq] at h; grind
+
+/-- Value typing does not read binding numbers: a value has a type iff it has
+    the type with every binding number set to 0. -/
+lemma valueHasETyp_zeroETyp {θ : RealizationMap} {v : Value} {t : ETyp}
+    (h : valueHasETyp θ v t) : valueHasETyp θ v (zeroETyp t) := by
+  induction h with
+  | num n => exact valueHasETyp.num n
+  | bool b => exact valueHasETyp.bool b
+  | unit => exact valueHasETyp.unit
+  | str s => exact valueHasETyp.str s
+  | loc hlookup hin => exact valueHasETyp.loc hlookup hin
+  | @closure x e env st1 st2 p tcl tenv htcl _henv hcover ih =>
+      rw [zeroETyp_arrow]
+      refine valueHasETyp.closure (tenv := zeroCapEnv tenv)
+        (List.mem_map_of_mem (f := zeroFnTClosure) htcl) ?_ ?_
+      · intro y qt' v hlk hv
+        obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hlk
+        simpa using ih y qt v hqt hv
+      · intro y qt' hlk
+        obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hlk
+        exact hcover y qt hqt
+  | @peClosure x body env st1 st2 p tcl pbody tenv hpure htcl _henv hcover ih =>
+      rw [zeroETyp_parrow]
+      refine valueHasETyp.peClosure (tenv := zeroCapEnv tenv) hpure
+        (List.mem_map_of_mem (f := zeroPFnTClosure) htcl) ?_ ?_
+      · intro y qt' v hlk hv
+        obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hlk
+        simpa using ih y qt v hqt hv
+      · intro y qt' hlk
+        obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hlk
+        exact hcover y qt hqt
+  | @closure_extern id x y argTyp argPoison argPred argQTyp retSpec eff cap memberCap env tcl p
+      tenv htcl _henv hcover ih =>
+      rw [zeroETyp_arrow]
+      refine valueHasETyp.closure_extern (tenv := zeroCapEnv tenv) (argQTyp := argQTyp)
+        (memberCap := memberCap) (List.mem_map_of_mem (f := zeroFnTClosure) htcl) ?_ ?_
+      · intro n qt' v hlk hv
+        obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hlk
+        simpa using ih n qt v hqt hv
+      · intro n qt' hlk
+        obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hlk
+        exact hcover n qt hqt
+  | @peClosure_extern id x y argTyp argPoison argPred argQTyp retSpec cap memberCap env tcl p
+      tenv htcl _henv hcover ih =>
+      rw [zeroETyp_parrow]
+      refine valueHasETyp.peClosure_extern (tenv := zeroCapEnv tenv) (argQTyp := argQTyp)
+        (memberCap := memberCap) (List.mem_map_of_mem (f := zeroPFnTClosure) htcl) ?_ ?_
+      · intro n qt' v hlk hv
+        obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hlk
+        simpa using ih n qt v hqt hv
+      · intro n qt' hlk
+        obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hlk
+        exact hcover n qt hqt
+
+/-- The converse of `valueHasETyp_zeroETyp`. -/
+lemma valueHasETyp_of_zeroETyp {θ : RealizationMap} {v : Value} {t : ETyp}
+    (h : valueHasETyp θ v (zeroETyp t)) : valueHasETyp θ v t := by
+  generalize ht : zeroETyp t = t' at h
+  induction h generalizing t with
+  | num n => cases t <;> simp [zeroETyp] at ht; exact valueHasETyp.num n
+  | bool b => cases t <;> simp [zeroETyp] at ht; exact valueHasETyp.bool b
+  | unit => cases t <;> simp [zeroETyp] at ht; exact valueHasETyp.unit
+  | str s => cases t <;> simp [zeroETyp] at ht; exact valueHasETyp.str s
+  | loc hlookup hin =>
+      rw [zeroETyp_eq_ref_iff] at ht; subst ht; exact valueHasETyp.loc hlookup hin
+  | @closure x e env st1 st2 p tcl tenv htcl _henv hcover ih =>
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroETyp_eq_arrow ht
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp htcl
+      obtain ⟨tenv0, rfl, rfl⟩ := zeroFnTClosure_eq_regular htcl0
+      refine valueHasETyp.closure (tenv := tenv0) hmem0 ?_ ?_
+      · intro y qt v hqt hv
+        have hlk : (zeroCapEnv tenv0).lookup y = some (zeroQTyp qt) := by
+          rw [zeroCapEnv_lookup, hqt]; rfl
+        exact ih y (zeroQTyp qt) v hlk hv (t := qt.etyp) (by simp)
+      · intro y qt hqt
+        exact hcover y (zeroQTyp qt) (by rw [zeroCapEnv_lookup, hqt]; rfl)
+  | @peClosure x body env st1 st2 p tcl pbody tenv hpure htcl _henv hcover ih =>
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroETyp_eq_parrow ht
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp htcl
+      obtain ⟨tenv0, rfl, rfl⟩ := zeroPFnTClosure_eq_regular htcl0
+      refine valueHasETyp.peClosure (tenv := tenv0) hpure hmem0 ?_ ?_
+      · intro y qt v hqt hv
+        have hlk : (zeroCapEnv tenv0).lookup y = some (zeroQTyp qt) := by
+          rw [zeroCapEnv_lookup, hqt]; rfl
+        exact ih y (zeroQTyp qt) v hlk hv (t := qt.etyp) (by simp)
+      · intro y qt hqt
+        exact hcover y (zeroQTyp qt) (by rw [zeroCapEnv_lookup, hqt]; rfl)
+  | @closure_extern id x y argTyp argPoison argPred argQTyp retSpec eff cap memberCap env tcl p
+      tenv htcl _henv hcover ih =>
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroETyp_eq_arrow ht
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp htcl
+      obtain ⟨tenv0, rfl, rfl⟩ := zeroFnTClosure_eq_extern htcl0
+      refine valueHasETyp.closure_extern (tenv := tenv0) (argQTyp := argQTyp)
+        (memberCap := memberCap) hmem0 ?_ ?_
+      · intro n qt v hqt hv
+        have hlk : (zeroCapEnv tenv0).lookup n = some (zeroQTyp qt) := by
+          rw [zeroCapEnv_lookup, hqt]; rfl
+        exact ih n (zeroQTyp qt) v hlk hv (t := qt.etyp) (by simp)
+      · intro n qt hqt
+        exact hcover n (zeroQTyp qt) (by rw [zeroCapEnv_lookup, hqt]; rfl)
+  | @peClosure_extern id x y argTyp argPoison argPred argQTyp retSpec cap memberCap env tcl p
+      tenv htcl _henv hcover ih =>
+      obtain ⟨tcls0, rfl, rfl⟩ := zeroETyp_eq_parrow ht
+      obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp htcl
+      obtain ⟨tenv0, rfl, rfl⟩ := zeroPFnTClosure_eq_extern htcl0
+      refine valueHasETyp.peClosure_extern (tenv := tenv0) (argQTyp := argQTyp)
+        (memberCap := memberCap) hmem0 ?_ ?_
+      · intro n qt v hqt hv
+        have hlk : (zeroCapEnv tenv0).lookup n = some (zeroQTyp qt) := by
+          rw [zeroCapEnv_lookup, hqt]; rfl
+        exact ih n (zeroQTyp qt) v hlk hv (t := qt.etyp) (by simp)
+      · intro n qt hqt
+        exact hcover n (zeroQTyp qt) (by rw [zeroCapEnv_lookup, hqt]; rfl)
+
+private lemma valueHasETyp_zeroETyp_iff {θ : RealizationMap} {v : Value} {t : ETyp} :
+    valueHasETyp θ v (zeroETyp t) ↔ valueHasETyp θ v t :=
+  ⟨valueHasETyp_of_zeroETyp, valueHasETyp_zeroETyp⟩
+
+/-! ### Zeroing entry by entry
+
+A merge of members that differ only in their captured environments keeps an
+entry of such an environment, or sets every binding number in it to 0
+(`zeroCapEnvAgainst`). `CapEnvZeroedFrom env env'` says that `env'` is `env`
+with some of its entries zeroed in this way, and `FnTClosure.ZeroedFrom` /
+`PFnTClosure.ZeroedFrom` say the same of the captured environment of a
+member. -/
+
+mutual
+
+private theorem zeroCapEnv_idem :
+    ∀ env : CapturedVarEnv, zeroCapEnv (zeroCapEnv env) = zeroCapEnv env
+  | [] => rfl
+  | (_, qt, _) :: env => by
+      simp only [zeroCapEnv, zeroQTyp_idem qt, zeroCapEnv_idem env]
+
+private theorem zeroQTyp_idem : ∀ qt : QTyp, zeroQTyp (zeroQTyp qt) = zeroQTyp qt
+  | ⟨etyp, _, _⟩ => by simp only [zeroQTyp, zeroETyp_idem etyp]
+
+private theorem zeroETyp_idem : ∀ t : ETyp, zeroETyp (zeroETyp t) = zeroETyp t
+  | .arrow _ _ _ tcls => by simp only [zeroETyp, zeroFnTClosureList_idem tcls]
+  | .parrow _ _ _ tcls => by simp only [zeroETyp, zeroPFnTClosureList_idem tcls]
+  | .int => rfl
+  | .bool => rfl
+  | .unit => rfl
+  | .string => rfl
+  | .ref _ => rfl
+
+private theorem zeroFnTClosureList_idem : ∀ tcls : List FnTClosure,
+    zeroFnTClosureList (zeroFnTClosureList tcls) = zeroFnTClosureList tcls
+  | [] => rfl
+  | tcl :: tcls => by
+      simp only [zeroFnTClosureList, zeroFnTClosure_idem tcl, zeroFnTClosureList_idem tcls]
+
+private theorem zeroPFnTClosureList_idem : ∀ tcls : List PFnTClosure,
+    zeroPFnTClosureList (zeroPFnTClosureList tcls) = zeroPFnTClosureList tcls
+  | [] => rfl
+  | tcl :: tcls => by
+      simp only [zeroPFnTClosureList, zeroPFnTClosure_idem tcl, zeroPFnTClosureList_idem tcls]
+
+private theorem zeroFnTClosure_idem : ∀ tcl : FnTClosure,
+    zeroFnTClosure (zeroFnTClosure tcl) = zeroFnTClosure tcl
+  | .regular _ _ env => by simp only [zeroFnTClosure, zeroCapEnv_idem env]
+  | .extern _ _ _ _ env _ _ => by simp only [zeroFnTClosure, zeroCapEnv_idem env]
+
+private theorem zeroPFnTClosure_idem : ∀ tcl : PFnTClosure,
+    zeroPFnTClosure (zeroPFnTClosure tcl) = zeroPFnTClosure tcl
+  | .regular _ _ env => by simp only [zeroPFnTClosure, zeroCapEnv_idem env]
+  | .extern _ _ _ env _ _ => by simp only [zeroPFnTClosure, zeroCapEnv_idem env]
+
+end
+
+/-- An entry of a captured environment, kept or with every binding number in
+    it set to 0. -/
+inductive CapEntryZeroedFrom : Name × QTyp × Nat → Name × QTyp × Nat → Prop where
+  | keep {e : Name × QTyp × Nat} : CapEntryZeroedFrom e e
+  | zero {x : Name} {qt : QTyp} {n : Nat} : CapEntryZeroedFrom (x, qt, n) (x, zeroQTyp qt, 0)
+
+/-- `env'` is `env` with some of its entries zeroed (`CapEntryZeroedFrom`). -/
+def CapEnvZeroedFrom (env env' : CapturedVarEnv) : Prop :=
+  List.Forall₂ CapEntryZeroedFrom env env'
+
+/-- `tcl'` is `tcl` with its captured environment zeroed entry by entry. -/
+def FnTClosure.ZeroedFrom (tcl tcl' : FnTClosure) : Prop :=
+  ∃ env', CapEnvZeroedFrom tcl.capEnv env' ∧ tcl' = tcl.withCapEnv env'
+
+/-- See `FnTClosure.ZeroedFrom`. -/
+def PFnTClosure.ZeroedFrom (tcl tcl' : PFnTClosure) : Prop :=
+  ∃ env', CapEnvZeroedFrom tcl.capEnv env' ∧ tcl' = tcl.withCapEnv env'
+
+lemma CapEntryZeroedFrom.trans {a b c : Name × QTyp × Nat}
+    (h₁ : CapEntryZeroedFrom a b) (h₂ : CapEntryZeroedFrom b c) : CapEntryZeroedFrom a c := by
+  cases h₁ with
+  | keep => exact h₂
+  | zero =>
+      cases h₂ with
+      | keep => exact .zero
+      | zero => rw [zeroQTyp_idem]; exact .zero
+
+lemma CapEntryZeroedFrom.qtyp {x x' : Name} {qt qt' : QTyp} {n n' : Nat}
+    (h : CapEntryZeroedFrom (x, qt, n) (x', qt', n')) :
+    x' = x ∧ (qt' = qt ∨ qt' = zeroQTyp qt) := by
+  cases h with
+  | keep => exact ⟨rfl, Or.inl rfl⟩
+  | zero => exact ⟨rfl, Or.inr rfl⟩
+
+lemma CapEnvZeroedFrom.refl : ∀ env : CapturedVarEnv, CapEnvZeroedFrom env env
+  | [] => List.Forall₂.nil
+  | _ :: env => List.Forall₂.cons .keep (CapEnvZeroedFrom.refl env)
+
+lemma CapEnvZeroedFrom.trans {a b c : CapturedVarEnv}
+    (h₁ : CapEnvZeroedFrom a b) (h₂ : CapEnvZeroedFrom b c) : CapEnvZeroedFrom a c := by
+  unfold CapEnvZeroedFrom at *
+  induction h₁ generalizing c with
+  | nil => exact h₂
+  | cons hr _ ih =>
+      cases h₂ with
+      | cons hr' ht' => exact List.Forall₂.cons (hr.trans hr') (ih ht')
+
+lemma capEnvZeroedFrom_zeroCapEnv : ∀ env : CapturedVarEnv, CapEnvZeroedFrom env (zeroCapEnv env)
+  | [] => List.Forall₂.nil
+  | (_, _, _) :: env => by
+      rw [zeroCapEnv]
+      exact List.Forall₂.cons .zero (capEnvZeroedFrom_zeroCapEnv env)
+
+lemma CapEnvZeroedFrom.mem_inv {env env' : CapturedVarEnv} (h : CapEnvZeroedFrom env env')
+    {e' : Name × QTyp × Nat} (hmem : e' ∈ env') : ∃ e ∈ env, CapEntryZeroedFrom e e' := by
+  unfold CapEnvZeroedFrom at h
+  revert hmem
+  induction h with
+  | nil => intro hmem; simp at hmem
+  | cons hr _ ih =>
+      intro hmem
+      rcases List.mem_cons.mp hmem with rfl | hmem
+      · exact ⟨_, List.mem_cons_self, hr⟩
+      · obtain ⟨e, he, hr'⟩ := ih hmem
+        exact ⟨e, List.mem_cons_of_mem _ he, hr'⟩
+
+lemma CapEnvZeroedFrom.mem {env env' : CapturedVarEnv} (h : CapEnvZeroedFrom env env')
+    {e : Name × QTyp × Nat} (hmem : e ∈ env) : ∃ e' ∈ env', CapEntryZeroedFrom e e' := by
+  unfold CapEnvZeroedFrom at h
+  revert hmem
+  induction h with
+  | nil => intro hmem; simp at hmem
+  | cons hr _ ih =>
+      intro hmem
+      rcases List.mem_cons.mp hmem with rfl | hmem
+      · exact ⟨_, List.mem_cons_self, hr⟩
+      · obtain ⟨e', he', hr'⟩ := ih hmem
+        exact ⟨e', List.mem_cons_of_mem _ he', hr'⟩
+
+/-- Lookup in an environment zeroed entry by entry finds the corresponding
+    entry: both lookups fail, or both find an entry and the second is the
+    first, kept or zeroed. -/
+private lemma CapEnvZeroedFrom.list_lookup {env env' : CapturedVarEnv}
+    (h : CapEnvZeroedFrom env env') (x : Name) :
+    (List.lookup x env = none ∧ List.lookup x env' = none) ∨
+      ∃ qt n qt' n', List.lookup x env = some (qt, n) ∧ List.lookup x env' = some (qt', n') ∧
+        CapEntryZeroedFrom (x, qt, n) (x, qt', n') := by
+  unfold CapEnvZeroedFrom at h
+  induction h with
+  | nil => exact Or.inl ⟨rfl, rfl⟩
+  | @cons e e' l l' hr _ ih =>
+      obtain ⟨y, q, m⟩ := e
+      obtain ⟨y', q', m'⟩ := e'
+      obtain ⟨rfl, -⟩ := hr.qtyp
+      by_cases hxy : x = y'
+      · subst hxy
+        exact Or.inr ⟨q, m, q', m', by simp [List.lookup], by simp [List.lookup], hr⟩
+      · have hb : (x == y') = false := by simpa using hxy
+        simpa only [List.lookup, hb] using ih
+
+lemma CapEnvZeroedFrom.lookup_eq_some {env env' : CapturedVarEnv}
+    (h : CapEnvZeroedFrom env env') {x : Name} {qt' : QTyp} (hl : env'.lookup x = some qt') :
+    ∃ qt, env.lookup x = some qt ∧ (qt' = qt ∨ qt' = zeroQTyp qt) := by
+  rcases h.list_lookup x with ⟨_, h'⟩ | ⟨qt, n, qt'', n', h1, h2, hr⟩
+  · simp [CapturedVarEnv.lookup, h'] at hl
+  · simp only [CapturedVarEnv.lookup, h2, Option.map_some, Option.some.injEq] at hl
+    subst hl
+    exact ⟨qt, by simp [CapturedVarEnv.lookup, h1], hr.qtyp.2⟩
+
+private lemma CapEnvZeroedFrom.lookup_eq_some_of {env env' : CapturedVarEnv}
+    (h : CapEnvZeroedFrom env env') {x : Name} {qt : QTyp} (hl : env.lookup x = some qt) :
+    ∃ qt', env'.lookup x = some qt' ∧ (qt' = qt ∨ qt' = zeroQTyp qt) := by
+  rcases h.list_lookup x with ⟨h', _⟩ | ⟨qt'', n, qt', n', h1, h2, hr⟩
+  · simp [CapturedVarEnv.lookup, h'] at hl
+  · simp only [CapturedVarEnv.lookup, h1, Option.map_some, Option.some.injEq] at hl
+    subst hl
+    exact ⟨qt', by simp [CapturedVarEnv.lookup, h2], hr.qtyp.2⟩
+
+@[simp] lemma FnTClosure.capEnv_withCapEnv (tcl : FnTClosure) (env : CapturedVarEnv) :
+    (tcl.withCapEnv env).capEnv = env := by
+  cases tcl <;> rfl
+
+@[simp] lemma FnTClosure.withCapEnv_capEnv (tcl : FnTClosure) :
+    tcl.withCapEnv tcl.capEnv = tcl := by
+  cases tcl <;> rfl
+
+@[simp] lemma FnTClosure.withCapEnv_withCapEnv (tcl : FnTClosure) (env env' : CapturedVarEnv) :
+    (tcl.withCapEnv env).withCapEnv env' = tcl.withCapEnv env' := by
+  cases tcl <;> rfl
+
+@[simp] lemma PFnTClosure.capEnv_withCapEnv (tcl : PFnTClosure) (env : CapturedVarEnv) :
+    (tcl.withCapEnv env).capEnv = env := by
+  cases tcl <;> rfl
+
+@[simp] lemma PFnTClosure.withCapEnv_capEnv (tcl : PFnTClosure) :
+    tcl.withCapEnv tcl.capEnv = tcl := by
+  cases tcl <;> rfl
+
+@[simp] lemma PFnTClosure.withCapEnv_withCapEnv (tcl : PFnTClosure) (env env' : CapturedVarEnv) :
+    (tcl.withCapEnv env).withCapEnv env' = tcl.withCapEnv env' := by
+  cases tcl <;> rfl
+
+lemma FnTClosure.ZeroedFrom.refl (tcl : FnTClosure) : FnTClosure.ZeroedFrom tcl tcl :=
+  ⟨tcl.capEnv, CapEnvZeroedFrom.refl _, (FnTClosure.withCapEnv_capEnv tcl).symm⟩
+
+lemma FnTClosure.ZeroedFrom.trans {a b c : FnTClosure}
+    (h₁ : FnTClosure.ZeroedFrom a b) (h₂ : FnTClosure.ZeroedFrom b c) :
+    FnTClosure.ZeroedFrom a c := by
+  obtain ⟨e1, he1, rfl⟩ := h₁
+  obtain ⟨e2, he2, rfl⟩ := h₂
+  rw [FnTClosure.capEnv_withCapEnv] at he2
+  exact ⟨e2, he1.trans he2, FnTClosure.withCapEnv_withCapEnv a e1 e2⟩
+
+lemma PFnTClosure.ZeroedFrom.refl (tcl : PFnTClosure) : PFnTClosure.ZeroedFrom tcl tcl :=
+  ⟨tcl.capEnv, CapEnvZeroedFrom.refl _, (PFnTClosure.withCapEnv_capEnv tcl).symm⟩
+
+lemma PFnTClosure.ZeroedFrom.trans {a b c : PFnTClosure}
+    (h₁ : PFnTClosure.ZeroedFrom a b) (h₂ : PFnTClosure.ZeroedFrom b c) :
+    PFnTClosure.ZeroedFrom a c := by
+  obtain ⟨e1, he1, rfl⟩ := h₁
+  obtain ⟨e2, he2, rfl⟩ := h₂
+  rw [PFnTClosure.capEnv_withCapEnv] at he2
+  exact ⟨e2, he1.trans he2, PFnTClosure.withCapEnv_withCapEnv a e1 e2⟩
+
+private lemma FnTClosure.zeroedFrom_zeroFnTClosure (tcl : FnTClosure) :
+    FnTClosure.ZeroedFrom tcl (zeroFnTClosure tcl) := by
+  cases tcl with
+  | regular _ _ env => exact ⟨zeroCapEnv env, capEnvZeroedFrom_zeroCapEnv env, rfl⟩
+  | extern _ _ _ _ env _ _ => exact ⟨zeroCapEnv env, capEnvZeroedFrom_zeroCapEnv env, rfl⟩
+
+private lemma PFnTClosure.zeroedFrom_zeroPFnTClosure (tcl : PFnTClosure) :
+    PFnTClosure.ZeroedFrom tcl (zeroPFnTClosure tcl) := by
+  cases tcl with
+  | regular _ _ env => exact ⟨zeroCapEnv env, capEnvZeroedFrom_zeroCapEnv env, rfl⟩
+  | extern _ _ _ env _ _ => exact ⟨zeroCapEnv env, capEnvZeroedFrom_zeroCapEnv env, rfl⟩
+
+lemma FnTClosure.ZeroedFrom.regular {x : Name} {b : Expr} {env : CapturedVarEnv}
+    {tcl' : FnTClosure} (h : FnTClosure.ZeroedFrom (.regular x b env) tcl') :
+    ∃ env', CapEnvZeroedFrom env env' ∧ tcl' = .regular x b env' := by
+  obtain ⟨env', he, rfl⟩ := h
+  exact ⟨env', he, rfl⟩
+
+lemma FnTClosure.ZeroedFrom.extern {id : ExternId} {x : Name} {r : ExternReturn}
+    {ef : List Effect} {env : CapturedVarEnv} {a : QTyp} {c : List Capture}
+    {tcl' : FnTClosure} (h : FnTClosure.ZeroedFrom (.extern id x r ef env a c) tcl') :
+    ∃ env', CapEnvZeroedFrom env env' ∧ tcl' = .extern id x r ef env' a c := by
+  obtain ⟨env', he, rfl⟩ := h
+  exact ⟨env', he, rfl⟩
+
+lemma PFnTClosure.ZeroedFrom.regular {x : Name} {b : PExpr} {env : CapturedVarEnv}
+    {tcl' : PFnTClosure} (h : PFnTClosure.ZeroedFrom (.regular x b env) tcl') :
+    ∃ env', CapEnvZeroedFrom env env' ∧ tcl' = .regular x b env' := by
+  obtain ⟨env', he, rfl⟩ := h
+  exact ⟨env', he, rfl⟩
+
+lemma PFnTClosure.ZeroedFrom.extern {id : ExternId} {x : Name} {r : ExternReturn}
+    {env : CapturedVarEnv} {a : QTyp} {c : List Capture}
+    {tcl' : PFnTClosure} (h : PFnTClosure.ZeroedFrom (.extern id x r env a c) tcl') :
+    ∃ env', CapEnvZeroedFrom env env' ∧ tcl' = .extern id x r env' a c := by
+  obtain ⟨env', he, rfl⟩ := h
+  exact ⟨env', he, rfl⟩
+
+lemma FnTClosure.ZeroedFrom.regular_inv {tcl : FnTClosure} {x : Name} {b : Expr}
+    {env' : CapturedVarEnv} (h : FnTClosure.ZeroedFrom tcl (.regular x b env')) :
+    ∃ env, CapEnvZeroedFrom env env' ∧ tcl = .regular x b env := by
+  obtain ⟨e, he, heq⟩ := h
+  cases tcl with
+  | regular y b0 env0 =>
+      simp only [FnTClosure.withCapEnv, FnTClosure.regular.injEq] at heq
+      obtain ⟨rfl, rfl, rfl⟩ := heq
+      exact ⟨env0, he, rfl⟩
+  | extern => simp [FnTClosure.withCapEnv] at heq
+
+lemma FnTClosure.ZeroedFrom.extern_inv {tcl : FnTClosure} {id : ExternId} {x : Name}
+    {r : ExternReturn} {ef : List Effect} {env' : CapturedVarEnv} {a : QTyp} {c : List Capture}
+    (h : FnTClosure.ZeroedFrom tcl (.extern id x r ef env' a c)) :
+    ∃ env, CapEnvZeroedFrom env env' ∧ tcl = .extern id x r ef env a c := by
+  obtain ⟨e, he, heq⟩ := h
+  cases tcl with
+  | regular => simp [FnTClosure.withCapEnv] at heq
+  | extern id0 x0 r0 ef0 env0 a0 c0 =>
+      simp only [FnTClosure.withCapEnv, FnTClosure.extern.injEq] at heq
+      obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := heq
+      exact ⟨env0, he, rfl⟩
+
+lemma PFnTClosure.ZeroedFrom.regular_inv {tcl : PFnTClosure} {x : Name} {b : PExpr}
+    {env' : CapturedVarEnv} (h : PFnTClosure.ZeroedFrom tcl (.regular x b env')) :
+    ∃ env, CapEnvZeroedFrom env env' ∧ tcl = .regular x b env := by
+  obtain ⟨e, he, heq⟩ := h
+  cases tcl with
+  | regular y b0 env0 =>
+      simp only [PFnTClosure.withCapEnv, PFnTClosure.regular.injEq] at heq
+      obtain ⟨rfl, rfl, rfl⟩ := heq
+      exact ⟨env0, he, rfl⟩
+  | extern => simp [PFnTClosure.withCapEnv] at heq
+
+lemma PFnTClosure.ZeroedFrom.extern_inv {tcl : PFnTClosure} {id : ExternId} {x : Name}
+    {r : ExternReturn} {env' : CapturedVarEnv} {a : QTyp} {c : List Capture}
+    (h : PFnTClosure.ZeroedFrom tcl (.extern id x r env' a c)) :
+    ∃ env, CapEnvZeroedFrom env env' ∧ tcl = .extern id x r env a c := by
+  obtain ⟨e, he, heq⟩ := h
+  cases tcl with
+  | regular => simp [PFnTClosure.withCapEnv] at heq
+  | extern id0 x0 r0 env0 a0 c0 =>
+      simp only [PFnTClosure.withCapEnv, PFnTClosure.extern.injEq] at heq
+      obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩ := heq
+      exact ⟨env0, he, rfl⟩
+
+/-! ### Members of a merged list -/
+
+private lemma mem_foldl_contains_iff {α : Type} [BEq α] [LawfulBEq α] (l acc : List α) (x : α) :
+    x ∈ l.foldl (fun acc y => if acc.contains y then acc else acc ++ [y]) acc ↔
+      x ∈ acc ∨ x ∈ l := by
+  induction l generalizing acc with
+  | nil => simp
   | cons hd tl ih =>
-    intro h; simp only [List.foldl] at h
-    rcases ih _ h with hinit' | htl
-    · split at hinit'
-      · left; exact hinit'
-      · rw [List.mem_append] at hinit'
-        rcases hinit' with hinit | hhd
-        · left; exact hinit
-        · simp at hhd; right; rw [hhd]; exact List.Mem.head _
-    · right; exact List.Mem.tail hd htl
+      simp only [List.foldl_cons]
+      by_cases hc : acc.contains hd
+      · simp only [hc, ↓reduceIte, ih, List.mem_cons]
+        have hhd : hd ∈ acc := List.mem_of_elem_eq_true hc
+        constructor
+        · rintro (h | h)
+          · exact Or.inl h
+          · exact Or.inr (Or.inr h)
+        · rintro (h | rfl | h)
+          · exact Or.inl h
+          · exact Or.inl hhd
+          · exact Or.inr h
+      · simp only [hc, Bool.false_eq_true, ↓reduceIte, ih, List.mem_append, List.mem_cons]
+        tauto
 
-/-- Every closure in mergeFnTClosures was in one of the inputs. -/
-private lemma mergeFnTClosures_mem (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
-    tcl ∈ mergeFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2 := by
-  intro h; simp only [mergeFnTClosures] at h
-  rcases foldl_dedup_mem _ _ _ h with h1 | h2
-  · rcases foldl_dedup_mem _ _ _ h1 with h_e | h_t
-    · simp at h_e
-    · left; exact h_t
-  · right; exact h2
+private lemma mem_dedupClosures {α : Type} [BEq α] [LawfulBEq α] {l : List α} {x : α} :
+    x ∈ dedupClosures l ↔ x ∈ l := by
+  unfold dedupClosures
+  rw [mem_foldl_contains_iff]
+  simp
 
-/-- Every closure in mergePFnTClosures was in one of the inputs. -/
-private lemma mergePFnTClosures_mem (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
-    tcl ∈ mergePFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2 := by
-  intro h; simp only [mergePFnTClosures] at h
-  rcases foldl_dedup_mem _ _ _ h with h1 | h2
-  · rcases foldl_dedup_mem _ _ _ h1 with h_e | h_t
-    · simp at h_e
-    · left; exact h_t
-  · right; exact h2
+private lemma zeroCapEnvAgainst_zeroedFrom (envs : List CapturedVarEnv) (env : CapturedVarEnv) :
+    CapEnvZeroedFrom env (zeroCapEnvAgainst envs env) := by
+  induction env with
+  | nil => exact List.Forall₂.nil
+  | cons e l ih =>
+      obtain ⟨x, qt, n⟩ := e
+      refine List.Forall₂.cons ?_ ih
+      dsimp only
+      split
+      · exact .keep
+      · exact .zero
+
+private lemma zeroedFrom_zeroDisagreeingFn_step (tcl : FnTClosure) (c : Prop) [Decidable c]
+    (envs : List CapturedVarEnv) :
+    FnTClosure.ZeroedFrom tcl
+      (if c then tcl else tcl.withCapEnv (zeroCapEnvAgainst envs tcl.capEnv)) := by
+  split
+  · exact FnTClosure.ZeroedFrom.refl tcl
+  · exact ⟨_, zeroCapEnvAgainst_zeroedFrom envs tcl.capEnv, rfl⟩
+
+private lemma zeroedFrom_zeroDisagreeingPFn_step (tcl : PFnTClosure) (c : Prop) [Decidable c]
+    (envs : List CapturedVarEnv) :
+    PFnTClosure.ZeroedFrom tcl
+      (if c then tcl else tcl.withCapEnv (zeroCapEnvAgainst envs tcl.capEnv)) := by
+  split
+  · exact PFnTClosure.ZeroedFrom.refl tcl
+  · exact ⟨_, zeroCapEnvAgainst_zeroedFrom envs tcl.capEnv, rfl⟩
+
+private lemma mem_zeroDisagreeingFn {tcls : List FnTClosure} {tcl : FnTClosure}
+    (h : tcl ∈ tcls) :
+    ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ zeroDisagreeingFn tcls := by
+  unfold zeroDisagreeingFn
+  refine ⟨_, ?_, List.mem_map_of_mem h⟩
+  dsimp only
+  exact zeroedFrom_zeroDisagreeingFn_step tcl _ _
+
+private lemma mem_zeroDisagreeingPFn {tcls : List PFnTClosure} {tcl : PFnTClosure}
+    (h : tcl ∈ tcls) :
+    ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ zeroDisagreeingPFn tcls := by
+  unfold zeroDisagreeingPFn
+  refine ⟨_, ?_, List.mem_map_of_mem h⟩
+  dsimp only
+  exact zeroedFrom_zeroDisagreeingPFn_step tcl _ _
+
+private lemma zeroedFrom_of_mem_zeroDisagreeingFn {tcls : List FnTClosure} {tcl' : FnTClosure}
+    (h : tcl' ∈ zeroDisagreeingFn tcls) : ∃ tcl ∈ tcls, FnTClosure.ZeroedFrom tcl tcl' := by
+  unfold zeroDisagreeingFn at h
+  obtain ⟨tcl, hmem, rfl⟩ := List.mem_map.mp h
+  exact ⟨tcl, hmem, zeroedFrom_zeroDisagreeingFn_step tcl _ _⟩
+
+private lemma zeroedFrom_of_mem_zeroDisagreeingPFn {tcls : List PFnTClosure}
+    {tcl' : PFnTClosure} (h : tcl' ∈ zeroDisagreeingPFn tcls) :
+    ∃ tcl ∈ tcls, PFnTClosure.ZeroedFrom tcl tcl' := by
+  unfold zeroDisagreeingPFn at h
+  obtain ⟨tcl, hmem, rfl⟩ := List.mem_map.mp h
+  exact ⟨tcl, hmem, zeroedFrom_zeroDisagreeingPFn_step tcl _ _⟩
+
+/-- Every member of a merged list is a member of an input, zeroed entry by
+    entry. -/
+lemma mem_mergeFnTClosures_inv (tcls1 tcls2 : List FnTClosure) (tcl' : FnTClosure) :
+    tcl' ∈ mergeFnTClosures tcls1 tcls2 →
+      ∃ tcl, (tcl ∈ tcls1 ∨ tcl ∈ tcls2) ∧ FnTClosure.ZeroedFrom tcl tcl' := by
+  intro h
+  rw [mergeFnTClosures, mem_dedupClosures] at h
+  obtain ⟨tcl, hmem, hz⟩ := zeroedFrom_of_mem_zeroDisagreeingFn h
+  rw [mem_dedupClosures, List.mem_append] at hmem
+  exact ⟨tcl, hmem, hz⟩
+
+/-- See `mem_mergeFnTClosures_inv`. -/
+lemma mem_mergePFnTClosures_inv (tcls1 tcls2 : List PFnTClosure) (tcl' : PFnTClosure) :
+    tcl' ∈ mergePFnTClosures tcls1 tcls2 →
+      ∃ tcl, (tcl ∈ tcls1 ∨ tcl ∈ tcls2) ∧ PFnTClosure.ZeroedFrom tcl tcl' := by
+  intro h
+  rw [mergePFnTClosures, mem_dedupClosures] at h
+  obtain ⟨tcl, hmem, hz⟩ := zeroedFrom_of_mem_zeroDisagreeingPFn h
+  rw [mem_dedupClosures, List.mem_append] at hmem
+  exact ⟨tcl, hmem, hz⟩
+
+private lemma mem_mergeFnTClosures_of_mem_append {tcls1 tcls2 : List FnTClosure}
+    {tcl : FnTClosure} (h : tcl ∈ tcls1 ++ tcls2) :
+    ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ mergeFnTClosures tcls1 tcls2 := by
+  obtain ⟨tcl', hz, hmem⟩ := mem_zeroDisagreeingFn (mem_dedupClosures.mpr h)
+  exact ⟨tcl', hz, by rw [mergeFnTClosures, mem_dedupClosures]; exact hmem⟩
+
+private lemma mem_mergePFnTClosures_of_mem_append {tcls1 tcls2 : List PFnTClosure}
+    {tcl : PFnTClosure} (h : tcl ∈ tcls1 ++ tcls2) :
+    ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ mergePFnTClosures tcls1 tcls2 := by
+  obtain ⟨tcl', hz, hmem⟩ := mem_zeroDisagreeingPFn (mem_dedupClosures.mpr h)
+  exact ⟨tcl', hz, by rw [mergePFnTClosures, mem_dedupClosures]; exact hmem⟩
+
+/-- A member of the left input has a copy, zeroed entry by entry, in the merge. -/
+private lemma mem_mergeFnTClosures_left (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
+    tcl ∈ tcls1 → ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ mergeFnTClosures tcls1 tcls2 :=
+  fun h => mem_mergeFnTClosures_of_mem_append (List.mem_append_left _ h)
+
+/-- A member of the right input has a copy, zeroed entry by entry, in the merge. -/
+lemma mem_mergeFnTClosures_right (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
+    tcl ∈ tcls2 → ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ mergeFnTClosures tcls1 tcls2 :=
+  fun h => mem_mergeFnTClosures_of_mem_append (List.mem_append_right _ h)
+
+/-- See `mem_mergeFnTClosures_left`. -/
+lemma mem_mergePFnTClosures_left (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
+    tcl ∈ tcls1 →
+      ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ mergePFnTClosures tcls1 tcls2 :=
+  fun h => mem_mergePFnTClosures_of_mem_append (List.mem_append_left _ h)
+
+/-- See `mem_mergeFnTClosures_right`. -/
+lemma mem_mergePFnTClosures_right (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
+    tcl ∈ tcls2 →
+      ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ mergePFnTClosures tcls1 tcls2 :=
+  fun h => mem_mergePFnTClosures_of_mem_append (List.mem_append_right _ h)
+
+/-! ### Value typing against members zeroed entry by entry -/
+
+private lemma capEnvTyping_zeroedFrom {θ : RealizationMap} {env : VarEnv}
+    {tenv tenv' : CapturedVarEnv} (hz : CapEnvZeroedFrom tenv tenv')
+    (henv : ∀ y qt v, tenv.lookup y = some qt → env.lookup y = some v →
+      valueHasETyp θ v qt.etyp)
+    (hcover : ∀ y qt, tenv.lookup y = some qt → ∃ v, env.lookup y = some v) :
+    (∀ y qt v, tenv'.lookup y = some qt → env.lookup y = some v →
+      valueHasETyp θ v qt.etyp) ∧
+      (∀ y qt, tenv'.lookup y = some qt → ∃ v, env.lookup y = some v) := by
+  refine ⟨fun y qt' v hl hv => ?_, fun y qt' hl => ?_⟩
+  · obtain ⟨qt, hqt, rfl | rfl⟩ := hz.lookup_eq_some hl
+    · exact henv y _ v hqt hv
+    · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp (henv y qt v hqt hv)
+  · obtain ⟨qt, hqt, -⟩ := hz.lookup_eq_some hl
+    exact hcover y qt hqt
+
+/-- A closure typed against a list of members is typed against any list that
+    holds a copy, zeroed entry by entry, of each of them. -/
+private lemma valueHasETyp_arrow_zeroedFrom {θ : RealizationMap} {v : Value} {st1 st2 : Typ}
+    {p p' : Poison} {tcls tcls' : List FnTClosure}
+    (h : valueHasETyp θ v (.arrow st1 st2 p tcls))
+    (hmem : ∀ tcl ∈ tcls, ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls') :
+    valueHasETyp θ v (.arrow st1 st2 p' tcls') := by
+  cases h with
+  | closure htcl henv hcover =>
+      obtain ⟨tcl', hz, hmem'⟩ := hmem _ htcl
+      obtain ⟨env', he, rfl⟩ := hz.regular
+      obtain ⟨henv', hcover'⟩ := capEnvTyping_zeroedFrom he henv hcover
+      exact .closure hmem' henv' hcover'
+  | closure_extern htcl henv hcover =>
+      obtain ⟨tcl', hz, hmem'⟩ := hmem _ htcl
+      obtain ⟨env', he, rfl⟩ := hz.extern
+      obtain ⟨henv', hcover'⟩ := capEnvTyping_zeroedFrom he henv hcover
+      exact .closure_extern hmem' henv' hcover'
+
+/-- See `valueHasETyp_arrow_zeroedFrom`. -/
+private lemma valueHasETyp_parrow_zeroedFrom {θ : RealizationMap} {v : Value} {st1 st2 : Typ}
+    {p p' : Poison} {tcls tcls' : List PFnTClosure}
+    (h : valueHasETyp θ v (.parrow st1 st2 p tcls))
+    (hmem : ∀ tcl ∈ tcls, ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls') :
+    valueHasETyp θ v (.parrow st1 st2 p' tcls') := by
+  cases h with
+  | peClosure hpure htcl henv hcover =>
+      obtain ⟨tcl', hz, hmem'⟩ := hmem _ htcl
+      obtain ⟨env', he, rfl⟩ := hz.regular
+      obtain ⟨henv', hcover'⟩ := capEnvTyping_zeroedFrom he henv hcover
+      exact .peClosure hpure hmem' henv' hcover'
+  | peClosure_extern htcl henv hcover =>
+      obtain ⟨tcl', hz, hmem'⟩ := hmem _ htcl
+      obtain ⟨env', he, rfl⟩ := hz.extern
+      obtain ⟨henv', hcover'⟩ := capEnvTyping_zeroedFrom he henv hcover
+      exact .peClosure_extern hmem' henv' hcover'
+
+end ZeroBindNumbers
+
+private lemma capturedEnvRefLocsBoundedN_zeroedFrom : ∀ (n : Nat) {env env' : CapturedVarEnv}
+    {nl : Loc}, CapturedEnvRefLocsBoundedN n env nl → CapEnvZeroedFrom env env' →
+      CapturedEnvRefLocsBoundedN n env' nl
+  | 0, _, _, _, _, _ => trivial
+  | n + 1, _, _, nl, h, hz => by
+    intro name qt' bn' hmem'
+    obtain ⟨e, hmem, hr⟩ := hz.mem_inv hmem'
+    cases hr with
+    | keep => exact h _ qt' bn' hmem
+    | @zero _ qt n0 =>
+      obtain ⟨hb, hc⟩ := h _ qt n0 hmem
+      refine ⟨?_, ?_⟩
+      · rw [zeroQTyp_etyp]; revert hb; cases qt.etyp <;> simp [zeroETyp, etypRefLocsBounded]
+      · rw [zeroQTyp_etyp]; revert hc
+        cases qt.etyp with
+        | arrow _ _ _ tcls =>
+          rw [zeroETyp_arrow]
+          intro hc tcl' hmem_tcl'
+          obtain ⟨tcl, htcl, rfl⟩ := List.mem_map.mp hmem_tcl'
+          have := hc tcl htcl
+          cases tcl with
+          | regular _ _ env0 =>
+              exact capturedEnvRefLocsBoundedN_zeroedFrom n this (capEnvZeroedFrom_zeroCapEnv env0)
+          | extern _ _ _ _ env0 _ _ =>
+              exact capturedEnvRefLocsBoundedN_zeroedFrom n this (capEnvZeroedFrom_zeroCapEnv env0)
+        | parrow _ _ _ tcls =>
+          rw [zeroETyp_parrow]
+          intro hc tcl' hmem_tcl'
+          obtain ⟨tcl, htcl, rfl⟩ := List.mem_map.mp hmem_tcl'
+          have := hc tcl htcl
+          cases tcl with
+          | regular _ _ env0 =>
+              exact capturedEnvRefLocsBoundedN_zeroedFrom n this (capEnvZeroedFrom_zeroCapEnv env0)
+          | extern _ _ _ env0 _ _ =>
+              exact capturedEnvRefLocsBoundedN_zeroedFrom n this (capEnvZeroedFrom_zeroCapEnv env0)
+        | _ => intro _; simp [zeroETyp]
+
+private lemma capturedEnvBoundedN_zeroedFrom : ∀ (n : Nat) {env env' : CapturedVarEnv}
+    {nt : Tag}, capturedEnvBoundedN n env nt → CapEnvZeroedFrom env env' →
+      capturedEnvBoundedN n env' nt
+  | 0, _, _, _, _, _ => trivial
+  | n + 1, _, _, nt, h, hz => by
+    intro name qt' bn' hmem'
+    obtain ⟨e, hmem, hr⟩ := hz.mem_inv hmem'
+    cases hr with
+    | keep => exact h _ qt' bn' hmem
+    | @zero _ qt n0 =>
+      obtain ⟨hb, hc⟩ := h _ qt n0 hmem
+      refine ⟨by simpa only [qtypPredTagBounded, zeroQTyp_pred] using hb, ?_⟩
+      rw [zeroQTyp_etyp]; revert hc
+      cases qt.etyp with
+      | arrow _ _ _ tcls =>
+        rw [zeroETyp_arrow]
+        intro hc tcl' hmem_tcl'
+        obtain ⟨tcl, htcl, rfl⟩ := List.mem_map.mp hmem_tcl'
+        have := hc tcl htcl
+        cases tcl with
+        | regular _ _ env0 =>
+            exact capturedEnvBoundedN_zeroedFrom n this (capEnvZeroedFrom_zeroCapEnv env0)
+        | extern _ _ _ _ env0 _ _ =>
+            exact capturedEnvBoundedN_zeroedFrom n this (capEnvZeroedFrom_zeroCapEnv env0)
+      | parrow _ _ _ tcls =>
+        rw [zeroETyp_parrow]
+        intro hc tcl' hmem_tcl'
+        obtain ⟨tcl, htcl, rfl⟩ := List.mem_map.mp hmem_tcl'
+        have := hc tcl htcl
+        cases tcl with
+        | regular _ _ env0 =>
+            exact capturedEnvBoundedN_zeroedFrom n this (capEnvZeroedFrom_zeroCapEnv env0)
+        | extern _ _ _ env0 _ _ =>
+            exact capturedEnvBoundedN_zeroedFrom n this (capEnvZeroedFrom_zeroCapEnv env0)
+      | _ => intro _; simp [zeroETyp]
+
+private lemma fnMember_refLocsBounded_zeroedFrom {tcl tcl' : FnTClosure} {nl : Loc}
+    (hz : FnTClosure.ZeroedFrom tcl tcl')
+    (h : match (generalizing := false) tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env nl
+      | .extern _ _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env nl) :
+    match (generalizing := false) tcl' with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env nl
+      | .extern _ _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env nl := by
+  obtain ⟨env', he, rfl⟩ := hz
+  cases tcl with
+  | regular => exact fun n => capturedEnvRefLocsBoundedN_zeroedFrom n (h n) he
+  | extern => exact fun n => capturedEnvRefLocsBoundedN_zeroedFrom n (h n) he
+
+private lemma pfnMember_refLocsBounded_zeroedFrom {tcl tcl' : PFnTClosure} {nl : Loc}
+    (hz : PFnTClosure.ZeroedFrom tcl tcl')
+    (h : match (generalizing := false) tcl with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env nl
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env nl) :
+    match (generalizing := false) tcl' with
+      | .regular _ _ env => CapturedEnvRefLocsFullBounded env nl
+      | .extern _ _ _ env _ _ => CapturedEnvRefLocsFullBounded env nl := by
+  obtain ⟨env', he, rfl⟩ := hz
+  cases tcl with
+  | regular => exact fun n => capturedEnvRefLocsBoundedN_zeroedFrom n (h n) he
+  | extern => exact fun n => capturedEnvRefLocsBoundedN_zeroedFrom n (h n) he
+
+private lemma fnMember_fullBounded_zeroedFrom {tcl tcl' : FnTClosure} {nt : Tag}
+    (hz : FnTClosure.ZeroedFrom tcl tcl')
+    (h : match (generalizing := false) tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env nt
+      | .extern _ _ _ _ env _ _ => CapturedEnvFullBounded env nt) :
+    match (generalizing := false) tcl' with
+      | .regular _ _ env => CapturedEnvFullBounded env nt
+      | .extern _ _ _ _ env _ _ => CapturedEnvFullBounded env nt := by
+  obtain ⟨env', he, rfl⟩ := hz
+  cases tcl with
+  | regular => exact fun n => capturedEnvBoundedN_zeroedFrom n (h n) he
+  | extern => exact fun n => capturedEnvBoundedN_zeroedFrom n (h n) he
+
+private lemma pfnMember_fullBounded_zeroedFrom {tcl tcl' : PFnTClosure} {nt : Tag}
+    (hz : PFnTClosure.ZeroedFrom tcl tcl')
+    (h : match (generalizing := false) tcl with
+      | .regular _ _ env => CapturedEnvFullBounded env nt
+      | .extern _ _ _ env _ _ => CapturedEnvFullBounded env nt) :
+    match (generalizing := false) tcl' with
+      | .regular _ _ env => CapturedEnvFullBounded env nt
+      | .extern _ _ _ env _ _ => CapturedEnvFullBounded env nt := by
+  obtain ⟨env', he, rfl⟩ := hz
+  cases tcl with
+  | regular => exact fun n => capturedEnvBoundedN_zeroedFrom n (h n) he
+  | extern => exact fun n => capturedEnvBoundedN_zeroedFrom n (h n) he
 
 /-- joinETyps preserves etypRefLocsBounded. -/
 private lemma etypRefLocsBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} {nl : Loc}
@@ -7560,10 +8397,9 @@ private lemma etypClosuresCapturedRefLocsBounded_joinETyps {e1 e2 : ETyp} {p1 p2
     | arrow st1' st2' p' tcls2 =>
       simp only [joinETyps]
       split
-      · intro tcl hmem
-        rcases mergeFnTClosures_mem _ _ _ hmem with hmem1 | hmem2
-        · exact h1 tcl hmem1
-        · exact h2 tcl hmem2
+      · intro tcl' hmem
+        obtain ⟨tcl, hsrc, hz⟩ := mem_mergeFnTClosures_inv _ _ _ hmem
+        exact fnMember_refLocsBounded_zeroedFrom hz (hsrc.elim (h1 tcl) (h2 tcl))
       · exact h1
     | _ => simp only [joinETyps]; exact h1
   | parrow st1 st2 p tcls1 =>
@@ -7571,10 +8407,9 @@ private lemma etypClosuresCapturedRefLocsBounded_joinETyps {e1 e2 : ETyp} {p1 p2
     | parrow st1' st2' p' tcls2 =>
       simp only [joinETyps]
       split
-      · intro tcl hmem
-        rcases mergePFnTClosures_mem _ _ _ hmem with hmem1 | hmem2
-        · exact h1 tcl hmem1
-        · exact h2 tcl hmem2
+      · intro tcl' hmem
+        obtain ⟨tcl, hsrc, hz⟩ := mem_mergePFnTClosures_inv _ _ _ hmem
+        exact pfnMember_refLocsBounded_zeroedFrom hz (hsrc.elim (h1 tcl) (h2 tcl))
       · exact h1
     | _ => simp only [joinETyps]; exact h1
   | int => cases e2 <;> simp [joinETyps, etypClosuresCapturedRefLocsBounded]
@@ -7594,10 +8429,9 @@ private lemma etypClosuresFullBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} 
     | arrow st1' st2' p' tcls2 =>
       simp only [joinETyps]
       split
-      · intro tcl hmem
-        rcases mergeFnTClosures_mem _ _ _ hmem with hmem1 | hmem2
-        · exact h1 tcl hmem1
-        · exact h2 tcl hmem2
+      · intro tcl' hmem
+        obtain ⟨tcl, hsrc, hz⟩ := mem_mergeFnTClosures_inv _ _ _ hmem
+        exact fnMember_fullBounded_zeroedFrom hz (hsrc.elim (h1 tcl) (h2 tcl))
       · exact h1
     | _ => simp only [joinETyps]; exact h1
   | parrow st1 st2 p tcls1 =>
@@ -7605,10 +8439,9 @@ private lemma etypClosuresFullBounded_joinETyps {e1 e2 : ETyp} {p1 p2 : Poison} 
     | parrow st1' st2' p' tcls2 =>
       simp only [joinETyps]
       split
-      · intro tcl hmem
-        rcases mergePFnTClosures_mem _ _ _ hmem with hmem1 | hmem2
-        · exact h1 tcl hmem1
-        · exact h2 tcl hmem2
+      · intro tcl' hmem
+        obtain ⟨tcl, hsrc, hz⟩ := mem_mergePFnTClosures_inv _ _ _ hmem
+        exact pfnMember_fullBounded_zeroedFrom hz (hsrc.elim (h1 tcl) (h2 tcl))
       · exact h1
     | _ => simp only [joinETyps]; exact h1
   | _ => simp only [joinETyps]; cases e2 <;> exact h1
@@ -12785,134 +13618,6 @@ lemma joinPoison_eq_false {p1 p2 : Poison} :
   cases p1 <;> cases p2
   all_goals simp [joinPoison] at h ⊢
 
-/-- Helper: adding unique elements from a list preserves membership from the accumulator. -/
-private lemma foldl_addUnique_mem_of_acc {α : Type} [BEq α] [LawfulBEq α]
-    (xs : List α) (acc : List α) (x : α) :
-    x ∈ acc → x ∈ xs.foldl (fun acc' y => if acc'.contains y then acc' else acc' ++ [y]) acc := by
-  intro hmem
-  induction xs generalizing acc with
-  | nil => exact hmem
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    by_cases hc : acc.contains hd
-    · simp only [hc, ↓reduceIte]
-      exact ih acc hmem
-    · simp only [hc, Bool.false_eq_true, ↓reduceIte]
-      exact ih (acc ++ [hd]) (List.mem_append_left [hd] hmem)
-
-/-- Helper: adding unique elements from a list preserves membership from input. -/
-private lemma foldl_addUnique_mem_of_input {α : Type} [BEq α] [LawfulBEq α]
-    (xs : List α) (acc : List α) (x : α) :
-    x ∈ xs → x ∈ xs.foldl (fun acc' y => if acc'.contains y then acc' else acc' ++ [y]) acc := by
-  intro hmem
-  induction xs generalizing acc with
-  | nil => simp at hmem
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    cases List.mem_cons.mp hmem with
-    | inl heq =>
-      subst heq
-      by_cases hc : acc.contains x
-      · simp only [hc, ↓reduceIte]
-        exact foldl_addUnique_mem_of_acc tl acc x (List.mem_of_elem_eq_true hc)
-      · simp only [hc, Bool.false_eq_true, ↓reduceIte]
-        have hmem_append : x ∈ acc ++ [x] := List.mem_append_right acc (List.mem_singleton_self x)
-        exact foldl_addUnique_mem_of_acc tl (acc ++ [x]) x hmem_append
-    | inr hmem_tl =>
-      by_cases hc : acc.contains hd
-      · simp only [hc, ↓reduceIte]
-        exact ih acc hmem_tl
-      · simp only [hc, Bool.false_eq_true, ↓reduceIte]
-        exact ih (acc ++ [hd]) hmem_tl
-
-/-- mergeFnTClosures preserves membership from the left list. -/
-private lemma mem_mergeFnTClosures_left (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
-    tcl ∈ tcls1 → tcl ∈ mergeFnTClosures tcls1 tcls2 := by
-  intro hmem
-  simp only [mergeFnTClosures]
-  -- First show tcl is in the result of processing tcls1
-  have h1 : tcl ∈ tcls1.foldl (fun acc x => if acc.contains x then acc else acc ++ [x]) [] :=
-    foldl_addUnique_mem_of_input tcls1 [] tcl hmem
-  -- Then show it's preserved when processing tcls2
-  exact foldl_addUnique_mem_of_acc tcls2 _ tcl h1
-
-/-- mergeFnTClosures preserves membership from the right list. -/
-lemma mem_mergeFnTClosures_right (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
-    tcl ∈ tcls2 → tcl ∈ mergeFnTClosures tcls1 tcls2 := by
-  intro hmem
-  simp only [mergeFnTClosures]
-  -- tcl is in tcls2, and the outer foldl processes tcls2
-  exact foldl_addUnique_mem_of_input tcls2 _ tcl hmem
-
-/-- mergePFnTClosures preserves membership from the left list. -/
-lemma mem_mergePFnTClosures_left (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
-    tcl ∈ tcls1 → tcl ∈ mergePFnTClosures tcls1 tcls2 := by
-  intro hmem
-  simp only [mergePFnTClosures]
-  have h1 : tcl ∈ tcls1.foldl (fun acc x => if acc.contains x then acc else acc ++ [x]) [] :=
-    foldl_addUnique_mem_of_input tcls1 [] tcl hmem
-  exact foldl_addUnique_mem_of_acc tcls2 _ tcl h1
-
-/-- mergePFnTClosures preserves membership from the right list. -/
-lemma mem_mergePFnTClosures_right (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
-    tcl ∈ tcls2 → tcl ∈ mergePFnTClosures tcls1 tcls2 := by
-  intro hmem
-  simp only [mergePFnTClosures]
-  exact foldl_addUnique_mem_of_input tcls2 _ tcl hmem
-
-/-- Helper: membership in the result of foldl-addUnique implies membership in acc or xs. -/
-private lemma foldl_addUnique_mem_inv {α : Type} [BEq α] [LawfulBEq α]
-    (xs : List α) (acc : List α) (x : α) :
-    x ∈ xs.foldl (fun acc' y => if acc'.contains y then acc' else acc' ++ [y]) acc →
-    x ∈ acc ∨ x ∈ xs := by
-  intro hmem
-  induction xs generalizing acc with
-  | nil =>
-      simp at hmem
-      exact Or.inl hmem
-  | cons hd tl ih =>
-      simp only [List.foldl_cons] at hmem
-      by_cases hc : acc.contains hd
-      · simp only [hc, ↓reduceIte] at hmem
-        cases ih acc hmem with
-        | inl h => exact Or.inl h
-        | inr h => exact Or.inr (List.mem_cons_of_mem _ h)
-      · simp only [hc, Bool.false_eq_true, ↓reduceIte] at hmem
-        cases ih (acc ++ [hd]) hmem with
-        | inl h =>
-            cases List.mem_append.mp h with
-            | inl h => exact Or.inl h
-            | inr h =>
-                have := List.mem_singleton.mp h
-                subst this
-                exact Or.inr List.mem_cons_self
-        | inr h =>
-            exact Or.inr (List.mem_cons_of_mem _ h)
-
-/-- Reverse direction: membership in mergeFnTClosures implies membership in one of the inputs. -/
-lemma mem_mergeFnTClosures_inv (tcls1 tcls2 : List FnTClosure) (tcl : FnTClosure) :
-    tcl ∈ mergeFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2 := by
-  intro hmem
-  simp only [mergeFnTClosures] at hmem
-  cases foldl_addUnique_mem_inv tcls2 _ tcl hmem with
-  | inl h =>
-      cases foldl_addUnique_mem_inv tcls1 [] tcl h with
-      | inl h => exact absurd h List.not_mem_nil
-      | inr h => exact Or.inl h
-  | inr h => exact Or.inr h
-
-/-- Reverse direction: membership in mergePFnTClosures implies membership in one of the inputs. -/
-lemma mem_mergePFnTClosures_inv (tcls1 tcls2 : List PFnTClosure) (tcl : PFnTClosure) :
-    tcl ∈ mergePFnTClosures tcls1 tcls2 → tcl ∈ tcls1 ∨ tcl ∈ tcls2 := by
-  intro hmem
-  simp only [mergePFnTClosures] at hmem
-  cases foldl_addUnique_mem_inv tcls2 _ tcl hmem with
-  | inl h =>
-      cases foldl_addUnique_mem_inv tcls1 [] tcl h with
-      | inl h => exact absurd h List.not_mem_nil
-      | inr h => exact Or.inl h
-  | inr h => exact Or.inr h
-
 lemma valueHasETyp_joinETyps_left
   {θ : RealizationMap} {v : Value} {t1 t2 : ETyp} {p1 p2 : Poison}
   (hval : valueHasETyp θ v t1) :
@@ -12961,13 +13666,11 @@ lemma valueHasETyp_joinETyps_left
           simpa [joinETyps] using (valueHasETyp.closure (θ := θ) (htcl := htcl) (henv := henv) (hcover := hcover))
       | arrow st1' st2' p' tcls2 =>
           by_cases hshape : st1 == st1' && st2 == st2'
-          · have htcl_join :
-              FnTClosure.regular x e tenv ∈ mergeFnTClosures tcl tcls2 :=
-              mem_mergeFnTClosures_left tcl tcls2 _ htcl
-            have hclo_join :
+          · have hclo_join :
                 valueHasETyp θ (Value.closure x e env)
                   (ETyp.arrow st1 st2 (joinPoison p p') (mergeFnTClosures tcl tcls2)) :=
-              valueHasETyp.closure (htcl := htcl_join) (henv := henv) (hcover := hcover)
+              valueHasETyp_arrow_zeroedFrom (valueHasETyp.closure (p := p) htcl henv hcover)
+                (mem_mergeFnTClosures_left tcl tcls2)
             simpa [joinETyps, hshape] using hclo_join
           · simpa [joinETyps, hshape] using
               (valueHasETyp.closure (θ := θ) (htcl := htcl) (henv := henv) (hcover := hcover))
@@ -12993,13 +13696,11 @@ lemma valueHasETyp_joinETyps_left
             (valueHasETyp.closure_extern (θ := θ) (htcl := htcl) (henv := henv) (hcover := hcover))
       | arrow st1' st2' p' tcls2 =>
           by_cases hshape : argTyp == st1' && parseReturnType retSpec == st2'
-          · have htcl_join :
-              FnTClosure.extern id x retSpec eff tenv argQTyp memberCap ∈ mergeFnTClosures tcl tcls2 :=
-              mem_mergeFnTClosures_left tcl tcls2 _ htcl
-            have hclo_join :
+          · have hclo_join :
                 valueHasETyp θ (Value.closure x (Expr.externFn id y argTyp argPoison argPred retSpec eff cap) env)
                   (ETyp.arrow argTyp (parseReturnType retSpec) (joinPoison p p') (mergeFnTClosures tcl tcls2)) :=
-              valueHasETyp.closure_extern (htcl := htcl_join) (henv := henv) (hcover := hcover)
+              valueHasETyp_arrow_zeroedFrom (valueHasETyp.closure_extern (p := p) htcl henv hcover)
+                (mem_mergeFnTClosures_left tcl tcls2)
             simpa [joinETyps, hshape] using hclo_join
           · simpa [joinETyps, hshape] using
               (valueHasETyp.closure_extern (θ := θ) (htcl := htcl) (henv := henv) (hcover := hcover))
@@ -13023,13 +13724,12 @@ lemma valueHasETyp_joinETyps_left
           simpa [joinETyps] using (valueHasETyp.peClosure (θ := θ) (hpure := hpure) (htcl := htcl) (henv := henv) (hcover := hcover))
       | parrow st1' st2' p' tcls2 =>
           by_cases hshape : st1 == st1' && st2 == st2'
-          · have htcl_join :
-              PFnTClosure.regular x pbody tenv ∈ mergePFnTClosures tcl tcls2 :=
-              mem_mergePFnTClosures_left tcl tcls2 _ htcl
-            have hpclo_join :
+          · have hpclo_join :
                 valueHasETyp θ (Value.peClosure x body env)
                   (ETyp.parrow st1 st2 (joinPoison p p') (mergePFnTClosures tcl tcls2)) :=
-              valueHasETyp.peClosure (hpure := hpure) (htcl := htcl_join) (henv := henv) (hcover := hcover)
+              valueHasETyp_parrow_zeroedFrom
+                (valueHasETyp.peClosure (p := p) hpure htcl henv hcover)
+                (mem_mergePFnTClosures_left tcl tcls2)
             simpa [joinETyps, hshape] using hpclo_join
           · simpa [joinETyps, hshape] using
               (valueHasETyp.peClosure (θ := θ) (hpure := hpure) (htcl := htcl) (henv := henv) (hcover := hcover))
@@ -13056,12 +13756,12 @@ lemma valueHasETyp_joinETyps_left
             (valueHasETyp.peClosure_extern (θ := θ) (htcl := htcl) (henv := henv) (hcover := hcover))
       | parrow st1' st2' p' tcls2 =>
           by_cases hshape : argTyp == st1' && parseReturnType retSpec == st2'
-          · have htcl_join :=
-              mem_mergePFnTClosures_left tcl tcls2 _ htcl
-            have hpclo_join :
+          · have hpclo_join :
                 valueHasETyp θ (Value.peClosure x (Expr.externPfn id y argTyp argPoison argPred retSpec cap) env)
                   (ETyp.parrow argTyp (parseReturnType retSpec) (joinPoison p p') (mergePFnTClosures tcl tcls2)) :=
-              valueHasETyp.peClosure_extern (htcl := htcl_join) (henv := henv) (hcover := hcover)
+              valueHasETyp_parrow_zeroedFrom
+                (valueHasETyp.peClosure_extern (p := p) htcl henv hcover)
+                (mem_mergePFnTClosures_left tcl tcls2)
             simpa [joinETyps, hshape] using hpclo_join
           · simpa [joinETyps, hshape] using
               (valueHasETyp.peClosure_extern (θ := θ) (htcl := htcl) (henv := henv) (hcover := hcover))
@@ -13099,9 +13799,8 @@ lemma valueHasETyp_joinETyps_right
           simp [beqETypSignature] at hsig
           obtain ⟨rfl, rfl⟩ := hsig
           simp [joinETyps]
-          exact valueHasETyp.closure
-            (htcl := mem_mergeFnTClosures_right tclsl tclr _ htcl)
-            (henv := henv) (hcover := hcover)
+          exact valueHasETyp_arrow_zeroedFrom (valueHasETyp.closure (p := pr) htcl henv hcover)
+            (mem_mergeFnTClosures_right tclsl tclr)
       | _ => simp [beqETypSignature] at hsig
   | peClosure hpure htcl henv hcover =>
       rename_i x body env st1r st2r pr tclr pbodyr tenvr
@@ -13110,9 +13809,9 @@ lemma valueHasETyp_joinETyps_right
           simp [beqETypSignature] at hsig
           obtain ⟨rfl, rfl⟩ := hsig
           simp [joinETyps]
-          exact valueHasETyp.peClosure hpure
-            (htcl := mem_mergePFnTClosures_right tclsl tclr _ htcl)
-            (henv := henv) (hcover := hcover)
+          exact valueHasETyp_parrow_zeroedFrom
+            (valueHasETyp.peClosure (p := pr) hpure htcl henv hcover)
+            (mem_mergePFnTClosures_right tclsl tclr)
       | _ => simp [beqETypSignature] at hsig
   | closure_extern htcl henv hcover =>
       rename_i id x y argTyp argPoison argPred argQTyp retSpec eff env tclr pr tenvr
@@ -13121,9 +13820,9 @@ lemma valueHasETyp_joinETyps_right
           simp [beqETypSignature] at hsig
           obtain ⟨rfl, rfl⟩ := hsig
           simp [joinETyps]
-          exact valueHasETyp.closure_extern
-            (htcl := mem_mergeFnTClosures_right tclsl tclr _ htcl)
-            (henv := henv) (hcover := hcover)
+          exact valueHasETyp_arrow_zeroedFrom
+            (valueHasETyp.closure_extern (p := pr) htcl henv hcover)
+            (mem_mergeFnTClosures_right tclsl tclr)
       | _ => simp [beqETypSignature] at hsig
   | peClosure_extern htcl henv hcover =>
       rename_i id x y argTyp argPoison argPred argQTyp retSpec env tclr pr tenvr
@@ -13132,9 +13831,9 @@ lemma valueHasETyp_joinETyps_right
           simp [beqETypSignature] at hsig
           obtain ⟨rfl, rfl⟩ := hsig
           simp [joinETyps]
-          exact valueHasETyp.peClosure_extern
-            (htcl := mem_mergePFnTClosures_right tclsl tclr _ htcl)
-            (henv := henv) (hcover := hcover)
+          exact valueHasETyp_parrow_zeroedFrom
+            (valueHasETyp.peClosure_extern (p := pr) htcl henv hcover)
+            (mem_mergePFnTClosures_right tclsl tclr)
       | _ => simp [beqETypSignature] at hsig
 
 /-- joinETyps for arrow types with compatible signatures produces an arrow type
@@ -13145,19 +13844,17 @@ lemma joinETyps_arrow_structure {st1 st2 : Typ} {p1 : Poison} {tcls1 : List FnTC
     beqETypSignature (ETyp.arrow st1 st2 p1 tcls1) t2 →
     ∃ (p' : Poison) (tcls' : List FnTClosure),
       joinETyps (ETyp.arrow st1 st2 p1 tcls1) t2 p1' p2' = ETyp.arrow st1 st2 p' tcls' ∧
-      (∀ tcl, tcl ∈ tcls1 → tcl ∈ tcls') := by
+      (∀ tcl ∈ tcls1, ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls') := by
   intro hisArrow hcompat
   cases t2 with
   | arrow st1' st2' p2 tcls2 =>
     simp only [joinETyps]
     by_cases heq : st1 == st1' && st2 == st2'
     · simp only [heq, ↓reduceIte]
-      refine ⟨joinPoison p1 p2, mergeFnTClosures tcls1 tcls2, rfl, ?_⟩
-      intro tcl hmem
-      exact mem_mergeFnTClosures_left tcls1 tcls2 tcl hmem
+      exact ⟨joinPoison p1 p2, mergeFnTClosures tcls1 tcls2, rfl,
+        mem_mergeFnTClosures_left tcls1 tcls2⟩
     · simp only [heq, Bool.false_eq_true, ↓reduceIte]
-      refine ⟨p1, tcls1, rfl, ?_⟩
-      intro _ h; exact h
+      exact ⟨p1, tcls1, rfl, fun tcl h => ⟨tcl, FnTClosure.ZeroedFrom.refl tcl, h⟩⟩
   | _ => simp [ETyp.isArrow] at hisArrow
 
 /-- joinETyps for parrow types with compatible signatures produces a parrow type
@@ -13168,19 +13865,17 @@ lemma joinETyps_parrow_structure {st1 st2 : Typ} {p1 : Poison} {tcls1 : List PFn
     beqETypSignature (ETyp.parrow st1 st2 p1 tcls1) t2 →
     ∃ (p' : Poison) (tcls' : List PFnTClosure),
       joinETyps (ETyp.parrow st1 st2 p1 tcls1) t2 p1' p2' = ETyp.parrow st1 st2 p' tcls' ∧
-      (∀ tcl, tcl ∈ tcls1 → tcl ∈ tcls') := by
+      (∀ tcl ∈ tcls1, ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls') := by
   intro hisParrow hcompat
   cases t2 with
   | parrow st1' st2' p2 tcls2 =>
     simp only [joinETyps]
     by_cases heq : st1 == st1' && st2 == st2'
     · simp only [heq, ↓reduceIte]
-      refine ⟨joinPoison p1 p2, mergePFnTClosures tcls1 tcls2, rfl, ?_⟩
-      intro tcl hmem
-      exact mem_mergePFnTClosures_left tcls1 tcls2 tcl hmem
+      exact ⟨joinPoison p1 p2, mergePFnTClosures tcls1 tcls2, rfl,
+        mem_mergePFnTClosures_left tcls1 tcls2⟩
     · simp only [heq, Bool.false_eq_true, ↓reduceIte]
-      refine ⟨p1, tcls1, rfl, ?_⟩
-      intro _ h; exact h
+      exact ⟨p1, tcls1, rfl, fun tcl h => ⟨tcl, PFnTClosure.ZeroedFrom.refl tcl, h⟩⟩
   | _ => simp [ETyp.isParrow] at hisParrow
 
 /-- joinETyps preserves beqETypSignature with the left operand: when t1 and t2 are compatible,

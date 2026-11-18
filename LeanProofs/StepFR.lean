@@ -1193,70 +1193,26 @@ lemma closureCapturedVarsRegime_transport_etyp
 
 end RegimeTransport
 
--- Weaken closureCapturedVarsRegime when the closure list grows (superset).
--- Used when joining type results: mergeFnTClosures produces a superset.
-
--- Weaken with different inner poison (joinETyps changes p to joinPoison p1 p2).
+-- Weaken closureCapturedVarsRegime to a closure list that holds a copy of every
+-- member, with its captured environment zeroed entry by entry. Used when joining
+-- type results: mergeFnTClosures gives such a list. The inner poison may differ
+-- (joinETyps changes p to joinPoison p1 p2).
 private lemma closureCapturedVarsRegime_weaken_fnTClosures'
   {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
   {st1 st2 : Typ} {p p' : Poison} {tcls tcls' : List FnTClosure} {poison : Poison} {pred : Predicate}
-  (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
+  (hmem : ∀ tcl ∈ tcls, ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls')
   (h : closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
-  closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p' tcls', poison, pred⟩ μ θ v := by
-  cases h with
-  | intro hdeep =>
-      refine .intro ?_
-      cases hdeep with
-      | nonClosure hv hpe => exact .nonClosure hv hpe
-      | closure xp body ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hmem_src hP hrec hbody =>
-          have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-          subst heq_tcls
-          exact .closure xp body ρcap σcap st1 st2 p' tcls' hval rfl (hmem _ hmem_src) hP hrec hbody
-      | closure_extern id xp y argTyp retSpec effects ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
-          have heq_arg : argTyp = st1 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.1).symm
-          have heq_ret : parseReturnType retSpec = st2 := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.1).symm
-          have heq_tcls : tcls_src = tcls := ((ETyp.arrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-          subst heq_tcls
-          exact .closure_extern id xp y argTyp retSpec effects ρcap σcap p' tcls'
-            hval (by simp [heq_arg, heq_ret]) (hmem _ hmem_src) hP hrec
-      | peClosure _ _ _ _ _ _ _ _ _ _ hetyp_eq_parr _ _ =>
-          exfalso
-          simp at hetyp_eq_parr
-      | peClosure_extern _id _xp _y _argTyp _retSpec _ρcap _σcap _p _tcls _hval hetyp_eq_parr _hmem _hP _hrec =>
-          exfalso
-          simp at hetyp_eq_parr
+  closureCapturedVarsRegime predSat R ⟨ETyp.arrow st1 st2 p' tcls', poison, pred⟩ μ θ v :=
+  closureCapturedVarsRegime_arrow_zeroedFrom hmem h
 
 -- Analogous for parrow/PFnTClosure.
-
--- Weaken parrow with different inner poison (joinETyps changes p).
 private lemma closureCapturedVarsRegime_weaken_pFnTClosures'
   {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
   {st1 st2 : Typ} {p p' : Poison} {tcls tcls' : List PFnTClosure} {poison : Poison} {pred : Predicate}
-  (hmem : ∀ tcl, tcl ∈ tcls → tcl ∈ tcls')
+  (hmem : ∀ tcl ∈ tcls, ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls')
   (h : closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
-  closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p' tcls', poison, pred⟩ μ θ v := by
-  cases h with
-  | intro hdeep =>
-      refine .intro ?_
-      cases hdeep with
-      | nonClosure hv hpe => exact .nonClosure hv hpe
-      | closure _ _ _ _ _ _ _ _ _ hetyp_eq_arr _ _ =>
-          exfalso
-          simp at hetyp_eq_arr
-      | closure_extern _id _xp _y _argTyp _retSpec _effects _ρcap _σcap _p _tcls _hval hetyp_eq_arr _hmem _hP _hrec =>
-          exfalso
-          simp at hetyp_eq_arr
-      | peClosure xp body pbody ρcap σcap _st1 _st2 _p tcls_src hval hetyp_eq hpure hmem_src hP hrec =>
-          have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-          subst heq_tcls
-          exact .peClosure xp body pbody ρcap σcap st1 st2 p' tcls' hval rfl hpure (hmem _ hmem_src) hP hrec
-      | peClosure_extern id xp y argTyp retSpec ρcap σcap _p tcls_src hval hetyp_eq hmem_src hP hrec =>
-          have heq_arg : argTyp = st1 := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.1).symm
-          have heq_ret : parseReturnType retSpec = st2 := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.1).symm
-          have heq_tcls : tcls_src = tcls := ((ETyp.parrow.injEq ..).mp hetyp_eq |>.2.2.2).symm
-          subst heq_tcls
-          exact .peClosure_extern id xp y argTyp retSpec ρcap σcap p' tcls'
-            hval (by simp [heq_arg, heq_ret]) (hmem _ hmem_src) hP hrec
+  closureCapturedVarsRegime predSat R ⟨ETyp.parrow st1 st2 p' tcls', poison, pred⟩ μ θ v :=
+  closureCapturedVarsRegime_parrow_zeroedFrom hmem h
 
 -- Single-step: transport closureCapturedVarsRegime across one joinETyps application.
 lemma closureCapturedVarsRegime_joinETyps_step
@@ -4480,3 +4436,568 @@ lemma agreeValueUnder_clean_transport_by_cleanBack_ext
         exact agreeCapturedEnv.cons_dirty hdirty' hlookup1 hlookup2 htyp1 htyp2 (ihtail htail_b))
       hagree
   exact hrec hbound hclean
+
+/-! ## Binding numbers set to 0
+
+Agreement of two runs, the member evidence and regime consistency read the
+types of captured variables and never their binding numbers, so they hold of a
+type (or captured environment) iff they hold of it with every number set to 0. -/
+section ZeroBindNumbers
+
+private lemma qtypCleanUnder_zeroQTyp_iff {R : Regime} {qt : QTyp} :
+    qtypCleanUnder R (zeroQTyp qt) ↔ qtypCleanUnder R qt := by
+  constructor
+  · intro h
+    cases h with
+    | clean hp => exact .clean (by simpa using hp)
+    | guard k htag hreg hnf => exact .guard k (by simpa using htag) hreg (by simpa using hnf)
+  · intro h
+    cases h with
+    | clean hp => exact .clean (by simpa using hp)
+    | guard k htag hreg hnf => exact .guard k (by simpa using htag) hreg (by simpa using hnf)
+
+private lemma internalPoisonClean_zeroQTyp_iff {qt : QTyp} :
+    internalPoisonClean (zeroQTyp qt) ↔ internalPoisonClean qt := by
+  simp only [internalPoisonClean, zeroQTyp_etyp]
+  cases qt.etyp <;> simp [getInternalPoison, zeroETyp]
+
+private lemma memberVarsRegimeEvidence_zeroCapEnv_iff {predSat : PredSat} {R : Regime} {μ : Memory}
+    {σ : CapturedVarEnv} {ρ : VarEnv} :
+    MemberVarsRegimeEvidence predSat R μ (zeroCapEnv σ) ρ ↔
+      MemberVarsRegimeEvidence predSat R μ σ ρ := by
+  unfold MemberVarsRegimeEvidence
+  constructor
+  · intro h y qt k v hl hv hk hR
+    have hl' := list_lookup_of_ofCaptured_lookup σ y qt hl
+    exact varsRegime_zeroQTyp_iff.mp (h y (zeroQTyp qt) k v
+      (ofCaptured_lookup_of_list_lookup _ y _ (by rw [zeroCapEnv_lookup, hl']; rfl)) hv
+      (by simpa using hk) hR)
+  · intro h y qt' k v hl hv hk hR
+    obtain ⟨qt, hqt, rfl⟩ :=
+      zeroCapEnv_lookup_eq_some (list_lookup_of_ofCaptured_lookup _ y qt' hl)
+    exact varsRegime_zeroQTyp_iff.mpr
+      (h y qt k v (ofCaptured_lookup_of_list_lookup σ y qt hqt) hv (by simpa using hk) hR)
+
+private lemma memberCvcrEvidence_zeroCapEnv_iff {predSat : PredSat} {R : Regime} {μ : Memory}
+    {θ : RealizationMap} {σ : CapturedVarEnv} {ρ : VarEnv} :
+    MemberCvcrEvidence predSat R μ θ (zeroCapEnv σ) ρ ↔
+      MemberCvcrEvidence predSat R μ θ σ ρ := by
+  unfold MemberCvcrEvidence
+  constructor
+  · intro h y qt v hl hv
+    have hl' := list_lookup_of_ofCaptured_lookup σ y qt hl
+    exact closureCapturedVarsRegime_zeroQTyp_iff.mp (h y (zeroQTyp qt) v
+      (ofCaptured_lookup_of_list_lookup _ y _ (by rw [zeroCapEnv_lookup, hl']; rfl)) hv)
+  · intro h y qt' v hl hv
+    obtain ⟨qt, hqt, rfl⟩ :=
+      zeroCapEnv_lookup_eq_some (list_lookup_of_ofCaptured_lookup _ y qt' hl)
+    exact closureCapturedVarsRegime_zeroQTyp_iff.mpr
+      (h y qt v (ofCaptured_lookup_of_list_lookup σ y qt hqt) hv)
+
+private lemma valueConsistentWithRegime_zeroQTyp_iff {predSat : PredSat} {R : Regime} {qt : QTyp}
+    {μ : Memory} {θ : RealizationMap} {v : Value} :
+    valueConsistentWithRegime predSat R (zeroQTyp qt) μ θ v ↔
+      valueConsistentWithRegime predSat R qt μ θ v := by
+  have hc' := @closureCapturedVarsRegime_zeroQTyp_iff predSat R qt μ θ v
+  have hp' := @qtypPredHolds_zeroQTyp_iff predSat qt μ v
+  constructor
+  · intro h
+    cases h with
+    | noTag ht hc => exact .noTag (by simpa using ht) (hc'.mp hc)
+    | guardOnly_ok k hg hc => exact .guardOnly_ok k (by simpa using hg) (hc'.mp hc)
+    | notInRegime k ht hR hc => exact .notInRegime k (by simpa using ht) hR (hc'.mp hc)
+    | inRegimeTrue k ht hR hp hc =>
+        exact .inRegimeTrue k (by simpa using ht) hR (hp'.mp hp) (hc'.mp hc)
+    | inRegimeFalse k ht hR hp hc =>
+        exact .inRegimeFalse k (by simpa using ht) hR (fun h' => hp (hp'.mpr h')) (hc'.mp hc)
+  · intro h
+    cases h with
+    | noTag ht hc => exact .noTag (by simpa using ht) (hc'.mpr hc)
+    | guardOnly_ok k hg hc => exact .guardOnly_ok k (by simpa using hg) (hc'.mpr hc)
+    | notInRegime k ht hR hc => exact .notInRegime k (by simpa using ht) hR (hc'.mpr hc)
+    | inRegimeTrue k ht hR hp hc =>
+        exact .inRegimeTrue k (by simpa using ht) hR (hp'.mpr hp) (hc'.mpr hc)
+    | inRegimeFalse k ht hR hp hc =>
+        exact .inRegimeFalse k (by simpa using ht) hR (fun h' => hp (hp'.mp h')) (hc'.mpr hc)
+
+private lemma capturedVarsRegimePropertyMasked_zeroCapEnv_iff {masked : Tag → Prop}
+    {predSat : PredSat} {R : Regime} {μ : Memory} {σ : CapturedVarEnv} {ρ : VarEnv} :
+    capturedVarsRegimePropertyMasked masked predSat R μ (zeroCapEnv σ) ρ ↔
+      capturedVarsRegimePropertyMasked masked predSat R μ σ ρ := by
+  unfold capturedVarsRegimePropertyMasked
+  constructor
+  · intro h x qt k hl hk hR
+    exact (h x (zeroQTyp qt) k (by rw [zeroCapEnv_lookup, hl]; rfl) (by simpa using hk) hR).imp
+      id varsRegime_zeroQTyp_iff.mp
+  · intro h x qt' k hl hk hR
+    obtain ⟨qt, hqt, rfl⟩ := zeroCapEnv_lookup_eq_some hl
+    exact (h x qt k hqt (by simpa using hk) hR).imp id varsRegime_zeroQTyp_iff.mpr
+
+private lemma closureCapturedVarsRegimeMasked_zeroQTyp_iff {masked : Tag → Prop} {predSat : PredSat}
+    {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value} :
+    closureCapturedVarsRegimeMasked masked predSat R (zeroQTyp qt) μ θ v ↔
+      closureCapturedVarsRegimeMasked masked predSat R qt μ θ v :=
+  deepValueQTypProperty_zeroQTyp_iff (fun _ _ =>
+    and_congr capturedVarsRegimePropertyMasked_zeroCapEnv_iff
+      capturedVarsTypingProperty_zeroCapEnv_iff)
+
+private lemma valueConsistentWithRegimeMasked_zeroQTyp_iff {masked : Tag → Prop} {predSat : PredSat}
+    {R : Regime} {qt : QTyp} {μ : Memory} {θ : RealizationMap} {v : Value} :
+    valueConsistentWithRegimeMasked masked predSat R (zeroQTyp qt) μ θ v ↔
+      valueConsistentWithRegimeMasked masked predSat R qt μ θ v := by
+  have hc' := @closureCapturedVarsRegimeMasked_zeroQTyp_iff masked predSat R qt μ θ v
+  have hp' := @qtypPredHolds_zeroQTyp_iff predSat qt μ v
+  constructor
+  · intro h
+    cases h with
+    | noTag ht hc => exact .noTag (by simpa using ht) (hc'.mp hc)
+    | guardOnly_ok k hg hc => exact .guardOnly_ok k (by simpa using hg) (hc'.mp hc)
+    | maskedTag k ht hm hc => exact .maskedTag k (by simpa using ht) hm (hc'.mp hc)
+    | notInRegime k ht hR hc => exact .notInRegime k (by simpa using ht) hR (hc'.mp hc)
+    | inRegimeFalse k ht hR hp hc =>
+        exact .inRegimeFalse k (by simpa using ht) hR (fun h' => hp (hp'.mpr h')) (hc'.mp hc)
+    | inRegimeTrue k ht hR hp hc =>
+        exact .inRegimeTrue k (by simpa using ht) hR (hp'.mp hp) (hc'.mp hc)
+  · intro h
+    cases h with
+    | noTag ht hc => exact .noTag (by simpa using ht) (hc'.mpr hc)
+    | guardOnly_ok k hg hc => exact .guardOnly_ok k (by simpa using hg) (hc'.mpr hc)
+    | maskedTag k ht hm hc => exact .maskedTag k (by simpa using ht) hm (hc'.mpr hc)
+    | notInRegime k ht hR hc => exact .notInRegime k (by simpa using ht) hR (hc'.mpr hc)
+    | inRegimeFalse k ht hR hp hc =>
+        exact .inRegimeFalse k (by simpa using ht) hR (fun h' => hp (hp'.mp h')) (hc'.mpr hc)
+    | inRegimeTrue k ht hR hp hc =>
+        exact .inRegimeTrue k (by simpa using ht) hR (hp'.mpr hp) (hc'.mpr hc)
+
+/-- Agreement of two runs carries over to the type with every binding number
+    set to 0 (and, for `agreeCapturedEnv`, to the environment). -/
+private lemma agreeValueUnder_zeroQTyp
+    {predSat₀ predSat₁ : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
+    {qt : QTyp} {v₀ v₁ : Value}
+    (h : agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁) :
+    agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ (zeroQTyp qt) v₀ v₁ := by
+  let motive₁ :
+      (a : QTyp) → (a_1 a_2 : Value) →
+        agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+    fun qt v₀ v₁ _ => agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ (zeroQTyp qt) v₀ v₁
+  let motive₂ :
+      (a : CapturedVarEnv) → (a_1 a_2 : VarEnv) →
+        agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+    fun σ ρ₀ ρ₁ _ => agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ (zeroCapEnv σ) ρ₀ ρ₁
+  exact agreeValueUnder.rec (predSat₁ := predSat₀) (predSat₂ := predSat₁) (R := R)
+      (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
+      (motive_1 := motive₁) (motive_2 := motive₂)
+      (clean_eq_nonref_nonarrow := by
+        intro qt v₀ v₁ hpoison hnotfun hnotref hagree
+        exact .clean_eq_nonref_nonarrow (by simpa using hpoison) (by simpa using hnotfun)
+          (by simpa [zeroETyp_eq_ref_iff] using hnotref) hagree)
+      (clean_internal_arrow := by
+        intro st1 st2 p tcls qt tcl x body σcap ρ₀ ρ₁ v₀ v₁ hci hetyp htcl hmatch _hcap
+          hmV₀ hmC₀ hmV₁ hmC₁ ht₀ ht₁ hv₀ hv₁ hbody ihCap
+        subst hmatch
+        exact .clean_internal_arrow (st1 := st1) (st2 := st2) (p := p)
+          (tcls := tcls.map zeroFnTClosure)
+          (tcl := FnTClosure.regular x body (zeroCapEnv σcap)) (σcap := zeroCapEnv σcap)
+          (internalPoisonClean_zeroQTyp_iff.mpr hci) (by simp [hetyp])
+          (List.mem_map_of_mem (f := zeroFnTClosure) htcl) rfl ihCap
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mpr hmV₀)
+          (memberCvcrEvidence_zeroCapEnv_iff.mpr hmC₀)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mpr hmV₁)
+          (memberCvcrEvidence_zeroCapEnv_iff.mpr hmC₁)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mpr ht₀)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mpr ht₁) hv₀ hv₁ hbody)
+      (clean_internal_arrow_extern := by
+        intro id x y argTyp argPoison argPred retSpec effects p tcls qt tcl σcap argQt cap
+          memberCap ρ₀ ρ₁ v₀ v₁ hci hetyp htcl hmatch _hcap hmV₀ hmC₀ hmV₁ hmC₁ ht₀ ht₁
+          hv₀ hv₁ ihCap
+        subst hmatch
+        exact .clean_internal_arrow_extern (p := p)
+          (tcls := tcls.map zeroFnTClosure)
+          (tcl := FnTClosure.extern id x retSpec effects (zeroCapEnv σcap) argQt memberCap)
+          (σcap := zeroCapEnv σcap)
+          (internalPoisonClean_zeroQTyp_iff.mpr hci) (by simp [hetyp])
+          (List.mem_map_of_mem (f := zeroFnTClosure) htcl) rfl ihCap
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mpr hmV₀)
+          (memberCvcrEvidence_zeroCapEnv_iff.mpr hmC₀)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mpr hmV₁)
+          (memberCvcrEvidence_zeroCapEnv_iff.mpr hmC₁)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mpr ht₀)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mpr ht₁) hv₀ hv₁)
+      (dirty_internal_arrow := by
+        intro qt v₀ v₁ hdirty hisArrow htyp₀ htyp₁
+        refine .dirty_internal_arrow (fun h => hdirty (internalPoisonClean_zeroQTyp_iff.mp h))
+          (by simpa using hisArrow) ?_ ?_
+        · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp htyp₀
+        · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp htyp₁)
+      (clean_internal_parrow := by
+        intro st1 st2 p tcls qt tcl x body pbody σcap ρ₀ ρ₁ v₀ v₁ hci hetyp htcl hmatch _hcap
+          hmV₀ hmC₀ hmV₁ hmC₁ ht₀ ht₁ hv₀ hv₁ ihCap
+        obtain ⟨hpb, rfl⟩ := hmatch
+        exact .clean_internal_parrow (st1 := st1) (st2 := st2) (p := p)
+          (tcls := tcls.map zeroPFnTClosure)
+          (tcl := PFnTClosure.regular x pbody (zeroCapEnv σcap)) (σcap := zeroCapEnv σcap)
+          (internalPoisonClean_zeroQTyp_iff.mpr hci) (by simp [hetyp])
+          (List.mem_map_of_mem (f := zeroPFnTClosure) htcl) ⟨hpb, rfl⟩ ihCap
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mpr hmV₀)
+          (memberCvcrEvidence_zeroCapEnv_iff.mpr hmC₀)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mpr hmV₁)
+          (memberCvcrEvidence_zeroCapEnv_iff.mpr hmC₁)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mpr ht₀)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mpr ht₁) hv₀ hv₁)
+      (clean_internal_parrow_extern := by
+        intro id x y argTyp argPoison argPred retSpec p tcls qt tcl σcap argQt cap memberCap
+          ρ₀ ρ₁ v₀ v₁ hci hetyp htcl hmatch _hcap hmV₀ hmC₀ hmV₁ hmC₁ ht₀ ht₁ hv₀ hv₁ ihCap
+        subst hmatch
+        exact .clean_internal_parrow_extern (p := p)
+          (tcls := tcls.map zeroPFnTClosure)
+          (tcl := PFnTClosure.extern id x retSpec (zeroCapEnv σcap) argQt memberCap)
+          (σcap := zeroCapEnv σcap)
+          (internalPoisonClean_zeroQTyp_iff.mpr hci) (by simp [hetyp])
+          (List.mem_map_of_mem (f := zeroPFnTClosure) htcl) rfl ihCap
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mpr hmV₀)
+          (memberCvcrEvidence_zeroCapEnv_iff.mpr hmC₀)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mpr hmV₁)
+          (memberCvcrEvidence_zeroCapEnv_iff.mpr hmC₁)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mpr ht₀)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mpr ht₁) hv₀ hv₁)
+      (dirty_internal_parrow := by
+        intro qt v₀ v₁ hdirty hisParrow htyp₀ htyp₁
+        refine .dirty_internal_parrow (fun h => hdirty (internalPoisonClean_zeroQTyp_iff.mp h))
+          (by simpa using hisParrow) ?_ ?_
+        · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp htyp₀
+        · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp htyp₁)
+      (clean_ref := by
+        intro ls l a₀ a₁ qt v₀ v₁ hpoison hetyp hl₀ hin hv₀ hl₁ hv₁
+        exact .clean_ref (by simpa using hpoison) (by rw [zeroQTyp_etyp, hetyp]; rfl)
+          hl₀ hin hv₀ hl₁ hv₁)
+      (withPred_true_eq := by
+        intro k qt v₀ v₁ htag hregime hnotfun hnotref hagree
+        exact .withPred_true_eq k (by simpa using htag) hregime (by simpa using hnotfun)
+          (by simpa [zeroETyp_eq_ref_iff] using hnotref) hagree)
+      (withPred_true_ref := by
+        intro k ls l a₀ a₁ qt v₀ v₁ htag hregime hetyp hl₀ hin hv₀ hl₁ hv₁
+        exact .withPred_true_ref k (by simpa using htag) hregime
+          (by rw [zeroQTyp_etyp, hetyp]; rfl) hl₀ hin hv₀ hl₁ hv₁)
+      (nil := by
+        intro ρ₀ ρ₁
+        exact agreeCapturedEnv.nil)
+      (cons_clean := by
+        intro x qt _n σcap ρ₀ ρ₁ v₀ v₁ hclean hl₀ hl₁ htyp₀ htyp₁ _hagree _htail ihAgree
+          ihTail
+        refine agreeCapturedEnv.cons_clean (qtypCleanUnder_zeroQTyp_iff.mpr hclean) hl₀ hl₁
+          ?_ ?_ ihAgree ihTail
+        · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp htyp₀
+        · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp htyp₁)
+      (cons_dirty := by
+        intro x qt _n σcap ρ₀ ρ₁ v₀ v₁ hdirty hl₀ hl₁ htyp₀ htyp₁ _htail ihTail
+        refine agreeCapturedEnv.cons_dirty
+          (fun h => hdirty (qtypCleanUnder_zeroQTyp_iff.mp h)) hl₀ hl₁ ?_ ?_ ihTail
+        · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp htyp₀
+        · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp htyp₁)
+      h
+
+/-- The converse of `agreeValueUnder_zeroQTyp`. -/
+private lemma agreeValueUnder_of_zeroQTyp
+    {predSat₀ predSat₁ : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
+    {qt : QTyp} {v₀ v₁ : Value}
+    (h : agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ (zeroQTyp qt) v₀ v₁) :
+    agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ := by
+  let motive₁ :
+      (a : QTyp) → (a_1 a_2 : Value) →
+        agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+    fun qt' v₀ v₁ _ =>
+      ∀ qt, qt' = zeroQTyp qt → agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁
+  let motive₂ :
+      (a : CapturedVarEnv) → (a_1 a_2 : VarEnv) →
+        agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ a a_1 a_2 → Prop :=
+    fun σ' ρ₀ ρ₁ _ =>
+      ∀ σ, σ' = zeroCapEnv σ → agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ σ ρ₀ ρ₁
+  have hrec : motive₁ (zeroQTyp qt) v₀ v₁ h :=
+    agreeValueUnder.rec (predSat₁ := predSat₀) (predSat₂ := predSat₁) (R := R)
+      (μ₁ := μ₀) (μ₂ := μ₁) (θ₁ := θ₀) (θ₂ := θ₁)
+      (motive_1 := motive₁) (motive_2 := motive₂)
+      (clean_eq_nonref_nonarrow := by
+        intro qt' v₀ v₁ hpoison hnotfun hnotref hagree qt hq
+        subst hq
+        exact .clean_eq_nonref_nonarrow (by simpa using hpoison) (by simpa using hnotfun)
+          (by simpa [zeroETyp_eq_ref_iff] using hnotref) hagree)
+      (clean_internal_arrow := by
+        intro st1 st2 p tcls qt' tcl x body σcap ρ₀ ρ₁ v₀ v₁ hci hetyp htcl hmatch _hcap
+          hmV₀ hmC₀ hmV₁ hmC₁ ht₀ ht₁ hv₀ hv₁ hbody ihCap qt hq
+        subst hq hmatch
+        rw [zeroQTyp_etyp] at hetyp
+        obtain ⟨tcls0, h0, rfl⟩ := zeroETyp_eq_arrow hetyp
+        obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp htcl
+        obtain ⟨σ0, rfl, rfl⟩ := zeroFnTClosure_eq_regular htcl0
+        exact .clean_internal_arrow (st1 := st1) (st2 := st2) (p := p) (tcls := tcls0)
+          (tcl := FnTClosure.regular x body σ0) (σcap := σ0)
+          (internalPoisonClean_zeroQTyp_iff.mp hci) h0 hmem0 rfl (ihCap σ0 rfl)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mp hmV₀)
+          (memberCvcrEvidence_zeroCapEnv_iff.mp hmC₀)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mp hmV₁)
+          (memberCvcrEvidence_zeroCapEnv_iff.mp hmC₁)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mp ht₀)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mp ht₁) hv₀ hv₁ hbody)
+      (clean_internal_arrow_extern := by
+        intro id x y argTyp argPoison argPred retSpec effects p tcls qt' tcl σcap argQt cap
+          memberCap ρ₀ ρ₁ v₀ v₁ hci hetyp htcl hmatch _hcap hmV₀ hmC₀ hmV₁ hmC₁ ht₀ ht₁
+          hv₀ hv₁ ihCap qt hq
+        subst hq hmatch
+        rw [zeroQTyp_etyp] at hetyp
+        obtain ⟨tcls0, h0, rfl⟩ := zeroETyp_eq_arrow hetyp
+        obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp htcl
+        obtain ⟨σ0, rfl, rfl⟩ := zeroFnTClosure_eq_extern htcl0
+        exact .clean_internal_arrow_extern (p := p) (tcls := tcls0)
+          (tcl := FnTClosure.extern id x retSpec effects σ0 argQt memberCap) (σcap := σ0)
+          (internalPoisonClean_zeroQTyp_iff.mp hci) h0 hmem0 rfl (ihCap σ0 rfl)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mp hmV₀)
+          (memberCvcrEvidence_zeroCapEnv_iff.mp hmC₀)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mp hmV₁)
+          (memberCvcrEvidence_zeroCapEnv_iff.mp hmC₁)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mp ht₀)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mp ht₁) hv₀ hv₁)
+      (dirty_internal_arrow := by
+        intro qt' v₀ v₁ hdirty hisArrow htyp₀ htyp₁ qt hq
+        subst hq
+        exact .dirty_internal_arrow (fun h => hdirty (internalPoisonClean_zeroQTyp_iff.mpr h))
+          (by simpa using hisArrow)
+          (valueHasETyp_of_zeroETyp (t := qt.etyp) (by simpa using htyp₀))
+          (valueHasETyp_of_zeroETyp (t := qt.etyp) (by simpa using htyp₁)))
+      (clean_internal_parrow := by
+        intro st1 st2 p tcls qt' tcl x body pbody σcap ρ₀ ρ₁ v₀ v₁ hci hetyp htcl hmatch _hcap
+          hmV₀ hmC₀ hmV₁ hmC₁ ht₀ ht₁ hv₀ hv₁ ihCap qt hq
+        subst hq
+        obtain ⟨hpb, rfl⟩ := hmatch
+        rw [zeroQTyp_etyp] at hetyp
+        obtain ⟨tcls0, h0, rfl⟩ := zeroETyp_eq_parrow hetyp
+        obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp htcl
+        obtain ⟨σ0, rfl, rfl⟩ := zeroPFnTClosure_eq_regular htcl0
+        exact .clean_internal_parrow (st1 := st1) (st2 := st2) (p := p) (tcls := tcls0)
+          (tcl := PFnTClosure.regular x pbody σ0) (σcap := σ0)
+          (internalPoisonClean_zeroQTyp_iff.mp hci) h0 hmem0 ⟨hpb, rfl⟩ (ihCap σ0 rfl)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mp hmV₀)
+          (memberCvcrEvidence_zeroCapEnv_iff.mp hmC₀)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mp hmV₁)
+          (memberCvcrEvidence_zeroCapEnv_iff.mp hmC₁)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mp ht₀)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mp ht₁) hv₀ hv₁)
+      (clean_internal_parrow_extern := by
+        intro id x y argTyp argPoison argPred retSpec p tcls qt' tcl σcap argQt cap memberCap
+          ρ₀ ρ₁ v₀ v₁ hci hetyp htcl hmatch _hcap hmV₀ hmC₀ hmV₁ hmC₁ ht₀ ht₁ hv₀ hv₁ ihCap
+          qt hq
+        subst hq hmatch
+        rw [zeroQTyp_etyp] at hetyp
+        obtain ⟨tcls0, h0, rfl⟩ := zeroETyp_eq_parrow hetyp
+        obtain ⟨tcl0, hmem0, htcl0⟩ := List.mem_map.mp htcl
+        obtain ⟨σ0, rfl, rfl⟩ := zeroPFnTClosure_eq_extern htcl0
+        exact .clean_internal_parrow_extern (p := p) (tcls := tcls0)
+          (tcl := PFnTClosure.extern id x retSpec σ0 argQt memberCap) (σcap := σ0)
+          (internalPoisonClean_zeroQTyp_iff.mp hci) h0 hmem0 rfl (ihCap σ0 rfl)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mp hmV₀)
+          (memberCvcrEvidence_zeroCapEnv_iff.mp hmC₀)
+          (memberVarsRegimeEvidence_zeroCapEnv_iff.mp hmV₁)
+          (memberCvcrEvidence_zeroCapEnv_iff.mp hmC₁)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mp ht₀)
+          (capturedVarsTypingProperty_zeroCapEnv_iff.mp ht₁) hv₀ hv₁)
+      (dirty_internal_parrow := by
+        intro qt' v₀ v₁ hdirty hisParrow htyp₀ htyp₁ qt hq
+        subst hq
+        exact .dirty_internal_parrow (fun h => hdirty (internalPoisonClean_zeroQTyp_iff.mpr h))
+          (by simpa using hisParrow)
+          (valueHasETyp_of_zeroETyp (t := qt.etyp) (by simpa using htyp₀))
+          (valueHasETyp_of_zeroETyp (t := qt.etyp) (by simpa using htyp₁)))
+      (clean_ref := by
+        intro ls l a₀ a₁ qt' v₀ v₁ hpoison hetyp hl₀ hin hv₀ hl₁ hv₁ qt hq
+        subst hq
+        exact .clean_ref (by simpa using hpoison)
+          ((zeroETyp_eq_ref_iff (t := qt.etyp)).mp (by simpa using hetyp)) hl₀ hin hv₀ hl₁ hv₁)
+      (withPred_true_eq := by
+        intro k qt' v₀ v₁ htag hregime hnotfun hnotref hagree qt hq
+        subst hq
+        exact .withPred_true_eq k (by simpa using htag) hregime (by simpa using hnotfun)
+          (by simpa [zeroETyp_eq_ref_iff] using hnotref) hagree)
+      (withPred_true_ref := by
+        intro k ls l a₀ a₁ qt' v₀ v₁ htag hregime hetyp hl₀ hin hv₀ hl₁ hv₁ qt hq
+        subst hq
+        exact .withPred_true_ref k (by simpa using htag) hregime
+          ((zeroETyp_eq_ref_iff (t := qt.etyp)).mp (by simpa using hetyp)) hl₀ hin hv₀ hl₁ hv₁)
+      (nil := by
+        intro ρ₀ ρ₁ σ hσ
+        cases σ with
+        | nil => exact agreeCapturedEnv.nil
+        | cons e l => obtain ⟨y, q, m⟩ := e; simp [zeroCapEnv] at hσ)
+      (cons_clean := by
+        intro x qt' n σcap ρ₀ ρ₁ v₀ v₁ hclean hl₀ hl₁ htyp₀ htyp₁ _hagree _htail ihAgree
+          ihTail σ hσ
+        cases σ with
+        | nil => simp [zeroCapEnv] at hσ
+        | cons e σ0 =>
+            obtain ⟨y, q, m⟩ := e
+            simp only [zeroCapEnv, List.cons.injEq, Prod.mk.injEq] at hσ
+            obtain ⟨⟨rfl, rfl, rfl⟩, rfl⟩ := hσ
+            exact agreeCapturedEnv.cons_clean (qtypCleanUnder_zeroQTyp_iff.mp hclean) hl₀ hl₁
+              (valueHasETyp_of_zeroETyp (t := q.etyp) (by simpa using htyp₀))
+              (valueHasETyp_of_zeroETyp (t := q.etyp) (by simpa using htyp₁))
+              (ihAgree q rfl) (ihTail σ0 rfl))
+      (cons_dirty := by
+        intro x qt' n σcap ρ₀ ρ₁ v₀ v₁ hdirty hl₀ hl₁ htyp₀ htyp₁ _htail ihTail σ hσ
+        cases σ with
+        | nil => simp [zeroCapEnv] at hσ
+        | cons e σ0 =>
+            obtain ⟨y, q, m⟩ := e
+            simp only [zeroCapEnv, List.cons.injEq, Prod.mk.injEq] at hσ
+            obtain ⟨⟨rfl, rfl, rfl⟩, rfl⟩ := hσ
+            exact agreeCapturedEnv.cons_dirty
+              (fun h => hdirty (qtypCleanUnder_zeroQTyp_iff.mpr h)) hl₀ hl₁
+              (valueHasETyp_of_zeroETyp (t := q.etyp) (by simpa using htyp₀))
+              (valueHasETyp_of_zeroETyp (t := q.etyp) (by simpa using htyp₁))
+              (ihTail σ0 rfl))
+      h
+  exact hrec qt rfl
+
+private lemma agreeValueUnder_zeroQTyp_iff
+    {predSat₀ predSat₁ : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
+    {qt : QTyp} {v₀ v₁ : Value} :
+    agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ (zeroQTyp qt) v₀ v₁ ↔
+      agreeValueUnder predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ qt v₀ v₁ :=
+  ⟨agreeValueUnder_of_zeroQTyp, agreeValueUnder_zeroQTyp⟩
+
+private lemma agreeCapturedEnv_zeroCapEnv_iff
+    {predSat₀ predSat₁ : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
+    {σ : CapturedVarEnv} {ρ₀ ρ₁ : VarEnv} :
+    agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ (zeroCapEnv σ) ρ₀ ρ₁ ↔
+      agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ σ ρ₀ ρ₁ := by
+  induction σ with
+  | nil => exact Iff.rfl
+  | cons e σ ih =>
+      obtain ⟨x, qt, n⟩ := e
+      show agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁
+          ((x, zeroQTyp qt, 0) :: zeroCapEnv σ) ρ₀ ρ₁ ↔ _
+      constructor
+      · intro h
+        cases h with
+        | cons_clean hclean hl₀ hl₁ ht₀ ht₁ hag htail =>
+            exact .cons_clean (qtypCleanUnder_zeroQTyp_iff.mp hclean) hl₀ hl₁
+              (valueHasETyp_of_zeroETyp (t := qt.etyp) (by simpa using ht₀))
+              (valueHasETyp_of_zeroETyp (t := qt.etyp) (by simpa using ht₁))
+              (agreeValueUnder_zeroQTyp_iff.mp hag) (ih.mp htail)
+        | cons_dirty hdirty hl₀ hl₁ ht₀ ht₁ htail =>
+            exact .cons_dirty (fun h => hdirty (qtypCleanUnder_zeroQTyp_iff.mpr h)) hl₀ hl₁
+              (valueHasETyp_of_zeroETyp (t := qt.etyp) (by simpa using ht₀))
+              (valueHasETyp_of_zeroETyp (t := qt.etyp) (by simpa using ht₁)) (ih.mp htail)
+      · intro h
+        cases h with
+        | cons_clean hclean hl₀ hl₁ ht₀ ht₁ hag htail =>
+            refine .cons_clean (qtypCleanUnder_zeroQTyp_iff.mpr hclean) hl₀ hl₁ ?_ ?_
+              (agreeValueUnder_zeroQTyp_iff.mpr hag) (ih.mpr htail)
+            · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp ht₀
+            · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp ht₁
+        | cons_dirty hdirty hl₀ hl₁ ht₀ ht₁ htail =>
+            refine .cons_dirty (fun h => hdirty (qtypCleanUnder_zeroQTyp_iff.mp h)) hl₀ hl₁
+              ?_ ?_ (ih.mpr htail)
+            · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp ht₀
+            · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp ht₁
+
+
+private lemma capturedVarsRegimePropertyMasked_zeroedFrom {masked : Tag → Prop}
+    {predSat : PredSat} {R : Regime} {μ : Memory} {σ σ' : CapturedVarEnv} {ρ : VarEnv}
+    (hz : CapEnvZeroedFrom σ σ')
+    (h : capturedVarsRegimePropertyMasked masked predSat R μ σ ρ) :
+    capturedVarsRegimePropertyMasked masked predSat R μ σ' ρ := by
+  intro x qt' k hl hk hR
+  obtain ⟨qt, hqt, rfl | rfl⟩ := hz.lookup_eq_some hl
+  · exact h x _ k hqt hk hR
+  · exact (h x qt k hqt (by simpa using hk) hR).imp id varsRegime_zeroQTyp_iff.mpr
+
+private lemma closureRegimeTypingMasked_zeroedFrom {masked : Tag → Prop} {predSat : PredSat}
+    {R : Regime} {μ : Memory} {θ : RealizationMap} :
+    ∀ σ σ' ρ, CapEnvZeroedFrom σ σ' →
+      (capturedVarsRegimePropertyMasked masked predSat R μ σ ρ ∧
+        capturedVarsTypingProperty θ σ ρ) →
+      (capturedVarsRegimePropertyMasked masked predSat R μ σ' ρ ∧
+        capturedVarsTypingProperty θ σ' ρ) :=
+  fun _ _ _ hz h => ⟨capturedVarsRegimePropertyMasked_zeroedFrom hz h.1,
+    capturedVarsTypingProperty_zeroedFrom hz h.2⟩
+
+lemma closureCapturedVarsRegimeMasked_arrow_zeroedFrom {masked : Tag → Prop}
+    {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
+    {st1 st2 : Typ} {p p' : Poison} {tcls tcls' : List FnTClosure} {poison : Poison}
+    {pred : Predicate}
+    (hmem : ∀ tcl ∈ tcls, ∃ tcl', FnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls')
+    (h : closureCapturedVarsRegimeMasked masked predSat R
+      ⟨ETyp.arrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
+    closureCapturedVarsRegimeMasked masked predSat R
+      ⟨ETyp.arrow st1 st2 p' tcls', poison, pred⟩ μ θ v :=
+  deepValueQTypProperty_arrow_zeroedFrom closureRegimeTypingMasked_zeroedFrom hmem h
+
+lemma closureCapturedVarsRegimeMasked_parrow_zeroedFrom {masked : Tag → Prop}
+    {predSat : PredSat} {R : Regime} {μ : Memory} {θ : RealizationMap} {v : Value}
+    {st1 st2 : Typ} {p p' : Poison} {tcls tcls' : List PFnTClosure} {poison : Poison}
+    {pred : Predicate}
+    (hmem : ∀ tcl ∈ tcls, ∃ tcl', PFnTClosure.ZeroedFrom tcl tcl' ∧ tcl' ∈ tcls')
+    (h : closureCapturedVarsRegimeMasked masked predSat R
+      ⟨ETyp.parrow st1 st2 p tcls, poison, pred⟩ μ θ v) :
+    closureCapturedVarsRegimeMasked masked predSat R
+      ⟨ETyp.parrow st1 st2 p' tcls', poison, pred⟩ μ θ v :=
+  deepValueQTypProperty_parrow_zeroedFrom closureRegimeTypingMasked_zeroedFrom hmem h
+
+
+/-! ### Environments zeroed entry by entry
+
+`agreeCapturedEnv` reads every entry by itself, and the member evidence looks
+each name up; zeroing an entry keeps its name and its position. -/
+
+lemma agreeCapturedEnv_zeroedFrom
+    {predSat₀ predSat₁ : PredSat} {R : Regime} {μ₀ μ₁ : Memory} {θ₀ θ₁ : RealizationMap}
+    {σ σ' : CapturedVarEnv} {ρ₀ ρ₁ : VarEnv} (hz : CapEnvZeroedFrom σ σ')
+    (h : agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ σ ρ₀ ρ₁) :
+    agreeCapturedEnv predSat₀ predSat₁ R μ₀ μ₁ θ₀ θ₁ σ' ρ₀ ρ₁ := by
+  unfold CapEnvZeroedFrom at hz
+  revert h
+  induction hz with
+  | nil => intro h; exact h
+  | cons hr _ ih =>
+      intro h
+      cases hr with
+      | keep =>
+          cases h with
+          | cons_clean hclean hl₀ hl₁ ht₀ ht₁ hag htail =>
+              exact .cons_clean hclean hl₀ hl₁ ht₀ ht₁ hag (ih htail)
+          | cons_dirty hdirty hl₀ hl₁ ht₀ ht₁ htail =>
+              exact .cons_dirty hdirty hl₀ hl₁ ht₀ ht₁ (ih htail)
+      | zero =>
+          cases h with
+          | cons_clean hclean hl₀ hl₁ ht₀ ht₁ hag htail =>
+              refine .cons_clean (qtypCleanUnder_zeroQTyp_iff.mpr hclean) hl₀ hl₁ ?_ ?_
+                (agreeValueUnder_zeroQTyp hag) (ih htail)
+              · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp ht₀
+              · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp ht₁
+          | cons_dirty hdirty hl₀ hl₁ ht₀ ht₁ htail =>
+              refine .cons_dirty (fun h => hdirty (qtypCleanUnder_zeroQTyp_iff.mp h)) hl₀ hl₁
+                ?_ ?_ (ih htail)
+              · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp ht₀
+              · rw [zeroQTyp_etyp]; exact valueHasETyp_zeroETyp ht₁
+
+lemma memberVarsRegimeEvidence_zeroedFrom {predSat : PredSat} {R : Regime} {μ : Memory}
+    {σ σ' : CapturedVarEnv} {ρ : VarEnv} (hz : CapEnvZeroedFrom σ σ')
+    (h : MemberVarsRegimeEvidence predSat R μ σ ρ) :
+    MemberVarsRegimeEvidence predSat R μ σ' ρ := by
+  intro y qt' k v hl hv hk hR
+  obtain ⟨qt, hqt, rfl | rfl⟩ :=
+    hz.lookup_eq_some (list_lookup_of_ofCaptured_lookup _ y qt' hl)
+  · exact h y _ k v (ofCaptured_lookup_of_list_lookup σ y _ hqt) hv hk hR
+  · exact varsRegime_zeroQTyp_iff.mpr
+      (h y qt k v (ofCaptured_lookup_of_list_lookup σ y qt hqt) hv (by simpa using hk) hR)
+
+lemma memberCvcrEvidence_zeroedFrom {predSat : PredSat} {R : Regime} {μ : Memory}
+    {θ : RealizationMap} {σ σ' : CapturedVarEnv} {ρ : VarEnv} (hz : CapEnvZeroedFrom σ σ')
+    (h : MemberCvcrEvidence predSat R μ θ σ ρ) :
+    MemberCvcrEvidence predSat R μ θ σ' ρ := by
+  intro y qt' v hl hv
+  obtain ⟨qt, hqt, rfl | rfl⟩ :=
+    hz.lookup_eq_some (list_lookup_of_ofCaptured_lookup _ y qt' hl)
+  · exact h y _ v (ofCaptured_lookup_of_list_lookup σ y _ hqt) hv
+  · exact closureCapturedVarsRegime_zeroQTyp_iff.mpr
+      (h y qt v (ofCaptured_lookup_of_list_lookup σ y qt hqt) hv)
+
+end ZeroBindNumbers
