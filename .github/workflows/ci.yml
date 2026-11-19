@@ -13,17 +13,40 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # The Lean build does not fit in the space a fresh runner leaves free:
+      # the Mathlib cache takes about 6 GB, and linking the interpreter
+      # compiles a C object for every module it imports (all of
+      # Mathlib.Tactic). Remove preinstalled toolchains the build does not use.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift
+          sudo docker image prune --all --force || true
+          df -h /
+
       - name: Install dependencies
+        env:
+          TREE_SITTER_VERSION: 0.27.2
         run: |
           sudo apt-get update
           sudo apt-get install -y latexmk texlive-latex-extra texlive-fonts-recommended texlive-latex-recommended texlive-lang-english
-          sudo apt-get install -y npm
-          sudo npm install -g tree-sitter-cli@0.27.2
+          # tree-sitter CLI: the release binary (the npm package downloads the
+          # same file from an install script, which recent npm may skip).
+          # `tree-sitter generate` uses the runner's preinstalled node.
+          curl -fsSL -o "$RUNNER_TEMP/tree-sitter.gz" \
+            "https://github.com/tree-sitter/tree-sitter/releases/download/v${TREE_SITTER_VERSION}/tree-sitter-linux-x64.gz"
+          gunzip "$RUNNER_TEMP/tree-sitter.gz"
+          sudo install -m 755 "$RUNNER_TEMP/tree-sitter" /usr/local/bin/tree-sitter
+          tree-sitter --version
+          node --version
           # Install Ott (requires OCaml and OPAM)
           sudo apt-get install -y opam
           opam init -y --disable-sandboxing
           opam install -y ott
           echo "$HOME/.opam/default/bin" >> $GITHUB_PATH
+          sudo apt-get clean
 
       # Set up Lean with cache (handled by lean-action)
       - uses: leanprover/lean-action@v1
@@ -38,3 +61,7 @@ jobs:
       # Run tests
       - name: Run tests
         run: make test
+
+      - name: Disk usage
+        if: always()
+        run: df -h /
