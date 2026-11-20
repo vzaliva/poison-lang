@@ -7,7 +7,7 @@ References are counted over *code-only* text: line comments (``--``), nested
 block comments (``/- -/``) including docstrings (``/-- -/``), and string
 literals are stripped before matching names (shared parser in ``lean_text``).
 Without this, a declaration mentioned only in prose would look referenced and
-be wrongly hidden from the unused report (issue #142).
+be wrongly hidden from the unused report.
 
 Dotted names (e.g. ``X.foo``) are included by default. Ref-count by substring
 match cannot detect dot-notation usages like ``x.foo`` where ``x : X``, so

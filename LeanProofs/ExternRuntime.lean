@@ -550,8 +550,8 @@ inductive ExternBoundaryWFRun
 
     Per-kind shape mirroring `RegistryOperationalSafe`'s clauses, so the
     bridge `TrustedRegistry.operationalSafe` is a direct unpacking.  The `d`
-    parameter is retained for signature continuity with
-    `ExternBoundarySpec.operational : ExternOperationalSafe d impl`, but the
+    parameter matches the signature of
+    `ExternBoundarySpec.operational : ExternOperationalSafe d impl`; the
     contract is determined entirely by `impl`'s constructor.
 
     The clauses are grouped by `ExternImpl` constructor:

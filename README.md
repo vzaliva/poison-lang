@@ -36,7 +36,9 @@ Ott specification in
   version 0.27 or later (tested with 0.27.2), and a C compiler (used by
   `tree-sitter build`).
 - [Ott](https://github.com/ott-lang/ott), LaTeX and `latexmk`. These are
-  needed only to regenerate the PDFs (`make poison-lang-spec`, `make doc`).
+  needed only to regenerate the PDFs (`make poison-lang-spec`, `make doc`),
+  which plain `make` also does; without them, run
+  `make lean-build parser`.
 - GNU Make and Bash.
 
 ### Build
@@ -45,6 +47,7 @@ Ott specification in
 make             # everything: Ott spec, Lean code and proofs, parser, docs
 make lean-build  # Lean only: interpreter, type checker and proofs
 make parser      # tree-sitter parser only
+make axioms      # print the axioms the main theorems depend on
 ```
 
 The first build downloads a precompiled Mathlib cache. Building `LeanProofs`
@@ -152,7 +155,7 @@ premise on the starting context (`GuardCapsBelowWitness.lean`).
   checker, parser front end
 - `LeanProofs/` - Proofs of fault robustness and supporting properties
 - `Main.lean` - Interpreter entry point
-- `parser/` - tree-sitter grammar and parser packaging
+- `parser/` - tree-sitter grammar
 - `examples/` - Sample programs with their expected output; they double as
   the test suite
 - `poison-lang-spec/` - Ott specification of the syntax, the typing rules and

@@ -1,5 +1,5 @@
 --! poison-interpreter --extern-regime "12=true"
--- Issue #137: --regime (concrete tag) vs --extern-regime (id-keyed) on ONE program.
+-- --regime (concrete tag) vs --extern-regime (id-keyed) on ONE program.
 --
 -- `read` returns a poisoned int guarded by `r >= 0`.  Asserting that guard lets
 -- the second call's clean-argument precondition accept the first result `x`, so

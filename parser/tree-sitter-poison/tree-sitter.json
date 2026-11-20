@@ -12,8 +12,8 @@
       "injection-regex": "^poison$",
       "class-name": "TreeSitterPoison",
       "highlights": [
-    "queries/highlights.scm"
-  ]
+        "queries/highlights.scm"
+      ]
     }
   ],
   "metadata": {
@@ -28,14 +28,5 @@
     "links": {
       "repository": "https://github.com/vzaliva/poison-lang"
     }
-  },
-  "bindings": {
-    "c": true,
-    "go": true,
-    "node": true,
-    "python": true,
-    "rust": true,
-    "swift": true,
-    "zig": false
   }
 }

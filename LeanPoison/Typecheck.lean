@@ -2091,7 +2091,7 @@ def typecheckSeq (ctx : TypeContext) (e1 e2 : Expr) (fuel : Nat) : TypecheckM Ty
 termination_by fuel
 
 
-/-- Issue #113: when p1p (join of function outer poison p1 and internal arrow poison p) is true,
+/-- When `p1p` (the join of the outer poison `p1` of a function value and its arrow poison `p`) is true,
     the application result is irrecoverably poisoned with no predicate. -/
 def normalizeAppResultByProvenance (p1p : Poison) (qt : QTyp) : QTyp :=
   if p1p then { qt with poison := true, pred := Predicate.noPred } else qt
@@ -2179,8 +2179,8 @@ def applyFnTClosureAtCursor (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1
         if not (isErasureOf st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
-        -- Issue #111: taint app result by function poison (p, p1)
-        -- Issue #113: provenance gate - if join p1 p, force irrecoverable poison and no_pred
+        -- The result is poisoned when the function value is (outer poison `p1`, arrow poison `p`);
+        -- then it is also irrecoverable: `normalizeAppResultByProvenance` drops its predicate.
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
         -- Bodies are typechecked with `externRefAllowed := false`, so they cannot
@@ -2328,8 +2328,8 @@ def applyFnTClosure (tcl : FnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poiso
         if not (isErasureOf st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
-        -- Issue #111: taint app result by function poison (p, p1)
-        -- Issue #113: provenance gate - if join p1 p, force irrecoverable poison and no_pred
+        -- The result is poisoned when the function value is (outer poison `p1`, arrow poison `p`);
+        -- then it is also irrecoverable: `normalizeAppResultByProvenance` drops its predicate.
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
         -- Bodies are typechecked with `externRefAllowed := false`, so they cannot
@@ -2479,8 +2479,8 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
         if not (isErasureOf st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
-        -- Issue #111: taint app result by function poison (p, p1)
-        -- Issue #113: provenance gate - if join p1 p, force irrecoverable poison and no_pred
+        -- The result is poisoned when the function value is (outer poison `p1`, arrow poison `p`);
+        -- then it is also irrecoverable: `normalizeAppResultByProvenance` drops its predicate.
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
         -- Bodies are typechecked with `externRefAllowed := false`, so they cannot
@@ -2532,8 +2532,8 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
             -- is recorded separately (two-track discipline).
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
-            -- Issue #111: taint app result by function poison (p, p1)
-            -- Issue #113: provenance gate
+            -- The result is poisoned when the function value is (outer poison `p1`, arrow poison `p`);
+            -- then it is also irrecoverable: `normalizeAppResultByProvenance` drops its predicate.
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
@@ -2548,8 +2548,8 @@ def applyPFnTClosureAtCursor (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (
             -- is recorded separately (two-track discipline).
             let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
-            -- Issue #111: taint app result by function poison (p, p1)
-            -- Issue #113: provenance gate
+            -- The result is poisoned when the function value is (outer poison `p1`, arrow poison `p`);
+            -- then it is also irrecoverable: `normalizeAppResultByProvenance` drops its predicate.
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
@@ -2581,8 +2581,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
         if not (isErasureOf st2 result3.qualType) then
           throw s!"Type mismatch in function application: return type {repr st2} is not compatible with body type {repr (QTyp.toTyp result3.qualType)}"
 
-        -- Issue #111: taint app result by function poison (p, p1)
-        -- Issue #113: provenance gate - if join p1 p, force irrecoverable poison and no_pred
+        -- The result is poisoned when the function value is (outer poison `p1`, arrow poison `p`);
+        -- then it is also irrecoverable: `normalizeAppResultByProvenance` drops its predicate.
         let taintedPoison := joinPoison p1 (joinPoison p result3.qualType.poison)
         let taintedQt := { result3.qualType with poison := taintedPoison }
         -- Bodies are typechecked with `externRefAllowed := false`, so they cannot
@@ -2634,8 +2634,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             -- is recorded separately (two-track discipline).
             let innerTcl := FnTClosure.extern innerId innerArg innerRet innerEffects (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures
             let innerArrowTyp := ETyp.arrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
-            -- Issue #111: taint app result by function poison (p, p1)
-            -- Issue #113: provenance gate
+            -- The result is poisoned when the function value is (outer poison `p1`, arrow poison `p`);
+            -- then it is also irrecoverable: `normalizeAppResultByProvenance` drops its predicate.
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt
@@ -2650,8 +2650,8 @@ def applyPFnTClosure (tcl : PFnTClosure) (_st1 st2 : Typ) (p : Poison) (p1 : Poi
             -- is recorded separately (two-track discipline).
             let innerTcl := PFnTClosure.extern innerId innerArg innerRet (VarTypeEnv.toCaptured unifiedEnv) innerArgQt innerCaptures
             let innerArrowTyp := ETyp.parrow innerArgTyp (parseReturnType innerRet) ctx.pc [innerTcl]
-            -- Issue #111: taint app result by function poison (p, p1)
-            -- Issue #113: provenance gate
+            -- The result is poisoned when the function value is (outer poison `p1`, arrow poison `p`);
+            -- then it is also irrecoverable: `normalizeAppResultByProvenance` drops its predicate.
             let poison' := joinPoison p1 (joinPoison p ctx.pc)
             let qt := ⟨innerArrowTyp, poison', Predicate.noPred⟩
             let normalizedQt := normalizeAppResultByProvenance (joinPoison p1 p) qt

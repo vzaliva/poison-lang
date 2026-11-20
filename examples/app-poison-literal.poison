@@ -1,4 +1,4 @@
--- Issue #111: poisoned function selection with literal bodies
+-- Poisoned function selection with literal bodies
 -- Result must be poisoned even though individual closure bodies are clean literals
 let c = extern val @201 : (int :> poisoned { 1, v => (v >= 0 && v <= 0) }) in
 let f1 = fn u : unit => 3 : int in

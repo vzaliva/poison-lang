@@ -1,4 +1,4 @@
--- Issue #113: provenance-poisoned function clears predicate in result.
+-- Provenance-poisoned function clears predicate in result.
 -- The function body returns a guarded value (`a` or `b`, each declared by
 -- extern val : (int :> poisoned { 1, v => (v >= 0 && v <= 0) })), but since the
 -- function itself is poisoned (via if-on-poisoned-condition), the guard

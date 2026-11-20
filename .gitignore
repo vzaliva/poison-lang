@@ -26,6 +26,8 @@ doc/*.synctex.gz
 .DS_Store
 
 .vscode/
+AGENTS.md
+.ai-agent.json
 .cursor/
 .claude/
 .agents/
@@ -37,7 +39,6 @@ config.json
 node_modules/
 package-lock.json
 package.json
-parser/tree-sitter-poison/poison.dylib
 
 # test results
 examples/*.result
@@ -47,6 +48,9 @@ testResults/*
 # Container build staging
 .build-cache/
 
-# Python bytecode cache (scripts/ now imports a shared module)
+# Editor workspace files
+*.code-workspace
+
+# Python bytecode cache
 __pycache__/
 *.pyc
